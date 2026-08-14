@@ -106,6 +106,17 @@ function useSplitEnabled(): boolean {
   return enabled;
 }
 
+/**
+ * @spec [Doc-05C §7.4, Doc-01_V8 §20–24 diagnostic client wiring]
+ * @implemented 2026-08-14
+ *
+ * completionHref: where to navigate after session completion. Default "/practice".
+ *   For diagnostic sessions, pass "/dashboard" so the student lands on the baseline card.
+ * isDiagnostic: when true, hides "Skip" and "End Session" buttons. A skipped diagnostic
+ *   item means that domain gets <5 mastery events → evidence gate may not clear →
+ *   NULL projection → no baseline. The 8×5 guarantee requires all 40 items to land.
+ *   Abandoning (End Session) sets status to abandoned → no baseline capture.
+ */
 export default function CanonicalPracticePage(props: {
   title: string;
   badgeLabel: string;
@@ -114,6 +125,8 @@ export default function CanonicalPracticePage(props: {
   sessionId?: string | null;
   difficulties?: PracticeDifficulty[];
   domains?: string[];
+  completionHref?: string;
+  isDiagnostic?: boolean;
 }) {
   const sessionSpec = React.useMemo(
     () => ({
@@ -236,16 +249,25 @@ export default function CanonicalPracticePage(props: {
     setLocalCalculatorState(calculatorState ?? null);
   }, [calculatorState]);
 
+  const completionDest = props.completionHref ?? "/practice";
+
   const endSession = React.useCallback(async () => {
     if (isEndingSession) return;
     setIsEndingSession(true);
     try {
+      // Diagnostic sessions: do NOT call terminateSession (which sets status
+      // to 'abandoned', preventing baseline capture). Navigate directly to
+      // the completion destination — the session remains resumable.
+      if (props.isDiagnostic) {
+        window.location.assign(completionDest);
+        return;
+      }
       await terminateSession();
-      window.location.assign("/practice");
+      window.location.assign(completionDest);
     } finally {
       setIsEndingSession(false);
     }
-  }, [isEndingSession, terminateSession]);
+  }, [isEndingSession, terminateSession, completionDest, props.isDiagnostic]);
 
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
@@ -440,21 +462,30 @@ export default function CanonicalPracticePage(props: {
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             {!showResult ? (
               <>
-                <Button
-                  variant="outline"
-                  disabled={isSubmitting || isLoading || isEndingSession}
-                  onClick={() => submitAnswer({ skipped: true })}
-                >
-                  Skip
-                </Button>
+                {/* Diagnostic mode: hide Skip (a skipped item breaks the 8×5
+                    guarantee — that domain gets <5 mastery events → NULL
+                    projection → no baseline) and End Session (abandon prevents
+                    baseline capture). The diagnostic is finishable, not
+                    discardable. */}
+                {!props.isDiagnostic && (
+                  <Button
+                    variant="outline"
+                    disabled={isSubmitting || isLoading || isEndingSession}
+                    onClick={() => submitAnswer({ skipped: true })}
+                  >
+                    Skip
+                  </Button>
+                )}
 
-                <Button
-                  variant="ghost"
-                  disabled={isSubmitting || isLoading || isEndingSession}
-                  onClick={endSession}
-                >
-                  End Session
-                </Button>
+                {!props.isDiagnostic && (
+                  <Button
+                    variant="ghost"
+                    disabled={isSubmitting || isLoading || isEndingSession}
+                    onClick={endSession}
+                  >
+                    End Session
+                  </Button>
+                )}
 
                 <Button
                   disabled={
