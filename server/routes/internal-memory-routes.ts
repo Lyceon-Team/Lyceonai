@@ -1,26 +1,26 @@
 /**
- * @spec [Doc-03A_V3 §9.4, §7.6 Layer A; Doc-03C_V3 §8.3]
+ * @spec [Doc-03A_V3 §9.4, §7.6 Layer A; Doc-03C_V3 §8.3; Doc-01A Part VII §62–§67]
  * @implemented 2026-08-14
  *
  * plain English: Internal-only route for memory compaction writeback.
  * Called by Cloud Tasks (or directly in local dev) to execute the four-step
  * chat compaction algorithm. This route is mounted under `/api/internal`
- * behind CRON_SECRET auth — it is never publicly accessible.
+ * behind HMAC-SHA256 service auth (01A Part VII) — it is never publicly
+ * accessible. The `compaction-worker → main-api` service pair is verified
+ * by the shared `internalAuthMiddleware`.
  *
  * expected outcome: POST /api/internal/memory/compact-writeback receives
  * the Cloud Tasks payload `{job_type, conversation_id, student_id,
- * trigger_reason, request_id}`, executes compaction, and returns the result.
+ * trigger_reason, request_id}`, verifies the HMAC signature, executes
+ * compaction, and returns the result.
  *
  * trade-offs:
- *  - Per the boundary report (WS-L4 pre-implementation report §5), the
- *    spec envisions a separate Cloud Run service (`lisa-memory-worker`) with
- *    HMAC callback to this endpoint. Until the HMAC infrastructure (01A Part VII)
- *    is wired, the BFF handles compaction directly and Cloud Tasks targets
- *    this route. When HMAC lands, the handler logic migrates to the standalone
- *    worker and this route becomes a thin HMAC-verified writeback receiver.
- *  - Auth: reuses the CRON_SECRET timing-safe auth from internal-cron-routes.ts.
- *    Cloud Tasks sends `Authorization: Bearer <CRON_SECRET>` header. In local
- *    dev, the route can be called directly for testing.
+ *  - Auth: HMAC-SHA256 per 01A Part VII. Secrets loaded from
+ *    `service_auth_secrets` table per §64. Timestamp tolerance 5min (§66).
+ *    Rotation overlap supported — verification tries all active secrets.
+ *  - §67: all auth failures return 401 with minimal body
+ *    `{error:{code:"internal_auth_failed",message:"Internal authentication failed"}}`.
+ *    Failure reasons logged server-side at WARN (never in response).
  *
  * edge cases:
  *  - Duplicate delivery (Cloud Tasks at-least-once): compaction is idempotent
@@ -28,32 +28,17 @@
  *  - Compaction failure: returns 200 with `{ ok: false, reason }` so Cloud
  *    Tasks does not retry (the failure is logged and the stale-summary sweep
  *    will catch it). Only unexpected errors return 500 (triggers retry).
+ *  - HMAC timestamp set at Cloud Tasks enqueue time; first delivery is within
+ *    seconds (well within 5-min tolerance). Retries after 5min fail on
+ *    timestamp — acceptable because stale-summary sweep catches orphans.
  */
-import crypto from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { logger } from "../logger";
 import { executeCompaction } from "../services/tutor-compaction";
+import { internalAuthMiddleware } from "../../packages/shared/internal-auth/verify-middleware";
 
 const router = Router();
-
-// ── Auth ──────────────────────────────────────────────────────────────
-
-/**
- * Cloud Tasks auth via CRON_SECRET (same pattern as internal-cron-routes.ts).
- * When the HMAC infrastructure (01A Part VII) lands, this is replaced by
- * HMAC-SHA256 verification for the `compaction-worker → main-api` service pair.
- */
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const expected = Buffer.from(`Bearer ${secret}`);
-  const actual = Buffer.from(req.get("authorization") ?? "");
-  return (
-    expected.length === actual.length &&
-    crypto.timingSafeEqual(expected, actual)
-  );
-}
 
 // ── Request schema ────────────────────────────────────────────────────
 
@@ -72,13 +57,8 @@ const compactionTaskSchema = z.object({
 
 router.post(
   "/memory/compact-writeback",
+  internalAuthMiddleware("main-api"),
   async (req: Request, res: Response): Promise<void> => {
-    if (!isAuthorized(req)) {
-      // Return 404 (not 401/403) to reveal nothing about the endpoint's existence
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-
     const parsed = compactionTaskSchema.safeParse(req.body);
     if (!parsed.success) {
       logger.warn(

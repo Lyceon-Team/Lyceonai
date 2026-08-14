@@ -25,6 +25,35 @@
 
 ## Entries
 
+SCL-031 | 2026-08-14 | Doc 03A §9.4 vs Doc 03C IAM (memory compaction write path) | PROPOSED
+Change: Doc 03A §9.4 says the memory compaction writer goes through the BFF with HMAC service auth
+  (compaction-worker → main-api). Doc 03C IAM table grants the compaction worker direct Supabase
+  write access to tutor_memory_summaries. These two provisions appear to contradict — one routes
+  through the BFF, the other implies direct DB writes.
+WAS: Doc 03A §9.4 defines the write path as: Cloud Tasks → BFF /api/internal/memory/compact-writeback
+  → executeCompaction → UPSERT into tutor_memory_summaries. The BFF verifies HMAC (01A Part VII,
+  compaction-worker → main-api service pair) before writing. The worker does not hold direct Supabase
+  credentials — it delegates the write to the BFF.
+  Doc 03C IAM table lists the compaction worker as having direct Supabase write access to
+  tutor_memory_summaries. Under this model, the worker writes directly without going through the BFF.
+IS: §9.4 is canonical for the write path. The compaction worker sends its result through the BFF
+  with HMAC-verified service auth. The Doc 03C IAM grant is defense-in-depth: the worker's service
+  account MAY have Supabase write access as a fallback, but the canonical code path uses the BFF.
+  Implementation follows §9.4 — the worker does not use direct Supabase writes.
+Rationale: §9.4 is the detailed architectural description; the Doc 03C IAM table is a summary
+  matrix that does not describe the request flow. The BFF path provides: (a) HMAC verification
+  (01A Part VII) so the write is authenticated at the application layer, not just at the DB layer;
+  (b) Zod validation of the content_json before the write (§7.6 Layer B); (c) observability
+  (structured logging of compaction outcomes). Direct DB writes from the worker would bypass all
+  three. The Doc 03C IAM grant may still be provisioned as defense-in-depth (if the BFF is
+  unavailable, the worker could theoretically write directly), but the canonical path is §9.4.
+Version: No spec version bump. This SCL records the interpretive alignment between the two docs.
+No code change. No schema change. Implementation follows §9.4.
+Owner action: at next spec pass, annotate Doc 03C IAM table to clarify that the compaction worker's
+  Supabase access is defense-in-depth, not the canonical write path. Reference §9.4 for the
+  canonical flow.
+Artifact: PR #566, branch claude/ws-l4-memory-writer.
+
 SCL-030 | 2026-08-13 | Doc 03 INV-03-10 scope narrowing (model-generated text, not structured API fields) | PROPOSED
 Change: INV-03-10 ("Canonical question IDs never appear in student-facing LISA output") and
   Doc 03B §16.6 line 2360 (source_question_canonical_id returned in conversation responses) appeared

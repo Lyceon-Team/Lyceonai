@@ -2,16 +2,29 @@
  * @spec [Doc-03A_V3 §9.1, §10.2; Doc-03C_V3 §8.3]
  * @implemented 2026-08-14
  *
- * plain English: Proof tests for the chat compaction service (WS-L4).
- * Four cases per the task spec:
- *   1. A conversation close produces a tutor_memory_summaries row satisfying the CHECK
- *   2. The row is retrievable by resolveMemorySummariesSafe on the next turn
- *   3. A malformed content_json is rejected, not silently dropped
- *   4. A conversation below the recent-message window does NOT trigger compaction
+ * plain English: Mock-based tests for the chat compaction service (WS-L4).
+ * These exercise application-layer code paths in executeCompaction that
+ * ephemeral PG cannot reach: Vertex response parsing, buildContentJson
+ * normalization, threshold gating, and error handling.
  *
- * These tests mock Supabase and the Vertex worker (no ephemeral Postgres in CI),
- * but exercise every code path in executeCompaction and validate the structural
- * invariants enforced by the Zod schema (which mirrors the DB CHECK trigger).
+ * DB-layer proofs (trigger validation, UPSERT idempotency, HMAC signing)
+ * live in tests/ci/memory-compaction.ephemeral-pg.proof.test.ts.
+ *
+ * Kept mock tests — justification for each:
+ *   - Happy-path pipeline: proves executeCompaction orchestrates
+ *     message-load → Vertex → content-build → upsert → NOTIFY correctly.
+ *     Real PG tests the trigger; this tests the function that feeds it.
+ *   - Array truncation: proves buildContentJson enforces bounds before
+ *     the DB write, so the trigger never fires on overlong arrays.
+ *   - Upsert call shape: proves executeCompaction sets the right metadata
+ *     (student_id, summary_type, source_window, refresh_trigger, NOTIFY).
+ *   - Malformed Vertex output: proves buildContentJson normalizes non-strings,
+ *     nulls, and wrong types. No DB interaction to test with PG.
+ *   - Prose fallback: proves the fallback path when Vertex returns free text.
+ *   - Below-threshold: proves the message-count gate (TutorConfig). Pure app
+ *     logic with no DB interaction.
+ *   - Vertex failure / empty summary / DB error / NOTIFY error: proves
+ *     application error-handling paths. Not exercisable against real PG.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,9 +150,13 @@ describe("Chat Compaction Service (WS-L4)", () => {
     mockTutorConfigGet.mockReturnValue(12);
   });
 
-  // ── Proof 1: conversation close → valid tutor_memory_summaries row ──
+  // ── Happy-path pipeline ──────────────────────────────────────────────
+  // Justification: real PG proves the trigger accepts valid content_json
+  // (proof a), but cannot exercise the executeCompaction orchestration:
+  // message-load → Vertex call → buildContentJson → Supabase upsert call
+  // shape → NOTIFY. These tests prove the *function* that feeds the trigger.
 
-  describe("Proof 1: conversation close produces a valid summary row", () => {
+  describe("Happy-path pipeline: executeCompaction produces a valid summary", () => {
     it("writes a row with content_json satisfying the §10.2 schema", async () => {
       const messages = makeMessages(15);
 
@@ -211,6 +228,9 @@ describe("Chat Compaction Service (WS-L4)", () => {
       );
     });
 
+    // Justification: tests buildContentJson's proactive truncation BEFORE the
+    // DB write. Real PG proves the trigger rejects out-of-bounds (proofs c, d);
+    // this proves the application enforces bounds so the trigger never fires.
     it("enforces §10.2 bounds: truncates overlong arrays and strings", async () => {
       const messages = makeMessages(20);
       __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
@@ -259,9 +279,13 @@ describe("Chat Compaction Service (WS-L4)", () => {
     });
   });
 
-  // ── Proof 2: row retrievable by resolveMemorySummariesSafe ──────────
+  // ── Upsert call shape ────────────────────────────────────────────────
+  // Justification: real PG proves the row is readable (proof e) and UPSERT
+  // is idempotent (proof f), but cannot test that executeCompaction
+  // constructs the correct Supabase upsert call (student_id, summary_type,
+  // source_window timestamps, refresh_trigger, NOTIFY invocation).
 
-  describe("Proof 2: written row is retrievable for the next turn", () => {
+  describe("Upsert call shape: executeCompaction sets correct metadata", () => {
     it("upserts with (student_id, summary_type) so resolveMemorySummariesSafe can read by student_id", async () => {
       const messages = makeMessages(15);
       __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
@@ -303,58 +327,20 @@ describe("Chat Compaction Service (WS-L4)", () => {
       );
     });
 
-    it("duplicate execution overwrites (idempotent per §8.3)", async () => {
-      const messages = makeMessages(15);
-
-      // First execution
-      __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
-      vi.mocked(compactConversation).mockResolvedValueOnce({
-        ok: true,
-        value: { ok: true, summary: VALID_STRUCTURED_SUMMARY },
-      });
-      __mocks.mockSingle.mockResolvedValueOnce({
-        data: { id: SUMMARY_ID },
-        error: null,
-      });
-      __mocks.mockRpc.mockResolvedValueOnce({ error: null });
-
-      const result1 = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
-      expect(result1.ok).toBe(true);
-
-      // Second execution (duplicate Cloud Tasks delivery)
-      __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
-      vi.mocked(compactConversation).mockResolvedValueOnce({
-        ok: true,
-        value: { ok: true, summary: VALID_STRUCTURED_SUMMARY },
-      });
-      __mocks.mockSingle.mockResolvedValueOnce({
-        data: { id: SUMMARY_ID },
-        error: null,
-      });
-      __mocks.mockRpc.mockResolvedValueOnce({ error: null });
-
-      const result2 = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
-      expect(result2.ok).toBe(true);
-
-      // Both used upsert with ON CONFLICT — idempotent
-      expect(__mocks.mockUpsert).toHaveBeenCalledTimes(2);
-      for (const call of __mocks.mockUpsert.mock.calls) {
-        expect(call[1].onConflict).toBe("student_id,summary_type");
-      }
-    });
+    // DELETED: "duplicate execution overwrites (idempotent per §8.3)"
+    // Reason: UPSERT idempotency is directly proven by ephemeral PG proof (f)
+    // in tests/ci/memory-compaction.ephemeral-pg.proof.test.ts, which tests
+    // ON CONFLICT at the real DB level. The mock only verified the onConflict
+    // string arg was passed — it did not prove idempotency.
   });
 
-  // ── Proof 3: malformed content_json is rejected ─────────────────────
+  // ── Vertex response normalization ───────────────────────────────────
+  // Justification: tests buildContentJson's handling of malformed/non-JSON
+  // Vertex responses. This is application-level content normalization that
+  // happens before any DB interaction. Real PG cannot exercise the Vertex
+  // response parsing pipeline.
 
-  describe("Proof 3: malformed content_json is rejected, not silently dropped", () => {
+  describe("Vertex response normalization: malformed output handled gracefully", () => {
     it("rejects content that fails Zod validation (Layer B)", async () => {
       const messages = makeMessages(15);
       __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
@@ -443,67 +429,20 @@ describe("Chat Compaction Service (WS-L4)", () => {
       expect(validation.success).toBe(true);
     });
 
-    it("rejects and returns error when content_json fails Zod validation", async () => {
-      // This tests the case where buildContentJson produces something that
-      // somehow fails the Zod schema (e.g., a bug in buildContentJson).
-      // We simulate this by making the compactConversation return a summary
-      // that, after buildContentJson processing, would have an invalid
-      // summary_version. Since buildContentJson hardcodes "1.0", we need
-      // to test the Zod validation itself.
-
-      // Verify the schema rejects invalid content directly
-      const invalidContent = {
-        summary_version: "2.0", // wrong — must be "1.0"
-        conversation_id: CONVERSATION_ID,
-        source_window_start: "2026-08-14T10:00:00Z",
-        source_window_end: "2026-08-14T10:14:00Z",
-        turns_compacted: 15,
-        topics_discussed: [],
-        skills_referenced: [],
-        key_insights: [],
-        unresolved_confusion: [],
-        last_student_direction: null,
-      };
-      const validation = chatCompactionContentSchema.safeParse(invalidContent);
-      expect(validation.success).toBe(false);
-
-      // Verify key_insights entry > 200 chars is rejected
-      const tooLong = {
-        summary_version: "1.0" as const,
-        conversation_id: CONVERSATION_ID,
-        source_window_start: "2026-08-14T10:00:00Z",
-        source_window_end: "2026-08-14T10:14:00Z",
-        turns_compacted: 15,
-        topics_discussed: [],
-        skills_referenced: [],
-        key_insights: ["x".repeat(201)], // over 200 char limit
-        unresolved_confusion: [],
-        last_student_direction: null,
-      };
-      const validation2 = chatCompactionContentSchema.safeParse(tooLong);
-      expect(validation2.success).toBe(false);
-
-      // Verify topics_discussed > 10 entries is rejected
-      const tooMany = {
-        summary_version: "1.0" as const,
-        conversation_id: CONVERSATION_ID,
-        source_window_start: "2026-08-14T10:00:00Z",
-        source_window_end: "2026-08-14T10:14:00Z",
-        turns_compacted: 15,
-        topics_discussed: Array.from({ length: 11 }, (_, i) => `t-${i}`),
-        skills_referenced: [],
-        key_insights: [],
-        unresolved_confusion: [],
-        last_student_direction: null,
-      };
-      const validation3 = chatCompactionContentSchema.safeParse(tooMany);
-      expect(validation3.success).toBe(false);
-    });
+    // DELETED: "rejects and returns error when content_json fails Zod validation"
+    // Reason: Bounds rejection (key_insights > 5, topics_discussed > 10, missing
+    // required keys) is directly proven by ephemeral PG proofs (c) and (d) in
+    // tests/ci/memory-compaction.ephemeral-pg.proof.test.ts, which test the real
+    // DB trigger. The Zod schema mirrors the trigger; testing it in isolation
+    // only proves the mirror matches, not that the real constraint holds.
   });
 
-  // ── Proof 4: below-threshold conversation does NOT trigger compaction ──
+  // ── Below-threshold gate ────────────────────────────────────────────
+  // Justification: tests the message-count threshold gate in
+  // executeCompaction (TutorConfig.get("recent_message_window")). This is
+  // pure application logic with no DB interaction — real PG cannot exercise it.
 
-  describe("Proof 4: below-threshold conversation skips compaction", () => {
+  describe("Below-threshold gate: insufficient messages skip compaction", () => {
     it("returns ok: false when message count < recent_message_window", async () => {
       // recent_message_window defaults to 12; send 5 messages
       const fewMessages = makeMessages(5);
@@ -596,9 +535,13 @@ describe("Chat Compaction Service (WS-L4)", () => {
     });
   });
 
-  // ── Edge cases ──────────────────────────────────────────────────────
+  // ── Application error handling ──────────────────────────────────────
+  // Justification: tests error-handling paths in executeCompaction (Vertex
+  // failure, empty summary, DB write error, NOTIFY failure). These are
+  // application-layer behaviors that real PG cannot exercise — they depend
+  // on mocking the Supabase client and Vertex orchestrator.
 
-  describe("Edge cases", () => {
+  describe("Application error handling", () => {
     it("returns ok: false when Vertex call fails", async () => {
       const messages = makeMessages(15);
       __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });

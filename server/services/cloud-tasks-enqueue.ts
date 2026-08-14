@@ -1,33 +1,37 @@
 /**
- * @spec [Doc-03C_V3 §8, CLAUDE.md managed-service-first rule]
+ * @spec [Doc-03C_V3 §8; Doc-01A Part VII §62, §70; CLAUDE.md managed-service-first rule]
  * @implemented 2026-08-14
  *
  * plain English: Shared Cloud Tasks enqueue utility. Wraps the Cloud Tasks
- * REST API to enqueue jobs for async LISA workers. Uses the same pattern as
- * crisis-notification.ts: fetch() against the REST API with GCP Application
- * Default Credentials from the metadata server. No @google-cloud/tasks SDK
- * (pnpm dependency changes require approval).
+ * REST API to enqueue jobs for async LISA workers. Requests are signed with
+ * HMAC-SHA256 per Doc 01A Part VII before enqueuing — the Cloud Tasks HTTP
+ * target receives the three HMAC headers alongside the payload so the
+ * receiver can verify the caller (§62, §63).
  *
  * expected outcome: `enqueueCloudTask(queueName, targetUrl, payload)` enqueues
- * a Cloud Tasks HTTP task. Fire-and-forget: errors are logged but never thrown.
- * The enqueue is NOT blocking — the conversation-close response is already sent
- * before the compaction job runs.
+ * a Cloud Tasks HTTP task with HMAC headers. Fire-and-forget: errors are
+ * logged but never thrown.
  *
  * trade-offs:
+ *  - HMAC timestamp is set at ENQUEUE time, not delivery time. Cloud Tasks
+ *    first delivery is within seconds (well within the 5-min §66 tolerance).
+ *    Retries after 5min fail on timestamp — acceptable because the stale-
+ *    summary sweep (§8.3) catches orphaned conversations.
  *  - Uses the same GCP ADC pattern as crisis-notification.ts. On Cloud Run, the
  *    metadata server provides access tokens. In local dev, the metadata server
  *    is unreachable and the call silently degrades (logged at debug level).
- *  - The Cloud Tasks REST API is used directly rather than the SDK to avoid
- *    adding a dependency.
- *  - Requires the Express server identity to have `roles/cloudtasks.enqueuer`
- *    on the target queue (IAM provisioned by Karl).
+ *  - No @google-cloud/tasks SDK (pnpm dependency changes require approval).
  *
  * edge cases:
  *  - No GCP credentials (local dev): skip silently.
  *  - Cloud Tasks API failure: log error, do not throw.
  *  - Missing env vars (GCP_PROJECT_ID): log warning, skip.
+ *  - HMAC signing failure (no provisioned secret): log error, skip enqueue.
+ *    The conversation is already closed; the summary can be retried on the
+ *    next stale-summary sweep.
  */
 import { logger } from "../logger";
+import { signInternalRequest } from "../../packages/shared/internal-auth/sign-request";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
@@ -85,14 +89,18 @@ export type CloudTaskPayload = {
  * if it fails, the conversation is still closed and the summary can be
  * generated on the next compaction sweep (stale trigger per §8.3).
  *
- * @param queueName  Cloud Tasks queue name (e.g. "lisa-compaction")
- * @param targetUrl  Full URL of the HTTP handler (e.g. https://lyceon.ai/api/internal/memory/compact-writeback)
- * @param payload    Task payload (JSON-serializable)
+ * @param queueName      Cloud Tasks queue name (e.g. "lisa-compaction")
+ * @param targetUrl      Full URL of the HTTP handler (e.g. https://lyceon.ai/api/internal/memory/compact-writeback)
+ * @param payload        Task payload (JSON-serializable)
+ * @param callerService  Calling service identifier for HMAC (e.g. "compaction-worker")
+ * @param calleeService  Receiving service identifier for HMAC (e.g. "main-api")
  */
 export async function enqueueCloudTask(
   queueName: string,
   targetUrl: string,
   payload: CloudTaskPayload,
+  callerService: string = "compaction-worker",
+  calleeService: string = "main-api",
 ): Promise<void> {
   if (!GCP_PROJECT_ID) {
     logger.warn(
@@ -115,6 +123,32 @@ export async function enqueueCloudTask(
     return;
   }
 
+  // ── Sign the request with HMAC (01A Part VII §62) ──────────────
+  // HMAC timestamp is set NOW at enqueue time. Cloud Tasks delivers
+  // within seconds (well within 5-min tolerance). Retries >5min fail
+  // on timestamp — acceptable per stale-summary sweep (§8.3).
+  const payloadJson = JSON.stringify(payload);
+  let hmacHeaders: Record<string, string> = {};
+  try {
+    const signResult = await signInternalRequest(
+      "POST",
+      targetUrl,
+      payloadJson,
+      callerService,
+      calleeService,
+    );
+    hmacHeaders = signResult.headers;
+  } catch (err: unknown) {
+    logger.error(
+      "CLOUD_TASKS",
+      "hmac_sign_failed",
+      "Failed to sign Cloud Tasks request with HMAC; enqueue skipped (stale-summary sweep will catch)",
+      err instanceof Error ? err : undefined,
+      { queueName, callerService, calleeService },
+    );
+    return;
+  }
+
   const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${queueName}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
@@ -125,8 +159,9 @@ export async function enqueueCloudTask(
         url: targetUrl,
         headers: {
           "Content-Type": "application/json",
+          ...hmacHeaders,
         },
-        body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+        body: Buffer.from(payloadJson).toString("base64"),
       },
     },
   };
