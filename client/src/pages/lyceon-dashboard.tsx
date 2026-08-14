@@ -361,7 +361,7 @@ export default function LyceonDashboard() {
                     Complete the diagnostic to establish your baseline score.
                   </p>
                   {diagnosticStartError && (
-                    <p className="text-sm text-red-200">
+                    <p className="text-sm text-primary-foreground/70">
                       {diagnosticStartError.message}
                     </p>
                   )}
