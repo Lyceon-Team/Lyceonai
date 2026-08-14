@@ -38,9 +38,16 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
   const mockOrder = vi.fn();
   const mockEq = vi.fn().mockReturnValue({ order: mockOrder });
   const mockSelectFrom = vi.fn().mockReturnValue({ eq: mockEq });
+  // tutor_conversations ownership lookup chain: .select().eq().maybeSingle()
+  const mockConvMaybeSingle = vi.fn();
+  const mockConvEq = vi.fn().mockReturnValue({ maybeSingle: mockConvMaybeSingle });
+  const mockConvSelect = vi.fn().mockReturnValue({ eq: mockConvEq });
   const mockFrom = vi.fn().mockImplementation((table: string) => {
     if (table === "tutor_memory_summaries") {
       return { upsert: mockUpsert };
+    }
+    if (table === "tutor_conversations") {
+      return { select: mockConvSelect };
     }
     // tutor_messages
     return { select: mockSelectFrom };
@@ -60,6 +67,9 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
       mockEq,
       mockOrder,
       mockRpc,
+      mockConvSelect,
+      mockConvEq,
+      mockConvMaybeSingle,
     },
   };
 });
@@ -136,6 +146,9 @@ const { __mocks } = vi.mocked(
       mockEq: ReturnType<typeof vi.fn>;
       mockOrder: ReturnType<typeof vi.fn>;
       mockRpc: ReturnType<typeof vi.fn>;
+      mockConvSelect: ReturnType<typeof vi.fn>;
+      mockConvEq: ReturnType<typeof vi.fn>;
+      mockConvMaybeSingle: ReturnType<typeof vi.fn>;
     };
   },
 );
@@ -148,6 +161,12 @@ describe("Chat Compaction Service (WS-L4)", () => {
 
     // Default: recent_message_window = 12
     mockTutorConfigGet.mockReturnValue(12);
+
+    // Default: conversation ownership lookup succeeds (conversation owned by STUDENT_ID)
+    __mocks.mockConvMaybeSingle.mockResolvedValue({
+      data: { student_id: STUDENT_ID },
+      error: null,
+    });
   });
 
   // ── Happy-path pipeline ──────────────────────────────────────────────
@@ -642,6 +661,123 @@ describe("Chat Compaction Service (WS-L4)", () => {
 
       // Compaction still succeeds — NOTIFY is supplementary
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // ── Conversation ownership verification (INV-03-14) ─────────────────
+  // Justification: tests the application-level ownership gate that prevents
+  // cross-student memory contamination. The DB does not enforce conversation →
+  // summary student_id coherence, so this is a pure application-layer invariant.
+
+  describe("Conversation ownership verification (INV-03-14)", () => {
+    const OTHER_STUDENT_ID = "99999999-9999-9999-9999-999999999999";
+
+    it("rejects when conversation is owned by a different student", async () => {
+      // Conversation is owned by OTHER_STUDENT_ID, not STUDENT_ID
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: { student_id: OTHER_STUDENT_ID },
+        error: null,
+      });
+
+      const result = await executeCompaction(
+        CONVERSATION_ID,
+        STUDENT_ID,
+        REQUEST_ID,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("ownership_mismatch");
+      }
+
+      // No messages loaded, no Vertex call, no DB write, no NOTIFY
+      expect(__mocks.mockOrder).not.toHaveBeenCalled();
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+      expect(supabaseServer.rpc).not.toHaveBeenCalled();
+    });
+
+    it("rejects when conversation does not exist", async () => {
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: null,
+        error: null,
+      });
+
+      const result = await executeCompaction(
+        CONVERSATION_ID,
+        STUDENT_ID,
+        REQUEST_ID,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("conversation_not_found");
+      }
+
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects when conversation ownership lookup fails (fail closed)", async () => {
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: "connection error", code: "08006" },
+      });
+
+      const result = await executeCompaction(
+        CONVERSATION_ID,
+        STUDENT_ID,
+        REQUEST_ID,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("ownership_lookup_failed");
+      }
+
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it("uses derived student_id (not payload) for the write", async () => {
+      // Ownership check passes — conversation owned by STUDENT_ID
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: { student_id: STUDENT_ID },
+        error: null,
+      });
+
+      const messages = makeMessages(15);
+      __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
+
+      vi.mocked(compactConversation).mockResolvedValueOnce({
+        ok: true,
+        value: { ok: true, summary: VALID_STRUCTURED_SUMMARY },
+      });
+      __mocks.mockSingle.mockResolvedValueOnce({
+        data: { id: SUMMARY_ID },
+        error: null,
+      });
+      __mocks.mockRpc.mockResolvedValueOnce({ error: null });
+
+      const result = await executeCompaction(
+        CONVERSATION_ID,
+        STUDENT_ID,
+        REQUEST_ID,
+      );
+
+      expect(result.ok).toBe(true);
+
+      // The upserted row MUST use the derived student_id (STUDENT_ID),
+      // which in this test happens to match the payload — but the code
+      // path uses the derived value, not the parameter.
+      const upsertedRow = __mocks.mockUpsert.mock.calls[0][0];
+      expect(upsertedRow.student_id).toBe(STUDENT_ID);
+
+      // NOTIFY also uses the derived student_id
+      expect(supabaseServer.rpc).toHaveBeenCalledWith(
+        "pg_notify_memory_summary",
+        { p_student_id: STUDENT_ID, p_summary_type: "chat_compaction" },
+      );
     });
   });
 });

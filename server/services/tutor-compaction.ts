@@ -1,9 +1,12 @@
 /**
- * @spec [Doc-03A_V3 §9.1, §10.2, §7.6; Doc-03C_V3 §8.3]
+ * @spec [Doc-03A_V3 §9.1, §10.2, §7.6; Doc-03C_V3 §8.3; INV-03-14]
  * @implemented 2026-08-14
  *
- * plain English: Chat compaction service. Implements the four-step compaction
- * algorithm for the conversation-close trigger:
+ * plain English: Chat compaction service. Implements the compaction algorithm
+ * for the conversation-close trigger:
+ *   0a. Verify conversation ownership — derive student_id from the
+ *       conversation row and reject payload mismatches (INV-03-14)
+ *   0b. Gate — conversation must have enough messages (§9.1)
  *   1. Load all messages from `tutor_messages` for the conversation
  *   2. Call Vertex for summary via the existing /compact worker endpoint
  *   3. Parse the LLM output into the §10.2 chat_compaction schema and write
@@ -110,16 +113,22 @@ const STRUCTURED_EXTRACTION_SYSTEM = [
 /**
  * Execute chat compaction for a closed conversation.
  *
- * @spec [Doc-03A_V3 §9.1, §10.2; Doc-03C_V3 §8.3]
+ * @spec [Doc-03A_V3 §9.1, §10.2; Doc-03C_V3 §8.3; INV-03-14]
  *
  * Steps:
- *   1. Load all messages for the conversation (unbounded — we need them all for summary)
+ *   0a. Verify conversation ownership — derive student_id from the
+ *       conversation row and reject if it mismatches the payload.
+ *       (INV-03-14: "service-role queries must include ownership predicate")
+ *   0b. Gate — conversation must have enough messages
+ *   1. Load all messages for the conversation
  *   2. Call Vertex via the existing /compact worker for structured extraction
  *   3. Validate and write to tutor_memory_summaries
  *   4. Fire NOTIFY for cache invalidation
  *
  * @param conversationId  The conversation to compact
- * @param studentId       The student who owns the conversation
+ * @param studentId       The student_id from the Cloud Tasks payload (used for
+ *                        early mismatch detection; the WRITE uses the derived
+ *                        student_id from the conversation row)
  * @param requestId       Correlation ID for observability
  * @returns CompactionResult — ok: true with summaryId, or ok: false with reason
  */
@@ -128,7 +137,33 @@ export async function executeCompaction(
   studentId: string,
   requestId: string,
 ): Promise<CompactionResult> {
-  // ── Step 0: Gate — conversation must have enough messages ──────────
+  // ── Step 0a: Verify conversation ownership (INV-03-14) ────────────
+  // Load the conversation row and derive student_id from it.
+  // Reject mismatch — a valid internal caller sending conversation A with
+  // student B must NOT store A's memory under B.
+  const ownership = await verifyConversationOwnership(
+    conversationId,
+    studentId,
+  );
+  if (!ownership.ok) {
+    logger.warn(
+      "TUTOR_COMPACTION",
+      "ownership_mismatch",
+      `Conversation ${conversationId} is not owned by the payload student_id; compaction rejected`,
+      {
+        conversationId,
+        payloadStudentId: studentId,
+        actualStudentId: ownership.actualStudentId ?? "not-found",
+        requestId,
+      },
+    );
+    return { ok: false, reason: ownership.reason };
+  }
+  // Use the DERIVED student_id for all subsequent operations (writes).
+  // The payload student_id was only used for the mismatch check above.
+  const derivedStudentId = ownership.derivedStudentId;
+
+  // ── Step 0b: Gate — conversation must have enough messages ────────
   const messageWindow = TutorConfig.get("recent_message_window");
 
   // Load ALL messages for the conversation (no window limit)
@@ -171,7 +206,7 @@ export async function executeCompaction(
 
   const compactResult = await compactConversation({
     conversation_id: conversationId,
-    student_id: studentId,
+    student_id: derivedStudentId,
     recent_messages: recentMessages,
   });
 
@@ -221,7 +256,7 @@ export async function executeCompaction(
 
   // ── Step 3: Write to tutor_memory_summaries ────────────────────────
   const writeResult = await writeCompactionSummary(
-    studentId,
+    derivedStudentId,
     validation.data,
     sourceWindowStart,
     sourceWindowEnd,
@@ -233,7 +268,7 @@ export async function executeCompaction(
   }
 
   // ── Step 4: Fire NOTIFY for cache invalidation ─────────────────────
-  await fireMemorySummaryNotify(studentId, "chat_compaction");
+  await fireMemorySummaryNotify(derivedStudentId, "chat_compaction");
 
   logger.info(
     "TUTOR_COMPACTION",
@@ -251,6 +286,76 @@ export async function executeCompaction(
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────
+
+// ── Ownership verification types ────────────────────────────────────
+
+type OwnershipOk = {
+  ok: true;
+  derivedStudentId: string;
+};
+
+type OwnershipFail = {
+  ok: false;
+  reason: string;
+  actualStudentId?: string;
+};
+
+type OwnershipResult = OwnershipOk | OwnershipFail;
+
+/**
+ * Verify that the conversation exists and is owned by the claimed student.
+ *
+ * @spec [INV-03-14: conversation ownership invariant]
+ *
+ * plain English: loads the conversation row by its id (service-role, so no RLS),
+ * reads its student_id, and compares to the payload. If the conversation does
+ * not exist or the student_id does not match, the compaction is rejected.
+ *
+ * The DERIVED student_id (from the conversation row) is returned so callers
+ * use it for all writes — the payload student_id is never trusted for writes.
+ *
+ * @param conversationId  The conversation to check
+ * @param claimedStudentId  The student_id from the Cloud Tasks payload
+ * @returns OwnershipResult — ok: true with derivedStudentId, or ok: false with reason
+ */
+async function verifyConversationOwnership(
+  conversationId: string,
+  claimedStudentId: string,
+): Promise<OwnershipResult> {
+  const { data, error } = await supabaseServer
+    .from("tutor_conversations")
+    .select("student_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error(
+      "TUTOR_COMPACTION",
+      "ownership_lookup_failed",
+      "Failed to load conversation for ownership verification",
+      { message: error.message, code: error.code },
+      { conversationId },
+    );
+    // Fail closed — cannot verify ownership → reject
+    return { ok: false, reason: "ownership_lookup_failed" };
+  }
+
+  if (!data) {
+    return { ok: false, reason: "conversation_not_found" };
+  }
+
+  const actualStudentId = (data as { student_id: string }).student_id;
+
+  if (actualStudentId !== claimedStudentId) {
+    return {
+      ok: false,
+      reason: "ownership_mismatch",
+      actualStudentId,
+    };
+  }
+
+  return { ok: true, derivedStudentId: actualStudentId };
+}
 
 type MessageRow = {
   id: string;
