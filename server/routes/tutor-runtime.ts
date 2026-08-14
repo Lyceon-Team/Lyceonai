@@ -55,6 +55,7 @@ import {
 import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
+import { enqueueCloudTask } from "../services/cloud-tasks-enqueue";
 import {
   runCrisisClassifier,
   getCrisisResponse,
@@ -1492,14 +1493,28 @@ router.post(
         return;
       }
 
-      // Async memory compaction (Doc 03A V3 §9.1) is executed by the Doc 03C
-      // orchestrator worker, not this request path. Enqueue is a fire-and-
-      // forget log marker until the job queue transport lands.
+      // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
+      // Enqueue to Cloud Tasks — fire-and-forget. The compaction handler
+      // gates on message count (recent_message_window threshold) and will
+      // skip conversations that are too short to merit compaction.
+      const compactionRequestId = crypto.randomUUID();
+      const compactionTargetUrl = `${(process.env.PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "")}/api/internal/memory/compact-writeback`;
+
+      // Fire-and-forget: do not await in the response path. The enqueue
+      // itself is async but does not block the close response.
+      void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
+        job_type: "compaction",
+        conversation_id: conversation.id,
+        student_id: studentId,
+        trigger_reason: "close",
+        request_id: compactionRequestId,
+      });
+
       logger.info(
         "TUTOR_RUNTIME",
-        "memory_compaction_enqueue_deferred",
-        "Conversation closed; memory compaction job not yet wired to a queue",
-        { conversationId: conversation.id },
+        "memory_compaction_enqueued",
+        "Conversation closed; compaction task enqueued to Cloud Tasks",
+        { conversationId: conversation.id, requestId: compactionRequestId },
       );
 
       res.status(200).json({
