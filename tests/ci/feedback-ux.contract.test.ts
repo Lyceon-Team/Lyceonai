@@ -49,8 +49,17 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/full-test.tsx",
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
+      "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
       "client/src/components/guardian/SubscriptionPaywall.tsx",
+    ];
+
+    // Semantic difficulty colors (easy=green, medium=amber, hard=red) are
+    // allowed — the ban targets destructive/alarming red on errors and alerts,
+    // not conventional difficulty-level semantics.
+    const SEMANTIC_RED_ALLOWLIST = [
+      // Difficulty pill config in practice.tsx
+      "border-red-300 text-red-700 bg-red-50 hover:bg-red-100",
     ];
 
     for (const file of auditedFiles) {
@@ -58,9 +67,16 @@ describe("Feedback UX hardening contract", () => {
       expect(source).not.toContain('variant="destructive"');
       expect(source).not.toContain("variant: \"destructive\"");
       expect(source).not.toContain("variant: 'destructive'");
-      expect(source).not.toContain("bg-red-");
-      expect(source).not.toContain("text-red-");
-      expect(source).not.toContain("border-red-");
+
+      // Strip allowlisted semantic patterns before checking for red classes,
+      // so legitimate difficulty colors don't trip the destructive-red ban.
+      let sanitized = source;
+      for (const allowed of SEMANTIC_RED_ALLOWLIST) {
+        sanitized = sanitized.replaceAll(allowed, "");
+      }
+      expect(sanitized).not.toContain("bg-red-");
+      expect(sanitized).not.toContain("text-red-");
+      expect(sanitized).not.toContain("border-red-");
     }
   });
 

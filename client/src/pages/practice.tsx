@@ -51,6 +51,11 @@ import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
 import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
+import {
+  fetchScoreEstimate,
+  type EstimateResponse,
+} from "@/lib/projectionApi";
+import { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";
 
 interface QuestionStats {
   total: number;
@@ -179,6 +184,15 @@ function Practice() {
       return getCalendarMonth(start, end);
     },
     enabled: !!user && !authLoading,
+  });
+
+  // Diagnostic prompting gate: fetch estimateStatus to show/hide the CTA.
+  // React Query deduplication ensures this shares the cache with the dashboard.
+  const { data: estimateData } = useQuery<EstimateResponse>({
+    queryKey: ["/api/progress/projection"],
+    queryFn: fetchScoreEstimate,
+    enabled: !!user && !authLoading,
+    staleTime: 60000,
   });
 
   const streakCurrent = calendarData?.streak?.current ?? 0;
@@ -418,6 +432,13 @@ function Practice() {
                   ))}
                 </div>
               </PageCard>
+            )}
+
+            {/* Diagnostic CTA — prominent, above session setup so undiagnosed
+                users see it before configuring a practice run. Gated on
+                no_baseline; vanishes entirely once the diagnostic is done. */}
+            {estimateData?.estimateStatus === "no_baseline" && (
+              <DiagnosticCTACard />
             )}
 
             <PageCard
@@ -687,10 +708,10 @@ function Practice() {
                 )}
 
                 {practiceHook.error && !practiceHook.quotaExhausted && (
-                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-3 text-red-800 text-sm">
-                    <AlertCircle className="h-4 w-4" />
-                    {practiceHook.error}
-                  </div>
+                  <RecoveryNotice
+                    title="Something went wrong."
+                    message={practiceHook.error}
+                  />
                 )}
 
                 {statsError && (
