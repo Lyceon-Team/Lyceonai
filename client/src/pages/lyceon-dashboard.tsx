@@ -31,6 +31,8 @@ import {
   type EstimateResponse,
 } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
+import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
+import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 
 interface KpiExplanation {
   ruleId: string;
@@ -271,6 +273,18 @@ export default function LyceonDashboard() {
             onRetry={() => window.location.reload()}
           />
         )}
+
+        {/* Diagnostic prompting — gated on no_baseline (no diagnostic completed).
+            Modal: shown on load, dismissible per browser session.
+            CTA card: persistent, visible even after modal dismiss. Both vanish
+            entirely once estimateStatus !== ‘no_baseline’. */}
+        <DiagnosticPromptModal
+          shouldShow={estimateData?.estimateStatus === "no_baseline"}
+        />
+        <DiagnosticCTAGate
+          estimateStatus={estimateData?.estimateStatus}
+          className="mb-6"
+        />
 
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
           <Card className="lg:col-span-8 border-border/40 bg-card">
