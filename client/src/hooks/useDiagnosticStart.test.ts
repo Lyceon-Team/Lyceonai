@@ -13,7 +13,7 @@
  *
  * trade-offs: uses renderHook from @testing-library/react; mocks global fetch.
  */
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosticStart } from "./useDiagnosticStart";
 
