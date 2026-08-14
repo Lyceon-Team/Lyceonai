@@ -443,7 +443,7 @@ export async function flagConversationForReview(
   }
 
   // Step 2: Create a durable review case with 48h SLA (BLOCKING)
-  const caseId = await createCrisisReviewCase({
+  const { id: caseId, slaDeadline } = await createCrisisReviewCase({
     conversationId,
     studentId,
     source,
@@ -455,18 +455,17 @@ export async function flagConversationForReview(
     "TUTOR_CRISIS",
     "conversation_crisis_flagged",
     "conversation flagged for safety review queue (48h SLA at launch)",
-    { conversationId, caseId, source },
+    { conversationId, caseId, source, slaDeadline },
   );
 
   // Step 3: Fire-and-forget ops notification via Cloud Tasks (§21.2 step 5).
   // Not blocking — the review case is the durable safety record.
+  // Metadata only — no conversation content, no student name per SCL-025(c).
   void notifyCrisisEvent({
     caseId,
     conversationId,
-    studentId,
     source,
-    signatureId,
-    modelConfidence,
+    slaDeadline,
     timestamp: new Date().toISOString(),
   });
 

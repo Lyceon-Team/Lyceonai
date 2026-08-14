@@ -9,21 +9,24 @@
  * managed-service-first rule (no hand-rolled queue).
  *
  * expected outcome:
- *   - notifyCrisisEvent: enqueues a Cloud Tasks task with crisis metadata.
- *     The task target is a Cloud Run endpoint (or webhook) that delivers
- *     the notification to the ops channel (email, Slack, PagerDuty — TBD
- *     by ops setup).
- *   - Fire-and-forget: the notification is NOT blocking. The crisis flag
- *     write (flagConversationForReview) is the blocking gate. Notification
- *     failure is logged but does not fail the turn.
+ *   - notifyCrisisEvent: enqueues a Cloud Tasks task with a Slack-compatible
+ *     payload. The task target is a Slack incoming webhook (LYCEON_CRISIS_ALERTS).
+ *   - Payload is METADATA ONLY: case ID, conversation ID, source, SLA deadline,
+ *     and admin review link. No conversation content, no student name, no message
+ *     text. SCL-025(c) and ADR-001 §3 forbid conversation content leaving Supabase.
+ *   - Fire-and-forget: the notification is NOT blocking. The crisis flag write
+ *     (flagConversationForReview) is the blocking gate. Notification failure is
+ *     logged but does not fail the turn.
  *
  * trade-offs:
  *   - Uses fetch() against Cloud Tasks REST API rather than @google-cloud/tasks
  *     SDK to avoid adding a dependency (pnpm dependency changes require approval).
  *   - Requires GCP Application Default Credentials (ADC) at runtime, obtained
  *     via the metadata server on Cloud Run.
- *   - The target endpoint is configured via CRISIS_NOTIFICATION_TARGET_URL env var.
- *     If not set, notification is skipped with a warning.
+ *   - The target is a Slack incoming webhook configured via LYCEON_CRISIS_ALERTS
+ *     env var. If not set, notification is skipped with a warning.
+ *   - The Express server (LISA tutor runtime) enqueues the task. Karl grants
+ *     roles/cloudtasks.enqueuer to that service identity.
  *
  * edge cases:
  *   - No GCP credentials available (local dev): skip silently.
@@ -31,10 +34,10 @@
  *   - Missing env vars: log warning on first call, skip.
  *
  * IAM requirements (report only — Karl provisions):
- *   - Service account: needs `roles/cloudtasks.enqueuer` on the crisis queue.
+ *   - Service account: Express server identity needs `roles/cloudtasks.enqueuer`
+ *     on the crisis queue.
  *   - Queue: `lisa-crisis-notification` in the project's Cloud Tasks.
- *   - Target: CRISIS_NOTIFICATION_TARGET_URL must be a Cloud Run service or
- *     HTTPS endpoint reachable from Cloud Tasks.
+ *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
 
@@ -43,10 +46,8 @@ import { logger } from "../logger";
 type CrisisNotificationPayload = {
   caseId: string;
   conversationId: string;
-  studentId: string;
   source: "signature" | "model" | "both" | "classifier_degraded";
-  signatureId: string | null;
-  modelConfidence: number | null;
+  slaDeadline: string;
   timestamp: string;
 };
 
@@ -62,7 +63,58 @@ const GCP_PROJECT_ID =
 
 const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
 
-const NOTIFICATION_TARGET_URL = process.env.CRISIS_NOTIFICATION_TARGET_URL;
+const NOTIFICATION_TARGET_URL = process.env.LYCEON_CRISIS_ALERTS;
+
+// ── Source Labels ─────────────────────────────────────────────────────
+
+const SOURCE_LABELS: Readonly<
+  Record<CrisisNotificationPayload["source"], string>
+> = {
+  signature: "Signature match (Layer 1)",
+  model: "Model classification (Layer 2)",
+  both: "Signature + Model (both layers)",
+  classifier_degraded: "Classifier degraded — force review",
+};
+
+// ── Slack Payload Builder ─────────────────────────────────────────────
+
+/**
+ * Builds a Slack-compatible JSON payload from crisis metadata.
+ * Metadata only — no conversation content, no student name, no message text.
+ * The reviewer clicks through to the audited in-product admin surface.
+ *
+ * @spec [SCL-025(c), ADR-001 §3]
+ */
+function buildSlackPayload(payload: CrisisNotificationPayload): string {
+  const siteUrl = (process.env.PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
+  const reviewUrl = siteUrl
+    ? `${siteUrl}/admin/crisis-review/${payload.caseId}`
+    : `(PUBLIC_SITE_URL not configured — case ID: ${payload.caseId})`;
+
+  const reason = SOURCE_LABELS[payload.source];
+
+  const slaDate = new Date(payload.slaDeadline);
+  const slaFormatted =
+    slaDate.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+
+  const linkLine = siteUrl
+    ? `<${reviewUrl}|Review this case →>`
+    : `Case ID: \`${payload.caseId}\``;
+
+  const slackBody = {
+    text: [
+      `🚨 *Crisis Review Case*`,
+      ``,
+      `*Reason:* ${reason}`,
+      `*SLA Deadline:* ${slaFormatted}`,
+      `*Conversation:* \`${payload.conversationId}\``,
+      ``,
+      linkLine,
+    ].join("\n"),
+  };
+
+  return JSON.stringify(slackBody);
+}
 
 // ── GCP Auth Helper ───────────────────────────────────────────────────
 
@@ -96,6 +148,7 @@ async function getGcpAccessToken(): Promise<string | null> {
 
 /**
  * Enqueues a crisis notification task via Cloud Tasks REST API.
+ * The task body is a Slack-compatible JSON payload (metadata only).
  *
  * Fire-and-forget: logs errors but never throws. The crisis flag write
  * (in tutor-crisis.ts) is the blocking safety gate. This notification
@@ -120,7 +173,7 @@ export async function notifyCrisisEvent(
     logger.warn(
       "CRISIS_NOTIFICATION",
       "missing_target_url",
-      "CRISIS_NOTIFICATION_TARGET_URL not set; crisis notification skipped",
+      "LYCEON_CRISIS_ALERTS not set; crisis notification skipped",
     );
     return;
   }
@@ -138,6 +191,8 @@ export async function notifyCrisisEvent(
   const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
+  const slackPayload = buildSlackPayload(payload);
+
   const taskBody = {
     task: {
       httpRequest: {
@@ -146,7 +201,7 @@ export async function notifyCrisisEvent(
         headers: {
           "Content-Type": "application/json",
         },
-        body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+        body: Buffer.from(slackPayload).toString("base64"),
       },
     },
   };

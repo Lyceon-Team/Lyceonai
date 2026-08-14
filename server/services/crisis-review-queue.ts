@@ -101,7 +101,7 @@ export type {
  */
 export async function createCrisisReviewCase(
   params: CreateCaseParams,
-): Promise<string> {
+): Promise<{ id: string; slaDeadline: string }> {
   const slaDeadline = new Date(
     Date.now() + SLA_HOURS * 60 * 60 * 1000,
   ).toISOString();
@@ -147,7 +147,7 @@ export async function createCrisisReviewCase(
     },
   );
 
-  return data.id as string;
+  return { id: data.id as string, slaDeadline };
 }
 
 // ── Audit Logging ─────────────────────────────────────────────────────
