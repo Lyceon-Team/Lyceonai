@@ -109,8 +109,7 @@ const DIFFICULTY_OPTIONS: {
   {
     value: "hard",
     label: "Hard",
-    color:
-      "border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100",
+    color: "border-red-300 text-red-700 bg-red-50 hover:bg-red-100",
   },
 ];
 
