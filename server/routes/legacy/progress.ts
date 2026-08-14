@@ -290,13 +290,25 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     }
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    const includeHistoricalTrends =
-      user.role === "admin"
-        ? true
-        : await EntitlementService.canAccessFeature(
-            user.id,
-            "historical_trends",
-          );
+
+    // FAIL-CLOSED (Doc-05C §7.4): if canAccessFeature throws (entitlement-read
+    // failure), degrade to includeHistoricalTrends=false — hide the premium
+    // surface rather than 500-ing the entire endpoint. Same pattern as
+    // getScoreEstimate's canSeeLiveProgression guard.
+    let includeHistoricalTrends: boolean;
+    if (user.role === "admin") {
+      includeHistoricalTrends = true;
+    } else {
+      try {
+        includeHistoricalTrends = await EntitlementService.canAccessFeature(
+          user.id,
+          "historical_trends",
+        );
+      } catch {
+        // Entitlement-read failure → hide historical trends, never 500.
+        includeHistoricalTrends = false;
+      }
+    }
 
     const view = await buildStudentKpiViewFromCanonical(
       user.id,

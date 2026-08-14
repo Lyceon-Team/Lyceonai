@@ -2962,7 +2962,9 @@ export async function captureDiagnosticBaseline(
     return;
   }
 
-  // Insert baseline snapshots — ON CONFLICT DO NOTHING (once-only via partial unique index).
+  // Insert baseline snapshots — plain INSERT; on unique-violation (23505) from the partial
+  // index, treat as idempotent no-op (original baseline preserved). ON CONFLICT cannot
+  // reference a partial unique index in PostgreSQL, so we catch 23505 instead.
   const baselineRows = nonNull.map((row) => ({
     student_id: row.student_id,
     section: row.section,
@@ -3690,9 +3692,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     //
     // Immutability: the partial unique index idx_baseline_once_per_student_section
     // (student_id, section) WHERE snapshot_kind='diagnostic_baseline' enforces once-only.
-    // ON CONFLICT DO NOTHING means a second diagnostic (if ever allowed) silently
-    // preserves the original baseline. Best-effort — a failure here must not block
-    // the answer response.
+    // A second insert hits unique-violation (23505), caught as an idempotent no-op
+    // inside captureDiagnosticBaseline — the original baseline is preserved. ON CONFLICT
+    // cannot reference a partial index, so we catch 23505 instead. Best-effort — a
+    // failure here must not block the answer response.
     if (session.mode === "diagnostic") {
       try {
         await captureDiagnosticBaseline(userId, requestId);

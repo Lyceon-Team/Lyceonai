@@ -139,6 +139,9 @@ export class EntitlementService {
       );
       return false;
     }
+  }
+
+  /**
    * @spec [Doc-03B_V4.1 §3.4, INV-03-02]
    * @implemented 2026-08-09
    *
