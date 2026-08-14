@@ -23,6 +23,20 @@ const SENSITIVE_KEY_PATTERNS = [
 
 const SENSITIVE_KEY_EXACT = new Set(['body']);
 
+/**
+ * Maps internal log levels to Cloud Logging severity strings.
+ * @spec [01A, §10] | @implemented [2026-08-12]
+ * Cloud Run auto-parses the `severity` field from structured JSON on stdout.
+ * 01A §10 specifies five levels (debug|info|warn|error|fatal); `fatal` is
+ * not yet implemented (separate workstream per §11).
+ */
+const CLOUD_LOGGING_SEVERITY: Record<string, string> = {
+  debug: 'DEBUG',
+  info: 'INFO',
+  warn: 'WARNING',
+  error: 'ERROR',
+};
+
 function shouldRedactKey(key: string) {
   const lower = key.toLowerCase();
 
@@ -185,11 +199,38 @@ class OperationalLogger {
 
   /**
    * Output log entry
+   * @spec [01A, §10 §19] | @implemented [2026-08-12]
+   * Development: console-readable format (§19).
+   * Staging/Production: structured JSON to stdout — Cloud Run forwards to
+   * Cloud Logging which auto-parses the `severity` field (§10, §19).
    */
   private output(entry: LogEntry) {
+    // Preserve existing behavior: debug logs only in development
+    if (entry.level === 'debug' && process.env.NODE_ENV !== 'development') {
+      return;
+    }
+
     const safeEntry = redactSensitive(entry) as LogEntry;
+
+    if (process.env.NODE_ENV === 'development') {
+      this.outputConsole(safeEntry);
+    } else {
+      this.outputStructuredJson(safeEntry);
+    }
+
+    if (safeEntry.level === 'error') {
+      this.trackError();
+      void this.sendErrorToMonitor(safeEntry);
+    }
+  }
+
+  /**
+   * Console-readable output for development
+   * @spec [01A, §19] — "Development: stdout (console-readable format)"
+   */
+  private outputConsole(safeEntry: LogEntry) {
     const formatted = this.formatForConsole(safeEntry);
-    
+
     switch (safeEntry.level) {
       case 'error':
         console.error(`🚨 ${formatted}`);
@@ -199,33 +240,67 @@ class OperationalLogger {
         if (safeEntry.data) {
           console.error('   Context:', safeEntry.data);
         }
-        this.trackError();
-        void this.sendErrorToMonitor(safeEntry);
         break;
-      
+
       case 'warn':
         console.warn(`⚠️  ${formatted}`);
         if (safeEntry.data) {
           console.warn('   Data:', safeEntry.data);
         }
         break;
-      
+
       case 'info':
         console.log(`ℹ️  ${formatted}`);
         if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
           console.log('   Data:', safeEntry.data);
         }
         break;
-      
+
       case 'debug':
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🐛 ${formatted}`);
-          if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
-            console.log('   Debug data:', safeEntry.data);
-          }
+        console.log(`🐛 ${formatted}`);
+        if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
+          console.log('   Debug data:', safeEntry.data);
         }
         break;
     }
+  }
+
+  /**
+   * Structured JSON output for staging/production/test
+   * @spec [01A, §10] | @implemented [2026-08-12]
+   * Emits one JSON line per entry to stdout. Cloud Run captures stdout and
+   * forwards to Cloud Logging, which auto-parses `severity` and `timestamp`
+   * — no Cloud Logging client library required.
+   *
+   * Field mapping (01A §10 → Cloud Logging):
+   *   severity    → Cloud Logging recognized field (01A `level` → CL severity string)
+   *   timestamp   → ISO 8601 (01A §10)
+   *   message     → human-readable summary (01A §10)
+   *   event       → snake_case event name (01A §10, mapped from `operation`)
+   *   component   → originating module
+   *   service     → service name (01A §10)
+   *   environment → runtime environment (01A §10)
+   *   request_id  → correlation ID (01A §10 / §12)
+   */
+  private outputStructuredJson(safeEntry: LogEntry) {
+    const structured: Record<string, unknown> = {
+      severity: CLOUD_LOGGING_SEVERITY[safeEntry.level] || safeEntry.level.toUpperCase(),
+      timestamp: safeEntry.timestamp,
+      message: safeEntry.message,
+      event: safeEntry.operation,
+      component: safeEntry.component,
+      service: process.env.SERVICE_NAME || 'lyceon-api',
+      environment: process.env.NODE_ENV || 'development',
+    };
+
+    if (safeEntry.requestId) structured.request_id = safeEntry.requestId;
+    if (safeEntry.userId) structured.user_id = safeEntry.userId;
+    if (safeEntry.duration !== undefined) structured.duration_ms = safeEntry.duration;
+    if (safeEntry.data && Object.keys(safeEntry.data).length > 0) structured.data = safeEntry.data;
+    if (safeEntry.error) structured.error = safeEntry.error;
+    if (safeEntry.ip) structured.ip = safeEntry.ip;
+
+    process.stdout.write(JSON.stringify(structured) + '\n');
   }
 
   /**

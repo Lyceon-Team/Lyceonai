@@ -25,6 +25,73 @@
 
 ## Entries
 
+SCL-030 | 2026-08-13 | Doc 03 INV-03-10 scope narrowing (model-generated text, not structured API fields) | PROPOSED
+Change: INV-03-10 ("Canonical question IDs never appear in student-facing LISA output") and
+  Doc 03B §16.6 line 2360 (source_question_canonical_id returned in conversation responses) appeared
+  to conflict. Karl ruled: both stand. They govern different things.
+WAS: INV-03-10 (Doc 03:2160) reads "Canonical question IDs (SAT{M|RW}{1|2}[A-Z0-9]{6}) never appear
+  in student-facing LISA output. Enforced: Doc 03 §3.7, output scanner pattern matching. Violation:
+  internal metadata leak." Doc 03B §16.6 (line 2360) returns source_question_canonical_id in the
+  conversation response envelope. Read together, the API field appears to violate the invariant.
+IS: The two provisions bind on DIFFERENT output layers:
+  (a) The structured API field (source_question_canonical_id) STAYS. It is scope metadata the client
+  uses to correlate a conversation to a question. It is never rendered to the student — visible only
+  in browser devtools, where it is meaningless to a student. It is load-bearing for LISA's scope
+  resolution (Doc 03A §1.2 layer 1, Doc 03B §6.5 step 3). Removing it would break scope continuity.
+  Doc 03B §16.6 is NOT in defect.
+  (b) INV-03-10 binds on MODEL-GENERATED TEXT. LISA must never write a canonical question ID into a
+  chat message, under any framing, on any surface. The invariant's own enforcement point already says
+  "output scanner pattern matching" — a text-layer mechanism, not an API-field mechanism. This SCL
+  records the narrowing explicitly so the boundary is not re-litigated.
+  (c) INV-03-10 enforcement remains ABSENT. No canonical-ID scanner exists on model output today —
+  the model can emit SATM1ABC123 in prose and nothing catches it. This SCL settles the SCOPE of the
+  invariant; it does not close it. Closing it is LISA-FULL-007.
+Rationale: Karl ruling 2026-08-13. The API field is structured metadata consumed by the client for
+  scope correlation; the invariant targets prose text the student reads. Conflating them would either
+  break scope resolution (if the field is removed) or render the invariant unenforceable (if it's
+  broadened to "never present in any JSON"). The boundary is: student-readable text vs. structured
+  metadata. The field is no more a "student-facing output" than a database row ID in a REST response.
+Version: Doc 03 INV-03-10 — scope narrowed to model-generated text only; structured API fields
+  carrying canonical IDs for scope resolution are explicitly excluded. No spec version bump (the
+  invariant text is unchanged; this SCL records the interpretive boundary).
+No code change. No schema change.
+Owner action: at next spec pass, annotate INV-03-10 with the text/field boundary. Track
+  LISA-FULL-007 (canonical-ID output scanner) as the open enforcement item.
+
+SCL-029 | 2026-08-13 | Doc 03 INV-03-03 past_due status (platform entitlement predicate wins) | PROPOSED
+Change: Doc 03 INV-03-03 says "LISA requires entitlement.tier=paid AND entitlement.status=active on
+  every request. No grandfathering, no cached entitlement beyond single-request TTL." Read literally,
+  this excludes past_due and trialing. Doc 01's platform entitlement predicate treats the canonical
+  entitled set as {active, past_due, trialing} — a locked decision (owner ruling 2026-06-14, codified
+  in the entitlement_active() SQL predicate). The two conflict.
+WAS: INV-03-03 (Doc 03:2146) requires "entitlement.status=active" — literally the string 'active'.
+  The platform predicate (entitlement_active(), migration 20260616120000) is
+  status IN ('active','past_due','trialing'). A student whose card is mid-retry (past_due) or in a
+  trial period (trialing) would be entitled on every other paid surface but denied LISA if the
+  invariant is enforced literally.
+IS: The platform entitlement predicate wins. LISA follows the same entitlement gate as every other
+  paid surface — {active, past_due, trialing}. A student whose card is mid-retry does not lose their
+  tutor.
+  Implementation already correct — no code change required. The LISA entitlement gate is:
+    server/services/entitlement-service.ts:47-67 (EntitlementService.isEntitlementActiveForProfile),
+    which delegates to the entitlement_active() RPC (status IN ('active','past_due','trialing')).
+    server/routes/tutor-runtime.ts:227 calls this check on every request.
+  INV-03-03's "status=active" is read as "entitlement-active per the platform predicate," not as
+  a literal string match on the word 'active'. The invariant's intent (per-request entitlement check,
+  no grandfathering, no caching) is preserved; only the status-value set is widened to match the
+  platform.
+Rationale: Karl ruling 2026-08-13. The platform owns the definition of "entitled." Every paid
+  surface (practice, mastery, guardian mirror, projections, LISA) consumes the same entitlement_active()
+  predicate. A LISA-specific narrowing to status='active' only would mean a student in Stripe's
+  past_due retry window can do practice but not talk to their tutor — a confusing and unjustifiable
+  split. The invariant's purpose is preventing unpaid access, not penalizing payment retry.
+Version: Doc 03 INV-03-03 — "status=active" widened to "entitlement-active per the platform
+  predicate (active, past_due, trialing)." No spec version bump (the invariant text is unchanged;
+  this SCL records the interpretive alignment with the platform predicate).
+No code change. No schema change. Implementation already correct.
+Owner action: at next spec pass, amend INV-03-03 to reference the platform entitlement predicate
+  rather than the literal string 'active', or add a parenthetical noting the platform-defined set.
+
 SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | PROPOSED
 Change: Doc 03A §18.2 defines the idempotency constraint as
   UNIQUE (conversation_id, client_turn_id). Doc 03B §9 and §13.3 describe an idempotency model
@@ -654,3 +721,5 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 02B §15 — SCL-015 (item selection: weakness-ranked + seeded Fisher-Yates → filter-driven native random prepopulation; adaptive deferred post-launch)
 - Doc 02B (flow-cards) — SCL-016 (flow-cards deferred post-launch; useAdaptivePractice retired)
 - Doc 05E — SCL-007/008/006 commit to docs/Spec after Codex audit
+- Doc 03 INV-03-03 — SCL-029 (past_due/trialing: platform entitlement predicate wins over literal "status=active")
+- Doc 03 INV-03-10 — SCL-030 (scope narrowed to model-generated text; structured API fields excluded; LISA-FULL-007 tracks enforcement)
