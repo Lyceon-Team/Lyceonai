@@ -26,28 +26,103 @@ describe("Diagnostic prompting contract", () => {
   });
 
   /**
-   * Intent: both dashboard and practice pages use the typed DiagnosticCTAGate
-   * component (which is behaviorally tested to show only for no_baseline) and
-   * wire its estimateStatus prop to estimateData?.estimateStatus.
+   * Intent: each page renders the diagnostic CTA ONLY through the typed
+   * DiagnosticCTAGate — never a direct, ungated DiagnosticCTACard.
    *
-   * Would fail if: either page used a raw inline conditional, rendered the
-   * card unconditionally, or used a different status check.
+   * Structural proof:
+   * 1. A complete <DiagnosticCTAGate estimateStatus={...} JSX element exists
+   *    (binds the prop to an actual gate element, not a stray string).
+   * 2. Exactly one DiagnosticCTAGate JSX invocation per surface.
+   * 3. No DiagnosticCTACard import (bypass via import).
+   * 4. No <DiagnosticCTACard JSX invocation (bypass via render).
+   *
+   * Would fail if: the page imported or rendered DiagnosticCTACard directly,
+   * rendered DiagnosticCTAGate without the estimateStatus prop, duplicated
+   * the gate, or kept the gate only in a comment/import while bypassing it.
    */
-  it("dashboard uses DiagnosticCTAGate with estimateStatus prop", () => {
+
+  /** Complete JSX element: <DiagnosticCTAGate estimateStatus={estimateData?.estimateStatus} */
+  const gateJsxPattern =
+    /<DiagnosticCTAGate\s[^>]*estimateStatus=\{estimateData\?\.estimateStatus\}/;
+
+  /** Any JSX invocation of DiagnosticCTAGate (counts instances) */
+  const gateInvocationPattern = /<DiagnosticCTAGate[\s/>]/g;
+
+  /** Direct DiagnosticCTACard import — bypass via import */
+  const cardImportPattern = /import\s.*DiagnosticCTACard/;
+
+  /** Direct <DiagnosticCTACard JSX invocation — bypass via render */
+  const cardJsxPattern = /<DiagnosticCTACard[\s/>]/;
+
+  it("dashboard routes CTA exclusively through DiagnosticCTAGate", () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    expect(dashboard).toContain("DiagnosticCTAGate");
-    // The gate receives the live estimateStatus from the query
-    const gateWiringPattern =
-      /estimateStatus=\{estimateData\?\.estimateStatus\}/;
-    expect(dashboard).toMatch(gateWiringPattern);
+
+    // 1. Complete JSX element with estimateStatus prop bound to gate
+    expect(dashboard).toMatch(gateJsxPattern);
+
+    // 2. Exactly one gate invocation
+    const gateMatches = dashboard.match(gateInvocationPattern);
+    expect(gateMatches).toHaveLength(1);
+
+    // 3. No direct DiagnosticCTACard import
+    expect(dashboard).not.toMatch(cardImportPattern);
+
+    // 4. No direct <DiagnosticCTACard JSX invocation
+    expect(dashboard).not.toMatch(cardJsxPattern);
   });
 
-  it("practice page uses DiagnosticCTAGate with estimateStatus prop", () => {
+  it("practice page routes CTA exclusively through DiagnosticCTAGate", () => {
     const practice = read("client/src/pages/practice.tsx");
-    expect(practice).toContain("DiagnosticCTAGate");
-    const gateWiringPattern =
-      /estimateStatus=\{estimateData\?\.estimateStatus\}/;
-    expect(practice).toMatch(gateWiringPattern);
+
+    // 1. Complete JSX element with estimateStatus prop bound to gate
+    expect(practice).toMatch(gateJsxPattern);
+
+    // 2. Exactly one gate invocation
+    const gateMatches = practice.match(gateInvocationPattern);
+    expect(gateMatches).toHaveLength(1);
+
+    // 3. No direct DiagnosticCTACard import
+    expect(practice).not.toMatch(cardImportPattern);
+
+    // 4. No direct <DiagnosticCTACard JSX invocation
+    expect(practice).not.toMatch(cardJsxPattern);
+  });
+
+  /**
+   * Mutation proof: if either page adds a direct <DiagnosticCTACard /> bypass
+   * (even while keeping the valid gate), the structural contract rejects it.
+   */
+  it("rejects a page that adds a direct DiagnosticCTACard bypass", () => {
+    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
+    const practice = read("client/src/pages/practice.tsx");
+
+    // Inject a direct bypass into each page's source
+    const dashboardBypass =
+      dashboard +
+      '\nimport { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";\n<DiagnosticCTACard />';
+    const practiceBypass =
+      practice +
+      '\nimport { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";\n<DiagnosticCTACard />';
+
+    // Both must fail the import guard
+    expect(dashboardBypass).toMatch(cardImportPattern);
+    expect(practiceBypass).toMatch(cardImportPattern);
+
+    // Both must fail the JSX invocation guard
+    expect(dashboardBypass).toMatch(cardJsxPattern);
+    expect(practiceBypass).toMatch(cardJsxPattern);
+
+    // Substitute: page replaces the gate with a direct card (removes gate,
+    // adds bare card) — must fail the gate JSX check
+    const dashboardSubstitute =
+      dashboard
+        .replace(gateInvocationPattern, "")
+        .replace(
+          /import.*DiagnosticCTAGate.*/,
+          'import { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";',
+        ) + "\n<DiagnosticCTACard />";
+    expect(dashboardSubstitute).not.toMatch(gateJsxPattern);
+    expect(dashboardSubstitute).toMatch(cardJsxPattern);
   });
 
   it("practice page fetches estimateStatus via projection API", () => {
