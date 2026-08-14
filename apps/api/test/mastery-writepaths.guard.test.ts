@@ -79,7 +79,36 @@ function findTypeScriptFiles(dir: string): string[] {
 }
 
 /**
- * Check a file for mastery write violations
+ * Maximum number of subsequent lines to include in a bounded window when
+ * scanning for multiline Supabase chains. A `.from("table")` on line N is
+ * joined with lines N..N+CHAIN_WINDOW-1 and the collapsed text is tested
+ * for write methods. Supabase chains in this codebase are 2-8 lines;
+ * 10 provides margin without joining unrelated code.
+ */
+const CHAIN_WINDOW = 10;
+
+/**
+ * Check a file for mastery write violations.
+ *
+ * @spec [INV-03-01, Doc-05_V2 §6.2]
+ * @implemented 2026-08-14
+ *
+ * plain English: detects direct writes to mastery tables outside the
+ * canonical choke point. Uses a bounded-window approach: when a line
+ * contains `.from("mastery_table")`, the next CHAIN_WINDOW lines are
+ * collapsed into a single string and tested for write methods (.insert,
+ * .update, .upsert, .delete). This catches multiline Supabase chains
+ * that the previous line-by-line scanner missed.
+ *
+ * trade-offs: the bounded window could theoretically false-positive if
+ * an unrelated .insert() appears within 10 lines of a mastery table
+ * .from(). In practice, code within 10 lines of a mastery .from() is
+ * part of the same chain or closely related — a false positive here
+ * is a code smell worth investigating regardless.
+ *
+ * edge cases: legitimate reads (.select) from mastery tables pass
+ * because only write methods trigger a violation. Same-line writes
+ * are still caught (they fall within the 1-line window trivially).
  */
 function checkFileForViolations(filePath: string): Violation[] {
   const violations: Violation[] = [];
@@ -93,35 +122,42 @@ function checkFileForViolations(filePath: string): Violation[] {
     const content = fs.readFileSync(filePath, "utf-8");
     const lines = content.split("\n");
 
+    // ── Table write detection (bounded-window, multiline-safe) ──────
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNumber = i + 1;
 
-      // Check for direct table writes
       for (const table of MASTERY_TABLES) {
-        // Pattern: .from("table_name").insert( / .update( / .upsert( / .delete(
-        const writePatterns = [
-          new RegExp(
-            `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\).*\\.(insert|update|upsert|delete)\\s*\\(`,
-          ),
-          new RegExp(
-            `from\\(["'\`]${table}["'\`]\\).*\\.(insert|update|upsert|delete)\\(`,
-          ),
-        ];
+        // Does this line reference a mastery table via .from()?
+        const fromPattern = new RegExp(
+          `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\)`,
+        );
+        if (!fromPattern.test(line)) continue;
 
-        for (const pattern of writePatterns) {
-          if (pattern.test(line)) {
-            violations.push({
-              file: filePath,
-              line: lineNumber,
-              content: line.trim(),
-              type: "table_write",
-            });
-          }
+        // Collect a bounded window: this line + next CHAIN_WINDOW lines
+        const windowEnd = Math.min(i + CHAIN_WINDOW, lines.length);
+        const windowText = lines
+          .slice(i, windowEnd)
+          .join(" ")
+          .replace(/\s+/g, " ");
+
+        // Test the collapsed window for write methods
+        const writePattern = new RegExp(
+          `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\)` +
+            `.*\\.(insert|update|upsert|delete)\\s*\\(`,
+        );
+
+        if (writePattern.test(windowText)) {
+          violations.push({
+            file: filePath,
+            line: lineNumber,
+            content: line.trim(),
+            type: "table_write",
+          });
         }
       }
 
-      // Check for RPC calls to mastery functions
+      // ── RPC detection (single-line — always on one line) ──────────
       for (const rpcFunc of MASTERY_RPC_FUNCTIONS) {
         const rpcPattern = new RegExp(
           `\\.rpc\\s*\\(\\s*["'\`]${rpcFunc}["'\`]`,
