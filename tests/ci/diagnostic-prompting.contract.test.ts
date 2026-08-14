@@ -9,22 +9,45 @@ function read(relativePath: string): string {
 }
 
 describe("Diagnostic prompting contract", () => {
-  it("dashboard wires DiagnosticPromptModal gated on no_baseline", () => {
+  /**
+   * Intent: the DiagnosticPromptModal's shouldShow prop is wired to the
+   * exact equality check estimateStatus === "no_baseline" — not a broad
+   * boolean, not a negation, not a comment.
+   *
+   * Would fail if: shouldShow received a different condition, or the modal
+   * were rendered without the no_baseline gate.
+   */
+  it("dashboard wires DiagnosticPromptModal shouldShow to estimateStatus === 'no_baseline'", () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    expect(dashboard).toContain("DiagnosticPromptModal");
-    expect(dashboard).toContain('"no_baseline"');
+    // Structural: shouldShow prop must be wired to the exact equality check
+    const modalGatePattern =
+      /shouldShow=\{estimateData\?\.estimateStatus === "no_baseline"\}/;
+    expect(dashboard).toMatch(modalGatePattern);
   });
 
-  it("dashboard wires DiagnosticCTACard gated on no_baseline", () => {
+  /**
+   * Intent: both dashboard and practice pages use the typed DiagnosticCTAGate
+   * component (which is behaviorally tested to show only for no_baseline) and
+   * wire its estimateStatus prop to estimateData?.estimateStatus.
+   *
+   * Would fail if: either page used a raw inline conditional, rendered the
+   * card unconditionally, or used a different status check.
+   */
+  it("dashboard uses DiagnosticCTAGate with estimateStatus prop", () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    expect(dashboard).toContain("DiagnosticCTACard");
-    expect(dashboard).toContain('"no_baseline"');
+    expect(dashboard).toContain("DiagnosticCTAGate");
+    // The gate receives the live estimateStatus from the query
+    const gateWiringPattern =
+      /estimateStatus=\{estimateData\?\.estimateStatus\}/;
+    expect(dashboard).toMatch(gateWiringPattern);
   });
 
-  it("practice page wires DiagnosticCTACard gated on no_baseline", () => {
+  it("practice page uses DiagnosticCTAGate with estimateStatus prop", () => {
     const practice = read("client/src/pages/practice.tsx");
-    expect(practice).toContain("DiagnosticCTACard");
-    expect(practice).toContain('"no_baseline"');
+    expect(practice).toContain("DiagnosticCTAGate");
+    const gateWiringPattern =
+      /estimateStatus=\{estimateData\?\.estimateStatus\}/;
+    expect(practice).toMatch(gateWiringPattern);
   });
 
   it("practice page fetches estimateStatus via projection API", () => {

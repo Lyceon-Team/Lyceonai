@@ -51,11 +51,8 @@ import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
 import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
-import {
-  fetchScoreEstimate,
-  type EstimateResponse,
-} from "@/lib/projectionApi";
-import { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";
+import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
+import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 
 interface QuestionStats {
   total: number;
@@ -437,9 +434,7 @@ function Practice() {
             {/* Diagnostic CTA — prominent, above session setup so undiagnosed
                 users see it before configuring a practice run. Gated on
                 no_baseline; vanishes entirely once the diagnostic is done. */}
-            {estimateData?.estimateStatus === "no_baseline" && (
-              <DiagnosticCTACard />
-            )}
+            <DiagnosticCTAGate estimateStatus={estimateData?.estimateStatus} />
 
             <PageCard
               title="Session Setup"

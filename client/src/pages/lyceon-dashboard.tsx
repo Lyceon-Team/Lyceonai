@@ -32,7 +32,7 @@ import {
 } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
-import { DiagnosticCTACard } from "@/components/diagnostic/DiagnosticCTACard";
+import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 
 interface KpiExplanation {
   ruleId: string;
@@ -281,9 +281,10 @@ export default function LyceonDashboard() {
         <DiagnosticPromptModal
           shouldShow={estimateData?.estimateStatus === "no_baseline"}
         />
-        {estimateData?.estimateStatus === "no_baseline" && (
-          <DiagnosticCTACard className="mb-6" />
-        )}
+        <DiagnosticCTAGate
+          estimateStatus={estimateData?.estimateStatus}
+          className="mb-6"
+        />
 
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
           <Card className="lg:col-span-8 border-border/40 bg-card">
