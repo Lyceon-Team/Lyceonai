@@ -5943,6 +5943,9 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 --
 
 CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
+
+
+--
 -- Name: idx_crisis_audit_log_case; Type: INDEX; Schema: public; Owner: -
 --
 
