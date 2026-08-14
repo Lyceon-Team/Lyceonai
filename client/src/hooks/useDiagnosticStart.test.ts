@@ -132,7 +132,7 @@ describe("useDiagnosticStart", () => {
     expect(result.current.error?.message).not.toContain("need 8");
   });
 
-  it("shows generic error on unexpected server error", async () => {
+  it("shows FIXED generic error on unexpected server error — never raw body.message", async () => {
     mockFetchForDiagnostic(
       jsonResponse(
         { error: "internal_error", message: "Database timeout" },
@@ -149,7 +149,12 @@ describe("useDiagnosticStart", () => {
 
     expect(sessionId).toBeNull();
     expect(result.current.error).not.toBeNull();
-    expect(result.current.error?.message).toBe("Database timeout");
+    // Must show the fixed generic message — never the raw server message.
+    expect(result.current.error?.message).toBe(
+      "Something went wrong starting the diagnostic.",
+    );
+    // Anti-leak: raw server message must NOT reach the student.
+    expect(result.current.error?.message).not.toContain("Database timeout");
     expect(result.current.error?.code).toBe("internal_error");
   });
 
