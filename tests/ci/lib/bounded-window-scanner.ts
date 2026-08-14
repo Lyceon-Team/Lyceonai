@@ -11,18 +11,24 @@
  * formats chains across multiple lines.
  *
  * approach: when an anchor pattern (e.g. `.from("table")`) is found on
- * a line, the next CHAIN_WINDOW lines are collapsed into a single
- * whitespace-normalized string and tested against a follow-up pattern.
+ * a line, the scanner collects lines forward until the first
+ * statement-terminating semicolon (`;` at end of a trimmed line) or
+ * CHAIN_WINDOW lines, whichever comes first. The collected lines are
+ * collapsed into a single whitespace-normalized string and tested
+ * against a follow-up pattern.
  *
- * trade-offs: the bounded window could theoretically false-positive if
- * an unrelated follow-up pattern appears within CHAIN_WINDOW lines of
- * the anchor. In practice, code within 10 lines of a Supabase `.from()`
- * is part of the same chain or closely related — a false positive here
- * is a code smell worth investigating regardless.
+ * trade-offs: statement-boundary termination relies on Prettier
+ * enforcing trailing semicolons. In code without semicolons (ASI), the
+ * scanner falls back to the full CHAIN_WINDOW — same behavior as the
+ * pre-fix version, which is strictly no worse.
  *
  * edge cases: legitimate operations that only match the anchor (e.g.
  * `.from("table").select(...)`) pass because the follow-up pattern is
- * not found. Same-line matches are still caught trivially (window of 1).
+ * not found. Same-line matches are still caught trivially (the anchor
+ * line itself ends with `;`). A legitimate read followed by an
+ * unrelated-table insert on a later statement is correctly excluded
+ * because the `;` after the read terminates the window before the
+ * insert is reached.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -75,8 +81,19 @@ export function scanFileWithBoundedWindow(
 
       if (!anchorPattern.test(line)) continue;
 
-      // Collect bounded window: this line + next CHAIN_WINDOW lines
-      const windowEnd = Math.min(i + CHAIN_WINDOW, lines.length);
+      // Collect bounded window: this line until end-of-statement or CHAIN_WINDOW.
+      // A Prettier-formatted Supabase chain ends at the first line whose trimmed
+      // content ends with ';'. Stopping there prevents the window from bridging
+      // into the next statement (F-01 false-positive fix). If no ';' is found
+      // within CHAIN_WINDOW, the full window is used (fallback, no regression).
+      const maxEnd = Math.min(i + CHAIN_WINDOW, lines.length);
+      let windowEnd = maxEnd;
+      for (let j = i; j < maxEnd; j++) {
+        if (lines[j].trimEnd().endsWith(";")) {
+          windowEnd = j + 1;
+          break;
+        }
+      }
       const windowText = lines
         .slice(i, windowEnd)
         .join(" ")
