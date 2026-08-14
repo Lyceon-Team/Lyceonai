@@ -346,6 +346,51 @@ describe("KPI Gating Contract", () => {
     );
   });
 
+  // FAIL-CLOSED NEGATIVE TEST (Doc-05C §7.4): if canAccessFeature throws
+  // (entitlement-read failure), the recency KPI route MUST degrade to
+  // includeHistoricalTrends=false — never 500. Same pattern as getScoreEstimate.
+  it("degrades to includeHistoricalTrends=false when canAccessFeature throws in getRecencyKpis (fail-closed)", async () => {
+    resolvePaidKpiAccessForUser.mockResolvedValueOnce({
+      hasPaidAccess: true,
+      accountId: "acc-paid",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
+      reason: "Active paid entitlement.",
+    });
+    // canAccessFeature THROWS (simulates entitlement-read failure).
+    canAccessFeature.mockRejectedValueOnce(
+      new Error("entitlement_rpc_exploded"),
+    );
+
+    const { getRecencyKpis } =
+      await import("../../server/routes/legacy/progress");
+
+    const req: any = {
+      user: {
+        id: "student-1",
+        role: "student",
+        isGuardian: false,
+        isAdmin: false,
+      },
+      requestId: "req-recency-fail-closed",
+    };
+    const { res, getBody, getStatus } = createRes();
+
+    await getRecencyKpis(req, res as any);
+
+    // MUST NOT 500 — must degrade to hiding historical trends.
+    expect(getStatus()).toBe(200);
+    const payload = getBody();
+    // buildStudentKpiViewFromCanonical must have been called with false
+    // (entitlement-read failure → hide historical trends).
+    expect(buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
+      "student-1",
+      false,
+    );
+    expect(payload.modelVersion).toBe("kpi_truth_v1");
+  }, 15_000);
+
   it("denies free-tier full-test analytics report route", async () => {
     const router = (await import("../../server/routes/full-length-exam-routes"))
       .default;

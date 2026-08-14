@@ -148,15 +148,6 @@ export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
 }
 
-export function isEntitlementError(error: unknown): boolean {
-  return isEntitlementDenialError(error);
-}
-
-export function isPaymentUpdateRequired(error: unknown): boolean {
-  const reason = getPremiumDenialReason(error);
-  return reason === "payment_required" || reason === "payment_past_due";
-}
-
 export function isCsrfError(error: unknown): boolean {
   if (!isApiError(error)) return false;
   const code = normalizeCode(error.code);
