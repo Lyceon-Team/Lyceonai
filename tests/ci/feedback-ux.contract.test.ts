@@ -49,6 +49,7 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/full-test.tsx",
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
+      "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
       "client/src/components/guardian/SubscriptionPaywall.tsx",
     ];
