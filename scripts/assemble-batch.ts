@@ -195,6 +195,17 @@ function validateRecord(
     v("explanation", "explanation is empty");
   }
 
+  // Hard-fail: explanations must not reference options by letter (A/B/C/D).
+  // Options are shuffled at serve (Feature-8 option_order); letter refs are gibberish.
+  const letterRefPattern =
+    /(?:Option|option|Choice|choice|Answer|answer)\s+[A-D]\b|\([A-D]\)|answer is [A-D]\b/;
+  if (letterRefPattern.test(rec.explanation)) {
+    v(
+      "explanation",
+      "explanation references an option by letter (A/B/C/D) — options are shuffled at serve; refer to options by content only",
+    );
+  }
+
   if (
     rec.section !== mathSection &&
     (rec.passage === null || rec.passage === undefined)

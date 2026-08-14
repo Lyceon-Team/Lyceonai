@@ -61,6 +61,7 @@ The identity header is not optional. Without it, the orchestrator treats the aud
 - Any MCQ with a second defensible answer, or a distractor that is merely weaker rather than wrong.
 - Grid-in stored value not value-equivalent to your derivation.
 - A tag inconsistent with the §A.4 convention, or a non-frozen skill string.
+- Any explanation that names an option by letter (A/B/C/D) or says "the correct answer is \<letter\>." Options are shuffled at serve and letters are never shown; letter references are gibberish to the student. Explanations must reference options by content only.
 
 ## Note on your standing (pre-graduation)
 
