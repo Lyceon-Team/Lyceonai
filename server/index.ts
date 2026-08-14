@@ -83,6 +83,7 @@ import {
 import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
+import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
 const app = express();
@@ -473,6 +474,13 @@ app.get(
     });
   },
 );
+// Admin crisis review surface — SEPARATE from /api/tutor/* per SCL-025.
+// §3.1 stands unchanged (student-only on /api/tutor/*). This is a different
+// authorization axis per SCL-025: read-only, scoped to crisis_flagged conversations,
+// every read audit-logged.
+// @spec [Doc-03_V3 §21.3, SCL-025]
+app.use("/api/admin/crisis-review", adminCrisisReviewRouter);
+
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
 app.get(
