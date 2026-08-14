@@ -1,0 +1,245 @@
+{
+  "audit_id": "PR555-B1.2c-485a9dc",
+  "auditor": "claude-opus-4-6",
+  "date": "2026-08-14",
+  "pr": 555,
+  "branch": "claude/ws-l3-b1-2c",
+  "head_commit": "485a9dc",
+  "baseline_audit": "lisa-full-surface-audit-103a80b",
+  "scope": "Targeted audit of 5 items from 103a80b full-surface audit (F-03, F-05, F-08, static gate, migration/snapshot) + regression spot-check",
+  "recommendation": "APPROVE",
+  "blocking_criteria_evaluation": {
+    "incident_taxonomy_matches_doc01a_s52": {
+      "verdict": "PASS",
+      "detail": "Doc 01A §52 defines incident_type 'injection_attempt' with Typical Severity 5 and description 'SQL injection or prompt injection detected'. Code at tutor-injection-defense.ts:314-315 uses incident_type: 'injection_attempt', severity: 5. Exact match."
+    },
+    "admin_read_path_skips_audit_write": {
+      "verdict": "PASS",
+      "detail": "All three admin read paths write durable audit rows: listCrisisReviewCases (mandatory params, line 257), getCaseAuditLog (mandatory params, line 554), getBreachedCases (admin route at admin-crisis-review.ts:309 always passes params). The optional-params shape on getBreachedCases exists solely for the cron sweep (system operation, no reviewer identity, no conversation content read). No admin call path can silently skip the audit."
+    },
+    "static_gate_fails_on_planted_bypass": {
+      "verdict": "PASS",
+      "detail": "Planted _audit-bypass-test.ts (reads tutor_messages, returns data.message without serializer). Gate output: 'SERIALIZER BYPASS DETECTED — _audit-bypass-test.ts: reads tutor_messages and returns message content but does NOT import serializeTutorOutput'. File removed after test."
+    },
+    "snapshot_delta_only_two_nullability_changes": {
+      "verdict": "PASS",
+      "detail": "git diff 103a80b 485a9dc -- scripts/ci/genesis-schema.expected.sql shows exactly 2 line changes: 'case_id uuid NOT NULL' → 'case_id uuid' and 'conversation_id uuid NOT NULL' → 'conversation_id uuid'. No other lines changed."
+    },
+    "no_invariant_regressed_from_103a80b": {
+      "verdict": "PASS",
+      "detail": "Spot-checked INV-03-04 (anti-leak serializer), INV-03-09 (context fail-closed), INV-03-10 (boundary markers), INV-03-12 (output scanning), INV-03-17 (abuse scoring). All unchanged or improved. INV-03-17 remains PARTIAL (pre-existing: AbuseScoreService not implemented) but the PR improved the signal-write side by adding input-injection dual-write."
+    }
+  },
+  "items": {
+    "F-03": {
+      "title": "abuse_score_incidents dual-write in tutor-injection-defense.ts",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "check": "incident_type matches Doc 01A §52",
+          "result": "PASS",
+          "evidence": "§52 table row: incident_type='injection_attempt', Typical Severity=5, Description='SQL injection or prompt injection detected'. Code at line 314: incident_type: 'injection_attempt'. Code at line 315: severity: 5. Exact match.",
+          "spec_source": "docs/Spec/Lyceon — Document 01A_ Platform Primitives.md, §52, line 1318"
+        },
+        {
+          "check": "Non-blocking behavior",
+          "result": "PASS",
+          "evidence": "Both writes (tutor_injection_log and abuse_score_incidents) are fire-and-forget. If abuse write fails, error is logged at line 325-333 but execution continues. If injection log write fails, error is logged at line 294-303 but execution continues. Neither failure propagates to the student-facing response."
+        },
+        {
+          "check": "Abuse write failure when injection log succeeds",
+          "result": "PASS",
+          "evidence": "At line 329: log message explicitly states 'tutor_injection_log write stands'. The two writes are sequential but independent — abuse write failure is caught and logged without affecting the prior injection log write. Structured logger at line 335 still fires with combined metadata."
+        },
+        {
+          "check": "Context payload structure",
+          "result": "PASS",
+          "evidence": "Lines 316-322: context includes detection_layer, pattern_count, has_signature_match, conversation_id. source_module: 'tutor_injection_defense'. All machine-readable, no student content leaked into abuse record."
+        }
+      ]
+    },
+    "F-05": {
+      "title": "Durable audit writes for crisis review read operations",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "check": "listCrisisReviewCases writes durable audit row",
+          "result": "PASS",
+          "evidence": "Line 257: calls writeAuditLogEntry with caseId: null, conversationId: null, action: 'viewed', metadata includes surface: 'list_cases', filter_status, limit, offset, result_count, total. Params are mandatory (not optional). writeAuditLogEntry at line 162 is BLOCKING — throws on failure, preventing the read from returning without an audit row."
+        },
+        {
+          "check": "getCaseAuditLog writes durable audit row",
+          "result": "PASS",
+          "evidence": "Line 554: calls writeAuditLogEntry with caseId (from params — non-null for single-case), conversationId: null, action: 'viewed', metadata includes surface: 'audit_trail_view', entries_returned. Blocking write. Reading the audit trail is itself audited — recursive correctness per SCL-025."
+        },
+        {
+          "check": "getBreachedCases cron exemption correctness",
+          "result": "PASS — exemption is correct",
+          "evidence": "The cron SLA sweep is a system operation: (1) no reviewer identity — cron has no authenticated user, (2) no conversation content read — only queries crisis_review_cases for open cases past SLA deadline, (3) the sweep exists to trigger notifications, not to provide human review access. SCL-025 mandates 'every read logged' for the admin review surface — the cron sweep is not a surface read, it's an automated monitoring operation. The exemption is correct.",
+          "risk_note": "The optional-params shape on getBreachedCases (line 464) is a design choice, not a vulnerability. The ONLY admin caller (admin-crisis-review.ts:309) always passes params. A future caller that omits params would skip the audit row, but TypeScript's optional parameter makes this explicit, and adding a new admin route requires passing through requireSupabaseAuth + requireSupabaseAdmin middleware. Low residual risk."
+        },
+        {
+          "check": "writeAuditLogEntry null handling",
+          "result": "PASS",
+          "evidence": "Line 168-169: case_id: params.caseId ?? undefined, conversation_id: params.conversationId ?? undefined. When null, Supabase client omits undefined keys from INSERT; column defaults to NULL (safe after migration 20260814000000). Functionally correct. Minor style note: explicit null would be clearer than undefined-omission, but behavior is identical."
+        },
+        {
+          "check": "Admin route always passes params for SLA breaches",
+          "result": "PASS",
+          "evidence": "admin-crisis-review.ts:309: getBreachedCases({ reviewerId: req.user!.id, ip: req.ip ?? ..., requestId: req.requestId }). Object literal always populated from authenticated request. No path for admin call to reach getBreachedCases without params."
+        }
+      ]
+    },
+    "F-08": {
+      "title": "Mastery guard test targets real file and fails on mastery writes",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "check": "Test targets real file",
+          "result": "PASS",
+          "evidence": "Line 226-228: targets server/routes/diagnostic-routes.ts (confirmed exists). Line 231-234: asserts file exists with descriptive message — no vacuous early return. Previous phantom path (apps/api/src/routes/diagnostic.ts) replaced."
+        },
+        {
+          "check": "Test fails on introduced mastery write",
+          "result": "PASS — PROVEN",
+          "evidence": "Injected '.from(\"student_skill_mastery\").insert(...)' into diagnostic-routes.ts. Guard test output: 'FAIL should verify that diagnostic routes do not bypass mastery-write chokepoint — Error: diagnostic-routes.ts bypasses mastery-write chokepoint: L507 [table_write]: await supabaseServer.from(\"student_skill_mastery\").insert({ skill_id: \"test\" })'. Broad-scan test also caught it. File restored; git diff confirms clean."
+        },
+        {
+          "check": "Test passes on legitimate reads",
+          "result": "PASS",
+          "evidence": "diagnostic-routes.ts has .insert() calls to practice_sessions (line 277) and practice_session_items (line 313) — NOT mastery tables. Guard checks only MASTERY_TABLES: student_skill_mastery, student_domain_mastery, student_section_projections, student_kpi_rollups_current. Test passes 3/3 on unmodified file."
+        }
+      ]
+    },
+    "static_gate": {
+      "title": "Structural gate catches bypass and is provably structural",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "check": "Built-in provability test passes",
+          "result": "PASS",
+          "evidence": "Test 'catches a synthetic bypass route (provability)' at line 655: writes _test-bypass-route.ts, verifies returnsTutorMessageContent returns true, verifies usesSerializer returns {imports: false, calls: false}. Cleans up in finally block. Passed in suite run (50/50)."
+        },
+        {
+          "check": "External planted bypass detected by structural gate",
+          "result": "PASS — PROVEN",
+          "evidence": "Planted _audit-bypass-test.ts: from('tutor_messages').select('id, message, role'), returns data.message without serializer. Gate output: 'FAIL every route file returning tutor message content uses serializeTutorOutput — AssertionError: SERIALIZER BYPASS DETECTED — _audit-bypass-test.ts: reads tutor_messages and returns message content but does NOT import serializeTutorOutput'. File removed after test."
+        },
+        {
+          "check": "Detection heuristic is three-layer",
+          "result": "PASS",
+          "evidence": "Layer 1: readsTutorMessages — /from(\"tutor_messages\")/. Layer 2: selectsMessageField — /\\.select\\([^)]*\\bmessage\\b/ or select('*'). Layer 3: TUTOR_CONTENT_RETURN_PATTERNS — 5 patterns covering .message access, object literals, serialized content fields, orchestration response, last_message_preview. All three must match for a file to be flagged."
+        },
+        {
+          "check": "Gate correctly excludes non-tutor routes",
+          "result": "PASS",
+          "evidence": "Dedicated tests: admin-crisis-review.ts (does not read tutor_messages) — not flagged. diagnostic-routes.ts (does not read tutor_messages) — not flagged. Both pass in suite."
+        }
+      ]
+    },
+    "migration_snapshot": {
+      "title": "Migration and genesis snapshot delta",
+      "verdict": "PASS",
+      "findings": [
+        {
+          "check": "Snapshot delta contains only two nullability changes",
+          "result": "PASS",
+          "evidence": "git diff 103a80b 485a9dc -- scripts/ci/genesis-schema.expected.sql: exactly 2 lines changed. Line 3574: 'case_id uuid NOT NULL' → 'case_id uuid'. Line 3575: 'conversation_id uuid NOT NULL' → 'conversation_id uuid'. No other changes."
+        },
+        {
+          "check": "Migration safe after 20260813000000",
+          "result": "PASS",
+          "evidence": "Migration 20260814000000 runs ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL. This is backward-compatible: existing rows with non-null values remain valid, new rows can have NULL. No data migration needed. Table created by 20260813000000_crisis_review_queue.sql. Ordering: 20260813 < 20260814. Safe."
+        },
+        {
+          "check": "Migration has ROLLBACK instructions",
+          "result": "PASS",
+          "evidence": "Lines 23-24: ROLLBACK: ALTER TABLE ... ALTER COLUMN case_id SET NOT NULL; ALTER TABLE ... ALTER COLUMN conversation_id SET NOT NULL. Correct reversal."
+        },
+        {
+          "check": "Production state compatibility",
+          "result": "PASS",
+          "evidence": "User noted production state: columns are still NOT NULL, migration NOT applied yet. The migration is a prerequisite for the writeAuditLogEntry null-case_id path. Until applied, aggregate audit writes (list cases, SLA breach, audit trail view) will fail with NOT NULL constraint violation. The code is correct FOR the post-migration state. The migration must be applied before deploying the code changes. This is the expected deployment sequence."
+        }
+      ]
+    },
+    "regression": {
+      "title": "Regression spot-check against 103a80b matrix",
+      "verdict": "PASS — no regressions",
+      "findings": [
+        {
+          "invariant": "INV-03-04",
+          "name": "Anti-leak serializer",
+          "status": "PRESENT",
+          "evidence": "tutor-antileak.ts unchanged. scanAndSubstitute + hasAnswerLeak fully intact. serializeTutorOutput in tutor-output-serializer.ts unchanged (5-class scan pipeline)."
+        },
+        {
+          "invariant": "INV-03-09",
+          "name": "Context-level fail-closed",
+          "status": "PRESENT",
+          "evidence": "tutor-context.ts unchanged. resolveScope throws on DB errors. Persona scanner intact in shared/tutor-safety-constants.ts."
+        },
+        {
+          "invariant": "INV-03-10",
+          "name": "Boundary markers",
+          "status": "PRESENT",
+          "evidence": "tutor-injection-defense.ts lines 74-89: BOUNDARY_MARKERS with student_input, question_content, memory_content. wrapWithBoundaryMarkers at line 153. Unchanged by PR (PR only modified logInjectionAttempt at line 275+)."
+        },
+        {
+          "invariant": "INV-03-12",
+          "name": "Output scanning",
+          "status": "PRESENT",
+          "evidence": "tutor-output-serializer.ts unchanged. serializeTutorOutput with 5 scan classes + fail-closed wrapper. Static gate test STRENGTHENED (Layer B structural scan added, provability test added). Net improvement."
+        },
+        {
+          "invariant": "INV-03-17",
+          "name": "Abuse scoring",
+          "status": "PARTIAL (pre-existing, improved by PR)",
+          "evidence": "abuse_score_incidents table and dual-write call sites exist. PR added input-side injection dual-write (tutor-injection-defense.ts:305-333). AbuseScoreService (tier computation) still not implemented — pre-existing gap, not a regression."
+        }
+      ]
+    }
+  },
+  "observations": [
+    {
+      "severity": "info",
+      "item": "F-05",
+      "note": "writeAuditLogEntry uses params.caseId ?? undefined (null → undefined → omitted from INSERT → column defaults to NULL). Passing null directly would be more explicit. Functionally identical. Not a finding."
+    },
+    {
+      "severity": "info",
+      "item": "F-05",
+      "note": "getBreachedCases optional-params pattern is a design choice that could allow a future caller to skip audit. Current risk is low: the only admin caller always passes params, and new admin routes require authenticated middleware. If the team prefers belt-and-suspenders, a separate function signature for cron vs admin would eliminate the optional path entirely."
+    },
+    {
+      "severity": "info",
+      "item": "migration",
+      "note": "Deployment ordering: migration 20260814000000 must be applied BEFORE deploying the code changes. Until the migration runs, aggregate audit writes (writeAuditLogEntry with null caseId) will fail with NOT NULL constraint violation. The writeAuditLogEntry function is BLOCKING (throws on failure), so affected admin endpoints (list cases, SLA breaches, audit trail view) will return 500 until the migration is applied. This is the expected deployment sequence."
+    }
+  ],
+  "test_evidence": {
+    "mastery_guard": {
+      "suite": "apps/api/test/mastery-writepaths.guard.test.ts",
+      "result": "3/3 passed",
+      "duration": "543ms",
+      "injection_proof": "Injected .from('student_skill_mastery').insert() → 2 tests FAILED with 'diagnostic-routes.ts bypasses mastery-write chokepoint'. File restored, git diff clean."
+    },
+    "output_serializer_gate": {
+      "suite": "tests/ci/tutor-output-serializer.contract.test.ts",
+      "result": "50/50 passed",
+      "duration": "447ms",
+      "bypass_proof": "Planted _audit-bypass-test.ts → 'SERIALIZER BYPASS DETECTED — _audit-bypass-test.ts: reads tutor_messages and returns message content but does NOT import serializeTutorOutput'. File removed."
+    }
+  },
+  "files_reviewed": [
+    "server/services/tutor-injection-defense.ts",
+    "server/services/crisis-review-queue.ts",
+    "server/routes/admin-crisis-review.ts",
+    "apps/api/test/mastery-writepaths.guard.test.ts",
+    "tests/ci/tutor-output-serializer.contract.test.ts",
+    "supabase/migrations/20260814000000_crisis_audit_log_nullable_case_id.sql",
+    "scripts/ci/genesis-schema.expected.sql",
+    "server/routes/diagnostic-routes.ts",
+    "docs/Spec/Lyceon — Document 01A_ Platform Primitives.md (§52)"
+  ]
+}
