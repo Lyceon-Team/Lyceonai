@@ -248,10 +248,29 @@ export async function checkSignatureTable(
 // ── Injection Logging (INV-03-13: logged, NEVER acknowledged) ──────────
 
 /**
- * Writes injection attempt to tutor_injection_log for forensic evidence.
+ * Writes injection attempt to tutor_injection_log for forensic evidence
+ * AND dual-writes to abuse_score_incidents for platform-wide abuse scoring.
  * Per INV-03-13: logged but NEVER acknowledged to the student.
  *
- * @spec [INV-03-13, Doc-03_V3 §18.2 Layer 5]
+ * @spec [INV-03-13, Doc-03_V3 §18.2 Layer 5, Doc-03A_V3 §12.8, Doc-01A_V1 §55]
+ * @implemented 2026-08-14
+ *
+ * plain English: records an input-side injection detection to both the LISA-
+ * specific forensic log (tutor_injection_log) and the platform-wide abuse
+ * scoring signal table (abuse_score_incidents). Without the dual-write,
+ * input-side injection detections were invisible to the platform abuse tier
+ * computation (AbuseScoreService). Both writes are fire-and-forget — a write
+ * failure is logged but never blocks the student-facing response or leaks
+ * detection status to the student.
+ *
+ * trade-offs: fire-and-forget means a transient DB error can lose a signal.
+ * Acceptable: the injection IS logged structurally (logger.info call), so
+ * Cloud Logging retains evidence even if the table write fails. The abuse
+ * score is advisory (tier demotion, not blocking), so a missed increment
+ * does not create a safety gap.
+ *
+ * edge cases: if both writes fail, the detection is still logged via the
+ * structured JSON logger — the audit trail is never fully lost.
  */
 export async function logInjectionAttempt(
   studentId: string,
@@ -259,12 +278,15 @@ export async function logInjectionAttempt(
   patterns: string[],
   signatureId: string | null,
 ): Promise<void> {
+  const detectionLayer =
+    patterns.length > 0 ? "layer_3_sanitization" : "layer_4_output";
+
+  // ── 1. LISA-specific forensic log (tutor_injection_log) ──────────────
   const { error } = await supabaseServer.from("tutor_injection_log").insert({
     student_id: studentId,
     conversation_id: conversationId,
     signature_matched: signatureId,
-    detection_layer:
-      patterns.length > 0 ? "layer_3_sanitization" : "layer_4_output",
+    detection_layer: detectionLayer,
     action_taken: "logged",
     response_substituted: null,
   });
@@ -278,13 +300,42 @@ export async function logInjectionAttempt(
       error,
       { studentId, conversationId },
     );
-    return;
+  }
+
+  // ── 2. Platform-wide abuse scoring dual-write (abuse_score_incidents) ──
+  // @spec [Doc-01A_V1 §52, Doc-03A_V3 §12.8]
+  // incident_type: "injection_attempt" per §52 canonical taxonomy (severity 5,
+  // "SQL injection or prompt injection detected"). §12.8 confirms severity 5
+  // for Layer 3 detections. Severity ≥ 4 triggers real-time recompute per §54.
+  const { error: abuseError } = await supabaseServer
+    .from("abuse_score_incidents")
+    .insert({
+      student_profile_id: studentId,
+      incident_type: "injection_attempt",
+      severity: 5,
+      context: {
+        detection_layer: detectionLayer,
+        pattern_count: patterns.length,
+        has_signature_match: signatureId !== null,
+        conversation_id: conversationId,
+      },
+      source_module: "tutor_injection_defense",
+    });
+
+  if (abuseError) {
+    logger.error(
+      "TUTOR_INJECTION_DEFENSE",
+      "abuse_incident_write_failed",
+      "failed to dual-write injection_attempt to abuse_score_incidents; tutor_injection_log write stands",
+      { error: abuseError.message, code: abuseError.code },
+      { studentId, conversationId },
+    );
   }
 
   logger.info(
     "TUTOR_INJECTION_DEFENSE",
     "injection_attempt_logged",
-    "injection attempt recorded in tutor_injection_log",
+    "injection attempt recorded in tutor_injection_log + abuse_score_incidents",
     {
       studentId,
       conversationId,
