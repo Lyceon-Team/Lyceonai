@@ -2572,6 +2572,7 @@ router.get(
     return res.json({
       sessionId: session.id,
       section,
+      mode: session.mode ?? null,
       state,
       currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
       answeredCount: progressCounts.answeredCount,

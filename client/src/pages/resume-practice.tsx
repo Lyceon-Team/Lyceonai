@@ -1,3 +1,20 @@
+/**
+ * @spec [Doc-05C §7.4, Doc-01_V8 §20–24 diagnostic client wiring]
+ * @implemented 2026-08-14
+ *
+ * plain English: resumes a practice or diagnostic session by ID. Fetches
+ * session state (including `mode`), detects diagnostic sessions, and passes
+ * diagnostic-specific props (isDiagnostic, completionHref="/dashboard",
+ * title/badge) to CanonicalPracticePage so the shared practice loop runs
+ * with skip/abandon hidden and correct completion navigation.
+ *
+ * expected outcome: navigating to /practice/session/:id for a diagnostic
+ * session shows "Diagnostic Assessment" title, hides skip/end-session,
+ * and redirects to /dashboard on completion.
+ *
+ * trade-offs: mode detection is a simple string check ("diagnostic") —
+ * no enum import needed since the server already validates.
+ */
 import { useRoute } from "wouter";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +30,7 @@ import {
 interface SessionState {
   sessionId: string;
   section: string | null;
+  mode: string | null;
   state: string;
   currentOrdinal: number;
   answeredCount: number;
@@ -104,12 +122,24 @@ export default function ResumePracticePage() {
     );
   }
 
+  const isDiagnostic = session.mode === "diagnostic";
+
   return (
     <CanonicalPracticePage
-      title={`Resuming ${sectionDisplayLabel(session.section) ?? "Practice"} Session`}
-      badgeLabel={sectionDisplayLabel(session.section) ?? "Practice"}
+      title={
+        isDiagnostic
+          ? "Diagnostic Assessment"
+          : `Resuming ${sectionDisplayLabel(session.section) ?? "Practice"} Session`
+      }
+      badgeLabel={
+        isDiagnostic
+          ? "Diagnostic"
+          : (sectionDisplayLabel(session.section) ?? "Practice")
+      }
       section={resolvedSection}
       sessionId={sessionId}
+      isDiagnostic={isDiagnostic}
+      completionHref={isDiagnostic ? "/dashboard" : "/practice"}
     />
   );
 }

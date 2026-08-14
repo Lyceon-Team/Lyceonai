@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Calendar,
   FileText,
+  Loader2,
   MessageCircle,
   Play,
   Target,
@@ -29,6 +30,7 @@ import {
   getConfidenceLabel,
   type EstimateResponse,
 } from "@/lib/projectionApi";
+import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 
 interface KpiExplanation {
   ruleId: string;
@@ -168,6 +170,23 @@ export default function LyceonDashboard() {
   // via estimateStatus:'baseline_only' + cta:true, no longer via 402.
   const estimateIsPremiumLocked =
     estimateData?.estimateStatus === "baseline_only";
+
+  // Diagnostic client wiring: session creation via POST /diagnostic/sessions.
+  // 201 → sessionId (fresh); 409 → existingSessionId (seamless resume);
+  // 503 → curated error (never raw). Once we have a sessionId, navigate to
+  // /practice/session/:id where the shared practice loop takes over.
+  const {
+    startDiagnostic,
+    isStarting: isDiagnosticStarting,
+    error: diagnosticStartError,
+  } = useDiagnosticStart();
+
+  const handleStartDiagnostic = async (): Promise<void> => {
+    const sessionId = await startDiagnostic();
+    if (sessionId) {
+      setLocation(`/practice/session/${sessionId}`);
+    }
+  };
 
   const todayPlan: StudyPlanDay | undefined = useMemo(
     () => calendarData?.days?.find((day) => day.day_date === todayISO),
@@ -329,7 +348,11 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
               ) : estimateData?.estimateStatus === "no_baseline" ? (
-                // Vertical-B Slice 2: no diagnostic completed — prompt to start.
+                // Diagnostic client wiring: button calls POST /diagnostic/sessions
+                // (via useDiagnosticStart), then navigates to /practice/session/:id
+                // where the shared practice answer loop takes over. 409 (active session
+                // exists) is handled as seamless resume; 503 (insufficient pool) shows
+                // a curated message, never the raw domain-count string.
                 <div className="space-y-4">
                   <p className="text-2xl font-semibold leading-tight tracking-tight">
                     Not yet available
@@ -337,8 +360,28 @@ export default function LyceonDashboard() {
                   <p className="text-sm text-primary-foreground/80">
                     Complete the diagnostic to establish your baseline score.
                   </p>
-                  <Button asChild variant="secondary" className="w-fit">
-                    <Link href="/practice">Start Diagnostic</Link>
+                  {diagnosticStartError && (
+                    <p
+                      className="text-sm font-medium text-primary-foreground"
+                      role="alert"
+                    >
+                      {diagnosticStartError.message}
+                    </p>
+                  )}
+                  <Button
+                    variant="secondary"
+                    className="w-fit"
+                    disabled={isDiagnosticStarting}
+                    onClick={handleStartDiagnostic}
+                  >
+                    {isDiagnosticStarting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting…
+                      </>
+                    ) : (
+                      "Start Diagnostic"
+                    )}
                   </Button>
                 </div>
               ) : estimateIsPremiumLocked && estimateData ? (
