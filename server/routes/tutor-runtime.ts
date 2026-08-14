@@ -37,17 +37,21 @@ import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
-// hasAnswerLeak + resolveFullEnvelope: canonical anti-leak scanner and context
-// resolver both live behind tutor-context.ts (which re-exports the scanner
-// from tutor-antileak.ts for backward compatibility — see that file's
-// "Re-export for backward compatibility" section).
-import { hasAnswerLeak, resolveFullEnvelope } from "../services/tutor-context";
-// Canonical anti-leak exports used directly (no local wrappers — the WS-2 CI
-// gate was rewritten to behavior assertions per LISA-FULL-001 item 6).
+// resolveFullEnvelope: context resolver lives in tutor-context.ts.
+// hasAnswerLeak was previously imported here but is now internal to the
+// output serializer — the static gate test (LISA-FULL-007) enforces that
+// this file never bypasses the serializer by using raw scan functions.
+import { resolveFullEnvelope } from "../services/tutor-context";
+// isPreSubmitForSurface: still needed to resolve pre-submit state before
+// calling the serializer. TUTOR_ANTI_LEAK_SUBSTITUTION no longer imported
+// here — it lives inside the serializer.
+import { isPreSubmitForSurface } from "../services/tutor-antileak";
+// LISA-FULL-007: single mandatory output serializer for all student-facing
+// tutor content. Every response path passes through serializeTutorOutput.
 import {
-  isPreSubmitForSurface,
-  TUTOR_ANTI_LEAK_SUBSTITUTION,
-} from "../services/tutor-antileak";
+  serializeTutorOutput,
+  type OutputScanContext,
+} from "../services/tutor-output-serializer";
 import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
@@ -71,10 +75,11 @@ import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/
 
 const router = Router();
 
-// TUTOR_ANTI_LEAK_SUBSTITUTION is now imported from ../services/tutor-antileak
-// (canonical single source of truth). The former local copy was removed per
-// LISA-FULL-001 item 6 — the WS-2 CI gate was rewritten from structural
-// assertions to behavior assertions, so no local declaration is required.
+// LISA-FULL-007: TUTOR_ANTI_LEAK_SUBSTITUTION, hasAnswerLeak, and
+// removeInternalMetadataMentions are now internal to the output serializer
+// (server/services/tutor-output-serializer.ts). This file calls
+// serializeTutorOutput() — never the raw scan functions. The static gate
+// test enforces this property.
 
 // ── Local surfaces enum (reused from the canonical wire schema — single
 // source of truth for the entry_mode / source_surface literal unions) ──────
@@ -164,52 +169,9 @@ type TutorConversationRow = {
 // structural assertions to behavior assertions, so no local declaration is
 // required.
 
-// ── removeInternalMetadataMentions ─────────────────────────────────────
-/**
- * @spec [Doc-03_V3 §17, INV-03-12] | @implemented 2026-08-09
- * plain English: strips accidental mentions of internal-only metadata
- * (policy/config identifiers, table names, model aliases) that the model
- * must never surface verbatim to the student. This runs BEFORE the
- * answer-leak scan so leak detection operates on already-cleaned text.
- * expected outcome: internal identifiers are removed and whitespace is
- * collapsed; pedagogical content is left untouched.
- * trade-offs: a fixed denylist of internal tokens — a heuristic layer, not
- * a substitute for prompting the model to never mention these things.
- * edge cases: case-insensitive match; removing a token never leaves a
- * dangling double space.
- */
-const INTERNAL_METADATA_PATTERNS: ReadonlyArray<RegExp> = [
-  /\bpolicy_family\b\s*[:=]?\s*[\w.-]*/gi,
-  /\bpolicy_variant\b\s*[:=]?\s*[\w.-]*/gi,
-  /\bpolicy_version\b\s*[:=]?\s*[\w.-]*/gi,
-  /\bassignment_key\b\s*[:=]?\s*[\w.:-]*/gi,
-  /\breason_snapshot\b/gi,
-  /\borchestration_meta\b/gi,
-  /\btutor_context_runtime_config\b/gi,
-  /\btutor_instruction_assignments\b/gi,
-  /\btutor_messages\b/gi,
-  /\bclassifier_class\b/gi,
-  /\bmodel_armor(_\w+)?\b/gi,
-  /\bgemini-[\w.-]+\b/gi,
-  /\bvertex\s*ai\b/gi,
-];
-
-export function removeInternalMetadataMentions(text: string): string {
-  let cleaned = text;
-  for (const pattern of INTERNAL_METADATA_PATTERNS) {
-    cleaned = cleaned.replace(pattern, "");
-  }
-  return cleaned
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-// invokeOrchestration stub DELETED — replaced by the real orchestrateTurn()
-// call from server/lib/tutor-orchestrator-client.ts (LISA-FULL-001 item 1).
-// orchestrateTurn() posts to the worker, scans the response through
-// scanAndSubstitute (the anti-leak chokepoint), and returns a TutorResult
-// that never throws.
+// LISA-FULL-007: INTERNAL_METADATA_PATTERNS and removeInternalMetadataMentions
+// moved to shared/tutor-safety-constants.ts (single source of truth for both
+// BFF and worker). Now consumed only through serializeTutorOutput.
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -395,15 +357,23 @@ async function resolveTrustedScopeForCreate(
 }
 
 /**
- * @spec [Doc-03_V3 §17, INV-03-04] Fetches the canonical correct answer for
- * a scoped question row, for use as the anti-leak comparison key. Returns
- * null (generic phrase detection fallback in hasAnswerLeak) if there is no
- * question scope or the lookup fails.
+ * @spec [Doc-03_V3 §17, INV-03-04, LISA-FULL-007]
+ *
+ * Fetches the canonical correct answer for a scoped question row, for use
+ * as the anti-leak comparison key. Returns a result that distinguishes
+ * "no question context" (value=null, failed=false) from "resolution failed"
+ * (value=null, failed=true). The serializer uses this distinction for the
+ * correct-answer blocking gate: pre-submit + failed = block.
  */
+type CorrectAnswerResult = {
+  value: string | null;
+  failed: boolean;
+};
+
 async function getCorrectAnswerForScope(
   questionRowId: string | null,
-): Promise<string | null> {
-  if (!questionRowId) return null;
+): Promise<CorrectAnswerResult> {
+  if (!questionRowId) return { value: null, failed: false };
 
   const { data, error } = await supabaseServer
     .from("questions")
@@ -415,13 +385,16 @@ async function getCorrectAnswerForScope(
     logger.warn(
       "TUTOR_RUNTIME",
       "correct_answer_lookup_failed",
-      "Could not resolve correct_answer for anti-leak scan; falling back to generic detection",
+      "Could not resolve correct_answer for anti-leak scan; signaling resolution failure (LISA-FULL-007)",
       { questionRowId },
     );
-    return null;
+    return { value: null, failed: true };
   }
 
-  return (data.correct_answer as string | null) ?? null;
+  return {
+    value: (data.correct_answer as string | null) ?? null,
+    failed: false,
+  };
 }
 
 // ============================================================================
@@ -682,9 +655,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
 
       if (existingStudentMsg && existingTutorMsg) {
-        // AUDIT-003: Apply anti-leak scan to idempotency replay — the
-        // submission state may have changed since the original turn.
-        // Same defense-in-depth as the GET replay endpoint (§16 Layer 4).
+        // LISA-FULL-007: idempotency replay — the submission state may have
+        // changed since the original turn. Run ALL scan classes through the
+        // mandatory output serializer, not just answer-leak.
         const replayPreSubmit = await isPreSubmitForSurface(
           conversation.source_surface,
           conversation.source_session_item_id,
@@ -692,14 +665,19 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         );
         const replayCorrectAnswer = replayPreSubmit
           ? await getCorrectAnswerForScope(conversation.source_question_row_id)
-          : null;
-        const cleanedReplay = removeInternalMetadataMentions(
+          : ({ value: null, failed: false } as CorrectAnswerResult);
+        const replayScanContext: OutputScanContext = {
+          conversationId: conversation.id,
+          studentId,
+          isPreSubmit: replayPreSubmit,
+          correctAnswer: replayCorrectAnswer.value,
+          correctAnswerResolutionFailed: replayCorrectAnswer.failed,
+          questionCanonicalId: conversation.source_question_canonical_id,
+        };
+        const replaySerialized = await serializeTutorOutput(
           existingTutorMsg.message,
+          replayScanContext,
         );
-        const safeReplayContent =
-          replayPreSubmit && hasAnswerLeak(cleanedReplay, replayCorrectAnswer)
-            ? TUTOR_ANTI_LEAK_SUBSTITUTION
-            : cleanedReplay;
 
         res.status(200).json({
           data: {
@@ -707,7 +685,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
             message_id: existingTutorMsg.id,
             client_turn_id: input.client_turn_id,
             response: {
-              content: safeReplayContent,
+              content: replaySerialized.content,
               content_kind: "message",
               suggested_action: { type: "none", label: null },
               ui_hints: {
@@ -873,13 +851,30 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         return;
       }
 
+      // LISA-FULL-007: crisis response passes through the serializer for
+      // static-gate compliance. isServerAuthored=true skips model-safety
+      // scans — crisis resources are server-authored and safe by construction.
+      const crisisScanContext: OutputScanContext = {
+        conversationId: conversation.id,
+        studentId,
+        isPreSubmit: false,
+        correctAnswer: null,
+        correctAnswerResolutionFailed: false,
+        questionCanonicalId: conversation.source_question_canonical_id,
+        isServerAuthored: true,
+      };
+      const crisisSerialized = await serializeTutorOutput(
+        crisisContent,
+        crisisScanContext,
+      );
+
       res.status(200).json({
         data: {
           conversation_id: conversation.id,
           message_id: crisisMessageRow.id,
           client_turn_id: input.client_turn_id,
           response: {
-            content: crisisContent,
+            content: crisisSerialized.content,
             content_kind: "message",
             suggested_action: { type: "none", label: null },
             ui_hints: {
@@ -932,16 +927,16 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope — these flow into both the wire request (worker-side scan) and
-    // the BFF-side defense-in-depth scan (step 15).
-    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15]
+    // the BFF-side defense-in-depth scan (step 15, via serializer).
+    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15, LISA-FULL-007]
     const preSubmit = await isPreSubmitForSurface(
       conversation.source_surface,
       effectiveScope.source_session_item_id,
       supabaseServer,
     );
-    const correctAnswer = preSubmit
+    const correctAnswerResult = preSubmit
       ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
-      : null;
+      : ({ value: null, failed: false } as CorrectAnswerResult);
 
     // Build context envelope (Doc 03A §5.4). Anti-leak fields and Model Armor
     // template IDs are resolved here so the worker receives them on the wire.
@@ -956,7 +951,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sourceQuestionRowId: effectiveScope.source_question_row_id,
       recentMessages,
       runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
-      correctAnswer,
+      correctAnswer: correctAnswerResult.value,
     });
 
     await logContextResolution({
@@ -983,7 +978,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestrationResult = await orchestrateTurn(
       envelope,
       preSubmit,
-      correctAnswer,
+      correctAnswerResult.value,
     );
 
     if (!orchestrationResult.ok) {
@@ -1006,18 +1001,27 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
-    // Step 15: Defense-in-depth anti-leak scan (belt-and-suspenders).
+    // Step 15: LISA-FULL-007 — mandatory output serializer (belt-and-suspenders).
     // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
     // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
-    // scan catches anything that slipped through both earlier layers —
-    // metadata mentions first, then answer-leak detection.
-    // @spec [Doc-03_V3 §16.4-5, INV-03-13]
-    const cleaned = removeInternalMetadataMentions(tutorResponse);
-    const safeContent =
-      preSubmit && hasAnswerLeak(cleaned, correctAnswer)
-        ? TUTOR_ANTI_LEAK_SUBSTITUTION
-        : cleaned;
-    const antiLeakTriggered = safeContent !== cleaned;
+    // serializer runs ALL 5 scan classes (Doc 03B §16.3) as defense-in-depth,
+    // including the 3 NEW scan classes (canonical ID, system-prompt, persona).
+    // @spec [Doc-03B_V2 §16.3-16.5, INV-03-04, INV-03-09, INV-03-10, INV-03-12,
+    //        INV-03-13, INV-03-17]
+    const appendScanContext: OutputScanContext = {
+      conversationId: conversation.id,
+      studentId,
+      isPreSubmit: preSubmit,
+      correctAnswer: correctAnswerResult.value,
+      correctAnswerResolutionFailed: correctAnswerResult.failed,
+      questionCanonicalId: effectiveScope.source_question_canonical_id,
+    };
+    const serialized = await serializeTutorOutput(
+      tutorResponse,
+      appendScanContext,
+    );
+    const safeContent = serialized.content;
+    const antiLeakTriggered = serialized.blocked;
 
     // Step 16: Persist tutor message.
     const { data: tutorMessageRow, error: tutorMessageError } =
@@ -1195,11 +1199,11 @@ router.get(
         return;
       }
 
-      // Defense-in-depth (§16 Layer 4 mirror): re-apply the anti-leak scan on
-      // read — the per-item submission state may have changed since write
-      // time. Tutor-authored messages only; student turns pass through.
-      let correctAnswerForReplay: string | null = null;
-      let correctAnswerResolved = false;
+      // LISA-FULL-007: Defense-in-depth (§16 Layer 4 mirror) — re-apply ALL
+      // 5 scan classes via the mandatory output serializer on read. The per-item
+      // submission state may have changed since write time. Tutor-authored
+      // messages only; student turns pass through.
+      let replayCorrectAnswerResult: CorrectAnswerResult | null = null;
       const safeMessages = [];
 
       for (const row of ordered) {
@@ -1214,27 +1218,34 @@ router.get(
           continue;
         }
 
-        const preSubmit = await isPreSubmitForSurface(
+        const rowPreSubmit = await isPreSubmitForSurface(
           conversation.source_surface,
           row.source_session_item_id ?? conversation.source_session_item_id,
           supabaseServer,
         );
-        if (!correctAnswerResolved) {
-          correctAnswerForReplay = await getCorrectAnswerForScope(
+        if (replayCorrectAnswerResult === null) {
+          replayCorrectAnswerResult = await getCorrectAnswerForScope(
             conversation.source_question_row_id,
           );
-          correctAnswerResolved = true;
         }
-        const safeContent =
-          preSubmit && hasAnswerLeak(row.message, correctAnswerForReplay)
-            ? TUTOR_ANTI_LEAK_SUBSTITUTION
-            : row.message;
+        const rowScanContext: OutputScanContext = {
+          conversationId: conversation.id,
+          studentId,
+          isPreSubmit: rowPreSubmit,
+          correctAnswer: replayCorrectAnswerResult.value,
+          correctAnswerResolutionFailed: replayCorrectAnswerResult.failed,
+          questionCanonicalId: conversation.source_question_canonical_id,
+        };
+        const rowSerialized = await serializeTutorOutput(
+          row.message,
+          rowScanContext,
+        );
 
         safeMessages.push({
           message_id: row.id,
           role: row.role,
           content_kind: row.content_kind,
-          message: safeContent,
+          message: rowSerialized.content,
           created_at: row.created_at,
         });
       }
@@ -1336,7 +1347,7 @@ router.get(
           const conv = row as TutorConversationRow;
           const { data: lastMessage } = await supabaseServer
             .from("tutor_messages")
-            .select("message")
+            .select("message, role")
             .eq("conversation_id", conv.id)
             .order("created_at", { ascending: false })
             .limit(1)
@@ -1346,7 +1357,32 @@ router.get(
             .select("id", { count: "exact", head: true })
             .eq("conversation_id", conv.id);
 
-          const preview = (lastMessage?.message as string | undefined) ?? null;
+          const rawPreview =
+            (lastMessage?.message as string | undefined) ?? null;
+          const lastRole = (lastMessage?.role as string | undefined) ?? null;
+
+          // LISA-FULL-007: scan list previews for defense-in-depth.
+          // Only tutor-role messages need scanning. Student messages
+          // and null previews pass through. The preview is truncated
+          // AFTER scanning so a leak at position 90 is still caught.
+          let safePreview: string | null = null;
+          if (rawPreview !== null && lastRole === "tutor") {
+            const listScanContext: OutputScanContext = {
+              conversationId: conv.id,
+              studentId,
+              isPreSubmit: false, // list is a summary surface; not pre-submit
+              correctAnswer: null,
+              correctAnswerResolutionFailed: false,
+              questionCanonicalId: conv.source_question_canonical_id,
+            };
+            const listSerialized = await serializeTutorOutput(
+              rawPreview,
+              listScanContext,
+            );
+            safePreview = listSerialized.content.slice(0, 100);
+          } else {
+            safePreview = rawPreview ? rawPreview.slice(0, 100) : null;
+          }
 
           return {
             conversation_id: conv.id,
@@ -1359,7 +1395,7 @@ router.get(
               source_question_row_id: conv.source_question_row_id,
               source_question_canonical_id: conv.source_question_canonical_id,
             },
-            last_message_preview: preview ? preview.slice(0, 100) : null,
+            last_message_preview: safePreview,
             message_count: count ?? 0,
             created_at: conv.created_at,
             updated_at: conv.updated_at,
