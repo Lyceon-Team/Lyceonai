@@ -78,6 +78,7 @@ export function setupSecurityMocks() {
       }
       return { user: req.user, supabase: req.supabase };
     },
+    requireStudentOnly: (_req: any, _res: any, next: any) => next(),
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
     requireProfileComplete: (_req: any, _res: any, next: any) => next(),
@@ -95,10 +96,7 @@ export function setupSecurityMocks() {
     }),
   }));
 
-  vi.doMock("../../server/middleware/usage-limits", () => ({
-    checkAiChatLimit: () => (req: any, res: any, next: any) => next(),
-    checkPracticeLimit: () => (req: any, res: any, next: any) => next(),
-  }));
+  // usage-limits (System A) retired — L1.6. No mock needed.
 
   vi.doMock("../../logger.js", () => ({
     logger: {

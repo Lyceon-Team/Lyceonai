@@ -139,5 +139,42 @@ export class EntitlementService {
       );
       return false;
     }
+   * @spec [Doc-03B_V4.1 §3.4, INV-03-02]
+   * @implemented 2026-08-09
+   *
+   * plain English: Checks whether the student has an active full-length exam
+   * session (status = 'in_progress'). Returns true if a live exam is in
+   * progress, false otherwise. Fails CLOSED (returns true) on DB error — a
+   * failing live-exam check must never allow tutor access during an exam.
+   *
+   * trade-offs: caching (30s soft TTL per spec) is not implemented in this
+   * pass — every call is a live query. The caching layer (01A Part III key
+   * `live_exam:{student_id}`, invalidated via `exam_status_changed` NOTIFY)
+   * is a separate concern to be added once the NOTIFY channel is wired.
+   */
+  static async isLiveExamInProgress(studentId: string): Promise<boolean> {
+    if (!studentId) {
+      return true; // fail closed
+    }
+
+    const { data, error } = await supabaseServer
+      .from("full_length_exams")
+      .select("id")
+      .eq("student_id", studentId)
+      .eq("status", "in_progress")
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      logger.error(
+        "ENTITLEMENT",
+        "live_exam_check_failed",
+        "full_length_exams live-exam query failed; failing closed (INV-03-02)",
+        { studentId, error: error.message, code: error.code },
+      );
+      return true; // fail closed — block tutor access
+    }
+
+    return data !== null;
   }
 }

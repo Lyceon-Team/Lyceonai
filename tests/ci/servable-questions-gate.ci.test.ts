@@ -50,6 +50,8 @@ const ALLOWLIST: Record<string, string> = {
     "HISTORICAL: form canonical ID resolution, deferred materialization snapshots",
   "apps/api/src/services/studentMastery.ts":
     "HISTORICAL: mastery metadata lookup by ID",
+  "server/services/tutor-context.ts":
+    "HISTORICAL: question metadata + correct_answer by ID for context resolution and anti-leak",
 };
 
 function collectTsFiles(dir: string): string[] {

@@ -10,9 +10,28 @@ const TUTOR_TABLES = [
   "tutor_question_links",
   "tutor_memory_summaries",
   "tutor_instruction_exposures",
+  "tutor_context_runtime_config",
+  "tutor_injection_signatures",
+  "tutor_injection_log",
 ] as const;
 
 type TutorTable = (typeof TUTOR_TABLES)[number];
+
+// Tables where students have INSERT policies (student can write rows).
+// All other tutor tables are student-read-only or have no student RLS at all.
+// @spec [Doc-03A_V3.0, §18.1–§18.7]
+const STUDENT_WRITABLE_TABLES: ReadonlySet<TutorTable> = new Set([
+  "tutor_conversations",
+  "tutor_messages",
+]);
+
+// Tables with no student_id column — no student-scoped RLS policies expected.
+// These are admin/system-managed tables.
+// @spec [Doc-03A_V3.0, §18.7; WS2 config template]
+const NO_STUDENT_RLS_TABLES: ReadonlySet<TutorTable> = new Set([
+  "tutor_context_runtime_config",
+  "tutor_injection_signatures",
+]);
 
 type ColumnMeta = {
   table_name: string;
@@ -162,37 +181,129 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "shown_at",
     "consumed_ms",
   ],
+  // §18.7 — WS2 config template (Doc 01A §8 shape: key/value/value_type/owner)
+  tutor_context_runtime_config: [
+    "key",
+    "value",
+    "value_type",
+    "owner",
+    "description",
+  ],
+  // §18.7 — injection attack patterns (admin-managed)
+  tutor_injection_signatures: [
+    "id",
+    "signature_pattern",
+    "signature_type",
+    "severity",
+    "action",
+    "added_at",
+    "added_by",
+  ],
+  // §18.7 — injection detection events (service-role only)
+  tutor_injection_log: [
+    "id",
+    "conversation_id",
+    "student_id",
+    "message_id",
+    "signature_matched",
+    "detection_layer",
+    "action_taken",
+    "response_substituted",
+    "detected_at",
+  ],
 };
 
-const REQUIRED_ENUMS: Array<{ table: TutorTable; column: string; values: string[] }> = [
-  { table: "tutor_conversations", column: "entry_mode", values: ["scoped_question", "scoped_session", "general"] },
-  { table: "tutor_conversations", column: "source_surface", values: ["practice", "review", "test_review", "dashboard"] },
-  { table: "tutor_conversations", column: "status", values: ["active", "closed", "abandoned"] },
-  { table: "tutor_conversations", column: "assignment_mode", values: ["deterministic", "explore", "manual_override"] },
-  { table: "tutor_messages", column: "role", values: ["student", "tutor", "system"] },
-  { table: "tutor_messages", column: "content_kind", values: ["message", "suggestion", "consent_prompt", "system_note"] },
-  { table: "tutor_instruction_assignments", column: "assignment_mode", values: ["deterministic", "explore", "manual_override"] },
+const REQUIRED_ENUMS: Array<{
+  table: TutorTable;
+  column: string;
+  values: string[];
+}> = [
+  {
+    table: "tutor_conversations",
+    column: "entry_mode",
+    values: ["scoped_question", "scoped_session", "general"],
+  },
+  {
+    table: "tutor_conversations",
+    column: "source_surface",
+    values: ["practice", "review", "test_review", "dashboard"],
+  },
+  {
+    table: "tutor_conversations",
+    column: "status",
+    values: ["active", "closed", "abandoned"],
+  },
+  {
+    table: "tutor_conversations",
+    column: "assignment_mode",
+    values: ["deterministic", "explore", "manual_override"],
+  },
+  {
+    table: "tutor_messages",
+    column: "role",
+    values: ["student", "tutor", "system"],
+  },
+  {
+    table: "tutor_messages",
+    column: "content_kind",
+    values: ["message", "suggestion", "consent_prompt", "system_note"],
+  },
+  {
+    table: "tutor_instruction_assignments",
+    column: "assignment_mode",
+    values: ["deterministic", "explore", "manual_override"],
+  },
   {
     table: "tutor_question_links",
     column: "relationship_type",
-    values: ["current", "similar_retry", "simpler_variant", "harder_variant", "concept_extension"],
+    values: [
+      "current",
+      "similar_retry",
+      "simpler_variant",
+      "harder_variant",
+      "concept_extension",
+    ],
   },
   {
     table: "tutor_instruction_exposures",
     column: "exposure_type",
-    values: ["hint", "explanation", "strategy", "similar_question_offer", "broader_coaching_offer", "consent_prompt"],
+    values: [
+      "hint",
+      "explanation",
+      "strategy",
+      "similar_question_offer",
+      "broader_coaching_offer",
+      "consent_prompt",
+    ],
   },
   {
     table: "tutor_memory_summaries",
     column: "summary_type",
-    values: ["teaching_profile", "chat_compaction", "recent_learning_pattern", "study_context"],
+    values: [
+      "teaching_profile",
+      "chat_compaction",
+      "recent_learning_pattern",
+      "study_context",
+    ],
+  },
+  {
+    table: "tutor_injection_signatures",
+    column: "severity",
+    values: ["low", "medium", "high", "critical"],
+  },
+  {
+    table: "tutor_injection_signatures",
+    column: "action",
+    values: ["flag", "reject", "silent_redirect"],
   },
 ];
 
 function requireDbUrl(): string {
   const dbUrl = process.env.SUPABASE_DB_URL ?? process.env.DATABASE_URL;
   if (!dbUrl || dbUrl.includes("placeholder")) {
-    throw new Error("SUPABASE_DB_URL (or DATABASE_URL) is required and must not be a placeholder.");
+    throw new Error(
+      "SUPABASE_DB_URL (or DATABASE_URL) is required and must not be a placeholder.",
+    );
   }
   return dbUrl;
 }
@@ -214,9 +325,12 @@ function containsStudentAuthUidPredicate(predicate: string | null): boolean {
 
 export async function collectTutorSchemaProof(): Promise<SchemaProof> {
   const dbUrl = requireDbUrl();
+  // CI uses a throwaway Postgres with no SSL; production uses Supabase with SSL.
+  const isLocalhost =
+    dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1");
   const client = new Client({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocalhost ? false : { rejectUnauthorized: false },
   });
   await client.connect();
 
@@ -291,17 +405,31 @@ export async function collectTutorSchemaProof(): Promise<SchemaProof> {
 
     const proof: SchemaProof = {
       generated_at: new Date().toISOString(),
-      table_columns: Object.fromEntries(TUTOR_TABLES.map((table) => [table, []])) as Record<TutorTable, ColumnMeta[]>,
-      indexes: Object.fromEntries(TUTOR_TABLES.map((table) => [table, []])) as Record<TutorTable, IndexMeta[]>,
-      checks: Object.fromEntries(TUTOR_TABLES.map((table) => [table, []])) as Record<TutorTable, CheckConstraintMeta[]>,
-      fks: Object.fromEntries(TUTOR_TABLES.map((table) => [table, []])) as Record<TutorTable, ForeignKeyConstraintMeta[]>,
+      table_columns: Object.fromEntries(
+        TUTOR_TABLES.map((table) => [table, []]),
+      ) as Record<TutorTable, ColumnMeta[]>,
+      indexes: Object.fromEntries(
+        TUTOR_TABLES.map((table) => [table, []]),
+      ) as Record<TutorTable, IndexMeta[]>,
+      checks: Object.fromEntries(
+        TUTOR_TABLES.map((table) => [table, []]),
+      ) as Record<TutorTable, CheckConstraintMeta[]>,
+      fks: Object.fromEntries(
+        TUTOR_TABLES.map((table) => [table, []]),
+      ) as Record<TutorTable, ForeignKeyConstraintMeta[]>,
       rls: Object.fromEntries(
         TUTOR_TABLES.map((table) => [
           table,
-          { table_name: table, rls_enabled: false, rls_forced: false } as RlsMeta,
+          {
+            table_name: table,
+            rls_enabled: false,
+            rls_forced: false,
+          } as RlsMeta,
         ]),
       ) as Record<TutorTable, RlsMeta>,
-      policies: Object.fromEntries(TUTOR_TABLES.map((table) => [table, []])) as Record<TutorTable, PolicyMeta[]>,
+      policies: Object.fromEntries(
+        TUTOR_TABLES.map((table) => [table, []]),
+      ) as Record<TutorTable, PolicyMeta[]>,
     };
 
     for (const row of columnsResult.rows) {
@@ -333,29 +461,43 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
   const failures: string[] = [];
 
   for (const table of TUTOR_TABLES) {
-    const actualColumns = new Set(proof.table_columns[table].map((column) => column.column_name));
+    const actualColumns = new Set(
+      proof.table_columns[table].map((column) => column.column_name),
+    );
     for (const requiredColumn of REQUIRED_COLUMNS[table]) {
       if (!actualColumns.has(requiredColumn)) {
-        failures.push(`${table} is missing required column '${requiredColumn}'.`);
+        failures.push(
+          `${table} is missing required column '${requiredColumn}'.`,
+        );
       }
     }
   }
 
-  const clientTurnColumn = proof.table_columns.tutor_messages.find((column) => column.column_name === "client_turn_id");
+  const clientTurnColumn = proof.table_columns.tutor_messages.find(
+    (column) => column.column_name === "client_turn_id",
+  );
   if (!clientTurnColumn) {
     failures.push("tutor_messages.client_turn_id is missing.");
   } else if (clientTurnColumn.udt_name !== "uuid") {
-    failures.push(`tutor_messages.client_turn_id must be uuid (found ${clientTurnColumn.udt_name}).`);
+    failures.push(
+      `tutor_messages.client_turn_id must be uuid (found ${clientTurnColumn.udt_name}).`,
+    );
   }
 
-  const idempotencyUniqueIndex = proof.indexes.tutor_messages.find((index) =>
-    /\bunique\s+index\b/i.test(index.indexdef)
-    && /\(student_id,\s*conversation_id,\s*client_turn_id\)/i.test(index.indexdef)
-    && /where\s+\(?client_turn_id\s+is\s+not\s+null\)?/i.test(index.indexdef),
+  // The idempotency index includes role so the two-row model (one student,
+  // one tutor per client_turn_id) can coexist.  See SCL-028 / migration
+  // 20260812000000_tutor_messages_idempotency_role.sql.
+  const idempotencyUniqueIndex = proof.indexes.tutor_messages.find(
+    (index) =>
+      /\bunique\s+index\b/i.test(index.indexdef) &&
+      /\(student_id,\s*conversation_id,\s*client_turn_id,\s*role\)/i.test(
+        index.indexdef,
+      ) &&
+      /where\s+\(?client_turn_id\s+is\s+not\s+null\)?/i.test(index.indexdef),
   );
   if (!idempotencyUniqueIndex) {
     failures.push(
-      "Missing unique index for idempotency on tutor_messages(student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL.",
+      "Missing unique index for idempotency on tutor_messages(student_id, conversation_id, client_turn_id, role) WHERE client_turn_id IS NOT NULL.",
     );
   }
 
@@ -364,12 +506,17 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
       check.constraint_def.includes(`${enumCheck.column}`),
     );
     if (!matchingCheck) {
-      failures.push(`Missing enum check constraint for ${enumCheck.table}.${enumCheck.column}.`);
+      failures.push(
+        `Missing enum check constraint for ${enumCheck.table}.${enumCheck.column}.`,
+      );
       continue;
     }
     const actual = parseEnumValues(matchingCheck.constraint_def).sort();
     const expected = [...enumCheck.values].sort();
-    if (actual.length !== expected.length || actual.some((value, i) => value !== expected[i])) {
+    if (
+      actual.length !== expected.length ||
+      actual.some((value, i) => value !== expected[i])
+    ) {
       failures.push(
         `Enum mismatch for ${enumCheck.table}.${enumCheck.column}. Expected [${expected.join(", ")}], found [${actual.join(", ")}].`,
       );
@@ -382,18 +529,35 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
       failures.push(`RLS is not enabled for ${table}.`);
     }
     const tablePolicies = proof.policies[table];
-    const selectPolicy = tablePolicies.find((policy) =>
-      (policy.cmd === "SELECT" || policy.cmd === "ALL") && containsStudentAuthUidPredicate(policy.qual),
+
+    // Tables with no student_id column have no student-scoped policies — skip student checks.
+    if (NO_STUDENT_RLS_TABLES.has(table)) {
+      continue;
+    }
+
+    const selectPolicy = tablePolicies.find(
+      (policy) =>
+        (policy.cmd === "SELECT" || policy.cmd === "ALL") &&
+        containsStudentAuthUidPredicate(policy.qual),
     );
     if (!selectPolicy) {
       failures.push(`Missing student-scoped SELECT policy for ${table}.`);
     }
-    const insertPolicy = tablePolicies.find((policy) =>
-      (policy.cmd === "INSERT" || policy.cmd === "ALL")
-      && (containsStudentAuthUidPredicate(policy.with_check) || containsStudentAuthUidPredicate(policy.qual)),
-    );
-    if (!insertPolicy) {
-      failures.push(`Missing student-scoped INSERT policy for ${table}.`);
+
+    // Only tables in STUDENT_WRITABLE_TABLES should have student INSERT policies.
+    // Other student-scoped tables are intentionally read-only from the student perspective
+    // (e.g. tutor_memory_summaries is written by trusted code only per §7.6;
+    //  tutor_injection_log is service-role only per INV-03-13).
+    if (STUDENT_WRITABLE_TABLES.has(table)) {
+      const insertPolicy = tablePolicies.find(
+        (policy) =>
+          (policy.cmd === "INSERT" || policy.cmd === "ALL") &&
+          (containsStudentAuthUidPredicate(policy.with_check) ||
+            containsStudentAuthUidPredicate(policy.qual)),
+      );
+      if (!insertPolicy) {
+        failures.push(`Missing student-scoped INSERT policy for ${table}.`);
+      }
     }
   }
 
@@ -434,7 +598,11 @@ function printProof(proof: SchemaProof): void {
 
 export async function runTutorSchemaProof(argv: string[]): Promise<void> {
   const assertOnly = argv.includes("--assert-only");
-  const outputPath = path.join(process.cwd(), "tmp", "tutor_schema_proof.latest.json");
+  const outputPath = path.join(
+    process.cwd(),
+    "tmp",
+    "tutor_schema_proof.latest.json",
+  );
   const proof = await collectTutorSchemaProof();
   const failures = assertTutorSchemaProof(proof);
 

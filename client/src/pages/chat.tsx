@@ -1,589 +1,251 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppShell } from "@/components/layout/app-shell";
+/**
+ * @spec [Doc-03B_V2 §3 (Surfaces)]
+ * @implemented 2026-08-09
+ *
+ * plain English: Chat page for the LISA tutor. Renders the conversation UI,
+ * handles message input, and displays tutor responses. This is the primary
+ * student-facing tutor interaction surface.
+ *
+ * expected outcome: student can type messages, see tutor responses, and
+ * navigate between conversations. Messages are sent via TanStack mutations.
+ *
+ * trade-offs: no optimistic updates (server must anti-leak scan first).
+ * Message history loaded via useConversation hook. Input disabled during
+ * message send to prevent double-submit.
+ *
+ * edge cases: this route (`/chat`) carries no `:conversationId` path param —
+ * the conversation is read from the `conversationId` search param via
+ * wouter's `useSearch()`. With no conversation selected, the page shows a
+ * prompt pointing back to `/tutor` rather than silently creating one
+ * (conversation creation is `tutor.tsx`'s responsibility, not this page's).
+ */
+
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
+import { Send, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Send, Sparkles, Info, MessageSquare } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { PremiumUpgradePrompt, type PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
+import {
+  useConversation,
+  useSendMessage,
+  type TutorMessage,
+} from "@/hooks/tutor-client";
+import {
+  isSessionError,
+  mapTutorErrorToPremiumReason,
+  toUserFacingMessage,
+} from "@/lib/api-error";
+import {
+  PremiumUpgradePrompt,
+  type PremiumPromptReason,
+} from "@/components/billing/PremiumUpgradePrompt";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
-import { isApiError, isCsrfError, isSessionError, toUserFacingMessage } from "@/lib/api-error";
-import {
-  appendTutorMessage,
-  fetchTutorConversation,
-  startTutorConversation,
-  TutorClientRequestError,
-  type TutorFetchConversationResponse,
-} from "@/lib/tutor-client";
-import { TutorSuggestedActionSchema, TutorUiHintsSchema } from "@shared/tutor-contract";
 
-type TutorSuggestedAction = {
-  type: "none" | "offer_similar_question" | "offer_broader_coaching" | "offer_stay_focused";
-  label: string | null;
-};
-
-type TutorUiHints = {
-  show_accept_decline: boolean;
-  allow_freeform_reply: boolean;
-  suggested_chip: string | null;
-};
-
-type MessageType = "user" | "tutor";
-
-interface ChatMessage {
-  id: string;
-  type: MessageType;
-  content: string;
-  timestamp: Date;
-  pending?: boolean;
-  suggestedAction?: TutorSuggestedAction | null;
-  uiHints?: TutorUiHints | null;
+function useConversationIdFromSearch(): string | null {
+  const search = useSearch();
+  const params = new URLSearchParams(search);
+  const raw = params.get("conversationId");
+  return raw && raw.trim().length > 0 ? raw.trim() : null;
 }
 
-interface PendingTurnState {
-  clientTurnId: string;
-  message: string;
-  userMessageId: string;
-  tutorPlaceholderId: string;
-  retryable: boolean;
-}
-
-function makeClientTurnId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function toDate(value: string): Date {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return new Date();
-  }
-  return date;
-}
-
-function extractTutorMetadata(contentJson: unknown): {
-  suggestedAction?: TutorSuggestedAction | null;
-  uiHints?: TutorUiHints | null;
-} {
-  if (!contentJson || typeof contentJson !== "object") {
-    return {};
-  }
-  const record = contentJson as Record<string, unknown>;
-  const suggestedActionParsed = TutorSuggestedActionSchema.safeParse(record.suggested_action);
-  const uiHintsParsed = TutorUiHintsSchema.safeParse(record.ui_hints);
-
-  return {
-    suggestedAction: suggestedActionParsed.success ? suggestedActionParsed.data : undefined,
-    uiHints: uiHintsParsed.success ? uiHintsParsed.data : undefined,
-  };
-}
-
-function toUiMessages(
-  messages: TutorFetchConversationResponse["data"]["messages"],
-): ChatMessage[] {
-  return messages.map((message) => {
-    const role = message.role === "student" ? "user" : "tutor";
-    const tutorMetadata = role === "tutor" ? extractTutorMetadata(message.content_json) : {};
-    return {
-      id: message.id,
-      type: role,
-      content: message.message,
-      timestamp: toDate(message.created_at),
-      ...tutorMetadata,
-    };
-  });
-}
-
-function replaceMessage(
-  messages: ChatMessage[],
-  messageId: string,
-  updater: (message: ChatMessage) => ChatMessage,
-): ChatMessage[] {
-  return messages.map((message) => {
-    if (message.id !== messageId) return message;
-    return updater(message);
-  });
-}
-
-function mapTutorErrorToPremiumReason(error: unknown): PremiumPromptReason | null {
-  if (!(error instanceof TutorClientRequestError)) return null;
-  const normalized = error.code.trim().toUpperCase();
-  if (normalized === "PAYMENT_REQUIRED") return "payment_required";
-  if (normalized === "PREMIUM_REQUIRED") return "premium_required";
-  return null;
-}
-
-export default function Chat() {
-  const { user } = useSupabaseAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [pendingTurn, setPendingTurn] = useState<PendingTurnState | null>(null);
-  const [inputValue, setInputValue] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isBootstrapping, setIsBootstrapping] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [requestErrorMode, setRequestErrorMode] = useState<"recovery" | "session" | null>(null);
-  const [premiumPromptReason, setPremiumPromptReason] = useState<PremiumPromptReason | null>(null);
-  const [premiumPromptDismissed, setPremiumPromptDismissed] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const bootstrapPromiseRef = useRef<Promise<string | null> | null>(null);
-  const { toast } = useToast();
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const bootstrapConversation = useCallback(async (): Promise<string | null> => {
-    if (conversationId) return conversationId;
-    if (bootstrapPromiseRef.current) return bootstrapPromiseRef.current;
-
-    const bootstrapPromise = (async () => {
-      setIsBootstrapping(true);
-      try {
-        const startResponse = await startTutorConversation({
-          entry_mode: "general",
-          source_surface: "dashboard",
-          source_session_id: null,
-          source_session_item_id: null,
-          source_question_row_id: null,
-          source_question_canonical_id: null,
-        });
-        const activeConversationId = startResponse.data.conversation_id;
-        setConversationId(activeConversationId);
-
-        const conversationResponse = await fetchTutorConversation(activeConversationId);
-        setMessages(toUiMessages(conversationResponse.data.messages));
-        setRequestError(null);
-        setRequestErrorMode(null);
-        setPremiumPromptReason(null);
-        setPremiumPromptDismissed(false);
-        return activeConversationId;
-      } catch (error) {
-        const premiumReason = mapTutorErrorToPremiumReason(error);
-        if (premiumReason) {
-          setPremiumPromptReason(premiumReason);
-          setPremiumPromptDismissed(false);
-          setRequestError(null);
-          setRequestErrorMode(null);
-          return null;
-        }
-        const userMessage = toUserFacingMessage(error);
-        const message = isApiError(error) ? error.message : userMessage.message;
-        setRequestError(message);
-        setRequestErrorMode(isSessionError(error) || isCsrfError(error) ? "session" : "recovery");
-        return null;
-      } finally {
-        setIsBootstrapping(false);
-      }
-    })().finally(() => {
-      bootstrapPromiseRef.current = null;
-    });
-
-    bootstrapPromiseRef.current = bootstrapPromise;
-    return bootstrapPromise;
-  }, [conversationId]);
-
-  useEffect(() => {
-    void bootstrapConversation();
-  }, [bootstrapConversation]);
-
-  const submitTurn = useCallback(
-    async (args: { activeConversationId: string; turn: PendingTurnState }) => {
-      setIsSubmitting(true);
-      setRequestError(null);
-      setRequestErrorMode(null);
-
-      try {
-        const response = await appendTutorMessage({
-          conversation_id: args.activeConversationId,
-          message: args.turn.message,
-          content_kind: "message",
-          client_turn_id: args.turn.clientTurnId,
-        });
-
-        setMessages((currentMessages) =>
-          replaceMessage(currentMessages, args.turn.tutorPlaceholderId, (message) => ({
-            ...message,
-            pending: false,
-            content: response.data.response.content,
-            suggestedAction: response.data.response.suggested_action ?? null,
-            uiHints: response.data.response.ui_hints ?? null,
-          })),
-        );
-        setPendingTurn((currentPendingTurn) =>
-          currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
-        );
-        setPremiumPromptReason(null);
-      } catch (error) {
-        const premiumReason = mapTutorErrorToPremiumReason(error);
-        if (premiumReason) {
-          setPremiumPromptReason(premiumReason);
-          setPremiumPromptDismissed(false);
-          setRequestError(null);
-          setRequestErrorMode(null);
-          setMessages((currentMessages) =>
-            currentMessages.filter((message) => message.id !== args.turn.tutorPlaceholderId),
-          );
-          setPendingTurn((currentPendingTurn) =>
-            currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
-          );
-          return;
-        }
-
-        if (error instanceof TutorClientRequestError && error.code === "TUTOR_RECOVERABLE_RETRY_REQUIRED") {
-          setPendingTurn((currentPendingTurn) => {
-            if (!currentPendingTurn || currentPendingTurn.clientTurnId !== args.turn.clientTurnId) {
-              return currentPendingTurn;
-            }
-            return {
-              ...currentPendingTurn,
-              retryable: true,
-            };
-          });
-          setRequestError(error.message);
-          setRequestErrorMode("recovery");
-          return;
-        }
-
-        setMessages((currentMessages) =>
-          currentMessages.filter((message) => message.id !== args.turn.tutorPlaceholderId),
-        );
-        setPendingTurn((currentPendingTurn) =>
-          currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
-        );
-
-        const fallbackMessage = "Failed to send message. Please try again.";
-        const message =
-          error instanceof TutorClientRequestError
-            ? error.message
-            : isApiError(error)
-              ? error.message
-              : fallbackMessage;
-        const notice = toUserFacingMessage(error);
-        const isSessionNotice = isSessionError(error) || isCsrfError(error);
-        setRequestError(message);
-        setRequestErrorMode(isSessionNotice ? "session" : "recovery");
-        toast({
-          title: notice.title,
-          description: notice.message,
-        });
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [toast],
+function MessageBubble({ message }: { message: TutorMessage }) {
+  const isStudent = message.role === "student";
+  return (
+    <div className={`flex ${isStudent ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+          isStudent
+            ? "bg-primary text-primary-foreground"
+            : "bg-secondary text-foreground"
+        }`}
+      >
+        {message.message}
+      </div>
+    </div>
   );
+}
 
-  const handleSendMessage = async () => {
-    const messageContent = inputValue.trim();
-    if (!messageContent || isSubmitting || pendingTurn) return;
+export default function ChatPage() {
+  const [, setLocation] = useLocation();
+  const conversationId = useConversationIdFromSearch();
 
-    const activeConversationId = conversationId ?? (await bootstrapConversation());
-    if (!activeConversationId) {
-      if (premiumPromptReason) {
-        return;
-      }
-      toast({
-        title: "Tutor unavailable",
-        description: "Unable to initialize tutor conversation.",
-      });
-      return;
-    }
+  const {
+    data: conversation,
+    isLoading,
+    error,
+  } = useConversation(conversationId);
+  const sendMessage = useSendMessage();
 
-    const clientTurnId = makeClientTurnId();
-    const userMessageId = `user-${clientTurnId}`;
-    const tutorPlaceholderId = `pending-${clientTurnId}`;
-    const turn: PendingTurnState = {
-      clientTurnId,
-      message: messageContent,
-      userMessageId,
-      tutorPlaceholderId,
-      retryable: false,
-    };
+  const [draft, setDraft] = useState("");
+  const [dismissedPremium, setDismissedPremium] = useState(false);
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
-    setInputValue("");
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: userMessageId,
-        type: "user",
-        content: messageContent,
-        timestamp: new Date(),
-      },
-      {
-        id: tutorPlaceholderId,
-        type: "tutor",
-        content: "Lisa is thinking...",
-        timestamp: new Date(),
-        pending: true,
-      },
-    ]);
-    setPendingTurn(turn);
-    await submitTurn({ activeConversationId, turn });
+  const messages = conversation?.messages ?? [];
+
+  // Premium entitlement check — both the conversation query and the send
+  // mutation can surface entitlement denial errors. Derive the premium
+  // reason inline (not via useEffect — coding standards §11.4).
+  const conversationPremiumReason: PremiumPromptReason | null =
+    mapTutorErrorToPremiumReason(error) as PremiumPromptReason | null;
+  const sendPremiumReason: PremiumPromptReason | null =
+    mapTutorErrorToPremiumReason(
+      sendMessage.error,
+    ) as PremiumPromptReason | null;
+  const activePremiumReason = conversationPremiumReason ?? sendPremiumReason;
+
+  // Classify non-premium errors for the structured notice UX.
+  const activeNonPremiumError =
+    !conversationPremiumReason && error ? error : null;
+  const sendNonPremiumError =
+    !sendPremiumReason && sendMessage.error ? sendMessage.error : null;
+
+  // Side effect only: scroll the message list into view when the message
+  // count changes. This is imperative DOM behavior, not derived state, so a
+  // ref-based effect is the correct tool (never used to compute a value).
+  const messageCount = messages.length;
+  useScrollToBottomOnChange(scrollAnchorRef, messageCount);
+
+  const canSend =
+    !!conversationId &&
+    draft.trim().length > 0 &&
+    !sendMessage.isPending &&
+    !activePremiumReason;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!conversationId) return;
+
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+
+    // Fire-and-forget — mutation errors surface via sendMessage.error
+    // and are rendered as RecoveryNotice / SessionNotice below. No toast
+    // with destructive variant (feedback-ux contract).
+    await sendMessage.mutateAsync({
+      conversation_id: conversationId,
+      message: trimmed,
+      client_turn_id: crypto.randomUUID(),
+    });
+    setDraft("");
   };
 
-  const handleRetryLastMessage = async () => {
-    if (!pendingTurn || !pendingTurn.retryable || isSubmitting) return;
-
-    const activeConversationId = conversationId ?? (await bootstrapConversation());
-    if (!activeConversationId) return;
-
-    const retryTurn = {
-      ...pendingTurn,
-      retryable: false,
-    };
-    setPendingTurn(retryTurn);
-    setRequestError(null);
-    await submitTurn({ activeConversationId, turn: retryTurn });
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSendMessage();
-    }
-  };
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-
-    return date.toLocaleDateString();
-  };
-
-  const inputDisabled = isSubmitting || isBootstrapping || Boolean(pendingTurn);
+  if (!conversationId) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 p-4">
+        <p className="text-muted-foreground text-center">
+          No conversation selected.
+        </p>
+        <Button onClick={() => setLocation("/tutor")}>Go to LISA tutor</Button>
+      </div>
+    );
+  }
 
   return (
-    <AppShell>
-      {premiumPromptReason && !premiumPromptDismissed && (
-        <PremiumUpgradePrompt
-          reason={premiumPromptReason}
-          mode="floating"
-          onDismiss={() => setPremiumPromptDismissed(true)}
-        />
-      )}
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-        <div className="mb-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">AI Tutor</p>
-              <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-                Lisa Tutor Chat
-              </h1>
-              <p className="text-muted-foreground">
-                Ask SAT questions and get canonical tutor guidance from the secured runtime.
-              </p>
-            </div>
-
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border/60 self-start">
-              <Sparkles className="h-4 w-4 text-foreground" />
-              <span className="text-sm font-medium text-foreground">Tutor Runtime · /api/tutor/messages</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-6 p-4 rounded-lg bg-secondary/60 border border-border/60">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 text-foreground flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-foreground">
-              <p className="font-medium mb-1">How this tutor works:</p>
-              <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                <li>Conversation and message flow is server-authoritative.</li>
-                <li>Hints and suggested actions come from backend policy/runtime responses.</li>
-                <li>When safe completion fails, retry reuses the same logical turn.</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {requestError && requestErrorMode === "session" && (
-          <SessionNotice
-            className="mb-6"
-            message={requestError}
-            onRefreshSession={() => window.location.reload()}
-            onSignInAgain={() => window.location.assign("/login")}
-          />
-        )}
-
-        {requestError && requestErrorMode !== "session" && (
-          <RecoveryNotice
-            className="mb-6"
-            message={requestError}
-            onRetry={pendingTurn?.retryable ? () => void handleRetryLastMessage() : undefined}
-            retryLabel="Retry"
-          />
-        )}
-
-        <div className="rounded-xl border border-border/60 bg-card/90 shadow-sm">
-          <div
-            className="h-[500px] overflow-y-auto p-6 space-y-6"
-            data-testid="chat-messages-container"
-          >
-            {messages.length === 0 && !isSubmitting && !isBootstrapping ? (
-              <div className="h-full flex flex-col items-center justify-center text-center px-4">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <MessageSquare className="h-8 w-8 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">Start a conversation</h3>
-                <p className="text-muted-foreground max-w-md">
-                  Ask a SAT question and Lisa will respond using the canonical tutor runtime.
-                </p>
-              </div>
-            ) : (
-              <>
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-3 ${message.type === "user" ? "flex-row-reverse" : ""}`}
-                    data-testid={`message-${message.id}`}
-                  >
-                    {message.type === "tutor" && (
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
-                          <Sparkles className="h-5 w-5 text-primary-foreground" />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className={`flex-1 max-w-[85%] ${message.type === "user" ? "flex justify-end" : ""}`}>
-                      <div>
-                        <div
-                          className={`rounded-2xl p-4 ${
-                            message.type === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
-                        >
-                          <p
-                            className="text-sm whitespace-pre-wrap leading-relaxed"
-                            data-testid={`text-message-content-${message.id}`}
-                          >
-                            {message.content}
-                          </p>
-
-                          {message.pending && (
-                            <p className="text-xs text-muted-foreground mt-3" data-testid={`text-message-pending-${message.id}`}>
-                              Waiting for canonical tutor response...
-                            </p>
-                          )}
-
-                          {message.type === "tutor" && !message.pending && (message.suggestedAction || message.uiHints) && (
-                            <div className="border-t border-border/50 pt-3 mt-3">
-                              <div className="flex flex-wrap gap-2">
-                                {message.suggestedAction && message.suggestedAction.type !== "none" && (
-                                  <Badge
-                                    variant="secondary"
-                                    data-testid={`badge-suggested-action-${message.id}`}
-                                  >
-                                    {message.suggestedAction.label ?? message.suggestedAction.type}
-                                  </Badge>
-                                )}
-                                {message.uiHints?.suggested_chip && (
-                                  <Badge
-                                    variant="secondary"
-                                    data-testid={`badge-suggested-chip-${message.id}`}
-                                  >
-                                    {message.uiHints.suggested_chip}
-                                  </Badge>
-                                )}
-                              </div>
-                              {message.uiHints && (
-                                <p
-                                  className="text-xs text-muted-foreground mt-2"
-                                  data-testid={`text-ui-hints-${message.id}`}
-                                >
-                                  UI hints: accept/decline {message.uiHints.show_accept_decline ? "on" : "off"} · freeform {message.uiHints.allow_freeform_reply ? "on" : "off"}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <p
-                          className={`text-xs text-muted-foreground mt-2 ${
-                            message.type === "user" ? "text-right" : ""
-                          }`}
-                          data-testid={`text-message-time-${message.id}`}
-                        >
-                          {formatTime(message.timestamp)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {message.type === "user" && (
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center">
-                          <span className="text-sm font-semibold text-foreground">
-                            {user?.email?.charAt(0).toUpperCase() || "U"}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {(isSubmitting || isBootstrapping) && (
-                  <div className="flex gap-3" data-testid="loading-indicator">
-                    <div className="flex-shrink-0">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
-                        <Sparkles className="h-5 w-5 text-primary-foreground" />
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <div className="bg-muted rounded-2xl p-4">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </>
-            )}
-          </div>
-
-          <div className="border-t p-4">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                placeholder="Type your question here..."
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={inputDisabled}
-                className="flex-1"
-                data-testid="input-chat-message"
-              />
-              <Button
-                onClick={() => void handleSendMessage()}
-                disabled={inputDisabled || !inputValue.trim()}
-                size="lg"
-                data-testid="button-send-message"
-              >
-                <Send className="h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-        </div>
+    <div className="flex h-screen flex-col">
+      <div className="flex items-center gap-2 border-b border-border p-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setLocation("/tutor")}
+          aria-label="Back to conversations"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <h1 className="text-lg font-semibold text-foreground">LISA</h1>
       </div>
-    </AppShell>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {isLoading && (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {!isLoading &&
+          activeNonPremiumError &&
+          (isSessionError(activeNonPremiumError) ? (
+            <SessionNotice
+              message={toUserFacingMessage(activeNonPremiumError).message}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              message={toUserFacingMessage(activeNonPremiumError).message}
+              onRetry={() => window.location.reload()}
+              retryLabel="Retry"
+            />
+          ))}
+
+        {sendNonPremiumError &&
+          (isSessionError(sendNonPremiumError) ? (
+            <SessionNotice
+              message={toUserFacingMessage(sendNonPremiumError).message}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              message={toUserFacingMessage(sendNonPremiumError).message}
+              onRetry={() => sendMessage.reset()}
+              retryLabel="Dismiss"
+            />
+          ))}
+
+        {activePremiumReason && !dismissedPremium && (
+          <div className="py-4">
+            <PremiumUpgradePrompt
+              reason={activePremiumReason}
+              mode="inline"
+              onDismiss={() => setDismissedPremium(true)}
+            />
+          </div>
+        )}
+
+        {!isLoading &&
+          !error &&
+          messages.map((message) => (
+            <MessageBubble key={message.message_id} message={message} />
+          ))}
+
+        <div ref={scrollAnchorRef} />
+      </div>
+
+      <form
+        onSubmit={handleSubmit}
+        className="flex items-center gap-2 border-t border-border p-4"
+      >
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Ask LISA a question..."
+          disabled={sendMessage.isPending}
+          aria-label="Message"
+        />
+        <Button type="submit" disabled={!canSend} aria-label="Send message">
+          {sendMessage.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+        </Button>
+      </form>
+    </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Scroll-to-bottom helper
+// ---------------------------------------------------------------------------
+//
+// Isolated into its own hook (rather than inlined `useEffect` in the
+// component body) so the intent is unambiguous: this synchronizes the DOM
+// scroll position with the message count, a legitimate imperative side
+// effect — it does not compute or derive any rendered value.
+function useScrollToBottomOnChange(
+  anchorRef: React.RefObject<HTMLDivElement>,
+  dependencyValue: number,
+): void {
+  useEffect(() => {
+    anchorRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [dependencyValue, anchorRef]);
 }

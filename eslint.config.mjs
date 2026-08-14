@@ -43,4 +43,17 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // apps/workers/** run as separate Cloud Run processes with no access to
+    // server/logger.ts (the shared structured logger is a main-API-only
+    // utility; workers are built in isolation per their own package.json —
+    // see apps/workers/tutor-orchestrator/src/lib/schema.ts). §16's intent
+    // ("use the structured logger utility") is met here via console.error +
+    // JSON, the agreed worker-process logging convention. Scoped to
+    // console.error only — console.log/warn/debug remain banned everywhere.
+    files: ["apps/workers/**/*.ts"],
+    rules: {
+      "no-console": ["error", { allow: ["error"] }],
+    },
+  },
 );

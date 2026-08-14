@@ -72,7 +72,7 @@ Derive edge cases from (a) the spec's stated edge cases captured in Stage 2 and 
 
 ## Stage 6 — Codex-ready PR  ·  gate: PR open + CI green (post-Pass-0) + ledger updated
 
-Create a scoped branch, commit with an annotated message, push, and open a **draft PR** into `main` using the template below. Append a row to the alignment ledger (`docs/alignment/LEDGER.md`): date · scope · spec sections · PR # · auditor verdict.
+Create a scoped `claude/*` branch, commit with an annotated message, push, and open a **draft PR** into the correct integration branch per the three-branch rule in `CLAUDE.md` (`questions` for question-bank work, `lisa` for LISA/tutor work, `cleanup` for everything else — **never `main`**) using the template below. Append a row to the alignment ledger (`docs/alignment/LEDGER.md`): date · scope · spec sections · PR # · auditor verdict.
 
 **CI gate (per pass).** Ensure this unit's tests run in CI. If the CI workflow has no job covering this unit's test type, add/extend it in this PR. After Pass 0 (the CI baseline reset), **the PR must show green CI** — a red check is a real failure to fix, not noise to explain away. Do not merge a red PR.
 

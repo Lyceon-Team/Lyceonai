@@ -1,199 +1,130 @@
-import { Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+/**
+ * @spec [Doc-03B_V2 §3 (Entry Points)]
+ * @implemented 2026-08-09
+ *
+ * plain English: Entry page for the LISA tutor. Shows conversation list and
+ * allows starting new conversations. Routes to the chat page for active
+ * conversations.
+ *
+ * expected outcome: student sees their conversation history and can start
+ * a new conversation. Clicking a conversation navigates to the chat page.
+ *
+ * edge cases: the chat route (`/chat`) carries no `:conversationId` path
+ * segment, so navigation passes the conversation as a `conversationId`
+ * search param instead of a route param. "New Conversation" always starts a
+ * `general` / `dashboard` conversation from this surface — the server's
+ * reuse rule (Doc 03B §5.6) decides whether that resolves to an existing
+ * active conversation or creates a new one; this page does not guess.
+ */
+
+import { useLocation } from "wouter";
+import { MessageSquarePlus, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Brain, CheckCircle2, Lock, Mail, Shield, Users } from "lucide-react";
-import Footer from "@/components/layout/Footer";
+import { Card } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import {
+  useConversations,
+  useCreateConversation,
+  type TutorConversationSummary,
+} from "@/hooks/tutor-client";
+
+function conversationTitle(conversation: TutorConversationSummary): string {
+  if (conversation.last_message_preview) {
+    return conversation.last_message_preview;
+  }
+  return "New conversation";
+}
 
 export default function TutorPage() {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const { data, isLoading, error } = useConversations();
+  const createConversation = useCreateConversation();
+
+  const conversations = data?.conversations ?? [];
+
+  const goToConversation = (conversationId: string): void => {
+    setLocation(`/chat?conversationId=${encodeURIComponent(conversationId)}`);
+  };
+
+  const handleNewConversation = async (): Promise<void> => {
+    try {
+      const conversation = await createConversation.mutateAsync({
+        entry_mode: "general",
+        source_surface: "dashboard",
+      });
+      goToConversation(conversation.conversation_id);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to start a new conversation.";
+      toast({
+        title: "Couldn't start conversation",
+        description: message,
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <main className="flex-1">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-              <BookOpen className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-3">
-              Tutor Safety, Privacy, and Pedagogy
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Lyceon’s tutor is SAT-aligned (not SAT-official) and built to guide learning with clear
-              boundaries, transparent data use, and adaptive instruction.
-            </p>
+    <div className="mx-auto flex h-screen max-w-2xl flex-col p-4">
+      <div className="flex items-center justify-between pb-4">
+        <h1 className="text-2xl font-bold text-foreground">LISA Tutor</h1>
+        <Button
+          onClick={handleNewConversation}
+          disabled={createConversation.isPending}
+        >
+          {createConversation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MessageSquarePlus className="h-4 w-4" />
+          )}
+          New Conversation
+        </Button>
+      </div>
+
+      <div className="flex-1 space-y-2 overflow-y-auto">
+        {isLoading && (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        )}
 
-          <section className="mb-12">
-            <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" />
-              Boundaries &amp; Safety
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    SAT-aligned, not official
-                  </CardTitle>
-                  <CardDescription>
-                    The tutor is grounded in SAT-style practice and explanations. It does not claim to be
-                    an official College Board product.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    No answer leakage
-                  </CardTitle>
-                  <CardDescription>
-                    Pre-submit question payloads do not expose correct answers or explanations. The tutor
-                    focuses on reasoning, not shortcuts.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    Academic integrity
-                  </CardTitle>
-                  <CardDescription>
-                    The tutor is not intended for live or proctored exams and should not be used to
-                    bypass school rules or assignments.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </section>
-
-          <section className="mb-12">
-            <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
-              <Lock className="h-5 w-5 text-primary" />
-              Privacy &amp; Data Use
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Student-first control
-                  </CardTitle>
-                  <CardDescription>
-                    Students own learning actions and plans. Guardians can view progress but do not take
-                    actions on a student’s behalf.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Lock className="h-4 w-4" />
-                    No data selling or ads
-                  </CardTitle>
-                  <CardDescription>
-                    Student data is not sold and is not used to build advertising profiles or targeted ad
-                    audiences.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Lock className="h-4 w-4" />
-                    Deletion &amp; de-identification
-                  </CardTitle>
-                  <CardDescription>
-                    Families can request deletion of student data. De-identified or aggregated analytics
-                    may be retained to improve learning outcomes.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </section>
-
-          <section className="mb-12">
-            <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
-              <Brain className="h-5 w-5 text-primary" />
-              Pedagogy &amp; Adaptation
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Brain className="h-4 w-4" />
-                    Skill-level focus
-                  </CardTitle>
-                  <CardDescription>
-                    Practice and diagnostics highlight the specific skills that need focus, with domain
-                    and section rollups for clarity.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" />
-                    Step-by-step guidance
-                  </CardTitle>
-                  <CardDescription>
-                    Explanations are structured to show reasoning and help students learn the method,
-                    not just the final answer.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Review loops
-                  </CardTitle>
-                  <CardDescription>
-                    Mistakes feed review sessions so students can re-practice weak areas with fresh
-                    explanations and targeted drills.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </section>
-
-          <section className="mb-10">
-            <h2 className="text-xl font-semibold text-foreground mb-4">Explore Trust &amp; Policy Details</h2>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button asChild variant="outline">
-                <Link href="/trust">Open Trust Center</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/legal/privacy-policy">Read Privacy Policy</Link>
-              </Button>
-            </div>
-          </section>
-
-          <Card className="bg-muted/30">
-            <CardContent className="py-6">
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Mail className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-center sm:text-left flex-1">
-                  <h3 className="font-semibold text-foreground mb-1">Questions or concerns?</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Report safety issues or ask about privacy at support@lyceon.ai.
-                  </p>
-                </div>
-                <Button asChild>
-                  <a href="mailto:support@lyceon.ai" className="inline-flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    support@lyceon.ai
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
+        {!isLoading && error && (
+          <Card className="p-4 text-sm text-destructive">
+            Could not load your conversations. Please try again.
           </Card>
-        </div>
-      </main>
+        )}
 
-      <Footer />
+        {!isLoading && !error && conversations.length === 0 && (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            No conversations yet. Start one to talk with LISA.
+          </Card>
+        )}
+
+        {!isLoading &&
+          !error &&
+          conversations.map((conversation) => (
+            <Card
+              key={conversation.conversation_id}
+              className="flex cursor-pointer items-center justify-between p-4 hover:bg-secondary"
+              onClick={() => goToConversation(conversation.conversation_id)}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {conversationTitle(conversation)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {conversation.message_count} messages ·{" "}
+                  {conversation.source_surface}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </Card>
+          ))}
+      </div>
     </div>
   );
 }
