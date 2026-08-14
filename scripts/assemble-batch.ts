@@ -195,14 +195,16 @@ function validateRecord(
     v("explanation", "explanation is empty");
   }
 
-  // Hard-fail: explanations must not reference options by letter (A/B/C/D).
+  // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).
   // Options are shuffled at serve (Feature-8 option_order); letter refs are gibberish.
-  const letterRefPattern =
+  // This regex is a detection aid — it flags for human/LLM review, not auto-reject,
+  // because capital A–D also appear as math variables, geometric labels, and articles.
+  // The auditor performs the binding comprehension check; the gate only warns.
+  const letterRefTripwire =
     /(?:Option|option|Choice|choice|Answer|answer)\s+[A-D]\b|\([A-D]\)|answer is [A-D]\b/;
-  if (letterRefPattern.test(rec.explanation)) {
-    v(
-      "explanation",
-      "explanation references an option by letter (A/B/C/D) — options are shuffled at serve; refer to options by content only",
+  if (letterRefTripwire.test(rec.explanation)) {
+    console.warn(
+      `[REVIEW] ${file}:${line} (record ${index}): possible letter-reference in explanation — verify by reading`,
     );
   }
 
