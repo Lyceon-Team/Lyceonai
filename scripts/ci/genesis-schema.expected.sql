@@ -492,7 +492,10 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
     pi.question_skill           AS skill,
     pi.question_difficulty      AS difficulty,
     pi.is_correct               AS correct,
-    pi.occurred_at              AS occurred_at,
+    -- DEFENSIVE COALESCE (2026-08-15): items answered before the handler stamped
+    -- occurred_at carry NULL.  answered_at is the authoritative fallback per seam
+    -- contract (20260610020000 line 135: "set to answered_at at write").
+    COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
   JOIN public.practice_sessions ps ON ps.id = pi.session_id
@@ -506,7 +509,7 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
 
   UNION ALL
 
-  -- Review events: review_error_attempts (unchanged).
+  -- Review events: review_error_attempts (unchanged — occurred_at is NOT NULL on this table).
   SELECT
     ra.id, 'review_error_attempt'::text, 'review'::text,
     ra.section, ra.domain, ra.skill, ra.difficulty,
@@ -537,7 +540,7 @@ CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) R
     pi.question_skill           AS skill,
     pi.question_difficulty      AS difficulty,
     pi.is_correct               AS correct,
-    pi.occurred_at              AS occurred_at,
+    COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
   JOIN public.practice_sessions ps ON ps.id = pi.session_id

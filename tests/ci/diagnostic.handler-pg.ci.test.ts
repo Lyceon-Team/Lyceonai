@@ -627,7 +627,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
            question_domain, question_skill, question_difficulty,
            question_section, status, question_item_type,
            option_order, option_token_map,
-           is_correct, selected_option_key, answered_at, occurred_at)
+           is_correct, selected_answer, answered_at, occurred_at)
         VALUES ($1, $2, $3, $3, 1,
           $4, 'Prior practice Q',
           '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
