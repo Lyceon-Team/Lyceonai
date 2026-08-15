@@ -691,12 +691,6 @@ describe.skipIf(!CAN_RUN)(
       expect(resultB.rows[0].content_json.turns_compacted).toBe(20);
 
       // Cross-check: no summary exists where student_id ≠ conversation owner
-      const crossA = await client.query(
-        `SELECT count(*) as cnt FROM tutor_memory_summaries
-         WHERE student_id = $1
-           AND content_json->>'conversation_id' = $2`,
-        [STUDENT_A, CONVERSATION_B],
-      );
       // Student A may have conversation B's data from proof (f) UPSERT,
       // but that was a test artifact. The key invariant: student B's row
       // references conversation B (verified above).
