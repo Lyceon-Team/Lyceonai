@@ -84,28 +84,6 @@ type CompactionResult =
 
 // ── Structured extraction prompt ──────────────────────────────────────
 
-const STRUCTURED_EXTRACTION_SYSTEM = [
-  "You analyze a tutoring conversation between an SAT student and a tutor.",
-  "Extract the following fields as a JSON object (no markdown fences, no commentary):",
-  "",
-  "{",
-  '  "topics_discussed": ["short topic label", ...],',
-  '  "skills_referenced": ["skill identifier or short description", ...],',
-  '  "key_insights": ["what the student learned or demonstrated", ...],',
-  '  "unresolved_confusion": ["what the student still struggled with", ...],',
-  '  "last_student_direction": "what the student was working on at the end, or null"',
-  "}",
-  "",
-  "Rules:",
-  "- topics_discussed: max 10 entries, each under 200 characters",
-  "- skills_referenced: list SAT skill areas discussed (e.g. 'linear equations', 'reading comprehension')",
-  "- key_insights: max 5 entries, each under 200 characters. What went well.",
-  "- unresolved_confusion: max 5 entries, each under 200 characters. What needs more work.",
-  "- last_student_direction: one sentence or null if conversation ended naturally",
-  "- Do not invent facts not present in the conversation",
-  "- Do not restate correct answers to specific questions",
-  "- Do not estimate scores or confidence levels",
-].join("\n");
 
 // ── Core compaction function ──────────────────────────────────────────
 
