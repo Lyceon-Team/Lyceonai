@@ -123,9 +123,22 @@ let mockSessionMode = "diagnostic";
 // When true, the CAS update (.eq("status","served").maybeSingle()) returns null,
 // simulating an optimistic-race loss where another request already answered the item.
 let mockCasUpdateReturnsNull = false;
+// @spec [Codex REVISE Fix 1] Controls question metadata per test to trigger
+// specific mastery failure branches (missing metadata, invalid difficulty).
+let mockQuestionSection: string | null = "M";
+let mockQuestionDomain: string | null = "Algebra";
+let mockQuestionSkill: string | null = "ALG.01";
+let mockQuestionDifficulty: number | null = 1;
+// @spec [Codex REVISE Fix 2] When non-null, findSessionItemByClientAttemptId returns
+// this object instead of the default currentItem. Enables testing the clientAttemptId
+// replay path (path 2) independently from the initial session-item fetch.
+let mockClientAttemptIdLookupItem: Record<string, unknown> | null = null;
 // @spec [Codex re-audit Fix D] Records every update patch applied to practice_sessions.
 // Tests assert that the handler issued a persisted lifecycle update, not just a response field.
 const sessionUpdatePatches: Record<string, unknown>[] = [];
+// @spec [Codex REVISE Fix 3] Records every update patch applied to practice_session_items.
+// Tests assert that the handler persisted the answer row, not just returned a 200.
+const itemUpdatePatches: Record<string, unknown>[] = [];
 
 function makeSessionRow(mode: string): Record<string, unknown> {
   return {
@@ -210,11 +223,15 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
       delete: () => chain,
       single: async () => ({ data: opts.single, ...result }),
       maybeSingle: async () => {
-        // findSessionItemByClientAttemptId path: return null when no
-        // client_attempt_id is set on the mock item (simulates no prior
-        // recorded attempt in the DB).
-        if (hasClientAttemptIdFilter && !mockItemClientAttemptId) {
-          return { data: null, ...result };
+        // findSessionItemByClientAttemptId path: return separate lookup data
+        // when configured, or null when no client_attempt_id is set.
+        if (hasClientAttemptIdFilter) {
+          if (mockClientAttemptIdLookupItem) {
+            return { data: mockClientAttemptIdLookupItem, ...result };
+          }
+          if (!mockItemClientAttemptId) {
+            return { data: null, ...result };
+          }
         }
         if (pendingUpdate && opts.onUpdate) {
           const updated = opts.onUpdate(pendingUpdate);
@@ -273,11 +290,16 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
             is_correct: mockItemIsCorrect,
             answered_at: mockItemAnsweredAt,
             selected_answer: mockItemSelectedAnswer,
+            question_section: mockQuestionSection,
+            question_domain: mockQuestionDomain,
+            question_skill: mockQuestionSkill,
+            question_difficulty: mockQuestionDifficulty,
           };
           return makeChain({
             single: currentItem,
             array: [currentItem],
             onUpdate: (patch) => {
+              itemUpdatePatches.push({ ...patch });
               if (mockCasUpdateReturnsNull) {
                 // Simulate: the winning request already answered this item.
                 // Flip mock state so the next findSessionItemById returns the
@@ -370,15 +392,22 @@ describe("Diagnostic mastery-tolerance gate", () => {
     mockResolvedCount = TARGET_COUNT;
     mockSessionMode = "diagnostic";
     mockCasUpdateReturnsNull = false;
+    mockQuestionSection = "M";
+    mockQuestionDomain = "Algebra";
+    mockQuestionSkill = "ALG.01";
+    mockQuestionDifficulty = 1;
+    mockClientAttemptIdLookupItem = null;
     sessionUpdatePatches.length = 0;
+    itemUpdatePatches.length = 0;
     mockApplyMasteryEvent.mockReset();
   });
 
   // ---------------------------------------------------------------------------
   // @rescoped [2026-08-15] Diagnostic now uses warn-and-continue (matches practice)
+  // @spec [Codex REVISE] Each fresh-answer failure branch is individually exercised.
   // ---------------------------------------------------------------------------
 
-  it("returns 200 when applyMasteryEvent fails for diagnostic (warn-and-continue)", async () => {
+  it("returns 200 when applyMasteryEvent returns {ok:false} for diagnostic (warn-and-continue)", async () => {
     mockApplyMasteryEvent.mockResolvedValue({
       ok: false,
       error: "simulated_failure",
@@ -393,8 +422,113 @@ describe("Diagnostic mastery-tolerance gate", () => {
     // Diagnostic now matches practice: mastery failure → warn-and-continue → 200
     expect(res.status).toBe(200);
     expect(res.body.isCorrect).toBe(true);
+    expect(res.body.state).toBe("completed");
     // Mastery was attempted (best-effort)
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
+    // @spec [Codex REVISE Fix 3] Answer row was persisted
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+        answered_at: expect.any(String),
+        occurred_at: expect.any(String),
+      }),
+    );
+  });
+
+  // @spec [Codex REVISE Fix 1] Forces the missing-metadata branch
+  // (canonicalId && difficultyBucket && (!section || !domain || !skill))
+  // Uses question_domain = null (not question_section, which would fail
+  // toCanonicalQuestionFromSessionItem validation and return 422).
+  it("returns 200 when metadata missing (null domain) for diagnostic (warn-and-continue)", async () => {
+    mockQuestionDomain = null;
+    // Mastery mock should NOT be called — missing metadata skips emission
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.state).toBe("completed");
+    // Mastery was NOT called — missing domain skips the emission entirely
+    expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
+    // @spec [Codex REVISE Fix 3] Answer row was persisted despite skipped mastery
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+        answered_at: expect.any(String),
+        occurred_at: expect.any(String),
+      }),
+    );
+  });
+
+  // @spec [Codex REVISE Fix 1] Forces the invalid-difficulty branch
+  // (canonicalId && !difficultyBucket)
+  it("returns 200 when difficulty invalid for diagnostic (warn-and-continue)", async () => {
+    mockQuestionDifficulty = 99; // resolveDifficultyBucketStrict returns null for values outside 1-3
+    // Mastery mock should NOT be called — invalid difficulty skips emission
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.state).toBe("completed");
+    // Mastery was NOT called — invalid difficulty skips the emission entirely
+    expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
+    // @spec [Codex REVISE Fix 3] Answer row was persisted despite skipped mastery
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+        answered_at: expect.any(String),
+        occurred_at: expect.any(String),
+      }),
+    );
+  });
+
+  // @spec [Codex REVISE Fix 1] Forces the thrown-exception branch
+  // (catch (masteryErr) around applyMasteryEvent)
+  it("returns 200 when applyMasteryEvent throws for diagnostic (warn-and-continue)", async () => {
+    mockApplyMasteryEvent.mockRejectedValue(new Error("mastery service down"));
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.state).toBe("completed");
+    // Mastery was attempted but threw — caught and continued
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
+    // @spec [Codex REVISE Fix 3] Answer row was persisted despite thrown mastery
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+        answered_at: expect.any(String),
+        occurred_at: expect.any(String),
+      }),
+    );
   });
 
   it("reports state:'completed' even when mastery fails (warn-and-continue)", async () => {
@@ -414,10 +548,30 @@ describe("Diagnostic mastery-tolerance gate", () => {
     expect(res.status).toBe(200);
     expect(res.body.state).toBe("completed");
     expect(res.body.isCorrect).toBe(true);
+    // @spec [Codex REVISE Fix 3] Answer row persisted + lifecycle completed
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+      }),
+    );
+    expect(sessionUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "completed",
+        completed_at: expect.any(String),
+      }),
+    );
   });
 
-  it("retries mastery emission on replay with same client_attempt_id", async () => {
-    // --- First call: mastery fails, but answer is recorded AND 200 returned ---
+  // ---------------------------------------------------------------------------
+  // @spec [Codex REVISE Fix 2] Replay paths: mastery failure tolerance
+  // Each replay entry point must return 200 even when mastery re-emission fails.
+  // ---------------------------------------------------------------------------
+
+  it("replay via status-check tolerates mastery failure (warn-and-continue)", async () => {
+    // --- First call: answer is recorded (mastery fails but 200 returned) ---
     mockApplyMasteryEvent.mockResolvedValue({
       ok: false,
       error: "simulated_failure",
@@ -429,8 +583,6 @@ describe("Diagnostic mastery-tolerance gate", () => {
       selectedAnswer: "opt_tok_B",
       clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
     });
-
-    // Diagnostic now returns 200 even when mastery fails (warn-and-continue)
     expect(firstRes.status).toBe(200);
     expect(firstRes.body.isCorrect).toBe(true);
 
@@ -444,10 +596,10 @@ describe("Diagnostic mastery-tolerance gate", () => {
     mockItemAnsweredAt = "2026-07-22T00:00:02Z";
     mockItemSelectedAnswer = "B";
 
-    // Mastery now recovers
-    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+    // @spec [Codex REVISE Fix 2] Mastery STAYS FAILING on replay — NOT flipped
+    // to ok:true. The replay must still return 200, proving tolerance.
 
-    // --- Second call: same client_attempt_id, mastery succeeds ---
+    // --- Second call: same client_attempt_id, mastery still fails ---
     const retryRes = await request(app).post("/api/practice/answer").send({
       sessionId: TEST_SESSION_ID,
       questionId: "SATM1AAAA01",
@@ -456,13 +608,172 @@ describe("Diagnostic mastery-tolerance gate", () => {
     });
 
     expect(retryRes.status).toBe(200);
-    // The replay path must have re-attempted mastery emission and
-    // succeeded, so it returns the answer data with idempotentRetried flag.
     expect(retryRes.body.isCorrect).toBe(true);
     expect(retryRes.body.idempotentRetried).toBe(true);
     // Completion reconciliation still runs on replay
     expect(retryRes.body.state).toBe("completed");
-    // Verify mastery was attempted on both calls
+    // Mastery was attempted on both calls (best-effort)
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("replay via status-check tolerates mastery throw (warn-and-continue)", async () => {
+    // --- First call: mastery throws, 200 returned ---
+    mockApplyMasteryEvent.mockRejectedValue(new Error("mastery service down"));
+
+    const firstRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+    expect(firstRes.status).toBe(200);
+
+    // --- Between calls: simulate answered state ---
+    mockItemStatus = "answered";
+    mockItemOutcome = "answered";
+    mockItemIsCorrect = true;
+    mockItemClientAttemptId = RETRY_CLIENT_ATTEMPT_ID;
+    mockItemAnsweredAt = "2026-07-22T00:00:02Z";
+    mockItemSelectedAnswer = "B";
+
+    // Mastery STILL throws on replay
+    // --- Second call: replay, mastery throws again ---
+    const retryRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.isCorrect).toBe(true);
+    expect(retryRes.body.idempotentRetried).toBe(true);
+    expect(retryRes.body.state).toBe("completed");
+    // Mastery was attempted on both calls (threw both times)
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("replay via status-check tolerates missing metadata (warn-and-continue)", async () => {
+    // --- First call: mastery skipped due to missing metadata, 200 returned ---
+    // Uses question_skill = null (not question_section, which would fail
+    // toCanonicalQuestionFromSessionItem validation upstream).
+    mockQuestionSkill = null;
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const firstRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+    expect(firstRes.status).toBe(200);
+
+    // --- Between calls: simulate answered state (still missing skill) ---
+    mockItemStatus = "answered";
+    mockItemOutcome = "answered";
+    mockItemIsCorrect = true;
+    mockItemClientAttemptId = RETRY_CLIENT_ATTEMPT_ID;
+    mockItemAnsweredAt = "2026-07-22T00:00:02Z";
+    mockItemSelectedAnswer = "B";
+
+    // --- Second call: replay, helper's missing-metadata early return fires ---
+    const retryRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.isCorrect).toBe(true);
+    expect(retryRes.body.idempotentRetried).toBe(true);
+    expect(retryRes.body.state).toBe("completed");
+    // Mastery was NOT called on either attempt — missing metadata skips it
+    expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
+  });
+
+  it("replay via clientAttemptId lookup tolerates mastery failure (warn-and-continue)", async () => {
+    // @spec [Codex REVISE Fix 2] Exercises replay path 2: item still "served" in
+    // the initial fetch, but findSessionItemByClientAttemptId finds a previously
+    // answered item with the same id. The handler enters the clientAttemptId
+    // replay branch and calls reEmitDiagnosticMasteryIfNeeded.
+    //
+    // Mock setup: mockItemStatus stays "served" (initial fetch returns served),
+    // but mockClientAttemptIdLookupItem returns a separately constructed
+    // "answered" item for the clientAttemptId query.
+    mockClientAttemptIdLookupItem = {
+      ...sessionItemRow,
+      status: "answered",
+      outcome: "answered",
+      client_attempt_id: RETRY_CLIENT_ATTEMPT_ID,
+      is_correct: true,
+      answered_at: "2026-07-22T00:00:02Z",
+      selected_answer: "B",
+      question_section: "M",
+      question_domain: "Algebra",
+      question_skill: "ALG.01",
+      question_difficulty: 1,
+    };
+    mockApplyMasteryEvent.mockResolvedValue({
+      ok: false,
+      error: "simulated_failure",
+    });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+    // Completion reconciliation still runs
+    expect(res.body.state).toBe("completed");
+    // Mastery was attempted via the clientAttemptId replay path
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries mastery emission on replay and recovers", async () => {
+    // Regression: the original recovery scenario still works (mastery fails on
+    // first call, recovers on replay).
+    mockApplyMasteryEvent.mockResolvedValue({
+      ok: false,
+      error: "simulated_failure",
+    });
+
+    const firstRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.body.isCorrect).toBe(true);
+
+    // --- Between calls: simulate answered state ---
+    mockItemStatus = "answered";
+    mockItemOutcome = "answered";
+    mockItemIsCorrect = true;
+    mockItemClientAttemptId = RETRY_CLIENT_ATTEMPT_ID;
+    mockItemAnsweredAt = "2026-07-22T00:00:02Z";
+    mockItemSelectedAnswer = "B";
+
+    // Mastery now recovers
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const retryRes = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.isCorrect).toBe(true);
+    expect(retryRes.body.idempotentRetried).toBe(true);
+    expect(retryRes.body.state).toBe("completed");
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(2);
   });
 
@@ -485,6 +796,15 @@ describe("Diagnostic mastery-tolerance gate", () => {
     expect(res.status).toBe(200);
     expect(res.body.state).toBe("completed");
     expect(res.body.isCorrect).toBe(true);
+    // @spec [Codex REVISE Fix 3] Answer row was persisted
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+      }),
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -542,6 +862,44 @@ describe("Diagnostic mastery-tolerance gate", () => {
     expect(res.body.state).toBe("completed");
   });
 
+  // @spec [Codex REVISE Fix 2] Optimistic-race with thrown exception
+  it("optimistic-race replay continues when mastery re-emission throws (warn-and-continue)", async () => {
+    mockCasUpdateReturnsNull = true;
+    mockApplyMasteryEvent.mockRejectedValue(new Error("mastery service down"));
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
+    expect(res.body.state).toBe("completed");
+  });
+
+  // @spec [Codex REVISE Fix 2] Optimistic-race with missing metadata
+  it("optimistic-race replay continues when metadata missing (warn-and-continue)", async () => {
+    mockCasUpdateReturnsNull = true;
+    mockQuestionSkill = null; // Missing skill triggers helper's early return
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+    // Mastery not called on the race path — helper sees missing skill and logs
+    expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
+    expect(res.body.state).toBe("completed");
+  });
+
   it("optimistic-race replay skips mastery for practice mode (regression)", async () => {
     mockSessionMode = "practice";
     mockCasUpdateReturnsNull = true;
@@ -560,5 +918,35 @@ describe("Diagnostic mastery-tolerance gate", () => {
     expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
     // No state field for non-diagnostic race replay (unchanged behavior)
     expect(res.body.state).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // @spec [Codex REVISE Fix 3] Answer-row persistence proof (with idempotency key)
+  // ---------------------------------------------------------------------------
+
+  it("persists client_attempt_id in the answer row when provided", async () => {
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    // Answer row includes client_attempt_id when provided
+    expect(itemUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "answered",
+        selected_answer: "B",
+        is_correct: true,
+        outcome: "correct",
+        answered_at: expect.any(String),
+        occurred_at: expect.any(String),
+        client_attempt_id: RETRY_CLIENT_ATTEMPT_ID,
+      }),
+    );
   });
 });
