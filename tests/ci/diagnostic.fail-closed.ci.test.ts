@@ -417,6 +417,7 @@ describe("Diagnostic mastery-tolerance gate", () => {
       sessionId: TEST_SESSION_ID,
       questionId: "SATM1AAAA01",
       selectedAnswer: "opt_tok_B",
+      clientAttemptId: RETRY_CLIENT_ATTEMPT_ID,
     });
 
     // Diagnostic now matches practice: mastery failure → warn-and-continue → 200
@@ -426,6 +427,8 @@ describe("Diagnostic mastery-tolerance gate", () => {
     // Mastery was attempted (best-effort)
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
     // @spec [Codex REVISE Fix 3] Answer row was persisted
+    // @spec [Codex re-audit Fix 2] Combined: failure-path + idempotency key →
+    // key durably written alongside the answer.
     expect(itemUpdatePatches).toContainEqual(
       expect.objectContaining({
         status: "answered",
@@ -434,6 +437,7 @@ describe("Diagnostic mastery-tolerance gate", () => {
         outcome: "correct",
         answered_at: expect.any(String),
         occurred_at: expect.any(String),
+        client_attempt_id: RETRY_CLIENT_ATTEMPT_ID,
       }),
     );
   });
