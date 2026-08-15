@@ -48,6 +48,7 @@ import {
   requireSupabaseAuth,
   requireSupabaseAdmin,
   requireStudentOrAdmin,
+  requireStudentOnly,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -72,6 +73,7 @@ import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
 import {
@@ -81,6 +83,7 @@ import {
 import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
+import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
 const app = express();
@@ -372,11 +375,12 @@ app.use(
 // GET  /api/tutor/conversations/:conversationId
 // GET  /api/tutor/conversations
 // POST /api/tutor/conversations/:conversationId/close
+// @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1] student-only gate for LISA.
 app.use(
   "/api/tutor",
   ragLimiter,
   requireSupabaseAuth,
-  requireStudentOrAdmin,
+  requireStudentOnly,
   doubleCsrfProtection,
   tutorRuntimeRouter,
 );
@@ -427,10 +431,6 @@ app.use(
   doubleCsrfProtection,
   weaknessRouter,
 );
-// Diagnostic runtime removed: keep the path terminally unavailable (404) before mastery auth mount.
-app.use("/api/me/mastery/diagnostic", (_req, res) =>
-  res.status(404).json({ error: "Not found" }),
-);
 app.use(
   "/api/me/mastery",
   requireSupabaseAuth,
@@ -474,6 +474,13 @@ app.get(
     });
   },
 );
+// Admin crisis review surface — SEPARATE from /api/tutor/* per SCL-025.
+// §3.1 stands unchanged (student-only on /api/tutor/*). This is a different
+// authorization axis per SCL-025: read-only, scoped to crisis_flagged conversations,
+// every read audit-logged.
+// @spec [Doc-03_V3 §21.3, SCL-025]
+app.use("/api/admin/crisis-review", adminCrisisReviewRouter);
+
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
 app.get(
@@ -634,6 +641,17 @@ app.get(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getPracticeQuestions,
+);
+
+// Diagnostic Routes (Vertical B — 40-question initial diagnostic)
+// Mounted at /api/practice/diagnostic BEFORE the practice canonical router so Express
+// matches the more-specific path first. Same auth + CSRF middleware stack as practice.
+app.use(
+  "/api/practice/diagnostic",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  diagnosticRouter,
 );
 
 // Practice Canonical Routes (unified practice API)

@@ -53,9 +53,31 @@ A task is open until: build passes, tests pass, no invariant violated, result re
 - One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
 - Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
 
-## Branch targeting (PRs land on `questions`, never `main`)
+## Managed-service first
 
-All in-flight work merges into the `questions` integration branch — **never open a PR against `main`**. When opening a PR, set its base to `questions`. If a PR is already open for the working branch, push to that branch and let the existing PR pick up the commits rather than opening a second PR.
+Before implementing scheduling, queueing, retries, alerting, tracing, or any other infrastructure behavior, check whether a connected platform already provides it — GCP (Cloud Tasks, Cloud Scheduler, Cloud Monitoring, Cloud Logging, Pub/Sub), Supabase, Stripe, or Vercel. Hand-rolled infrastructure requires a stated reason in the PR description explaining why the managed service does not fit. "We already have code for it" is not a reason.
+
+This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
+
+## Branch targeting — three integration branches, never `main`
+
+Three long-lived integration branches exist. Route every PR to the correct one by scope:
+
+| Branch | Scope | Examples |
+|---|---|---|
+| `questions` | Question bank creation **only** | Batch authoring, taxonomy edits, seed SQL, ingestion pipeline |
+| `lisa` | AI tutor / LISA work | Tutor runtime, context/memory, RAG, LISA API, tutor-adjacent tests |
+| `cleanup` | Everything else | Spec alignment, auth, mastery, practice engine, frontend, billing, CI, docs |
+
+**Never open a PR against `main`.** Karl owns all merges to `main`.
+
+When opening a PR, set its base to the integration branch that matches the scope above. If a PR is already open for the working branch, push to that branch and let the existing PR pick up the commits rather than opening a second PR.
+
+### Claude Code branch rules (standing)
+
+- Work on `claude/*` branches — never commit directly to an integration branch.
+- Always open PRs as **draft**.
+- Never merge a PR. Never force-push a shared branch. Karl owns all merges.
 
 ## Unified code across agents & sessions
 

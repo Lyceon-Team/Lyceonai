@@ -82,6 +82,12 @@ jobs:
       - name: Practice schema-types gate (STRUCTURAL 1 — no phantom columns)
         run: bash scripts/ci/practice-schema-types-gate.sh
 
+      - name: Wire-contract drift gate (AUD-519-007 — L1.4 single-contract)
+        run: diff shared/tutor-orchestrator-wire.ts apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated.ts
+
+      - name: Safety-constants drift gate (AUD-B1.1c-010 — anti-leak + boundary mirrors)
+        run: diff shared/tutor-safety-constants.ts apps/workers/tutor-orchestrator/src/lib/_tutor-safety-constants.generated.ts
+
   # ---------------------------------------------------------------------------
   # Visibility job — NOT required for merge. Steps are continue-on-error so the
   # job stays green, but their failures remain visible in the logs/annotations
@@ -253,7 +259,7 @@ jobs:
       - name: Ensure postgresql-client 16
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
-      - name: Practice engine integration gate
+      - name: Practice engine integration gate (SQL seam)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -262,6 +268,43 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/practice-integration.sh
+
+      # @spec [Codex re-audit Fix C] Handler-driven real-PG proof.
+      # The bash test above proves the SQL seam; this vitest test proves the
+      # TS handler actually calls applyMasteryEvent against real Postgres.
+      # Would FAIL if `await applyMasteryEvent(...)` were removed from the handler.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Diagnostic handler → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/diagnostic.handler-pg.ci.test.ts
+
+      # @spec [Doc-01_V8 §20–§24 | STRIPE-001] Entitlement write-path → real PG proof.
+      # Proves upsertEntitlement(profileId, ...) persists against the REAL genesis schema
+      # (profile_id + UNIQUE(profile_id), NO account_id). Would FAIL against the old
+      # account_id code (column does not exist). Also proves entitlement_active() and
+      # the stripe_webhook_events idempotency gate against real PG.
+      - name: Entitlement write-path → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/entitlement-write-path.ci.test.ts
 
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
@@ -485,3 +528,66 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/guardian-mirror-gates.sh
+
+  # ---------------------------------------------------------------------------
+  # Tutor schema-proof gate (AUD-519-008 closure — Doc 03A §18.1–§18.7). Proves
+  # the tutor schema matches spec: required columns, types, enum values, RLS
+  # enabled, and correct student-scoped policies across all 9 tutor_* tables.
+  # Includes negative control: drops a required column and asserts the suite FAILS
+  # — a gate never observed failing is not known to work.
+  # ---------------------------------------------------------------------------
+  tutor-schema-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Tutor schema-proof gate
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/tutor-schema-proof.sh
+
+      - name: Negative control — schema-proof must FAIL on missing column
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/tutor-schema-proof-negative-control.sh

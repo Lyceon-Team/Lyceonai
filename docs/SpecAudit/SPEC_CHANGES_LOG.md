@@ -25,6 +25,273 @@
 
 ## Entries
 
+SCL-030 | 2026-08-13 | Doc 03 INV-03-10 scope narrowing (model-generated text, not structured API fields) | PROPOSED
+Change: INV-03-10 ("Canonical question IDs never appear in student-facing LISA output") and
+  Doc 03B §16.6 line 2360 (source_question_canonical_id returned in conversation responses) appeared
+  to conflict. Karl ruled: both stand. They govern different things.
+WAS: INV-03-10 (Doc 03:2160) reads "Canonical question IDs (SAT{M|RW}{1|2}[A-Z0-9]{6}) never appear
+  in student-facing LISA output. Enforced: Doc 03 §3.7, output scanner pattern matching. Violation:
+  internal metadata leak." Doc 03B §16.6 (line 2360) returns source_question_canonical_id in the
+  conversation response envelope. Read together, the API field appears to violate the invariant.
+IS: The two provisions bind on DIFFERENT output layers:
+  (a) The structured API field (source_question_canonical_id) STAYS. It is scope metadata the client
+  uses to correlate a conversation to a question. It is never rendered to the student — visible only
+  in browser devtools, where it is meaningless to a student. It is load-bearing for LISA's scope
+  resolution (Doc 03A §1.2 layer 1, Doc 03B §6.5 step 3). Removing it would break scope continuity.
+  Doc 03B §16.6 is NOT in defect.
+  (b) INV-03-10 binds on MODEL-GENERATED TEXT. LISA must never write a canonical question ID into a
+  chat message, under any framing, on any surface. The invariant's own enforcement point already says
+  "output scanner pattern matching" — a text-layer mechanism, not an API-field mechanism. This SCL
+  records the narrowing explicitly so the boundary is not re-litigated.
+  (c) INV-03-10 enforcement remains ABSENT. No canonical-ID scanner exists on model output today —
+  the model can emit SATM1ABC123 in prose and nothing catches it. This SCL settles the SCOPE of the
+  invariant; it does not close it. Closing it is LISA-FULL-007.
+Rationale: Karl ruling 2026-08-13. The API field is structured metadata consumed by the client for
+  scope correlation; the invariant targets prose text the student reads. Conflating them would either
+  break scope resolution (if the field is removed) or render the invariant unenforceable (if it's
+  broadened to "never present in any JSON"). The boundary is: student-readable text vs. structured
+  metadata. The field is no more a "student-facing output" than a database row ID in a REST response.
+Version: Doc 03 INV-03-10 — scope narrowed to model-generated text only; structured API fields
+  carrying canonical IDs for scope resolution are explicitly excluded. No spec version bump (the
+  invariant text is unchanged; this SCL records the interpretive boundary).
+No code change. No schema change.
+Owner action: at next spec pass, annotate INV-03-10 with the text/field boundary. Track
+  LISA-FULL-007 (canonical-ID output scanner) as the open enforcement item.
+
+SCL-029 | 2026-08-13 | Doc 03 INV-03-03 past_due status (platform entitlement predicate wins) | PROPOSED
+Change: Doc 03 INV-03-03 says "LISA requires entitlement.tier=paid AND entitlement.status=active on
+  every request. No grandfathering, no cached entitlement beyond single-request TTL." Read literally,
+  this excludes past_due and trialing. Doc 01's platform entitlement predicate treats the canonical
+  entitled set as {active, past_due, trialing} — a locked decision (owner ruling 2026-06-14, codified
+  in the entitlement_active() SQL predicate). The two conflict.
+WAS: INV-03-03 (Doc 03:2146) requires "entitlement.status=active" — literally the string 'active'.
+  The platform predicate (entitlement_active(), migration 20260616120000) is
+  status IN ('active','past_due','trialing'). A student whose card is mid-retry (past_due) or in a
+  trial period (trialing) would be entitled on every other paid surface but denied LISA if the
+  invariant is enforced literally.
+IS: The platform entitlement predicate wins. LISA follows the same entitlement gate as every other
+  paid surface — {active, past_due, trialing}. A student whose card is mid-retry does not lose their
+  tutor.
+  Implementation already correct — no code change required. The LISA entitlement gate is:
+    server/services/entitlement-service.ts:47-67 (EntitlementService.isEntitlementActiveForProfile),
+    which delegates to the entitlement_active() RPC (status IN ('active','past_due','trialing')).
+    server/routes/tutor-runtime.ts:227 calls this check on every request.
+  INV-03-03's "status=active" is read as "entitlement-active per the platform predicate," not as
+  a literal string match on the word 'active'. The invariant's intent (per-request entitlement check,
+  no grandfathering, no caching) is preserved; only the status-value set is widened to match the
+  platform.
+Rationale: Karl ruling 2026-08-13. The platform owns the definition of "entitled." Every paid
+  surface (practice, mastery, guardian mirror, projections, LISA) consumes the same entitlement_active()
+  predicate. A LISA-specific narrowing to status='active' only would mean a student in Stripe's
+  past_due retry window can do practice but not talk to their tutor — a confusing and unjustifiable
+  split. The invariant's purpose is preventing unpaid access, not penalizing payment retry.
+Version: Doc 03 INV-03-03 — "status=active" widened to "entitlement-active per the platform
+  predicate (active, past_due, trialing)." No spec version bump (the invariant text is unchanged;
+  this SCL records the interpretive alignment with the platform predicate).
+No code change. No schema change. Implementation already correct.
+Owner action: at next spec pass, amend INV-03-03 to reference the platform entitlement predicate
+  rather than the literal string 'active', or add a parenthetical noting the platform-defined set.
+
+SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | PROPOSED
+Change: Doc 03A §18.2 defines the idempotency constraint as
+  UNIQUE (conversation_id, client_turn_id). Doc 03B §9 and §13.3 describe an idempotency model
+  that persists two tutor_messages rows per client_turn_id per turn — one role='student' (§6.5
+  step 11) and one role='tutor' (§6.5 step 16). The constraint as written permits only one row
+  per (conversation_id, client_turn_id), so the tutor message insert always fails. This is a spec
+  defect — the constraint contradicts the two-row model that the idempotency and retry sections
+  depend on.
+WAS: UNIQUE (conversation_id, client_turn_id) — or equivalently, partial unique index on
+  (student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL per
+  migration 20260806020000. Either shape permits only one row per client_turn_id per conversation.
+IS: UNIQUE (student_id, conversation_id, client_turn_id, role) WHERE client_turn_id IS NOT NULL.
+  Permits exactly one student row and one tutor row per turn. The idempotency lookup (§9, step 8)
+  finds both rows by (conversation_id, client_turn_id) and discriminates by role to detect full
+  replay vs. partial recovery.
+Rationale: The idempotency model at §9 and the retry model at §13.3 require two rows per
+  client_turn_id — one for the student message (step 11) and one for the tutor response (step 16).
+  The §18.2 constraint blocks the second insert. Without this fix, every non-crisis tutor turn
+  fails at step 16 with a uniqueness violation and cannot complete (P0 severity — total LISA
+  outage).
+Version: Spec defect — §18.2 constraint must be widened to include role in the uniqueness key.
+Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messages_idempotency_role.sql.
+Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
+  equivalently the partial unique index form with role included.
+
+SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
+Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
+  as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5
+  (loadOwnedConversation) — so a malformed request body is rejected with 400 before any DB lookup
+  occurs.
+WAS: Spec ordering — step 5 ownership check first, step 6 payload validation second. Under this
+  ordering, a request with a valid conversation_id but garbage body hits the DB for ownership
+  before discovering the body is invalid.
+IS: Implementation ordering — step 6 payload validation first (tutor-runtime.ts:622), step 5
+  ownership check second (tutor-runtime.ts:633). A malformed body returns 400 without touching
+  the database.
+Rationale: Fail-fast on shape. A 400 for an invalid body reveals nothing about conversation
+  ownership — the rejection is purely structural, independent of who owns the conversation. No
+  security property is lost. The reordering avoids a wasted DB round-trip on requests that would
+  fail validation anyway. Karl accepted.
+Version: Spec deviation — implementation intentionally diverges from the numbered step ordering
+  in §6.5. The spec text is correct as a logical description of what the pipeline does; only the
+  execution order differs.
+Artifact: PR for branch claude/lisa-tutor-inventory-27lras.
+Owner action: review — confirm acceptance of the step 5/6 ordering inversion in §6.5, or
+  renumber the spec steps to match the implementation order.
+
+SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
+Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated
+  conversation history. This entry moves it to V1, captured per-turn from model output via the
+  orchestrator response schema.
+WAS: §7.3 defines preferred_explanation_style as a V2 target requiring "LLM-based pattern extraction
+  over conversation history" and "sufficient observed conversation data to train extraction prompts."
+  V1 stores only last_struggled_skill and last_mastered_skill on teaching_profile summaries.
+IS: V1 adds a learner_observation block to the orchestrator response schema (Doc 03C wire contract).
+  The model emits an enum-constrained explanation_form observation per turn (or null when no signal).
+  Enum values: step_by_step, conceptual, example_driven, visual. Observations accumulate as a tally
+  in tutor_memory_summaries type teaching_profile content_json. A preferred style is derived when
+  total observations ≥ 5 and a single-leader plurality exists. The derived style feeds back through
+  Layer 3 memory retrieval to shape subsequent prompts. Free text is never written to memory —
+  enum-constrained values only, satisfying §7.6 Layer B (schema constraints prevent self-injection).
+  The learner_observation block is INTERNAL ONLY — never serialized to any client response body.
+Rationale: Karl ruling 2026-08-07 — the batch-extraction prerequisite (sufficient conversation
+  history + trained extraction prompts) is unnecessary for a four-value enum that the model can
+  classify per-turn from student response patterns. Per-turn capture provides immediate V1 value
+  ("Knows Me" moments) without a separate extraction pipeline. The four-value enum
+  (step_by_step | conceptual | example_driven | visual) scopes to explanation form only — other
+  dimensions (scaffolding level, test strategy) are deferred to independent fields once conversation
+  data proves reliable model classification.
+Version: Doc 03A → V3.2 (§7.3 explanation style capture moved to V1; §10.3 adds learner_observation
+  to orchestrator response contract).
+Artifact: PR for branch claude/ws-l2-context.
+Owner action: at next spec pass, update §7.3 to reflect V1 per-turn capture with the four-value
+  enum, and add learner_observation to §10.3 orchestrator response contract.
+
+SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | PROPOSED (Karl approved 2026-08-04)
+Change: The corpus mandates a human safety review workflow (Doc 03 §21.3) whose required actions
+  cannot be performed without reading the flagged conversation, but Doc 03B §3.1 line 243 forbids
+  admin absolutely on /api/tutor/*. Doc 07E has no provisions for staff access to tutor data.
+  The corpus mandates a capability its own role rule forbids.
+WAS: Doc 03B §3.1 blocks all non-student roles from /api/tutor/* (403 role_not_permitted). Doc 03
+  §21.3 mandates human review of crisis-flagged conversations. No access path connects the two.
+  Doc 07E provides no staff-access surface for tutor data.
+IS: (a) §3.1 stands unchanged for /api/tutor/*. student only. All other roles 403 role_not_permitted.
+  Already implemented in PR #519. (b) Safety review is a SEPARATE surface outside /api/tutor/*, not
+  a role exception. Read-only. Scoped to conversations where crisis_flagged = true. Not routed
+  through canAccessFeature — different authorization axis. Every read logged append-only with
+  reviewer identity, conversation id, timestamp, action. Write scope limited to classification
+  outcome and review disposition. (c) Doc 03 §21.3 tooling correction: the shared ticketing system
+  carries a conversation identifier and non-content metadata only. Conversation content never leaves
+  Supabase. As currently written §21.3 would export a minor's verbatim crisis disclosure to a
+  third-party SaaS, contradicting ADR-001 §3 and making the Doc 07E deletion cascade unenforceable.
+  (d) Open at V2: §21.3 transitions to a dedicated T&S function at 5,000 paid users or 20+ monthly
+  flags. At that scale the admin role is too broad for standing read access to minors' crisis
+  conversations. Flagged, not resolved.
+Rationale: Karl ruling 2026-08-04 — the contradiction is real. §3.1 is correct for the tutor API
+  surface (student only). The review capability is a separate access path, not an exception to §3.1.
+  Third-party export of crisis content contradicts ADR-001 §3 data-residency and Doc 07E deletion
+  cascade enforceability.
+Version: Doc 03B → V4.2, Doc 03 Main → V1.2.
+No code/schema change from this entry. Owner action: amend Doc 03B, Doc 03 §21.3, and Doc 07E at
+  next spec pass. V2 T&S function is tracked as open, not resolved.
+
+SCL-024 | 2026-08-04 | Doc 03A §18.7, §18.1, §18.2, §18.5 (config table shape + question FK type) | PROPOSED (Karl approved 2026-08-04)
+Change: Two defects in Doc 03A. Production is correct in both; the spec is wrong.
+  (a) Config table shape: Doc 03A §18.7 defines tutor_context_runtime_config with a bespoke shape
+  (id UUID PK, config_key, config_value). Production carries the Doc 01A §8 config template
+  (key TEXT PK, value, value_type, min_value, max_value, allowed_values, owner, description,
+  environment, updated_at, updated_by_profile_id), created by migration
+  supabase/migrations/20260610000000_ws2_config_constants.sql, applied and in ledger. Doc 01A Part I
+  owns config-table shape platform-wide. §18.7 restated a primitive another document owns,
+  differently.
+  (b) Question FK type: Doc 03A types questions(id) foreign keys as UUID. Production: questions.id
+  is TEXT, profiles.id is uuid. A UUID column cannot reference a TEXT primary key — the DDL fails.
+  Four columns across three tables: line 1734 §18.1 tutor_conversations.source_question_row_id;
+  line 1822 §18.2 tutor_messages.source_question_row_id; lines 2012 and 2016 §18.5
+  tutor_question_links.source_question_row_id and .related_question_row_id.
+WAS (a): §18.7 defined tutor_context_runtime_config with (id UUID PK, config_key TEXT, config_value
+  TEXT) — a bespoke shape that conflicts with the platform config template owned by Doc 01A §8.
+WAS (b): §18.1, §18.2, §18.5 typed source_question_row_id and related_question_row_id as UUID
+  REFERENCES questions(id). questions.id is TEXT in production — DDL would fail on type mismatch.
+IS (a): §18.7 removes its DDL and references Doc 01A §8 for config-table shape. §18.7 specifies
+  only the keys it requires and their semantics.
+IS (b): All four question FK columns (§18.1 tutor_conversations.source_question_row_id, §18.2
+  tutor_messages.source_question_row_id, §18.5 tutor_question_links.source_question_row_id and
+  .related_question_row_id) retype from UUID to TEXT. REFERENCES questions(id) ON DELETE SET NULL
+  unchanged.
+Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a) Doc 01A Part I
+  owns config-table shape; §18.7 should not restate it differently. (b) UUID cannot reference TEXT
+  PK — the DDL is structurally invalid against the live schema.
+Version: Doc 03A → V3.1 (config table reference + FK type corrections).
+No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
+  Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
+SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | PROPOSED
+Change: Extends SCL-024(b) to cover a fifth column and the wire-contract Zod schemas that carry
+  the same UUID assumption.
+  (c) Fifth column: tutor_instruction_assignments.source_question_row_id (§18.4). SCL-024(b) listed
+  four columns across three tables; this fifth column was omitted because §18.4 defines it with no
+  FK to questions(id), and the original rationale (UUID cannot reference TEXT PK) appeared not to
+  apply. Karl ruled: the same resolvedScope.source_question_row_id value is written to all four
+  tutor tables from a single code path; the column must carry the same type. questions.id is TEXT
+  under CHECK (id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$') — canonical SAT IDs, not UUIDs — making UUID
+  structurally impossible regardless of FK presence. The revert migration
+  (20260806010000_tutor_instruction_assignments_uuid_revert.sql) that would have cast this column
+  to UUID is dropped.
+  (d) Wire-contract Zod schemas: Doc 03B §4.1's wire protocol definitions validate
+  source_question_row_id and related_question_row_id as z.string().uuid(). These Zod schemas
+  (shared/tutor-contract.ts, shared/tutor-orchestrator-wire.ts, server/routes/tutor-runtime.ts)
+  would reject canonical SAT question IDs at parse time. Same root cause as (b) — the spec typed
+  question IDs as UUID when questions.id is TEXT.
+WAS (c): §18.4 typed tutor_instruction_assignments.source_question_row_id as UUID (no FK). A
+  revert migration existed to cast the production TEXT column back to UUID.
+WAS (d): Zod schemas validated source_question_row_id and related_question_row_id as
+  z.string().uuid() — 10 call sites across 4 files (shared + server + generated worker copy).
+IS (c): Column stays TEXT, matching the other four question-FK columns. Revert migration dropped.
+IS (d): Zod schemas validate with z.string().regex(CANONICAL_ID_PATTERN) using the existing
+  single-source-of-truth regex from shared/question-bank-contract.ts. All 10 call sites fixed.
+Rationale: Karl ruling 2026-08-06 — extend SCL-024, do not revert to UUID. The same value flows
+  to all four tables from one code path; mixed types are a latent runtime failure. The Zod UUID
+  validation would reject every real question ID at parse time.
+Artifact: PR #523, branch claude/lisa-tutor-inventory-27lras.
+Owner action: at next spec pass, retype §18.4 source_question_row_id to TEXT and update Doc 03B
+  §4.1 wire-contract definitions to use canonical question ID format, not UUID.
+
+SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | PROPOSED (Karl approved 2026-08-04)
+Change: Doc 03C V3.0 contains no crisis classifier stage. Full-text scan returns zero occurrences
+  of crisis, self-harm, safety classifier, or classifier. Three siblings delegate crisis handling
+  there: Doc 03 §21.1 (crisis detection trigger), INV-03-16 (crisis classification before main
+  response generation), Doc 03A §17 schema (crisis_flagged column + idx_tutor_conversations_crisis
+  index), Doc 03B §0 and §13 step 14 (crisis flow references). Doc 03C.1 has no crisis test
+  scenario.
+WAS: Doc 03C V3.0 has no crisis classifier stage. The pipeline spec gap means four sibling docs
+  reference a capability Doc 03C does not define. Doc 03C §4.5 "Content safety pre-pass" is named
+  misleadingly — it performs prompt-token bounding and its own body says it is not safety
+  enforcement. Doc 03C V3.0's "no further architectural change expected before V1 launch" is
+  falsified by this addition.
+IS: Two-layer crisis classifier gate, both pre-generation, parallel:
+  Layer 1: deterministic signature match against a tutor_crisis_signatures table, reusing the
+  tutor_injection_signatures pattern (Doc 03A). Layer 2: model inference on a new classifier_class
+  alias (alongside flash_class and pro_class; unknown alias continues to throw).
+  New pipeline stage inserted before Vertex invocation. Ordering is load-bearing: INV-03-16 requires
+  "before main response generation."
+  Either layer positive → crisis path per Doc 03 §21.2 (unchanged, referenced not restated).
+  Failure modes: Layer 2 failure → retry once, then Layer 1 result stands, turn proceeds, turn is
+  force-enqueued to the §21.3 review queue, SLI increments. Failure-rate breach pages ops rather
+  than flooding the queue. This is a deliberate narrow exception to fail-closed — blocking returns
+  an error to a student who may be the person the gate exists for. Layer 1 signature table
+  unreadable → fail closed on the turn.
+  Doc 03C §4.5 "Content safety pre-pass" renamed — it does prompt-token bounding, not safety
+  enforcement. The name collides with the crisis classifier stage.
+Rationale: Karl ruling 2026-08-04 — Doc 03C is the sole pipeline-architecture spec and four sibling
+  docs delegate crisis handling to it. The gap is structural, not editorial. Two-layer design
+  provides deterministic baseline (Layer 1) with model-backed depth (Layer 2). Fail-open on Layer 2
+  only is justified because the alternative (fail-closed) returns an error to the student who may be
+  in crisis — the person the gate exists to help.
+Version: Doc 03C → V3.1, Doc 03C.1 → V1.2, Doc 03A → V3.1 (crisis signature table).
+No code/schema change from this entry. Owner action: add crisis classifier stage to Doc 03C,
+  add classifier_class alias to Doc 03A, add crisis test scenarios to Doc 03C.1, rename §4.5 at
+  next spec pass.
+
 SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
 Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
   (tag the skill the student must exercise to reach the correct answer), disambiguation table for
@@ -327,6 +594,118 @@ Effect: unpaid 40/day quota resets at 00:00 America/Chicago. No code/migration c
   America/Chicago on prod. Supersedes Q13's UTC clause for quota_reset_timezone only.
 Status: PROPOSED → Karl promotes to canonical.
 
+### SCL-P-CONTENT-01 — Content-column disposition contract (anti-whack-a-mole) [PROPOSED]
+Decision: Every `questions` column has a declared disposition — served_pre_submit / server_only /
+  post_submit_only — in a registry, enforced by a CI test that FAILS when a new column appears undeclared.
+  served_pre_submit: id, section, stem, passage, options, assets, difficulty, domain, skill_codes, item_type.
+  server_only: option_metadata, correct_variants, estimated_time_seconds, premium_flag, quality_score,
+  issue_flags, source_lineage, generation_attribution, version, source_type, status, created_at,
+  published_at, retired_at. post_submit_only: correct_answer, explanation.
+Rationale: recurring defect class — a content column exists on `questions` but the RPC never SELECTs it, so
+  it arrives null (caused the R&W passage P0, then option_metadata). A per-column declared contract makes a
+  new column require a conscious serve/don't-serve decision; ends the class.
+Effect: RPC widened to serve passage + assets; option_metadata/estimated_time_seconds carried server-side
+  only. Migration applied, verified live. premium_flag documented permanently unused (Karl: no premium
+  questions ever; all questions servable to all users).
+
+### SCL-P-SERVABLE-01 — servable_questions view is the shared flagged-question gate [PROPOSED]
+Decision: `servable_questions` = questions WHERE status='published' AND issue_flags empty. Created WITH
+  (security_invoker=true); GRANT SELECT to service_role ONLY. select_practice_pool_random selects FROM the
+  view. All student-serving question reads route through it (practice-topics, questions-runtime student
+  paths, full-length selection); a CI gate FAILS on direct `.from("questions")` / `FROM questions` in
+  student-serving paths (authoring/ingestion allowlisted by path).
+Rationale: one shared definition of "servable" so review + full-length inherit the flagged-question gate
+  rather than re-implementing it. security_invoker + service_role-only grant are load-bearing: the view is
+  SELECT* over answer-bearing columns (correct_answer, explanation, option_metadata), so a broader grant
+  would expose the bank WITH ANSWER KEYS via PostgREST.
+Effect: flagged questions excluded from selection everywhere; historical reconstruction of already-served
+  items may still read `questions` directly (a question flagged after a student saw it must still render in
+  review). Migration applied, verified live (security_invoker=true, service_role-only ACL confirmed).
+SECURITY BOUNDARY: the servable_questions grant must NEVER be widened beyond service_role. Load-bearing.
+
+### SCL-P-OPTMETA-01 — option_metadata is server-only LISA context, never client [PROPOSED]
+Decision: option_metadata ({"A":{"role":"correct","error_taxonomy":...},...}) is the ANSWER KEY plus
+  distractor taxonomy. Server-only: TYPE-ABSENT from StudentSafeQuestionDTO (compile error to add), like
+  correct_variants. Consumed solely as LISA (tutor) context; NEVER shown to the student, pre- or
+  post-submit.
+Rationale: Karl ruling — error_taxonomy is valuable tutor context (LISA can say "you made an equation-setup
+  error") but naming it to the student pre-submit leaks the correct role, and post-submit adds no student
+  value over the explanation. Simpler and safer as server-only, full stop.
+Effect: carried RPC→snapshot server-side; never in any student payload. LISA reads it; INV-03-01 (LISA never
+  writes mastery) unaffected.
+
+### SCL-P-ASSETS-01 — assets discriminated union; role is an anti-leak boundary [PROPOSED]
+Decision: assets = { v:1, items:[{ id, kind:"svg"|"table", role:"stimulus"|"option"|"explanation", alt,
+  option_key?, ... }] }. Inline, text-representable (not object storage). ROLE is an anti-leak boundary:
+  pre-submit serves ONLY stimulus/option; explanation-role (worked-solution figures) is post-submit only.
+  filterAssetsPreSubmit FAILS CLOSED — unknown v / missing role / unknown role / unknown kind → excluded,
+  never passthrough.
+Rationale: inline SVG keeps figures legible to LISA (labels as text), transacts+deletes with the row (no
+  second deletion surface vs object storage), and is AI-authorable/auditable. Role-filtering server-side
+  prevents explanation figures (which reveal the answer) leaking pre-submit. Fail-closed because an
+  unrecognized asset shape is exactly when least should be revealed (3rd fail-open default caught in
+  program — quota, rate-limiter, assets).
+Effect: assets threaded RPC→snapshot→DTO→client (renderer deferred — 0 authored). Server role-filter live.
+  Authoring note (out of engine scope): inline SVG is an XSS vector — authoring gate must reject
+  script/event-handler/external-href; renderer sanitizes.
+
+### SCL-P-SECTION-01 — Shared section resolver; fail-closed label [PROPOSED]
+Decision: shared/section-display.ts exports isMathSection() and sectionDisplayLabel() (M→Math, RW→R&W).
+  Badge, Desmos gate, and reference-sheet gate all call these — no ad-hoc section comparison in the client.
+  sectionDisplayLabel returns null (not a defaulted section) on unknown; callers render a neutral state.
+  Resume path reads the item's canonical section ('M'/'RW'), not the session-spec full-word string.
+Rationale: a hardcoded/broken section check badged Math questions "R&W" (data verified clean). One shared
+  resolver kills the double-surface. Fail-closed on the label (not defaulting to a section) prevents the
+  "unknown → R&W" recurrence; the earlier percentage-style default WAS that recurrence.
+Effect: badge correct on practice + resume + review + full-length (shared helper, reusable by those
+  surfaces). Client-only, no migration.
+
+### SCL-P-EXPLANATION-01 — Post-submit explanation/answer values route through MathRenderer [PROPOSED]
+Decision: post-submit explanation text and answer-value displays route through MathRenderer (which
+  tokenizes inline $...$ within prose) at all render sites: QuestionRenderer, NumericEntryInput,
+  FullLengthReviewView (explanation + answer values), review-errors. Placed INSIDE the post-submit
+  result panel (anti-leak: never renders pre-submit).
+Rationale: explanations are prose-with-inline-math ("the $4$th value is $18$"); the stem is whole-string
+  math. The renderer already tokenized inline $...$; the gap was threading, not parsing. MathRenderer is a
+  display component — placement inside the post-submit gate preserves anti-leak.
+Effect: LaTeX in explanations/answers renders typeset, not raw source. Client-only, no migration.
+Content note (authoring track): explanations must reference answer VALUES, not option letters — options
+  randomize per serve, so "Option B" is meaningless. Existing "Option B" explanations are authored wrong
+  for the randomized model; report-an-issue loop surfaces them.
+
+### SCL-P-DESMOS-01 — Desmos resizable side-panel; CSS min-width is the pixel floor [PROPOSED]
+Decision: Bluebook-parity resizable side panel (question left, Desmos right, draggable divider), math-only,
+  graphing+scientific modes with per-mode state preserved across switches. Split activates at 1062px;
+  below it the calculator stacks full-width (never a sub-450px side panel). The 450px floor (Desmos stacks
+  its expression list below the graph under 450px container width) is enforced by BROWSER CSS min-width:496px
+  on the calculator panel (host = 496−16 padding = 480 ≥ 450) — the single source of truth, honored on first
+  render. calculator.resize() called on container-change/toggle/mode-switch (autosize:true explicit).
+Rationale: a fixed sidebar structurally can't clear 450px on laptops; a resizable panel with a real pixel
+  floor can. CSS min-width is browser-continuous and needs no JS — chosen over a JS ResizeObserver
+  recompute (which was found dead in prod: ref mounted after the effect ran → observer never created; a
+  phantom mechanism everyone believed enforced the floor). One mechanism, browser-enforced.
+Effect: calculator renders desktop layout ≥450px on first paint and after resize; verified by a test that
+  measures resolved pixels (stubbed BCR), not the CSS attribute. Divider drag/keyboard are library-provided,
+  bounded by the CSS floor; real interaction proof deferred to a Playwright e2e follow-up. Client-only.
+
+### SCL-P-REFSHEET-01 — Math reference sheet typeset + complete [PROPOSED]
+Decision: all 12 official Bluebook formulas render via MathRenderer (were plain text); added the two
+  missing special-right-triangle figures (30-60-90: x, x√3, 2x; 45-45-90: s, s, s√2) as labeled figures.
+Rationale: plain-text "pi r^2" beside a typeset question is a visible quality tell; the two special
+  triangles are on the official sheet and heavily used. Verified against the official Bluebook sheet.
+Effect: reference sheet matches the official sheet, typeset. Client-only.
+
+### SCL-P-OWNERSHIP-01 — Practice session reads are non-owning [PROPOSED]
+Decision: /state and /resume READ session state WITHOUT writing client_instance_id — no adoption, no claim.
+  Ownership mutates ONLY on the answer-submit WRITE. client_instance_id is generated once and persisted
+  (sessionStorage) so a refresh reuses the same id. Concurrent /state + /resume on load are de-duplicated.
+Rationale: a P0 — practice sessions 409'd on refresh. Root cause: client_instance_id regenerated per-render
+  + /state and /resume racing to ADOPT ownership (one adopts, the other 409s). Reads don't conflict; only
+  concurrent writes/claims do — so ownership enforcement belongs on the write path, and a read must never
+  409 on instance mismatch. Reads-non-owning verified by code-trace (stored id unchanged after a read).
+Effect: refresh/resume works; a new tab/device can read a resumable session without stealing it. Pure
+  client/server-logic fix, NO migration.
+
 ---
 
 ## Owner spec-annotations owed (fold into locked docs on next revision)
@@ -342,3 +721,5 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 02B §15 — SCL-015 (item selection: weakness-ranked + seeded Fisher-Yates → filter-driven native random prepopulation; adaptive deferred post-launch)
 - Doc 02B (flow-cards) — SCL-016 (flow-cards deferred post-launch; useAdaptivePractice retired)
 - Doc 05E — SCL-007/008/006 commit to docs/Spec after Codex audit
+- Doc 03 INV-03-03 — SCL-029 (past_due/trialing: platform entitlement predicate wins over literal "status=active")
+- Doc 03 INV-03-10 — SCL-030 (scope narrowed to model-generated text; structured API fields excluded; LISA-FULL-007 tracks enforcement)
