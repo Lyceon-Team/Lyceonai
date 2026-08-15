@@ -61,6 +61,7 @@ The identity header is not optional. Without it, the orchestrator treats the aud
 - Any MCQ with a second defensible answer, or a distractor that is merely weaker rather than wrong.
 - Grid-in stored value not value-equivalent to your derivation.
 - A tag inconsistent with the §A.4 convention, or a non-frozen skill string.
+- Any explanation that names an option by letter (A/B/C/D) or says "the correct answer is \<letter\>." Options are shuffled at serve and letters are never shown; letter references are gibberish to the student. Explanations must reference options by content only. **This is a comprehension check, not a regex scan.** Read the explanation and decide per A–D occurrence whether it is an option reference (must be changed), a math variable/angle/vertex (leave alone), or an ordinary word like the article "A" (leave alone). A capital letter inside LaTeX (`$\sin A$`, `$\cos(B)$`, `triangle $ABC$`) is math, not an option reference.
 
 ## Note on your standing (pre-graduation)
 

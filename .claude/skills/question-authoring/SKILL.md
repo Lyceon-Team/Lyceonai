@@ -72,15 +72,20 @@ Calibrate to taxonomy.json: 1 = single-step/direct; 2 = two-to-three steps or on
 
 RW items are self-contained: answerable from the passage alone, no outside knowledge. Math items have no passage (`passage: null`).
 
-## 9. Output discipline
+## 9. No letter references in explanations (hard rule)
+
+Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student.
+
+## 10. Output discipline
 
 - Write **only** NDJSON records to your assigned part-file path — one object per line.
 - No prose, no markdown, no SQL, no scratchpad, no reasoning in the file. Nothing but records.
 - Author exactly the assignment: the given `(skill × difficulty × count)` leaves, no more, no fewer.
 
-## 10. Before you finish (DoD)
+## 11. Before you finish (DoD)
 
 - Every record parses as JSON and matches the schema.
 - Every `section`/`domain`/`skill`/`difficulty`/`error_taxonomy` literal was copied from taxonomy.json.
 - Every MCQ has exactly one defensible answer; every distractor is checkably wrong.
+- Every explanation references options by content, never by letter (A/B/C/D).
 - Record count == assigned count. File contains records only.
