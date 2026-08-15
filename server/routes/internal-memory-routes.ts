@@ -1,25 +1,26 @@
 /**
- * @spec [Doc-03A_V3 §9.4, §7.6 Layer A; Doc-03C_V3 §8.3; Doc-01A Part VII §62–§67]
- * @implemented 2026-08-14
+ * @spec [Doc-03A_V3 §9.4, §7.6 Layer A; Doc-03C_V3 §8.3, §9.3]
+ * @implemented 2026-08-15
  *
  * plain English: Internal-only route for memory compaction writeback.
- * Called by Cloud Tasks (or directly in local dev) to execute the four-step
- * chat compaction algorithm. This route is mounted under `/api/internal`
- * behind HMAC-SHA256 service auth (01A Part VII) — it is never publicly
- * accessible. The `compaction-worker → main-api` service pair is verified
- * by the shared `internalAuthMiddleware`.
+ * Called by Cloud Tasks to execute the four-step chat compaction algorithm.
+ * This route is mounted under `/api/internal` behind OIDC token verification
+ * per Doc 03C §9.3 — Cloud Tasks mints the OIDC token at delivery time using
+ * the `lisa-cloud-tasks@PROJECT.iam` service account.
  *
  * expected outcome: POST /api/internal/memory/compact-writeback receives
  * the Cloud Tasks payload `{job_type, conversation_id, student_id,
- * trigger_reason, request_id}`, verifies the HMAC signature, executes
+ * trigger_reason, request_id}`, verifies the OIDC token, executes
  * compaction, and returns the result.
  *
  * trade-offs:
- *  - Auth: HMAC-SHA256 per 01A Part VII. Secrets loaded from
- *    `service_auth_secrets` table per §64. Timestamp tolerance 5min (§66).
- *    Rotation overlap supported — verification tries all active secrets.
- *  - §67: all auth failures return 401 with minimal body
- *    `{error:{code:"internal_auth_failed",message:"Internal authentication failed"}}`.
+ *  - Auth: OIDC per Doc 03C §9.3 (replaces HMAC per 01A Part VII). OIDC
+ *    tokens are minted at DELIVERY time, not enqueue time — retries get
+ *    fresh credentials instead of permanently failing on stale timestamps.
+ *  - §9.3: the handler validates audience (handler URL), issuer
+ *    (accounts.google.com), and service account email. Cloud Run IAM
+ *    (`roles/run.invoker`) provides the first layer; this is defense-in-depth.
+ *  - §67-style response: all auth failures return 401 with minimal body.
  *    Failure reasons logged server-side at WARN (never in response).
  *
  * edge cases:
@@ -28,17 +29,30 @@
  *  - Compaction failure: returns 200 with `{ ok: false, reason }` so Cloud
  *    Tasks does not retry (the failure is logged and the stale-summary sweep
  *    will catch it). Only unexpected errors return 500 (triggers retry).
- *  - HMAC timestamp set at Cloud Tasks enqueue time; first delivery is within
- *    seconds (well within 5-min tolerance). Retries after 5min fail on
- *    timestamp — acceptable because stale-summary sweep catches orphans.
+ *  - Missing OIDC env vars (CLOUD_TASKS_OIDC_AUDIENCE, CLOUD_TASKS_SERVICE_ACCOUNT):
+ *    middleware construction fails at startup with a clear error log.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { logger } from "../logger";
 import { executeCompaction } from "../services/tutor-compaction";
-import { internalAuthMiddleware } from "../../packages/shared/internal-auth/verify-middleware";
+import { oidcAuthMiddleware } from "../../packages/shared/internal-auth/verify-oidc-middleware";
 
 const router = Router();
+
+// ── OIDC config ──────────────────────────────────────────────────────
+
+/**
+ * @spec [Doc-03C_V3 §9.3]
+ *
+ * OIDC audience: the handler URL that Cloud Tasks targets. The token's
+ * audience claim must match this value. Configured per deployment.
+ *
+ * OIDC service account: the SA that Cloud Tasks uses to mint tokens.
+ * Must match `lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com`.
+ */
+const OIDC_AUDIENCE = process.env.CLOUD_TASKS_OIDC_AUDIENCE ?? "";
+const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
 
 // ── Request schema ────────────────────────────────────────────────────
 
@@ -57,7 +71,10 @@ const compactionTaskSchema = z.object({
 
 router.post(
   "/memory/compact-writeback",
-  internalAuthMiddleware("main-api"),
+  oidcAuthMiddleware({
+    expectedAudience: OIDC_AUDIENCE,
+    expectedServiceAccount: OIDC_SERVICE_ACCOUNT,
+  }),
   async (req: Request, res: Response): Promise<void> => {
     const parsed = compactionTaskSchema.safeParse(req.body);
     if (!parsed.success) {
