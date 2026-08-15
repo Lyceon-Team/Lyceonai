@@ -48,7 +48,6 @@
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { getRecentMessages } from "./tutor-memory";
 import { compactConversation } from "../lib/tutor-orchestrator-client";
 import { TutorConfig } from "./tutor-config";
 
