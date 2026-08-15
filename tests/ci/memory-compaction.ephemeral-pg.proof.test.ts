@@ -437,7 +437,6 @@ describe.skipIf(!CAN_RUN)(
         [STUDENT_A],
       );
       expect(before.rowCount).toBe(1);
-      const originalId = before.rows[0].id;
 
       // UPSERT with updated content (different conversation, more topics)
       const updatedContent = makeValidContent(CONVERSATION_B);
