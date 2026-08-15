@@ -3122,6 +3122,13 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         )?.[0] ?? null)
       : null;
 
+  // This guard owns ALL non-served-item replay detection. sessionItem.status
+  // was loaded from DB above and is not reassigned between here and the CAS
+  // update at line ~3378 (.eq("status", "served")). Any duplicate-check code
+  // after this block would be unreachable — do not re-add a second
+  // sessionItem.status !== "served" guard downstream.
+  // @provenance: Codex re-audit 2026-08-15 identified a duplicate guard at the
+  //   former "defensive replay" site as unreachable dead code; removed.
   if (sessionItem.status !== "served") {
     const resolvedAttemptKey =
       typeof sessionItem.client_attempt_id === "string"
@@ -3297,82 +3304,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         idempotentRetried: true,
       });
     }
-  }
-
-  if (sessionItem.status !== "served") {
-    const resolvedAttemptKey =
-      typeof sessionItem.client_attempt_id === "string"
-        ? sessionItem.client_attempt_id.trim()
-        : "";
-    const replayAttemptKey = payload.clientAttemptId?.trim() ?? "";
-    if (
-      sessionItem.outcome &&
-      resolvedAttemptKey &&
-      replayAttemptKey === resolvedAttemptKey
-    ) {
-      // @spec [Doc-05A §11, Codex audit Fix 2] Defensive path: diagnostic
-      // mastery re-emission — same rationale as the primary replay path above.
-      // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation.
-      // @rescoped [2026-08-15] Warn-and-continue — see Codex REVISE.
-      if (session.mode === "diagnostic") {
-        const replayNow = sessionItem.answered_at ?? now;
-        // Best-effort mastery re-emission — always continues.
-        await reEmitDiagnosticMasteryIfNeeded({
-          sessionItem,
-          userId,
-          requestId,
-          sessionId: payload.sessionId,
-          isCorrect: !!sessionItem.is_correct,
-          occurredAt: replayNow,
-        });
-        const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
-          sessionId: payload.sessionId,
-          session,
-          now: replayNow,
-        });
-        return res.json({
-          sessionId: payload.sessionId,
-          sessionItemId: sessionItem.id,
-          isCorrect: !!sessionItem.is_correct,
-          mode: responseMode,
-          ...(isGridIn
-            ? { correctAnswer: canonicalQuestion.correct_answer }
-            : { correctOptionId }),
-          explanation,
-          feedback: sessionItem.is_correct
-            ? "Correct"
-            : sessionItem.outcome === "skipped"
-              ? "Skipped"
-              : "Incorrect",
-          stats: await getSessionStats(payload.sessionId, userId),
-          state: shouldComplete ? "completed" : "active",
-          idempotentRetried: true,
-        });
-      }
-      return res.json({
-        sessionId: payload.sessionId,
-        sessionItemId: sessionItem.id,
-        isCorrect: !!sessionItem.is_correct,
-        mode: responseMode,
-        ...(isGridIn
-          ? { correctAnswer: canonicalQuestion.correct_answer }
-          : { correctOptionId }),
-        explanation,
-        feedback: sessionItem.is_correct
-          ? "Correct"
-          : sessionItem.outcome === "skipped"
-            ? "Skipped"
-            : "Incorrect",
-        stats: await getSessionStats(payload.sessionId, userId),
-        idempotentRetried: true,
-      });
-    }
-
-    return res.status(409).json({
-      error: "session_item_not_open",
-      message: "This practice item was already resolved by another request.",
-      requestId,
-    });
   }
 
   const { data: updatedItem, error: updateItemErr } = await supabaseServer
