@@ -10,9 +10,9 @@
  * by the shared `internalAuthMiddleware`.
  *
  * expected outcome: POST /api/internal/memory/compact-writeback receives
- * the Cloud Tasks payload `{job_type, conversation_id, student_id,
- * trigger_reason, request_id}`, verifies the HMAC signature, executes
- * compaction, and returns the result.
+ * the Cloud Tasks payload `{job_type, conversation_id, trigger_reason,
+ * request_id}`, verifies the HMAC signature, executes compaction (which
+ * derives student_id from the conversation row), and returns the result.
  *
  * trade-offs:
  *  - Auth: HMAC-SHA256 per 01A Part VII. Secrets loaded from
@@ -48,7 +48,6 @@ const router = Router();
 const compactionTaskSchema = z.object({
   job_type: z.literal("compaction"),
   conversation_id: z.string().uuid(),
-  student_id: z.string().uuid(),
   trigger_reason: z.enum(["close", "threshold", "stale"]),
   request_id: z.string().uuid(),
 });
@@ -77,15 +76,10 @@ router.post(
       return;
     }
 
-    const { conversation_id, student_id, request_id, trigger_reason } =
-      parsed.data;
+    const { conversation_id, request_id, trigger_reason } = parsed.data;
 
     try {
-      const result = await executeCompaction(
-        conversation_id,
-        student_id,
-        request_id,
-      );
+      const result = await executeCompaction(conversation_id, request_id);
 
       if (!result.ok) {
         // Expected failures (below threshold, Vertex error, etc.): return 200
