@@ -25,7 +25,48 @@
 
 ## Entries
 
-SCL-031 | 2026-08-14 | Doc 03A §9.4 vs Doc 03C IAM (memory compaction write path) | PROPOSED
+SCL-032 | 2026-08-15 | Doc 03B §5.5 step 4 vs implementation scope for INV-03-02 (live exam gate on POST /messages only) | OPEN (owner-promoted 2026-08-14)
+Change: Doc 03B §5.5 (Start Conversation server steps) lists "Check live exam block (§3.4)" as
+step 4, identical to §6.5 step 4 (Append Turn). §3.4 says "Before allowing any tutor turn, check
+if the student has an active full-length exam session." The current implementation gates only
+POST /api/tutor/messages (append turn, §6.5) — not POST /api/tutor/conversations (start/reuse,
+§5.5), not GET /api/tutor/conversations/:id (replay, §7), not GET /api/tutor/conversations
+(list, §8), not POST /api/tutor/conversations/:id/close (close, §9). Karl ruled: current scope
+is correct. §5.5 step 4 should be removed from the spec.
+WAS: §5.5 step 4 says the start-conversation route must check the live exam block (§3.4). §3.4
+uses the word "turn" ("Before allowing any tutor turn"). INV-03-02 (Doc 03:2144) says "API
+endpoints return explicit access-denied errors during active exam session state" — the plural
+"endpoints" is ambiguous. Read together, these provisions could require the gate on all tutor
+endpoints including start-conversation.
+IS: The gate applies to POST /api/tutor/messages ONLY. The four ungated routes are correct without
+it. Karl’s three reasons:
+(a) A conversation is cheap and stateless at creation — it stores a row in tutor_conversations
+with no student content, no Vertex call, no mastery effect. Blocking creation during an exam
+would mean the student has to create a new conversation after the exam and loses the scope
+reference they set up beforehand. No invariant is violated by allowing creation.
+(b) §3.4’s own language says "turn" — a turn is an append-turn (POST /messages), not a
+conversation shell. The gate’s enforcement point is the moment content generation begins
+(Vertex inference), which only happens on append-turn.
+(c) Replay (GET /:id) and list (GET /) are read-only operations on existing data. Blocking them
+during an exam would prevent a student from reading past tutoring conversations while studying
+for the exam — a hostile UX with no security justification. Close (POST /:id/close) is a
+lifecycle transition with no content generation. None of these routes trigger Vertex inference
+or produce new tutor output. INV-03-02’s purpose is preventing exam integrity breach via live
+AI generation, not locking the student out of their conversation history.
+Rationale: Karl ruling 2026-08-15. The invariant’s purpose is preventing live AI tutoring during
+an active exam — the concern is that real-time Vertex inference could be used to cheat. That
+concern applies only to the append-turn route, which is the sole path to model inference.
+Creation, replay, list, and close are inert from an exam-integrity perspective.
+Version: Doc 03B §5.5 step 4 should be removed at next spec pass. No spec version bump (the
+invariant INV-03-02 is unchanged; the spec step list is the defect, not the invariant).
+No code change. No schema change. Implementation already correct.
+Owner action: at next spec pass, remove "Check live exam block (§3.4)" from §5.5 step 4 (Start
+Conversation server steps). The step remains in §6.5 step 4 (Append Turn). Optionally: amend
+§3.4’s prose to say "Before allowing any tutor turn" rather than using the broader "any tutor
+request", and annotate INV-03-02 to clarify that "API endpoints" means "content-generating
+endpoints" (i.e., POST /api/tutor/messages only).
+
+SCL-031 | 2026-08-14 | Doc 03A §9.4 vs Doc 03C IAM (memory compaction write path) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03A §9.4 says the memory compaction writer goes through the BFF with HMAC service auth
   (compaction-worker → main-api). Doc 03C IAM table grants the compaction worker direct Supabase
   write access to tutor_memory_summaries. These two provisions appear to contradict — one routes
@@ -54,7 +95,7 @@ Owner action: at next spec pass, annotate Doc 03C IAM table to clarify that the 
   canonical flow.
 Artifact: PR #566, branch claude/ws-l4-memory-writer.
 
-SCL-030 | 2026-08-13 | Doc 03 INV-03-10 scope narrowing (model-generated text, not structured API fields) | PROPOSED
+SCL-030 | 2026-08-13 | Doc 03 INV-03-10 scope narrowing (model-generated text, not structured API fields) | OPEN (owner-promoted 2026-08-14)
 Change: INV-03-10 ("Canonical question IDs never appear in student-facing LISA output") and
   Doc 03B §16.6 line 2360 (source_question_canonical_id returned in conversation responses) appeared
   to conflict. Karl ruled: both stand. They govern different things.
@@ -87,7 +128,7 @@ No code change. No schema change.
 Owner action: at next spec pass, annotate INV-03-10 with the text/field boundary. Track
   LISA-FULL-007 (canonical-ID output scanner) as the open enforcement item.
 
-SCL-029 | 2026-08-13 | Doc 03 INV-03-03 past_due status (platform entitlement predicate wins) | PROPOSED
+SCL-029 | 2026-08-13 | Doc 03 INV-03-03 past_due status (platform entitlement predicate wins) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03 INV-03-03 says "LISA requires entitlement.tier=paid AND entitlement.status=active on
   every request. No grandfathering, no cached entitlement beyond single-request TTL." Read literally,
   this excludes past_due and trialing. Doc 01's platform entitlement predicate treats the canonical
@@ -121,7 +162,7 @@ No code change. No schema change. Implementation already correct.
 Owner action: at next spec pass, amend INV-03-03 to reference the platform entitlement predicate
   rather than the literal string 'active', or add a parenthetical noting the platform-defined set.
 
-SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | PROPOSED
+SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03A §18.2 defines the idempotency constraint as
   UNIQUE (conversation_id, client_turn_id). Doc 03B §9 and §13.3 describe an idempotency model
   that persists two tutor_messages rows per client_turn_id per turn — one role='student' (§6.5
@@ -146,7 +187,7 @@ Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messa
 Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
   equivalently the partial unique index form with role included.
 
-SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
+SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
   as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5
   (loadOwnedConversation) — so a malformed request body is rejected with 400 before any DB lookup
@@ -168,7 +209,7 @@ Artifact: PR for branch claude/lisa-tutor-inventory-27lras.
 Owner action: review — confirm acceptance of the step 5/6 ordering inversion in §6.5, or
   renumber the spec steps to match the implementation order.
 
-SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
+SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated
   conversation history. This entry moves it to V1, captured per-turn from model output via the
   orchestrator response schema.
@@ -196,7 +237,7 @@ Artifact: PR for branch claude/ws-l2-context.
 Owner action: at next spec pass, update §7.3 to reflect V1 per-turn capture with the four-value
   enum, and add learner_observation to §10.3 orchestrator response contract.
 
-SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | PROPOSED (Karl approved 2026-08-04)
+SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | OPEN (owner-promoted 2026-08-14)
 Change: The corpus mandates a human safety review workflow (Doc 03 §21.3) whose required actions
   cannot be performed without reading the flagged conversation, but Doc 03B §3.1 line 243 forbids
   admin absolutely on /api/tutor/*. Doc 07E has no provisions for staff access to tutor data.
@@ -224,7 +265,7 @@ Version: Doc 03B → V4.2, Doc 03 Main → V1.2.
 No code/schema change from this entry. Owner action: amend Doc 03B, Doc 03 §21.3, and Doc 07E at
   next spec pass. V2 T&S function is tracked as open, not resolved.
 
-SCL-024 | 2026-08-04 | Doc 03A §18.7, §18.1, §18.2, §18.5 (config table shape + question FK type) | PROPOSED (Karl approved 2026-08-04)
+SCL-024 | 2026-08-04 | Doc 03A §18.7, §18.1, §18.2, §18.5 (config table shape + question FK type) | OPEN (owner-promoted 2026-08-14)
 Change: Two defects in Doc 03A. Production is correct in both; the spec is wrong.
   (a) Config table shape: Doc 03A §18.7 defines tutor_context_runtime_config with a bespoke shape
   (id UUID PK, config_key, config_value). Production carries the Doc 01A §8 config template
@@ -254,7 +295,7 @@ Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a
 Version: Doc 03A → V3.1 (config table reference + FK type corrections).
 No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
   Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
-SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | PROPOSED
+SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | OPEN (owner-promoted 2026-08-14)
 Change: Extends SCL-024(b) to cover a fifth column and the wire-contract Zod schemas that carry
   the same UUID assumption.
   (c) Fifth column: tutor_instruction_assignments.source_question_row_id (§18.4). SCL-024(b) listed
@@ -285,7 +326,7 @@ Artifact: PR #523, branch claude/lisa-tutor-inventory-27lras.
 Owner action: at next spec pass, retype §18.4 source_question_row_id to TEXT and update Doc 03B
   §4.1 wire-contract definitions to use canonical question ID format, not UUID.
 
-SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | PROPOSED (Karl approved 2026-08-04)
+SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03C V3.0 contains no crisis classifier stage. Full-text scan returns zero occurrences
   of crisis, self-harm, safety classifier, or classifier. Three siblings delegate crisis handling
   there: Doc 03 §21.1 (crisis detection trigger), INV-03-16 (crisis classification before main
@@ -321,7 +362,7 @@ No code/schema change from this entry. Owner action: add crisis classifier stage
   add classifier_class alias to Doc 03A, add crisis test scenarios to Doc 03C.1, rename §4.5 at
   next spec pass.
 
-SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
+SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | OPEN (owner-promoted 2026-08-14)
 Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
   (tag the skill the student must exercise to reach the correct answer), disambiguation table for
   5 boundary rules (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
@@ -339,7 +380,7 @@ Rationale: Prerequisite for volume batch (70 questions across all 29 skills). Wi
   defects on first Codex submission).
 Owner action: review disambiguation table and tiebreak rule at next spec pass.
 
-SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | PROPOSED
+SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | OPEN (owner-promoted 2026-08-14)
 Change: Grid-in correctness model clarified. Grading is by **value-equivalence** (`gridInResponseMatches`,
   `shared/question-ingestion-qa.ts:436-444`); `correct_variants` is the deterministically-generated
   canonical set (`gridInAcceptedForms` — reduced fraction + exact decimal, no trailing zeros), validated
@@ -356,7 +397,7 @@ Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer=
   conflation of grading-acceptance with `correct_variants` caused the false-positive class.
   Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
 Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
-SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | PROPOSED
+SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | OPEN (owner-promoted 2026-08-14)
 Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
 WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
   failed with 422 (MCQ-only `normalizeAnswerKey` rejected numeric answers). Anti-leak was structurally
@@ -370,7 +411,7 @@ Rationale: MCFR contract practice lane. Migration `20260708000000_practice_grid_
   but NOT applied — Karl applies. Review + full-length lanes are named follow-ons.
 Build artifact: PR on branch `claude/grid-in-anti-leak-audit-v0wha5`.
 
-SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
+SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | OPEN (owner-promoted 2026-08-14)
 Change: Canonical skill taxonomy frozen as **29 Title Case strings** in governance doc §A.4.
 WAS: skill strings in mixed sentence-case/title-case (internal inconsistency).
 IS: all 29 skills locked to Title Case (e.g., `Linear Equations in One Variable`, `Words in Context`),
@@ -379,7 +420,7 @@ Rationale: single source of truth; no deployed SQL function hardcodes skill stri
   doc is the sole authority — its internal consistency is load-bearing. Title Case matches CB convention.
 No code/DB change from this entry. Owner action: confirm Title Case convention at next spec pass.
 
-SCL-018 | 2026-06-28 | Doc 02A §15/§16 / questions_governance.md §A.3 (grid-in / free-response scope) | PROPOSED
+SCL-018 | 2026-06-28 | Doc 02A §15/§16 / questions_governance.md §A.3 (grid-in / free-response scope) | OPEN (owner-promoted 2026-08-14)
 Change: Free-response (grid-in / student-produced response) is **in scope for prelaunch**, superseding
   the prior MCQ-only deferral.
 WAS (gap-closure plan proposal): grid-in deferred to post-launch (MCQ-only for launch).
@@ -392,7 +433,7 @@ Rationale: Karl ruling (2026-06-28) — grid-in represents ~25% of Digital SAT M
 Owner action: apply migration; promote into Doc 02A spec at next revision; update Doc 02A §23 QA gate
   "Four options present" to exempt grid-in items (`options.length = 0` is valid for `grid_in`).
 
-SCL-016 | Doc 02B (flow-cards / adaptive practice flow) | PROPOSED (Karl promotes)
+SCL-016 | Doc 02B (flow-cards / adaptive practice flow) | OPEN (owner-promoted 2026-08-14)
 Change: flow-cards is a POST-LAUNCH feature; removed from launch UI.
 WAS: flow-cards positioned as the adaptive practice flow for students (the useAdaptivePractice path).
 IS: flow-cards deferred to post-launch as an Anki/Quizlet-style spaced-practice feature, distinct from
@@ -402,7 +443,7 @@ Rationale: CEO ruling 2026-06 — launch practice is the unified filter-driven e
   salvaged as the Vertical B weakest-skills filter preset.
 Owner action: revise any 02B flow-cards prose to post-launch status. No code/DB change from this entry.
 
-SCL-015 | Doc 02B §15 (item selection) | PROPOSED (Karl promotes)
+SCL-015 | Doc 02B §15 (item selection) | OPEN (owner-promoted 2026-08-14)
 Change: launch selection is filter-driven native random; adaptive/weakness-ranked selection is POST-LAUNCH.
 WAS (02B §15): weakness-first ranking from mastery + seeded Fisher-Yates determinism ("reconstructable
   from recorded state", INV-02B-07) + cold-start blueprint-balanced sampling.
@@ -420,7 +461,7 @@ Rationale: CEO ruling — launch practice is standard filter-driven prepopulatio
 Owner action: revise Doc 02B §15 to the filter-driven launch model; mark adaptive selection post-launch.
 No code/DB change from this entry; records the spec-vs-launch-model divergence.
 
-SCL-014 | Doc 05A §4.6/§11.4 (canonical_mastery_events source tables) | PROPOSED (Karl promotes)
+SCL-014 | Doc 05A §4.6/§11.4 (canonical_mastery_events source tables) | OPEN (owner-promoted 2026-08-14)
 Change: spec prose names event-source tables that differ from the live canonical schema. DB is canonical.
 WAS (spec text): canonical_mastery_events derives events from `test_session_answers` (full_length_answer)
    and `practice_attempts_v0` (practice_attempt).
@@ -441,7 +482,7 @@ Rationale: WS-0 mastery vertical (PR @cleanup) grounded the TS write-bridge agai
 No DB migration. No code change. Owner action: update Doc 05A §4.6/§11.4 table names at next spec pass.
 
 ### SCL-013 — Doc 01 V8 §40.3 subscription-cancellation timing corrected to match built implementation
-**Date:** 2026-06-27 · **Status:** PROPOSED
+**Date:** 2026-06-27 · **Status:** OPEN (owner-promoted 2026-08-14)
 **Touches:** Doc 01 V8 §40.3 (line ~1968)
 **Change:** subscription-cancellation timing corrected to match built + proven implementation.
 WAS: "Stripe subscription cancellation is initiated immediately" (at deletion request)
@@ -459,7 +500,7 @@ makes NO Stripe-cancellation claim.
 **Artifact:** PR-5e Bucket 2 (spec correction). Karl separately updating Doc 01 §40.3 to match.
 
 ### SCL-012 — Doc 01 §19 deletion-confirmation prompt framing aligned to counsel ruling
-**Date:** 2026-06-27 · **Status:** PROPOSED
+**Date:** 2026-06-27 · **Status:** OPEN (owner-promoted 2026-08-14)
 **Touches:** Doc 01 §19 (line ~1047)
 **Change:** deletion-confirmation prompt framing aligned to counsel ruling.
 WAS: "...the confirmation prompt should explain ... data anonymization at T+7"
@@ -569,7 +610,7 @@ applied + verified live 2026-06-25; 5b write-path stamping next).
 **Reason:** PR-2 build findings (deadlock analysis + GUC atomicity). Two CI guards hardened against comment-false-match by perturbation proof.
 **Artifact:** Migration 20260625000000, applied + verified live.
 
-### SCL-P-GRIDIN-01 — Grid-in serve+grade rides MCQ machinery [PROPOSED]
+### SCL-P-GRIDIN-01 — Grid-in serve+grade rides MCQ machinery [OPEN (owner-promoted 2026-08-14)]
 Decision: Grid-in (numeric-entry) item type extends the existing MCQ practice pipeline — same serializer,
   same practice_session_items table (+ question_item_type, question_correct_variants), same submit handler,
   same select_practice_pool_random (widened to return item_type + correct_variants). Branches only at
@@ -578,7 +619,7 @@ Rationale: minimize deviation / no double surfaces. One pipeline, one branch poi
 Effect: grid-in fully functional end-to-end (serve → typed entry → grade → feedback). Backend migration
   applied [date], Codex-passed, verified live (RPC stays plain invoker).
 
-### SCL-P-GRIDIN-02 — Grid-in grades against correct_variants (snapshot, not lookup) [PROPOSED]
+### SCL-P-GRIDIN-02 — Grid-in grades against correct_variants (snapshot, not lookup) [OPEN (owner-promoted 2026-08-14)]
 Decision: Grid-in correctness matches submitted answer against the correct_variants accepted-forms ARRAY
   snapshotted into practice_session_items at prepopulation — NOT against correct_answer alone, and NOT via
   submit-time lookup back to questions. correct_answer = canonical display value; correct_variants = grading
@@ -587,14 +628,14 @@ Rationale: session-immutable grading, single answer-data path (parallel-paths-bu
   accepts equivalent forms (e.g. "1/5" for "0.2").
 Effect: grading is snapshot-based, immutable per session, correct across equivalent forms.
 
-### SCL-P-GRIDIN-03 — Malformed grid-in fails closed, no fallback grading [PROPOSED]
+### SCL-P-GRIDIN-03 — Malformed grid-in fails closed, no fallback grading [OPEN (owner-promoted 2026-08-14)]
 Decision: If a grid-in canonical value won't parse / variants missing, the handler FAILS CLOSED (data-
   integrity error), NOT a fallback grading path. One grading path only.
 Rationale: a malformed answer is a data defect to surface loudly, not grade around; a second grading path
   is a double surface.
 Effect: bad grid-in data errors visibly rather than silently mis-grading.
 
-### SCL-P-SUBMIT-01 — Unified answer-submission dispatcher (action-boundary validation) [PROPOSED]
+### SCL-P-SUBMIT-01 — Unified answer-submission dispatcher (action-boundary validation) [OPEN (owner-promoted 2026-08-14)]
 Decision: Client answer-submission validates WELL-FORMEDNESS via ONE dispatcher, isSubmittableAnswer(
   question, answer), called by BOTH the submit-button state (canSubmit) AND the submitAnswer action guard.
   Enforced at the ACTION boundary before payload/fetch (the disabled button is UX-only and bypassable via
@@ -608,12 +649,12 @@ Effect: both item types validated at one bypass-proof point; MCQ gained action-b
 Follow-on (logged, not built): button-enabled + inline-error a11y pattern for BOTH types (industry trend
   away from disabled-button); apply to both to preserve symmetry when done.
 
-### SCL-P-GRIDIN-FOLLOWON — Review + full-length grid-in [PROPOSED]
+### SCL-P-GRIDIN-FOLLOWON — Review + full-length grid-in [OPEN (owner-promoted 2026-08-14)]
 Note: grid-in serve+grade was built for PRACTICE only. Review and full-length session-item surfaces have
   the SAME latent grid-in gap and need the same fix shape before they serve grid-in. Full-length also
   blocked on 04B seam. Named follow-on, not yet built.
 
-### SCL-P-TZRESET — quota_reset_timezone: UTC (Q13) → America/Chicago [PROPOSED]
+### SCL-P-TZRESET — quota_reset_timezone: UTC (Q13) → America/Chicago [OPEN (owner-promoted 2026-08-14)]
 Context: Q13 locked UTC for quota daily-reset determinism. Live config landed as America/Chicago;
   Karl confirmed Central is the intended boundary.
 Rationale: US-only launch userbase; midnight Central is a more humane reset than 00:00 UTC. DST wobble
@@ -621,9 +662,9 @@ Rationale: US-only launch userbase; midnight Central is a more humane reset than
   determinism concern was load-bearing for seeded selection (deferred, SCL-P-ADAPTIVE), not quota windows.
 Effect: unpaid 40/day quota resets at 00:00 America/Chicago. No code/migration change; config row already
   America/Chicago on prod. Supersedes Q13's UTC clause for quota_reset_timezone only.
-Status: PROPOSED → Karl promotes to canonical.
+Status: OPEN (owner-promoted 2026-08-14).
 
-### SCL-P-CONTENT-01 — Content-column disposition contract (anti-whack-a-mole) [PROPOSED]
+### SCL-P-CONTENT-01 — Content-column disposition contract (anti-whack-a-mole) [OPEN (owner-promoted 2026-08-14)]
 Decision: Every `questions` column has a declared disposition — served_pre_submit / server_only /
   post_submit_only — in a registry, enforced by a CI test that FAILS when a new column appears undeclared.
   served_pre_submit: id, section, stem, passage, options, assets, difficulty, domain, skill_codes, item_type.
@@ -637,7 +678,7 @@ Effect: RPC widened to serve passage + assets; option_metadata/estimated_time_se
   only. Migration applied, verified live. premium_flag documented permanently unused (Karl: no premium
   questions ever; all questions servable to all users).
 
-### SCL-P-SERVABLE-01 — servable_questions view is the shared flagged-question gate [PROPOSED]
+### SCL-P-SERVABLE-01 — servable_questions view is the shared flagged-question gate [OPEN (owner-promoted 2026-08-14)]
 Decision: `servable_questions` = questions WHERE status='published' AND issue_flags empty. Created WITH
   (security_invoker=true); GRANT SELECT to service_role ONLY. select_practice_pool_random selects FROM the
   view. All student-serving question reads route through it (practice-topics, questions-runtime student
@@ -652,7 +693,7 @@ Effect: flagged questions excluded from selection everywhere; historical reconst
   review). Migration applied, verified live (security_invoker=true, service_role-only ACL confirmed).
 SECURITY BOUNDARY: the servable_questions grant must NEVER be widened beyond service_role. Load-bearing.
 
-### SCL-P-OPTMETA-01 — option_metadata is server-only LISA context, never client [PROPOSED]
+### SCL-P-OPTMETA-01 — option_metadata is server-only LISA context, never client [OPEN (owner-promoted 2026-08-14)]
 Decision: option_metadata ({"A":{"role":"correct","error_taxonomy":...},...}) is the ANSWER KEY plus
   distractor taxonomy. Server-only: TYPE-ABSENT from StudentSafeQuestionDTO (compile error to add), like
   correct_variants. Consumed solely as LISA (tutor) context; NEVER shown to the student, pre- or
@@ -663,7 +704,7 @@ Rationale: Karl ruling — error_taxonomy is valuable tutor context (LISA can sa
 Effect: carried RPC→snapshot server-side; never in any student payload. LISA reads it; INV-03-01 (LISA never
   writes mastery) unaffected.
 
-### SCL-P-ASSETS-01 — assets discriminated union; role is an anti-leak boundary [PROPOSED]
+### SCL-P-ASSETS-01 — assets discriminated union; role is an anti-leak boundary [OPEN (owner-promoted 2026-08-14)]
 Decision: assets = { v:1, items:[{ id, kind:"svg"|"table", role:"stimulus"|"option"|"explanation", alt,
   option_key?, ... }] }. Inline, text-representable (not object storage). ROLE is an anti-leak boundary:
   pre-submit serves ONLY stimulus/option; explanation-role (worked-solution figures) is post-submit only.
@@ -678,7 +719,7 @@ Effect: assets threaded RPC→snapshot→DTO→client (renderer deferred — 0 a
   Authoring note (out of engine scope): inline SVG is an XSS vector — authoring gate must reject
   script/event-handler/external-href; renderer sanitizes.
 
-### SCL-P-SECTION-01 — Shared section resolver; fail-closed label [PROPOSED]
+### SCL-P-SECTION-01 — Shared section resolver; fail-closed label [OPEN (owner-promoted 2026-08-14)]
 Decision: shared/section-display.ts exports isMathSection() and sectionDisplayLabel() (M→Math, RW→R&W).
   Badge, Desmos gate, and reference-sheet gate all call these — no ad-hoc section comparison in the client.
   sectionDisplayLabel returns null (not a defaulted section) on unknown; callers render a neutral state.
@@ -689,7 +730,7 @@ Rationale: a hardcoded/broken section check badged Math questions "R&W" (data ve
 Effect: badge correct on practice + resume + review + full-length (shared helper, reusable by those
   surfaces). Client-only, no migration.
 
-### SCL-P-EXPLANATION-01 — Post-submit explanation/answer values route through MathRenderer [PROPOSED]
+### SCL-P-EXPLANATION-01 — Post-submit explanation/answer values route through MathRenderer [OPEN (owner-promoted 2026-08-14)]
 Decision: post-submit explanation text and answer-value displays route through MathRenderer (which
   tokenizes inline $...$ within prose) at all render sites: QuestionRenderer, NumericEntryInput,
   FullLengthReviewView (explanation + answer values), review-errors. Placed INSIDE the post-submit
@@ -702,7 +743,7 @@ Content note (authoring track): explanations must reference answer VALUES, not o
   randomize per serve, so "Option B" is meaningless. Existing "Option B" explanations are authored wrong
   for the randomized model; report-an-issue loop surfaces them.
 
-### SCL-P-DESMOS-01 — Desmos resizable side-panel; CSS min-width is the pixel floor [PROPOSED]
+### SCL-P-DESMOS-01 — Desmos resizable side-panel; CSS min-width is the pixel floor [OPEN (owner-promoted 2026-08-14)]
 Decision: Bluebook-parity resizable side panel (question left, Desmos right, draggable divider), math-only,
   graphing+scientific modes with per-mode state preserved across switches. Split activates at 1062px;
   below it the calculator stacks full-width (never a sub-450px side panel). The 450px floor (Desmos stacks
@@ -717,14 +758,14 @@ Effect: calculator renders desktop layout ≥450px on first paint and after resi
   measures resolved pixels (stubbed BCR), not the CSS attribute. Divider drag/keyboard are library-provided,
   bounded by the CSS floor; real interaction proof deferred to a Playwright e2e follow-up. Client-only.
 
-### SCL-P-REFSHEET-01 — Math reference sheet typeset + complete [PROPOSED]
+### SCL-P-REFSHEET-01 — Math reference sheet typeset + complete [OPEN (owner-promoted 2026-08-14)]
 Decision: all 12 official Bluebook formulas render via MathRenderer (were plain text); added the two
   missing special-right-triangle figures (30-60-90: x, x√3, 2x; 45-45-90: s, s, s√2) as labeled figures.
 Rationale: plain-text "pi r^2" beside a typeset question is a visible quality tell; the two special
   triangles are on the official sheet and heavily used. Verified against the official Bluebook sheet.
 Effect: reference sheet matches the official sheet, typeset. Client-only.
 
-### SCL-P-OWNERSHIP-01 — Practice session reads are non-owning [PROPOSED]
+### SCL-P-OWNERSHIP-01 — Practice session reads are non-owning [OPEN (owner-promoted 2026-08-14)]
 Decision: /state and /resume READ session state WITHOUT writing client_instance_id — no adoption, no claim.
   Ownership mutates ONLY on the answer-submit WRITE. client_instance_id is generated once and persisted
   (sessionStorage) so a refresh reuses the same id. Concurrent /state + /resume on load are de-duplicated.
@@ -752,3 +793,16 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 05E — SCL-007/008/006 commit to docs/Spec after Codex audit
 - Doc 03 INV-03-03 — SCL-029 (past_due/trialing: platform entitlement predicate wins over literal "status=active")
 - Doc 03 INV-03-10 — SCL-030 (scope narrowed to model-generated text; structured API fields excluded; LISA-FULL-007 tracks enforcement)
+- Doc 03B §5.5 — SCL-032 (remove step 4 live exam block from Start Conversation; amend §3.4 "turn" language; annotate INV-03-02 scope)
+- Doc 03C IAM table — SCL-031 (annotate compaction worker Supabase access as defense-in-depth, not canonical write path)
+- Doc 03A §18.2 — SCL-028 (widen idempotency constraint to include role in uniqueness key)
+- Doc 03B §6.5 — SCL-027 (confirm step 5/6 ordering inversion: payload validation before ownership check)
+- Doc 03A §7.3/§10.3 — SCL-026 (update §7.3 to V1 per-turn capture; add learner_observation to §10.3 orchestrator response contract)
+- Doc 03B §3.1, Doc 03 §21.3, Doc 07E — SCL-025 (safety review is separate surface; amend §21.3 tooling to keep content in Supabase)
+- Doc 03A §18.7/§18.1/§18.2/§18.4/§18.5, Doc 03B §4.1 — SCL-024 (config table → Doc 01A §8; retype question FK columns UUID→TEXT; wire-contract Zod schemas)
+- Doc 03C, Doc 03C.1, Doc 03A — SCL-023 (add crisis classifier stage; add classifier_class alias; add crisis test scenarios; rename §4.5)
+- questions_governance.md §A.4 — SCL-022 (review skill-classification disambiguation table and tiebreak rule)
+- questions_governance.md §A.3/§A.8 — SCL-021 (confirm value-equivalence correctness model; align with Doc 04B)
+- questions_governance.md §A.4 — SCL-020 (confirm 29-skill Title Case convention)
+- Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
+- Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
