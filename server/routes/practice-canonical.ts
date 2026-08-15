@@ -2734,6 +2734,8 @@ function gradeAnswer(
 // applyMasteryEvent is idempotent on event_id: if the prior attempt succeeded,
 // this is a no-op; if it failed, this repairs the gap.
 // @implemented [2026-08-08] Re-emit mastery for diagnostic idempotent replays
+// @rescoped [2026-08-15] Warn-and-continue — mastery is a separate vertical;
+// the diagnostic must not 500 on mastery-emission failure on replay either.
 async function reEmitDiagnosticMasteryIfNeeded(opts: {
   sessionItem: SessionItemRow;
   userId: string;
@@ -2741,9 +2743,7 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
   sessionId: string;
   isCorrect: boolean;
   occurredAt: string;
-}): Promise<
-  { ok: true } | { ok: false; status: number; body: Record<string, unknown> }
-> {
+}): Promise<{ ok: true }> {
   const canonicalId =
     typeof opts.sessionItem.question_id === "string"
       ? opts.sessionItem.question_id
@@ -2765,9 +2765,9 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
   );
 
   if (!canonicalId || !difficultyBucket || !section || !domain || !skill) {
-    // Missing metadata — log and fail-closed for diagnostic.
+    // Missing metadata — log but continue. The answer is already recorded.
     logger.error(
-      "[diagnostic] mastery re-emission impossible (missing metadata) — fail-closed",
+      "[diagnostic] mastery re-emission skipped (missing metadata) — warn-and-continue",
       {
         requestId: opts.requestId,
         sessionId: opts.sessionId,
@@ -2777,16 +2777,7 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
         skill: skill || null,
       },
     );
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "diagnostic_mastery_emission_failed",
-        message:
-          "Diagnostic item lacks required metadata for mastery re-emission on replay. This is a data integrity defect.",
-        requestId: opts.requestId,
-      },
-    };
+    return { ok: true };
   }
 
   try {
@@ -2805,7 +2796,7 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
     });
     if (!masteryResult.ok) {
       logger.error(
-        "[diagnostic] mastery re-emission failed on replay — fail-closed",
+        "[diagnostic] mastery re-emission failed on replay — warn-and-continue",
         {
           requestId: opts.requestId,
           sessionId: opts.sessionId,
@@ -2813,38 +2804,18 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
           masteryError: masteryResult.error ?? "unknown",
         },
       );
-      return {
-        ok: false,
-        status: 500,
-        body: {
-          error: "diagnostic_mastery_emission_failed",
-          message:
-            "Diagnostic mastery event could not be durably written on replay. Retry the submission.",
-          requestId: opts.requestId,
-        },
-      };
     }
   } catch (masteryErr: unknown) {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
     logger.error(
-      "[diagnostic] mastery re-emission threw on replay — fail-closed",
+      "[diagnostic] mastery re-emission threw on replay — warn-and-continue",
       {
         requestId: opts.requestId,
         sessionId: opts.sessionId,
         message: errMsg,
       },
     );
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "diagnostic_mastery_emission_failed",
-        message:
-          "Diagnostic mastery event threw an unexpected error on replay. Retry the submission.",
-        requestId: opts.requestId,
-      },
-    };
   }
 
   return { ok: true };
@@ -3170,7 +3141,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // reaching the completion path, so the session may still be ACTIVE.
       if (session.mode === "diagnostic") {
         const replayNow = sessionItem.answered_at ?? new Date().toISOString();
-        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+        // Best-effort mastery re-emission — always continues.
+        await reEmitDiagnosticMasteryIfNeeded({
           sessionItem,
           userId,
           requestId,
@@ -3178,9 +3150,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           isCorrect: !!sessionItem.is_correct,
           occurredAt: replayNow,
         });
-        if (!reEmitResult.ok) {
-          return res.status(reEmitResult.status).json(reEmitResult.body);
-        }
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
           session,
@@ -3273,7 +3242,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // successful re-emission.
       if (session.mode === "diagnostic") {
         const replayNow = existingByKey.answered_at ?? now;
-        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+        // Best-effort mastery re-emission — always continues.
+        await reEmitDiagnosticMasteryIfNeeded({
           sessionItem: existingByKey,
           userId,
           requestId,
@@ -3281,9 +3251,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           isCorrect: !!existingByKey.is_correct,
           occurredAt: replayNow,
         });
-        if (!reEmitResult.ok) {
-          return res.status(reEmitResult.status).json(reEmitResult.body);
-        }
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
           session,
@@ -3344,7 +3311,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation.
       if (session.mode === "diagnostic") {
         const replayNow = sessionItem.answered_at ?? now;
-        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+        // Best-effort mastery re-emission — always continues.
+        await reEmitDiagnosticMasteryIfNeeded({
           sessionItem,
           userId,
           requestId,
@@ -3352,9 +3320,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           isCorrect: !!sessionItem.is_correct,
           occurredAt: replayNow,
         });
-        if (!reEmitResult.ok) {
-          return res.status(reEmitResult.status).json(reEmitResult.body);
-        }
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
           session,
@@ -3447,7 +3412,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // idempotent replay path — source-count parity is not sufficient.
       if (session.mode === "diagnostic") {
         const raceNow = raced.answered_at ?? now;
-        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+        // Best-effort mastery re-emission — always continues.
+        await reEmitDiagnosticMasteryIfNeeded({
           sessionItem: raced,
           userId,
           requestId,
@@ -3455,9 +3421,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           isCorrect: !!raced.is_correct,
           occurredAt: raceNow,
         });
-        if (!reEmitResult.ok) {
-          return res.status(reEmitResult.status).json(reEmitResult.body);
-        }
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
           session,
@@ -3551,39 +3514,37 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         eventId: sessionItem.id,
         questionId: canonicalId,
       });
-      if (!masteryResult.ok && session.mode === "diagnostic") {
-        logger.error("[diagnostic] mastery emission failed — fail-closed", {
-          requestId,
-          sessionId: payload.sessionId,
-          questionCanonicalId: canonicalId,
-          masteryError: masteryResult.error ?? "unknown",
-        });
-        return res.status(500).json({
-          error: "diagnostic_mastery_emission_failed",
-          message:
-            "Diagnostic mastery event could not be durably written. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
-          requestId,
-        });
-      } else if (!masteryResult.ok) {
-        // Non-diagnostic: existing warn-and-continue posture (practice sessions
-        // do not have the 40-event completeness invariant).
-        logger.warn("[practice] mastery emission returned error", {
-          requestId,
-          sessionId: payload.sessionId,
-          questionCanonicalId: canonicalId,
-          masteryError: masteryResult.error ?? "unknown",
-        });
+      if (!masteryResult.ok) {
+        // Warn-and-continue for ALL modes (including diagnostic).
+        // The answer was already recorded; mastery is a downstream consumer.
+        // Mastery emission is best-effort — the diagnostic still advances.
+        // @rescoped [2026-08-15] Mastery is a separate vertical; the diagnostic
+        // must not 500 on mastery-emission failure. Data is written correctly
+        // (diagnostic_attempt, source_family=practice per §11.4); mastery will
+        // consume it when that vertical works.
+        const logLevel = session.mode === "diagnostic" ? "error" : "warn";
+        logger[logLevel](
+          `[${session.mode}] mastery emission returned error — warn-and-continue`,
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            masteryError: masteryResult.error ?? "unknown",
+          },
+        );
       }
     } else if (
       canonicalId &&
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
-      // Diagnostic sessions must never skip mastery emission — all 40 items
-      // must have complete metadata. Missing metadata is a data integrity defect.
+      // Missing metadata — log as error for diagnostic (data integrity issue
+      // worth investigating), but warn-and-continue for all modes. The answer
+      // was already recorded; the student must not be blocked.
+      // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
       if (session.mode === "diagnostic") {
         logger.error(
-          "[diagnostic] mastery emission impossible (missing metadata) — fail-closed",
+          "[diagnostic] mastery emission skipped (missing metadata) — warn-and-continue",
           {
             requestId,
             sessionId: payload.sessionId,
@@ -3593,12 +3554,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
             skill: skill || null,
           },
         );
-        return res.status(500).json({
-          error: "diagnostic_mastery_emission_failed",
-          message:
-            "Diagnostic item lacks required metadata for mastery emission. This is a data integrity defect.",
-          requestId,
-        });
       }
       logger.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
@@ -3611,9 +3566,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
+      // Invalid difficulty — log as error for diagnostic (data integrity issue),
+      // but warn-and-continue for all modes.
+      // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
       if (session.mode === "diagnostic") {
         logger.error(
-          "[diagnostic] mastery emission impossible (invalid difficulty) — fail-closed",
+          "[diagnostic] mastery emission skipped (invalid difficulty) — warn-and-continue",
           {
             requestId,
             sessionId: payload.sessionId,
@@ -3621,12 +3579,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
             rawDifficulty: sessionItem.question_difficulty ?? null,
           },
         );
-        return res.status(500).json({
-          error: "diagnostic_mastery_emission_failed",
-          message:
-            "Diagnostic item has an invalid difficulty bucket for mastery emission. This is a data integrity defect.",
-          requestId,
-        });
       }
       logger.warn(
         "[practice] mastery emission skipped (invalid difficulty bucket)",
@@ -3643,24 +3595,17 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   } catch (masteryErr: unknown) {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
-    // Diagnostic: fail-closed — re-throw so the request does not succeed.
-    if (session.mode === "diagnostic") {
-      logger.error("[diagnostic] mastery emission threw — fail-closed", {
+    // Warn-and-continue for ALL modes (including diagnostic).
+    // The answer was already recorded; mastery is a downstream consumer.
+    // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
+    logger[session.mode === "diagnostic" ? "error" : "warn"](
+      `[${session.mode}] mastery emission threw — warn-and-continue`,
+      {
         requestId,
         sessionId: payload.sessionId,
         message: errMsg,
-      });
-      return res.status(500).json({
-        error: "diagnostic_mastery_emission_failed",
-        message:
-          "Diagnostic mastery event threw an unexpected error. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
-        requestId,
-      });
-    }
-    logger.warn("[practice] mastery logging failed", {
-      requestId,
-      message: errMsg,
-    });
+      },
+    );
   }
 
   const answerConfig = await loadPracticeConfig();
