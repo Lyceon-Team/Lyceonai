@@ -1004,7 +1004,6 @@ BEGIN
     WHERE e.occurred_at IS NOT NULL
   ),
   islands AS (
-    -- gaps-and-islands: consecutive days share (d - row_number()) as the island key.
     SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d))::integer AS grp
     FROM active_days
   )
