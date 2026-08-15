@@ -8,12 +8,20 @@
  * title/badge) to CanonicalPracticePage so the shared practice loop runs
  * with skip/abandon hidden and correct completion navigation.
  *
+ * Diagnostic sessions span BOTH sections (8 domains × 5 items). They have
+ * no single section — the answer loop (GET /sessions/:id/next) is mode-
+ * agnostic. Diagnostic mode is detected BEFORE the single-section resolver
+ * so it enters the answer loop without requiring a section value.
+ *
  * expected outcome: navigating to /practice/session/:id for a diagnostic
  * session shows "Diagnostic Assessment" title, hides skip/end-session,
- * and redirects to /dashboard on completion.
+ * and redirects to /dashboard on completion — even when the state API
+ * returns section: null (which it always does for diagnostic sessions).
  *
  * trade-offs: mode detection is a simple string check ("diagnostic") —
- * no enum import needed since the server already validates.
+ * no enum import needed since the server already validates. The "section"
+ * prop passed to CanonicalPracticePage for diagnostic is "math" (unused
+ * during resume — only matters for new session creation).
  */
 import { useRoute } from "wouter";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
@@ -95,6 +103,29 @@ export default function ResumePracticePage() {
     );
   }
 
+  const isDiagnostic = session.mode === "diagnostic";
+
+  // ── Diagnostic sessions span BOTH sections (8 domains across Math + R&W).
+  // They have no single section — the answer loop (GET /sessions/:id/next)
+  // is mode-agnostic and serves items regardless of section, and the
+  // calculator display reads question?.section from the current item, not
+  // the prop.  Skip single-section resolution for diagnostic; the "section"
+  // prop value is unused during resume (only matters for new session
+  // creation), so "math" is a safe placeholder that satisfies the type.
+  if (isDiagnostic) {
+    return (
+      <CanonicalPracticePage
+        title="Diagnostic Assessment"
+        badgeLabel="Diagnostic"
+        section="math"
+        sessionId={sessionId}
+        isDiagnostic
+        completionHref="/dashboard"
+      />
+    );
+  }
+
+  // ── Regular (single-section) sessions: resolve and guard ──
   const resolvedSection: "math" | "reading_writing" | null = isMathSection(
     session.section,
   )
@@ -122,24 +153,13 @@ export default function ResumePracticePage() {
     );
   }
 
-  const isDiagnostic = session.mode === "diagnostic";
-
   return (
     <CanonicalPracticePage
-      title={
-        isDiagnostic
-          ? "Diagnostic Assessment"
-          : `Resuming ${sectionDisplayLabel(session.section) ?? "Practice"} Session`
-      }
-      badgeLabel={
-        isDiagnostic
-          ? "Diagnostic"
-          : (sectionDisplayLabel(session.section) ?? "Practice")
-      }
+      title={`Resuming ${sectionDisplayLabel(session.section) ?? "Practice"} Session`}
+      badgeLabel={sectionDisplayLabel(session.section) ?? "Practice"}
       section={resolvedSection}
       sessionId={sessionId}
-      isDiagnostic={isDiagnostic}
-      completionHref={isDiagnostic ? "/dashboard" : "/practice"}
+      completionHref="/practice"
     />
   );
 }
