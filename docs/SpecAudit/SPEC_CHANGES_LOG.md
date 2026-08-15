@@ -25,6 +25,37 @@
 
 ## Entries
 
+SCL-033 | 2026-08-15 | Doc 03 INV-03-05 narrowed — guardian visibility of LISA-derived topic coverage | OPEN (owner-approved 2026-08-15)
+
+Change: INV-03-05 ("Zero guardian LISA access") as locked forbids "derived indicators" without qualification. Doc 03D §11 specifies a student- and guardian-visible surface showing which skills a student has recently discussed with LISA — a derived indicator sourced from tutor_conversations. Read literally, the invariant forbids it. Karl ruled the surface should exist and the invariant should be narrowed rather than the two left in contradiction.
+
+WAS: Doc 03 Part XI, INV-03-05 — "Zero guardian LISA access. Guardians have no LISA access of any kind: no conversation content, no analytics, no usage counters, no derived indicators." Doc 03A §16.2–16.3 elaborates the same prohibition. Read as written, ANY value computed from a LISA table is forbidden to guardians, including a bare list of skill names.
+
+IS: INV-03-05 forbids guardian access to LISA CONTENT and to indicators that reveal, characterize, or infer from the substance of a conversation. It does not forbid a bare enumeration of which skills a conversation touched.
+
+Permitted to guardians:
+- Skill-level topic coverage: which skills the student has recently discussed with LISA, expressed as skill names from the canonical taxonomy and nothing else.
+
+Forbidden to guardians, unchanged:
+- Conversation content, verbatim or summarized, in whole or in part
+- Message counts, session counts, turn counts, duration, frequency, or any usage volume
+- Sentiment, engagement, effort, confidence, or any affective characterization
+- Inferred traits of any kind, including learning style (Doc 03D §11.2)
+- Crisis flags, crisis review status, or any signal derived from the crisis path (Doc 03 §21.4 governs; guardian contact runs through the §21.3 human process only)
+- Anything the student said
+
+Rationale: A skill name is a fact about curriculum coverage, not about the student. "Your child has been working on Linear Equations with the tutor" carries the same informational weight as the practice-surface data guardians already receive and reveals nothing about what was said, how well it went, or how the student behaved. The guardian-trust pillar is served by a parent being able to see that tutoring is happening and on what — that is the product's value, visible.
+
+The prohibition's purpose is protecting the confidentiality of a minor's conversation with a tutor. A skill name does not touch that. Usage counters do — frequency and volume characterize the student's behavior and struggle — and they remain forbidden, which is why the "no usage counters" clause is preserved verbatim rather than narrowed alongside.
+
+Boundary test for any future addition to this surface: if the value would change based on WHAT the student said rather than only WHICH skill was discussed, it is forbidden. Topic coverage passes. Everything else in the original prohibition fails.
+
+Scope note: Doc 03D §11.1's second visible item — skills with recurring difficulty — is derived from practice_session_items, not from any LISA table. It is practice data guardians already receive and is outside INV-03-05's scope entirely. This SCL does not address it and no narrowing is required for it.
+
+Version: Doc 03 INV-03-05 — "no derived indicators" narrowed to "no indicators derived from conversation substance." Doc 03A §16.2–16.3 requires the parallel narrowing. No spec version bump; this SCL records the interpretive boundary. No code change (the surface is unbuilt). No schema change.
+
+Owner action: at next spec pass, amend INV-03-05 in Doc 03 Part XI and the corresponding prohibition in Doc 03A §16.2–16.3 to carry the content-substance qualifier and the boundary test above. Until amended, the locked text reads as an absolute prohibition and this SCL governs.
+
 SCL-032 | 2026-08-15 | Doc 03B §5.5 step 4 vs implementation scope for INV-03-02 (live exam gate on POST /messages only) | OPEN (owner-promoted 2026-08-14)
 Change: Doc 03B §5.5 (Start Conversation server steps) lists "Check live exam block (§3.4)" as
 step 4, identical to §6.5 step 4 (Append Turn). §3.4 says "Before allowing any tutor turn, check
@@ -806,3 +837,4 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - questions_governance.md §A.4 — SCL-020 (confirm 29-skill Title Case convention)
 - Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
 - Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
+- Doc 03 INV-03-05, Doc 03A §16.2–16.3 — SCL-033 (narrow "no derived indicators" to "no indicators derived from conversation substance"; permit bare skill-topic coverage to guardians)
