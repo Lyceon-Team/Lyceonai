@@ -398,13 +398,15 @@ The canonical shape is a keyed object (not an array), validated by `optionMetada
 
 Every question must have an explanation that:
 
-1. **States the correct answer** clearly at the start ("The correct answer is B.")
+1. **States the correct answer** clearly at the start by its content, never by letter
 2. **Walks through the solution** step-by-step (Math) or provides the textual evidence and reasoning (RW)
 3. **Uses LaTeX** for all math notation (matching the stem/options conventions)
-4. **Addresses key distractors** when pedagogically useful — explain why a common wrong answer is wrong
+4. **Addresses key distractors** when pedagogically useful — explain why a common wrong answer is wrong, referencing the distractor by its content or the error it represents
 5. **Is appropriately sized** — 2–4 sentences for Easy, 3–6 sentences for Medium, 4–8 sentences for Hard
 
 **Tone:** CB-instructional — clear, direct, educational. Second person ("you") is acceptable but not required.
+
+**No letter references (hard rule):** Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student; a letter reference is gibberish in context. _(Added 2026-08-14 for Feature-8 option_order shuffle compatibility.)_
 
 **Prohibited patterns:**
 - Condescending language ("This is a simple problem", "Obviously...")
@@ -413,15 +415,16 @@ Every question must have an explanation that:
 - Referencing question numbers, test forms, or Lyceon internals
 - Emotional language ("Great question!", "Don't worry about...")
 - Revealing meta-information about question design or distractor intent
+- **Option letter references** ("Option A", "the correct answer is B", "(C)", "D is wrong") — refer to options by content only
 
 **Example (Math, Easy):**
 ```
-The correct answer is B. To solve $2x + 5 = 13$, subtract 5 from both sides to get $2x = 8$, then divide by 2 to get $x = 4$. Option A ($-4$) results from a sign error when dividing. Option C ($9$) comes from subtracting 5 from 13 but not dividing by 2.
+The correct answer is $4$. To solve $2x + 5 = 13$, subtract 5 from both sides to get $2x = 8$, then divide by 2 to get $x = 4$. The choice $-4$ results from a sign error when dividing. The choice $9$ comes from subtracting 5 from 13 but not dividing by 2.
 ```
 
 **Example (RW, Medium):**
 ```
-The correct answer is C. The passage states that the researcher "found no significant correlation between the variables" (lines 3–4), which directly supports the claim that the hypothesis was not confirmed. Option A refers to the methodology, not the findings. Option D overstates the conclusion — the passage says "not confirmed," not "disproven."
+The correct answer is the choice stating that the hypothesis was not confirmed. The passage states that the researcher "found no significant correlation between the variables" (lines 3–4), which directly supports this claim. The choice referring to methodology addresses the study's design, not its findings. The choice suggesting the hypothesis was "disproven" overstates the conclusion — the passage says "not confirmed," not "disproven."
 ```
 
 ---
