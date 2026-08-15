@@ -993,7 +993,7 @@ BEGIN
   WITH active_days AS (
     SELECT DISTINCT (e.occurred_at AT TIME ZONE 'UTC')::date AS d
     FROM (
-      SELECT pi.occurred_at
+      SELECT COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at
       FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered'
       UNION ALL
@@ -1468,7 +1468,7 @@ BEGIN
       SELECT 1 FROM (
         SELECT (e.occurred_at AT TIME ZONE 'UTC')::date AS event_date, e.section, e.domain, e.skill
         FROM (
-          SELECT pi.occurred_at, pi.question_section AS section, pi.question_domain AS domain, pi.question_skill AS skill
+          SELECT COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at, pi.question_section AS section, pi.question_domain AS domain, pi.question_skill AS skill
           FROM public.practice_session_items pi
           WHERE pi.user_id = p_student_id AND pi.status = 'answered'
           UNION ALL
@@ -2420,8 +2420,9 @@ BEGIN
   v_t_short_cutoff := p_t_now - make_interval(days => v_short_days);
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
+  -- DEFENSIVE COALESCE (2026-08-15): use COALESCE so answered_at covers NULL occurred_at.
   SELECT count(*) INTO v_bad_count FROM (
-    SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+    SELECT pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered'
         AND pi.question_section = p_section AND pi.question_domain = p_domain
     UNION ALL
@@ -2434,7 +2435,7 @@ BEGIN
 
   WITH domain_events AS (
     SELECT correct, occurred_at FROM (
-      SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+      SELECT pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
         WHERE pi.user_id = p_student_id AND pi.status = 'answered'
           AND pi.question_section = p_section AND pi.question_domain = p_domain
       UNION ALL
@@ -2702,8 +2703,9 @@ BEGIN
   v_t_short_cutoff := p_t_now - make_interval(days => v_short_days);
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
+  -- DEFENSIVE COALESCE (2026-08-15): use COALESCE so answered_at covers NULL occurred_at.
   SELECT count(*) INTO v_bad_count FROM (
-    SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+    SELECT pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered'
     UNION ALL
     SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
@@ -2715,7 +2717,7 @@ BEGIN
 
   WITH all_events AS (
     SELECT section, correct, occurred_at FROM (
-      SELECT pi.question_section AS section, pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+      SELECT pi.question_section AS section, pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
         WHERE pi.user_id = p_student_id AND pi.status = 'answered'
       UNION ALL
       SELECT ra.section, ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
@@ -2823,8 +2825,9 @@ BEGIN
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
   -- RB-05B-V1-02: explicit data-integrity validation, no silent NULL filter.
+  -- DEFENSIVE COALESCE (2026-08-15): use COALESCE so answered_at covers NULL occurred_at.
   SELECT count(*) INTO v_bad_count FROM (
-    SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+    SELECT pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered' AND pi.question_section = p_section
     UNION ALL
     SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
@@ -2836,7 +2839,7 @@ BEGIN
 
   WITH section_events AS (
     SELECT correct, occurred_at FROM (
-      SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+      SELECT pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
         WHERE pi.user_id = p_student_id AND pi.status = 'answered' AND pi.question_section = p_section
       UNION ALL
       SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
@@ -2911,8 +2914,9 @@ BEGIN
   v_t_short_cutoff := p_t_now - make_interval(days => v_short_days);
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
+  -- DEFENSIVE COALESCE (2026-08-15): use COALESCE so answered_at covers NULL occurred_at.
   SELECT count(*) INTO v_bad_count FROM (
-    SELECT pi.question_skill AS skill, pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+    SELECT pi.question_skill AS skill, pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered'
         AND pi.question_section = p_section AND pi.question_domain = p_domain
     UNION ALL
@@ -2925,7 +2929,7 @@ BEGIN
 
   WITH skill_events AS (
     SELECT skill, correct, occurred_at FROM (
-      SELECT pi.question_skill AS skill, pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
+      SELECT pi.question_skill AS skill, pi.is_correct AS correct, COALESCE(pi.occurred_at, pi.answered_at) AS occurred_at FROM public.practice_session_items pi
         WHERE pi.user_id = p_student_id AND pi.status = 'answered'
           AND pi.question_section = p_section AND pi.question_domain = p_domain
       UNION ALL
