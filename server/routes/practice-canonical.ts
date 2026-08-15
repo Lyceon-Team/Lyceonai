@@ -2727,15 +2727,16 @@ function gradeAnswer(
 }
 
 // @spec [Doc-05A §11, Codex audit Fix 2] On idempotent replay of a diagnostic
-// answer, re-attempt mastery emission. The answer was already recorded (status →
-// "answered") on the first attempt, but mastery emission may have failed (500
-// returned to client). On retry, the idempotent branch returns 200 without re-
-// trying mastery — leaving the diagnostic without its required audit trail.
-// applyMasteryEvent is idempotent on event_id: if the prior attempt succeeded,
-// this is a no-op; if it failed, this repairs the gap.
+// answer, re-attempt mastery emission (best-effort). The answer was already
+// recorded (status → "answered") on the first attempt, but mastery emission may
+// have failed. On retry, this helper re-emits mastery (idempotent on event_id) to
+// repair the gap. If mastery fails again, the helper logs and returns {ok: true}
+// — the caller always continues.
 // @implemented [2026-08-08] Re-emit mastery for diagnostic idempotent replays
 // @rescoped [2026-08-15] Warn-and-continue — mastery is a separate vertical;
 // the diagnostic must not 500 on mastery-emission failure on replay either.
+// See Codex REVISE — all failure branches (missing metadata, {ok:false}, thrown
+// exception) log and continue; return type narrowed to Promise<{ok: true}>.
 async function reEmitDiagnosticMasteryIfNeeded(opts: {
   sessionItem: SessionItemRow;
   userId: string;
@@ -3134,11 +3135,13 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     ) {
       // @spec [Doc-05A §11, Codex audit Fix 2] For diagnostic sessions, re-attempt
       // mastery emission on idempotent replay. A prior attempt may have recorded
-      // the answer but failed mastery emission (fail-closed 500). applyMasteryEvent
-      // is idempotent on event_id — safe to re-emit.
-      // @spec [Doc-05A §11, Codex re-audit Fix A] After successful re-emission,
-      // run completion reconciliation — the first attempt returned 500 before
-      // reaching the completion path, so the session may still be ACTIVE.
+      // the answer but mastery emission may have failed. applyMasteryEvent is
+      // idempotent on event_id — safe to re-emit.
+      // @spec [Doc-05A §11, Codex re-audit Fix A] After re-emission (success or
+      // failure — warn-and-continue), run completion reconciliation to ensure the
+      // session completes when all items are answered.
+      // @rescoped [2026-08-15] Re-emission is best-effort; failure is logged, not
+      // returned as 500. See Codex REVISE.
       if (session.mode === "diagnostic") {
         const replayNow = sessionItem.answered_at ?? new Date().toISOString();
         // Best-effort mastery re-emission — always continues.
@@ -3239,7 +3242,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // on idempotent replay via clientAttemptId lookup — same rationale as the
       // status-check replay path above.
       // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation after
-      // successful re-emission.
+      // re-emission (success or failure — warn-and-continue).
+      // @rescoped [2026-08-15] See Codex REVISE.
       if (session.mode === "diagnostic") {
         const replayNow = existingByKey.answered_at ?? now;
         // Best-effort mastery re-emission — always continues.
@@ -3309,6 +3313,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // @spec [Doc-05A §11, Codex audit Fix 2] Defensive path: diagnostic
       // mastery re-emission — same rationale as the primary replay path above.
       // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation.
+      // @rescoped [2026-08-15] Warn-and-continue — see Codex REVISE.
       if (session.mode === "diagnostic") {
         const replayNow = sessionItem.answered_at ?? now;
         // Best-effort mastery re-emission — always continues.
@@ -3407,9 +3412,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const raced = await findSessionItemById(payload.sessionId, sessionItem.id);
     if (raced?.outcome) {
       // @spec [Doc-05A §11, Codex re-audit Fix B] The optimistic-race replay path
-      // must guarantee diagnostic mastery emitted (or fail closed) AND complete
+      // re-emits diagnostic mastery (best-effort, warn-and-continue) AND completes
       // the session if this was the final answer. Same contract as every other
       // idempotent replay path — source-count parity is not sufficient.
+      // @rescoped [2026-08-15] Warn-and-continue — see Codex REVISE.
       if (session.mode === "diagnostic") {
         const raceNow = raced.answered_at ?? now;
         // Best-effort mastery re-emission — always continues.
@@ -3496,11 +3502,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const eventSourceKind: "practice_attempt" | "diagnostic_attempt" =
       session.mode === "diagnostic" ? "diagnostic_attempt" : "practice_attempt";
     if (canonicalId && difficultyBucket && section && domain && skill) {
-      // @spec [Doc-05A §11, Codex audit Fix 1] Diagnostic mastery emission is
-      // FAIL-CLOSED: applyMasteryEvent returns { ok, error } and does NOT throw
-      // on RPC failure. For diagnostic mode, a failed mastery write must not be
-      // silently swallowed — the diagnostic must not be presented as completed
-      // without its required 40 audit events.
+      // @spec [Doc-05A §11, Codex audit Fix 1] Mastery emission is best-effort
+      // (warn-and-continue). applyMasteryEvent returns { ok, error } and does NOT
+      // throw on RPC failure. For ALL modes (including diagnostic), a failed
+      // mastery write is logged but does not block the answer response — the answer
+      // was already persisted; mastery is a downstream consumer.
+      // @rescoped [2026-08-15] Matches practice posture. See Codex REVISE.
       const masteryResult = await applyMasteryEvent({
         studentId: userId,
         section,
