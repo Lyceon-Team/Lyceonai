@@ -28,6 +28,7 @@ import * as path from "path";
 import {
   scanFileWithBoundedWindow,
   findTypeScriptFiles,
+  assertRootsExist,
   type BoundedWindowHit,
 } from "../../../tests/ci/lib/bounded-window-scanner";
 
@@ -110,31 +111,29 @@ function checkFileForViolations(filePath: string): Violation[] {
   }
 
   // ── RPC detection (single-line — always on one line) ──────────
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const lines = content.split("\n");
+  // No try/catch — I/O errors MUST propagate so the guard fails closed.
+  // (LISA-AUDIT-566-002)
+  const content = fs.readFileSync(filePath, "utf-8");
+  const lines = content.split("\n");
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lineNumber = i + 1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNumber = i + 1;
 
-      for (const rpcFunc of MASTERY_RPC_FUNCTIONS) {
-        const rpcPattern = new RegExp(
-          `\\.rpc\\s*\\(\\s*["'\`]${rpcFunc}["'\`]`,
-        );
+    for (const rpcFunc of MASTERY_RPC_FUNCTIONS) {
+      const rpcPattern = new RegExp(
+        `\\.rpc\\s*\\(\\s*["'\`]${rpcFunc}["'\`]`,
+      );
 
-        if (rpcPattern.test(line)) {
-          violations.push({
-            file: filePath,
-            line: lineNumber,
-            content: line.trim(),
-            type: "rpc_call",
-          });
-        }
+      if (rpcPattern.test(line)) {
+        violations.push({
+          file: filePath,
+          line: lineNumber,
+          content: line.trim(),
+          type: "rpc_call",
+        });
       }
     }
-  } catch {
-    // Ignore read errors
   }
 
   return violations;
@@ -143,6 +142,12 @@ function checkFileForViolations(filePath: string): Violation[] {
 describe("Mastery Write Path Guard", () => {
   it("should enforce that all mastery writes go through mastery-write.ts", () => {
     const projectRoot = path.resolve(__dirname, "../../..");
+
+    // Assert every configured root exists BEFORE scanning.
+    // A typo'd root would scan nothing and pass vacuously. (LISA-AUDIT-566-002)
+    const fullRoots = SCAN_DIRECTORIES.map((d) => path.join(projectRoot, d));
+    assertRootsExist(fullRoots);
+
     const allViolations: Violation[] = [];
 
     for (const scanDir of SCAN_DIRECTORIES) {

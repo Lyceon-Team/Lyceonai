@@ -62,7 +62,6 @@ const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
 const compactionTaskSchema = z.object({
   job_type: z.literal("compaction"),
   conversation_id: z.string().uuid(),
-  student_id: z.string().uuid(),
   trigger_reason: z.enum(["close", "threshold", "stale"]),
   request_id: z.string().uuid(),
 });
@@ -94,15 +93,10 @@ router.post(
       return;
     }
 
-    const { conversation_id, student_id, request_id, trigger_reason } =
-      parsed.data;
+    const { conversation_id, request_id, trigger_reason } = parsed.data;
 
     try {
-      const result = await executeCompaction(
-        conversation_id,
-        student_id,
-        request_id,
-      );
+      const result = await executeCompaction(conversation_id, request_id);
 
       if (!result.ok) {
         // Expected failures (below threshold, Vertex error, etc.): return 200

@@ -1505,7 +1505,6 @@ router.post(
       void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
         job_type: "compaction",
         conversation_id: conversation.id,
-        student_id: studentId,
         trigger_reason: "close",
         request_id: compactionRequestId,
       });

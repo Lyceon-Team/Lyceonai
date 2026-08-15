@@ -1,6 +1,11 @@
 /**
  * @spec [Doc-03A_V3 §9.1, §10.2; Doc-03C_V3 §8.3]
  * @implemented 2026-08-14
+ * @updated 2026-08-15 — removed caller-supplied student_id from
+ *   executeCompaction. student_id is now derived exclusively from the
+ *   conversation row (INV-03-14). The ownership check becomes "does this
+ *   conversation exist and is it readable" — there is nothing to compare
+ *   against, because there is only one source.
  *
  * plain English: Mock-based tests for the chat compaction service (WS-L4).
  * These exercise application-layer code paths in executeCompaction that
@@ -25,8 +30,12 @@
  *     logic with no DB interaction.
  *   - Vertex failure / empty summary / DB error / NOTIFY error: proves
  *     application error-handling paths. Not exercisable against real PG.
+ *   - Static assertion: proves executeCompaction's write path contains no
+ *     reference to a caller-supplied student_id — source-level guarantee.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -38,9 +47,18 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
   const mockOrder = vi.fn();
   const mockEq = vi.fn().mockReturnValue({ order: mockOrder });
   const mockSelectFrom = vi.fn().mockReturnValue({ eq: mockEq });
+  // tutor_conversations ownership lookup chain: .select().eq().maybeSingle()
+  const mockConvMaybeSingle = vi.fn();
+  const mockConvEq = vi
+    .fn()
+    .mockReturnValue({ maybeSingle: mockConvMaybeSingle });
+  const mockConvSelect = vi.fn().mockReturnValue({ eq: mockConvEq });
   const mockFrom = vi.fn().mockImplementation((table: string) => {
     if (table === "tutor_memory_summaries") {
       return { upsert: mockUpsert };
+    }
+    if (table === "tutor_conversations") {
+      return { select: mockConvSelect };
     }
     // tutor_messages
     return { select: mockSelectFrom };
@@ -60,6 +78,9 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
       mockEq,
       mockOrder,
       mockRpc,
+      mockConvSelect,
+      mockConvEq,
+      mockConvMaybeSingle,
     },
   };
 });
@@ -136,6 +157,9 @@ const { __mocks } = vi.mocked(
       mockEq: ReturnType<typeof vi.fn>;
       mockOrder: ReturnType<typeof vi.fn>;
       mockRpc: ReturnType<typeof vi.fn>;
+      mockConvSelect: ReturnType<typeof vi.fn>;
+      mockConvEq: ReturnType<typeof vi.fn>;
+      mockConvMaybeSingle: ReturnType<typeof vi.fn>;
     };
   },
 );
@@ -148,6 +172,12 @@ describe("Chat Compaction Service (WS-L4)", () => {
 
     // Default: recent_message_window = 12
     mockTutorConfigGet.mockReturnValue(12);
+
+    // Default: conversation ownership lookup succeeds (conversation owned by STUDENT_ID)
+    __mocks.mockConvMaybeSingle.mockResolvedValue({
+      data: { student_id: STUDENT_ID },
+      error: null,
+    });
   });
 
   // ── Happy-path pipeline ──────────────────────────────────────────────
@@ -178,11 +208,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
       // Mock: NOTIFY succeeds
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       // ── Assert: result is ok
       expect(result.ok).toBe(true);
@@ -257,11 +283,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
       });
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
       expect(result.ok).toBe(true);
 
       const upsertedRow = __mocks.mockUpsert.mock.calls[0][0];
@@ -300,10 +322,11 @@ describe("Chat Compaction Service (WS-L4)", () => {
       });
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      await executeCompaction(CONVERSATION_ID, STUDENT_ID, REQUEST_ID);
+      await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
-      // Verify the upserted row uses the correct student_id and summary_type
-      // so that resolveMemorySummariesSafe (which queries by student_id) will find it
+      // Verify the upserted row uses the DERIVED student_id (from the
+      // conversation row) and summary_type so that
+      // resolveMemorySummariesSafe (which queries by student_id) will find it
       const upsertedRow = __mocks.mockUpsert.mock.calls[0][0];
       expect(upsertedRow.student_id).toBe(STUDENT_ID);
       expect(upsertedRow.summary_type).toBe("chat_compaction");
@@ -371,11 +394,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
       });
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       // The service's buildContentJson handles bad types gracefully by
       // filtering non-strings. The result still passes Zod validation
@@ -408,11 +427,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
       });
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
       expect(result.ok).toBe(true);
 
       // Verify the fallback structure was used
@@ -451,11 +466,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
         error: null,
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -476,11 +487,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
         error: null,
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -507,11 +514,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
       });
       __mocks.mockRpc.mockResolvedValueOnce({ error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(true);
       expect(compactConversation).toHaveBeenCalled();
@@ -520,11 +523,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
     it("skips compaction for empty conversations (0 messages)", async () => {
       __mocks.mockOrder.mockResolvedValueOnce({ data: [], error: null });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -551,11 +550,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
         errorCode: "WORKER_TIMEOUT",
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -573,11 +568,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
         value: { ok: true, summary: null },
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -601,11 +592,7 @@ describe("Chat Compaction Service (WS-L4)", () => {
         error: { message: "constraint violation", code: "23514" },
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -634,14 +621,142 @@ describe("Chat Compaction Service (WS-L4)", () => {
         error: { message: "connection lost", code: "08006" },
       });
 
-      const result = await executeCompaction(
-        CONVERSATION_ID,
-        STUDENT_ID,
-        REQUEST_ID,
-      );
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
 
       // Compaction still succeeds — NOTIFY is supplementary
       expect(result.ok).toBe(true);
+    });
+  });
+
+  // ── Conversation ownership derivation (INV-03-14) ──────────────────
+  // Justification: tests the application-level ownership derivation that
+  // prevents compaction from running on non-existent conversations or when
+  // the DB is unreachable. The DB does not enforce conversation → summary
+  // student_id coherence, so this is a pure application-layer invariant.
+
+  describe("Conversation ownership derivation (INV-03-14)", () => {
+    it("rejects when conversation does not exist", async () => {
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: null,
+        error: null,
+      });
+
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("conversation_not_found");
+      }
+
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects when conversation ownership lookup fails (fail closed)", async () => {
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: "connection error", code: "08006" },
+      });
+
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("ownership_lookup_failed");
+      }
+
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it("writes under the derived student_id from the conversation row", async () => {
+      // Conversation is owned by STUDENT_ID — the only source of truth
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: { student_id: STUDENT_ID },
+        error: null,
+      });
+
+      const messages = makeMessages(15);
+      __mocks.mockOrder.mockResolvedValueOnce({ data: messages, error: null });
+
+      vi.mocked(compactConversation).mockResolvedValueOnce({
+        ok: true,
+        value: { ok: true, summary: VALID_STRUCTURED_SUMMARY },
+      });
+      __mocks.mockSingle.mockResolvedValueOnce({
+        data: { id: SUMMARY_ID },
+        error: null,
+      });
+      __mocks.mockRpc.mockResolvedValueOnce({ error: null });
+
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
+
+      expect(result.ok).toBe(true);
+
+      // The upserted row MUST use the derived student_id (STUDENT_ID),
+      // sourced from the conversation row — no caller-supplied student_id
+      // exists in executeCompaction's signature.
+      const upsertedRow = __mocks.mockUpsert.mock.calls[0][0];
+      expect(upsertedRow.student_id).toBe(STUDENT_ID);
+
+      // NOTIFY also uses the derived student_id
+      expect(supabaseServer.rpc).toHaveBeenCalledWith(
+        "pg_notify_memory_summary",
+        { p_student_id: STUDENT_ID, p_summary_type: "chat_compaction" },
+      );
+    });
+  });
+
+  // ── Static assertion: no caller-supplied student_id in write path ──
+  // Reads the source file and asserts executeCompaction's signature has
+  // no student_id parameter. This catches any future attempt to re-add
+  // a caller-supplied student_id — the exact convention failure that
+  // created the BLOCKER in the first place.
+
+  describe("Static assertion: compaction write path has no caller-supplied student_id", () => {
+    it("executeCompaction signature accepts only (conversationId, requestId)", () => {
+      const sourcePath = path.resolve(
+        __dirname,
+        "../services/tutor-compaction.ts",
+      );
+      const source = fs.readFileSync(sourcePath, "utf-8");
+
+      // Extract the function signature
+      const fnMatch = source.match(
+        /export\s+async\s+function\s+executeCompaction\s*\(([^)]*)\)/,
+      );
+      expect(fnMatch).toBeTruthy();
+
+      const params = fnMatch![1];
+
+      // Must NOT contain any form of student_id / studentId
+      expect(params).not.toMatch(/student[_]?[iI]d/i);
+
+      // Must contain exactly the two expected params
+      expect(params).toMatch(/conversationId/);
+      expect(params).toMatch(/requestId/);
+    });
+
+    it("no function in tutor-compaction.ts accepts a caller-supplied student identifier for writes", () => {
+      const sourcePath = path.resolve(
+        __dirname,
+        "../services/tutor-compaction.ts",
+      );
+      const source = fs.readFileSync(sourcePath, "utf-8");
+
+      // The ownership derivation function must not accept a student_id
+      // comparison parameter — it derives, never compares.
+      const deriveFnMatch = source.match(
+        /async\s+function\s+deriveConversationOwner\s*\(([^)]*)\)/,
+      );
+      expect(deriveFnMatch).toBeTruthy();
+      expect(deriveFnMatch![1]).not.toMatch(/student[_]?[iI]d/i);
+
+      // The old verifyConversationOwnership (which accepted claimedStudentId)
+      // must not exist
+      expect(source).not.toMatch(/verifyConversationOwnership/);
+      expect(source).not.toMatch(/claimedStudentId/);
+      expect(source).not.toMatch(/payloadStudentId/);
     });
   });
 });

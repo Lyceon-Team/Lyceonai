@@ -26,6 +26,7 @@ import fs from "fs";
 import path from "path";
 import {
   scanFileWithBoundedWindow,
+  assertRootsExist,
   type BoundedWindowHit,
 } from "./lib/bounded-window-scanner";
 
@@ -66,7 +67,13 @@ function normalizeRepoPath(repoRoot: string, filePath: string): string {
 }
 
 function scanFiles(dir: string, repoRoot: string): string[] {
-  if (!fs.existsSync(dir)) return [];
+  // Fail closed — a missing directory must crash the guard, not pass it
+  // vacuously. (LISA-AUDIT-566-002)
+  if (!fs.existsSync(dir)) {
+    throw new Error(
+      `scanFiles: configured scan root does not exist: ${dir}`,
+    );
+  }
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
@@ -119,6 +126,12 @@ function collectViolations(repoRoot: string): Violation[] {
 describe("Notification Writer Authority Contract", () => {
   it("keeps mounted user-facing notification inserts in the central preference-aware writer", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
+
+    // Assert every configured root exists BEFORE scanning.
+    // A typo'd root would scan nothing and pass vacuously. (LISA-AUDIT-566-002)
+    const fullRoots = RUNTIME_ROOTS.map((r) => path.join(repoRoot, r));
+    assertRootsExist(fullRoots);
+
     const violations = collectViolations(repoRoot);
 
     expect(

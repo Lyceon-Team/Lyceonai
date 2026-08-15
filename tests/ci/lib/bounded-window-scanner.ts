@@ -37,6 +37,10 @@
  * unrelated-table insert on a later statement is correctly excluded
  * because the `;` after the read terminates the window before the
  * insert is reached.
+ *
+ * I/O errors: read and traversal errors propagate (not swallowed).
+ * A guard that cannot read what it guards must FAIL, not pass silently.
+ * (LISA-AUDIT-566-002, fixed 2026-08-14)
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -80,55 +84,53 @@ export function scanFileWithBoundedWindow(
     if (excludePaths.has(relPath)) return hits;
   }
 
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const lines = content.split("\n");
+  // No try/catch — I/O errors MUST propagate. A guard that cannot read
+  // what it guards must FAIL, not pass silently. (LISA-AUDIT-566-002)
+  const content = fs.readFileSync(filePath, "utf-8");
+  const lines = content.split("\n");
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-      if (!anchorPattern.test(line)) continue;
+    if (!anchorPattern.test(line)) continue;
 
-      // Collect bounded window: this line until end-of-statement or CHAIN_WINDOW.
-      // A Prettier-formatted Supabase chain ends at the first line whose trimmed
-      // content ends with ';'. Stopping there prevents the window from bridging
-      // into the next statement (F-01 false-positive fix). If no ';' is found
-      // within CHAIN_WINDOW, the full window is used (fallback, no regression).
-      //
-      // A ';' inside a template literal is string content, not a statement
-      // boundary. Track unescaped-backtick parity: odd = inside a template
-      // literal, so skip ';' on that line.
-      const maxEnd = Math.min(i + CHAIN_WINDOW, lines.length);
-      let windowEnd = maxEnd;
-      let insideTemplateLiteral = false;
-      for (let j = i; j < maxEnd; j++) {
-        // Count unescaped backticks on this line to track parity
-        const lineText = lines[j];
-        for (let k = 0; k < lineText.length; k++) {
-          if (lineText[k] === "`" && (k === 0 || lineText[k - 1] !== "\\")) {
-            insideTemplateLiteral = !insideTemplateLiteral;
-          }
-        }
-        if (!insideTemplateLiteral && lineText.trimEnd().endsWith(";")) {
-          windowEnd = j + 1;
-          break;
+    // Collect bounded window: this line until end-of-statement or CHAIN_WINDOW.
+    // A Prettier-formatted Supabase chain ends at the first line whose trimmed
+    // content ends with ';'. Stopping there prevents the window from bridging
+    // into the next statement (F-01 false-positive fix). If no ';' is found
+    // within CHAIN_WINDOW, the full window is used (fallback, no regression).
+    //
+    // A ';' inside a template literal is string content, not a statement
+    // boundary. Track unescaped-backtick parity: odd = inside a template
+    // literal, so skip ';' on that line.
+    const maxEnd = Math.min(i + CHAIN_WINDOW, lines.length);
+    let windowEnd = maxEnd;
+    let insideTemplateLiteral = false;
+    for (let j = i; j < maxEnd; j++) {
+      // Count unescaped backticks on this line to track parity
+      const lineText = lines[j];
+      for (let k = 0; k < lineText.length; k++) {
+        if (lineText[k] === "`" && (k === 0 || lineText[k - 1] !== "\\")) {
+          insideTemplateLiteral = !insideTemplateLiteral;
         }
       }
-      const windowText = lines
-        .slice(i, windowEnd)
-        .join(" ")
-        .replace(/\s+/g, " ");
-
-      if (followUpPattern.test(windowText)) {
-        hits.push({
-          file: filePath,
-          line: i + 1,
-          content: line.trim(),
-        });
+      if (!insideTemplateLiteral && lineText.trimEnd().endsWith(";")) {
+        windowEnd = j + 1;
+        break;
       }
     }
-  } catch {
-    // Ignore read errors (missing files, permission errors)
+    const windowText = lines
+      .slice(i, windowEnd)
+      .join(" ")
+      .replace(/\s+/g, " ");
+
+    if (followUpPattern.test(windowText)) {
+      hits.push({
+        file: filePath,
+        line: i + 1,
+        content: line.trim(),
+      });
+    }
   }
 
   return hits;
@@ -144,25 +146,23 @@ export function findTypeScriptFiles(
 ): string[] {
   const results: string[] = [];
 
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+  // No try/catch — I/O errors MUST propagate. A typo'd or unreadable root
+  // must crash the guard, not pass it vacuously. (LISA-AUDIT-566-002)
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
 
-      if (excludeDirNames.has(entry.name)) continue;
+    if (excludeDirNames.has(entry.name)) continue;
 
-      if (entry.isDirectory()) {
-        results.push(...findTypeScriptFiles(fullPath, excludeDirNames));
-      } else if (
-        entry.isFile() &&
-        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
-      ) {
-        results.push(fullPath);
-      }
+    if (entry.isDirectory()) {
+      results.push(...findTypeScriptFiles(fullPath, excludeDirNames));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
+    ) {
+      results.push(fullPath);
     }
-  } catch {
-    // Ignore permission errors or missing directories
   }
 
   return results;
@@ -176,3 +176,31 @@ const DEFAULT_EXCLUDE_DIRS: ReadonlySet<string> = new Set([
   ".next",
   ".git",
 ]);
+
+/**
+ * Assert every configured scan root exists and is a directory.
+ *
+ * @spec [LISA-AUDIT-566-002: "assert every configured root exists and was scanned"]
+ * @implemented 2026-08-14
+ *
+ * plain English: a typo'd root currently scans nothing and passes the guard
+ * vacuously. This function catches that — call it before scanning.
+ *
+ * @param roots  Absolute paths to scan roots
+ * @throws Error if any root does not exist or is not a directory
+ */
+export function assertRootsExist(roots: ReadonlyArray<string>): void {
+  for (const root of roots) {
+    if (!fs.existsSync(root)) {
+      throw new Error(
+        `assertRootsExist: configured scan root does not exist: ${root}`,
+      );
+    }
+    const stat = fs.statSync(root);
+    if (!stat.isDirectory()) {
+      throw new Error(
+        `assertRootsExist: configured scan root is not a directory: ${root}`,
+      );
+    }
+  }
+}

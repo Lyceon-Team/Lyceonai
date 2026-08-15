@@ -83,7 +83,6 @@ async function getGcpAccessToken(): Promise<string | null> {
 export type CloudTaskPayload = {
   job_type: string;
   conversation_id?: string;
-  student_id: string;
   trigger_reason: string;
   request_id: string;
 };
