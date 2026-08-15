@@ -7,6 +7,11 @@
  * real PostgreSQL — not SQL mimicry. This test:
  *   1. Applies all migrations to an ephemeral PG16 database
  *   2. Seeds 40 diagnostic questions (8 domains × 5)
+ *   2b. Seeds a PRIOR practice answer with occurred_at = NULL — reproduces
+ *       LIVE BUG #3 where historical NULL occurred_at poisoned
+ *       compute_mastery_for_entity during diagnostic answer submission.
+ *       The backfill migration (20260815000000) applies COALESCE defense
+ *       so the NULL is harmless when answered_at is present.
  *   3. Creates a diagnostic session + 40 served items
  *   4. Submits all 40 answers THROUGH the handler (/api/practice/answer)
  *   5. Queries PG and asserts:
@@ -55,16 +60,23 @@ const DB_NAME = "diagnostic_handler_ci";
 // ---------------------------------------------------------------------------
 const TEST_USER_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const TEST_SESSION_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const PRIOR_PRACTICE_SESSION_ID = "11111111-1111-1111-1111-111111111111";
+const PRIOR_PRACTICE_ITEM_ID = "22222222-2222-2222-2222-222222222222";
 
+// PROD-SHAPED skill names: real SAT skill taxonomy uses human-readable skill
+// names, NOT short codes.  The original test used 'ALG.D01' etc., which hid
+// the prod bug (NULL occurred_at on prior practice answers) because the test
+// had no prior history.  These names match the shape of real published
+// questions in the Lyceon question bank.
 const CANONICAL_DOMAINS: [string, string, string, string][] = [
-  ["M", "Algebra", "ALG.D01", "DGA"],
-  ["M", "Advanced Math", "ADV.D01", "DGB"],
-  ["M", "Problem Solving and Data Analysis", "PSD.D01", "DGC"],
-  ["M", "Geometry and Trigonometry", "GEO.D01", "DGD"],
-  ["RW", "Information and Ideas", "INI.D01", "DGE"],
-  ["RW", "Craft and Structure", "CAS.D01", "DGF"],
-  ["RW", "Expression of Ideas", "EOI.D01", "DGG"],
-  ["RW", "Standard English Conventions", "SEC.D01", "DGH"],
+  ["M", "Algebra", "Linear Equations in One Variable", "DGA"],
+  ["M", "Advanced Math", "Nonlinear Functions", "DGB"],
+  ["M", "Problem Solving and Data Analysis", "Ratios and Proportions", "DGC"],
+  ["M", "Geometry and Trigonometry", "Right Triangles and Trigonometry", "DGD"],
+  ["RW", "Information and Ideas", "Central Ideas and Details", "DGE"],
+  ["RW", "Craft and Structure", "Words in Context", "DGF"],
+  ["RW", "Expression of Ideas", "Rhetorical Synthesis", "DGG"],
+  ["RW", "Standard English Conventions", "Boundaries", "DGH"],
 ];
 
 const DIFFICULTIES = [1, 2, 3, 1, 2];
@@ -576,6 +588,65 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     );
 
     // ---------------------------------------------------------------
+    // 6b. Seed a PRIOR practice session with an answered item whose
+    //     occurred_at is NULL — reproduces LIVE BUG #3.
+    //
+    //     ROOT CAUSE: practice_session_items answered before the handler
+    //     began stamping occurred_at (2026-07-22 → 2026-08-06) carry
+    //     occurred_at = NULL.  When the diagnostic handler later submits
+    //     an answer for the SAME (student, section, domain, skill) entity,
+    //     compute_mastery_for_entity validates ALL historical events and
+    //     raises MASTERY_HISTORICAL_DATA_INVALID on the NULL occurred_at.
+    //
+    //     The item shares (M, "Advanced Math", "Nonlinear Functions") with
+    //     diagnostic domain index 1, so the first diagnostic answer for
+    //     that skill hits the poisoned history.
+    //
+    //     With the backfill migration (20260815000000_backfill_occurred_at)
+    //     applied, the COALESCE defence in canonical_mastery_events makes
+    //     the NULL safe: COALESCE(NULL, '2026-07-22T12:00:00Z') returns the
+    //     answered_at value, and compute_mastery_for_entity sees no bad rows.
+    // ---------------------------------------------------------------
+    await testPg.query(
+      `INSERT INTO public.practice_sessions
+          (id, user_id, actor_id, mode, filters, target_count, platform, status)
+        VALUES ($1, $2, $2, 'balanced',
+          '{"target_question_count": 20}', 20, 'web', 'completed')`,
+      [PRIOR_PRACTICE_SESSION_ID, TEST_USER_ID],
+    );
+
+    // Prior answered item: shares skill "Nonlinear Functions" in domain
+    // "Advanced Math", section "M" with diagnostic question SATM1DGB01X.
+    // occurred_at is deliberately NULL to reproduce the prod bug.
+    await testPg.query(
+      `INSERT INTO public.practice_session_items
+          (id, session_id, user_id, actor_id, ordinal,
+           question_id, question_stem, question_options,
+           question_correct_answer, question_explanation,
+           question_option_metadata,
+           question_domain, question_skill, question_difficulty,
+           question_section, status, question_item_type,
+           option_order, option_token_map,
+           is_correct, selected_option_key, answered_at, occurred_at)
+        VALUES ($1, $2, $3, $3, 1,
+          $4, 'Prior practice Q',
+          '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
+          'B', 'Prior explanation',
+          '{"A":{"role":"distractor","error_taxonomy":"common-misconception"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"common-misconception"},"D":{"role":"distractor","error_taxonomy":"common-misconception"}}'::jsonb,
+          'Advanced Math', 'Nonlinear Functions', 2, 'M',
+          'answered', 'mcq',
+          ARRAY['A','B','C','D']::text[],
+          '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb,
+          false, 'A', '2026-07-22T12:00:00Z'::timestamptz, NULL)`,
+      [
+        PRIOR_PRACTICE_ITEM_ID,
+        PRIOR_PRACTICE_SESSION_ID,
+        TEST_USER_ID,
+        questionId(1, 1), // SATM1DGB01X — shares entity with diagnostic domain 1
+      ],
+    );
+
+    // ---------------------------------------------------------------
     // 7. Create diagnostic session (ACTIVE) + 40 served items
     // ---------------------------------------------------------------
     await testPg.query(
@@ -918,9 +989,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     // Call the PRODUCTION baseline-capture function a second time.
     // This exercises: supabaseServer.from(...).insert(rows) → PG raises
     // 23505 from the partial unique index → production catches it as a no-op.
-    const { captureDiagnosticBaseline } = await import(
-      "../../server/routes/practice-canonical"
-    );
+    const { captureDiagnosticBaseline } =
+      await import("../../server/routes/practice-canonical");
     await captureDiagnosticBaseline(TEST_USER_ID, "req-immutability-proof");
 
     // The production catch-23505 path logs "baseline already captured".
