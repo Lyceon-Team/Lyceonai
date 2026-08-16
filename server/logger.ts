@@ -1,27 +1,58 @@
 /**
  * OPERATIONAL LOGGING SYSTEM
- * 
+ *
  * Provides structured logging for monitoring, debugging, and operational insights
  * for the SAT Learning Copilot application.
  */
 
-const REDACTION_STRING = '[REDACTED]';
+const REDACTION_STRING = "[REDACTED]";
 const DEFAULT_ERROR_MONITOR_TIMEOUT_MS = 1500;
 
+/**
+ * Substring-matched sensitive key patterns. A key containing any of these is redacted.
+ *
+ * @spec [01A_V1.0, §14 PII redaction rules] | @implemented [2026-08-16]
+ * plain English: 'session' was removed from this list on 2026-08-16 and moved to
+ * SENSITIVE_KEY_EXACT below. As a substring it matched EVERY session-ish key,
+ * including domain-entity identifiers like `practiceSessionId` — opaque UUIDs, not
+ * credentials. That redacted the only correlation field on every mastery emission
+ * failure log and is a large part of why a 100%-failure outage ran for seven weeks
+ * untraceable to a session or a student.
+ *
+ * The narrowing is deliberately conservative. `session_id` / `sessionId` stay
+ * redacted by exact match — an auth session identifier is credential-adjacent, and
+ * tests/ci/structured-log-redaction.ci.test.ts has asserted that since 2026-08-12.
+ * Only unambiguous domain-entity keys (`practiceSessionId`, `sessionItemId`) are
+ * released. Nothing secret is lost: every genuinely secret session-prefixed key also
+ * contains a surviving pattern (`session_token`/`sessionToken` → 'token',
+ * `session_secret` → 'secret', `sessionCookie` → 'cookie').
+ * tests/ci/log-redaction.ci.test.ts asserts both halves of that claim in one test.
+ */
 const SENSITIVE_KEY_PATTERNS = [
-  'authorization',
-  'cookie',
-  'token',
-  'password',
-  'secret',
-  'api_key',
-  'apikey',
-  'credential',
-  'session',
-  'email',
+  "authorization",
+  "cookie",
+  "token",
+  "password",
+  "secret",
+  "api_key",
+  "apikey",
+  "credential",
+  "email",
 ];
 
-const SENSITIVE_KEY_EXACT = new Set(['body']);
+/**
+ * Exact-matched sensitive keys (case-insensitive). Use this — not the substring list —
+ * for a key whose bare form is sensitive but whose prefixed forms are not.
+ * `session` is the whole session object; `session_id`/`sessionId` is the auth session
+ * identifier. `practiceSessionId` and `sessionItemId` are domain-entity ids and are
+ * deliberately NOT here — they are the correlation keys mastery logs emit.
+ */
+const SENSITIVE_KEY_EXACT = new Set([
+  "body",
+  "session",
+  "session_id",
+  "sessionid",
+]);
 
 /**
  * Maps internal log levels to Cloud Logging severity strings.
@@ -31,10 +62,10 @@ const SENSITIVE_KEY_EXACT = new Set(['body']);
  * not yet implemented (separate workstream per §11).
  */
 const CLOUD_LOGGING_SEVERITY: Record<string, string> = {
-  debug: 'DEBUG',
-  info: 'INFO',
-  warn: 'WARNING',
-  error: 'ERROR',
+  debug: "DEBUG",
+  info: "INFO",
+  warn: "WARNING",
+  error: "ERROR",
 };
 
 function shouldRedactKey(key: string) {
@@ -51,7 +82,7 @@ export function redactSensitive<T>(input: T): T {
 
   const clone = (value: any): any => {
     if (value === null || value === undefined) return value;
-    if (typeof value !== 'object') return value;
+    if (typeof value !== "object") return value;
     if (value instanceof Date) return value;
     if (seen.has(value)) return seen.get(value);
 
@@ -59,11 +90,13 @@ export function redactSensitive<T>(input: T): T {
       const target: any = {
         name: value.name,
         message: value.message,
-        stack: value.stack
+        stack: value.stack,
       };
       seen.set(value, target);
       for (const key of Object.keys(value)) {
-        target[key] = shouldRedactKey(key) ? REDACTION_STRING : clone((value as any)[key]);
+        target[key] = shouldRedactKey(key)
+          ? REDACTION_STRING
+          : clone((value as any)[key]);
       }
       return target;
     }
@@ -91,7 +124,7 @@ export function redactSensitive<T>(input: T): T {
 
 export interface LogEntry {
   timestamp: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
+  level: "debug" | "info" | "warn" | "error";
   component: string;
   operation: string;
   message: string;
@@ -124,25 +157,26 @@ class OperationalLogger {
    */
   generateRequestId(): string {
     this.requestCounter++;
-    return `req_${Date.now()}_${this.requestCounter.toString().padStart(4, '0')}`;
+    return `req_${Date.now()}_${this.requestCounter.toString().padStart(4, "0")}`;
   }
 
   /**
    * Create structured log entry
    */
   private createLogEntry(
-    level: LogEntry['level'],
+    level: LogEntry["level"],
     component: string,
     operation: string,
     message: string,
     data?: any,
     error?: any,
     duration?: number,
-    context?: { userId?: string; requestId?: string; ip?: string }
+    context?: { userId?: string; requestId?: string; ip?: string },
   ): LogEntry {
     let safeData: any;
     if (data !== undefined) {
-      safeData = typeof data === 'object' ? redactSensitive(data) : { value: data };
+      safeData =
+        typeof data === "object" ? redactSensitive(data) : { value: data };
     }
 
     let safeError: any;
@@ -161,7 +195,7 @@ class OperationalLogger {
       duration,
       userId: context?.userId,
       requestId: context?.requestId,
-      ip: context?.ip
+      ip: context?.ip,
     };
   }
 
@@ -178,18 +212,18 @@ class OperationalLogger {
   private formatForConsole(entry: LogEntry): string {
     const level = entry.level.toUpperCase().padEnd(5);
     const component = `[${entry.component}]`.padEnd(12);
-    const timestamp = entry.timestamp.split('T')[1].split('.')[0]; // HH:MM:SS format
-    
+    const timestamp = entry.timestamp.split("T")[1].split(".")[0]; // HH:MM:SS format
+
     let output = `${timestamp} ${level} ${component} ${entry.operation}: ${entry.message}`;
-    
+
     if (entry.duration !== undefined) {
       output += ` (${entry.duration}ms)`;
     }
-    
+
     if (entry.requestId) {
       output += ` [${entry.requestId}]`;
     }
-    
+
     if (entry.userId) {
       output += ` [user:${entry.userId}]`;
     }
@@ -206,19 +240,19 @@ class OperationalLogger {
    */
   private output(entry: LogEntry) {
     // Preserve existing behavior: debug logs only in development
-    if (entry.level === 'debug' && process.env.NODE_ENV !== 'development') {
+    if (entry.level === "debug" && process.env.NODE_ENV !== "development") {
       return;
     }
 
     const safeEntry = redactSensitive(entry) as LogEntry;
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === "development") {
       this.outputConsole(safeEntry);
     } else {
       this.outputStructuredJson(safeEntry);
     }
 
-    if (safeEntry.level === 'error') {
+    if (safeEntry.level === "error") {
       this.trackError();
       void this.sendErrorToMonitor(safeEntry);
     }
@@ -232,34 +266,34 @@ class OperationalLogger {
     const formatted = this.formatForConsole(safeEntry);
 
     switch (safeEntry.level) {
-      case 'error':
+      case "error":
         console.error(`🚨 ${formatted}`);
         if (safeEntry.error) {
-          console.error('   Error details:', safeEntry.error);
+          console.error("   Error details:", safeEntry.error);
         }
         if (safeEntry.data) {
-          console.error('   Context:', safeEntry.data);
+          console.error("   Context:", safeEntry.data);
         }
         break;
 
-      case 'warn':
+      case "warn":
         console.warn(`⚠️  ${formatted}`);
         if (safeEntry.data) {
-          console.warn('   Data:', safeEntry.data);
+          console.warn("   Data:", safeEntry.data);
         }
         break;
 
-      case 'info':
+      case "info":
         console.log(`ℹ️  ${formatted}`);
         if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
-          console.log('   Data:', safeEntry.data);
+          console.log("   Data:", safeEntry.data);
         }
         break;
 
-      case 'debug':
+      case "debug":
         console.log(`🐛 ${formatted}`);
         if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
-          console.log('   Debug data:', safeEntry.data);
+          console.log("   Debug data:", safeEntry.data);
         }
         break;
     }
@@ -284,23 +318,27 @@ class OperationalLogger {
    */
   private outputStructuredJson(safeEntry: LogEntry) {
     const structured: Record<string, unknown> = {
-      severity: CLOUD_LOGGING_SEVERITY[safeEntry.level] || safeEntry.level.toUpperCase(),
+      severity:
+        CLOUD_LOGGING_SEVERITY[safeEntry.level] ||
+        safeEntry.level.toUpperCase(),
       timestamp: safeEntry.timestamp,
       message: safeEntry.message,
       event: safeEntry.operation,
       component: safeEntry.component,
-      service: process.env.SERVICE_NAME || 'lyceon-api',
-      environment: process.env.NODE_ENV || 'development',
+      service: process.env.SERVICE_NAME || "lyceon-api",
+      environment: process.env.NODE_ENV || "development",
     };
 
     if (safeEntry.requestId) structured.request_id = safeEntry.requestId;
     if (safeEntry.userId) structured.user_id = safeEntry.userId;
-    if (safeEntry.duration !== undefined) structured.duration_ms = safeEntry.duration;
-    if (safeEntry.data && Object.keys(safeEntry.data).length > 0) structured.data = safeEntry.data;
+    if (safeEntry.duration !== undefined)
+      structured.duration_ms = safeEntry.duration;
+    if (safeEntry.data && Object.keys(safeEntry.data).length > 0)
+      structured.data = safeEntry.data;
     if (safeEntry.error) structured.error = safeEntry.error;
     if (safeEntry.ip) structured.ip = safeEntry.ip;
 
-    process.stdout.write(JSON.stringify(structured) + '\n');
+    process.stdout.write(JSON.stringify(structured) + "\n");
   }
 
   /**
@@ -308,23 +346,25 @@ class OperationalLogger {
    */
   private trackError() {
     const now = Date.now();
-    
+
     // Reset counters if needed
-    if (now - this.lastErrorReset > 60 * 60 * 1000) { // 1 hour
+    if (now - this.lastErrorReset > 60 * 60 * 1000) {
+      // 1 hour
       this.errorCount.lastHour = 0;
       this.lastErrorReset = now;
     }
-    
-    if (now - this.lastErrorReset > 24 * 60 * 60 * 1000) { // 24 hours
+
+    if (now - this.lastErrorReset > 24 * 60 * 60 * 1000) {
+      // 24 hours
       this.errorCount.last24h = 0;
     }
-    
+
     this.errorCount.lastHour++;
     this.errorCount.last24h++;
   }
 
   private shouldSendErrorMonitorEvents() {
-    return process.env.ERROR_MONITOR_ENABLED !== 'false';
+    return process.env.ERROR_MONITOR_ENABLED !== "false";
   }
 
   private async sendErrorToMonitor(entry: LogEntry) {
@@ -333,17 +373,20 @@ class OperationalLogger {
     const endpoint = process.env.ERROR_MONITOR_WEBHOOK_URL?.trim();
     if (!endpoint) return;
 
-    const timeoutMsRaw = Number(process.env.ERROR_MONITOR_TIMEOUT_MS || DEFAULT_ERROR_MONITOR_TIMEOUT_MS);
-    const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
-      ? timeoutMsRaw
-      : DEFAULT_ERROR_MONITOR_TIMEOUT_MS;
+    const timeoutMsRaw = Number(
+      process.env.ERROR_MONITOR_TIMEOUT_MS || DEFAULT_ERROR_MONITOR_TIMEOUT_MS,
+    );
+    const timeoutMs =
+      Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
+        ? timeoutMsRaw
+        : DEFAULT_ERROR_MONITOR_TIMEOUT_MS;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const payload = redactSensitive({
-        source: 'lyceon-api',
+        source: "lyceon-api",
         level: entry.level,
         component: entry.component,
         operation: entry.operation,
@@ -357,14 +400,17 @@ class OperationalLogger {
       });
 
       await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
     } catch (monitorError) {
-      if (process.env.NODE_ENV !== 'test') {
-        console.error('[MONITOR] Failed to send error event', redactSensitive(monitorError));
+      if (process.env.NODE_ENV !== "test") {
+        console.error(
+          "[MONITOR] Failed to send error event",
+          redactSensitive(monitorError),
+        );
       }
     } finally {
       clearTimeout(timeout);
@@ -374,32 +420,93 @@ class OperationalLogger {
   /**
    * Debug level logging
    */
-  debug(component: string, operation: string, message: string, data?: any, context?: { userId?: string; requestId?: string; ip?: string }) {
-    const entry = this.createLogEntry('debug', component, operation, message, data, undefined, undefined, context);
+  debug(
+    component: string,
+    operation: string,
+    message: string,
+    data?: any,
+    context?: { userId?: string; requestId?: string; ip?: string },
+  ) {
+    const entry = this.createLogEntry(
+      "debug",
+      component,
+      operation,
+      message,
+      data,
+      undefined,
+      undefined,
+      context,
+    );
     this.output(entry);
   }
 
   /**
    * Info level logging
    */
-  info(component: string, operation: string, message: string, data?: any, context?: { userId?: string; requestId?: string; ip?: string }) {
-    const entry = this.createLogEntry('info', component, operation, message, data, undefined, undefined, context);
+  info(
+    component: string,
+    operation: string,
+    message: string,
+    data?: any,
+    context?: { userId?: string; requestId?: string; ip?: string },
+  ) {
+    const entry = this.createLogEntry(
+      "info",
+      component,
+      operation,
+      message,
+      data,
+      undefined,
+      undefined,
+      context,
+    );
     this.output(entry);
   }
 
   /**
    * Warning level logging
    */
-  warn(component: string, operation: string, message: string, data?: any, context?: { userId?: string; requestId?: string; ip?: string }) {
-    const entry = this.createLogEntry('warn', component, operation, message, data, undefined, undefined, context);
+  warn(
+    component: string,
+    operation: string,
+    message: string,
+    data?: any,
+    context?: { userId?: string; requestId?: string; ip?: string },
+  ) {
+    const entry = this.createLogEntry(
+      "warn",
+      component,
+      operation,
+      message,
+      data,
+      undefined,
+      undefined,
+      context,
+    );
     this.output(entry);
   }
 
   /**
    * Error level logging
    */
-  error(component: string, operation: string, message: string, error?: any, data?: any, context?: { userId?: string; requestId?: string; ip?: string }) {
-    const entry = this.createLogEntry('error', component, operation, message, data, error, undefined, context);
+  error(
+    component: string,
+    operation: string,
+    message: string,
+    error?: any,
+    data?: any,
+    context?: { userId?: string; requestId?: string; ip?: string },
+  ) {
+    const entry = this.createLogEntry(
+      "error",
+      component,
+      operation,
+      message,
+      data,
+      error,
+      undefined,
+      context,
+    );
     this.output(entry);
   }
 
@@ -408,11 +515,14 @@ class OperationalLogger {
    */
   startTimer(operation: string, metadata?: any): () => PerformanceMetrics {
     const startTime = Date.now();
-    
-    return (success: boolean = true, errorType?: string): PerformanceMetrics => {
+
+    return (
+      success: boolean = true,
+      errorType?: string,
+    ): PerformanceMetrics => {
       const endTime = Date.now();
       const duration = endTime - startTime;
-      
+
       const metrics: PerformanceMetrics = {
         operation,
         duration,
@@ -420,22 +530,26 @@ class OperationalLogger {
         endTime,
         success,
         errorType,
-        metadata
+        metadata,
       };
-      
+
       // Store metrics for analysis
       this.performanceMetrics.push(metrics);
-      
+
       // Keep only last 1000 metrics to prevent memory issues
       if (this.performanceMetrics.length > 1000) {
         this.performanceMetrics = this.performanceMetrics.slice(-1000);
       }
-      
+
       // Log performance if operation took too long
-      if (duration > 1000) { // 1 second threshold
-        this.warn('PERFORMANCE', operation, `Slow operation detected`, { duration, metadata });
+      if (duration > 1000) {
+        // 1 second threshold
+        this.warn("PERFORMANCE", operation, `Slow operation detected`, {
+          duration,
+          metadata,
+        });
       }
-      
+
       return metrics;
     };
   }
@@ -444,36 +558,39 @@ class OperationalLogger {
    * Log API request/response
    */
   apiRequest(
-    method: string, 
-    path: string, 
-    statusCode: number, 
-    duration: number, 
+    method: string,
+    path: string,
+    statusCode: number,
+    duration: number,
     requestId: string,
     userId?: string,
     ip?: string,
     requestBody?: any,
-    responseSize?: number
+    responseSize?: number,
   ) {
-    const level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
-    
+    const level =
+      statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
+
     const data = {
       method,
       path,
       statusCode,
       duration,
       responseSize,
-      requestBodySize: requestBody ? JSON.stringify(requestBody).length : 0
+      requestBodySize: requestBody ? JSON.stringify(requestBody).length : 0,
     };
-    this.output(this.createLogEntry(
-      level,
-      'API',
-      'request',
-      `${method} ${path} ${statusCode}`,
-      data,
-      undefined,
-      duration,
-      { userId, requestId, ip }
-    ));
+    this.output(
+      this.createLogEntry(
+        level,
+        "API",
+        "request",
+        `${method} ${path} ${statusCode}`,
+        data,
+        undefined,
+        duration,
+        { userId, requestId, ip },
+      ),
+    );
   }
 
   /**
@@ -486,29 +603,31 @@ class OperationalLogger {
     requestId: string,
     ip: string,
     changes?: any,
-    success: boolean = true
+    success: boolean = true,
   ) {
-    const level = success ? 'info' : 'warn';
+    const level = success ? "info" : "warn";
     const message = `Admin ${action} on ${resource}`;
-    
+
     const data = {
       action,
       resource,
       changes,
       success,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
-    this.output(this.createLogEntry(
-      level,
-      'AUDIT',
-      'admin_action',
-      message,
-      data,
-      undefined,
-      undefined,
-      { userId, requestId, ip }
-    ));
+    this.output(
+      this.createLogEntry(
+        level,
+        "AUDIT",
+        "admin_action",
+        message,
+        data,
+        undefined,
+        undefined,
+        { userId, requestId, ip },
+      ),
+    );
   }
 
   /**
@@ -516,32 +635,37 @@ class OperationalLogger {
    */
   getHealthMetrics() {
     const now = Date.now();
-    const recentMetrics = this.performanceMetrics.filter(m => m.endTime > now - 60000); // Last minute
-    
-    const avgDuration = recentMetrics.length > 0 
-      ? recentMetrics.reduce((sum, m) => sum + m.duration, 0) / recentMetrics.length 
-      : 0;
-    
-    const errorRate = recentMetrics.length > 0
-      ? recentMetrics.filter(m => !m.success).length / recentMetrics.length
-      : 0;
-    
+    const recentMetrics = this.performanceMetrics.filter(
+      (m) => m.endTime > now - 60000,
+    ); // Last minute
+
+    const avgDuration =
+      recentMetrics.length > 0
+        ? recentMetrics.reduce((sum, m) => sum + m.duration, 0) /
+          recentMetrics.length
+        : 0;
+
+    const errorRate =
+      recentMetrics.length > 0
+        ? recentMetrics.filter((m) => !m.success).length / recentMetrics.length
+        : 0;
+
     return {
       timestamp: new Date().toISOString(),
       performance: {
         avgResponseTime: Math.round(avgDuration),
         requestsLastMinute: recentMetrics.length,
-        errorRateLastMinute: Math.round(errorRate * 100)
+        errorRateLastMinute: Math.round(errorRate * 100),
       },
       errors: {
         lastHour: this.errorCount.lastHour,
-        last24h: this.errorCount.last24h
+        last24h: this.errorCount.last24h,
       },
       memory: {
         used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
       },
-      uptime: Math.round(process.uptime())
+      uptime: Math.round(process.uptime()),
     };
   }
 
@@ -549,14 +673,14 @@ class OperationalLogger {
    * Log system startup
    */
   systemStartup(component: string, details?: any) {
-    this.info('SYSTEM', 'startup', `${component} started`, details);
+    this.info("SYSTEM", "startup", `${component} started`, details);
   }
 
   /**
    * Log system shutdown
    */
   systemShutdown(component: string, reason?: string) {
-    this.info('SYSTEM', 'shutdown', `${component} shutting down`, { reason });
+    this.info("SYSTEM", "shutdown", `${component} shutting down`, { reason });
   }
 }
 
@@ -575,6 +699,6 @@ export function createLoggingContext(req: any): LogContext {
   return {
     userId: req.user?.id || req.userId,
     requestId: req.requestId || logger.generateRequestId(),
-    ip: req.ip || req.connection?.remoteAddress
+    ip: req.ip || req.connection?.remoteAddress,
   };
 }

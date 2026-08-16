@@ -23,6 +23,7 @@ import {
   type CanonicalQuestionRowLike,
   isCanonicalRuntimeQuestion,
   isValidCanonicalId,
+  assertCanonicalDomain,
   mapGenesisQuestionRow,
   normalizeClientInstanceId,
   normalizeAnswerKey,
@@ -36,6 +37,11 @@ import {
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
 import type { PracticeSessionItemRow } from "../../packages/shared/src/practice-schema";
+import {
+  MASTERY_EMISSION_COMPONENT,
+  MASTERY_EMISSION_EVENT,
+  MASTERY_EMISSION_FAILURE_CODE,
+} from "../../packages/shared/src/mastery-emission";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -806,7 +812,17 @@ export function buildSessionItemInsertRows(
     question_options: question.options,
     question_correct_answer: question.correct_answer ?? null,
     question_explanation: question.explanation ?? null,
-    question_domain: question.domain ?? null,
+    // @spec [Doc-05B_V1.0 §4.2 domain canonicality is BLOCKING] | @implemented [2026-08-16]
+    // plain English: this is the value the mastery RPC receives as p_domain, and
+    // refresh_domain_mastery raises DOMAIN_SECTION_MISMATCH on anything outside the
+    // canonical eight — rolling back the whole mastery event. The previous
+    // `question.domain ?? null` wrote null into a NOT NULL column (opaque 23502) and
+    // passed any non-null string straight through. Assert instead: a bad pair fails
+    // session materialization loudly rather than minting a permanently un-masterable item.
+    question_domain: assertCanonicalDomain(
+      question.section_code,
+      question.domain,
+    ),
     question_skill: question.skill ?? null,
     question_difficulty: question.difficulty ?? null,
     question_item_type: question.item_type,
@@ -1604,13 +1620,42 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
-  const insertRows = buildSessionItemInsertRows(selected, {
-    sessionId,
-    userId: args.userId,
-    actorId: args.actorId,
-    clientInstanceId: args.clientInstanceId,
-    now,
-  });
+  // @spec [Doc-05B_V1.0 §4.2] | @implemented [2026-08-16]
+  // plain English: buildSessionItemInsertRows now asserts the canonical (section, domain)
+  // pair, so it can throw. The session row already exists at this point — an uncaught
+  // throw would orphan it. Clean up and fail closed, matching the
+  // hydrateSessionItemOptionTokens branch immediately below.
+  let insertRows: Record<string, unknown>[];
+  try {
+    insertRows = buildSessionItemInsertRows(selected, {
+      sessionId,
+      userId: args.userId,
+      actorId: args.actorId,
+      clientInstanceId: args.clientInstanceId,
+      now,
+    });
+  } catch (buildError: unknown) {
+    await cleanupFailedSessionMaterialization(sessionId);
+    const message =
+      buildError instanceof Error
+        ? buildError.message
+        : "Unable to build session items";
+    logger.error(
+      "PRACTICE_SESSION",
+      "session_materialization_refused",
+      "session item materialization refused",
+      undefined,
+      { practiceSessionId: sessionId, reason: message },
+    );
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message,
+      },
+    };
+  }
 
   const { data: insertedItems, error: itemInsertError } = await supabaseServer
     .from("practice_session_items")
@@ -2768,10 +2813,15 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
   if (!canonicalId || !difficultyBucket || !section || !domain || !skill) {
     // Missing metadata — log but continue. The answer is already recorded.
     logger.error(
-      "[diagnostic] mastery re-emission skipped (missing metadata) — warn-and-continue",
+      MASTERY_EMISSION_COMPONENT,
+      MASTERY_EMISSION_EVENT.SKIPPED,
+      "diagnostic mastery re-emission skipped (missing metadata) — warn-and-continue",
+      undefined,
       {
+        code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
         requestId: opts.requestId,
-        sessionId: opts.sessionId,
+        practiceSessionId: opts.sessionId,
+        eventSourceKind: "diagnostic_attempt",
         questionCanonicalId: canonicalId,
         section: section || null,
         domain: domain || null,
@@ -2797,12 +2847,17 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
     });
     if (!masteryResult.ok) {
       logger.error(
-        "[diagnostic] mastery re-emission failed on replay — warn-and-continue",
+        MASTERY_EMISSION_COMPONENT,
+        MASTERY_EMISSION_EVENT.FAILED,
+        "diagnostic mastery re-emission failed on replay — warn-and-continue",
+        undefined,
         {
+          code: masteryResult.code ?? MASTERY_EMISSION_FAILURE_CODE.RPC_ERROR,
           requestId: opts.requestId,
-          sessionId: opts.sessionId,
+          practiceSessionId: opts.sessionId,
+          eventSourceKind: "diagnostic_attempt",
           questionCanonicalId: canonicalId,
-          masteryError: masteryResult.error ?? "unknown",
+          dbError: masteryResult.error ?? "unknown",
         },
       );
     }
@@ -2810,11 +2865,16 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
     logger.error(
-      "[diagnostic] mastery re-emission threw on replay — warn-and-continue",
+      MASTERY_EMISSION_COMPONENT,
+      MASTERY_EMISSION_EVENT.FAILED,
+      "diagnostic mastery re-emission threw on replay — warn-and-continue",
+      undefined,
       {
+        code: MASTERY_EMISSION_FAILURE_CODE.THREW,
         requestId: opts.requestId,
-        sessionId: opts.sessionId,
-        message: errMsg,
+        practiceSessionId: opts.sessionId,
+        eventSourceKind: "diagnostic_attempt",
+        dbError: errMsg,
       },
     );
   }
@@ -2894,11 +2954,12 @@ export async function captureDiagnosticBaseline(
     .eq("student_id", userId);
 
   if (readError) {
-    logger.warn("[diagnostic] baseline read failed", {
-      requestId,
-      userId,
-      error: readError.message,
-    });
+    logger.warn(
+      "DIAGNOSTIC_BASELINE",
+      "baseline_read_failed",
+      "diagnostic baseline read failed",
+      { requestId, userId, dbError: readError.message },
+    );
     return;
   }
 
@@ -2924,7 +2985,9 @@ export async function captureDiagnosticBaseline(
   const nonNull = rows.filter((r) => typeof r.projected_score_mid === "number");
   if (nonNull.length < 2) {
     logger.warn(
-      "[diagnostic] baseline skipped — projection evidence gate not yet cleared",
+      "DIAGNOSTIC_BASELINE",
+      "baseline_skipped_evidence_gate",
+      "diagnostic baseline skipped — projection evidence gate not yet cleared",
       {
         requestId,
         userId,
@@ -3460,14 +3523,19 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         // must not 500 on mastery-emission failure. Data is written correctly
         // (diagnostic_attempt, source_family=practice per §11.4); mastery will
         // consume it when that vertical works.
-        const logLevel = session.mode === "diagnostic" ? "error" : "warn";
-        logger[logLevel](
-          `[${session.mode}] mastery emission returned error — warn-and-continue`,
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.FAILED,
+          `${session.mode} mastery emission returned error — warn-and-continue`,
+          undefined,
           {
+            code: masteryResult.code ?? MASTERY_EMISSION_FAILURE_CODE.RPC_ERROR,
             requestId,
-            sessionId: payload.sessionId,
+            practiceSessionId: payload.sessionId,
+            sessionMode: session.mode,
+            eventSourceKind,
             questionCanonicalId: canonicalId,
-            masteryError: masteryResult.error ?? "unknown",
+            dbError: masteryResult.error ?? "unknown",
           },
         );
       }
@@ -3480,52 +3548,40 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // worth investigating), but warn-and-continue for all modes. The answer
       // was already recorded; the student must not be blocked.
       // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
-      if (session.mode === "diagnostic") {
-        logger.error(
-          "[diagnostic] mastery emission skipped (missing metadata) — warn-and-continue",
-          {
-            requestId,
-            sessionId: payload.sessionId,
-            questionCanonicalId: canonicalId,
-            section: section || null,
-            domain: domain || null,
-            skill: skill || null,
-          },
-        );
-      }
-      logger.warn("[practice] mastery emission skipped (missing metadata)", {
-        requestId,
-        sessionId: payload.sessionId,
-        questionCanonicalId: canonicalId,
-        sourceFamily: "practice",
-        eventSourceKind,
-        section: section || null,
-        domain: domain || null,
-        skill: skill || null,
-      });
+      logger.error(
+        MASTERY_EMISSION_COMPONENT,
+        MASTERY_EMISSION_EVENT.SKIPPED,
+        `${session.mode} mastery emission skipped (missing metadata) — warn-and-continue`,
+        undefined,
+        {
+          code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
+          requestId,
+          practiceSessionId: payload.sessionId,
+          sessionMode: session.mode,
+          sourceFamily: "practice",
+          eventSourceKind,
+          questionCanonicalId: canonicalId,
+          section: section || null,
+          domain: domain || null,
+          skill: skill || null,
+        },
+      );
     } else if (canonicalId && !difficultyBucket) {
       // Invalid difficulty — log as error for diagnostic (data integrity issue),
       // but warn-and-continue for all modes.
       // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
-      if (session.mode === "diagnostic") {
-        logger.error(
-          "[diagnostic] mastery emission skipped (invalid difficulty) — warn-and-continue",
-          {
-            requestId,
-            sessionId: payload.sessionId,
-            questionCanonicalId: canonicalId,
-            rawDifficulty: sessionItem.question_difficulty ?? null,
-          },
-        );
-      }
-      logger.warn(
-        "[practice] mastery emission skipped (invalid difficulty bucket)",
+      logger.error(
+        MASTERY_EMISSION_COMPONENT,
+        MASTERY_EMISSION_EVENT.SKIPPED,
+        `${session.mode} mastery emission skipped (invalid difficulty) — warn-and-continue`,
+        undefined,
         {
+          code: MASTERY_EMISSION_FAILURE_CODE.INVALID_DIFFICULTY,
           requestId,
-          sessionId: payload.sessionId,
-          questionCanonicalId: canonicalId,
-          sourceFamily: "practice",
+          practiceSessionId: payload.sessionId,
+          sessionMode: session.mode,
           eventSourceKind,
+          questionCanonicalId: canonicalId,
           rawDifficulty: sessionItem.question_difficulty ?? null,
         },
       );
@@ -3536,12 +3592,17 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     // Warn-and-continue for ALL modes (including diagnostic).
     // The answer was already recorded; mastery is a downstream consumer.
     // @rescoped [2026-08-15] Diagnostic matches practice's warn-and-continue.
-    logger[session.mode === "diagnostic" ? "error" : "warn"](
-      `[${session.mode}] mastery emission threw — warn-and-continue`,
+    logger.error(
+      MASTERY_EMISSION_COMPONENT,
+      MASTERY_EMISSION_EVENT.FAILED,
+      `${session.mode} mastery emission threw — warn-and-continue`,
+      undefined,
       {
+        code: MASTERY_EMISSION_FAILURE_CODE.THREW,
         requestId,
-        sessionId: payload.sessionId,
-        message: errMsg,
+        practiceSessionId: payload.sessionId,
+        sessionMode: session.mode,
+        dbError: errMsg,
       },
     );
   }
@@ -3588,11 +3649,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           baselineErr instanceof Error
             ? baselineErr.message
             : String(baselineErr);
-        logger.warn("[diagnostic] baseline capture failed (non-fatal)", {
-          requestId,
-          sessionId: payload.sessionId,
-          message: baselineMsg,
-        });
+        logger.warn(
+          "DIAGNOSTIC_BASELINE",
+          "baseline_capture_failed",
+          "diagnostic baseline capture failed (non-fatal)",
+          {
+            requestId,
+            practiceSessionId: payload.sessionId,
+            dbError: baselineMsg,
+          },
+        );
       }
     }
   } else {

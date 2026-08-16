@@ -88,6 +88,18 @@ jobs:
       - name: Safety-constants drift gate (AUD-B1.1c-010 — anti-leak + boundary mirrors)
         run: diff shared/tutor-safety-constants.ts apps/workers/tutor-orchestrator/src/lib/_tutor-safety-constants.generated.ts
 
+      # Mastery emission failed 100% of the time for seven weeks unnoticed. These two
+      # gates block the two defects that made that invisible: console.* on mastery
+      # paths, and a miscalled structured logger that put the data object into `event`
+      # (which no log filter can match).
+      - name: Mastery emission observability gate (M-05 / M-07)
+        run: node scripts/ci/mastery-emission-observability.mjs
+
+      # The destructive rehearsal scripts seed fabricated mastery rows and take PGHOST
+      # from the environment. Six such rows were found unattributed in prod.
+      - name: Destructive-rehearsal target guard — negative control (M-10)
+        run: bash scripts/ci/rehearsal-host-guard-negative-control.sh
+
   # ---------------------------------------------------------------------------
   # Visibility job — NOT required for merge. Steps are continue-on-error so the
   # job stays green, but their failures remain visible in the logs/annotations
@@ -259,7 +271,7 @@ jobs:
       - name: Ensure postgresql-client 16
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
-      - name: Practice engine integration gate (SQL seam)
+      - name: Practice engine integration gate (SQL seam only — no TS handler)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -285,7 +297,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Diagnostic handler → real PG proof
+      - name: Diagnostic handler → real PG LOGIC proof (mocked transport)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -305,6 +317,88 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/entitlement-write-path.ci.test.ts
+
+  # ---------------------------------------------------------------------------
+  # Mastery pipeline gates — HARD GATE.
+  #
+  # Three things nothing else covers:
+  #   1. the unblock migrations, red-before/green-after against a seeded pre-state
+  #   2. derivation-gap detection (the invariant: every derivable event has exactly
+  #      one attributable audit row)
+  #   3. the REAL transport — supabase-js -> PostgREST -> service_role JWT -> GRANT.
+  #      Every other mastery test mocks the Supabase client; all of them were green
+  #      throughout the outage.
+  # ---------------------------------------------------------------------------
+  mastery-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Red-before/green-after on a seeded pre-state, plus the portability case that
+      # regression-tests the hardcoded-count blocker (a migration carrying a prod row
+      # count reds every fresh apply).
+      - name: Mastery unblock migration gates (1.1 + 1.2)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-unblock-gates.sh
+
+      - name: Mastery derivation gap detection gate (2.4)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          source scripts/ci/lib/deletion-rehearsal-db.sh
+          setup_genesis_db mastery_gap_ci
+          psql -v ON_ERROR_STOP=1 -d mastery_gap_ci -q -f scripts/ci/mastery-gap-detection-gates.sql
+        shell: bash
+
+      # The gate that would have caught this outage on day one.
+      - name: Install PostgREST (real transport)
+        run: |
+          curl -sL -o /tmp/pgrst.tar.xz \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          tar -xf /tmp/pgrst.tar.xz -C /tmp
+          sudo mv /tmp/postgrest /usr/local/bin/postgrest
+          postgrest --version
+
+      - name: Mastery emission → REAL PostgREST transport proof (3.1)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-transport-gate.sh
 
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
