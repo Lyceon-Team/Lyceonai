@@ -3,10 +3,11 @@
  * mints canonical IDs, derives grid-in variants, renders SQL INSERTs.
  *
  * @spec [questions_governance.md §A.1–A.9]
- * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--dry-run] [--dry-apply]
+ * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--manifest <manifest>.json] [--dry-run] [--dry-apply]
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
+import { createHash } from "crypto";
 import { join, resolve } from "path";
 import { parseArgs } from "util";
 import pg from "pg";
@@ -58,6 +59,12 @@ type Violation = {
   record_index: number;
   field: string;
   reason: string;
+};
+
+type BatchManifest = {
+  target_skills: string[];
+  difficulties: number[];
+  extra_hard: Array<{ skill: string; difficulty: number }>;
 };
 
 type AssembledQuestion = {
@@ -124,6 +131,179 @@ function domainForSkill(taxonomy: Taxonomy, skill: string): string | null {
     if (skills.includes(skill)) return domain;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Near-duplicate detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Collapse whitespace, lowercase. Keyed on stem+passage together: RW items
+ * share generic stems ("Which choice completes the text…") with distinct
+ * passages, so stem-only would false-flag them. Math stems are the content
+ * and collide meaningfully.
+ */
+function normalizeForDupeCheck(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function stemPassageHash(stem: string, passage: string | null): string {
+  const key =
+    normalizeForDupeCheck(stem) + "\0" + normalizeForDupeCheck(passage ?? "");
+  return createHash("sha256").update(key).digest("hex");
+}
+
+function checkNearDuplicates(
+  records: Array<{ rec: ContentRecord; file: string; line: number }>,
+): Violation[] {
+  const violations: Violation[] = [];
+  const seen = new Map<string, { file: string; line: number; index: number }>();
+
+  for (let i = 0; i < records.length; i++) {
+    const { rec, file, line } = records[i];
+    const hash = stemPassageHash(rec.stem, rec.passage);
+    const existing = seen.get(hash);
+    if (existing) {
+      violations.push({
+        file,
+        line,
+        record_index: i,
+        field: "stem+passage",
+        reason: `NEAR_DUPLICATE: stem+passage hash collision with ${existing.file}:${existing.line} (record ${existing.index})`,
+      });
+    } else {
+      seen.set(hash, { file, line, index: i });
+    }
+  }
+
+  return violations;
+}
+
+// ---------------------------------------------------------------------------
+// Coverage assertion (requires --manifest)
+// ---------------------------------------------------------------------------
+
+function loadManifest(path: string): BatchManifest {
+  const raw = JSON.parse(readFileSync(path, "utf-8")) as BatchManifest;
+  if (!Array.isArray(raw.target_skills) || raw.target_skills.length === 0) {
+    throw new Error("manifest.target_skills must be a non-empty array");
+  }
+  if (!Array.isArray(raw.difficulties) || raw.difficulties.length === 0) {
+    throw new Error("manifest.difficulties must be a non-empty array");
+  }
+  if (!Array.isArray(raw.extra_hard)) {
+    throw new Error("manifest.extra_hard must be an array");
+  }
+  return raw;
+}
+
+function buildExpectedTally(manifest: BatchManifest): Map<string, number> {
+  const expected = new Map<string, number>();
+  for (const skill of manifest.target_skills) {
+    for (const d of manifest.difficulties) {
+      const key = `${skill}\0${d}`;
+      expected.set(key, (expected.get(key) ?? 0) + 1);
+    }
+  }
+  for (const extra of manifest.extra_hard) {
+    const key = `${extra.skill}\0${extra.difficulty}`;
+    expected.set(key, (expected.get(key) ?? 0) + 1);
+  }
+  return expected;
+}
+
+function checkCoverage(
+  records: Array<{ rec: ContentRecord; file: string; line: number }>,
+  manifest: BatchManifest,
+  taxonomy: Taxonomy,
+): Violation[] {
+  const violations: Violation[] = [];
+  const v = (reason: string): void => {
+    violations.push({
+      file: "<manifest>",
+      line: 0,
+      record_index: -1,
+      field: "coverage",
+      reason,
+    });
+  };
+
+  // Validate manifest skills against taxonomy
+  const frozenSkills = allSkills(taxonomy);
+  for (const skill of manifest.target_skills) {
+    if (!frozenSkills.has(skill)) {
+      v(`MANIFEST_ERROR: target skill "${skill}" not in the frozen 29`);
+    }
+  }
+  for (const extra of manifest.extra_hard) {
+    if (!frozenSkills.has(extra.skill)) {
+      v(
+        `MANIFEST_ERROR: extra_hard skill "${extra.skill}" not in the frozen 29`,
+      );
+    }
+    if (!manifest.target_skills.includes(extra.skill)) {
+      v(
+        `MANIFEST_ERROR: extra_hard skill "${extra.skill}" not in target_skills`,
+      );
+    }
+  }
+
+  const expected = buildExpectedTally(manifest);
+  const targetSkillSet = new Set(manifest.target_skills);
+
+  // Build actual tally
+  const actual = new Map<string, number>();
+  for (const { rec } of records) {
+    const key = `${rec.skill}\0${rec.difficulty}`;
+    actual.set(key, (actual.get(key) ?? 0) + 1);
+  }
+
+  // Off-target skills (record-level — include file:line for traceability)
+  for (let i = 0; i < records.length; i++) {
+    const { rec, file, line } = records[i];
+    if (!targetSkillSet.has(rec.skill)) {
+      violations.push({
+        file,
+        line,
+        record_index: i,
+        field: "coverage",
+        reason: `OFF_TARGET: skill "${rec.skill}" not in manifest target set`,
+      });
+    }
+  }
+
+  // Missing leaves (expected but absent or under-counted)
+  Array.from(expected.entries()).forEach(([key, expCount]) => {
+    const [skill, diff] = key.split("\0");
+    const actualCount = actual.get(key) ?? 0;
+    if (actualCount < expCount) {
+      v(
+        `MISSING_LEAF: "${skill}" d${diff} — expected ${expCount}, got ${actualCount}`,
+      );
+    }
+  });
+
+  // Over-counted leaves (more than expected)
+  Array.from(actual.entries()).forEach(([key, actCount]) => {
+    const [skill, diff] = key.split("\0");
+    const expCount = expected.get(key) ?? 0;
+    if (actCount > expCount) {
+      v(
+        `OVER_COUNT: "${skill}" d${diff} — expected ${expCount}, got ${actCount}`,
+      );
+    }
+  });
+
+  // Total check
+  let expectedTotal = 0;
+  expected.forEach((count) => {
+    expectedTotal += count;
+  });
+  if (records.length !== expectedTotal) {
+    v(`TOTAL_MISMATCH: expected ${expectedTotal}, got ${records.length}`);
+  }
+
+  return violations;
 }
 
 function validateRecord(
@@ -570,6 +750,7 @@ async function main(): Promise<void> {
       in: { type: "string" },
       out: { type: "string" },
       report: { type: "string" },
+      manifest: { type: "string" },
       "dry-run": { type: "boolean", default: false },
       "dry-apply": { type: "boolean", default: false },
     },
@@ -579,6 +760,7 @@ async function main(): Promise<void> {
   const partsDir = values["in"];
   const outPath = values["out"];
   const reportPath = values["report"];
+  const manifestPath = values["manifest"];
   const dryRun = values["dry-run"] ?? false;
   const dryApplyFlag = values["dry-apply"] ?? false;
 
@@ -648,6 +830,19 @@ async function main(): Promise<void> {
       allViolations.push(...recViolations);
       records.push({ rec: parsed, file, line: i + 1 });
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Near-duplicate detection (stem+passage hash collision)
+  // -----------------------------------------------------------------------
+  allViolations.push(...checkNearDuplicates(records));
+
+  // -----------------------------------------------------------------------
+  // Coverage assertion (only when --manifest is provided)
+  // -----------------------------------------------------------------------
+  if (manifestPath) {
+    const manifest = loadManifest(resolve(manifestPath));
+    allViolations.push(...checkCoverage(records, manifest, taxonomy));
   }
 
   if (allViolations.length > 0) {
