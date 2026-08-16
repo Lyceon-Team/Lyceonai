@@ -4488,6 +4488,25 @@ ALTER TABLE public.projection_refresh_outbox ALTER COLUMN outbox_id ADD GENERATE
 
 
 --
+-- Name: psi_occurred_at_backfill_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.psi_occurred_at_backfill_log (
+    item_id uuid NOT NULL,
+    occurred_at_applied timestamp with time zone NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    migration_version text NOT NULL
+);
+
+
+--
+-- Name: TABLE psi_occurred_at_backfill_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.psi_occurred_at_backfill_log IS 'One row per practice_session_items row repaired by migration 20260816000000. The only record of which rows the backfill touched — post-state cannot re-derive the set, because a repaired row is indistinguishable from one that always had occurred_at = answered_at.';
+
+
+--
 -- Name: questions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5692,6 +5711,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.projection_refresh_outbox
     ADD CONSTRAINT projection_refresh_outbox_pkey PRIMARY KEY (outbox_id);
+
+
+--
+-- Name: psi_occurred_at_backfill_log psi_occurred_at_backfill_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.psi_occurred_at_backfill_log
+    ADD CONSTRAINT psi_occurred_at_backfill_log_pkey PRIMARY KEY (item_id);
 
 
 --
@@ -8048,6 +8075,12 @@ CREATE POLICY projection_snapshots_student_read ON public.student_section_projec
 
 
 --
+-- Name: psi_occurred_at_backfill_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10059,6 +10092,13 @@ GRANT SELECT ON TABLE public.profiles TO authenticated;
 --
 
 GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
+
+
+--
+-- Name: TABLE psi_occurred_at_backfill_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role;
 
 
 --

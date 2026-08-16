@@ -40,11 +40,31 @@
 -- row (owner ruling Q4, 2026-08-16). It is not a formula constant, so no
 -- mastery_constants_change_log entry is required.
 --
--- rollback:
+-- SELF-AUDITING: statement (1) writes one row per repaired item into
+-- psi_occurred_at_backfill_log, in the SAME statement as the UPDATE via a
+-- data-modifying CTE. Two reasons, and the second stands on its own:
+--
+--   1. Exact-target proof. Once occurred_at is filled, NO predicate over the
+--      post-state can identify which rows were repaired — a row set to
+--      occurred_at = answered_at is indistinguishable from one that always had
+--      them equal. Without the log, post-apply verification can only hash the
+--      whole resolved population, which is a different set than the pre-apply
+--      target hash and therefore proves nothing about identity. The log makes
+--      the proof about THESE 42 rows rather than SOME 42 rows.
+--
+--   2. Provenance. A backfill that mutates production data and leaves no record
+--      of what it touched is a gap regardless of the hash question. Every other
+--      mutation on the mastery surface leaves an audit trail; this one should
+--      too.
+--
+-- rollback (reviewed): LYCEON-MIGRATION-REVIEWED
 --   ALTER TABLE public.practice_session_items
 --     DROP CONSTRAINT IF EXISTS psi_resolved_requires_occurred_at;
+--   DROP TABLE IF EXISTS public.psi_occurred_at_backfill_log;
 --   -- the UPDATE is not rolled back: occurred_at = answered_at is the correct
---   -- value for these rows, and reverting it would re-break the pipeline.
+--   -- value for these rows, and reverting it would re-break the pipeline. Drop
+--   -- the log only if the backfill itself is being abandoned — it is the only
+--   -- record of which rows were touched.
 -- ---------------------------------------------------------------------------
 
 BEGIN;
@@ -97,16 +117,65 @@ BEGIN
 END $guard$;
 
 -- ---------------------------------------------------------------------------
--- (1) Repair. Scoped so the unresolved rows ('pending' / 'served') are outside
---     the predicate entirely — their NULL occurred_at is correct and must not
---     be touched. 1.1-post-apply.sql asserts that count is unchanged; it is the
+-- (0b) Backfill log. Created before the repair so statement (1) can write it in
+--      the same statement.
+--
+--      item_id is the PRIMARY KEY, not a surrogate: exactly one log row per
+--      repaired item is the property post-apply verification asserts, and the PK
+--      enforces it rather than merely expecting it.
+--
+--      Deliberately NO foreign key to practice_session_items and NO student_id
+--      column. A FK would make this table a participant in the 05D §10 account-
+--      deletion cascade, which enumerates its in-scope tables explicitly — adding
+--      an unlisted FK child would break the cascade rather than extend it, and
+--      extending the cascade is outside this workstream. Omitting student_id
+--      keeps the log operational-only: it records which ROWS were touched, not
+--      who they belong to. LYCEON-MIGRATION-REVIEWED
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.psi_occurred_at_backfill_log (
+  item_id             uuid        NOT NULL,
+  occurred_at_applied timestamptz NOT NULL,
+  applied_at          timestamptz NOT NULL DEFAULT now(),
+  migration_version   text        NOT NULL,
+  CONSTRAINT psi_occurred_at_backfill_log_pkey PRIMARY KEY (item_id)
+);
+
+COMMENT ON TABLE public.psi_occurred_at_backfill_log IS
+  'One row per practice_session_items row repaired by migration 20260816000000. The only record of which rows the backfill touched — post-state cannot re-derive the set, because a repaired row is indistinguishable from one that always had occurred_at = answered_at.';
+
+-- Same posture as mastery_derivation_gap_ledger and mastery_event_audit_log:
+-- RLS on with no policy (deny-all to anon/authenticated; service_role bypasses),
+-- revoked from PUBLIC, service_role-only grants. genesis requires RLS on every
+-- public table (genesis-fresh-apply gate A.4). LYCEON-MIGRATION-REVIEWED
+ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.psi_occurred_at_backfill_log FROM PUBLIC;
+GRANT SELECT, INSERT ON public.psi_occurred_at_backfill_log TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- (1) Repair, and log exactly what it repaired — ONE statement.
+--
+--     A data-modifying CTE, not an UPDATE followed by a separate INSERT: the
+--     RETURNING set IS the log source, so the log and the mutation cannot
+--     diverge even in principle. A separate INSERT could drift if the predicate
+--     were edited in one place and not the other.
+--
+--     Scoped so the unresolved rows ('pending' / 'served') are outside the
+--     predicate entirely — their NULL occurred_at is correct and must not be
+--     touched. 1.1-post-apply.sql asserts that count is unchanged; it is the
 --     negative control for this statement.
 -- ---------------------------------------------------------------------------
-UPDATE public.practice_session_items
-   SET occurred_at = answered_at
- WHERE status IN ('answered', 'skipped')
-   AND occurred_at IS NULL
-   AND answered_at IS NOT NULL;
+WITH repaired AS (
+  UPDATE public.practice_session_items
+     SET occurred_at = answered_at
+   WHERE status IN ('answered', 'skipped')
+     AND occurred_at IS NULL
+     AND answered_at IS NOT NULL
+  RETURNING id, answered_at
+)
+INSERT INTO public.psi_occurred_at_backfill_log
+  (item_id, occurred_at_applied, applied_at, migration_version)
+SELECT r.id, r.answered_at, now(), '20260816000000'
+FROM repaired r;
 
 -- ---------------------------------------------------------------------------
 -- (2) Seal. A resolved item is a mastery event; an event without an occurrence

@@ -15,7 +15,16 @@
 # Cases:
 #   (A) repair + seal        — 3 repairable rows fixed, 2 legitimate NULLs
 #                              untouched (negative control), constraint rejects
-#                              the write it accepted pre-migration
+#                              the write it accepted pre-migration, and the
+#                              backfill log names exactly the repaired rows
+#   (A2) EXACT-TARGET HASH    — the target_set_hash construction in
+#                              1.1-pre-apply.sql and the backfill_set_hash
+#                              construction in 1.1-post-apply.sql produce the
+#                              SAME value for the same set. This is the property
+#                              the whole production exact-target proof rests on;
+#                              if the two constructions ever diverge the operator
+#                              would see a mismatch and wrongly conclude the wrong
+#                              rows were repaired.
 #   (B) unrepairable guard   — resolved row with NULL occurred_at AND NULL
 #                              answered_at aborts with PSI_BACKFILL_UNREPAIRABLE
 #   (C) scope-expansion guard— 43 repairable rows abort with
@@ -76,12 +85,44 @@ else
   if ! psql -v ON_ERROR_STOP=1 -d mastery_unblock_a -q -v assert_pre=1 -f "$FIXTURE" >/dev/null 2>&1; then
     fail A "pre-state assertions failed (constraint already present, or unconstrained write refused)"
   fi
+  # Capture the pre-apply target hash using the EXACT expression from
+  # scripts/prod-verify/1.1-pre-apply.sql, before the repair makes the target
+  # set unrecoverable.
+  PRE_HASH="$(psql -tAq -d mastery_unblock_a -c "
+    WITH target_set AS (
+      SELECT id FROM public.practice_session_items
+       WHERE status IN ('answered','skipped')
+         AND occurred_at IS NULL
+         AND answered_at IS NOT NULL
+       ORDER BY id
+    )
+    SELECT encode(extensions.digest(
+             COALESCE(string_agg(id::text, ',' ORDER BY id), ''), 'sha256'), 'hex')
+      FROM target_set;" 2>/dev/null)"
+
   if ! apply_migration mastery_unblock_a "$M_BACKFILL" >/dev/null 2>&1; then
     fail A "migration failed to apply to the seeded pre-state"
   elif ! psql -v ON_ERROR_STOP=1 -d mastery_unblock_a -q -v assert_post=1 -f "$FIXTURE" >/dev/null; then
     fail A "post-migration assertions failed"
   else
-    pass A "3 repaired, negative control held, constraint rejects with 23514"
+    pass A "3 repaired, 3 logged, negative control held, constraint rejects with 23514"
+  fi
+
+  # Capture the post-apply hash using the EXACT expression from
+  # scripts/prod-verify/1.1-post-apply.sql.
+  POST_HASH="$(psql -tAq -d mastery_unblock_a -c "
+    SELECT encode(extensions.digest(
+             COALESCE(string_agg(item_id::text, ',' ORDER BY item_id), ''), 'sha256'), 'hex')
+      FROM public.psi_occurred_at_backfill_log;" 2>/dev/null)"
+
+  if [ -z "$PRE_HASH" ] || [ -z "$POST_HASH" ]; then
+    fail A2 "could not compute one of the hashes (pre='$PRE_HASH' post='$POST_HASH')"
+  elif [ "$PRE_HASH" != "$POST_HASH" ]; then
+    fail A2 "exact-target hash MISMATCH — 1.1-pre-apply and 1.1-post-apply do not agree
+       pre  (target_set_hash)   = $PRE_HASH
+       post (backfill_set_hash) = $POST_HASH"
+  else
+    pass A2 "target_set_hash == backfill_set_hash (${PRE_HASH:0:16}…) — exact-target proof holds"
   fi
 fi
 
@@ -136,12 +177,17 @@ if ! setup_genesis_db mastery_unblock_d; then
 else
   n="$(psql -tAq -d mastery_unblock_d -c "SELECT count(*) FROM public.practice_session_items WHERE status IN ('answered','skipped') AND occurred_at IS NULL AND answered_at IS NOT NULL;" 2>/dev/null)"
   c="$(psql -tAq -d mastery_unblock_d -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('psi_resolved_requires_occurred_at','questions_domain_section_canonical','psi_question_domain_section_canonical');" 2>/dev/null)"
+  # On a fresh DB the backfill repairs nothing, so the log must exist and be EMPTY.
+  # A log row here would mean the CTE logged something the UPDATE did not repair.
+  l="$(psql -tAq -d mastery_unblock_d -c "SELECT count(*) FROM public.psi_occurred_at_backfill_log;" 2>/dev/null)"
   if [ "${n:-x}" != "0" ]; then
     fail D "expected 0 repairable rows on a fresh DB, got '${n}'"
   elif [ "${c:-x}" != "3" ]; then
     fail D "expected all 3 new constraints present on a fresh DB, got '${c}'"
+  elif [ "${l:-x}" != "0" ]; then
+    fail D "expected 0 backfill-log rows on a fresh DB (nothing to repair), got '${l}'"
   else
-    pass D "clean apply at count 0, all 3 constraints present"
+    pass D "clean apply at count 0, all 3 constraints present, backfill log empty"
   fi
 fi
 

@@ -61,6 +61,25 @@ BEGIN
     (v_session, v_student, 3, v_qid, 'Stem', '[{"key":"A","text":"a"}]'::jsonb, 'A', 'E',
      'Algebra', 'ALG.01', 2, 'M', 'skipped',  NULL, false, 'skipped',  now() - interval '1 days', NULL, v_actor);
 
+  -- 2 ALREADY-REPAIRED resolved rows: answered with occurred_at ALREADY set.
+  -- These make the repairable set a STRICT SUBSET of the resolved set, mirroring
+  -- prod (42 repairable of 84 resolved). Without them every resolved row is also
+  -- repairable, and a backfill log that wrongly logged "all resolved rows"
+  -- instead of "the rows I repaired" would produce an identical set and slip
+  -- through both the count assertion and the exact-target hash.
+  INSERT INTO public.practice_session_items (
+    session_id, user_id, ordinal, question_id,
+    question_stem, question_options, question_correct_answer, question_explanation,
+    question_domain, question_skill, question_difficulty, question_section,
+    status, selected_answer, is_correct, outcome, answered_at, occurred_at, actor_id
+  ) VALUES
+    (v_session, v_student, 6, v_qid, 'Stem', '[{"key":"A","text":"a"}]'::jsonb, 'A', 'E',
+     'Algebra', 'ALG.01', 2, 'M', 'answered', 'A', true, 'correct',
+     now() - interval '9 days', now() - interval '9 days', v_actor),
+    (v_session, v_student, 7, v_qid, 'Stem', '[{"key":"A","text":"a"}]'::jsonb, 'A', 'E',
+     'Algebra', 'ALG.01', 2, 'M', 'answered', 'B', false, 'incorrect',
+     now() - interval '8 days', now() - interval '8 days', v_actor);
+
   -- 2 LEGITIMATE NULLs: unresolved items are not events yet. These are the
   -- negative control — the UPDATE must not touch them.
   INSERT INTO public.practice_session_items (
@@ -87,6 +106,7 @@ DO $pre$
 DECLARE
   v_repairable integer;
   v_legit      integer;
+  v_resolved   integer;
   v_con        integer;
 BEGIN
   SELECT count(*) INTO v_repairable FROM public.practice_session_items
@@ -101,10 +121,25 @@ BEGIN
     RAISE EXCEPTION 'PRE: expected 2 legitimately-NULL rows, found %', v_legit;
   END IF;
 
+  -- The repairable set MUST be a strict subset of the resolved set, or the
+  -- exact-target assertions below cannot discriminate a correct log from one
+  -- that logged every resolved row.
+  SELECT count(*) INTO v_resolved FROM public.practice_session_items
+   WHERE status IN ('answered','skipped');
+  IF v_resolved <> 5 THEN
+    RAISE EXCEPTION 'PRE: expected 5 resolved rows (3 repairable + 2 already-repaired), found %', v_resolved;
+  END IF;
+
   SELECT count(*) INTO v_con FROM pg_constraint
    WHERE conname = 'psi_resolved_requires_occurred_at';
   IF v_con <> 0 THEN
     RAISE EXCEPTION 'PRE: constraint psi_resolved_requires_occurred_at already exists — cutoff apply is wrong';
+  END IF;
+
+  SELECT count(*) INTO v_con FROM pg_tables
+   WHERE schemaname = 'public' AND tablename = 'psi_occurred_at_backfill_log';
+  IF v_con <> 0 THEN
+    RAISE EXCEPTION 'PRE: backfill log table already exists — cutoff apply is wrong';
   END IF;
 
   -- The mutation the constraint is supposed to stop. It must SUCCEED here.
@@ -112,7 +147,7 @@ BEGIN
      SET status = 'answered', answered_at = now(), occurred_at = NULL
    WHERE ordinal = 4;
 
-  RAISE NOTICE 'PRE ok: 3 repairable, 2 legit-NULL, no constraint, unconstrained write accepted';
+  RAISE NOTICE 'PRE ok: 3 repairable of 5 resolved, 2 legit-NULL, no constraint, unconstrained write accepted';
 
   -- put it back so the migration sees the intended shape (now 4 repairable)
   UPDATE public.practice_session_items
@@ -127,11 +162,13 @@ END $pre$;
 
 DO $post$
 DECLARE
-  v_unrepaired integer;
-  v_legit      integer;
-  v_drifted    integer;
-  v_con        integer;
-  v_sqlstate   text;
+  v_unrepaired   integer;
+  v_legit        integer;
+  v_drifted      integer;
+  v_con          integer;
+  v_logged       integer;
+  v_logmismatch  integer;
+  v_sqlstate     text;
 BEGIN
   -- (i) repair assertion
   SELECT count(*) INTO v_unrepaired FROM public.practice_session_items
@@ -162,6 +199,36 @@ BEGIN
     RAISE EXCEPTION 'POST: constraint psi_resolved_requires_occurred_at not found';
   END IF;
 
+  -- (iv-b) BACKFILL LOG — exactly one row per repaired item, and each logged
+  --        value still present on the row. The log is the only post-state
+  --        record of WHICH rows were repaired, so a wrong log silently destroys
+  --        the exact-target proof in 1.1-post-apply.sql.
+  SELECT count(*) INTO v_logged FROM public.psi_occurred_at_backfill_log;
+  IF v_logged <> 3 THEN
+    RAISE EXCEPTION 'POST: backfill log has % row(s), expected 3 (one per REPAIRED item, not per resolved row — there are 5 resolved)', v_logged;
+  END IF;
+
+  SELECT count(*) INTO v_logmismatch
+    FROM public.psi_occurred_at_backfill_log l
+    JOIN public.practice_session_items pi ON pi.id = l.item_id
+   WHERE pi.occurred_at IS DISTINCT FROM l.occurred_at_applied;
+  IF v_logmismatch <> 0 THEN
+    RAISE EXCEPTION 'POST: % logged row(s) do not carry the value the backfill wrote', v_logmismatch;
+  END IF;
+
+  -- the log must name exactly the rows that were repairable, not merely 3 rows
+  SELECT count(*) INTO v_logmismatch
+    FROM public.psi_occurred_at_backfill_log l
+   WHERE NOT EXISTS (
+     SELECT 1 FROM public.practice_session_items pi
+      WHERE pi.id = l.item_id
+        AND pi.status IN ('answered','skipped')
+        AND pi.occurred_at = pi.answered_at
+   );
+  IF v_logmismatch <> 0 THEN
+    RAISE EXCEPTION 'POST: % logged item(s) are not repaired resolved rows', v_logmismatch;
+  END IF;
+
   -- (v) GREEN HALF of the mutation: the same write the pre-state accepted must
   --     now be refused with 23514.
   BEGIN
@@ -174,7 +241,7 @@ BEGIN
     IF v_sqlstate <> '23514' THEN
       RAISE EXCEPTION 'POST: expected SQLSTATE 23514, got %', v_sqlstate;
     END IF;
-    RAISE NOTICE 'POST ok: repaired 3, negative control held at 2, constraint rejects with 23514';
+    RAISE NOTICE 'POST ok: repaired 3, logged 3, negative control held at 2, constraint rejects with 23514';
   END;
 END $post$;
 
