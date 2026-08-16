@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# ============================================================================
+# Mastery-unblock migration gate — 20260816000000 + 20260816010000
+# ============================================================================
+# Proves, against a throwaway Postgres carrying genesis + every migration, that
+# the two unblock migrations do what they claim and refuse what they should.
+#
+# The sequencing IS the test. Each case provisions a DB at the state that
+# existed just BEFORE the migration under test (setup_genesis_db's stop_before
+# cutoff), seeds the pre-state, asserts the failure is real, applies the single
+# migration, then asserts the fix. A gate that only ever sees the post-migration
+# schema cannot tell a working constraint from a constraint that was always
+# there — that is the hollow-test failure mode this suite exists to avoid.
+#
+# Cases:
+#   (A) repair + seal        — 3 repairable rows fixed, 2 legitimate NULLs
+#                              untouched (negative control), constraint rejects
+#                              the write it accepted pre-migration
+#   (B) unrepairable guard   — resolved row with NULL occurred_at AND NULL
+#                              answered_at aborts with PSI_BACKFILL_UNREPAIRABLE
+#   (C) scope-expansion guard— 43 repairable rows abort with
+#                              PSI_BACKFILL_SCOPE_EXPANDED
+#   (D) portability          — the migration applies cleanly to a FRESH database
+#                              where the repairable count is 0. This is the
+#                              regression test for the hardcoded-count blocker:
+#                              an environment-specific fact inside a migration
+#                              reds every fresh apply.
+#   (E) domain pre-check     — a non-canonical (section, domain) row aborts
+#                              1.2 with CANONICAL_DOMAIN_VIOLATION
+#   (F) domain post-state    — both constraints present; hyphenated and
+#                              cross-section pairs rejected; canonical accepted
+#
+# Connection via standard PG* env (PGHOST/PGPORT/PGUSER/PGPASSWORD). Defaults to
+# a local cluster on :5432. The shared lib refuses non-ephemeral hosts.
+# ============================================================================
+set -uo pipefail
+
+export PGHOST="${PGHOST:-localhost}"
+export PGPORT="${PGPORT:-5432}"
+export PGUSER="${PGUSER:-postgres}"
+export PGPASSWORD="${PGPASSWORD:-postgres}"
+# Migrations emit a large volume of NOTICE-level CI-guard chatter. Assertions in
+# this gate raise EXCEPTION, so warnings and above are all we need to see.
+export PGOPTIONS="${PGOPTIONS:--c client_min_messages=warning}"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/ci/lib/deletion-rehearsal-db.sh
+source "$SCRIPT_DIR/lib/deletion-rehearsal-db.sh"
+
+FIXTURE="$SCRIPT_DIR/mastery-unblock-gates.sql"
+M_BACKFILL="20260816000000_psi_occurred_at_backfill_and_seal.sql"
+M_DOMAIN="20260816010000_canonical_domain_checks.sql"
+
+[ -f "$FIXTURE" ] || { echo "FAIL: fixture not found ($FIXTURE)"; exit 1; }
+
+FAILURES=0
+fail() { echo "FAIL [$1]: $2"; FAILURES=$((FAILURES + 1)); }
+pass() { echo "ok   [$1]: $2"; }
+
+cleanup() {
+  for db in mastery_unblock_a mastery_unblock_b mastery_unblock_c mastery_unblock_d mastery_unblock_e mastery_unblock_f; do
+    drop_deletion_rehearsal_db "$db" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
+# (A) repair + seal, with the negative control
+# ---------------------------------------------------------------------------
+echo "==> (A) repair + seal"
+if ! setup_genesis_db mastery_unblock_a "$M_BACKFILL"; then
+  fail A "could not provision DB at pre-migration state"
+else
+  psql -v ON_ERROR_STOP=1 -d mastery_unblock_a -q -v seed_repairable=1 -f "$FIXTURE" >/dev/null 2>&1 \
+    || fail A "seed failed"
+  if ! psql -v ON_ERROR_STOP=1 -d mastery_unblock_a -q -v assert_pre=1 -f "$FIXTURE" >/dev/null 2>&1; then
+    fail A "pre-state assertions failed (constraint already present, or unconstrained write refused)"
+  fi
+  if ! apply_migration mastery_unblock_a "$M_BACKFILL" >/dev/null 2>&1; then
+    fail A "migration failed to apply to the seeded pre-state"
+  elif ! psql -v ON_ERROR_STOP=1 -d mastery_unblock_a -q -v assert_post=1 -f "$FIXTURE" >/dev/null; then
+    fail A "post-migration assertions failed"
+  else
+    pass A "3 repaired, negative control held, constraint rejects with 23514"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (B) unrepairable guard
+# ---------------------------------------------------------------------------
+echo "==> (B) unrepairable guard"
+if ! setup_genesis_db mastery_unblock_b "$M_BACKFILL"; then
+  fail B "could not provision DB"
+else
+  psql -v ON_ERROR_STOP=1 -d mastery_unblock_b -q -v seed_unrepairable=1 -f "$FIXTURE" >/dev/null 2>&1 \
+    || fail B "seed failed"
+  out="$(apply_migration mastery_unblock_b "$M_BACKFILL" 2>&1)"
+  if [ $? -eq 0 ]; then
+    fail B "migration APPLIED despite an unrepairable row — the guard is not firing"
+  elif ! grep -q "PSI_BACKFILL_UNREPAIRABLE" <<<"$out"; then
+    fail B "migration aborted but not with PSI_BACKFILL_UNREPAIRABLE: $out"
+  else
+    pass B "aborted with PSI_BACKFILL_UNREPAIRABLE"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (C) scope-expansion guard
+# ---------------------------------------------------------------------------
+echo "==> (C) scope-expansion guard"
+if ! setup_genesis_db mastery_unblock_c "$M_BACKFILL"; then
+  fail C "could not provision DB"
+else
+  psql -v ON_ERROR_STOP=1 -d mastery_unblock_c -q -v seed_overscope=1 -f "$FIXTURE" >/dev/null 2>&1 \
+    || fail C "seed failed"
+  out="$(apply_migration mastery_unblock_c "$M_BACKFILL" 2>&1)"
+  if [ $? -eq 0 ]; then
+    fail C "migration APPLIED with 43 repairable rows — the scope guard is not firing"
+  elif ! grep -q "PSI_BACKFILL_SCOPE_EXPANDED" <<<"$out"; then
+    fail C "migration aborted but not with PSI_BACKFILL_SCOPE_EXPANDED: $out"
+  else
+    pass C "aborted with PSI_BACKFILL_SCOPE_EXPANDED"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (D) portability — fresh DB, zero repairable rows
+#
+# The regression test for the blocker. A migration carrying an
+# environment-specific count (`<> 42`) passes (A)-(C) and still reds every
+# fresh apply, every throwaway rehearsal DB, and the transport-test substrate.
+# ---------------------------------------------------------------------------
+echo "==> (D) portability on a fresh database"
+if ! setup_genesis_db mastery_unblock_d; then
+  fail D "full migration set (including both unblock migrations) failed to apply to a fresh DB"
+else
+  n="$(psql -tAq -d mastery_unblock_d -c "SELECT count(*) FROM public.practice_session_items WHERE status IN ('answered','skipped') AND occurred_at IS NULL AND answered_at IS NOT NULL;" 2>/dev/null)"
+  c="$(psql -tAq -d mastery_unblock_d -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('psi_resolved_requires_occurred_at','questions_domain_section_canonical','psi_question_domain_section_canonical');" 2>/dev/null)"
+  if [ "${n:-x}" != "0" ]; then
+    fail D "expected 0 repairable rows on a fresh DB, got '${n}'"
+  elif [ "${c:-x}" != "3" ]; then
+    fail D "expected all 3 new constraints present on a fresh DB, got '${c}'"
+  else
+    pass D "clean apply at count 0, all 3 constraints present"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (E) domain pre-check aborts on a violating row
+# ---------------------------------------------------------------------------
+echo "==> (E) canonical-domain pre-check"
+if ! setup_genesis_db mastery_unblock_e "$M_DOMAIN"; then
+  fail E "could not provision DB at pre-migration state"
+else
+  psql -v ON_ERROR_STOP=1 -d mastery_unblock_e -q -v seed_bad_domain=1 -f "$FIXTURE" >/dev/null 2>&1 \
+    || fail E "seed failed — is the CHECK already present at this cutoff?"
+  out="$(apply_migration mastery_unblock_e "$M_DOMAIN" 2>&1)"
+  if [ $? -eq 0 ]; then
+    fail E "migration APPLIED with a non-canonical domain present — the pre-check is not firing"
+  elif ! grep -q "CANONICAL_DOMAIN_VIOLATION" <<<"$out"; then
+    fail E "migration aborted but not with CANONICAL_DOMAIN_VIOLATION: $out"
+  else
+    pass E "aborted with CANONICAL_DOMAIN_VIOLATION"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (F) domain constraints enforce after apply
+# ---------------------------------------------------------------------------
+echo "==> (F) canonical-domain constraints enforce"
+if ! setup_genesis_db mastery_unblock_f; then
+  fail F "could not provision DB"
+elif ! psql -v ON_ERROR_STOP=1 -d mastery_unblock_f -q -v assert_domain_post=1 -f "$FIXTURE" >/dev/null; then
+  fail F "domain constraint assertions failed"
+else
+  pass F "hyphen rejected, cross-section rejected, canonical accepted"
+fi
+
+echo
+if [ "$FAILURES" -ne 0 ]; then
+  echo "MASTERY UNBLOCK GATES: FAIL ($FAILURES case(s))"
+  exit 1
+fi
+echo "MASTERY UNBLOCK GATES: PASS"

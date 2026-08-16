@@ -43,7 +43,7 @@ python3 "$ROOT/scripts/ci/mastery_production_parity.py" check --psql-out "$PSQL_
 # Shared FK parents for the D1/D2 unit tests.
 psql_db "$DB" -q >/dev/null <<'SQL'
 INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation)
-  VALUES ('SATM1ZZZZZZ','M',1,'d',ARRAY['s'],2,'stem','[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,'A','expl') ON CONFLICT DO NOTHING;
+  VALUES ('SATM1ZZZZZZ','M',1,'Algebra',ARRAY['s'],2,'stem','[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,'A','expl') ON CONFLICT DO NOTHING;
 -- replay student R + a 5-event answered session; atomicity student A + committed session.
 INSERT INTO auth.users (id,email) VALUES
   ('11111111-1111-1111-1111-111111111111','r@ci'),('22222222-2222-2222-2222-222222222222','a@ci');

@@ -44,7 +44,7 @@ def cmd_gen() -> int:
     out.append(
         "INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, "
         "stem, options, correct_answer, explanation) VALUES "
-        f"({_lit(_QID)}, 'M', 1, 'd', ARRAY['s'], 2, 'stem', "
+        f"({_lit(_QID)}, 'M', 1, 'Algebra', ARRAY['s'], 2, 'stem', "
         f"'[{{\"key\":\"A\",\"text\":\"a\"}},{{\"key\":\"B\",\"text\":\"b\"}},{{\"key\":\"C\",\"text\":\"c\"}},{{\"key\":\"D\",\"text\":\"d\"}}]'::jsonb, 'A', 'expl') "
         "ON CONFLICT (id) DO NOTHING;"
     )
@@ -72,21 +72,21 @@ def cmd_gen() -> int:
                     " question_correct_answer, question_explanation, question_domain, question_skill, "
                     " question_difficulty, question_section, status, is_correct, occurred_at, actor_id) VALUES ("
                     f"{_lit(_evt(fid,i))}, {_lit(_sess(fid))}, {_lit(sid)}, {i}, {_lit(_QID)}, 'stem', '[]'::jsonb, "
-                    f"'A', 'expl', 'd', 's', {diff}::smallint, 'M', 'answered', {correct}, {occ}, "
+                    f"'A', 'expl', 'Algebra', 's', {diff}::smallint, 'M', 'answered', {correct}, {occ}, "
                     f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
                 )
             else:  # review
                 out.append(
                     "INSERT INTO public.review_error_attempts "
                     "(id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at, actor_id) VALUES ("
-                    f"{_lit(_evt(fid,i))}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', 'd', 's', {diff}::smallint, {occ}, "
+                    f"{_lit(_evt(fid,i))}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', 'Algebra', 's', {diff}::smallint, {occ}, "
                     f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
                 )
     # compute via PRODUCTION canonical_mastery_events, COPYed as TSV
     selects = [
         f"SELECT {_lit(fid)}::text AS fid, c.total_events, c.acc_test, c.acc_practice, c.acc_review, "
         f"c.mastery_score, c.mastery_pct, c.mastery_level "
-        f"FROM public.compute_mastery_for_entity({_lit(_student(fid))}, 'skill', 'M', 'd', 's') c"
+        f"FROM public.compute_mastery_for_entity({_lit(_student(fid))}, 'skill', 'M', 'Algebra', 's') c"
         for fid in prod
     ]
     out.append("\\echo __COMPUTE_BEGIN__")

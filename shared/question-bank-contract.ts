@@ -105,23 +105,87 @@ export function normalizeItemType(value: unknown): CanonicalItemType | null {
   return null;
 }
 
+/**
+ * @spec [Doc-05B_V1.0 §4.2 domain canonicality is BLOCKING in 05B] | @implemented [2026-08-16]
+ * plain English: the canonical (section, domain) pairing, single-sourced. It mirrors
+ * the two lists inside refresh_domain_mastery exactly — that function raises
+ * DOMAIN_SECTION_MISMATCH on anything else and rolls back the whole mastery event,
+ * so a drifted string here is not cosmetic. Note 'Problem Solving and Data Analysis'
+ * has NO hyphen. The DB enforces the same pairing independently
+ * (questions_domain_section_canonical / psi_question_domain_section_canonical);
+ * this is the application-side source, not a substitute for that floor.
+ */
+export const CANONICAL_DOMAINS_BY_SECTION: Readonly<
+  Record<"M" | "RW", readonly string[]>
+> = {
+  M: [
+    "Algebra",
+    "Advanced Math",
+    "Problem Solving and Data Analysis",
+    "Geometry and Trigonometry",
+  ],
+  RW: [
+    "Craft and Structure",
+    "Information and Ideas",
+    "Standard English Conventions",
+    "Expression of Ideas",
+  ],
+};
+
+/** Flat view of the pairing above. Derived — never edit this list directly. */
 export const CANONICAL_DOMAINS: readonly string[] = [
-  "Algebra",
-  "Advanced Math",
-  "Problem Solving and Data Analysis",
-  "Geometry and Trigonometry",
-  "Craft and Structure",
-  "Information and Ideas",
-  "Standard English Conventions",
-  "Expression of Ideas",
+  ...CANONICAL_DOMAINS_BY_SECTION.M,
+  ...CANONICAL_DOMAINS_BY_SECTION.RW,
 ];
 
 export const DOMAIN_LOOKUP = new Map(
   CANONICAL_DOMAINS.map((d) => [d.toLowerCase(), d]),
 );
 
+/**
+ * LENIENT — for FILTER INPUT ONLY. Falls back to the trimmed input when there is no
+ * canonical match, so a non-canonical filter narrows to zero rows instead of erroring.
+ * Both callers (practice-canonical `normalizeDomainList`, practice-topics-routes query
+ * builder) are query paths where that is the correct behaviour.
+ *
+ * Do NOT use this on the serving/storage path — the pass-through is exactly how a
+ * non-canonical string would reach practice_session_items.question_domain and kill
+ * every mastery event in that domain. Use assertCanonicalDomain there.
+ */
 export function resolveCanonicalDomain(input: string): string {
   return DOMAIN_LOOKUP.get(input.trim().toLowerCase()) ?? input.trim();
+}
+
+/** Predicate form of the canonical (section, domain) pairing. */
+export function isCanonicalDomainForSection(
+  section: unknown,
+  domain: unknown,
+): boolean {
+  if (section !== "M" && section !== "RW") return false;
+  if (typeof domain !== "string") return false;
+  return CANONICAL_DOMAINS_BY_SECTION[section].includes(domain);
+}
+
+/**
+ * STRICT — for the serving/storage path. Returns the domain unchanged when the
+ * (section, domain) pair is canonical; throws otherwise.
+ *
+ * Throws rather than returning a Result because reaching here with a bad pair is a
+ * data-integrity fault, not an expected failure: post-migration the DB CHECK makes it
+ * unrepresentable, so an exception means the invariant has already been breached
+ * upstream. Callers on the session-materialization path catch it and route through
+ * cleanupFailedSessionMaterialization, so the failure is fail-closed, not a leak.
+ */
+export function assertCanonicalDomain(
+  section: unknown,
+  domain: unknown,
+): string {
+  if (!isCanonicalDomainForSection(section, domain)) {
+    throw new Error(
+      `NON_CANONICAL_DOMAIN: (${String(section)}, ${String(domain)}) is not a canonical (section, domain) pair`,
+    );
+  }
+  return domain as string;
 }
 
 export function resolveSectionFilterValues(input: unknown): string[] | null {
