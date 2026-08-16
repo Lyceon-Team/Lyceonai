@@ -150,6 +150,14 @@ CREATE TABLE IF NOT EXISTS public.mastery_derivation_gap_ledger (
 CREATE INDEX IF NOT EXISTS idx_mastery_gap_ledger_observed_at
   ON public.mastery_derivation_gap_ledger (observed_at DESC);
 
+-- RLS with NO policy — deny-all to anon/authenticated; service_role bypasses.
+-- Same posture as mastery_event_audit_log (20260610010000_ws3_mastery_formula.sql:294):
+-- an operator-facing table that names students gets no student-readable surface.
+-- genesis enforces RLS on EVERY public table (genesis-fresh-apply gate A.4), so a new
+-- table without this line fails that gate. Rollback is the DROP TABLE in the header
+-- block, which removes the policy-less RLS state with it. LYCEON-MIGRATION-REVIEWED
+ALTER TABLE public.mastery_derivation_gap_ledger ENABLE ROW LEVEL SECURITY;
+
 COMMENT ON TABLE public.mastery_derivation_gap_ledger IS
   'Time series of mastery derivation gap observations. total_gap_count > 0 on the latest row is the alert condition.';
 
