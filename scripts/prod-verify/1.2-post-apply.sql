@@ -1,108 +1,116 @@
 -- ============================================================================
 -- POST-APPLY VERIFICATION — 20260816010000_canonical_domain_checks
 -- ============================================================================
--- Both constraints present AND enforcing. The presence check alone is not
--- sufficient: a constraint can exist and still be NOT VALID, or be defined over
--- the wrong column. The spot insert proves enforcement.
+-- READ-ONLY. No transaction, no INSERT, no ROLLBACK. Run after Karl applies the
+-- migration.
 --
--- This file performs ONE transactional write and rolls it back. It is the only
--- file under scripts/prod-verify/ that is not strictly read-only, and it leaves
--- no trace: the INSERT is expected to FAIL, and the surrounding transaction is
--- rolled back regardless.
+-- WHY THIS FILE NO LONGER ATTEMPTS SPOT INSERTS
+--   An earlier revision opened a transaction and issued three INSERTs against
+--   public.questions — two expected to fail, one expected to succeed — before
+--   ROLLBACK. That is not read-only in any sense that matters on production:
+--   rollback does not undo trigger side effects that reach outside the
+--   transaction, the attempts still consume sequence values and take locks, and
+--   an operator whose session dies mid-file leaves an open transaction on prod.
+--
+--   It was also unnecessary. Proving that PostgreSQL enforces a CHECK constraint
+--   is CI's job against an ephemeral database, and it is already done there:
+--   scripts/ci/mastery-unblock-gates.sh case (F) rejects the hyphenated form and
+--   the cross-section pair, and accepts the canonical form. Prod does not need to
+--   re-prove the database engine.
+--
+-- WHAT REPLACES IT — AND WHY IT IS STRONGER
+--   Exact comparison of pg_get_constraintdef() against the expected definition
+--   text. A rejection test only proves the constraint refuses ONE probe value; a
+--   constraint could reject 'Problem-Solving and Data Analysis' while being
+--   subtly wrong elsewhere in the pairing — a missing RW domain, a swapped
+--   section, a stray extra literal — and still pass every probe an operator would
+--   think to type. Comparing the full normalized definition catches all of that
+--   at once, with no write.
 --
 -- EXPECTED
---   both_constraints_present = t
---   the hyphenated spot insert raises 23514 (printed as a caught exception)
---   the canonical spot insert succeeds, then is rolled back
+--   questions_constraint_matches       = t
+--   psi_constraint_matches             = t
+--   both_present                       = t
+--   verdict                            = 'OK — 1.2 applied, both constraints exact'
+--
+-- HOW TO READ A DEVIATION
+--   present but not matching → the constraint exists with a DIFFERENT definition
+--     than this migration authored. Print the actual text (second query below)
+--     and compare against the expected literal. Do not assume it is equivalent.
+--   absent                   → the migration did not apply.
+--
+-- Note the M list is 'Problem Solving and Data Analysis' WITHOUT a hyphen, which
+-- is what refresh_domain_mastery's canonical list uses and what the data uses.
 --
 -- USAGE: psql -f scripts/prod-verify/1.2-post-apply.sql
 -- ============================================================================
 
 \pset footer off
-\echo '=== 1.2 POST-APPLY — canonical domain constraints present and enforcing ==='
+\echo '=== 1.2 POST-APPLY — canonical domain constraints present and EXACT ==='
 
+WITH expected(conname, definition) AS (
+  VALUES
+    (
+      'questions_domain_section_canonical',
+      'CHECK ((((section = ''M''::text) AND (domain = ANY (ARRAY[''Algebra''::text, ''Advanced Math''::text, ''Problem Solving and Data Analysis''::text, ''Geometry and Trigonometry''::text]))) OR ((section = ''RW''::text) AND (domain = ANY (ARRAY[''Information and Ideas''::text, ''Craft and Structure''::text, ''Expression of Ideas''::text, ''Standard English Conventions''::text])))))'
+    ),
+    (
+      'psi_question_domain_section_canonical',
+      'CHECK ((((question_section = ''M''::text) AND (question_domain = ANY (ARRAY[''Algebra''::text, ''Advanced Math''::text, ''Problem Solving and Data Analysis''::text, ''Geometry and Trigonometry''::text]))) OR ((question_section = ''RW''::text) AND (question_domain = ANY (ARRAY[''Information and Ideas''::text, ''Craft and Structure''::text, ''Expression of Ideas''::text, ''Standard English Conventions''::text])))))'
+    )
+)
 SELECT
-  EXISTS (SELECT 1 FROM pg_constraint
-           WHERE conname = 'questions_domain_section_canonical')     AS questions_constraint,
-  EXISTS (SELECT 1 FROM pg_constraint
-           WHERE conname = 'psi_question_domain_section_canonical')  AS psi_constraint,
-  (EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'questions_domain_section_canonical')
-   AND
-   EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'psi_question_domain_section_canonical'))
-                                                                     AS both_constraints_present;
+  bool_or(e.conname = 'questions_domain_section_canonical'
+          AND pg_get_constraintdef(c.oid) = e.definition)      AS questions_constraint_matches,
+  bool_or(e.conname = 'psi_question_domain_section_canonical'
+          AND pg_get_constraintdef(c.oid) = e.definition)      AS psi_constraint_matches,
+  count(c.oid)                                                 AS constraints_found,
+  2                                                            AS constraints_expected,
+  CASE
+    WHEN count(c.oid) <> 2
+      THEN 'STOP — one or both canonical-domain constraints are missing'
+    WHEN bool_and(pg_get_constraintdef(c.oid) = e.definition)
+      THEN 'OK — 1.2 applied, both constraints exact'
+    ELSE 'STOP — a constraint exists but its definition does NOT match the migration'
+  END                                                          AS verdict
+FROM expected e
+LEFT JOIN pg_constraint c ON c.conname = e.conname;
 
 \echo ''
-\echo '--- constraint definitions ---'
-SELECT conname, pg_get_constraintdef(oid) AS definition
+\echo '--- actual definitions (compare by eye against the literals above on any deviation) ---'
+
+SELECT
+  conname,
+  conrelid::regclass AS on_table,
+  convalidated       AS is_validated,
+  pg_get_constraintdef(oid) AS actual_definition
 FROM pg_constraint
 WHERE conname IN ('questions_domain_section_canonical',
                   'psi_question_domain_section_canonical')
 ORDER BY conname;
 
 \echo ''
-\echo '--- enforcement proof (writes nothing: every branch is rolled back) ---'
+\echo '--- corroboration: no row in either table violates the pairing (0/0 expected) ---'
+\echo '--- a NOT VALID constraint would let pre-existing violations survive ---'
 
-BEGIN;
-
-DO $proof$
-DECLARE
-  v_sqlstate text;
-  v_hyphen_rejected      boolean := false;
-  v_cross_rejected       boolean := false;
-  v_canonical_accepted   boolean := false;
-BEGIN
-  -- (a) hyphenated M domain must be REJECTED
-  BEGIN
-    INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty,
-                                  stem, options, correct_answer, explanation)
-    VALUES ('SATM1Z99901', 'M', 1, 'Problem-Solving and Data Analysis', ARRAY['PSD.01'], 2, 'proof',
-      '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
-      'A', 'proof');
-  EXCEPTION WHEN check_violation THEN
-    GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
-    v_hyphen_rejected := (v_sqlstate = '23514');
-  END;
-
-  -- (b) valid RW domain under section M must be REJECTED (the pairing, not just the list)
-  BEGIN
-    INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty,
-                                  stem, options, correct_answer, explanation)
-    VALUES ('SATM1Z99902', 'M', 1, 'Craft and Structure', ARRAY['CAS.01'], 2, 'proof',
-      '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
-      'A', 'proof');
-  EXCEPTION WHEN check_violation THEN
-    v_cross_rejected := true;
-  END;
-
-  -- (c) the canonical form must still be ACCEPTED — not a blanket refusal
-  BEGIN
-    INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty,
-                                  stem, options, correct_answer, explanation)
-    VALUES ('SATM1Z99903', 'M', 1, 'Problem Solving and Data Analysis', ARRAY['PSD.01'], 2, 'proof',
-      '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
-      'A', 'proof');
-    v_canonical_accepted := true;
-  EXCEPTION WHEN OTHERS THEN
-    v_canonical_accepted := false;
-  END;
-
-  IF NOT v_hyphen_rejected THEN
-    RAISE EXCEPTION 'STOP — hyphenated domain was ACCEPTED; the CHECK is not enforcing';
-  END IF;
-  IF NOT v_cross_rejected THEN
-    RAISE EXCEPTION 'STOP — cross-section pair (M, Craft and Structure) was ACCEPTED; pairing not enforced';
-  END IF;
-  IF NOT v_canonical_accepted THEN
-    RAISE EXCEPTION 'STOP — canonical domain was REJECTED; the CHECK is too strict';
-  END IF;
-
-  RAISE NOTICE 'OK — hyphen rejected (23514), cross-section rejected, canonical accepted';
-END $proof$;
-
-ROLLBACK;
-
-\echo ''
-\echo '--- confirm the proof left nothing behind (expect 0) ---'
-SELECT count(*) AS leftover_proof_rows
-FROM public.questions
-WHERE id LIKE 'SATM1Z999%';
+SELECT
+  (SELECT count(*) FROM public.questions q
+    WHERE NOT (
+      (q.section = 'M'  AND q.domain IN ('Algebra','Advanced Math',
+                                         'Problem Solving and Data Analysis',
+                                         'Geometry and Trigonometry'))
+      OR
+      (q.section = 'RW' AND q.domain IN ('Information and Ideas','Craft and Structure',
+                                         'Expression of Ideas',
+                                         'Standard English Conventions'))
+    ))                                                          AS bad_questions,
+  (SELECT count(*) FROM public.practice_session_items pi
+    WHERE NOT (
+      (pi.question_section = 'M'  AND pi.question_domain IN ('Algebra','Advanced Math',
+                                                             'Problem Solving and Data Analysis',
+                                                             'Geometry and Trigonometry'))
+      OR
+      (pi.question_section = 'RW' AND pi.question_domain IN ('Information and Ideas','Craft and Structure',
+                                                             'Expression of Ideas',
+                                                             'Standard English Conventions'))
+    ))                                                          AS bad_items;
