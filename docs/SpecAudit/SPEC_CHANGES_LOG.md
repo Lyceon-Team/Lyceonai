@@ -25,6 +25,20 @@
 
 ## Entries
 
+SCL-040 | 2026-08-17 | Doc 03C §4.3 cross-reference error — "03A V3 §11" is Policy Decision Logging, not prompt artifacts | PROPOSED
+
+Change: Doc 03C V3 §4.3 references "Doc 03A V3 §11 (policy prompt artifacts)" as the authority for the prompt artifact format. Doc 03A V3 §11 is actually "Policy Decision Logging" — it defines the `tutor_policy_decision_log` table and has no prompt artifact content.
+
+WAS: §4.3 says "Prompt artifacts use the format defined in 03A V3 §11 (policy prompt artifacts)" and proceeds to describe loading behavior (immutable after load, version-keyed, registry-resolved) without specifying the artifact shape or format, delegating that to the cross-referenced section.
+
+IS: No section of Doc 03A defines the prompt artifact format. The cross-reference is a drafting error — §11 is not about prompt artifacts. The loading and resolution semantics in §4.3 itself (immutable, version-keyed, variant-resolved, fallback-to-default) are implemented as specified. The artifact format — a TypeScript module exporting a typed `PromptArtifact` with a `renderSystemInstruction(fields)` function — is derived from §4.3's behavioral requirements (immutability, version keying, field substitution only) and the platform's existing module-load conventions.
+
+Rationale: Discovered during WS-L5 implementation (prompt template system). The loading/resolution semantics are clear and implemented per §4.3. The missing piece is the artifact format itself, which §4.3 delegates to a non-existent source section. Implementation chose TypeScript modules with typed render functions because: (a) immutability is enforced by `ReadonlyMap` + module-load semantics, (b) field substitution is type-checked via `PromptFields`, (c) version keying uses the artifact's own `version` field, (d) the registry is loaded at bootstrap (import time), not at request time.
+
+Version: Doc 03C V3 §4.3 cross-reference to "03A V3 §11" should be corrected. No spec version bump (the behavioral requirements are correct; only the cross-reference target is wrong). No code change — the implementation satisfies §4.3's behavioral requirements.
+Owner action: at next spec pass, either (a) correct the §4.3 cross-reference to the actual prompt artifact format section (if one exists elsewhere), or (b) define the artifact format inline in §4.3, or (c) create a new §11.x in Doc 03A for prompt artifact format and update the cross-reference.
+Artifact: PR for branch claude/ws-l5-prompt-templates.
+
 SCL-039 | 2026-08-15 | Doc 03D §3 and §5.1 — affective state modulates scaffolding level | OPEN (owner-approved 2026-08-15)
 
 Change: Doc 03D specifies scaffolding by diagnostic mode — knowledge gap, retrieval failure, buggy procedure — and by surface. It does not account for the student's affective state. The owner's blind-authored gold response for CASE-18 departed sharply from the rubric for a reason the document had no field to express.

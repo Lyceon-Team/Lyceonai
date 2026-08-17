@@ -1,6 +1,15 @@
 /**
- * @spec [Doc-03C_V3 §5.3 (Model Routing), Doc-03B_V4.1 §6.5 step 14]
+ * @spec [Doc-03C_V3 §5.3 (Model Routing), §4.3 (Prompt Artifacts),
+ *        Doc-03D_V1.2 §7.2 (Late Block Placement), §7.4 (Fact-Directive Pairing),
+ *        Doc-03B_V4.1 §6.5 step 14]
  * @implemented 2026-08-09
+ * @updated 2026-08-17 — WS-L5: prompt template artifact system replaces the
+ *   static placeholder. System instruction now comes from a versioned, immutable
+ *   prompt artifact (§4.3) loaded at bootstrap via the prompt registry. Context
+ *   blocks (mastery, friction, memory, style) are rendered as late-placed
+ *   [system note] messages per §7.2, with fact-directive pairing per §7.4.
+ *   SCL-034 through SCL-039 behavioral directives are encoded in the artifact
+ *   and in the paired state-block directives.
  *
  * plain English: Worker route for tutor turn orchestration. Receives the assembled
  * context envelope (OrchestrateRequest), invokes the appropriate Vertex model via
@@ -8,8 +17,9 @@
  *
  * expected outcome: POST /orchestrate/turn accepts a validated OrchestrateRequest,
  * routes to the correct model alias (flash_class or pro_class per the 9-rule routing
- * table), invokes Vertex with Model Armor input scanning, and returns the response
- * with Model Armor output scanning applied.
+ * table), builds a system instruction from the prompt artifact and injects
+ * context-aware state blocks, invokes Vertex with Model Armor input scanning,
+ * and returns the response with Model Armor output scanning applied.
  *
  * trade-offs:
  *  - Model routing rules are hardcoded in the 9-rule precedence table (Doc 03C V3
@@ -28,21 +38,31 @@
  *    the enforceable manual-override lever the spec explicitly calls out ("ops can
  *    disable the circuit breaker"); automatic spend-based tripping is a separate,
  *    cost-observability-pipeline concern, not implemented here.
- *  - Prompt assembly implemented here is intentionally minimal: `recent_messages`
- *    are mapped to Gemini `Content[]` per the role table in Doc 03C V3 §4.2, and
- *    `systemInstruction` is a neutral, bounded placeholder. The full prompt
- *    template artifact system (§4.3 versioned policy prompts), the deterministic
- *    PII guard (§4.2.2), content safety pre-pass (§4.5), and candidate-slot
- *    resolution for similar-question links (§5.9) are NOT implemented in this
- *    file — each is a distinct subsystem beyond this route's stated scope
- *    (validate → route → call Vertex → return) and needs its own dedicated pass
- *    before production traffic.
+ *  - Prompt artifact system (§4.3): prompt artifacts are versioned TypeScript
+ *    modules loaded at import time (bootstrap). The registry resolves by
+ *    (policy_variant, prompt_version) from the envelope. Only the "default"
+ *    variant is authored in this pass. §4.3 references "03A V3 §11 (policy
+ *    prompt artifacts)" for artifact authoring, but Doc 03A §11 is actually
+ *    "Policy Decision Logging" — see SCL-040. The artifact format implemented
+ *    here (TypeScript const with a render function) is the pragmatic resolution.
+ *  - State blocks are late-placed per Doc 03D §7.2: injected as a [system note]
+ *    immediately before the final student turn, not adjacent to the system
+ *    instruction. This preserves prompt-cache stability (system instruction is
+ *    invariant across turns) and improves adherence (proximity to current turn).
+ *  - The deterministic PII guard (§4.2.2), content safety pre-pass (§4.5), and
+ *    candidate-slot resolution for similar-question links (§5.9) are NOT
+ *    implemented in this file — each is a distinct subsystem beyond this route's
+ *    stated scope and needs its own dedicated pass before production traffic.
  *  - `question_links` and `instruction_exposures` are returned empty; structured
  *    output enforcement via Vertex `responseSchema` (§5.4 hybrid strictness) is
  *    not wired up in this pass — the model call is plain-text only.
  *  - Idempotency: per Doc 03C V3 §3.6, 03C is deliberately NOT idempotent — the
  *    BFF (Doc 03B V4.1 §13.7) owns the idempotency guard before this endpoint is
  *    ever called. No idempotency_key handling belongs here.
+ *  - prompt_version is read from the envelope (policy_assignment.prompt_version)
+ *    to select the artifact, and logged for observability. The wire-contract
+ *    response schema (orchestration_meta) does not carry prompt_version — the BFF
+ *    already knows which version it sent and can log it from its own context.
  */
 import { Router } from "express";
 import type { Request, Response } from "express";
@@ -59,6 +79,8 @@ import {
   type VertexMessage,
   type VertexResponse,
 } from "../lib/vertex-client.js";
+import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
+import { renderStateBlocks } from "../prompts/render-state-blocks.js";
 
 export const orchestrateRouter: Router = Router();
 
@@ -140,12 +162,17 @@ function isProBudgetCircuitBreakerTripped(): boolean {
  * (Gemini has no native system role inside contents[]; system-level notes
  * are tagged and folded into a user turn).
  *
- * @spec [Doc-03C_V3 §4.2]
+ * State blocks from the context envelope are injected as a late-placed
+ * [system note] immediately before the final student turn (Doc 03D §7.2).
+ * This preserves prompt-cache stability (system instruction is invariant)
+ * and improves model adherence (proximity to current turn).
+ *
+ * @spec [Doc-03C_V3 §4.2; Doc-03D_V1.2 §7.2 (late block placement)]
  */
 export function buildConversationMessages(
   request: OrchestrateRequest,
 ): VertexMessage[] {
-  return request.recent_messages.map((message) => {
+  const mapped: VertexMessage[] = request.recent_messages.map((message) => {
     if (message.role === "tutor") {
       return { role: "model", text: message.message };
     }
@@ -157,24 +184,63 @@ export function buildConversationMessages(
     const wrapped = `${STUDENT_INPUT_OPEN}\n${message.message}\n${STUDENT_INPUT_CLOSE}`;
     return { role: "user", text: wrapped };
   });
+
+  // Late block placement (§7.2): inject state blocks immediately before the
+  // final student turn. This places context data near where the model attends
+  // most, and keeps the system instruction invariant for prompt-cache stability.
+  const stateBlockText = renderStateBlocks(request);
+  if (stateBlockText) {
+    // Find the position of the last user message (the current student turn)
+    // and insert the state block just before it.
+    let lastUserIndex = -1;
+    for (let i = mapped.length - 1; i >= 0; i--) {
+      if (mapped[i].role === "user") {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    const stateBlockMessage: VertexMessage = {
+      role: "user",
+      text: `[system note] ${stateBlockText}`,
+    };
+
+    if (lastUserIndex > 0) {
+      // Insert before the last user message
+      mapped.splice(lastUserIndex, 0, stateBlockMessage);
+    } else {
+      // No prior user messages or only one — prepend the state block
+      // so it still appears before any student content.
+      mapped.unshift(stateBlockMessage);
+    }
+  }
+
+  return mapped;
 }
 
 /**
- * Builds the system instruction sent to Vertex. This is a bounded, neutral
- * placeholder — NOT the policy-authored prompt artifact system of Doc 03A V3
- * §11 / Doc 03C V3 §4.3. See file header trade-offs.
+ * Builds the system instruction sent to Vertex from the versioned prompt
+ * artifact resolved by the prompt registry (Doc 03C V3 §4.3).
  *
- * @spec [Doc-03C_V3 §4.1 (division of concerns) — placeholder pending §4.3]
+ * The artifact is selected by (policy_variant, prompt_version) from the
+ * envelope. The render function receives typed PromptFields for field
+ * substitution — no runtime prompt generation, no string interpolation
+ * of untrusted data.
+ *
+ * @spec [Doc-03C_V3 §4.3 (prompt artifact system); SCL-034–SCL-039]
  */
 export function buildSystemInstruction(request: OrchestrateRequest): string {
-  return [
-    "You are LISA, an SAT tutor for a student aged 13-18.",
-    `Entry mode: ${request.entry_mode}. Source surface: ${request.source_surface}.`,
-    "Be concise, encouraging, and never reveal a correct answer or explanation",
-    "unless the platform has already told you the question is post-submit.",
-    "Never claim to know a predicted score or confidence level that was not",
-    "explicitly provided to you.",
-  ].join(" ");
+  const artifact = resolvePromptArtifact(
+    request.policy_assignment.policy_variant,
+    request.policy_assignment.prompt_version,
+  );
+
+  return artifact.renderSystemInstruction({
+    entryMode: request.entry_mode,
+    sourceSurface: request.source_surface,
+    policyVariant: request.policy_assignment.policy_variant,
+    isPostSubmit: request.correct_answer !== null,
+  });
 }
 
 /** Per Doc 03C V3 §8.1: compaction is recommended once a conversation reaches
@@ -316,6 +382,27 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
 
   const messages = buildConversationMessages(request);
   const systemInstruction = buildSystemInstruction(request);
+
+  // Log prompt_version for observability (§4.3). The BFF already knows
+  // which version it sent; this log confirms which artifact the worker
+  // actually resolved and used.
+  const resolvedArtifact = resolvePromptArtifact(
+    request.policy_assignment.policy_variant,
+    request.policy_assignment.prompt_version,
+  );
+  logEvent(
+    "info",
+    "orchestrate_route",
+    "prompt_artifact_resolved",
+    "Resolved prompt artifact for tutor turn",
+    {
+      conversationId: request.conversation_id,
+      policyVariant: request.policy_assignment.policy_variant,
+      requestedPromptVersion: request.policy_assignment.prompt_version,
+      resolvedPromptVersion: resolvedArtifact.version,
+      modelAlias,
+    },
+  );
 
   const result = await generateTutorResponse(
     modelAlias,
