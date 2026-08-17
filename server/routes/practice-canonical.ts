@@ -42,6 +42,10 @@ import {
   MASTERY_EMISSION_EVENT,
   MASTERY_EMISSION_FAILURE_CODE,
 } from "../../packages/shared/src/mastery-emission";
+import {
+  DEFAULT_PRACTICE_SESSION_MODE,
+  practiceSessionModeSchema,
+} from "../../packages/shared/src/session-mode";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -304,7 +308,13 @@ const StartSessionBodySchema = z.object({
   domains: z.array(z.string().max(128)).max(100).optional().nullable(),
   skills: z.array(z.string().max(128)).max(100).optional().nullable(),
   difficulties: z.array(z.string().max(32)).max(10).optional().nullable(),
-  mode: z.string().max(64).optional().nullable(),
+  // Enum, not free text. A client may not name its own session mode: `mode`
+  // decides event_source_kind via practice_session_mode_to_event_kind(), so an
+  // unvalidated string here lets a request classify its own activity in the
+  // mastery record — and lets `mode: "diagnostic"` create a diagnostic session
+  // through this route, bypassing the once-only guard in the diagnostic route
+  // entirely. `diagnostic` and `flow` are both excluded; see session-mode.ts.
+  mode: practiceSessionModeSchema.optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
   target_minutes: z.number().int().positive().max(300).optional().nullable(),
@@ -921,7 +931,10 @@ function normalizeSessionSpec(
 
   sectionValues.sort((a, b) => a.localeCompare(b));
 
-  const mode = String(input.mode ?? "balanced").trim() || "balanced";
+  // Zod has already narrowed this to a PracticeSessionMode; absent/null is the
+  // path every current client takes, so the default carries the same value the
+  // old String() coercion produced.
+  const mode = input.mode ?? DEFAULT_PRACTICE_SESSION_MODE;
   const targetMinutes =
     typeof input.target_minutes === "number"
       ? Math.floor(input.target_minutes)
@@ -2402,9 +2415,23 @@ router.post(
     metadata.client_instance_id = null;
     metadata.calculator_state = null;
 
+    // @spec [Doc-02B_V4 §14 session lifecycle; owner ruling "completion signal is
+    // a session fact", 2026-08-17] @implemented 2026-08-17
+    //
+    // BUG-4. This wrote completed_at while setting status='abandoned'. completed_at
+    // is the completion signal; stamping it on abandonment makes abandoned work
+    // read as finished work to anything that inspects the column. review_sessions
+    // has carried a separate abandoned_at since 20260610020000 and writes the
+    // matching one (server/routes/review-session-routes.ts:684) — this is the same
+    // shape, not a new convention.
+    //
+    // practice_sessions_abandoned_not_completed (migration 20260817020000) rejects
+    // the old pair outright, so the defect cannot be reintroduced silently: it
+    // becomes a 23514 on this update, surfaced as practice_sessions_update_failed.
     await updateSessionLifecycle(sessionId, metadata, {
       status: "abandoned",
-      completed_at: new Date().toISOString(),
+      abandoned_at: new Date().toISOString(),
+      completed_at: null,
     });
 
     return res.json({

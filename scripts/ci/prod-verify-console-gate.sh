@@ -213,7 +213,14 @@ else
     rc=$?
     if [ "$rc" -eq 0 ]; then
       pass "4/$rel" "runs clean in console mode"
-    elif grep -qE '(STEP8|PURGE|PREFLIGHT)' <<<"$out" && ! grep -qE '(42601|42703|42P01|42883|42P10|42704)' <<<"$out"; then
+    # One of OUR OWN guards refusing. Every RAISE in these files uses a
+    # SCREAMING_SNAKE prefix followed by a colon (STEP8:, PURGE:, RESOLVE_DUP:,
+    # BASELINE_REPAIR:, PSI_BACKFILL_*:), so the convention is matched rather than
+    # a hardcoded prefix list — an earlier revision listed three prefixes and
+    # flagged a correctly-refusing new file as a real failure. PostgreSQL's own
+    # errors do not have this shape ("syntax error at or near", "column ... does
+    # not exist"), and the SQLSTATE exclusion below is still the backstop.
+    elif grep -qE 'ERROR:[[:space:]]+[A-Z][A-Z0-9_]{2,}:' <<<"$out" && ! grep -qE '(42601|42703|42P01|42883|42P10|42704)' <<<"$out"; then
       # One of our own RAISEs. On an empty database that is the correct behaviour.
       pass "4/$rel" "refused with its own guard (expected on an empty DB): $(head -1 <<<"$out" | cut -c1-90)"
     else

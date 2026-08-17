@@ -73,6 +73,32 @@ export function ScoreProjectionCard() {
     );
   }
 
+  // ── Branch 0: diagnostic completed, baseline still computing ────────────
+  // Owner ruling Q2, 2026-08-17. Deliberately offers no action: the student has
+  // already done the only thing they can do, and the diagnostic start route
+  // refuses a second attempt with 409 diagnostic_already_completed.
+  if (data.estimateStatus === "baseline_pending") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            Score Estimate
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <AlertCircle className="h-4 w-4" />
+            <span>
+              Your baseline is being calculated. You have finished the
+              diagnostic — your starting point will appear here shortly.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // ── Branch 1: no diagnostic completed yet ───────────────────────────────
   if (data.estimateStatus === "no_baseline") {
     return (

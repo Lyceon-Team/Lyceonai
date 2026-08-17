@@ -3223,6 +3223,29 @@ $$;
 
 
 --
+-- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.student_diagnostic_state(p_student_id uuid) RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT s.state FROM public.student_diagnostic_states s
+      WHERE s.student_id = p_student_id),
+    'not_taken'
+  );
+$$;
+
+
+--
+-- Name: FUNCTION student_diagnostic_state(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4182,11 +4205,20 @@ CREATE TABLE public.practice_sessions (
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     actor_id uuid NOT NULL,
+    abandoned_at timestamp with time zone,
+    CONSTRAINT practice_sessions_abandoned_not_completed CHECK (((status <> 'abandoned'::text) OR ((completed_at IS NULL) AND (abandoned_at IS NOT NULL)))),
     CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
 );
+
+
+--
+-- Name: COLUMN practice_sessions.abandoned_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.practice_sessions.abandoned_at IS 'When the session was abandoned. Mutually exclusive with completed_at — enforced by practice_sessions_abandoned_not_completed.';
 
 
 --
@@ -4799,31 +4831,6 @@ COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe we
 
 
 --
--- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.student_kpi_rollups_current (
-    student_id uuid NOT NULL,
-    scope text NOT NULL,
-    scope_key text NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    computed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: student_projection_refresh_state; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.student_projection_refresh_state (
-    student_id uuid NOT NULL,
-    events_since_refresh integer DEFAULT 0 NOT NULL,
-    last_refresh_at timestamp with time zone,
-    CONSTRAINT student_projection_refresh_state_events_since_refresh_check CHECK ((events_since_refresh >= 0))
-);
-
-
---
 -- Name: student_section_projection_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4851,6 +4858,97 @@ CREATE TABLE public.student_section_projection_snapshots (
     CONSTRAINT student_section_projection_snapshots_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
     CONSTRAINT student_section_projection_snapshots_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
     CONSTRAINT student_section_projection_snapshots_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
+-- Name: student_diagnostic_states; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.student_diagnostic_states AS
+ WITH diag AS (
+         SELECT ps.user_id AS student_id,
+            count(*) FILTER (WHERE (ps.status = 'completed'::text)) AS completed_count,
+            count(*) FILTER (WHERE (ps.status = ANY (ARRAY['created'::text, 'active'::text]))) AS in_flight_count,
+            max(ps.completed_at) FILTER (WHERE (ps.status = 'completed'::text)) AS diagnostic_completed_at,
+            max(ps.last_activity_at) FILTER (WHERE (ps.status = 'completed'::text)) AS diagnostic_last_activity_at
+           FROM public.practice_sessions ps
+          WHERE ((ps.mode = 'diagnostic'::text) AND (ps.user_id IS NOT NULL))
+          GROUP BY ps.user_id
+        ), baseline AS (
+         SELECT sn.student_id,
+            count(DISTINCT sn.section) FILTER (WHERE (sn.projected_score_mid IS NOT NULL)) AS scored_sections,
+            min(sn.snapshot_at) AS baseline_captured_at
+           FROM public.student_section_projection_snapshots sn
+          WHERE (sn.snapshot_kind = 'diagnostic_baseline'::text)
+          GROUP BY sn.student_id
+        )
+ SELECT d.student_id,
+        CASE
+            WHEN ((d.completed_count > 0) AND (COALESCE(b.scored_sections, (0)::bigint) >= 2)) THEN 'baseline_ready'::text
+            WHEN (d.completed_count > 0) THEN 'baseline_pending'::text
+            WHEN (d.in_flight_count > 0) THEN 'in_progress'::text
+            ELSE 'not_taken'::text
+        END AS state,
+    (d.completed_count)::integer AS completed_diagnostic_count,
+    (d.in_flight_count)::integer AS in_flight_diagnostic_count,
+    d.diagnostic_completed_at,
+    COALESCE(d.diagnostic_completed_at, d.diagnostic_last_activity_at) AS diagnostic_finished_at,
+    b.baseline_captured_at,
+    (COALESCE(b.scored_sections, (0)::bigint))::integer AS baseline_scored_sections
+   FROM (diag d
+     LEFT JOIN baseline b ON ((b.student_id = d.student_id)));
+
+
+--
+-- Name: VIEW student_diagnostic_states; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.student_diagnostic_states IS 'One row per student with any diagnostic session. state is the single canonical answer to "where is this student in the diagnostic lifecycle": not_taken | in_progress | baseline_pending | baseline_ready. Precedence matches resolveDiagnosticStartDecision — completed is checked first and is terminal.';
+
+
+--
+-- Name: student_baseline_pending; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.student_baseline_pending AS
+ SELECT student_id,
+    diagnostic_finished_at,
+    baseline_scored_sections,
+    (EXTRACT(epoch FROM (now() - diagnostic_finished_at)))::bigint AS pending_seconds
+   FROM public.student_diagnostic_states s
+  WHERE (state = 'baseline_pending'::text);
+
+
+--
+-- Name: VIEW student_baseline_pending; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.student_baseline_pending IS 'Students who completed the diagnostic but have no usable diagnostic_baseline snapshot, with the age of that state. Age, not count, is the alert condition — a brief pending state is normal after every completion.';
+
+
+--
+-- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_kpi_rollups_current (
+    student_id uuid NOT NULL,
+    scope text NOT NULL,
+    scope_key text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: student_projection_refresh_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_projection_refresh_state (
+    student_id uuid NOT NULL,
+    events_since_refresh integer DEFAULT 0 NOT NULL,
+    last_refresh_at timestamp with time zone,
+    CONSTRAINT student_projection_refresh_state_events_since_refresh_check CHECK ((events_since_refresh >= 0))
 );
 
 
@@ -6599,6 +6697,20 @@ CREATE INDEX idx_tutor_question_links_student ON public.tutor_question_links USI
 --
 
 CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
+-- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX practice_sessions_one_completed_diagnostic_uq ON public.practice_sessions USING btree (user_id) WHERE ((mode = 'diagnostic'::text) AND (status = 'completed'::text));
+
+
+--
+-- Name: INDEX practice_sessions_one_completed_diagnostic_uq; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner ruling Q1 2026-08-17: a diagnostic is taken once. Uniqueness is on COMPLETED only — an abandoned diagnostic does not spend the student''s one diagnostic, and in-flight sessions are owned by the route''s anti-concurrency guard.';
 
 
 --
@@ -9482,6 +9594,14 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 
 --
+-- Name: FUNCTION student_diagnostic_state(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10316,20 +10436,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.stripe_webhook_events TO servi
 
 
 --
--- Name: TABLE student_kpi_rollups_current; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO service_role;
-
-
---
--- Name: TABLE student_projection_refresh_state; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
-
-
---
 -- Name: TABLE student_section_projection_snapshots; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10397,6 +10503,34 @@ GRANT SELECT(snapshot_at) ON TABLE public.student_section_projection_snapshots T
 --
 
 GRANT SELECT(snapshot_kind) ON TABLE public.student_section_projection_snapshots TO authenticated;
+
+
+--
+-- Name: TABLE student_diagnostic_states; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_diagnostic_states TO service_role;
+
+
+--
+-- Name: TABLE student_baseline_pending; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_baseline_pending TO service_role;
+
+
+--
+-- Name: TABLE student_kpi_rollups_current; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO service_role;
+
+
+--
+-- Name: TABLE student_projection_refresh_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
 
 
 --

@@ -76,6 +76,29 @@ jobs:
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
 
+      # practice_sessions.mode decides event_source_kind, so accepting it as free
+      # text let a client classify its own activity in the mastery record AND
+      # create a diagnostic session through the practice route, bypassing the
+      # once-only guard. Integrity bypass, not a lifecycle bug.
+      - name: Session-mode boundary gate (BUG-3 — client cannot name its own mode)
+        run: node scripts/ci/session-mode-boundary-gate.mjs
+
+      # The RULE is unit-tested in packages/shared; this covers the seam the unit
+      # test cannot see — narrowing the route's status filter back to
+      # ['created','active'] means the rule never receives the completed row and a
+      # second diagnostic is startable again, with every unit test still green.
+      - name: Diagnostic once-only gate (BUG-2 — no retake)
+        run: node scripts/ci/diagnostic-once-only-gate.mjs
+
+      # The diagnostic lifecycle is declared in three places that cannot import
+      # from each other: the CASE arms in the migration, DIAGNOSTIC_STATES in
+      # packages/shared, and the EstimateStatus union in the client (which has no
+      # module path to packages/shared). A state the SQL emits and the TypeScript
+      # cannot name degrades the student silently; a status the server emits and
+      # the client cannot name renders a blank card, not a type error.
+      - name: Diagnostic state drift gate (SQL <-> shared <-> client)
+        run: node scripts/ci/diagnostic-state-drift-gate.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 
@@ -388,6 +411,23 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
 
+      # captureDiagnosticBaseline is once-only with no retry and silently returns
+      # when the projection is not ready, so a student who completed a diagnostic
+      # during the mastery outage is permanently no_baseline. This guards the
+      # repair — and above all that it stays a repair, never a fabricated score.
+      # One-off exact-target resolution of the single duplicate diagnostic in prod
+      # (ruling Q8). The fixture seeds a SECOND student's active diagnostic, which
+      # is what makes it discriminate a pinned id from its superset.
+      - name: Resolve-duplicate-diagnostic gate (Q8 — exact target)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/resolve-duplicate-diagnostic-gate.sh
+
+      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/baseline-repair-gate.sh
+
       # Guards scripts/prod-verify/step8-verify.sql, which previously asserted
       # student_projection_refresh_state > 0 and so reported STOP on a completely
       # successful production backfill. Runs a REAL backfill and checks the real
@@ -405,6 +445,16 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-history-gate.sh
+
+      # Session lifecycle, steps 2/1/8/9. Seven fixture students; the two that
+      # earn their place are E (two ALL-NULL diagnostic_baseline rows — what the
+      # evidence gate actually writes, so counting snapshot rows calls them
+      # "ready") and G (a completed AND an active diagnostic at once, which is
+      # production's real shape and the only way to prove the CASE precedence).
+      - name: Session lifecycle DB gate (once-only index, state, abandoned_at)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/session-lifecycle-db-gate.sh
 
       - name: Mastery derivation gap detection gate (2.4)
         run: |

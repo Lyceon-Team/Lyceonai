@@ -155,6 +155,38 @@ There is no `migration-history-repair.sql`. Ruling Q9 puts the repair in the CLI
 hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing the
 column shape the runner expects. CI fails if that file reappears.
 
+### Session lifecycle — steps 2, 1, 8 and 9 (four migrations)
+
+Four migrations close the diagnostic-lifecycle defects. Order is load-bearing in
+one place only, and it is the first row: **`resolve-duplicate-diagnostic.sql` must
+have been RUN before `20260817000000` is applied.** Production holds a student with
+a completed diagnostic and an in-flight one; the index builds happily over that and
+then strands the in-flight session on its fortieth answer, which the student sees
+as a 500. `3.1-pre-apply.sql` is the check that it was run.
+
+The other three are independent of each other and of the reconciliation track.
+
+| # | File | Writes? | Expected verdict |
+|---|---|---|---|
+| S0 | `resolve-duplicate-diagnostic-preview.sql` → `resolve-duplicate-diagnostic.sql` | **yes** | see the rows above; must be run before S1 |
+| S1 | `3.1-pre-apply.sql` | no | `OK — safe to apply 20260817000000` |
+| S2 | *apply* `20260817000000_diagnostic_once_only_index.sql` | yes | — |
+| S3 | `3.1-post-apply.sql` | no | `OK — 20260817000000 applied; one completed diagnostic per student is enforced` |
+| S4 | *apply* `20260817010000_student_diagnostic_state.sql` | yes | — |
+| S5 | `3.2-post-apply.sql` | no | `OK — 20260817010000 applied; the derivation answers for the pinned student` |
+| S5a | `3.2-post-apply-detail.sql` | no | record who is in which state |
+| S6 | `3.3-pre-apply.sql` | no | `OK — safe to apply 20260817020000` |
+| S6a | `3.3-pre-apply-detail.sql` | no | record where each `abandoned_at` comes from |
+| S7 | *apply* `20260817020000_practice_session_abandoned_at.sql` | yes | — |
+| S8 | `3.3-post-apply.sql` | no | `OK — 20260817020000 applied; abandoned rows repaired and sealed, completed sessions untouched` |
+| S9 | *apply* `20260817030000_student_baseline_pending.sql` | yes | — |
+| S10 | `3.4-post-apply.sql` | no | `OK — 20260817030000 applied; the staleness surface reads` |
+
+`3.4-post-apply.sql` reports `stale_students` and deliberately keeps it out of the
+verdict: a non-zero count is a finding about the data, not a failure of the
+migration, and production is expected to show at least one until
+`baseline-repair.sql` has run.
+
 ### Before every migration apply
 
 [`docs/runbooks/migration-deploy.md`](../../docs/runbooks/migration-deploy.md) makes
