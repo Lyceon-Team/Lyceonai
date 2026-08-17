@@ -24,12 +24,15 @@
 --
 --       encode(digest(string_agg(<id>::text, ',' ORDER BY <id>), 'sha256'), 'hex')
 --
---   backfill_set_hash MUST EQUAL the target_set_hash recorded from
---   1.1-pre-apply.sql. That equality is the exact-target proof.
+--   That hash is then ASSERTED — not eyeballed — against the pinned constant in
+--   _target-set-hash.psql, the same file 1.1-pre-apply.sql includes. Equality means
+--   the rows the migration actually repaired are the rows that were audited, by
+--   identity. Inequality is a STOP in the verdict below, not a note for the
+--   operator to check.
 --
 -- EXPECTED VALUES
---   backfill_logged     = 42    one log row per repaired item
---   backfill_set_hash          MUST EQUAL target_set_hash from 1.1-pre-apply.sql
+--   backfill_logged            = 42    one log row per repaired item
+--   backfill_set_hash_matches  = t     asserted against the pinned constant, not eyeballed
 --   log_mismatched      = 0     logged items whose occurred_at <> the logged value
 --   unrepaired          = 0     resolved rows still NULL
 --   legit_null          = 70    MUST equal the pre-apply reading — NEGATIVE CONTROL
@@ -62,6 +65,11 @@
 -- ============================================================================
 
 \pset footer off
+
+-- Same pinned constant the pre-apply verifier used — one file, both verifiers,
+-- no possibility of drift between them.
+\ir _target-set-hash.psql
+
 \echo '=== 1.1 POST-APPLY — exact-target proof, negative controls, constraint ==='
 
 SELECT
@@ -76,6 +84,14 @@ SELECT
               'sha256'),
             'hex')
      FROM public.psi_occurred_at_backfill_log l)                      AS backfill_set_hash,
+  :'expected_target_set_hash'                                         AS backfill_set_hash_pinned,
+  (SELECT encode(
+            extensions.digest(
+              COALESCE(string_agg(l.item_id::text, ',' ORDER BY l.item_id), ''),
+              'sha256'),
+            'hex')
+     FROM public.psi_occurred_at_backfill_log l)
+    = :'expected_target_set_hash'                                     AS backfill_set_hash_matches,
 
   -- every logged row still carries the value the backfill wrote
   (SELECT count(*)
@@ -107,7 +123,7 @@ SELECT
            WHERE conname = 'psi_resolved_requires_occurred_at')       AS constraint_present;
 
 \echo ''
-\echo '--- verdict (compare backfill_set_hash above against target_set_hash from 1.1-pre-apply.sql) ---'
+\echo '--- verdict (the hash equality is ASSERTED below, not left to the operator) ---'
 
 SELECT CASE
   WHEN (SELECT count(*) FROM public.psi_occurred_at_backfill_log) <> 42
@@ -134,7 +150,15 @@ SELECT CASE
   WHEN NOT EXISTS (SELECT 1 FROM pg_constraint
                     WHERE conname = 'psi_resolved_requires_occurred_at')
     THEN 'STOP — constraint missing; the seal did not apply'
-  ELSE 'OK on counts — now CONFIRM backfill_set_hash = target_set_hash by eye before proceeding'
+  -- EXACT-TARGET PROOF, asserted rather than eyeballed. The log names the rows the
+  -- migration actually repaired; the pinned constant names the rows 1.1-pre-apply
+  -- audited. Equality means those are the same 42 rows, by identity.
+  WHEN (SELECT encode(extensions.digest(
+                  COALESCE(string_agg(l.item_id::text, ',' ORDER BY l.item_id), ''), 'sha256'), 'hex')
+          FROM public.psi_occurred_at_backfill_log l)
+       IS DISTINCT FROM :'expected_target_set_hash'
+    THEN 'STOP — EXACT-TARGET PROOF FAILED. The rows repaired are not the rows that were audited. Do not proceed to Step 8; read scripts/prod-verify/_target-set-hash.psql.'
+  ELSE 'OK — 42 rows repaired, identity matches the pinned target, negative controls held, constraint enforcing'
 END AS verdict;
 
 \echo ''

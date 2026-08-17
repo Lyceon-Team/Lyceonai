@@ -39,6 +39,12 @@
 -- ============================================================================
 
 \pset footer off
+
+-- The pinned exact-target hash, single-sourced so pre- and post-apply cannot drift.
+-- Read its header before reacting to any mismatch: a mismatch is a STOP signal, not
+-- a stale constant, and regenerating it destroys the guarantee.
+\ir _target-set-hash.psql
+
 \echo '=== 1.1 PRE-APPLY — practice_session_items.occurred_at repair scope ==='
 
 WITH target_set AS (
@@ -67,14 +73,21 @@ SELECT
   154                                                                AS total_rows_expected,
 
   -- Exact-target proof. Hash of the ordered id list of precisely the rows the
-  -- UPDATE will touch. Record this value; 1.1-post-apply.sql recomputes it over
-  -- the rows that were actually repaired and the two must match.
+  -- UPDATE will touch. Asserted against the pinned constant below, and recomputed
+  -- by 1.1-post-apply.sql over the rows that were actually repaired.
   (SELECT encode(
             extensions.digest(
               COALESCE(string_agg(id::text, ',' ORDER BY id), ''),
               'sha256'),
             'hex')
      FROM target_set)                                                AS target_set_hash,
+  :'expected_target_set_hash'                                        AS target_set_hash_pinned,
+  (SELECT encode(
+            extensions.digest(
+              COALESCE(string_agg(id::text, ',' ORDER BY id), ''),
+              'sha256'),
+            'hex')
+     FROM target_set) = :'expected_target_set_hash'                  AS target_set_hash_matches,
 
   -- Verdict in one column so a wrong result is visibly wrong, not a number to
   -- squint at.
@@ -87,6 +100,12 @@ SELECT
       THEN 'STOP — scope expanded beyond 42; re-audit before applying'
     WHEN (SELECT count(*) FROM target_set) <> 42
       THEN 'STOP — repairable count is not 42; something changed these rows'
+    -- The hash check is LAST because it is the strictest: the count can match
+    -- while the identity of the rows has changed underneath it.
+    WHEN (SELECT encode(extensions.digest(
+                    COALESCE(string_agg(id::text, ',' ORDER BY id), ''), 'sha256'), 'hex')
+            FROM target_set) IS DISTINCT FROM :'expected_target_set_hash'
+      THEN 'STOP — DO NOT APPLY. Exact-target hash mismatch: the repairable set has MOVED since it was pinned. Read scripts/prod-verify/_target-set-hash.psql before doing anything — do NOT re-pin the constant.'
     ELSE 'OK — safe to apply 20260816000000'
   END                                                                AS verdict;
 
