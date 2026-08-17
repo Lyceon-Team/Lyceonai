@@ -76,6 +76,13 @@ jobs:
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
 
+      # practice_sessions.mode decides event_source_kind, so accepting it as free
+      # text let a client classify its own activity in the mastery record AND
+      # create a diagnostic session through the practice route, bypassing the
+      # once-only guard. Integrity bypass, not a lifecycle bug.
+      - name: Session-mode boundary gate (BUG-3 — client cannot name its own mode)
+        run: node scripts/ci/session-mode-boundary-gate.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 

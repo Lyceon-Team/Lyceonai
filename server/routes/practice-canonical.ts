@@ -42,6 +42,10 @@ import {
   MASTERY_EMISSION_EVENT,
   MASTERY_EMISSION_FAILURE_CODE,
 } from "../../packages/shared/src/mastery-emission";
+import {
+  DEFAULT_PRACTICE_SESSION_MODE,
+  practiceSessionModeSchema,
+} from "../../packages/shared/src/session-mode";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -304,7 +308,13 @@ const StartSessionBodySchema = z.object({
   domains: z.array(z.string().max(128)).max(100).optional().nullable(),
   skills: z.array(z.string().max(128)).max(100).optional().nullable(),
   difficulties: z.array(z.string().max(32)).max(10).optional().nullable(),
-  mode: z.string().max(64).optional().nullable(),
+  // Enum, not free text. A client may not name its own session mode: `mode`
+  // decides event_source_kind via practice_session_mode_to_event_kind(), so an
+  // unvalidated string here lets a request classify its own activity in the
+  // mastery record — and lets `mode: "diagnostic"` create a diagnostic session
+  // through this route, bypassing the once-only guard in the diagnostic route
+  // entirely. `diagnostic` and `flow` are both excluded; see session-mode.ts.
+  mode: practiceSessionModeSchema.optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
   target_minutes: z.number().int().positive().max(300).optional().nullable(),
@@ -921,7 +931,10 @@ function normalizeSessionSpec(
 
   sectionValues.sort((a, b) => a.localeCompare(b));
 
-  const mode = String(input.mode ?? "balanced").trim() || "balanced";
+  // Zod has already narrowed this to a PracticeSessionMode; absent/null is the
+  // path every current client takes, so the default carries the same value the
+  // old String() coercion produced.
+  const mode = input.mode ?? DEFAULT_PRACTICE_SESSION_MODE;
   const targetMinutes =
     typeof input.target_minutes === "number"
       ? Math.floor(input.target_minutes)
