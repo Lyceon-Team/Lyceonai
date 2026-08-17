@@ -1,134 +1,123 @@
-# Migration history reconciliation — plan, not an instruction to run
+# Migration history reconciliation — decisions and rationale
 
-**Status: proposed. Nothing here has been applied. Do not run anything in this
-document until the sequence below has been reviewed.**
+**Owner rulings received 2026-08-17. This document records the decisions and the
+reasoning behind them. The operational steps live in
+[`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md) — go there to run
+anything.**
+
+> ## ⛔ HOLD — Priority 0 outranks this whole track
+>
+> `apply_mastery_event` has still never completed in production. Run
+> `live-event-verify.sql` first. If the live path still fails, it outranks
+> everything here. Nothing in this track is urgent — a failed `supabase db push` is
+> loud and recoverable.
 
 ## The situation
 
-`20260816000000` and `20260816010000` were applied to production by executing
-their SQL directly rather than through the migration runner. Their objects are
-present and correct — constraints exist and are validated, the backfill log holds
-42 rows — but `supabase_migrations.schema_migrations` has no row for either
-version.
+`20260816000000` and `20260816010000` were applied to production by executing their
+SQL directly rather than through the migration runner. Their objects are present and
+correct — constraints exist and are validated, the backfill log holds 42 rows — but
+`supabase_migrations.schema_migrations` has no row for either version.
 
-The runner therefore still believes both are pending. The next `supabase db push`
-will attempt to re-run them, and both will fail:
+The runner therefore still believes both are pending, and the next
+`supabase db push` will attempt to re-run them. Both will fail: the backfill scope
+guard aborts, and `ADD CONSTRAINT` hits a duplicate.
 
-| Version | Failure on re-run |
-|---|---|
-| `20260816000000` | the backfill scope guard aborts (`PSI_BACKFILL_SCOPE_EXPANDED`), or the seal fails as a duplicate constraint |
-| `20260816010000` | `ADD CONSTRAINT` fails — both constraints already exist |
-
-A failed push is loud and recoverable, so this is not urgent in the "production is
-broken" sense. It is urgent in the "the next person to ship a migration hits a
-wall they did not cause" sense, which is why it should be settled before any
-further migration ships.
-
-## The asymmetry that shapes the whole plan
+## The asymmetry that shapes every decision below
 
 Recording a version as applied is **irreversible in practice**: the runner will
-never look at that version again. If the claim is false — the version is marked
-applied but its objects are not actually there — the migration is skipped forever
-and the schema drifts permanently, silently.
+never look at that version again. If the claim is false — marked applied but the
+objects are not really there — the migration is skipped forever and the schema
+drifts permanently and silently.
 
-That is strictly worse than the duplicate-apply failure being repaired here. So
-every artifact below is built to fail closed:
+That is strictly worse than the duplicate-apply failure being repaired. Every
+decision below falls out of that asymmetry.
 
-- `migration-history-repair.sql` **refuses** unless it can see the objects itself.
-  It does not trust the audit having been run, and it does not trust this document.
-- `migration-schema-parity.sql` checks the statements a manual apply is most
-  likely to have skipped — RLS, GRANT/REVOKE, the primary key — not just the
-  headline constraints, because those are the ones that are invisible afterwards.
+---
 
-## Two mechanisms. Prefer the first.
+## Q9 — mechanism: the Supabase CLI, not hand-written SQL
 
-### 1. The Supabase CLI (recommended)
+**Ruling:** use `supabase migration repair --status applied <version>`.
 
-```
-supabase migration repair --status applied 20260816000000
-supabase migration repair --status applied 20260816010000
-```
+Hand-inserting into `supabase_migrations.schema_migrations` means guessing the
+column shape the runner expects — `statements`, `name`, the version format. A wrong
+guess creates a subtler desync than the one being fixed: the row exists, the runner
+reads it differently than intended, and now two things are wrong instead of one.
+The platform-native tool owns that shape; we should not model it.
 
-This is the CLI's supported mechanism for exactly this situation. It is the
-managed path and it handles the bookkeeping table's shape itself.
+**Consequence:** `migration-history-repair.sql` is **deleted**. The committed-file
+constraint is satisfied by `MIGRATION-HISTORY-REPAIR.md` carrying the literal
+commands, their expected output, and what each deviation means.
+`scripts/ci/migration-history-gate.sh` fails if that SQL file reappears, so it
+cannot drift back in as a tempting shortcut.
 
-### 2. `migration-history-repair.sql` (committed equivalent)
+### Order is load-bearing
 
-The standing rule is that every statement executed against production must exist
-as a committed, reviewable file. The CLI command is not such a file, so
-`scripts/prod-verify/migration-history-repair.sql` exists as:
+**Ruling:** `migration-schema-parity.sql` runs FIRST and must pass. Only then mark
+the versions applied.
 
-- the **reviewable record** of exactly what the CLI does, and
-- the **fallback** when the CLI cannot reach the project.
+Recording "these ran successfully" before proving prod matches what they produce is
+recording **a belief, not a fact** — and per the asymmetry above, that belief
+becomes unfalsifiable the moment it is written.
 
-It builds its `INSERT` from `information_schema` rather than hardcoding a column
-list, because `supabase_migrations.schema_migrations` has changed shape across CLI
-versions (older: `version` only; newer: `version`, `name`, `statements`). CI proves
-it works against both.
+This is why gate case R2 exists: it disables RLS on the backfill log and requires
+parity to STOP. Runbook step 1 is the only thing standing between a hand-applied
+schema and an irreversible recording, so parity being *strict* is the property that
+matters, not parity merely existing.
 
-> **Owner question 1.** Which mechanism do you want used? The two rules point in
-> different directions — *managed-service first* favours the CLI, *every statement
-> is a committed file* favours the SQL. My recommendation is the CLI, with the SQL
-> file committed regardless as the reviewable record and the fallback. Both are in
-> the repo either way; this only decides which one you run.
+## Q10 — apply `20260816020000` (the gap detector): yes, now
 
-## Sequence
+**Ruling:** deployment does not require a scheduler. The view and ledger are useful
+the moment they exist, and they are the reconciliation invariant.
 
-Nothing here is applied. This is the proposed order.
+**Sequence:** parity → repair `000`/`010` → apply `020` **through the runner**, so
+history stays consistent going forward. Applying `020` by hand would recreate the
+exact drift being repaired.
 
-| # | File | Writes? | Gate before continuing |
-|---|---|---|---|
-| 1 | `migration-history-audit.sql` | no | both target versions must report `REPAIR — objects exist but the version is not recorded`. Any `INVESTIGATE` row stops the whole plan. |
-| 2 | `migration-schema-parity.sql` | no | must report `OK — prod schema matches both migrations`. Anything else means the manual apply did not reproduce the migration — fix that first, do **not** record the version. |
-| 3 | CLI `migration repair`, **or** `migration-history-repair.sql` | yes (1–2 bookkeeping rows) | verdict `OK — both versions recorded as applied; nothing was re-executed` |
-| 4 | `migration-history-audit.sql` again | no | both target versions now report `consistent — nothing to do` |
+Verified afterwards by `2.4-post-apply.sql`, which is new — the original defect was
+that this migration shipped with a CI gate and no operator artifact at all.
 
-Step 2 is the one that actually protects you. Step 1 tells you the runner and
-reality disagree; step 2 tells you *which one is right*.
+## Q11 — scheduling the history audit: no
 
-## What this plan deliberately does not do
+**Ruling:** it requires production credentials, which CI must not hold. It becomes a
+**required pre-flight step in the deploy runbook**, run before every migration
+apply: [`docs/runbooks/migration-deploy.md`](../../docs/runbooks/migration-deploy.md).
 
-- **It does not touch `20260816020000`.** That migration is genuinely not applied
-  (see below), so it must go through the runner normally, not through repair.
-  `migration-history-repair.sql` has no object check defined for it and will
-  refuse by construction if anyone adds it to the target list without one.
-- **It does not re-run any migration SQL.** No application table is touched.
-- **It does not backfill `statements`.** The runner uses that column for its own
-  diffing; claiming we executed statements we did not execute through it would be
-  a second, subtler inaccuracy layered on the one being repaired. `NULL` is honest.
+## Q1 + Q7 — collapsed, and the gap detector answers both
 
-## Related: `20260816020000` is not applied, and that is a different problem
+**Ruling:** bind as Vercel cron → internal route that queries the gap view and
+alerts on a non-zero count, using the **existing** scheduler in
+`server/routes/internal-cron-routes.ts`. No `pg_cron`, no second scheduler, no GCP
+dependency.
 
-`mastery_derivation_gaps` does not exist on production. The migration that creates
-it, `20260816020000_mastery_derivation_gap_detection.sql`, landed in commit
-`2ab98bb` (PR #589) with a CI gate but **no operator-facing artifact**: no
-`prod-verify` file, and no entry in the run-order table in `README.md`. It was
-never on the list of things to apply, so it never got applied.
+This measures the invariant directly rather than counting log lines, which is why it
+supersedes the metrics-substrate question rather than answering it.
 
-This is a documentation defect with a schema consequence, and the fix is an entry
-in the run order — not a repair. Unlike the two versions above, this one has not
-run, so it must be applied through the runner in the normal way.
+**Not built yet** — the ruling sequences it after `020` is applied. It is the next
+piece of work once the runbook completes.
 
-> **Owner question 2.** Do you want `20260816020000` applied now, or deferred? It
-> creates read-only observability objects (two views, a ledger table, and a
-> recording function) and changes no existing behaviour, so applying it is low
-> risk — but it is also the migration whose absence has been invisible for a week,
-> and Q7 (nothing is scheduled to call the detector) is still unanswered. Applying
-> it without a scheduler gives you a detector nobody reads. I would apply it and
-> answer Q7 separately, but it is your call and I have not written a run-order
-> entry that presumes the answer.
+## Q2 / Q4 / Q5 — closed
 
-## Preventing the recurrence
+Recorded here so they are not re-raised:
 
-The root cause is that direct SQL execution and the migration runner are two paths
-to the same database, and only one of them updates the bookkeeping.
-`migration-history-audit.sql` is the standing detector for the resulting drift —
-it is cheap, read-only, and can be run any time. Running it before every
-`supabase db push` would have caught this the day it happened.
+- **Q2** = option (a): quarantine `refresh_section_kpi` + `refresh_overall_kpi`
+  only. Phase 4, spec cycle.
+- **Q4** = `excluded_event_count` is operator-only, per Doc 05 Parent acceptance #20.
+- **Q5** = closed by the two-branch schema-shape assertion already shipped and green.
 
-> **Owner question 3.** Should the audit become a scheduled check rather than a
-> file someone remembers to run? It cannot go in CI, because CI has no access to
-> production. The honest options are a step in whatever runbook precedes a push, or
-> a scheduled job with prod credentials. I have not built either — that decision
-> is upstream of Q1 in the original plan (the alert-substrate question), and I do
-> not want to add a second half-answer to it.
+---
+
+## Why the root cause recurs without the runbook
+
+Direct SQL execution and the migration runner are two paths to the same database,
+and only one of them updates the bookkeeping. Nothing in CI can see production, so
+nothing in CI can catch the divergence.
+
+`migration-history-audit.sql` is the detector, and Q11 puts it where it will
+actually run: as a pre-flight step before every apply. It costs seconds and would
+have caught this on day one instead of a week later.
+
+A second, related root cause is worth naming because it caused the `020` omission
+independently: **a migration with a CI gate and no operator artifact is a migration
+nobody will remember to apply.** The deploy runbook now requires both a
+`prod-verify` file and a run-order row before any migration is applied.

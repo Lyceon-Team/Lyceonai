@@ -112,24 +112,54 @@ question is answered and the new set is deliberately re-audited.
 | 11 | `step8-verify.sql` | no | `OK — backfill rebuilt mastery end to end; 3f18cbe2 projects in both sections` |
 | 11a | `step8-verify-detail.sql` | no | per-student rollup |
 
-### Migration-history reconciliation (separate track, not yet run)
+### Priority 0 — the live event path
 
-`20260816000000` and `20260816010000` were applied by direct SQL execution, so the
-migration runner has no record of them. See
-[`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md) —
-that document is the plan and carries the open owner questions.
+The backfill proved the compute chain. `apply_mastery_event` has still never
+completed in production, so the event path is unproven. This outranks everything
+below.
 
 | # | File | Writes? | Expected verdict |
 |---|---|---|---|
-| A | `migration-history-audit.sql` | no | `REPAIR` for both target versions |
-| B | `migration-schema-parity.sql` | no | `OK — prod schema matches both migrations; safe to record them as applied` |
-| C | `migration-history-repair.sql` | yes (bookkeeping only) | `OK — both versions recorded as applied; nothing was re-executed` |
-| D | `migration-history-audit.sql` again | no | `consistent` for both target versions |
+| P0 | `live-event-verify.sql` | no | `OK — apply_mastery_event completed for a live answer; the event path works` |
 
-`20260816020000_mastery_derivation_gap_detection.sql` is **not applied** to
-production and is NOT part of the repair track — it has genuinely never run, so it
-goes through the runner normally. Its absence is why `mastery_derivation_gaps`
-does not exist and why files that referenced it failed with `42P01`.
+Run it after answering one practice question through the app.
+
+**Note:** once a live answer lands, `step8-verify.sql` will report STOP, because it
+asserts the event-time tables are EMPTY — the correct acceptance signature for a
+*pure backfill* and nothing else. That STOP is expected and is not a regression.
+After the live path is exercised, `live-event-verify.sql` is the file to run.
+
+### Migration-history reconciliation (separate track — HELD until Priority 0 clears)
+
+`20260816000000` and `20260816010000` were applied by direct SQL execution, so the
+migration runner has no record of them.
+
+**Steps live in [`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md).**
+The decisions and rationale are in
+[`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md).
+
+| # | Step | Writes? | Expected verdict |
+|---|---|---|---|
+| A | `migration-schema-parity.sql` — **runs FIRST, must pass** | no | `OK — prod schema matches both migrations; safe to record them as applied` |
+| B | `migration-history-audit.sql` | no | `REPAIR` for both target versions |
+| C | `supabase migration repair --status applied` ×2 (**CLI**, ruling Q9) | bookkeeping only | `Repaired migration history: [...] => applied` |
+| D | `migration-history-audit.sql` again | no | `consistent` for both target versions |
+| E | `supabase db push` — applies `20260816020000` **through the runner** | yes | — |
+| F | `2.4-post-apply.sql` | no | `OK — gap detector deployed; views, ledger, function and grants all present` |
+
+Order is load-bearing: parity before recording. Recording "these ran successfully"
+before proving prod matches what they produce records a belief, not a fact — and a
+version marked applied is skipped by the runner forever.
+
+There is no `migration-history-repair.sql`. Ruling Q9 puts the repair in the CLI's
+hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing the
+column shape the runner expects. CI fails if that file reappears.
+
+### Before every migration apply
+
+[`docs/runbooks/migration-deploy.md`](../../docs/runbooks/migration-deploy.md) makes
+`migration-history-audit.sql` a **required pre-flight step** (ruling Q11 — it needs
+production credentials, so it cannot be scheduled in CI).
 
 Any verdict beginning `STOP` means stop. The verdict text names the reason and,
 where relevant, the file to read before doing anything else.

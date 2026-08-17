@@ -75,6 +75,13 @@
 -- rather than reporting a missing detector. Gap counts live in the follow-up
 -- file, which is only meaningful once the detector exists.
 --
+-- SCOPE — THIS FILE DESCRIBES A MOMENT, NOT A STEADY STATE
+--   It is the acceptance check for a pure backfill, and it stops being applicable
+--   the instant a live answer is submitted, because that writes the two event-time
+--   tables this file asserts are empty. That STOP is expected and is not a
+--   regression. Once the live path is exercised, live-event-verify.sql is the file
+--   to run.
+--
 -- Per-student breakdown: run step8-verify-detail.sql.
 -- ============================================================================
 
@@ -139,10 +146,10 @@ SELECT
     -- before changing these.
     WHEN c.audit_rows > 0
       THEN 'STOP — mastery_event_audit_log is non-empty (' || c.audit_rows::text ||
-           '). Only apply_mastery_event writes it, and the backfill does not call it. Either live events have flowed since the backfill (in which case this acceptance file no longer describes the state) or something else wrote.'
+           '). Only apply_mastery_event writes it, and the backfill does not call it. If a live answer has been submitted since the backfill this is EXPECTED — run live-event-verify.sql instead, which is the file for that state. Otherwise something else wrote.'
     WHEN c.projection_refresh_rows > 0
       THEN 'STOP — student_projection_refresh_state is non-empty (' || c.projection_refresh_rows::text ||
-           '). It is the event-time throttle counter and the backfill never bumps it. Same two explanations as above.'
+           '). It is the event-time throttle counter and the backfill never bumps it. Same reading as above: if a live answer has landed, run live-event-verify.sql instead.'
     ELSE 'OK — backfill rebuilt mastery end to end; 3f18cbe2 projects in both sections'
   END                                 AS verdict
 FROM census c;

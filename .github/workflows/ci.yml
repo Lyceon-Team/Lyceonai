@@ -397,12 +397,14 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/step8-backfill-acceptance-gates.sh
 
-      # Guards the migration-history repair path. Recording a version as applied is
-      # irreversible in practice, so the refusal case is the load-bearing one.
-      - name: Migration history repair gate
+      # Guards the two read-only files that decide whether a history repair is safe
+      # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
+      # FIRST and must be strict: it is the only thing between a hand-applied schema
+      # and an irreversible "recorded as applied".
+      - name: Migration history gate
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/migration-history-repair-gate.sh
+          bash scripts/ci/migration-history-gate.sh
 
       - name: Mastery derivation gap detection gate (2.4)
         run: |
