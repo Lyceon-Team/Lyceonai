@@ -109,8 +109,57 @@ question is answered and the new set is deliberately re-audited.
 | 8 | `purge-seed-residue.sql` | **DELETES** | `OK — residue purged` |
 | 9 | `step8-preflight.sql` | no | `OK — ready to recompute` |
 | 10 | `step8-recompute.sql` | **WRITES** | `OK — recompute complete` |
-| 11 | `step8-verify.sql` | no | `OK — mastery pipeline is emitting, rolling up, and projecting` |
+| 11 | `step8-verify.sql` | no | `OK — backfill rebuilt mastery end to end; 3f18cbe2 projects in both sections` |
 | 11a | `step8-verify-detail.sql` | no | per-student rollup |
+
+### Priority 0 — the live event path
+
+The backfill proved the compute chain. `apply_mastery_event` has still never
+completed in production, so the event path is unproven. This outranks everything
+below.
+
+| # | File | Writes? | Expected verdict |
+|---|---|---|---|
+| P0 | `live-event-verify.sql` | no | `OK — apply_mastery_event completed for a live answer; the event path works` |
+
+Run it after answering one practice question through the app.
+
+**Note:** once a live answer lands, `step8-verify.sql` will report STOP, because it
+asserts the event-time tables are EMPTY — the correct acceptance signature for a
+*pure backfill* and nothing else. That STOP is expected and is not a regression.
+After the live path is exercised, `live-event-verify.sql` is the file to run.
+
+### Migration-history reconciliation (separate track — HELD until Priority 0 clears)
+
+`20260816000000` and `20260816010000` were applied by direct SQL execution, so the
+migration runner has no record of them.
+
+**Steps live in [`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md).**
+The decisions and rationale are in
+[`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md).
+
+| # | Step | Writes? | Expected verdict |
+|---|---|---|---|
+| A | `migration-schema-parity.sql` — **runs FIRST, must pass** | no | `OK — prod schema matches both migrations; safe to record them as applied` |
+| B | `migration-history-audit.sql` | no | `REPAIR` for both target versions |
+| C | `supabase migration repair --status applied` ×2 (**CLI**, ruling Q9) | bookkeeping only | `Repaired migration history: [...] => applied` |
+| D | `migration-history-audit.sql` again | no | `consistent` for both target versions |
+| E | `supabase db push` — applies `20260816020000` **through the runner** | yes | — |
+| F | `2.4-post-apply.sql` | no | `OK — gap detector deployed; views, ledger, function and grants all present` |
+
+Order is load-bearing: parity before recording. Recording "these ran successfully"
+before proving prod matches what they produce records a belief, not a fact — and a
+version marked applied is skipped by the runner forever.
+
+There is no `migration-history-repair.sql`. Ruling Q9 puts the repair in the CLI's
+hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing the
+column shape the runner expects. CI fails if that file reappears.
+
+### Before every migration apply
+
+[`docs/runbooks/migration-deploy.md`](../../docs/runbooks/migration-deploy.md) makes
+`migration-history-audit.sql` a **required pre-flight step** (ruling Q11 — it needs
+production credentials, so it cannot be scheduled in CI).
 
 Any verdict beginning `STOP` means stop. The verdict text names the reason and,
 where relevant, the file to read before doing anything else.

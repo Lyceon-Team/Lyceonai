@@ -90,6 +90,15 @@ jobs:
       - name: Diagnostic once-only gate (BUG-2 — no retake)
         run: node scripts/ci/diagnostic-once-only-gate.mjs
 
+      # The diagnostic lifecycle is declared in three places that cannot import
+      # from each other: the CASE arms in the migration, DIAGNOSTIC_STATES in
+      # packages/shared, and the EstimateStatus union in the client (which has no
+      # module path to packages/shared). A state the SQL emits and the TypeScript
+      # cannot name degrades the student silently; a status the server emits and
+      # the client cannot name renders a blank card, not a type error.
+      - name: Diagnostic state drift gate (SQL <-> shared <-> client)
+        run: node scripts/ci/diagnostic-state-drift-gate.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 
@@ -418,6 +427,34 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/baseline-repair-gate.sh
+
+      # Guards scripts/prod-verify/step8-verify.sql, which previously asserted
+      # student_projection_refresh_state > 0 and so reported STOP on a completely
+      # successful production backfill. Runs a REAL backfill and checks the real
+      # file's verdict against it.
+      - name: Step 8 backfill acceptance gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/step8-backfill-acceptance-gates.sh
+
+      # Guards the two read-only files that decide whether a history repair is safe
+      # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
+      # FIRST and must be strict: it is the only thing between a hand-applied schema
+      # and an irreversible "recorded as applied".
+      - name: Migration history gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-history-gate.sh
+
+      # Session lifecycle, steps 2/1/8/9. Seven fixture students; the two that
+      # earn their place are E (two ALL-NULL diagnostic_baseline rows — what the
+      # evidence gate actually writes, so counting snapshot rows calls them
+      # "ready") and G (a completed AND an active diagnostic at once, which is
+      # production's real shape and the only way to prove the CASE precedence).
+      - name: Session lifecycle DB gate (once-only index, state, abandoned_at)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/session-lifecycle-db-gate.sh
 
       - name: Mastery derivation gap detection gate (2.4)
         run: |
