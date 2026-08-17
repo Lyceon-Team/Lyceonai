@@ -25,6 +25,35 @@
 
 ## Entries
 
+SCL-039 | 2026-08-15 | Doc 03D §3 and §5.1 — affective state modulates scaffolding level | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D specifies scaffolding by diagnostic mode — knowledge gap, retrieval failure, buggy procedure — and by surface. It does not account for the student's affective state. The owner's blind-authored gold response for CASE-18 departed sharply from the rubric for a reason the document had no field to express.
+
+WAS: Doc 03D §3.3 states that productive struggle is the point and that a tutor who answers for the student has failed. §5.1's CASE-18 rubric specified "give the student one easy next action." The implied model: scaffolding level is a function of what the student knows.
+
+IS: Scaffolding level is a function of what the student knows AND their affective state. When a student expresses self-directed negative judgment, the tutor reduces questioning load and supplies structure.
+
+The rule:
+
+1. Contradict the self-judgment once, flatly, then move on. Not repeated, not expanded, not a speech. "No, you're not" and then the work.
+2. Stop asking and start giving. Continued questioning of a student who has just called themselves stupid is experienced as further evidence of incompetence. Each unanswered question confirms the self-judgment.
+3. Supply the structure, leave the execution. Give the setup, the framing, the organizing principle. The student still does the final work — but they do it from a position of "I can see how this goes" rather than "I don't know where to start."
+4. Restore momentum before resuming diagnosis. Diagnostic questioning resumes on the next item, not in the same turn.
+
+INV-03-04 is unchanged and unaffected. Scaffolding increases; the answer is still never given. In CASE-18 the owner supplied the full proportion setup — which quantity is the numerator, which is the denominator, and the equation to solve — and left the student to solve it. That is the maximum scaffolding this rule permits: everything up to but not including the arithmetic that produces the answer.
+
+Owner's framing, recorded because the reasoning matters more than the rule:
+
+"If the student is self-bashing, we don't want to keep asking them questions. It just makes them feel more incompetent. They have a lot of time to learn. We need to make sure they feel confident, that they're able to understand, and get that pressure off their chest. We are not trying to prove a point to the student or to ourselves that we're always going to follow hard rules. The end goal is the student's education. The end goal is not for us to prove that we can assess something in one question, or do things a specific way."
+
+Evidence: Lepper & Woolverton (2002) and Lepper, Drake & O'Donnell-Johnson (1997) found expert tutors attribute difficulty to the problem rather than to the student and spend a large fraction of their effort on motivation rather than content [Moderate — observational, small samples, consistent across independent groups]. Ryan & Pintrich (1997) established that adolescent help-seeking avoidance is driven by threat to self-worth [Established]; continued questioning of a student who has just voiced a self-worth judgment is such a threat. Craig, Graesser, Sullins & Gholson (2004) established that disengagement predicts absence of learning [Established]; a spiraling student is on the path to it.
+
+Boundary against SCL-036: SCL-036 rules that disengagement, not frustration, is the intervention trigger. This SCL is not an exception to that. Self-directed negative judgment is a precursor signal — it does not yet indicate disengagement, and the correct response is to prevent the transition rather than to treat one as underway. A student saying "I'm stupid" while still describing their own error accurately is engaged. This rule keeps them there.
+
+Boundary against Doc 03 §21: this rule covers ordinary academic self-deprecation. Safety-relevant statements run a separate mechanism (INV-03-16) and a separate response path (Doc 03 §21). Where both could apply, §21 governs.
+
+Owner action: amend Doc 03D §3 to record affective state as a scaffolding input alongside diagnostic mode. Amend §5.1's CASE-18 rubric to permit structural supply rather than a single next action, and add the rule to the authoring brief. No code change — this is prompt-construction and rubric guidance, and it will appear in the system instruction as a directive paired with the recent_friction context block per §7.4. No schema change.
+
 SCL-038 | 2026-08-15 | Doc 03D §9 — A/B power calibrated to realistic coaching effect sizes | OPEN (owner-approved 2026-08-15)
 
 Change: Doc 03D §9 specifies A/B methodology without stating the effect size the harness must be able to detect. Absent that, an experiment can be designed that cannot detect a real effect.
@@ -966,6 +995,7 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
 - Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
 - Doc 03 INV-03-05, Doc 03A §16.2–16.3 — SCL-033 (narrow "no derived indicators" to "no indicators derived from conversation substance"; permit bare skill-topic coverage to guardians)
+- Doc 03D §3, §5.1 CASE-18, authoring brief — SCL-039 (affective state as scaffolding input; permit structural supply on self-directed negative judgment; directive paired with recent_friction context block per §7.4)
 - Doc 03D §3.1, §3.2 — SCL-034 (add buggy-procedure as third diagnostic mode; amend misconception repair rate definition)
 - Doc 03D §5.1 CASE-15/CASE-16 — SCL-035 (decompose-first with three-level floor; annotate owner's blind gold response)
 - Doc 03D §3.2, §5.1 coverage taxonomy — SCL-036 (add disengagement signal replacing frustration model; reclassify self-deprecation category)
