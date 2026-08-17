@@ -13,9 +13,9 @@
 # there — that is the hollow-test failure mode this suite exists to avoid.
 #
 # Cases:
-#   (A0) pinned constant     — the default in _target-set-hash.psql is a
-#                              well-formed sha256, not a placeholder. Every other
-#                              case overrides it, so nothing else would notice.
+#   NOTE the pinned-constant SHAPE check that used to live here as (A0) now lives
+#   in scripts/ci/prod-verify-console-gate.sh, alongside every other invariant
+#   about the operator files — including that they run at all in a SQL console.
 #   (A) repair + seal        — 42 repairable rows fixed, 70 legitimate NULLs
 #                              untouched (negative control), constraint rejects
 #                              the write it accepted pre-migration, and the
@@ -35,8 +35,8 @@
 #                              would see a mismatch and wrongly conclude the wrong
 #                              rows were repaired.
 #   (A3) PINNED LITERAL      — both prod-verify files actually assert against the
-#                              pinned constant in _target-set-hash.psql. A wrong
-#                              literal must red both; the right one must pass both.
+#                              pinned literal written into them. A wrong literal
+#                              must red both; the right one must pass both.
 #                              Without this the constant could be inert and every
 #                              run would report OK no matter what was pinned.
 #                              Asserted on the operator-facing VERDICT STRING, not
@@ -76,6 +76,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib/deletion-rehearsal-db.sh"
 
 FIXTURE="$SCRIPT_DIR/mastery-unblock-gates.sql"
+SCRATCH="$(mktemp -d)"
 M_BACKFILL="20260816000000_psi_occurred_at_backfill_and_seal.sql"
 M_DOMAIN="20260816010000_canonical_domain_checks.sql"
 
@@ -86,28 +87,30 @@ fail() { echo "FAIL [$1]: $2"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "ok   [$1]: $2"; }
 
 # ---------------------------------------------------------------------------
-# (A0) the pinned constant has a real value
+# Substitute the pinned exact-target hash in a prod-verify file.
 #
-# Every other case in this file overrides expected_target_set_hash with the
-# fixture's own hash, because the fixture's row ids are gen_random_uuid() and can
-# never equal production's. That is correct, but it leaves the pinned DEFAULT
-# unexercised: a placeholder, a truncated paste, or an uppercase copy would sail
-# through the whole suite and only fail in front of Karl on production.
+# The verifiers used to take the hash from an \ir include and accept a
+# -v expected_target_set_hash override. Both were psql client features, and the
+# operator runs these files in a SQL console that has neither — so the include is
+# gone and the literal is written inline. This function is how (A3) still points
+# the real files at the fixture's hash.
 #
-# So assert its SHAPE here. This deliberately does NOT assert a specific value —
-# the value is a production fact, and a gate that hardcoded it would have to be
-# edited every time the set was legitimately re-pinned, which is exactly the
-# reflex _target-set-hash.psql's header forbids.
+# It asserts the literal was found EXACTLY ONCE. Without that, a renamed or
+# deleted constant would silently produce a file with nothing substituted, and
+# (A3) would go green while testing nothing.
 # ---------------------------------------------------------------------------
-PINNED_FILE="$ROOT/scripts/prod-verify/_target-set-hash.psql"
-PINNED="$(sed -n "s/^[[:space:]]*\\\\set expected_target_set_hash '\\([^']*\\)'.*/\\1/p" "$PINNED_FILE" | tail -1)"
-if ! grep -qE '^[0-9a-f]{64}$' <<<"${PINNED:-}"; then
-  fail A0 "the pinned default in scripts/prod-verify/_target-set-hash.psql is not a 64-char lowercase hex sha256 (got '${PINNED:-<none>}') — an unpinned or malformed constant makes both 1.1 verifiers report a mismatch against production"
-else
-  pass A0 "pinned constant is a well-formed sha256 (${PINNED:0:16}…)"
-fi
+subst_pinned_hash() { # $1=source file  $2=hash to pin  $3=output file
+  local n
+  n="$(grep -cE "'[0-9a-f]{64}'::text" "$1")"
+  if [ "$n" != "1" ]; then
+    echo "subst_pinned_hash: found $n pinned literal(s) in $1, expected exactly 1" >&2
+    return 1
+  fi
+  sed -E "s/'[0-9a-f]{64}'::text/'$2'::text/" "$1" > "$3"
+}
 
 cleanup() {
+  rm -rf "$SCRATCH"
   for db in mastery_unblock_a mastery_unblock_b mastery_unblock_c mastery_unblock_d mastery_unblock_e mastery_unblock_f; do
     drop_deletion_rehearsal_db "$db" >/dev/null 2>&1 || true
   done
@@ -145,28 +148,26 @@ else
   # migration the set is empty and 1.1-pre-apply would hash nothing, so these probes
   # would compare against the empty-set hash and prove nothing.
   #
-  # Two assertions per probe, and the second is the one that matters. The
-  # target_set_hash_matches COLUMN proves the comparison was computed; the VERDICT
-  # STRING proves the file acts on it. They are not the same claim — an earlier
-  # revision could have emitted a correct `f` in the column while the verdict said
-  # 'OK — safe to apply', and the operator reads the verdict.
+  # The assertion is on the VERDICT STRING, which is what the operator reads. The
+  # *_hash_matches column proving the comparison was computed is not the same
+  # claim: a verdict could emit a correct `f` in that column and still say
+  # 'OK — safe to apply'. That mutation is proven to red this case.
   #
-  # The verdict is only assertable because the fixture now carries production's
+  # The verdict is only assertable because the fixture carries production's
   # census. The CASE tests unrepairable, then count, then the hash; on the old
   # 3-row fixture the count branch short-circuited and the hash STOP was dead code
   # in this gate.
   #
-  # Fields of the pre-apply summary row: 9 = target_set_hash,
-  # 11 = target_set_hash_matches, 12 = verdict.
-  a3_pre_probe() { # $1 = hash to pin, $2 = field number
-    psql -tAq -F'|' -d mastery_unblock_a -v expected_target_set_hash="$1" \
-      -f "$ROOT/scripts/prod-verify/1.1-pre-apply.sql" 2>/dev/null \
-      | awk -F'|' -v f="$2" 'NF>=12 && $9 ~ /^[0-9a-f]{64}$/ {print $f; exit}'
+  # Run with `psql -c`, NOT `-f`. -c does not process meta-commands, so this
+  # executes the file exactly as the operator's SQL console does — which is the
+  # environment these files actually ship into.
+  a3_run() { # $1 = prod-verify file, $2 = hash to pin
+    local tmp="$SCRATCH/$(basename "$1")"
+    subst_pinned_hash "$ROOT/scripts/prod-verify/$1" "$2" "$tmp" || return 1
+    psql -tAq -F'|' -d mastery_unblock_a -c "$(cat "$tmp")" 2>&1
   }
-  A3_PRE_OK="$(a3_pre_probe "$PRE_HASH" 11)"
-  A3_PRE_OK_VERDICT="$(a3_pre_probe "$PRE_HASH" 12)"
-  A3_PRE_BAD="$(a3_pre_probe "deadbeef${PRE_HASH:8}" 11)"
-  A3_PRE_BAD_VERDICT="$(a3_pre_probe "deadbeef${PRE_HASH:8}" 12)"
+  A3_PRE_OK_OUT="$(a3_run 1.1-pre-apply.sql "$PRE_HASH")"
+  A3_PRE_BAD_OUT="$(a3_run 1.1-pre-apply.sql "deadbeef${PRE_HASH:8}")"
 
   if ! apply_migration mastery_unblock_a "$M_BACKFILL" >/dev/null 2>&1; then
     fail A "migration failed to apply to the seeded pre-state"
@@ -201,69 +202,47 @@ else
   # and the right one passes both. Without this, the constant could be ignored
   # entirely and every run would report OK regardless of what was pinned.
   #
-  # The pinned default in _target-set-hash.psql is production's hash, computed over
-  # production's row ids. The fixture's ids come from gen_random_uuid() and are
-  # fresh on every run, so its hash can never equal the pinned one — that is why
-  # the files accept -v expected_target_set_hash, and this case is the documented
-  # reason that override exists.
+  # The fixture's ids come from gen_random_uuid() and are fresh on every run, so
+  # its hash can never equal the pinned production value. subst_pinned_hash
+  # rewrites the literal in a throwaway copy — and asserts it found exactly one,
+  # so a renamed or deleted constant reds this case instead of silently producing
+  # a file with nothing substituted.
   #
   # Everything ELSE both files assert — 42 repairable, 0 unrepairable, 42 logged,
-  # legit_null 70, total_rows 154, drifted 0 — now holds on the fixture, so the
-  # verdicts reach their hash branch and A3 asserts the operator-facing string.
+  # legit_null 70, total_rows 154, drifted 0, constraint validated — holds on the
+  # fixture, so the verdicts reach their hash branch and A3 asserts the
+  # operator-facing string.
   # -------------------------------------------------------------------------
-  # (A3) post-apply half — run the REAL 1.1-post-apply.sql and read its own
-  # backfill_set_hash_matches column (field 5) and its verdict. Using the actual
-  # file rather than a re-typed predicate means this cannot pass while the shipped
-  # file is unwired.
-  #
-  # The post-apply verdict is a separate statement, not a column of the summary
-  # row, so it arrives on its own line; every verdict starts with 'OK — ' or
-  # 'STOP — ' and no \echo banner in the file does.
-  #
-  # psql -c does NOT interpolate :'var' — only -f and stdin do — so both halves of
-  # A3 drive the files with -f. A -c probe here silently produced empty output and
-  # was caught by this case rather than by review.
-  a3_post_run() { # $1 = hash to pin
-    psql -tAq -F'|' -d mastery_unblock_a -v expected_target_set_hash="$1" \
-      -f "$ROOT/scripts/prod-verify/1.1-post-apply.sql" 2>/dev/null
-  }
-  A3_POST_OUT_OK="$(a3_post_run "$POST_HASH")"
-  A3_POST_OUT_BAD="$(a3_post_run "deadbeef${POST_HASH:8}")"
+  # Both files are now single statements whose last column is the verdict, so the
+  # whole assertion is "does the output contain this sentence". No field indices:
+  # the previous revision parsed field 11 and field 5 by position, which silently
+  # decoupled from the files the moment a column was added.
+  A3_POST_OK_OUT="$(a3_run 1.1-post-apply.sql "$POST_HASH")"
+  A3_POST_BAD_OUT="$(a3_run 1.1-post-apply.sql "deadbeef${POST_HASH:8}")"
 
-  A3_POST_OK="$(awk -F'|' 'NF>=5 && $3 ~ /^[0-9a-f]{64}$/ {print $5; exit}' <<<"$A3_POST_OUT_OK")"
-  A3_POST_BAD="$(awk -F'|' 'NF>=5 && $3 ~ /^[0-9a-f]{64}$/ {print $5; exit}' <<<"$A3_POST_OUT_BAD")"
-  A3_POST_OK_VERDICT="$(grep -m1 -E '^(OK|STOP) ' <<<"$A3_POST_OUT_OK")"
-  A3_POST_BAD_VERDICT="$(grep -m1 -E '^(OK|STOP) ' <<<"$A3_POST_OUT_BAD")"
-
-  # The verdicts, verbatim from the two prod-verify files. Matching them exactly is
-  # the point: these are the sentences Karl reads before deciding to apply, and a
-  # reworded or reordered CASE that no longer says them is a change to the operator
-  # contract, not a cosmetic edit.
+  # Verbatim from the two prod-verify files. Matching exactly is the point: these
+  # are the sentences Karl reads before deciding to apply, and a reworded or
+  # reordered CASE that no longer says them is a change to the operator contract,
+  # not a cosmetic edit.
   A3_PRE_OK_EXPECT='OK — safe to apply 20260816000000'
   A3_POST_OK_EXPECT='OK — 42 rows repaired, identity matches the pinned target, negative controls held, constraint enforcing'
 
-  if [ "${A3_PRE_OK:-x}" != "t" ]; then
-    fail A3 "pre-apply target_set_hash_matches was not true with the CORRECT pinned literal (got '${A3_PRE_OK}')"
-  elif [ "${A3_PRE_BAD:-x}" != "f" ]; then
-    fail A3 "pre-apply target_set_hash_matches was not false with a WRONG pinned literal (got '${A3_PRE_BAD}') — the assertion is not wired"
-  elif [ "${A3_PRE_OK_VERDICT:-}" != "$A3_PRE_OK_EXPECT" ]; then
-    fail A3 "pre-apply verdict with the CORRECT pinned literal was not the expected OK line
-       expected: $A3_PRE_OK_EXPECT
-       got     : ${A3_PRE_OK_VERDICT}"
-  elif ! grep -q '^STOP — DO NOT APPLY\. Exact-target hash mismatch' <<<"${A3_PRE_BAD_VERDICT}"; then
-    fail A3 "pre-apply verdict with a WRONG pinned literal did not STOP on the hash branch (got '${A3_PRE_BAD_VERDICT}') — the verdict computes the comparison but does not act on it"
-  elif [ "${A3_POST_OK:-x}" != "t" ]; then
-    fail A3 "post-apply backfill_set_hash_matches was not true with the CORRECT pinned literal (got '${A3_POST_OK}')"
-  elif [ "${A3_POST_BAD:-x}" != "f" ]; then
-    fail A3 "post-apply backfill_set_hash_matches was not false with a WRONG pinned literal (got '${A3_POST_BAD}') — the assertion is not wired"
-  elif [ "${A3_POST_OK_VERDICT:-}" != "$A3_POST_OK_EXPECT" ]; then
-    fail A3 "post-apply verdict with the CORRECT pinned literal was not the expected OK line
-       expected: $A3_POST_OK_EXPECT
-       got     : ${A3_POST_OK_VERDICT}"
-  elif ! grep -q '^STOP — EXACT-TARGET PROOF FAILED' <<<"${A3_POST_BAD_VERDICT}"; then
-    fail A3 "post-apply verdict with a WRONG pinned literal did not STOP on the exact-target branch (got '${A3_POST_BAD_VERDICT}') — the verdict computes the comparison but does not act on it"
+  if ! grep -qF "$A3_PRE_OK_EXPECT" <<<"$A3_PRE_OK_OUT"; then
+    fail A3 "pre-apply did not reach its OK verdict with the CORRECT pinned literal
+       expected to contain: $A3_PRE_OK_EXPECT
+       got: $(head -2 <<<"$A3_PRE_OK_OUT")"
+  elif ! grep -qF 'STOP — DO NOT APPLY. Exact-target hash mismatch' <<<"$A3_PRE_BAD_OUT"; then
+    fail A3 "pre-apply did not STOP on the hash branch with a WRONG pinned literal — the verdict computes the comparison but does not act on it
+       got: $(head -2 <<<"$A3_PRE_BAD_OUT")"
+  elif ! grep -qF "$A3_POST_OK_EXPECT" <<<"$A3_POST_OK_OUT"; then
+    fail A3 "post-apply did not reach its OK verdict with the CORRECT pinned literal
+       expected to contain: $A3_POST_OK_EXPECT
+       got: $(head -2 <<<"$A3_POST_OK_OUT")"
+  elif ! grep -qF 'STOP — EXACT-TARGET PROOF FAILED' <<<"$A3_POST_BAD_OUT"; then
+    fail A3 "post-apply did not STOP on the exact-target branch with a WRONG pinned literal — the verdict computes the comparison but does not act on it
+       got: $(head -2 <<<"$A3_POST_BAD_OUT")"
   else
-    pass A3 "a wrong pinned literal reds BOTH verifiers, verdict string included; the correct one passes both"
+    pass A3 "a wrong pinned literal reds BOTH verifiers in console mode; the correct one passes both"
   fi
 fi
 

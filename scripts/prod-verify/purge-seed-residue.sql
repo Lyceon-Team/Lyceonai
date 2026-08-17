@@ -3,19 +3,21 @@
 -- ============================================================================
 -- DESTRUCTIVE. This is the only file under scripts/prod-verify/ that deletes.
 --
+-- HOW TO RUN
+--   Run purge-seed-residue-preview.sql FIRST and keep its output. Then paste
+--   this whole file into the SQL console. Two statements: the atomic purge, then
+--   a verdict row. The verdict is the last result.
+--
 -- WHAT IT REMOVES
 --   * 6 rows in mastery_event_audit_log with constants_snapshot_hash = 'seedhash'
 --   * 1 row in student_skill_mastery for 30d5d035-ab51-4b2f-9882-4ce87219a054
 --     (event_count_total = 0, same 'seedhash')
 --
 -- WHY THE PREDICATE IS EXACT-TARGET BY CONSTRUCTION
---   'seedhash' is a literal the real function CANNOT emit. apply_mastery_event
---   computes constants_snapshot_hash as
---     encode(extensions.digest(canonicalize_mastery_constants_serialized(), 'sha256'), 'hex')
---   — a 64-character lowercase hex string. No genuine row can carry an 8-character
---   word. The predicate therefore cannot reach a real mastery row even in
---   principle, which is a stronger guarantee than an id list (an id list can be
---   stale; this cannot be wrong).
+--   'seedhash' is a literal the real function CANNOT emit — apply_mastery_event
+--   writes a 64-character lowercase hex digest there. No genuine row can carry an
+--   8-character word, so this predicate cannot reach a real mastery row even in
+--   principle. That is stronger than an id list, which can go stale.
 --
 -- WHY THEY MUST GO
 --   1. They are unattributable rows sitting in an audit table whose entire
@@ -37,46 +39,18 @@
 --
 -- SEQUENCING: after Step 3.1 has captured these rows as evidence, before Step 8.
 --
--- USAGE: psql -f scripts/prod-verify/purge-seed-residue.sql
---   Runs inside a transaction with a built-in negative control. If the control
---   trips, the whole thing rolls back and nothing is deleted.
+-- ATOMICITY — READ THIS BEFORE "RESTORING" THE TRANSACTION
+--   An earlier revision wrapped the deletes in an explicit BEGIN; ... COMMIT;.
+--   That is removed, and the all-or-nothing guarantee is NOT weakened.
+--
+--   Both DELETEs and the negative control live inside a single DO block. A DO
+--   block is ONE statement, so a RAISE anywhere inside it rolls back everything
+--   the block did — the deletes included. The explicit transaction was redundant
+--   with that, and actively harmful here: a SQL console runs statements in its
+--   own transaction, where a nested BEGIN either warns or errors depending on the
+--   runner, and a session that dies mid-file can strand an open transaction on
+--   production. See README.md rule 4.
 -- ============================================================================
-
-\set ON_ERROR_STOP on
-\pset footer off
-
-\echo '=== PURGE seed residue — pre-state ==='
-
-SELECT
-  (SELECT count(*) FROM public.mastery_event_audit_log
-    WHERE constants_snapshot_hash = 'seedhash')                     AS seedhash_audit_rows,
-  6                                                                 AS seedhash_audit_expected,
-  (SELECT count(*) FROM public.student_skill_mastery
-    WHERE constants_snapshot_hash = 'seedhash')                     AS seedhash_mastery_rows,
-  1                                                                 AS seedhash_mastery_expected,
-  (SELECT count(*) FROM public.mastery_event_audit_log
-    WHERE constants_snapshot_hash <> 'seedhash')                    AS real_audit_rows_before,
-  (SELECT count(*) FROM public.student_skill_mastery
-    WHERE constants_snapshot_hash <> 'seedhash')                    AS real_mastery_rows_before;
-
-\echo ''
-\echo '--- the exact rows to be deleted ---'
-SELECT 'mastery_event_audit_log' AS tbl, audit_row_id::text AS row_id,
-       student_id::text, event_source_kind, event_id::text, applied_at
-FROM public.mastery_event_audit_log
-WHERE constants_snapshot_hash = 'seedhash'
-ORDER BY applied_at;
-
-SELECT 'student_skill_mastery' AS tbl, student_id::text AS row_id,
-       section, domain, skill, event_count_total, computed_at
-FROM public.student_skill_mastery
-WHERE constants_snapshot_hash = 'seedhash'
-ORDER BY student_id;
-
-\echo ''
-\echo '=== PURGE — executing with negative control ==='
-
-BEGIN;
 
 DO $purge$
 DECLARE
@@ -130,11 +104,7 @@ BEGIN
     v_deleted_audit, v_deleted_mastery, v_real_audit_after, v_real_mastery_after;
 END $purge$;
 
-COMMIT;
-
-\echo ''
-\echo '=== PURGE — post-state (both seedhash counts must be 0) ==='
-
+-- Post-state. Both seedhash counts must be 0. This is the last result.
 SELECT
   (SELECT count(*) FROM public.mastery_event_audit_log
     WHERE constants_snapshot_hash = 'seedhash')                     AS seedhash_audit_rows,
