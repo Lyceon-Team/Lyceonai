@@ -16,6 +16,20 @@ You author a disjoint slice of the SAT question bank. You run in a fresh context
 
 The orchestrator gives you: a `section`, a `domain`, a list of `(skill, difficulty, count)` leaves you own, and an **output part-file path**. Author exactly those records — no other skills, no other domain, no overlap with any sibling worker.
 
+## Numeric parameter randomization (MANDATORY)
+
+Every question you author MUST use randomized, non-canonical numeric parameters. **NEVER emit the textbook/canonical instance of a problem type.** Examples of banned canonical instances:
+
+- `x² - 5x + 6 = 0` (the universal factoring example)
+- The 3-4-5 or 6-8-10 right triangle
+- `f(x) = x² + 3`, `f(4) = 19`
+- `x + y = 10, x - y = 4` (the universal systems example)
+- `2 cups of flour for 24 cookies` (the universal ratio example)
+- `15% off $800` (the universal percent-off example)
+- Circle with center (3, -2) and radius 6
+
+Instead, vary coefficients, constants, and context so that each question is structurally original. Use odd numbers, primes, non-round values, and unusual combinations that are unlikely to collide with any existing question in the bank or in standard textbooks.
+
 ## What you emit
 
 Content NDJSON per the contract's record schema — one JSON object per line — to your assigned part-file only. **No IDs, no `correct_variants`, no SQL, no prose in the file.** The pipeline mints IDs and derives grid-in forms; that is not your job.
