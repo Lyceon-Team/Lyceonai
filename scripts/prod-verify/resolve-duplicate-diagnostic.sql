@@ -52,11 +52,12 @@
 -- sessions read as completed to anything that inspects the column. This file must
 -- not reproduce the defect it sits next to in the same workstream.
 --
--- `abandoned_at` does not exist yet; it arrives with step 9. This row is therefore
--- left with NO terminal timestamp, and step 9's backfill is what gives it one. The
--- session's last_activity_at (2026-08-17 07:01:26Z) already records when the
--- student actually stopped, which is the honest value and better than the
--- wall-clock time this file happens to run at.
+-- `abandoned_at` arrives with migration 20260817020000. This file writes it when
+-- the column is there and skips it when it is not, so it runs correctly on either
+-- side of that migration — see the branch at the write below. The value used is
+-- the session's last_activity_at (2026-08-17 07:01:26Z): when the student actually
+-- stopped, which is both the honest value and the one 20260817020000's own
+-- backfill would derive, so the row is identical whichever path wrote it.
 --
 -- EXPECTED
 --   target_found        = 1     the pinned id resolves to exactly one row
@@ -87,6 +88,7 @@ DECLARE
   v_total_post    integer;
   v_keep_status   text;
   v_keep_done_at  timestamptz;
+  v_stopped_at    timestamptz;
   v_updated       integer;
 BEGIN
   -- ---- premises. Any failure here means this is not the situation the file was
@@ -124,10 +126,40 @@ BEGIN
     FROM public.practice_sessions WHERE id = v_keep;
 
   -- ---- the write. Pinned id only. completed_at deliberately untouched.
-  UPDATE public.practice_sessions
-     SET status = 'abandoned',
-         updated_at = now()
-   WHERE id = v_target;
+  --
+  -- abandoned_at is written WHEN THE COLUMN EXISTS. It arrives with migration
+  -- 20260817020000, and this file must run correctly on either side of it:
+  --   before  — the column is absent and referencing it is a 42703 that stops the
+  --             whole DO block
+  --   after   — practice_sessions_abandoned_not_completed REQUIRES it on any
+  --             abandoned row, so omitting it is a 23514 that stops the block
+  -- An operator file that only works in one of those two worlds is a trap, and
+  -- which world production is in depends on the order Karl happens to run things.
+  -- The dynamic branch removes the dependency entirely.
+  --
+  -- The value is last_activity_at — when the student actually stopped — not now().
+  -- That is the same value 20260817020000's backfill would have derived, so the row
+  -- ends up identical whichever path wrote it.
+  SELECT last_activity_at INTO v_stopped_at
+    FROM public.practice_sessions WHERE id = v_target;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'practice_sessions'
+       AND column_name = 'abandoned_at'
+  ) THEN
+    EXECUTE
+      'UPDATE public.practice_sessions
+          SET status = ''abandoned'', abandoned_at = $1, updated_at = now()
+        WHERE id = $2'
+      USING v_stopped_at, v_target;
+  ELSE
+    UPDATE public.practice_sessions
+       SET status = 'abandoned',
+           updated_at = now()
+     WHERE id = v_target;
+  END IF;
   GET DIAGNOSTICS v_updated = ROW_COUNT;
 
   IF v_updated <> 1 THEN

@@ -129,6 +129,25 @@ BEGIN
       'POST: completed_at was stamped on the abandoned target — that is BUG-4, the defect this workstream is removing';
   END IF;
 
+  -- abandoned_at, when the column exists (migration 20260817020000). The value
+  -- must be the session's own last_activity_at — when the student stopped — and
+  -- not the wall-clock time the file happened to run at. A now() here would be a
+  -- fabricated timestamp on an audited row, and it would also disagree with what
+  -- 20260817020000's backfill derives for the same row.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'practice_sessions'
+       AND column_name = 'abandoned_at'
+  ) THEN
+    SELECT count(*) INTO v_n
+      FROM public.practice_sessions
+     WHERE id = v_target AND abandoned_at IS NOT DISTINCT FROM last_activity_at;
+    IF v_n <> 1 THEN
+      RAISE EXCEPTION
+        'POST: abandoned_at on the target is not its last_activity_at. The file either skipped the column or invented a timestamp.';
+    END IF;
+  END IF;
+
   SELECT status INTO v_status FROM public.practice_sessions WHERE id = v_keep;
   IF v_status <> 'completed' THEN
     RAISE EXCEPTION 'POST: the KEPT diagnostic is now ''%'', expected completed', v_status;
