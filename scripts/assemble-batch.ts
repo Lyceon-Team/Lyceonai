@@ -134,45 +134,130 @@ function domainForSkill(taxonomy: Taxonomy, skill: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Near-duplicate detection
+// Prod-grounded dedup detection
 // ---------------------------------------------------------------------------
 
 /**
- * Collapse whitespace, lowercase. Keyed on stem+passage together: RW items
- * share generic stems ("Which choice completes the text…") with distinct
- * passages, so stem-only would false-flag them. Math stems are the content
- * and collide meaningfully.
+ * Exact normalization matching the production dedup corpus:
+ *   md5( regexp_replace(trim(stem),'\s+',' ','g') + '||' + regexp_replace(trim(passage),'\s+',' ','g') )
+ *
+ * Note: NO lowercasing — the prod corpus was computed without it.
+ * Separator is '||', not '\0'.
  */
-function normalizeForDupeCheck(text: string): string {
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
+function normalizeDedupText(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
 }
 
-function stemPassageHash(stem: string, passage: string | null): string {
+function dedupHash(stem: string, passage: string | null): string {
   const key =
-    normalizeForDupeCheck(stem) + "\0" + normalizeForDupeCheck(passage ?? "");
-  return createHash("sha256").update(key).digest("hex");
+    normalizeDedupText(stem) + "||" + normalizeDedupText(passage ?? "");
+  return createHash("md5").update(key).digest("hex");
 }
 
-function checkNearDuplicates(
+/**
+ * Load the prod dedup corpus (one md5 hash per line) and all branch
+ * part-files (excluding the current batch's parts dir) to build the
+ * full dedup set. Returns a Map of hash → source label.
+ */
+function loadDedupCorpus(excludePartsDir: string | null): Map<string, string> {
+  const corpus = new Map<string, string>();
+
+  // 1. Load prod corpus hashes
+  const prodCorpusPath = join(
+    REPO_ROOT,
+    "content/canonical/prod_dedup_corpus.txt",
+  );
+  if (existsSync(prodCorpusPath)) {
+    const lines = readFileSync(prodCorpusPath, "utf-8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    for (const hash of lines) {
+      corpus.set(hash, "prod_corpus");
+    }
+  }
+
+  // 2. Scan all branch part-files (all batches)
+  const partsRoot = join(REPO_ROOT, "infra/supabase/seed/parts");
+  if (existsSync(partsRoot)) {
+    const batchDirs = readdirSync(partsRoot).filter((d) =>
+      d.startsWith("batch_"),
+    );
+    for (const batchDir of batchDirs) {
+      const batchPath = join(partsRoot, batchDir);
+      const resolvedBatchPath = resolve(batchPath);
+      // Skip the current batch being assembled (its records are checked intra-batch)
+      if (excludePartsDir && resolvedBatchPath === resolve(excludePartsDir)) {
+        continue;
+      }
+      const ndjsonFiles = readdirSync(batchPath).filter((f) =>
+        f.endsWith(".ndjson"),
+      );
+      for (const file of ndjsonFiles) {
+        const filePath = join(batchPath, file);
+        const content = readFileSync(filePath, "utf-8");
+        const fileLines = content
+          .split("\n")
+          .filter((l) => l.trim().length > 0);
+        for (const line of fileLines) {
+          try {
+            const rec = JSON.parse(line) as ContentRecord;
+            const hash = dedupHash(rec.stem, rec.passage);
+            corpus.set(hash, `${batchDir}/${file}`);
+          } catch {
+            // Skip malformed lines — they'll be caught by the main validator
+          }
+        }
+      }
+    }
+  }
+
+  return corpus;
+}
+
+/**
+ * Check new batch records against the full dedup corpus (prod + all other
+ * branch batches) AND against each other within the batch.
+ */
+function checkDuplicates(
   records: Array<{ rec: ContentRecord; file: string; line: number }>,
+  corpus: Map<string, string>,
 ): Violation[] {
   const violations: Violation[] = [];
-  const seen = new Map<string, { file: string; line: number; index: number }>();
+  // Track intra-batch hashes too
+  const batchSeen = new Map<
+    string,
+    { file: string; line: number; index: number }
+  >();
 
   for (let i = 0; i < records.length; i++) {
     const { rec, file, line } = records[i];
-    const hash = stemPassageHash(rec.stem, rec.passage);
-    const existing = seen.get(hash);
+    const hash = dedupHash(rec.stem, rec.passage);
+
+    // Check against prod corpus + other branch batches
+    const corpusSource = corpus.get(hash);
+    if (corpusSource) {
+      violations.push({
+        file,
+        line,
+        record_index: i,
+        field: "stem+passage",
+        reason: `BANK_DUPLICATE: hash ${hash} collides with existing question in ${corpusSource}`,
+      });
+    }
+
+    // Check intra-batch
+    const existing = batchSeen.get(hash);
     if (existing) {
       violations.push({
         file,
         line,
         record_index: i,
         field: "stem+passage",
-        reason: `NEAR_DUPLICATE: stem+passage hash collision with ${existing.file}:${existing.line} (record ${existing.index})`,
+        reason: `INTRA_BATCH_DUPLICATE: hash ${hash} collides with ${existing.file}:${existing.line} (record ${existing.index})`,
       });
     } else {
-      seen.set(hash, { file, line, index: i });
+      batchSeen.set(hash, { file, line, index: i });
     }
   }
 
@@ -833,9 +918,10 @@ async function main(): Promise<void> {
   }
 
   // -----------------------------------------------------------------------
-  // Near-duplicate detection (stem+passage hash collision)
+  // Prod-grounded dedup (prod corpus + all other branch batches + intra-batch)
   // -----------------------------------------------------------------------
-  allViolations.push(...checkNearDuplicates(records));
+  const dedupCorpus = loadDedupCorpus(resolvedPartsDir);
+  allViolations.push(...checkDuplicates(records, dedupCorpus));
 
   // -----------------------------------------------------------------------
   // Coverage assertion (only when --manifest is provided)
@@ -952,6 +1038,20 @@ async function main(): Promise<void> {
 
   const sqlContent = header + inserts + "\n";
   writeFileSync(resolve(outPath!), sqlContent);
+
+  // Write gate-pass marker alongside the SQL for external audit tools (e.g. Codex)
+  // to distinguish complete batches from in-flight ones.
+  const gatePassMarkerPath = resolve(outPath!) + ".gate-pass";
+  writeFileSync(
+    gatePassMarkerPath,
+    JSON.stringify({
+      status: "PASS",
+      record_count: assembled.length,
+      assembled_at: new Date().toISOString(),
+      sql_path: outPath,
+    }) + "\n",
+  );
+
   console.log(`GATE PASS: ${assembled.length} records assembled to ${outPath}`);
   console.log(`Report: ${reportPath}`);
 
