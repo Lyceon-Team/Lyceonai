@@ -1,7 +1,12 @@
 -- ============================================================================
 -- STEP 8 — recompute mastery for the four profiles with answered items
 -- ============================================================================
--- WRITES. Run only after steps 1–6 are green and 3.1 is passing.
+-- WRITES. Run only after steps 1–6 are green, 3.1 is passing, the residue purge
+-- has run, and step8-preflight.sql reports 'OK — ready to recompute'.
+--
+-- HOW TO RUN
+--   Paste this whole file into the SQL console. Two statements: the guarded
+--   recompute, then a summary row. The verdict is the last result.
 --
 -- Drives Doc 05D §7.2's backfill_recompute_student for the pinned profile set.
 -- The 84 answered items were never lost — only their derivation was. This
@@ -14,34 +19,36 @@
 --   f95b29f3   7 items
 --   0ebe43d9   1 item
 -- Pinned rather than SELECTed so the write set is reviewable in the diff. If the
--- population has changed, the pre-flight below refuses rather than silently
+-- population has changed, the guards below refuse rather than silently
 -- recomputing a different set.
+--
+-- THE GUARDS ARE DUPLICATED FROM step8-preflight.sql ON PURPOSE. That file is
+-- read-only and advisory; a write path must not depend on an operator having run
+-- a different file first, and state can change between the two runs. These
+-- checks are the fail-closed ones.
 --
 -- PROVENANCE: backfill_recompute_student sets
 -- app.mastery_refresh_trigger = 'backfill_recompute', so every audit row it
 -- produces is stamped triggered_by = 'backfill_recompute' and stays
 -- distinguishable from live event-time writes. step8-verify.sql asserts this.
 --
--- ORDER: run purge-seed-residue.sql FIRST. The seeded student_skill_mastery row
--- makes a zero-event student look incomplete-derived to the selection driver.
---
--- USAGE: psql -f scripts/prod-verify/step8-recompute.sql
+-- ATOMICITY: the whole recompute runs inside one DO block, so any guard that
+-- fires rolls back every profile recomputed before it. There is no partial
+-- outcome to reason about. See README.md rule 4 on why there is no explicit
+-- BEGIN/COMMIT here.
 -- ============================================================================
 
-\set ON_ERROR_STOP on
-\pset footer off
-
-\echo '=== STEP 8 PRE-FLIGHT ==='
-
--- Refuse to run if the prerequisites are not actually in place. Recomputing on
--- top of un-repaired data would fail per-student with
--- KPI_HISTORICAL_DATA_INVALID and leave a confusing partial result.
-DO $preflight$
+DO $recompute$
 DECLARE
+  v_target     uuid;
+  v_targets    uuid[];
+  v_observed   integer;
+  v_pinned     integer;
   v_unrepaired integer;
   v_residue    integer;
-  v_constraint boolean;
+  v_seal       boolean;
 BEGIN
+  -- ---- fail-closed preconditions ----
   SELECT count(*) INTO v_unrepaired
     FROM public.practice_session_items
    WHERE status IN ('answered','skipped') AND occurred_at IS NULL;
@@ -53,8 +60,8 @@ BEGIN
 
   SELECT EXISTS (SELECT 1 FROM pg_constraint
                   WHERE conname = 'psi_resolved_requires_occurred_at')
-    INTO v_constraint;
-  IF NOT v_constraint THEN
+    INTO v_seal;
+  IF NOT v_seal THEN
     RAISE EXCEPTION 'STEP8 PREFLIGHT: psi_resolved_requires_occurred_at missing — 1.1 has not been applied';
   END IF;
 
@@ -66,28 +73,7 @@ BEGIN
       v_residue;
   END IF;
 
-  RAISE NOTICE 'STEP8 PREFLIGHT ok: occurred_at repaired, constraint present, residue purged';
-END $preflight$;
-
-\echo ''
-\echo '--- profiles with answered items (must match the pinned set below) ---'
-SELECT pi.user_id, count(*) AS answered_items
-FROM public.practice_session_items pi
-WHERE pi.status = 'answered'
-GROUP BY pi.user_id
-ORDER BY count(*) DESC;
-
-\echo ''
-\echo '=== STEP 8 RECOMPUTE ==='
-
-DO $recompute$
-DECLARE
-  v_target uuid;
-  v_targets uuid[];
-  v_observed integer;
-  v_pinned   integer;
-BEGIN
-  -- Pinned set. Full uuids resolved from the short prefixes in the ruling.
+  -- ---- resolve and validate the pinned set ----
   SELECT array_agg(p.id ORDER BY p.id) INTO v_targets
   FROM public.profiles p
   WHERE p.id::text LIKE '3f18cbe2%'
@@ -114,6 +100,7 @@ BEGIN
       v_observed;
   END IF;
 
+  -- ---- recompute ----
   FOREACH v_target IN ARRAY v_targets LOOP
     RAISE NOTICE 'STEP8: recomputing %', v_target;
     PERFORM public.backfill_recompute_student(v_target);
@@ -122,5 +109,19 @@ BEGIN
   RAISE NOTICE 'STEP8: recompute complete for % profile(s)', v_pinned;
 END $recompute$;
 
-\echo ''
-\echo '=== run scripts/prod-verify/step8-verify.sql now ==='
+-- Summary. Non-zero rows here mean apply_mastery_event ran to completion, which
+-- it had not done once in production before this workstream. The full acceptance
+-- check is step8-verify.sql — this is just the immediate did-it-write signal.
+SELECT
+  (SELECT count(*) FROM public.student_skill_mastery)                    AS skill_mastery_rows,
+  (SELECT count(*) FROM public.student_domain_mastery)                   AS domain_mastery_rows,
+  (SELECT count(*) FROM public.student_projection_refresh_state)         AS projection_refresh_rows,
+  (SELECT count(*) FROM public.mastery_domain_refresh_audit_log
+    WHERE triggered_by = 'backfill_recompute')                           AS backfill_stamped_rows,
+  CASE
+    WHEN (SELECT count(*) FROM public.student_domain_mastery) = 0
+      THEN 'STOP — recompute reported success but domain mastery is still empty'
+    WHEN (SELECT count(*) FROM public.student_projection_refresh_state) = 0
+      THEN 'STOP — recompute reported success but projection refresh state is still empty'
+    ELSE 'OK — recompute complete; now run step8-verify.sql'
+  END                                                                    AS verdict;

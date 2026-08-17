@@ -378,6 +378,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-unblock-gates.sh
 
+      # Every file under scripts/prod-verify/ is pasted by hand into the Supabase
+      # SQL editor and run against production — it is NOT run with `psql -f`.
+      # This executes each one the way the operator does. Every prod-verify file
+      # shipped in #589..#595 failed at its first backslash meta-command and CI
+      # never noticed, because CI only ever ran the CI fixtures.
+      - name: prod-verify console gate (operator SQL must run in a SQL console)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/prod-verify-console-gate.sh
+
       - name: Mastery derivation gap detection gate (2.4)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
