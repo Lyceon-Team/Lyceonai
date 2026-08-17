@@ -402,6 +402,15 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
 
+      # captureDiagnosticBaseline is once-only with no retry and silently returns
+      # when the projection is not ready, so a student who completed a diagnostic
+      # during the mastery outage is permanently no_baseline. This guards the
+      # repair — and above all that it stays a repair, never a fabricated score.
+      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/baseline-repair-gate.sh
+
       - name: Mastery derivation gap detection gate (2.4)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
