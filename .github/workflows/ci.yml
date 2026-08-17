@@ -83,6 +83,13 @@ jobs:
       - name: Session-mode boundary gate (BUG-3 — client cannot name its own mode)
         run: node scripts/ci/session-mode-boundary-gate.mjs
 
+      # The RULE is unit-tested in packages/shared; this covers the seam the unit
+      # test cannot see — narrowing the route's status filter back to
+      # ['created','active'] means the rule never receives the completed row and a
+      # second diagnostic is startable again, with every unit test still green.
+      - name: Diagnostic once-only gate (BUG-2 — no retake)
+        run: node scripts/ci/diagnostic-once-only-gate.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 
