@@ -3,9 +3,17 @@
  * ║  THROWAWAY DIAGNOSTIC — delete after the run                   ║
  * ║                                                                ║
  * ║  Ablation V2: model-half diagnostic per Doc 03D §5.2 / §7.4.  ║
- * ║  Calls Gemini for 5 CASE-01 configurations (full context +    ║
- * ║  each of 4 state blocks removed) + 1 CASE-18 full-context     ║
+ * ║  Calls Gemini for 6 CASE-01 configurations (full context +    ║
+ * ║  each of 5 state blocks removed) + 1 CASE-18 full-context     ║
  * ║  run exercising SCL-039 affective scaffolding.                 ║
+ * ║                                                                ║
+ * ║  V2-rev1: Updated to match WS-L5.1 prompt tuning. Changes:    ║
+ * ║  - DEFECT 1: New ITEM block (surface/submit state)             ║
+ * ║  - DEFECT 2: Directive dedup (pointer, not restatement)        ║
+ * ║  - DEFECT 3: Style directive = structure, not tone             ║
+ * ║  - DEFECT 4: SCL-034 restructured, buggy-procedure first      ║
+ * ║  - SCL-039 rule 2: "NEVER ask a question" (absolute)           ║
+ * ║  - correct_answer: null for pre-submit scenarios               ║
  * ║                                                                ║
  * ║  Usage:                                                        ║
  * ║    GEMINI_API_KEY=<key> node ablation-v2.mjs                   ║
@@ -78,18 +86,22 @@ function renderSystemInstruction(fields) {
   );
 
   sections.push(
-    `Diagnose difficulty using three modes: ` +
-    `(1) Knowledge gap — the student does not have the concept. Signature: ` +
-    `slow or absent response, no partial recall. Response: decompose first ` +
-    `(see below), teach only after decomposition fails. ` +
-    `(2) Retrieval failure — the student has the concept but cannot access it. ` +
-    `Signature: delay then hedged partial recall ("something about... signs?"), ` +
-    `correct earlier in session. Response: decompose to surface what is already there. ` +
-    `(3) Buggy procedure — the student has a rule; it is the wrong rule. Signature: ` +
-    `fast, confident, wrong, with a consistent error pattern. Response: surface the ` +
-    `rule the student is actually applying, then contrast it against the correct one. ` +
-    `Do not decompose or reteach — decomposition confirms the student can execute ` +
-    `each step, because they can, with the wrong rule.`
+    `Classify every wrong answer into exactly one diagnostic mode before ` +
+    `responding. Each mode has a different intervention — using the wrong ` +
+    `one is a defect.\n\n` +
+    `BUGGY PROCEDURE (check first): Fast, confident, wrong, with a ` +
+    `consistent error pattern (not random mistakes). The student has a ` +
+    `rule; it is the wrong rule. DO NOT decompose. DO NOT reteach. ` +
+    `Decomposition confirms the student can execute each step, because ` +
+    `they can — with the wrong rule. Instead: state the rule the student ` +
+    `is actually applying ("You're treating the negative sign as ` +
+    `subtraction"), then contrast it with the correct rule.\n\n` +
+    `KNOWLEDGE GAP: Slow or absent response, no partial recall. The ` +
+    `student does not have the concept. Decompose first (see below). ` +
+    `Teach only after three decomposition levels fail.\n\n` +
+    `RETRIEVAL FAILURE: Delay then hedged partial recall ("something ` +
+    `about..."). The student has the concept but cannot access it. ` +
+    `Decompose to surface what is already there — do not reteach.`
   );
 
   sections.push(
@@ -122,6 +134,29 @@ function renderSystemInstruction(fields) {
 }
 
 // ── State block renderers (from render-state-blocks.ts) ────────────────
+
+function renderItemBlock(request) {
+  if (request.entry_mode !== "scoped_question") return null;
+  const isPostSubmit = request.correct_answer !== null;
+  const surface = request.source_surface;
+  if (isPostSubmit) {
+    return (
+      `[ITEM] This is a post-submit question (${surface} surface). ` +
+      `The student has already submitted their answer.` +
+      (request.correct_answer
+        ? ` The correct answer is: ${request.correct_answer}.`
+        : ``) +
+      ` [DIRECTIVE] You may explain the answer, walk through the solution, ` +
+      `and discuss why incorrect options are wrong.`
+    );
+  }
+  return (
+    `[ITEM] This is a pre-submit question (${surface} surface). ` +
+    `The student has NOT yet submitted their answer. ` +
+    `[DIRECTIVE] DO NOT reveal, hint at, or narrow toward the correct answer. ` +
+    `Help the student work through the problem using scaffolding and decomposition.`
+  );
+}
 
 function renderMasteryBlock(request) {
   const snapshot = request.student_learning_context.mastery_snapshot;
@@ -160,14 +195,8 @@ function renderMasteryBlock(request) {
   if (parts.length === 0) return null;
 
   parts.push(
-    `[DIRECTIVE] Use the mastery level to calibrate your scaffolding depth. ` +
-    `A "needs_work" student likely needs more support; a "strong" student needs less. ` +
-    `Watch for three diagnostic signatures: (1) knowledge gap — slow or absent response, ` +
-    `no partial recall; (2) retrieval failure — delay then hedged partial recall, the ` +
-    `student knew this before; (3) buggy procedure — fast, confident, wrong, with a ` +
-    `consistent error pattern rather than random errors. For a buggy procedure, surface ` +
-    `the rule the student is actually applying, then contrast it against the correct one. ` +
-    `Do not decompose or reteach — the student has a rule; it is the wrong rule.`
+    `[DIRECTIVE] Calibrate scaffolding depth to this mastery level. ` +
+    `Apply the diagnostic framework from your instructions to classify errors.`
   );
   return parts.join(" ");
 }
@@ -194,9 +223,8 @@ function renderFrictionBlock(request) {
       `[DIRECTIVE] The student is expressing self-directed negative judgment. ` +
       `(1) Contradict the self-judgment once, flatly, then move on — "No, you're not" ` +
       `and then the work. Not repeated, not expanded, not a speech. ` +
-      `(2) Stop asking questions and start giving structure. Continued questioning of ` +
-      `a student who has just called themselves stupid is experienced as further evidence ` +
-      `of incompetence. ` +
+      `(2) NEVER ask a question for the rest of this turn. Not one. A question ` +
+      `after "I'm stupid" is experienced as proof of the claim. Give structure instead. ` +
       `(3) Supply the setup, the framing, the organizing principle — the student still ` +
       `does the final work, but from a position of "I can see how this goes." ` +
       `(4) Do not resume diagnostic questioning in this turn. Diagnosis resumes on the ` +
@@ -215,12 +243,7 @@ function renderFrictionBlock(request) {
 
   if (!friction.self_deprecating_language_detected) {
     parts.push(
-      `[DIRECTIVE] If the student says "I don't know," decompose the question into a ` +
-      `smaller sub-step first. Teach the concept only after three levels of decomposition ` +
-      `fail. Watch for disengagement (messages shortening, losing content, one-word replies ` +
-      `like "idk", "ok", "whatever") rather than frustration — a frustrated student who is ` +
-      `still writing substantive messages is engaged and working. Intervene on disengagement, ` +
-      `not on frustration.`
+      `[DIRECTIVE] Apply the decompose-first and disengagement rules from your instructions.`
     );
   }
   return parts.join(" ");
@@ -275,9 +298,12 @@ function renderStyleBlock(request) {
       `(${styleDesc}). Confidence in this preference: ${confidence}.`
     );
     parts.push(
-      `[DIRECTIVE] Adapt your explanations toward this style when possible. ` +
-      `If confidence is "low," treat this as a hypothesis — vary your approach ` +
-      `and observe what the student responds to.`
+      `[DIRECTIVE] Use this style to structure explanations — not to adjust tone. ` +
+      `"Step-by-step" means sequential sub-steps; "example-driven" means worked ` +
+      `examples first; "conceptual" means underlying principle first; "visual" ` +
+      `means spatial or diagrammatic framing. This is about explanation structure. ` +
+      `It is not a license for encouragement, praise, or warmth. ` +
+      `If confidence is "low," vary structural approach and observe what lands.`
     );
   }
   if (fields.last_struggled_skill) {
@@ -298,6 +324,7 @@ function renderStyleBlock(request) {
 
 function renderStateBlocks(request) {
   const blocks = [];
+  const item = renderItemBlock(request); if (item) blocks.push(item);
   const m = renderMasteryBlock(request); if (m) blocks.push(m);
   const f = renderFrictionBlock(request); if (f) blocks.push(f);
   const mem = renderMemoryBlock(request); if (mem) blocks.push(mem);
@@ -316,7 +343,10 @@ const CASE_01 = {
   entry_mode: "scoped_question",
   source_surface: "practice",
   policy_assignment: { policy_variant: "default" },
-  correct_answer: "17",
+  // Pre-submit: correct_answer is null. The BFF only sends a value post-submit.
+  // Previous script version had "17" but fields01.isPostSubmit was false — mismatch.
+  // Now that renderItemBlock derives isPostSubmit from this field, align them.
+  correct_answer: null,
   student_learning_context: {
     mastery_snapshot: {
       current_skill: {
@@ -373,7 +403,8 @@ const CASE_18 = {
   entry_mode: "scoped_question",
   source_surface: "practice",
   policy_assignment: { policy_variant: "default" },
-  correct_answer: "12",
+  // Pre-submit: correct_answer is null. See CASE_01 comment.
+  correct_answer: null,
   student_learning_context: {
     mastery_snapshot: {
       current_skill: {
@@ -466,7 +497,7 @@ function buildContents(request, stateBlockText) {
 function buildConfigs(request) {
   return [
     {
-      label: "C1 — Full context (all 4 state blocks)",
+      label: "C1 — Full context (all 5 state blocks)",
       stateBlocks: renderStateBlocks(request),
     },
     {
@@ -509,6 +540,14 @@ function buildConfigs(request) {
           last_struggled_skill: null,
           last_mastered_skill: null,
         };
+        return renderStateBlocks(m);
+      })(),
+    },
+    {
+      label: "C6 — No ITEM block",
+      stateBlocks: (() => {
+        const m = structuredClone(request);
+        m.entry_mode = "general"; // renderItemBlock returns null for non-scoped_question
         return renderStateBlocks(m);
       })(),
     },

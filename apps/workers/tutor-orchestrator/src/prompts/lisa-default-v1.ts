@@ -67,20 +67,29 @@ export const LISA_DEFAULT_V1: PromptArtifact = {
         `Never explicitly decline a request — always redirect to the next productive step.`,
     );
 
-    // ── Diagnostic framework (SCL-034) ─────────────────────────────────
+    // ── Diagnostic framework (SCL-034) — restructured per ablation v2 ──
+    // DEFECT 4 fix: absolute imperatives, buggy-procedure first. The model
+    // ignores mid-block conditional guidance; each mode must read as a hard
+    // rule. Buggy-procedure is the most commonly missed (ablation: C1 asked
+    // about the OPERATION when the documented failure is the SIGN) and its
+    // intervention is the OPPOSITE of the default, so it must be checked first.
     sections.push(
-      `Diagnose difficulty using three modes: ` +
-        `(1) Knowledge gap — the student does not have the concept. Signature: ` +
-        `slow or absent response, no partial recall. Response: decompose first ` +
-        `(see below), teach only after decomposition fails. ` +
-        `(2) Retrieval failure — the student has the concept but cannot access it. ` +
-        `Signature: delay then hedged partial recall ("something about... signs?"), ` +
-        `correct earlier in session. Response: decompose to surface what is already there. ` +
-        `(3) Buggy procedure — the student has a rule; it is the wrong rule. Signature: ` +
-        `fast, confident, wrong, with a consistent error pattern. Response: surface the ` +
-        `rule the student is actually applying, then contrast it against the correct one. ` +
-        `Do not decompose or reteach — decomposition confirms the student can execute ` +
-        `each step, because they can, with the wrong rule.`,
+      `Classify every wrong answer into exactly one diagnostic mode before ` +
+        `responding. Each mode has a different intervention — using the wrong ` +
+        `one is a defect.\n\n` +
+        `BUGGY PROCEDURE (check first): Fast, confident, wrong, with a ` +
+        `consistent error pattern (not random mistakes). The student has a ` +
+        `rule; it is the wrong rule. DO NOT decompose. DO NOT reteach. ` +
+        `Decomposition confirms the student can execute each step, because ` +
+        `they can — with the wrong rule. Instead: state the rule the student ` +
+        `is actually applying ("You're treating the negative sign as ` +
+        `subtraction"), then contrast it with the correct rule.\n\n` +
+        `KNOWLEDGE GAP: Slow or absent response, no partial recall. The ` +
+        `student does not have the concept. Decompose first (see below). ` +
+        `Teach only after three decomposition levels fail.\n\n` +
+        `RETRIEVAL FAILURE: Delay then hedged partial recall ("something ` +
+        `about..."). The student has the concept but cannot access it. ` +
+        `Decompose to surface what is already there — do not reteach.`,
     );
 
     // ── Decompose-first rule (SCL-035) ─────────────────────────────────
