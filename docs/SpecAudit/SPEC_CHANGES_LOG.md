@@ -25,6 +25,134 @@
 
 ## Entries
 
+SCL-038 | 2026-08-15 | Doc 03D §9 — A/B power calibrated to realistic coaching effect sizes | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D §9 specifies A/B methodology without stating the effect size the harness must be able to detect. Absent that, an experiment can be designed that cannot detect a real effect.
+
+WAS: §9 specifies student-level randomization, pre-registration, covariate adjustment, and test-date cohorting. It does not state the magnitude of effect a LISA change can plausibly produce.
+
+IS: The harness is calibrated to detect effects on the order of **single-digit to low-double-digit SAT points**, not large swings.
+
+Briggs's analysis of NELS data placed commercial coaching at roughly 14–15 points on SAT-math and 6–8 points on verbal. A 2025 meta-analysis found no reliable verbal effect at all.
+
+These are whole-program effects. A single prompt change is a fraction of that. An A/B design powered to detect a 100-point swing is calibrated to marketing copy, not to measurement, and will report null results indefinitely while real improvements go undetected.
+
+Consequences for §9:
+- Covariate adjustment is not an optimization, it is a requirement. Between-student variance dwarfs the effect size. §9.3 already specifies this; this SCL records why it is load-bearing.
+- Process metrics (§3.2) carry more decision weight at realistic sample sizes than outcome metrics do, because they have better signal-to-noise. §9.2's pre-registration requirement stands, but the practical readout order is process first, outcome as confirmation.
+- Claims made externally about score improvement must survive FTC substantiation against these effect sizes, not against aspirational ones.
+
+Owner action: amend Doc 03D §9 to record the expected effect-size range and its consequences for power. No code change. Coordinate with whoever owns marketing claims — the substantiation requirement is downstream of this number.
+
+SCL-037 | 2026-08-15 | Doc 03D §0.1 and §2.1 — INV-03-04 justification corrected; refusal posture grounded | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D frames the never-reveal-an-unsubmitted-answer rule as pedagogically grounded. The evidence does not support that framing at the strength implied. Separately, the evidence supports a specific refusal posture that the document did not previously justify.
+
+WAS: Doc 03D §0 asserts that "a tutor that hands over the answer produces a student who feels helped and scores the same," presented as the foundation of the product. Doc 03D §5.1's authoring brief describes the never-reveal rule in learning-science terms.
+
+IS, part 1 — the rule holds; the justification narrows.
+
+**The central premise is well-supported.** Chi et al. (2001) found that constraining tutoring to suppress tutor explanation and force student construction produced equal or greater learning [Established]. "Did the student do the thinking" is a real finding.
+
+**The specific rule is not derivable from it.** Chi, Jordan, VanLehn & Litman (2009) compared eliciting against telling and found no reliable learning difference. The bottom-out-hint literature is genuinely contested.
+
+INV-03-04 therefore stands as a **product decision** — it is what distinguishes a tutoring product from an answer service, and it is what a parent is paying for — not as a conclusion from learning science. Doc 03D must not cite pedagogical evidence it cannot support for this rule. The rule does not weaken; its justification becomes honest.
+
+IS, part 2 — refusal posture is now evidence-grounded.
+
+**Never make declining feel like a rebuke, and never make it the whole response.**
+
+Ryan & Pintrich (1997) and Ryan, Pintrich & Midgley (2001) establish that help-seeking avoidance rises sharply in early adolescence, driven by threat to self-worth and perceived social cost [Established]. The population's default failure mode is not asking too much — it is going quiet. A refusal that costs the student standing raises the probability they stop asking, and a student who stops asking is worse off than one who asked for the answer.
+
+Expert human tutors converge on the same posture from observation: Merrill, Reiser, Ranney & Trafton (1992) found human tutors keep students on a productive path and give substantially more guidance than constructivist theory recommends; Lepper & Woolverton (2002) describe highly effective tutors who rarely say "wrong," ask leading questions instead of correcting, and attribute difficulty to the problem rather than the student [Moderate — observational, small samples, consistent across independent groups].
+
+**They redirect rather than deny.** The observed pattern is substitution of a smaller step for the requested answer, not refusal.
+
+This validates the owner's blind-authored CASE-01 gold response, which never declines explicitly and instead moves directly to the next diagnostic step.
+
+Owner action: amend Doc 03D §0 to describe INV-03-04 as a product decision with the Chi et al. (2001) constructive-activity finding as supporting context rather than as proof. Amend §5.1's authoring brief to specify redirect-over-refuse as the default posture, with the Ryan/Pintrich mechanism recorded. No code change — INV-03-04's enforcement is unchanged and remains structural.
+
+Two measurable gaps, recorded because the product can close them:
+1. No study tests whether refusing an answer reduces subsequent help-seeking. The instrumentation to measure this exists in this platform.
+2. No study tests "acknowledge briefly, then redirect to a winnable step" against alternatives. This is a load-bearing move in Doc 03D §5.1 CASE-04 and CASE-18.
+
+Both are answerable with the golden set and the attribution fields required by Doc 03D §8. Neither is a V1 requirement.
+
+SCL-036 | 2026-08-15 | Doc 03D §3.2 — intervention trigger changed from frustration to disengagement | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D §3 and the golden-set case taxonomy treat escalating frustration and self-deprecation as the signal that a student needs intervention. The evidence identifies a different and better-supported signal.
+
+WAS: §5.1 coverage targets included "self-deprecation escalating" as an intervention-relevant category. §3.2's process metrics carried no disengagement measure. The implied model was that frustration indicates a student in trouble.
+
+IS: **Confusion is not the problem. Disengagement is.**
+
+Craig, Graesser, Sullins & Gholson (2004) found confusion positively predicted learning and boredom negatively predicted it [Established]. A frustrated, engaged student is in a productive state. A student transitioning toward disengagement is the one being lost.
+
+Observable difference:
+
+| State | Signal | Action |
+|---|---|---|
+| Engaged frustration | Complaining, but messages still contain content, reasoning, or specific objections | Continue tutoring. This student is working |
+| Disengagement | Messages shorten and stop containing content. "idk", "ok", "whatever", one-word replies with no substance | Intervene — change approach, reduce difficulty, or offer a win |
+
+Doc 03D §5.1 CASE-01's student complains about twenty minutes and is fully engaged — the message contains a specific, accurate account of what they tried. That student needs a better hint, not intervention. CASE-15's "idk" with no elaboration is closer to the real signal.
+
+**No time threshold exists.** There is no research-supported answer to "how long should a student struggle before the tutor intervenes." Wait-time research covers roughly three seconds of classroom silence and does not transfer to asynchronous text. Any specific number in an implementation is invented. Doc 03D must not specify one, and any future implementation proposing a threshold must state that it is a product heuristic rather than an evidence-backed value.
+
+Owner action: amend Doc 03D §3.2 to add a disengagement signal to the process metrics, replacing the implicit frustration model. Amend §5.1's coverage taxonomy so that the self-deprecation category is described as a tone-and-register test rather than an intervention-trigger test. No code change; this is measurement and rubric guidance.
+
+Instrumentation note: message length trend and content density across a conversation are cheap to compute and are the closest available proxies for the disengagement transition. Neither is validated in tutoring dialogue — treat as a hypothesis to test against the golden set, not as an established detector.
+
+SCL-035 | 2026-08-15 | Doc 03D §5.1 — "I don't know" rubric inverted: decompose first, with a floor | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D §5.1's golden-set rubric for silent-student cases (CASE-15, CASE-16) specified shrinking the question as the default response to "I don't know." The owner's blind-authored gold response contradicted this, favouring teaching the core concept. Evidence review resolved against both positions.
+
+WAS: Golden-set rubric — on "I don't know," shrink the question. The owner's blind gold response for CASE-15 instead taught the concept, reasoning that a needs_work student on a concept-heavy item has a knowledge problem rather than an execution problem.
+
+IS: **Decompose first. Teach the concept only after decomposition fails, and no deeper than three levels.**
+
+Rationale: The evidence favours decomposition for a specific reason neither prior position accounted for.
+
+The **expertise reversal effect** (Kalyuga, Ayres, Chandler & Sweller, 2003) [Established] holds that instructional support which helps novices actively *harms* learners who already possess the relevant schema. Teaching the concept when the student's problem was retrieval is therefore not merely wasted instruction — it is negative.
+
+Decomposition is self-diagnosing. It costs one turn and reveals which mode the student is in. Teaching first costs a turn and reveals nothing, while risking the reversal effect.
+
+Two further findings converge: impasse-driven learning (VanLehn, Siler, Murray, Yamauchi & Baggett, 2003) found learning events cluster around impasses the student worked through rather than around smoothly delivered tutor explanations [Moderate to Established]; and Chi et al. (2001) found that constraining tutors to suppress explanation and force student construction produced equal or greater learning [Established].
+
+**The floor is load-bearing.** Decompose three levels and still hit "I don't know," and the tutor is no longer diagnosing — it is grinding. At that point telling is correct. Chi, Jordan, VanLehn & Litman (2009) compared eliciting against telling and found no reliable learning difference, so the cost of telling at the floor is low and the cost of continued decomposition is student disengagement.
+
+Subject qualifier: decomposition in procedural math means sub-computation with verifiable intermediate states. In Reading & Writing the analogue is **localization** — "which sentence would you point to?" — not sub-computation. Doc 03D §5.1 CASE-04's gold response already does this correctly. The evidence for this distinction is structural reasoning, not a finding: [Absent] for direct comparison.
+
+Age qualifier: no evidence of a gradient within 13–18. Treat a 14-year-old and a 17-year-old identically until product data says otherwise.
+
+Owner action: amend Doc 03D §5.1's CASE-15 and CASE-16 rubrics to specify decompose-first with a three-level floor. The owner's blind gold response for CASE-15 stands as authored but is annotated with this ruling, so the calibration set records the disagreement rather than silently overwriting it. No code change.
+
+SCL-034 | 2026-08-15 | Doc 03D §3.1 — fourth diagnostic mode added: systematically applied incorrect procedure | OPEN (owner-approved 2026-08-15)
+
+Change: Doc 03D §3.1's tutor act taxonomy and the diagnostic framing throughout §3 assume two failure modes when a student is stuck — the student lacks the concept, or the student has it and cannot retrieve it. A third mode is well-established in the literature and is absent from the document.
+
+WAS: Doc 03D §3 treats student difficulty as either a knowledge gap or a retrieval failure. §5.1's CASE-03 (prerequisite gap) is the only case addressing a structural cause, and it addresses a missing prerequisite rather than a wrong rule.
+
+IS: Three diagnostic modes, not two.
+
+| Mode | Signature | Correct response |
+|---|---|---|
+| Knowledge gap | Slow or absent response, no partial recall, no consistent pattern | Teach the concept — but only after decomposition fails, per SCL-035 |
+| Retrieval failure | Delay then hedged partial ("something about... signs?"); correct earlier in session | Decompose to surface what is already there |
+| **Buggy procedure** | **Fast, confident, wrong. Consistent error pattern rather than random errors** | **Surface the rule the student is actually applying, then contrast it against the correct one** |
+
+Rationale: Brown & VanLehn's repair theory (1980) and VanLehn's Mind Bugs (1990) establish that a common failure mode is a systematically applied incorrect procedure. The student has a rule; it is the wrong rule. The evidence classification is [Established] — the misconception literature is solid.
+
+This mode is diagnostically dangerous because it presents as competence. The student is fast and confident, which reads as understanding. Neither "teach the concept" nor "decompose the question" is the correct response: decomposition confirms the student can execute each step, because they can — they are executing the wrong rule correctly.
+
+Doc 03D §5.1 CASE-01 is exactly this case and was authored as an answer-extraction test. The student has three sign-flip errors in seven days. That is not confusion; that is a consistently applied rule about what happens to a term crossing the equals sign. The case remains valid for what it tests, and now also carries the buggy-procedure signature.
+
+Detection: the distinguishing signal is error *pattern*, not error *rate*. A student making random errors across a skill is in a different mode from a student making the same error every time. The document previously had no field for this distinction.
+
+Owner action: amend Doc 03D §3.1 to carry three diagnostic modes and their signatures. Amend §3.2's misconception repair rate definition to reference the buggy-procedure mode explicitly. No code change (the diagnostic modes are prompt-construction guidance, not an implemented classifier). No schema change.
+
+Note on instrumentation: Learning Factors Analysis (Cen, Koedinger & Junker, 2006) detects when a skill's error rate fails to decline with practice, which is evidence the knowledge component being taught is not the one blocking the student. That is the closest principled trigger for "the named skill is not the real skill." Recorded as available prior art, not as a V1 requirement.
+
 SCL-033 | 2026-08-15 | Doc 03 INV-03-05 narrowed — guardian visibility of LISA-derived topic coverage | OPEN (owner-approved 2026-08-15)
 
 Change: INV-03-05 ("Zero guardian LISA access") as locked forbids "derived indicators" without qualification. Doc 03D §11 specifies a student- and guardian-visible surface showing which skills a student has recently discussed with LISA — a derived indicator sourced from tutor_conversations. Read literally, the invariant forbids it. Karl ruled the surface should exist and the invariant should be narrowed rather than the two left in contradiction.
@@ -838,3 +966,8 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
 - Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
 - Doc 03 INV-03-05, Doc 03A §16.2–16.3 — SCL-033 (narrow "no derived indicators" to "no indicators derived from conversation substance"; permit bare skill-topic coverage to guardians)
+- Doc 03D §3.1, §3.2 — SCL-034 (add buggy-procedure as third diagnostic mode; amend misconception repair rate definition)
+- Doc 03D §5.1 CASE-15/CASE-16 — SCL-035 (decompose-first with three-level floor; annotate owner's blind gold response)
+- Doc 03D §3.2, §5.1 coverage taxonomy — SCL-036 (add disengagement signal replacing frustration model; reclassify self-deprecation category)
+- Doc 03D §0, §5.1 authoring brief — SCL-037 (INV-03-04 justification narrowed to product decision; redirect-over-refuse posture grounded)
+- Doc 03D §9 — SCL-038 (record expected effect-size range and power consequences; coordinate marketing substantiation)
