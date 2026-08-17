@@ -2415,9 +2415,23 @@ router.post(
     metadata.client_instance_id = null;
     metadata.calculator_state = null;
 
+    // @spec [Doc-02B_V4 §14 session lifecycle; owner ruling "completion signal is
+    // a session fact", 2026-08-17] @implemented 2026-08-17
+    //
+    // BUG-4. This wrote completed_at while setting status='abandoned'. completed_at
+    // is the completion signal; stamping it on abandonment makes abandoned work
+    // read as finished work to anything that inspects the column. review_sessions
+    // has carried a separate abandoned_at since 20260610020000 and writes the
+    // matching one (server/routes/review-session-routes.ts:684) — this is the same
+    // shape, not a new convention.
+    //
+    // practice_sessions_abandoned_not_completed (migration 20260817020000) rejects
+    // the old pair outright, so the defect cannot be reintroduced silently: it
+    // becomes a 23514 on this update, surfaced as practice_sessions_update_failed.
     await updateSessionLifecycle(sessionId, metadata, {
       status: "abandoned",
-      completed_at: new Date().toISOString(),
+      abandoned_at: new Date().toISOString(),
+      completed_at: null,
     });
 
     return res.json({
