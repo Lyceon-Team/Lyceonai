@@ -388,6 +388,22 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
 
+      # Guards scripts/prod-verify/step8-verify.sql, which previously asserted
+      # student_projection_refresh_state > 0 and so reported STOP on a completely
+      # successful production backfill. Runs a REAL backfill and checks the real
+      # file's verdict against it.
+      - name: Step 8 backfill acceptance gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/step8-backfill-acceptance-gates.sh
+
+      # Guards the migration-history repair path. Recording a version as applied is
+      # irreversible in practice, so the refusal case is the load-bearing one.
+      - name: Migration history repair gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-history-repair-gate.sh
+
       - name: Mastery derivation gap detection gate (2.4)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH

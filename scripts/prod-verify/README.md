@@ -109,8 +109,27 @@ question is answered and the new set is deliberately re-audited.
 | 8 | `purge-seed-residue.sql` | **DELETES** | `OK — residue purged` |
 | 9 | `step8-preflight.sql` | no | `OK — ready to recompute` |
 | 10 | `step8-recompute.sql` | **WRITES** | `OK — recompute complete` |
-| 11 | `step8-verify.sql` | no | `OK — mastery pipeline is emitting, rolling up, and projecting` |
+| 11 | `step8-verify.sql` | no | `OK — backfill rebuilt mastery end to end; 3f18cbe2 projects in both sections` |
 | 11a | `step8-verify-detail.sql` | no | per-student rollup |
+
+### Migration-history reconciliation (separate track, not yet run)
+
+`20260816000000` and `20260816010000` were applied by direct SQL execution, so the
+migration runner has no record of them. See
+[`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md) —
+that document is the plan and carries the open owner questions.
+
+| # | File | Writes? | Expected verdict |
+|---|---|---|---|
+| A | `migration-history-audit.sql` | no | `REPAIR` for both target versions |
+| B | `migration-schema-parity.sql` | no | `OK — prod schema matches both migrations; safe to record them as applied` |
+| C | `migration-history-repair.sql` | yes (bookkeeping only) | `OK — both versions recorded as applied; nothing was re-executed` |
+| D | `migration-history-audit.sql` again | no | `consistent` for both target versions |
+
+`20260816020000_mastery_derivation_gap_detection.sql` is **not applied** to
+production and is NOT part of the repair track — it has genuinely never run, so it
+goes through the runner normally. Its absence is why `mastery_derivation_gaps`
+does not exist and why files that referenced it failed with `42P01`.
 
 Any verdict beginning `STOP` means stop. The verdict text names the reason and,
 where relevant, the file to read before doing anything else.

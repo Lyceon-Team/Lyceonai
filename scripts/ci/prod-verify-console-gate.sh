@@ -197,6 +197,15 @@ echo "==> (4) execute in console mode against genesis + all migrations"
 if ! setup_genesis_db "$DB"; then
   fail 4 "could not provision the verification database"
 else
+  # Model the Supabase migration runner's bookkeeping table. Genesis does not
+  # create it (it belongs to the CLI, not to our schema), but production HAS it,
+  # and migration-history-audit.sql / -repair.sql reference it by name. A missing
+  # table would fail those files at PARSE time here while they run fine on prod —
+  # the gate's substrate has to match the operator's.
+  psql -q -d "$DB" -c "
+    CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+    CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+      version text PRIMARY KEY, statements text[], name text);" >/dev/null 2>&1
   for f in "${PV_FILES[@]}"; do
     rel="${f#"$ROOT"/}"
     # psql -c does NOT process meta-commands — this is the operator's environment.
