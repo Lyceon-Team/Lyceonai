@@ -8,6 +8,11 @@ import {
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
 import { getBreachedCases } from "../services/crisis-review-queue";
+import {
+  sweepStalePracticeSessions,
+  STALE_PRACTICE_SESSION_TTL_DAYS,
+} from "../lib/stale-session-sweep.js";
+import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -170,6 +175,128 @@ router.get(
         err,
       );
       res.status(500).json({ error: "crisis_sla_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/stale-session-sweep
+ * @spec [Doc-02B_V4 §14 session lifecycle; owner rulings Q1 + Q4, 2026-08-17]
+ * @implemented 2026-08-17
+ *
+ * plain English: closes practice sessions nobody has touched in
+ * STALE_PRACTICE_SESSION_TTL_DAYS days. Diagnostics are never swept — the rule and
+ * the reason live in server/lib/stale-session-sweep.ts, and this handler is
+ * transport only.
+ *
+ * Managed-service first: this is a Vercel cron entry in vercel.json, the same
+ * scheduler already driving legal-acceptance-drain and execute-deletions. No
+ * pg_cron (genesis excludes it as platform-managed), no second scheduler.
+ *
+ * Runs daily. The window is seven days, so the exact hour is immaterial and a
+ * missed run costs nothing — the next run sweeps the same rows plus a day's worth.
+ */
+router.get(
+  "/stale-session-sweep",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const { sweptCount, cutoff } = await sweepStalePracticeSessions(
+        getSupabaseAdmin(),
+        { now: new Date() },
+      );
+      logger.info(
+        "SESSION_LIFECYCLE",
+        "stale_session_sweep_job",
+        "Scheduled stale practice-session sweep completed",
+        { sweptCount, cutoff, ttlDays: STALE_PRACTICE_SESSION_TTL_DAYS },
+      );
+      res.json({ ok: true, sweptCount, cutoff });
+    } catch (err) {
+      logger.error(
+        "SESSION_LIFECYCLE",
+        "stale_session_sweep_job_error",
+        "Scheduled stale practice-session sweep failed",
+        err,
+      );
+      res.status(500).json({ error: "stale_session_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/baseline-pending-sweep
+ * @spec [Doc-01A_V1.0 §18 alert routing; Doc-05C_V1.0 §7.4; owner ruling Q2]
+ * @implemented 2026-08-17
+ *
+ * plain English: alerts when a student has been sitting in baseline_pending long
+ * enough that the pipeline, not the clock, explains it. Read-only — this endpoint
+ * repairs nothing. Repair is scripts/prod-verify/baseline-repair.sql, which Karl
+ * runs deliberately after reading the preview.
+ *
+ * WHY IT ALERTS ON AGE, NOT COUNT: every student who finishes a diagnostic is
+ * briefly pending. An alert on count > 0 fires on every healthy completion and is
+ * muted within a week.
+ *
+ * trade-offs: alerting only, matching crisis-sla-sweep. At V1 the structured
+ * ERROR log is the signal; the substrate that consumes it is the open Doc-01A §18
+ * question already raised on the mastery-emission workstream, not re-litigated
+ * here.
+ */
+router.get(
+  "/baseline-pending-sweep",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const report = await readBaselinePendingReport(getSupabaseAdmin());
+
+      if (report.staleCount > 0) {
+        logger.error(
+          "BASELINE_PENDING",
+          "baseline_pending_stale",
+          `${report.staleCount} student(s) have completed a diagnostic with no baseline for over ${Math.round(report.thresholdSeconds / 3600)}h`,
+          undefined,
+          {
+            staleCount: report.staleCount,
+            pendingCount: report.pendingCount,
+            oldestPendingSeconds: report.oldestPendingSeconds,
+            thresholdSeconds: report.thresholdSeconds,
+            // Bounded: the alert names who to look at, not everyone. Student ids
+            // are opaque uuids — no name, no email, no answer content.
+            studentIds: report.stale.slice(0, 20).map((r) => r.student_id),
+          },
+        );
+      } else {
+        logger.info(
+          "BASELINE_PENDING",
+          "baseline_pending_clean",
+          "No student stuck in baseline_pending beyond the threshold",
+          {
+            pendingCount: report.pendingCount,
+            oldestPendingSeconds: report.oldestPendingSeconds,
+          },
+        );
+      }
+
+      res.json({
+        ok: true,
+        pendingCount: report.pendingCount,
+        staleCount: report.staleCount,
+      });
+    } catch (err) {
+      logger.error(
+        "BASELINE_PENDING",
+        "baseline_pending_sweep_error",
+        "Baseline-pending staleness sweep failed",
+        err,
+      );
+      res.status(500).json({ error: "baseline_pending_sweep_failed" });
     }
   },
 );
