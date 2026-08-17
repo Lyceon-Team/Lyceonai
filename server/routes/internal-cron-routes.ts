@@ -245,6 +245,12 @@ router.get(
  * ERROR log is the signal; the substrate that consumes it is the open Doc-01A §18
  * question already raised on the mastery-emission workstream, not re-litigated
  * here.
+ *
+ * SCHEDULE — DAILY, AND NOT BY CHOICE. The threshold is 24h, so an hourly check
+ * would surface a stuck student within an hour of crossing it; daily means up to
+ * a further 24h. Vercel's Hobby plan rejects any cron expression that runs more
+ * than once per day (the deploy fails outright, it does not degrade), so daily is
+ * the most frequent schedule this plan permits. Raised as an owner question.
  */
 router.get(
   "/baseline-pending-sweep",

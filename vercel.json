@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/internal/baseline-pending-sweep",
-      "schedule": "0 * * * *"
+      "schedule": "0 4 * * *"
     }
   ],
   "routes": [
