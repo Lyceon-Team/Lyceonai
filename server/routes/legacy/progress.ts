@@ -9,7 +9,12 @@ import {
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
   readDiagnosticBaseline,
+  readDiagnosticState,
 } from "../../services/canonical-runtime-views";
+import {
+  resolveEstimateStatus,
+  BASELINE_PENDING_HEADLINE,
+} from "../../../packages/shared/src/diagnostic-state";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 import { EntitlementService } from "../../services/entitlement-service";
 
@@ -60,6 +65,13 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     // Read the frozen diagnostic baseline (null if no diagnostic completed yet).
     const baseline = await readDiagnosticBaseline(user.id);
 
+    // @spec [owner rulings Q1 + Q2, 2026-08-17] @implemented 2026-08-17
+    // The canonical lifecycle state. A null baseline has two causes with opposite
+    // copy — never took one, versus took one and the numbers are not ready — and
+    // this is the read that tells them apart. null means the read failed; the
+    // mapping degrades to the baseline-presence behaviour shipped before step 1.
+    const diagnosticState = await readDiagnosticState(user.id);
+
     // Feature-scoped gate: admin bypass at call site, then canAccessFeature.
     // Semantic equivalence confirmed (2026-08-12): for students, hasPaidAccess
     // and canAccessFeature('mastery_detail') both resolve to the same canonical
@@ -85,6 +97,70 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       }
     }
 
+    // Every branch's status literal comes from this one pure function, so a
+    // client can never gate a surface on a status the server does not emit.
+    // hasLiveEstimate is false here because branches 1 and 2 never consult it —
+    // branch 3 recomputes with the real value once the projection is in hand.
+    const statusWithoutLiveEstimate = resolveEstimateStatus({
+      diagnosticState: diagnosticState ?? "not_taken",
+      hasBaseline: baseline !== null,
+      canSeeLiveProgression,
+      hasLiveEstimate: false,
+    });
+
+    // ── Branch 0: diagnostic completed, baseline not computed yet ────────
+    // The student finished the work. Telling them to "complete the diagnostic"
+    // is both false and unactionable — the start route refuses a second one with
+    // 409 diagnostic_already_completed. Owner ruling Q2 gives this state its own
+    // copy instead.
+    if (statusWithoutLiveEstimate === "baseline_pending") {
+      return res.json({
+        modelVersion: "kpi_truth_v1",
+        measurementModel: {
+          official: ["official_sat_score"],
+          weighted: [
+            "estimated_scaled_total",
+            "estimated_scaled_math",
+            "estimated_scaled_rw",
+          ],
+          diagnostic: ["mastery_evidence_count"],
+        },
+        estimate: null,
+        baseline: null,
+        estimateStatus: "baseline_pending",
+        explanations: {
+          estimated_scaled_total: {
+            whatThisMeans: `${BASELINE_PENDING_HEADLINE} You have finished the diagnostic, so there is nothing left for you to do here.`,
+            whyThisChanged:
+              "Your baseline comes from the diagnostic you completed. It appears as soon as the calculation finishes.",
+            whatToDoNext:
+              "Keep practising if you like — your baseline will appear on its own.",
+          },
+          official_sat_score: {
+            whatThisMeans:
+              "Official SAT scores only come from College Board score releases.",
+            whyThisChanged:
+              "Practice estimates never replace official reporting.",
+            whatToDoNext:
+              "Set your first target now; the baseline fills in when the calculation finishes.",
+          },
+        },
+        // 0 in every branch that serves no live projection — the shipped
+        // convention for this field (branches 1 and 2 both report 0). Not
+        // introduced here; see the open owner question on the PR.
+        totalQuestionsAttempted: 0,
+        lastUpdated: new Date().toISOString(),
+        officialScore: null,
+        entitlement: {
+          hasPaidAccess: access.hasPaidAccess,
+          plan: access.plan,
+          status: access.status,
+          reason: access.reason,
+        },
+        requestId: req.requestId,
+      });
+    }
+
     // ── Branch 1: no diagnostic baseline exists yet ──────────────────────
     if (!baseline) {
       return res.json({
@@ -100,7 +176,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         },
         estimate: null,
         baseline: null,
-        estimateStatus: "no_baseline",
+        estimateStatus: statusWithoutLiveEstimate,
         explanations: {
           estimated_scaled_total: {
             whatThisMeans:
@@ -154,7 +230,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           confidence: baseline.confidence,
           capturedAt: baseline.capturedAt,
         },
-        estimateStatus: "baseline_only",
+        estimateStatus: statusWithoutLiveEstimate,
         cta: true,
         explanations: {
           estimated_scaled_total: {
@@ -227,7 +303,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         confidence: baseline.confidence,
         capturedAt: baseline.capturedAt,
       },
-      estimateStatus: liveEstimate ? "computed" : "baseline_only",
+      estimateStatus: resolveEstimateStatus({
+        diagnosticState: diagnosticState ?? "not_taken",
+        hasBaseline: true,
+        canSeeLiveProgression,
+        hasLiveEstimate: liveEstimate !== null,
+      }),
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
