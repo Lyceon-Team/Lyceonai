@@ -17,6 +17,7 @@
 -- Negative controls:
 --   SATM261P4YE — options have single backslashes; must NOT be changed.
 --   SATM239UMU4 — stem has a legit \\ line break; must survive (proves stems untouched).
+--   SATM291T22L — spot-check: options must be single-backslash after fix.
 
 BEGIN;
 
@@ -144,6 +145,24 @@ BEGIN
 
   RAISE NOTICE 'Negative control OK: SATM239UMU4 stem unchanged (legit \\\\ preserved)';
   DROP TABLE _neg_controls;
+END $$;
+
+-- ─── Post-check 4: spot-check SATM291T22L options now single-backslash ────
+DO $$
+DECLARE
+  v_doubled integer;
+BEGIN
+  SELECT count(*) INTO v_doubled
+  FROM public.questions q,
+       LATERAL jsonb_array_elements(q.options) AS e(val)
+  WHERE q.id = 'SATM291T22L'
+    AND e.val->>'text' ~ E'\\\\\\\\[^\\s]';
+
+  IF v_doubled <> 0 THEN
+    RAISE EXCEPTION 'Post-check FAILED: SATM291T22L still has % option elements with doubled backslashes', v_doubled;
+  END IF;
+
+  RAISE NOTICE 'Post-check OK: SATM291T22L options have single backslashes';
 END $$;
 
 COMMIT;
