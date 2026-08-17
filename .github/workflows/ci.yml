@@ -406,6 +406,14 @@ jobs:
       # when the projection is not ready, so a student who completed a diagnostic
       # during the mastery outage is permanently no_baseline. This guards the
       # repair — and above all that it stays a repair, never a fabricated score.
+      # One-off exact-target resolution of the single duplicate diagnostic in prod
+      # (ruling Q8). The fixture seeds a SECOND student's active diagnostic, which
+      # is what makes it discriminate a pinned id from its superset.
+      - name: Resolve-duplicate-diagnostic gate (Q8 — exact target)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/resolve-duplicate-diagnostic-gate.sh
+
       - name: Baseline repair gate (BUG-1 — repair, not fabrication)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
