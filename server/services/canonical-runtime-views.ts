@@ -1,5 +1,10 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import { logger } from "../logger";
+import {
+  diagnosticStateSchema,
+  type DiagnosticState,
+} from "../../packages/shared/src/diagnostic-state";
 
 export const CANONICAL_RUNTIME_VIEW_VERSION = "kpi_truth_v1";
 
@@ -692,6 +697,63 @@ export function buildStudentFullLengthReportView(
     }),
     measurementModel: fullTestMeasurementModel(),
   };
+}
+
+/**
+ * @spec [Doc-05C_V1.0 §7.4; owner rulings Q1 + Q2, 2026-08-17] @implemented 2026-08-17
+ *
+ * plain English: read the ONE canonical diagnostic-lifecycle state for a student
+ * from public.student_diagnostic_state() (migration 20260817010000). The
+ * derivation is deliberately not restated here — this function is transport plus
+ * a Zod narrow at the boundary, nothing else.
+ *
+ * expected outcome: one of the four DiagnosticState literals, or null when the
+ * state could not be read.
+ *
+ * WHY null RATHER THAN A DEFAULT. Every default is a lie in some direction:
+ * 'not_taken' re-tells a student who finished the diagnostic to take one (the
+ * defect this workstream exists to remove), and 'baseline_pending' hides the CTA
+ * from a student who genuinely has not started, leaving them no way in. null
+ * means "unknown", and the caller degrades to the pre-existing
+ * baseline-presence derivation — the behaviour shipped today, which is wrong only
+ * for students already in the broken state and wrong in no new way.
+ *
+ * trade-offs: one extra RPC on the projection endpoint. It replaces no read, so
+ * the endpoint issues one more round trip than before; the function is STABLE and
+ * touches two small grouped reads.
+ */
+export async function readDiagnosticState(
+  userId: string,
+): Promise<DiagnosticState | null> {
+  const { data, error } = await supabaseServer.rpc("student_diagnostic_state", {
+    p_student_id: userId,
+  });
+
+  if (error) {
+    logger.warn(
+      "DIAGNOSTIC_STATE",
+      "diagnostic_state_read_failed",
+      "diagnostic lifecycle state read failed; falling back to baseline presence",
+      { userId, dbError: error.message },
+    );
+    return null;
+  }
+
+  // unknown at the boundary, narrowed with Zod (Coding Standards §7.1). A value
+  // outside the enum means the migration and this module have diverged, which the
+  // drift gate should have caught — log it rather than coercing it into a state.
+  const parsed = diagnosticStateSchema.safeParse(data);
+  if (!parsed.success) {
+    logger.warn(
+      "DIAGNOSTIC_STATE",
+      "diagnostic_state_unrecognized",
+      "student_diagnostic_state() returned a value outside the known state set",
+      { userId },
+    );
+    return null;
+  }
+
+  return parsed.data;
 }
 
 export function projectGuardianFullLengthReportView(
