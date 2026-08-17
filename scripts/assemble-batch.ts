@@ -154,61 +154,30 @@ function dedupHash(stem: string, passage: string | null): string {
   return createHash("md5").update(key).digest("hex");
 }
 
+const PROD_CORPUS_PATH = join(
+  REPO_ROOT,
+  "content/canonical/prod_dedup_corpus.txt",
+);
+
 /**
- * Load the prod dedup corpus (one md5 hash per line) and all branch
- * part-files (excluding the current batch's parts dir) to build the
- * full dedup set. Returns a Map of hash → source label.
+ * Load the living dedup corpus — a single sorted file of md5 hashes
+ * (one per line) representing all known questions: prod + all previously
+ * assembled branch batches.
+ *
+ * The file is the SOLE source of dedup truth. No dynamic branch scanning.
+ * New batch hashes are appended after a successful gate pass (see
+ * appendCorpusHashes). Branch resets re-seed from prod.
  */
-function loadDedupCorpus(excludePartsDir: string | null): Map<string, string> {
+function loadDedupCorpus(): Map<string, string> {
   const corpus = new Map<string, string>();
 
-  // 1. Load prod corpus hashes
-  const prodCorpusPath = join(
-    REPO_ROOT,
-    "content/canonical/prod_dedup_corpus.txt",
-  );
-  if (existsSync(prodCorpusPath)) {
-    const lines = readFileSync(prodCorpusPath, "utf-8")
+  if (existsSync(PROD_CORPUS_PATH)) {
+    const lines = readFileSync(PROD_CORPUS_PATH, "utf-8")
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
     for (const hash of lines) {
-      corpus.set(hash, "prod_corpus");
-    }
-  }
-
-  // 2. Scan all branch part-files (all batches)
-  const partsRoot = join(REPO_ROOT, "infra/supabase/seed/parts");
-  if (existsSync(partsRoot)) {
-    const batchDirs = readdirSync(partsRoot).filter((d) =>
-      d.startsWith("batch_"),
-    );
-    for (const batchDir of batchDirs) {
-      const batchPath = join(partsRoot, batchDir);
-      const resolvedBatchPath = resolve(batchPath);
-      // Skip the current batch being assembled (its records are checked intra-batch)
-      if (excludePartsDir && resolvedBatchPath === resolve(excludePartsDir)) {
-        continue;
-      }
-      const ndjsonFiles = readdirSync(batchPath).filter((f) =>
-        f.endsWith(".ndjson"),
-      );
-      for (const file of ndjsonFiles) {
-        const filePath = join(batchPath, file);
-        const content = readFileSync(filePath, "utf-8");
-        const fileLines = content
-          .split("\n")
-          .filter((l) => l.trim().length > 0);
-        for (const line of fileLines) {
-          try {
-            const rec = JSON.parse(line) as ContentRecord;
-            const hash = dedupHash(rec.stem, rec.passage);
-            corpus.set(hash, `${batchDir}/${file}`);
-          } catch {
-            // Skip malformed lines — they'll be caught by the main validator
-          }
-        }
-      }
+      corpus.set(hash, "dedup_corpus");
     }
   }
 
@@ -216,8 +185,31 @@ function loadDedupCorpus(excludePartsDir: string | null): Map<string, string> {
 }
 
 /**
- * Check new batch records against the full dedup corpus (prod + all other
- * branch batches) AND against each other within the batch.
+ * Append new batch hashes to the living dedup corpus file, then sort -u
+ * the result. Called after a successful gate pass — the batch is not
+ * "done" until its hashes are in the corpus and committed alongside it.
+ */
+function appendCorpusHashes(records: Array<{ rec: ContentRecord }>): void {
+  const newHashes = records.map(({ rec }) => dedupHash(rec.stem, rec.passage));
+
+  let existing: string[] = [];
+  if (existsSync(PROD_CORPUS_PATH)) {
+    existing = readFileSync(PROD_CORPUS_PATH, "utf-8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+
+  const merged = [...new Set([...existing, ...newHashes])].sort();
+  writeFileSync(PROD_CORPUS_PATH, merged.join("\n") + "\n");
+  console.log(
+    `Corpus updated: ${existing.length} → ${merged.length} hashes (+${merged.length - existing.length} new)`,
+  );
+}
+
+/**
+ * Check new batch records against the living dedup corpus AND against
+ * each other within the batch.
  */
 function checkDuplicates(
   records: Array<{ rec: ContentRecord; file: string; line: number }>,
@@ -918,9 +910,9 @@ async function main(): Promise<void> {
   }
 
   // -----------------------------------------------------------------------
-  // Prod-grounded dedup (prod corpus + all other branch batches + intra-batch)
+  // Prod-grounded dedup (living corpus file + intra-batch)
   // -----------------------------------------------------------------------
-  const dedupCorpus = loadDedupCorpus(resolvedPartsDir);
+  const dedupCorpus = loadDedupCorpus();
   allViolations.push(...checkDuplicates(records, dedupCorpus));
 
   // -----------------------------------------------------------------------
@@ -1051,6 +1043,10 @@ async function main(): Promise<void> {
       sql_path: outPath,
     }) + "\n",
   );
+
+  // Append new batch hashes to the living dedup corpus — the batch is not
+  // "done" until its hashes are in the corpus file, committed alongside it.
+  appendCorpusHashes(records);
 
   console.log(`GATE PASS: ${assembled.length} records assembled to ${outPath}`);
   console.log(`Report: ${reportPath}`);
