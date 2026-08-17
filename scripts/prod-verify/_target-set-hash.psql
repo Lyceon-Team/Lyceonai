@@ -16,8 +16,8 @@
 --
 -- PROVENANCE
 --   Advisor read-only verification against production project hncolwkccbbjkfithhlo,
---   2026-08-16. 42 rows. Two independent runs minutes apart returned the same
---   value, so the target set was stable at pin time.
+--   2026-08-16. 42 rows. Three independent runs returned the same value and the
+--   same 42-row count, so the target set was stable at pin time.
 --
 -- ============================================================================
 -- A MISMATCH IS A STOP SIGNAL, NOT A STALE CONSTANT. DO NOT REGENERATE IT.
@@ -42,14 +42,20 @@
 --
 -- OVERRIDE (testing only)
 --   psql -v expected_target_set_hash=<hash> ...
---   scripts/ci/mastery-unblock-gates.sh case (A2) uses this to run both verifiers
+--   scripts/ci/mastery-unblock-gates.sh case (A3) uses this to run both verifiers
 --   against its throwaway fixture, where the correct hash is the fixture's, not
---   production's. The guard below means an explicit -v always wins and the pinned
---   default applies only when no override was supplied. Never pass -v against prod.
+--   production's — fixture row ids come from gen_random_uuid(), so the fixture can
+--   never reproduce the pinned value and must supply its own. The guard below means
+--   an explicit -v always wins and the pinned default applies only when no override
+--   was supplied. Never pass -v against prod.
+--
+--   Because every CI probe overrides it, the pinned default is exercised by
+--   nothing but production. Case (A0) of the same gate therefore asserts its
+--   SHAPE — 64 lowercase hex — so a placeholder or a truncated paste cannot ship.
 -- ============================================================================
 
 \if :{?expected_target_set_hash}
   -- caller supplied an override; leave it alone
 \else
-  \set expected_target_set_hash 'PENDING__OWNER_MUST_PIN__read_this_file_header'
+  \set expected_target_set_hash '55025a91663cc7a097deb089e9a327c2ba02de79efd8654106097c4d273ce9d9'
 \endif
