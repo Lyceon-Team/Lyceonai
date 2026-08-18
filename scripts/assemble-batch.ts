@@ -3,7 +3,7 @@
  * mints canonical IDs, derives grid-in variants, renders SQL INSERTs.
  *
  * @spec [questions_governance.md §A.1–A.9]
- * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--manifest <manifest>.json] [--dry-run] [--dry-apply]
+ * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--manifest <manifest>.json] [--dry-run] [--dry-apply] [--reassemble]
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
@@ -830,6 +830,7 @@ async function main(): Promise<void> {
       manifest: { type: "string" },
       "dry-run": { type: "boolean", default: false },
       "dry-apply": { type: "boolean", default: false },
+      reassemble: { type: "boolean", default: false },
     },
     strict: true,
   });
@@ -840,6 +841,7 @@ async function main(): Promise<void> {
   const manifestPath = values["manifest"];
   const dryRun = values["dry-run"] ?? false;
   const dryApplyFlag = values["dry-apply"] ?? false;
+  const reassembleFlag = values["reassemble"] ?? false;
 
   if (!partsDir) {
     console.error("--in <parts_dir> is required");
@@ -913,6 +915,25 @@ async function main(): Promise<void> {
   // Prod-grounded dedup (living corpus file + intra-batch)
   // -----------------------------------------------------------------------
   const dedupCorpus = loadDedupCorpus();
+
+  // --reassemble: strip the batch's own hashes from the corpus so a
+  // previously-assembled batch does not collide with itself during
+  // re-assembly. The batch's hashes will be re-appended after gate pass.
+  if (reassembleFlag) {
+    const selfHashes = new Set(
+      records.map(({ rec }) => dedupHash(rec.stem, rec.passage)),
+    );
+    let stripped = 0;
+    for (const hash of selfHashes) {
+      if (dedupCorpus.delete(hash)) stripped++;
+    }
+    if (stripped > 0) {
+      console.log(
+        `--reassemble: stripped ${stripped} self-hashes from corpus (${dedupCorpus.size} remaining)`,
+      );
+    }
+  }
+
   allViolations.push(...checkDuplicates(records, dedupCorpus));
 
   // -----------------------------------------------------------------------
