@@ -314,6 +314,7 @@ export const orchestrateResponseSchema = z.object({
   instruction_exposures: z.array(instructionExposureSchema),
   orchestration_meta: z.object({
     model_name: z.string(),
+    prompt_version: z.string(),
     cache_used: z.boolean(),
     compaction_recommended: z.boolean(),
   }),
