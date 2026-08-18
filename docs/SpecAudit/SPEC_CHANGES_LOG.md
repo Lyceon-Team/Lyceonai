@@ -114,6 +114,9 @@ Rationale: The idempotency model at §9 and the retry model at §13.3 require tw
   outage).
 Version: Spec defect — §18.2 constraint must be widened to include role in the uniqueness key.
 Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messages_idempotency_role.sql.
+(That file was renamed 2026-08-18 to 20260812010000_tutor_messages_idempotency_role.sql — its version
+string collided with 20260812000000_snapshot_kind_baseline.sql. The record above is left as written;
+see scripts/prod-verify/MIGRATION-VERSION-COLLISIONS.md.)
 Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
   equivalently the partial unique index form with role included.
 
