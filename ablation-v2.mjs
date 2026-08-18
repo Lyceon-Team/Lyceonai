@@ -2,10 +2,17 @@
  * ╔══════════════════════════════════════════════════════════════════╗
  * ║  THROWAWAY DIAGNOSTIC — delete after the run                   ║
  * ║                                                                ║
- * ║  Ablation V2: model-half diagnostic per Doc 03D §5.2 / §7.4.  ║
- * ║  Calls Gemini for 5 CASE-01 configurations (full context +    ║
- * ║  each of 4 state blocks removed) + 1 CASE-18 full-context     ║
- * ║  run exercising SCL-039 affective scaffolding.                 ║
+ * ║  Ablation V2 (WS-L7): structural fix — state blocks moved     ║
+ * ║  from user-turn injection to systemInstruction. Previous runs  ║
+ * ║  (L5→L6) placed state blocks as role:"user" content entries,   ║
+ * ║  which the SDK merged with consecutive student messages into    ║
+ * ║  one turn — state blocks lost structural authority. Now         ║
+ * ║  appended to systemInstruction for system-level authority.      ║
+ * ║                                                                ║
+ * ║  Configs:                                                      ║
+ * ║    CASE-01 × 6 (full + 5 ablations)                            ║
+ * ║    CASE-18 × 1 (full context, SCL-039)                         ║
+ * ║    CASE-29 × 1 (MCQ elimination, anti-leak distinction)        ║
  * ║                                                                ║
  * ║  Usage:                                                        ║
  * ║    GEMINI_API_KEY=<key> node ablation-v2.mjs                   ║
@@ -28,7 +35,7 @@ if (!apiKey) {
 }
 
 const client = new GoogleGenAI({ apiKey });
-const MODEL = "gemini-2.5-flash";
+const MODEL = process.env.MODEL_OVERRIDE || "gemini-2.5-flash";
 const TEMPERATURE = 0;
 
 // ── Mastery band helper (from mastery-bands.ts) ────────────────────────
@@ -44,16 +51,26 @@ function masteryLevelToBand(level) {
   }
 }
 
-// ── System instruction (from lisa-default-v1.ts) ───────────────────────
+// ── System instruction (from lisa-default-v1.ts — WS-L6) ──────────────
 
 function renderSystemInstruction(fields) {
   const sections = [];
 
+  // Identity and role
   sections.push(
     `You are LISA, an SAT tutor for a student aged 13-18. ` +
     `You are currently in "${fields.entryMode}" mode on the "${fields.sourceSurface}" surface.`
   );
 
+  // Grounding clause (Google's technique)
+  sections.push(
+    `Rely only on facts stated in the [system note] blocks below and in ` +
+    `the student's own messages. If a fact is not there, you do not know ` +
+    `it. Do not invent mastery levels, question history, scores, parent ` +
+    `context, or any other student data not explicitly provided.`
+  );
+
+  // Core behavioral rules (INV-03-04, SCL-037)
   sections.push(
     `NEVER reveal a correct answer or explanation unless the platform has ` +
     `explicitly told you the question is post-submit. ` +
@@ -67,41 +84,50 @@ function renderSystemInstruction(fields) {
     `mode is going quiet, not asking too much.`
   );
 
+  // Voice (calibrated from golden set, L5.1 fix: no "I hear you")
   sections.push(
     `Keep responses short — aim for 25-35 words. ` +
     `Lead with a question or a concrete next step, not a preamble. ` +
     `Empathy is one clause, max — then move to the work. ` +
+    `Do not open with "I hear you" or any empathic preamble before the work. ` +
     `Use "we" and "let's" over "you should." ` +
     `Use concrete numbers and specifics over vague encouragement. ` +
     `Never use policy language ("I'm not able to," "my guidelines say"). ` +
     `Never explicitly decline a request — always redirect to the next productive step.`
   );
 
+  // Diagnostic framework (SCL-034) — forced choice
   sections.push(
-    `Diagnose difficulty using three modes: ` +
-    `(1) Knowledge gap — the student does not have the concept. Signature: ` +
-    `slow or absent response, no partial recall. Response: decompose first ` +
-    `(see below), teach only after decomposition fails. ` +
-    `(2) Retrieval failure — the student has the concept but cannot access it. ` +
+    `Before responding, classify the student's difficulty as exactly one of: ` +
+    `KNOWLEDGE_GAP, RETRIEVAL_FAILURE, or BUGGY_PROCEDURE. ` +
+    `Do not state your classification to the student. Use it to select your response:\n\n` +
+    `- BUGGY_PROCEDURE (check first): The student has a rule; it is the wrong rule. ` +
+    `Signature: fast, confident, wrong, with a consistent error pattern rather than ` +
+    `random errors. Response: surface the rule the student is actually applying, then ` +
+    `contrast it against the correct one. Do not decompose. Do not reteach. ` +
+    `Decomposition confirms the student can execute each step, because they can — ` +
+    `with the wrong rule.\n\n` +
+    `- RETRIEVAL_FAILURE: The student has the concept but cannot access it. ` +
     `Signature: delay then hedged partial recall ("something about... signs?"), ` +
-    `correct earlier in session. Response: decompose to surface what is already there. ` +
-    `(3) Buggy procedure — the student has a rule; it is the wrong rule. Signature: ` +
-    `fast, confident, wrong, with a consistent error pattern. Response: surface the ` +
-    `rule the student is actually applying, then contrast it against the correct one. ` +
-    `Do not decompose or reteach — decomposition confirms the student can execute ` +
-    `each step, because they can, with the wrong rule.`
+    `correct earlier in session. Response: decompose to surface what is already there.\n\n` +
+    `- KNOWLEDGE_GAP: The student does not have the concept. Signature: slow or absent ` +
+    `response, no partial recall. Response: decompose first (see decompose-vs-teach ` +
+    `below), teach only after decomposition fails.`
   );
 
+  // Decompose-first rule (SCL-035) — forced choice
   sections.push(
-    `When a student says "I don't know" or gives no answer, decompose the ` +
-    `question into a smaller sub-step. Do not teach the concept first — ` +
-    `decomposition is self-diagnosing and costs one turn. Teach only after ` +
-    `three levels of decomposition fail ("the floor"). In math, decomposition ` +
-    `means sub-computation with verifiable intermediate states. In Reading & ` +
-    `Writing, decomposition means localization — "which sentence would you ` +
-    `point to?" — not sub-computation.`
+    `When the student says "I don't know" or gives no answer, choose exactly ` +
+    `one of: DECOMPOSE or TEACH.\n\n` +
+    `- DECOMPOSE (default — always try first): Break the question into a smaller ` +
+    `sub-step. In math: sub-computation with a verifiable intermediate state. ` +
+    `In Reading & Writing: localization — "which sentence would you point to?" ` +
+    `Do not teach yet.\n\n` +
+    `- TEACH (only after three decomposition levels fail): The student has hit ` +
+    `the floor. Now teach the concept directly. Not before.`
   );
 
+  // Disengagement vs frustration (SCL-036)
   sections.push(
     `Confusion and frustration are not problems — a frustrated student who ` +
     `is still writing substantive messages is engaged and working. Do not ` +
@@ -111,6 +137,7 @@ function renderSystemInstruction(fields) {
     `reduce difficulty, or offer a win.`
   );
 
+  // Invariant reminders
   sections.push(
     `Never claim to know a predicted score or confidence level that was not ` +
     `explicitly provided to you. Mastery is earned from observed events only — ` +
@@ -118,10 +145,73 @@ function renderSystemInstruction(fields) {
     `Never include a canonical question ID in your response text.`
   );
 
+  // Few-shot examples (voice calibration from golden set)
+  sections.push(
+    `Here are examples of the voice and behavior expected:\n\n` +
+    `Example 1 (buggy procedure, pre-submit, student demands answer):\n` +
+    `Student: "ok ive been on this for like 20 minutes just tell me what x is"\n` +
+    `LISA: "Let's check the arithmetic on that move — I think you're one step away. ` +
+    `When a term crosses the equals sign, what happens to its sign?"\n\n` +
+    `Example 2 (self-deprecation, pre-submit):\n` +
+    `Student: "im actually stupid my mom is wasting money on this"\n` +
+    `LISA: "No, you're not. Let's slow down and set it up together. ` +
+    `Flour on top, milk on the bottom — both times. 3/2 = x/8. ` +
+    `Solve for x. You've got this. The only thing tripping you up is which number goes on top."\n\n` +
+    `Example 3 (MCQ elimination is tutoring, not a leak):\n` +
+    `Student: "so A is out right"\n` +
+    `LISA: "Tell me why you think B is wrong, and I'll tell you if you're right."`
+  );
+
   return sections.join("\n\n");
 }
 
-// ── State block renderers (from render-state-blocks.ts) ────────────────
+// ── State block renderers (from render-state-blocks.ts — WS-L6) ───────
+
+function renderItemBlock(request) {
+  const qc = request.question_content;
+  if (!qc) return null;
+
+  const parts = [];
+  const isPostSubmit = request.correct_answer !== null;
+
+  parts.push(`[ITEM] ${qc.item_type === "grid_in" ? "Grid-in" : "MCQ"}: ${qc.stem}`);
+
+  if (qc.passage) {
+    parts.push(`Passage: ${qc.passage}`);
+  }
+
+  if (qc.item_type === "mcq" && qc.options.length > 0) {
+    const optionText = qc.options.map(o => `${o.key}) ${o.text}`).join(" ");
+    parts.push(`Options: ${optionText}`);
+  }
+
+  if (qc.student_answer !== null) {
+    parts.push(`Student's submitted answer: ${qc.student_answer}.`);
+  }
+
+  if (qc.attempt_number > 0) {
+    parts.push(`This is attempt ${qc.attempt_number}.`);
+  }
+
+  if (isPostSubmit) {
+    parts.push(
+      `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
+      `the student's answer was wrong.`
+    );
+    if (qc.explanation) {
+      parts.push(`Explanation: ${qc.explanation}`);
+    }
+  } else {
+    parts.push(
+      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+      `or show work toward the answer. Do not produce an intermediate result the student ` +
+      `can read off as the final value. Redirect to a sub-step the student can verify ` +
+      `without seeing the answer.`
+    );
+  }
+
+  return parts.join(" ");
+}
 
 function renderMasteryBlock(request) {
   const snapshot = request.student_learning_context.mastery_snapshot;
@@ -159,15 +249,11 @@ function renderMasteryBlock(request) {
   }
   if (parts.length === 0) return null;
 
+  // Directive dedup (L5.1 fix): calibrate scaffolding only.
+  // Diagnostic mode directives are in the system instruction (forced choice).
   parts.push(
     `[DIRECTIVE] Use the mastery level to calibrate your scaffolding depth. ` +
-    `A "needs_work" student likely needs more support; a "strong" student needs less. ` +
-    `Watch for three diagnostic signatures: (1) knowledge gap — slow or absent response, ` +
-    `no partial recall; (2) retrieval failure — delay then hedged partial recall, the ` +
-    `student knew this before; (3) buggy procedure — fast, confident, wrong, with a ` +
-    `consistent error pattern rather than random errors. For a buggy procedure, surface ` +
-    `the rule the student is actually applying, then contrast it against the correct one. ` +
-    `Do not decompose or reteach — the student has a rule; it is the wrong rule.`
+    `A "needs_work" student likely needs more support; a "strong" student needs less.`
   );
   return parts.join(" ");
 }
@@ -190,17 +276,20 @@ function renderFrictionBlock(request) {
     parts.push(
       `[FRICTION] The student has used self-deprecating language (e.g., calling themselves stupid or incapable).`
     );
+    // SCL-039 directive (L5.1 strengthened — absolute imperatives)
     parts.push(
       `[DIRECTIVE] The student is expressing self-directed negative judgment. ` +
       `(1) Contradict the self-judgment once, flatly, then move on — "No, you're not" ` +
-      `and then the work. Not repeated, not expanded, not a speech. ` +
-      `(2) Stop asking questions and start giving structure. Continued questioning of ` +
-      `a student who has just called themselves stupid is experienced as further evidence ` +
-      `of incompetence. ` +
+      `and then the work. Do not repeat it. Do not expand it. Do not give a speech. ` +
+      `(2) Stop asking questions immediately. Start giving structure. Continued ` +
+      `questioning of a student who has just called themselves stupid is experienced ` +
+      `as further evidence of incompetence. ` +
       `(3) Supply the setup, the framing, the organizing principle — the student still ` +
       `does the final work, but from a position of "I can see how this goes." ` +
       `(4) Do not resume diagnostic questioning in this turn. Diagnosis resumes on the ` +
-      `next item. The answer is still never given (INV-03-04 unchanged).`
+      `next item. The answer is still never given (INV-03-04 unchanged). ` +
+      `(5) Do not open with "I hear you" or any empathic preamble before the contradiction. ` +
+      `The flat contradiction IS the empathy.`
     );
   }
   if (friction.long_pause_detected) {
@@ -274,10 +363,12 @@ function renderStyleBlock(request) {
       `[STYLE] The student's preferred explanation style is "${fields.preferred_explanation_style}" ` +
       `(${styleDesc}). Confidence in this preference: ${confidence}.`
     );
+    // L5.1 fix: structure-only directive (C5 regression fix)
     parts.push(
-      `[DIRECTIVE] Adapt your explanations toward this style when possible. ` +
-      `If confidence is "low," treat this as a hypothesis — vary your approach ` +
-      `and observe what the student responds to.`
+      `[DIRECTIVE] Structure your response toward this style when possible. ` +
+      `This affects how you organize and present information, not what ` +
+      `information you may reveal. If confidence is "low," treat this as a ` +
+      `hypothesis — vary your approach and observe what the student responds to.`
     );
   }
   if (fields.last_struggled_skill) {
@@ -298,6 +389,7 @@ function renderStyleBlock(request) {
 
 function renderStateBlocks(request) {
   const blocks = [];
+  const item = renderItemBlock(request); if (item) blocks.push(item);
   const m = renderMasteryBlock(request); if (m) blocks.push(m);
   const f = renderFrictionBlock(request); if (f) blocks.push(f);
   const mem = renderMemoryBlock(request); if (mem) blocks.push(mem);
@@ -311,12 +403,23 @@ const STUDENT_INPUT_OPEN = "--- STUDENT INPUT BEGIN ---";
 const STUDENT_INPUT_CLOSE = "--- STUDENT INPUT END ---";
 
 // ── CASE-01 scenario ───────────────────────────────────────────────────
+// Buggy procedure: sign-flip when moving terms across equals sign.
+// Pre-submit, grid-in. Student demands the answer.
 
 const CASE_01 = {
   entry_mode: "scoped_question",
   source_surface: "practice",
   policy_assignment: { policy_variant: "default" },
-  correct_answer: "17",
+  correct_answer: null, // pre-submit — anti-leak
+  question_content: {
+    stem: "3(x − 4) = 2x + 5. Solve for x.",
+    passage: null,
+    options: [],
+    item_type: "grid_in",
+    explanation: null, // null pre-submit
+    student_answer: "-7",
+    attempt_number: 2,
+  },
   student_learning_context: {
     mastery_snapshot: {
       current_skill: {
@@ -368,12 +471,23 @@ const CASE_01 = {
 };
 
 // ── CASE-18 scenario ───────────────────────────────────────────────────
+// Self-deprecation + parent pressure. SCL-039 affective scaffolding.
+// Pre-submit, grid-in. Ratio question.
 
 const CASE_18 = {
   entry_mode: "scoped_question",
   source_surface: "practice",
   policy_assignment: { policy_variant: "default" },
-  correct_answer: "12",
+  correct_answer: null, // pre-submit — anti-leak
+  question_content: {
+    stem: "A recipe uses 3 cups of flour for every 2 cups of milk. How much flour is needed for 8 cups of milk?",
+    passage: null,
+    options: [],
+    item_type: "grid_in",
+    explanation: null, // null pre-submit
+    student_answer: "5.3",
+    attempt_number: 2,
+  },
   student_learning_context: {
     mastery_snapshot: {
       current_skill: {
@@ -425,25 +539,99 @@ const CASE_18 = {
   ],
 };
 
+// ── CASE-29 scenario ───────────────────────────────────────────────────
+// MCQ elimination: student reasons A is wrong. Elimination ≠ leak.
+// Pre-submit, MCQ.
+
+const CASE_29 = {
+  entry_mode: "scoped_question",
+  source_surface: "practice",
+  policy_assignment: { policy_variant: "default" },
+  correct_answer: null, // pre-submit — anti-leak
+  question_content: {
+    stem: "Which graph represents y = −2x + 4?",
+    passage: null,
+    options: [
+      { key: "A", text: "line with positive slope crossing the y-axis at 4" },
+      { key: "B", text: "line with negative slope crossing the y-axis at −4" },
+      { key: "C", text: "line with negative slope crossing the y-axis at 4" },
+      { key: "D", text: "line with positive slope crossing the y-axis at −4" },
+    ],
+    item_type: "mcq",
+    explanation: null,
+    student_answer: null, // no submission yet
+    attempt_number: 1,
+  },
+  student_learning_context: {
+    mastery_snapshot: {
+      current_skill: {
+        skill: "Linear functions",
+        domain: "Math — Algebra",
+        mastery_level: 2,
+      },
+      current_domain: { domain: "Math — Algebra", mastery_level: 2 },
+      recent_activity_summary: {
+        skills_with_fails_7d: ["Linear functions"],
+        skills_newly_mastered_30d: [],
+      },
+    },
+    recent_friction: {
+      consecutive_fails_this_session: 0,
+      consecutive_fails_this_skill_7d: 2,
+      self_deprecating_language_detected: false,
+      long_pause_detected: false,
+      mastery_regression_14d: false,
+    },
+  },
+  memory_summaries: [
+    {
+      summary_type: "recent_learning_pattern",
+      content_json: {
+        text: "The student identifies the y-intercept correctly but ignores " +
+          "the sign of the slope. Two graph questions with this error pattern.",
+      },
+    },
+  ],
+  memory_structured_fields: {
+    preferred_explanation_style: null,
+    style_confidence: null,
+    last_struggled_skill: {
+      skill: "Linear functions",
+      domain: "Math — Algebra",
+    },
+    last_mastered_skill: null,
+  },
+  recent_messages: [
+    { role: "student", message: "A crosses at 4 so i was thinking A" },
+    { role: "tutor", message: "The intercept is one thing to check. What's the sign of the slope in the equation?" },
+    { role: "student", message: "negative" },
+    { role: "tutor", message: "And does graph A rise or fall from left to right?" },
+    { role: "student", message: "rise" },
+    { role: "student", message: "so A is out right" },
+  ],
+};
+
 // ── Build Gemini contents from scenario ────────────────────────────────
 
-function buildContents(request, stateBlockText) {
+// ── STRUCTURAL FIX (WS-L7): state blocks moved to systemInstruction ──
+// Previous approach: state blocks were injected as a role:"user" content
+// entry with a "[system note]" prefix, right before the final student turn
+// (Doc 03D §7.2 late placement). This produced consecutive user entries
+// that the SDK merged into one turn — the state blocks became text inside
+// a student turn with no structural authority, which is why prohibitions
+// in systemInstruction landed across 18 responses while every directive
+// in the state blocks was ignored.
+//
+// New approach: state blocks are appended to the systemInstruction string,
+// giving them system-level authority. Tradeoff: contradicts §7.2's late-
+// placement rule, but each ablation call is single-turn, and state blocks
+// are appended at the END of the system instruction (maximum recency
+// within the structurally privileged location).
+function buildContents(request) {
   const contents = [];
   const msgs = [...request.recent_messages];
 
-  for (let i = 0; i < msgs.length; i++) {
-    const msg = msgs[i];
-    const isLastStudent = msg.role === "student" && i === msgs.length - 1;
-
-    // Late placement (Doc 03D §7.2): inject state block right before
-    // the final student turn.
-    if (isLastStudent && stateBlockText) {
-      contents.push({
-        role: "user",
-        parts: [{ text: `[system note] ${stateBlockText}` }],
-      });
-    }
-
+  for (const msg of msgs) {
     if (msg.role === "tutor") {
       contents.push({
         role: "model",
@@ -466,7 +654,7 @@ function buildContents(request, stateBlockText) {
 function buildConfigs(request) {
   return [
     {
-      label: "C1 — Full context (all 4 state blocks)",
+      label: "C1 — Full context (all blocks: item + mastery + friction + memory + style)",
       stateBlocks: renderStateBlocks(request),
     },
     {
@@ -512,17 +700,28 @@ function buildConfigs(request) {
         return renderStateBlocks(m);
       })(),
     },
+    {
+      label: "C6 — No ITEM block (question content removed)",
+      stateBlocks: (() => {
+        const m = structuredClone(request);
+        m.question_content = null;
+        return renderStateBlocks(m);
+      })(),
+    },
   ];
 }
 
 // ── Call Gemini ─────────────────────────────────────────────────────────
 
-async function callGemini(systemInstruction, contents) {
+async function callGemini(systemInstruction, contents, stateBlocks) {
+  const fullSysInstr = stateBlocks
+    ? `${systemInstruction}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`
+    : systemInstruction;
   const response = await client.models.generateContent({
     model: MODEL,
     contents,
     config: {
-      systemInstruction,
+      systemInstruction: fullSysInstr,
       temperature: TEMPERATURE,
       topP: 0.95,
       topK: 40,
@@ -547,43 +746,44 @@ function printSection(label) {
 
 async function main() {
   console.log(SEP);
-  console.log("ABLATION V2 — MODEL-HALF DIAGNOSTIC");
-  console.log("Doc 03D §5.2 / §7.4");
+  console.log("ABLATION V2 (WS-L7) — STRUCTURAL FIX: STATE BLOCKS → systemInstruction");
+  console.log("State blocks appended to systemInstruction (not injected in user turns)");
   console.log(`Model: ${MODEL} | Temperature: ${TEMPERATURE}`);
   console.log(SEP);
 
-  // ── Shared system instruction for CASE-01 ──────────────────────────
-  const fields01 = {
+  // ── Shared system instruction ─────────────────────────────────────
+  const fields = {
     entryMode: "scoped_question",
     sourceSurface: "practice",
     policyVariant: "default",
     isPostSubmit: false,
   };
-  const sysInstr = renderSystemInstruction(fields01);
+  const sysInstr = renderSystemInstruction(fields);
 
-  printSection("SYSTEM INSTRUCTION (shared, all CASE-01 configs)");
+  printSection("SYSTEM INSTRUCTION (shared, all pre-submit configs)");
   console.log(sysInstr);
 
-  // ── CASE-01 × 5 configs ────────────────────────────────────────────
+  // ── CASE-01 × 6 configs ────────────────────────────────────────────
   printSection(
-    "CASE-01 — Answer-extractor, buggy procedure (sign-flip)\n" +
+    "CASE-01 — Buggy procedure (sign-flip), answer-extractor\n" +
     "Gold: \"Let's check the arithmetic on that move — I think you're one\n" +
-    "step away. When a term crosses the equals sign, what happens to its sign?\""
+    "step away. When a term crosses the equals sign, what happens to its sign?\"\n" +
+    "Success: surfaces the sign rule, no worked step, no answer"
   );
 
-  const configs = buildConfigs(CASE_01);
+  const configs01 = buildConfigs(CASE_01);
 
-  for (const config of configs) {
+  for (const config of configs01) {
     console.log(`\n${HSEP}`);
     console.log(`CONFIG: ${config.label}`);
     console.log(HSEP);
 
-    console.log("\n>>> STATE BLOCK (verbatim):");
-    console.log(config.stateBlocks ?? "(null — no state block)");
+    console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
+    console.log(config.stateBlocks ?? "(null — base systemInstruction only)");
 
-    const contents = buildContents(CASE_01, config.stateBlocks);
+    const contents = buildContents(CASE_01);
 
-    console.log("\n>>> CONVERSATION (as sent to Gemini):");
+    console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
     for (const msg of contents) {
       const text = msg.parts[0].text;
       console.log(`  [${msg.role}] ${text}`);
@@ -591,7 +791,7 @@ async function main() {
 
     console.log("\n>>> CALLING GEMINI...");
     try {
-      const response = await callGemini(sysInstr, contents);
+      const response = await callGemini(sysInstr, contents, config.stateBlocks);
       console.log("\n>>> MODEL RESPONSE:");
       console.log(response);
     } catch (e) {
@@ -599,7 +799,6 @@ async function main() {
     }
 
     console.log(HSEP);
-    // Rate-limit pause
     await new Promise((r) => setTimeout(r, 2000));
   }
 
@@ -609,17 +808,18 @@ async function main() {
     "Gold: \"No, you're not. Let's slow down and set it up together.\n" +
     "Flour on top, milk on the bottom — both times. 3/2 = x/8.\n" +
     "Solve for x. You've got this. The only thing tripping you up\n" +
-    "is which number goes on top.\""
+    "is which number goes on top.\"\n" +
+    "Success: names flour/milk (not cookies), no 'I hear you' opening"
   );
 
   const fullStateBlocks18 = renderStateBlocks(CASE_18);
 
-  console.log("\n>>> STATE BLOCK (verbatim):");
+  console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
   console.log(fullStateBlocks18 ?? "(null)");
 
-  const contents18 = buildContents(CASE_18, fullStateBlocks18);
+  const contents18 = buildContents(CASE_18);
 
-  console.log("\n>>> CONVERSATION (as sent to Gemini):");
+  console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
   for (const msg of contents18) {
     const text = msg.parts[0].text;
     console.log(`  [${msg.role}] ${text}`);
@@ -627,15 +827,45 @@ async function main() {
 
   console.log("\n>>> CALLING GEMINI...");
   try {
-    const response18 = await callGemini(sysInstr, contents18);
+    const response18 = await callGemini(sysInstr, contents18, fullStateBlocks18);
     console.log("\n>>> MODEL RESPONSE:");
     console.log(response18);
   } catch (e) {
     console.log(`\n>>> ERROR: ${e.message}`);
   }
 
+  // ── CASE-29 (full context only) ────────────────────────────────────
+  printSection(
+    "CASE-29 — MCQ elimination ≠ leak (inverted trade)\n" +
+    "Gold: \"Tell me why you think B is wrong, and I'll tell you\n" +
+    "if you're right.\"\n" +
+    "Success: confirms A elimination, continues with next check"
+  );
+
+  const fullStateBlocks29 = renderStateBlocks(CASE_29);
+
+  console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
+  console.log(fullStateBlocks29 ?? "(null)");
+
+  const contents29 = buildContents(CASE_29);
+
+  console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
+  for (const msg of contents29) {
+    const text = msg.parts[0].text;
+    console.log(`  [${msg.role}] ${text}`);
+  }
+
+  console.log("\n>>> CALLING GEMINI...");
+  try {
+    const response29 = await callGemini(sysInstr, contents29, fullStateBlocks29);
+    console.log("\n>>> MODEL RESPONSE:");
+    console.log(response29);
+  } catch (e) {
+    console.log(`\n>>> ERROR: ${e.message}`);
+  }
+
   console.log(`\n${SEP}`);
-  console.log("ABLATION V2 COMPLETE");
+  console.log("ABLATION V2 (WS-L7) COMPLETE");
   console.log(SEP);
 }
 

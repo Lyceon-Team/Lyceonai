@@ -20,6 +20,8 @@ export {
   studentLearningContextSchema,
   explanationFormEnum,
   memoryStructuredFieldsSchema,
+  questionOptionSchema,
+  questionContentSchema,
   learnerObservationSchema,
   orchestrateRequestSchema,
   questionLinkSchema,
@@ -38,4 +40,5 @@ export {
   type MasterySnapshot,
   type KpiState,
   type ExplanationForm,
+  type QuestionContent,
 } from "./_tutor-orchestrator-wire.generated.js";
