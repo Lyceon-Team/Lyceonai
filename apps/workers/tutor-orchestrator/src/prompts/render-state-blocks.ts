@@ -1,6 +1,9 @@
 /**
  * @spec [Doc-03D_V1.2 §7.2 (late block placement), §7.4 (fact-directive pairing)]
  * @implemented 2026-08-17
+ * @updated 2026-08-18 — WS-L6: added renderItemBlock (question content from
+ *   Supabase), L5.1 fixes (directive dedup, style structure-only, SCL-039
+ *   strengthening), C5 regression fix (pre-submit item-level prohibition).
  *
  * plain English: Renders the dynamic state blocks that are placed immediately
  * before the current student turn in the conversation messages. Each block
@@ -22,6 +25,9 @@
  *    extract only the summary text, never raw structured data.
  *  - SCL-034 through SCL-039 directives are embedded directly in the
  *    paired blocks, not as separate instructions.
+ *  - Item block includes question content (stem, options, student answer)
+ *    but NEVER correct_answer or canonical ID (anti-leak). Explanation
+ *    is present only post-submit (gated upstream in tutor-context.ts).
  */
 
 import type { OrchestrateRequest } from "../lib/schema.js";
@@ -38,6 +44,9 @@ import { masteryLevelToBand } from "./mastery-bands.js";
  */
 export function renderStateBlocks(request: OrchestrateRequest): string | null {
   const blocks: string[] = [];
+
+  const itemBlock = renderItemBlock(request);
+  if (itemBlock) blocks.push(itemBlock);
 
   const masteryBlock = renderMasteryBlock(request);
   if (masteryBlock) blocks.push(masteryBlock);
@@ -59,13 +68,81 @@ export function renderStateBlocks(request: OrchestrateRequest): string | null {
 // ── Individual block renderers (pure, deterministic) ────────────────
 
 /**
+ * Item block: tells the model what the student is working on.
+ *
+ * Directive pairing (§7.4): fact = question content + student answer;
+ * directive = pre-submit prohibition (C5 regression fix) or post-submit
+ * explanation permission.
+ *
+ * Anti-leak: correct_answer is NEVER included. Explanation is only
+ * present post-submit (gated upstream in tutor-context.ts).
+ *
+ * @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, INV-03-04]
+ */
+function renderItemBlock(request: OrchestrateRequest): string | null {
+  const qc = request.question_content;
+  if (!qc) return null;
+
+  const parts: string[] = [];
+  const isPostSubmit = request.correct_answer !== null;
+
+  // Question stem
+  parts.push(
+    `[ITEM] ${qc.item_type === "grid_in" ? "Grid-in" : "MCQ"}: ${qc.stem}`,
+  );
+
+  // Passage (if present)
+  if (qc.passage) {
+    parts.push(`Passage: ${qc.passage}`);
+  }
+
+  // Options (MCQ only)
+  if (qc.item_type === "mcq" && qc.options.length > 0) {
+    const optionText = qc.options.map((o) => `${o.key}) ${o.text}`).join(" ");
+    parts.push(`Options: ${optionText}`);
+  }
+
+  // Student's submitted answer (if any)
+  if (qc.student_answer !== null) {
+    parts.push(`Student's submitted answer: ${qc.student_answer}.`);
+  }
+
+  // Attempt number
+  if (qc.attempt_number > 0) {
+    parts.push(`This is attempt ${qc.attempt_number}.`);
+  }
+
+  // Anti-leak directive — directly addresses C5 regression
+  if (isPostSubmit) {
+    parts.push(
+      `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
+        `the student's answer was wrong.`,
+    );
+    // Explanation (only present post-submit, gated upstream)
+    if (qc.explanation) {
+      parts.push(`Explanation: ${qc.explanation}`);
+    }
+  } else {
+    parts.push(
+      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+        `or show work toward the answer. Do not produce an intermediate result the student ` +
+        `can read off as the final value. Redirect to a sub-step the student can verify ` +
+        `without seeing the answer.`,
+    );
+  }
+
+  return parts.join(" ");
+}
+
+/**
  * Mastery block: tells the model the student's current mastery level and
  * what diagnostic modes to consider.
  *
  * Directive pairing (§7.4): fact = mastery band; directive = how to
- * calibrate scaffolding and which diagnostic mode signatures to watch for.
+ * calibrate scaffolding. Diagnostic mode directives live in the system
+ * instruction (SCL-034 forced choice) — NOT duplicated here.
  *
- * @spec [Doc-03D_V1.2 §7.1, §7.4; SCL-034 diagnostic modes]
+ * @spec [Doc-03D_V1.2 §7.1, §7.4]
  */
 function renderMasteryBlock(request: OrchestrateRequest): string | null {
   const snapshot = request.student_learning_context.mastery_snapshot;
@@ -115,17 +192,12 @@ function renderMasteryBlock(request: OrchestrateRequest): string | null {
 
   if (parts.length === 0) return null;
 
-  // Directive: how to use mastery data — calibrate scaffolding and
-  // watch for diagnostic mode signatures (SCL-034)
+  // Directive: how to use mastery data — calibrate scaffolding only.
+  // Diagnostic mode directives are in the system instruction (forced choice),
+  // NOT duplicated here (L5.1 directive dedup fix).
   parts.push(
     `[DIRECTIVE] Use the mastery level to calibrate your scaffolding depth. ` +
-      `A "needs_work" student likely needs more support; a "strong" student needs less. ` +
-      `Watch for three diagnostic signatures: (1) knowledge gap — slow or absent response, ` +
-      `no partial recall; (2) retrieval failure — delay then hedged partial recall, the ` +
-      `student knew this before; (3) buggy procedure — fast, confident, wrong, with a ` +
-      `consistent error pattern rather than random errors. For a buggy procedure, surface ` +
-      `the rule the student is actually applying, then contrast it against the correct one. ` +
-      `Do not decompose or reteach — the student has a rule; it is the wrong rule.`,
+      `A "needs_work" student likely needs more support; a "strong" student needs less.`,
   );
 
   return parts.join(" ");
@@ -162,18 +234,20 @@ function renderFrictionBlock(request: OrchestrateRequest): string | null {
     parts.push(
       `[FRICTION] The student has used self-deprecating language (e.g., calling themselves stupid or incapable).`,
     );
-    // SCL-039 directive: the four rules
+    // SCL-039 directive: the four rules (L5.1 strengthened — absolute imperatives)
     parts.push(
       `[DIRECTIVE] The student is expressing self-directed negative judgment. ` +
         `(1) Contradict the self-judgment once, flatly, then move on — "No, you're not" ` +
-        `and then the work. Not repeated, not expanded, not a speech. ` +
-        `(2) Stop asking questions and start giving structure. Continued questioning of ` +
-        `a student who has just called themselves stupid is experienced as further evidence ` +
-        `of incompetence. ` +
+        `and then the work. Do not repeat it. Do not expand it. Do not give a speech. ` +
+        `(2) Stop asking questions immediately. Start giving structure. Continued ` +
+        `questioning of a student who has just called themselves stupid is experienced ` +
+        `as further evidence of incompetence. ` +
         `(3) Supply the setup, the framing, the organizing principle — the student still ` +
         `does the final work, but from a position of "I can see how this goes." ` +
         `(4) Do not resume diagnostic questioning in this turn. Diagnosis resumes on the ` +
-        `next item. The answer is still never given (INV-03-04 unchanged).`,
+        `next item. The answer is still never given (INV-03-04 unchanged). ` +
+        `(5) Do not open with "I hear you" or any empathic preamble before the contradiction. ` +
+        `The flat contradiction IS the empathy.`,
     );
   }
 
@@ -269,10 +343,11 @@ function summaryTypeLabel(
 }
 
 /**
- * Style block: tells the model the student's preferred explanation style.
+ * Style block: tells the model the student's preferred explanation structure.
  *
  * Directive pairing (§7.4): fact = preferred style;
- * directive = adapt explanation approach.
+ * directive = structure-only adaptation (L5.1 fix — no content-level
+ * directive that could override anti-leak).
  *
  * @spec [Doc-03D_V1.2 §7.4; Doc-03A_V3 §7.3]
  */
@@ -289,10 +364,14 @@ function renderStyleBlock(request: OrchestrateRequest): string | null {
       `[STYLE] The student's preferred explanation style is "${fields.preferred_explanation_style}" ` +
         `(${styleDescription}). Confidence in this preference: ${confidence}.`,
     );
+    // L5.1 fix: structure-only directive. Does not say "adapt explanations" —
+    // only says "structure your response." Prevents the style directive from
+    // encouraging the model to show worked examples (C5 regression).
     parts.push(
-      `[DIRECTIVE] Adapt your explanations toward this style when possible. ` +
-        `If confidence is "low," treat this as a hypothesis — vary your approach ` +
-        `and observe what the student responds to.`,
+      `[DIRECTIVE] Structure your response toward this style when possible. ` +
+        `This affects how you organize and present information, not what ` +
+        `information you may reveal. If confidence is "low," treat this as a ` +
+        `hypothesis — vary your approach and observe what the student responds to.`,
     );
   }
 
