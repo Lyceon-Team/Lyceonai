@@ -1,6 +1,9 @@
 /**
  * @spec [Doc-03D_V1.2 §7.2 (late block placement), §7.4 (fact-directive pairing)]
  * @implemented 2026-08-17
+ * @updated 2026-08-18 — WS-L6: added renderItemBlock (question content from
+ *   Supabase), L5.1 fixes (directive dedup, style structure-only, SCL-039
+ *   strengthening), C5 regression fix (pre-submit item-level prohibition).
  *
  * plain English: Renders the dynamic state blocks that are placed immediately
  * before the current student turn in the conversation messages. Each block
@@ -20,13 +23,11 @@
  *    know a predicted score or confidence level (CLAUDE.md invariant).
  *  - memory_summaries content_json is opaque (passthrough schema). We
  *    extract only the summary text, never raw structured data.
- *  - SCL-034, SCL-035, SCL-036 rules live in the system instruction ONCE.
- *    State blocks carry FACTS plus a short pointer to those rules, not
- *    restated copies (ablation v2 confirmed duplication makes blocks inert —
- *    C1 with all blocks was WORSE than C3/C5 with blocks removed).
- *  - Exception: SCL-039 (affective scaffolding) stays in the friction block
- *    because it is conditional on self_deprecating_language_detected and
- *    must not be a standing instruction.
+ *  - SCL-034 through SCL-039 directives are embedded directly in the
+ *    paired blocks, not as separate instructions.
+ *  - Item block includes question content (stem, options, student answer)
+ *    but NEVER correct_answer or canonical ID (anti-leak). Explanation
+ *    is present only post-submit (gated upstream in tutor-context.ts).
  */
 
 import type { OrchestrateRequest } from "../lib/schema.js";
@@ -44,7 +45,6 @@ import { masteryLevelToBand } from "./mastery-bands.js";
 export function renderStateBlocks(request: OrchestrateRequest): string | null {
   const blocks: string[] = [];
 
-  // Item block goes first — establishes what the student is looking at.
   const itemBlock = renderItemBlock(request);
   if (itemBlock) blocks.push(itemBlock);
 
@@ -68,57 +68,79 @@ export function renderStateBlocks(request: OrchestrateRequest): string | null {
 // ── Individual block renderers (pure, deterministic) ────────────────
 
 /**
- * Item block: tells the model what the student is looking at and what can
- * be revealed.
+ * Item block: tells the model what the student is working on.
  *
- * Directive pairing (§7.4): fact = current surface and submit state;
- * directive = what may or may not be revealed.
+ * Directive pairing (§7.4): fact = question content + student answer;
+ * directive = pre-submit prohibition (C5 regression fix) or post-submit
+ * explanation permission.
  *
- * @spec [Doc-03C_V3 §4.4 (pass content, never canonical ID);
- *        Doc-03D_V1.2 §6.3 (correct_answer gating by surface);
- *        INV-03-04 (anti-leak)]
+ * Anti-leak: correct_answer is NEVER included. Explanation is only
+ * present post-submit (gated upstream in tutor-context.ts).
  *
- * NOTE: The question stem and options are not yet on the OrchestrateRequest
- * wire. When the BFF begins injecting question text as system_note messages
- * in recent_messages (Doc 03C §4.4), this renderer will surface them.
- * Until then, this block renders surface/submit state only. The wire
- * extension is tracked separately — this PR's constraint is "no wire
- * contract changes."
+ * @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, INV-03-04]
  */
 function renderItemBlock(request: OrchestrateRequest): string | null {
-  // Only relevant for scoped_question entry mode — general and scoped_session
-  // conversations don't have a specific question to describe.
-  if (request.entry_mode !== "scoped_question") return null;
+  const qc = request.question_content;
+  if (!qc) return null;
 
+  const parts: string[] = [];
   const isPostSubmit = request.correct_answer !== null;
-  const surface = request.source_surface;
 
+  // Question stem
+  parts.push(
+    `[ITEM] ${qc.item_type === "grid_in" ? "Grid-in" : "MCQ"}: ${qc.stem}`,
+  );
+
+  // Passage (if present)
+  if (qc.passage) {
+    parts.push(`Passage: ${qc.passage}`);
+  }
+
+  // Options (MCQ only)
+  if (qc.item_type === "mcq" && qc.options.length > 0) {
+    const optionText = qc.options.map((o) => `${o.key}) ${o.text}`).join(" ");
+    parts.push(`Options: ${optionText}`);
+  }
+
+  // Student's submitted answer (if any)
+  if (qc.student_answer !== null) {
+    parts.push(`Student's submitted answer: ${qc.student_answer}.`);
+  }
+
+  // Attempt number
+  if (qc.attempt_number > 0) {
+    parts.push(`This is attempt ${qc.attempt_number}.`);
+  }
+
+  // Anti-leak directive — directly addresses C5 regression
   if (isPostSubmit) {
-    return (
-      `[ITEM] This is a post-submit question (${surface} surface). ` +
-      `The student has already submitted their answer.` +
-      (request.correct_answer
-        ? ` The correct answer is: ${request.correct_answer}.`
-        : ``) +
-      ` [DIRECTIVE] You may explain the answer, walk through the solution, ` +
-      `and discuss why incorrect options are wrong.`
+    parts.push(
+      `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
+        `the student's answer was wrong.`,
+    );
+    // Explanation (only present post-submit, gated upstream)
+    if (qc.explanation) {
+      parts.push(`Explanation: ${qc.explanation}`);
+    }
+  } else {
+    parts.push(
+      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+        `or show work toward the answer. Do not produce an intermediate result the student ` +
+        `can read off as the final value. Redirect to a sub-step the student can verify ` +
+        `without seeing the answer.`,
     );
   }
 
-  return (
-    `[ITEM] This is a pre-submit question (${surface} surface). ` +
-    `The student has NOT yet submitted their answer. ` +
-    `[DIRECTIVE] DO NOT reveal, hint at, or narrow toward the correct answer. ` +
-    `Help the student work through the problem using scaffolding and decomposition.`
-  );
+  return parts.join(" ");
 }
 
 /**
- * Mastery block: tells the model the student's current mastery level.
+ * Mastery block: tells the model the student's current mastery level and
+ * what diagnostic modes to consider.
  *
- * Directive pairing (§7.4): fact = mastery band; directive = short pointer
- * to calibrate scaffolding depth. The full diagnostic framework (SCL-034)
- * lives in the system instruction ONCE — not restated here.
+ * Directive pairing (§7.4): fact = mastery band; directive = how to
+ * calibrate scaffolding. Diagnostic mode directives live in the system
+ * instruction (SCL-034 forced choice) — NOT duplicated here.
  *
  * @spec [Doc-03D_V1.2 §7.1, §7.4]
  */
@@ -170,27 +192,26 @@ function renderMasteryBlock(request: OrchestrateRequest): string | null {
 
   if (parts.length === 0) return null;
 
-  // Directive: short pointer to system instruction's diagnostic framework.
-  // DEFECT 2 fix: SCL-034 rules live in system instruction ONCE. State block
-  // carries the FACT (mastery band) and a pointer, not a restated copy.
-  // Ablation v2 confirmed duplication made blocks inert (C1 worse than C3/C5).
+  // Directive: how to use mastery data — calibrate scaffolding only.
+  // Diagnostic mode directives are in the system instruction (forced choice),
+  // NOT duplicated here (L5.1 directive dedup fix).
   parts.push(
-    `[DIRECTIVE] Calibrate scaffolding depth to this mastery level. ` +
-      `Apply the diagnostic framework from your instructions to classify errors.`,
+    `[DIRECTIVE] Use the mastery level to calibrate your scaffolding depth. ` +
+      `A "needs_work" student likely needs more support; a "strong" student needs less.`,
   );
 
   return parts.join(" ");
 }
 
 /**
- * Friction block: tells the model about current struggle signals.
+ * Friction block: tells the model about current struggle signals and
+ * what to do about them.
  *
- * Directive pairing (§7.4): fact = friction signals; directive = short
- * pointer to decompose-first / disengagement rules in system instruction.
- * Exception: SCL-039 (affective scaffolding) stays here in full because
- * it is conditional on self_deprecating_language_detected.
+ * Directive pairing (§7.4): fact = friction signals; directives from
+ * SCL-035 (decompose first), SCL-036 (disengagement trigger),
+ * SCL-039 (affective scaffolding).
  *
- * @spec [Doc-03D_V1.2 §7.4; SCL-039]
+ * @spec [Doc-03D_V1.2 §7.4; SCL-035, SCL-036, SCL-039]
  */
 function renderFrictionBlock(request: OrchestrateRequest): string | null {
   const friction = request.student_learning_context.recent_friction;
@@ -213,20 +234,20 @@ function renderFrictionBlock(request: OrchestrateRequest): string | null {
     parts.push(
       `[FRICTION] The student has used self-deprecating language (e.g., calling themselves stupid or incapable).`,
     );
-    // SCL-039 directive: the four rules
-    // SCL-039 stays in friction block — conditional on self_deprecating_language_detected,
-    // must not be a standing instruction. Rule 2 phrased with same absoluteness as
-    // anti-leak rule (DEFECT 4 / ablation v2: CASE-18 violated rule 2).
+    // SCL-039 directive: the four rules (L5.1 strengthened — absolute imperatives)
     parts.push(
       `[DIRECTIVE] The student is expressing self-directed negative judgment. ` +
         `(1) Contradict the self-judgment once, flatly, then move on — "No, you're not" ` +
-        `and then the work. Not repeated, not expanded, not a speech. ` +
-        `(2) NEVER ask a question for the rest of this turn. Not one. A question ` +
-        `after "I'm stupid" is experienced as proof of the claim. Give structure instead. ` +
+        `and then the work. Do not repeat it. Do not expand it. Do not give a speech. ` +
+        `(2) Stop asking questions immediately. Start giving structure. Continued ` +
+        `questioning of a student who has just called themselves stupid is experienced ` +
+        `as further evidence of incompetence. ` +
         `(3) Supply the setup, the framing, the organizing principle — the student still ` +
         `does the final work, but from a position of "I can see how this goes." ` +
         `(4) Do not resume diagnostic questioning in this turn. Diagnosis resumes on the ` +
-        `next item. The answer is still never given (INV-03-04 unchanged).`,
+        `next item. The answer is still never given (INV-03-04 unchanged). ` +
+        `(5) Do not open with "I hear you" or any empathic preamble before the contradiction. ` +
+        `The flat contradiction IS the empathy.`,
     );
   }
 
@@ -244,13 +265,16 @@ function renderFrictionBlock(request: OrchestrateRequest): string | null {
 
   if (parts.length === 0) return null;
 
-  // General friction directive — short pointer to system instruction rules.
-  // DEFECT 2 fix: SCL-035/036 rules live in system instruction ONCE. State block
-  // carries FACTS (friction signals) and a pointer, not restated copies.
-  // Only add if we haven't already added the specific SCL-039 directive.
+  // General friction directives (SCL-035, SCL-036)
+  // Only add if we haven't already added the specific SCL-039 directive
   if (!friction.self_deprecating_language_detected) {
     parts.push(
-      `[DIRECTIVE] Apply the decompose-first and disengagement rules from your instructions.`,
+      `[DIRECTIVE] If the student says "I don't know," decompose the question into a ` +
+        `smaller sub-step first. Teach the concept only after three levels of decomposition ` +
+        `fail. Watch for disengagement (messages shortening, losing content, one-word replies ` +
+        `like "idk", "ok", "whatever") rather than frustration — a frustrated student who is ` +
+        `still writing substantive messages is engaged and working. Intervene on disengagement, ` +
+        `not on frustration.`,
     );
   }
 
@@ -321,13 +345,11 @@ function summaryTypeLabel(
 /**
  * Style block: tells the model the student's preferred explanation structure.
  *
- * Directive pairing (§7.4): fact = preferred style; directive = structure
- * explanations accordingly. DEFECT 3 fix: directive is about explanation
- * STRUCTURE only — explicitly not a license for encouragement or praise
- * (Doc 03D §11.4 / Graham finding: praise exceeding work difficulty signals
- * low expectations).
+ * Directive pairing (§7.4): fact = preferred style;
+ * directive = structure-only adaptation (L5.1 fix — no content-level
+ * directive that could override anti-leak).
  *
- * @spec [Doc-03D_V1.2 §7.4, §11.4; Doc-03A_V3 §7.3]
+ * @spec [Doc-03D_V1.2 §7.4; Doc-03A_V3 §7.3]
  */
 function renderStyleBlock(request: OrchestrateRequest): string | null {
   const fields = request.memory_structured_fields;
@@ -342,17 +364,14 @@ function renderStyleBlock(request: OrchestrateRequest): string | null {
       `[STYLE] The student's preferred explanation style is "${fields.preferred_explanation_style}" ` +
         `(${styleDescription}). Confidence in this preference: ${confidence}.`,
     );
-    // DEFECT 3 fix: directive is about explanation STRUCTURE, not tone.
-    // "Adapt your explanations toward this style" was read as a warmth
-    // instruction. Ablation showed C5 (style block removed) produced
-    // tighter responses — the directive was producing praise.
+    // L5.1 fix: structure-only directive. Does not say "adapt explanations" —
+    // only says "structure your response." Prevents the style directive from
+    // encouraging the model to show worked examples (C5 regression).
     parts.push(
-      `[DIRECTIVE] Use this style to structure explanations — not to adjust tone. ` +
-        `"Step-by-step" means sequential sub-steps; "example-driven" means worked ` +
-        `examples first; "conceptual" means underlying principle first; "visual" ` +
-        `means spatial or diagrammatic framing. This is about explanation structure. ` +
-        `It is not a license for encouragement, praise, or warmth. ` +
-        `If confidence is "low," vary structural approach and observe what lands.`,
+      `[DIRECTIVE] Structure your response toward this style when possible. ` +
+        `This affects how you organize and present information, not what ` +
+        `information you may reveal. If confidence is "low," treat this as a ` +
+        `hypothesis — vary your approach and observe what the student responds to.`,
     );
   }
 
@@ -364,7 +383,7 @@ function renderStyleBlock(request: OrchestrateRequest): string | null {
     );
   }
 
-  // Last mastered skill — context for continuity (not encouragement)
+  // Last mastered skill — context for encouragement
   if (fields.last_mastered_skill) {
     parts.push(
       `[CONTEXT] The student recently mastered "${fields.last_mastered_skill.skill}" ` +

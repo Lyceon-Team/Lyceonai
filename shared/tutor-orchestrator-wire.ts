@@ -195,6 +195,27 @@ export const memoryStructuredFieldsSchema = z.object({
   style_confidence: z.enum(["low", "medium", "high"]).nullable(),
 });
 
+// ── Question content (Doc 03A §5.4, Doc 03C §4.4) ───────────────────
+// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4]: pass question CONTENT to
+// the worker, never canonical ID. Anti-leak: explanation is null
+// pre-submit (gated by correct_answer presence). student_answer is
+// null if no submission yet.
+
+export const questionOptionSchema = z.object({
+  key: z.string(),
+  text: z.string(),
+});
+
+export const questionContentSchema = z.object({
+  stem: z.string(),
+  passage: z.string().nullable(),
+  options: z.array(questionOptionSchema),
+  item_type: z.enum(["mcq", "grid_in"]),
+  explanation: z.string().nullable(),
+  student_answer: z.string().nullable(),
+  attempt_number: z.number().int().nonnegative(),
+});
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -212,6 +233,10 @@ export const orchestrateRequestSchema = z.object({
     max_output_tokens: z.number().int().positive(),
     timeout_ms: z.number().int().positive(),
   }),
+  // ── Question content (Doc 03A §5.4, Doc 03C §4.4) ──────────────────
+  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4]: question CONTENT, never
+  // canonical ID. Anti-leak: explanation null pre-submit.
+  question_content: questionContentSchema.nullable(),
   // ── Anti-leak field (LISA-FULL-001): BFF resolves; worker scans when non-null ──
   // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
   correct_answer: z.string().nullable(),
@@ -339,3 +364,4 @@ export type RecentFriction = z.infer<typeof recentFrictionSchema>;
 export type MasterySnapshot = z.infer<typeof masterySnapshotSchema>;
 export type KpiState = z.infer<typeof kpiStateSchema>;
 export type ExplanationForm = z.infer<typeof explanationFormEnum>;
+export type QuestionContent = z.infer<typeof questionContentSchema>;
