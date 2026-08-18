@@ -129,14 +129,36 @@ asserts the event-time tables are EMPTY — the correct acceptance signature for
 *pure backfill* and nothing else. That STOP is expected and is not a regression.
 After the live path is exercised, `live-event-verify.sql` is the file to run.
 
-### Migration-history reconciliation — SEVEN versions (do this FIRST)
+### Migration inventory — do this BEFORE the seven-version reconciliation
+
+`supabase migration list` against prod on 2026-08-18 showed the seven below are a
+**subset**: `schema_migrations` has 16 rows ending at `20260624020000`, and ~29
+versions after it are unrecorded. They are not all applied. Three of them are
+blocked outright.
+
+| # | Step | Writes? | Expected |
+|---|---|---|---|
+| 0 | [`MIGRATION-BRANCH-SPLIT.md`](./MIGRATION-BRANCH-SPLIT.md) | no | check out `cleanup`; decide where the two lisa-only migrations get reconciled |
+| 0a | `migration-inventory-classify.sql` | no | 29 rows: `APPLIED-UNRECORDED` (repair) vs `NOT-APPLIED` (push), plus 2 UNKNOWN + 1 INERT |
+| 0b | [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) | no | three versions claimed by two files each — renumber before recording |
+
+`supabase db push` is **off the table** until 0–0b are resolved: it applies every
+pending migration, all ~29, not the one intended.
+
+The classifier earns its verdicts through
+`scripts/ci/migration-inventory-gate.sh`, which builds the recorded baseline and
+the fully-applied state and requires opposite answers from each probe. Two false
+positives it has already caught are documented in the SQL file's header.
+
+### Migration-history reconciliation — SEVEN versions (after the inventory above)
 
 `supabase_migrations.schema_migrations` records **none** of the seven migrations
 below, though every object exists on prod. The next `supabase db push` attempts to
 replay all seven. This is the largest unaddressed risk in the repo and it fires the
 next time anyone ships schema.
 
-**Steps live in [`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md).**
+**Steps live in [`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md)**,
+which now opens with a STOP banner pointing back at the inventory above.
 Decisions and rationale in
 [`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md).
 
@@ -174,8 +196,10 @@ On its first day the detector reported **84 gaps out of 91 answered items** — 
 item the Step 8 backfill rebuilt, because `backfill_recompute_student` writes no
 per-event audit row. An alert that is 100% noise on arrival gets muted.
 
-This is a NEW migration, so it goes **through the runner** (`supabase db push`),
-which is only safe once the seven above are recorded.
+This is a NEW migration, so it goes **through the runner** (`supabase db push`).
+That is only safe once the seven above are recorded **and** the inventory in step
+0a has classified every other pending version — `db push` applies the whole
+pending set, and today that set is ~29 migrations, not one.
 
 | # | Step | Writes? | Expected verdict |
 |---|---|---|---|

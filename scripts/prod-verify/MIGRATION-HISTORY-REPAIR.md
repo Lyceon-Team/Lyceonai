@@ -1,5 +1,31 @@
 # Migration history repair — runbook
 
+> ## SUPERSEDED AS A STANDALONE RUNBOOK — do not start at Step 1
+>
+> On 2026-08-18 `supabase migration list` against prod showed that the seven
+> versions in this runbook are a **subset of ~29 unrecorded versions**, and that
+> the unrecorded set contains both applied-but-unrecorded migrations (repair) and
+> possibly-never-applied ones (push). It also surfaced three version strings
+> claimed by two files each, and the fact that no single branch holds every
+> migration.
+>
+> Nothing below is wrong — the seven are still correct, still parity-gated, and
+> still repairable. But running Step 1 first answers a narrower question than the
+> one that has to be answered, and `db push` at Step 5 would act on all ~29
+> pending migrations, not the one intended.
+>
+> **Start here instead:**
+> 1. [`MIGRATION-BRANCH-SPLIT.md`](./MIGRATION-BRANCH-SPLIT.md) — which branch to
+>    check out; no CLI command is meaningful before this.
+> 2. [`migration-inventory-classify.sql`](./migration-inventory-classify.sql) —
+>    per-file APPLIED-UNRECORDED vs NOT-APPLIED for the other 29.
+> 3. [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) —
+>    three versions that cannot be recorded at all until renumbered.
+>
+> Return to this runbook for the seven once those three are resolved. **Step 5's
+> `supabase db push` stays off the table until then.**
+
+
 > ## Standing: this is now the largest unaddressed risk in the repo
 >
 > **SEVEN** migrations are applied to production and recorded by the runner as
