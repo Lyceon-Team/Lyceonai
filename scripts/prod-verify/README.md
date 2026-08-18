@@ -138,12 +138,13 @@ blocked outright.
 
 | # | Step | Writes? | Expected |
 |---|---|---|---|
-| 0 | [`MIGRATION-BRANCH-SPLIT.md`](./MIGRATION-BRANCH-SPLIT.md) | no | check out `cleanup`; decide where the two lisa-only migrations get reconciled |
-| 0a | `migration-inventory-classify.sql` | no | 29 rows: `APPLIED-UNRECORDED` (repair) vs `NOT-APPLIED` (push), plus 2 UNKNOWN + 1 INERT |
-| 0b | [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) | no | three versions claimed by two files each — renumber before recording |
+| 0 | [`MIGRATION-BRANCH-SPLIT.md`](./MIGRATION-BRANCH-SPLIT.md) | no | **resolved** — check out `cleanup`; the two lisa-only migrations now live there too |
+| 0a | [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) | no | **resolved** — three LISA-lane files renumbered; must land on all four branches before any repair |
+| 0b | `migration-inventory-classify.sql` | no | 37 rows, 37 distinct versions: `REPAIR` vs `PUSH`, plus 2 `SUPERSEDED` + 1 `INERT` |
 
-`supabase db push` is **off the table** until 0–0b are resolved: it applies every
-pending migration, all ~29, not the one intended.
+`supabase db push` stays **off the table** until the advisor has verified 0b's 37
+probes against prod: push applies every pending migration, all 37, not the one
+intended.
 
 The classifier earns its verdicts through
 `scripts/ci/migration-inventory-gate.sh`, which builds the recorded baseline and

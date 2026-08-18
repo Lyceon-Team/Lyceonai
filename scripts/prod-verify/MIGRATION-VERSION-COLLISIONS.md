@@ -1,7 +1,13 @@
 # Three version strings are claimed by two files each
 
-**Status: blocking. No `repair` and no `push` for these three versions until it
-is resolved.**
+**Status: RESOLVED on this branch, 2026-08-18. Owner ruling approved the proposal
+below and it has been executed with `git mv`.**
+
+> The renames must land on `main`, `cleanup`, `questions` and `lisa` **together**,
+> and **before any `repair`**. This branch carries them for `cleanup`; sibling
+> branches carry them for `questions` and `lisa`; `main` receives them through
+> Karl's merges of those three. Until all four agree, the collision returns at the
+> next merge.
 
 ## The six files
 
@@ -49,7 +55,7 @@ the six is a real migration declaring real objects, and
 Two independent workstreams each picked the day's round timestamp. That is the
 whole cause. There is no duplicate work and nothing to discard.
 
-## Proposed resolution — renumber the LISA-lane file in each pair
+## Resolution — renumber the LISA-lane file in each pair (EXECUTED)
 
 ```
 20260806000000_tutor_dedicated_roles.sql            ->  20260806010000_tutor_dedicated_roles.sql
@@ -100,9 +106,17 @@ Stated in full, because three of these six are live on prod.
 6. **`git mv`, not delete-and-create**, so history follows the file and the next
    reader can see it was renamed rather than rewritten.
 
-## What I have NOT done
+## What was done, and what was not
 
-I have not renamed anything. Renaming touches four branches including `main`,
-which Karl owns, and the ordering rule in hazard 2 makes it a sequencing decision
-rather than a mechanical edit. This document is the proposal; the rename is
-Karl's call.
+**Done on this branch:** the three `git mv`s above, plus the three prose
+references. `scripts/tutor-schema-proof.ts` and
+`scripts/prod-verify/migration-inventory-classify.sql` were updated to the new
+name because they point at the file as it is today.
+`docs/SpecAudit/SPEC_CHANGES_LOG.md` was **annotated, not rewritten** — it is a
+dated record of what a PR did at the time, and editing the record to match a
+later rename would falsify it. The annotation names the new filename and points
+here. `packages/shared/src/session-mode.ts` cites
+`20260806000000_diagnostic_gate.sql`, which was not renamed; it is correct as it
+stands.
+
+**Not done:** anything on `main`. Karl owns those merges.

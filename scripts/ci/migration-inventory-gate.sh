@@ -48,17 +48,16 @@ CLASSIFY="$ROOT/scripts/prod-verify/migration-inventory-classify.sql"
 # schema_migrations already claims.
 FIRST_UNRECORDED="20260625000000_"
 
-# Files the classifier cannot decide, and why. Kept here as well as in the SQL
-# so that adding a new UNKNOWN silently is a gate failure, not a quiet drift.
-#   superseded  a later migration DROPs and re-creates the same object
-#   inert       every declared object already exists in genesis
-#   tree        the file lives only on the lisa branch, so a build from THIS
-#               working tree cannot apply it — see MIGRATION-BRANCH-SPLIT.md
-NON_CLASSIFIABLE='20260627030000|practice_select_pool_random
-20260722000000|practice_pool_passage_col
-20260809000000|entitlements_profile_id_unique_and_webhook_events'
-LISA_ONLY='20260814000000|crisis_audit_log_nullable_case_id
-20260815000000|memory_summary_notify_function'
+# Rows that do not classify APPLIED/NOT-APPLIED, and why. Kept here as well as in
+# the SQL so that a new one appearing silently is a gate failure, not quiet drift.
+#   SUPERSEDED  nothing of the migration survives to probe; the probe is its
+#               SUCCESSOR's, so the row reads SUPERSEDED when the successor is
+#               present and UNKNOWN when it is not. I4 proves both directions.
+#   INERT       every declared object already exists in genesis and every
+#               statement is IF NOT EXISTS, so repair and push converge.
+SUPERSEDED='20260627030000|practice_select_pool_random
+20260722000000|practice_pool_passage_col'
+INERT='20260809000000|entitlements_profile_id_unique_and_webhook_events'
 
 FAILURES=0
 fail() { echo "FAIL [$1]: $2"; FAILURES=$((FAILURES + 1)); }
@@ -85,7 +84,7 @@ if ! setup_genesis_db mi_base "$FIRST_UNRECORDED"; then
 else
   BASE="$(classify mi_base)"
   ROWS="$(grep -c . <<<"$BASE")"
-  if [ "$ROWS" -lt 25 ]; then
+  if [ "$ROWS" -lt 30 ]; then
     fail I1 "the classifier returned $ROWS rows against the baseline — it ERRORED rather than reporting.
        A probe that reads a table an UNRECORDED migration creates is a PARSE error, not a NULL.
        got: $(head -3 <<<"$BASE")"
@@ -96,7 +95,19 @@ else
        the discriminator is satisfied by something other than its own migration:
 $(sed 's/^/         /' <<<"$BAD")"
     else
-      pass I1 "$ROWS rows, none APPLIED-UNRECORDED"
+      # The superseded rows probe their SUCCESSOR. With nothing applied the
+      # successor is absent too, so they must say so rather than claim skippable.
+      SUP_BAD=0
+      while IFS='|' read -r ver file; do
+        [ -z "$ver" ] && continue
+        got="$(awk -F'|' -v v="$ver" '$1==v {print $3}' <<<"$BASE")"
+        case "$got" in
+          UNKNOWN*) : ;;
+          *) fail I1 "$ver must report UNKNOWN at the baseline (its successor is not
+       applied either, so nothing proves supersession) — got '$got'"; SUP_BAD=1 ;;
+        esac
+      done <<<"$SUPERSEDED"
+      [ "$SUP_BAD" = 0 ] && pass I1 "$ROWS rows, none APPLIED-UNRECORDED, both superseded rows UNKNOWN"
     fi
   fi
 fi
@@ -110,18 +121,17 @@ else
   I2_OK=1
   while IFS='|' read -r ver file cls; do
     [ -z "$ver" ] && continue
-    key="$ver|$(sed 's/  \[.*//' <<<"$file")"
-    if grep -qxF "$key" <<<"$NON_CLASSIFIABLE"; then
-      case "$cls" in
-        UNKNOWN*|INERT*) : ;;
-        *) fail I2 "$key is documented as non-classifiable but reported '$cls' —
-       either the documentation or the probe is now wrong"; I2_OK=0 ;;
-      esac
-    elif grep -qxF "$key" <<<"$LISA_ONLY"; then
-      if [ "$cls" != "NOT-APPLIED" ]; then
-        fail I2 "$key lives only on the lisa branch and cannot be in this build,
-       yet it reported '$cls'"; I2_OK=0
+    key="$ver|$file"
+    if grep -qxF "$key" <<<"$SUPERSEDED"; then
+      if [ "$cls" != "SUPERSEDED (successor verified)" ]; then
+        fail I2 "$key should read SUPERSEDED once its successor is applied, got '$cls'"
+        I2_OK=0
       fi
+    elif grep -qxF "$key" <<<"$INERT"; then
+      case "$cls" in
+        INERT*) : ;;
+        *) fail I2 "$key is documented INERT but reported '$cls'"; I2_OK=0 ;;
+      esac
     elif [ "$cls" != "APPLIED-UNRECORDED" ]; then
       fail I2 "$key was applied by this build but reported '$cls'"; I2_OK=0
     fi
@@ -154,7 +164,7 @@ ROLLBACK;
 SQL
 )"
     AFTER="$(awk -F'|' 'NF>=8 {print $1 "|" $2 "|" $7}' <<<"$RAW")"
-    if [ "$(grep -c . <<<"$AFTER")" -lt 25 ]; then
+    if [ "$(grep -c . <<<"$AFTER")" -lt 30 ]; then
       fail I3 "dropping [$drop] made the classifier ERROR instead of reporting
        got: $(head -2 <<<"$AFTER")"
       I3_OK=0
@@ -191,6 +201,47 @@ DELETE FROM public.tutor_context_runtime_config WHERE key IN ('study_context_fre
 DELETE FROM public.tutor_context_runtime_config WHERE key = 'friction_long_pause_seconds'|ws_l2_context_config_keys|PARTIAL
 CASES
   [ "$I3_OK" = 1 ] && pass I3 "each dropped object flips exactly its own row"
+fi
+
+# ── I4 — supersession is only recordable while the successor is present ────
+# The owner rule of 2026-08-18 has two halves: a later migration fully replaces
+# the objects, AND that replacement is verified present. A probe that asserted
+# only the first half would record an unapplied migration on the strength of a
+# claim about the repo rather than a fact about the database. Removing the
+# successor's own marker must therefore withdraw the REPAIR verdict.
+echo "==> (I4) removing the successor withdraws the SUPERSEDED verdict"
+if [ -z "${FULL:-}" ]; then
+  fail I4 "skipped — the full DB was not provisioned"
+else
+  RAW4="$(PGOPTIONS='-c client_min_messages=warning' psql -tAq -F'|' -d mi_full <<SQL 2>&1
+BEGIN;
+ALTER TABLE public.practice_session_items DROP COLUMN question_assets;
+$(cat "$CLASSIFY")
+ROLLBACK;
+SQL
+)"
+  AFTER4="$(awk -F'|' 'NF>=8 {print $1 "|" $2 "|" $7 "|" $8}' <<<"$RAW4")"
+  I4_OK=1
+  if [ "$(grep -c . <<<"$AFTER4")" -lt 30 ]; then
+    fail I4 "the classifier ERRORED instead of reporting
+       got: $(head -2 <<<"$RAW4")"
+    I4_OK=0
+  else
+    while IFS='|' read -r ver file; do
+      [ -z "$ver" ] && continue
+      row="$(grep "^$ver|" <<<"$AFTER4")"
+      if ! grep -q 'UNKNOWN' <<<"$row"; then
+        fail I4 "$ver still claims supersession with its successor removed
+       got: $row"
+        I4_OK=0
+      elif ! grep -q 'STOP —' <<<"$row"; then
+        fail I4 "$ver went UNKNOWN but its verdict is not a STOP
+       got: $row"
+        I4_OK=0
+      fi
+    done <<<"$SUPERSEDED"
+  fi
+  [ "$I4_OK" = 1 ] && pass I4 "both superseded rows STOP when the successor is gone"
 fi
 
 echo

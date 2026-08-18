@@ -11,6 +11,10 @@
 -- version — and while any STOP remains, `supabase db push` is unsafe for ALL of
 -- them, because push acts on the whole pending set rather than on one version.
 --
+-- COMPLETENESS IS THE POINT. Every unrecorded version appears, including the
+-- ones another gate proves and the one that is genuinely new. A version absent
+-- from an inventory reads as "nothing to do" — the same mistake in a quieter form.
+--
 -- WHY THIS EXISTS
 --   supabase_migrations.schema_migrations stops at 20260624020000 (16 rows).
 --   Everything after it renders in `supabase migration list` as Local with a
@@ -43,27 +47,37 @@
 --     unique-rows the migration has no DDL at all; the rows it INSERTs are its
 --                 only trace. Present ⇒ applied; a partial count is neither class
 --                 and is reported as PARTIAL.
---     superseded  a later migration DROPs and re-creates the same object with the
---                 same name and signature, leaving nothing of this one behind.
---                 No discriminator exists. Classified UNKNOWN, never guessed.
+--     superseded-verified
+--                 a later migration DROPs and re-creates the same object with the
+--                 same name and signature, leaving nothing of this one behind, AND
+--                 that successor is verified present. Nothing of this migration
+--                 survives to probe, so the probe is the SUCCESSOR's. Recordable
+--                 under the narrow rule stated at its row — never on the
+--                 supersession claim alone.
+--     parity      covered object-by-object by migration-schema-parity.sql. The row
+--                 exists so the inventory is complete; the verdict defers.
 --     inert       every object the migration declares already exists in genesis
 --                 and every statement is IF NOT EXISTS. No discriminator exists
 --                 and none is needed: applying it and recording it reach the same
 --                 schema, so the choice cannot do damage.
 --
--- DUPLICATE VERSIONS
---   Three version strings are claimed by two files each (20260806000000,
---   20260807000000, 20260812000000). They are classified INDEPENDENTLY here,
---   because they are independent migrations that happen to collide on a
---   filename prefix. schema_migrations.version is a primary key, so at most one
---   row per pair can ever be recorded — that is a separate, blocking problem.
---   See MIGRATION-VERSION-COLLISIONS.md. Do not repair any of the three until it
---   is resolved.
+-- DUPLICATE VERSIONS — RESOLVED 2026-08-18
+--   Three version strings were claimed by two files each. schema_migrations.version
+--   is a primary key, so at most one row per pair could ever be recorded and
+--   `repair` had no way to say which file it meant. Under the owner ruling of
+--   2026-08-18 the LISA-lane file in each pair was renumbered to the next free
+--   slot the same day, preserving apply order:
+--     20260806000000_tutor_dedicated_roles            -> 20260806010000
+--     20260807000000_ws_l2_context_config_keys        -> 20260807010000
+--     20260812000000_tutor_messages_idempotency_role  -> 20260812010000
+--   Every version below is now unique. See MIGRATION-VERSION-COLLISIONS.md.
 --
--- THE SEVEN FROM 20260816/20260817 ARE NOT IN THIS FILE
+-- THE SEVEN FROM 20260816/20260817 ARE LISTED BUT NOT RE-PROVEN HERE
 --   They already have a stronger, object-by-object gate:
---   migration-schema-parity.sql (28 checks). Running a one-line discriminator
---   for them here would be a weaker second opinion on a settled question.
+--   migration-schema-parity.sql (28 checks). Their rows below carry a
+--   one-object presence probe purely so that this file is a COMPLETE inventory —
+--   a version missing from an inventory reads as "nothing to do" — and their
+--   verdict defers to the parity gate rather than competing with it.
 --
 -- WHAT THIS FILE ASSUMES EXISTS
 --   The RECORDED baseline: genesis plus the 16 migrations through
@@ -152,9 +166,19 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
       WHERE key IN ('answer_rate_limit_max', 'answer_rate_limit_window_ms',
                     'max_concurrent_sessions')) = 3)),
 
+  -- Owner ruling 2026-08-18: a superseded migration is safe to SKIP — that is,
+  -- to record without applying — when a later migration fully replaces its
+  -- objects AND that replacement is verified present. Narrow, and conditional on
+  -- the second half: `present` below is the SUCCESSOR's discriminator, so if
+  -- 20260724000000 is not itself applied, this row does not claim skippability.
+  -- Not a general licence to record unapplied migrations.
   ('20260627030000', 'practice_select_pool_random', 'practice engine (Vertical A)',
-   'none — 20260708000000, 20260722000000 and 20260724000000 each DROP and re-create select_practice_pool_random with the same signature', 'superseded',
-   false),
+   'successor 20260724000000 verified present (it DROPs and re-creates select_practice_pool_random with the same signature, leaving nothing of this one behind)', 'superseded-verified',
+   (((SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'practice_session_items'
+         AND column_name IN ('question_assets', 'question_estimated_time_seconds')) = 2)
+    AND (to_regprocedure(
+      'public.select_practice_pool_random(text[], text[], text[], int[], text[], integer)') IS NOT NULL))),
 
   ('20260628010000', 'grid_in_schema_extension', 'question bank',
    'questions.item_type + constraint questions_item_shape_chk', 'unique',
@@ -189,8 +213,12 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
                    AND conname = 'psi_item_shape_chk'))),
 
   ('20260722000000', 'practice_pool_passage_col', 'practice engine (Vertical A)',
-   'none — its only statement re-creates select_practice_pool_random, which 20260724000000 then DROPs and re-creates', 'superseded',
-   false),
+   'successor 20260724000000 verified present (its only statement re-creates select_practice_pool_random, which 20260724000000 then DROPs and re-creates)', 'superseded-verified',
+   (((SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'practice_session_items'
+         AND column_name IN ('question_assets', 'question_estimated_time_seconds')) = 2)
+    AND (to_regprocedure(
+      'public.select_practice_pool_random(text[], text[], text[], int[], text[], integer)') IS NOT NULL))),
 
   -- ── content pipeline ──────────────────────────────────────────────────────
   ('20260724000000', 'content_pipeline_columns', 'content pipeline',
@@ -212,8 +240,8 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
     AND (to_regclass('public.tutor_messages') IS NOT NULL)
     AND (to_regclass('public.tutor_memory_summaries') IS NOT NULL))),
 
-  -- ── 20260806000000 — TWO FILES CLAIM THIS VERSION ─────────────────────────
-  ('20260806000000', 'diagnostic_gate  [COLLISION]', 'diagnostic',
+  -- ── 20260806 — the collision pair, renumbered 2026-08-18 ─────────────────
+  ('20260806000000', 'diagnostic_gate', 'diagnostic',
    'functions select_diagnostic_pool(integer, text[]) + practice_session_mode_to_event_kind(text)', 'unique',
    ((to_regprocedure('public.select_diagnostic_pool(integer, text[])') IS NOT NULL)
     AND (to_regprocedure('public.practice_session_mode_to_event_kind(text)') IS NOT NULL))),
@@ -223,7 +251,7 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
   -- by the negative control, which reported APPLIED against a database the
   -- migration had never touched. The policy is per-database and per-migration,
   -- so both halves are required.
-  ('20260806000000', 'tutor_dedicated_roles  [COLLISION]', 'LISA (tutor roles)',
+  ('20260806010000', 'tutor_dedicated_roles', 'LISA (tutor roles)',
    'five tutor_* roles AND policy tutor_conversations_runtime_insert', 'unique',
    (((SELECT count(*) FROM pg_roles
        WHERE rolname IN ('tutor_runtime_writer', 'tutor_memory_writer',
@@ -233,7 +261,7 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
                  WHERE schemaname = 'public' AND tablename = 'tutor_conversations'
                    AND policyname = 'tutor_conversations_runtime_insert'))),
 
-  -- Its unique index is re-created by 20260812000000_tutor_messages_idempotency_role;
+  -- Its unique index is re-created by 20260812010000_tutor_messages_idempotency_role;
   -- the policy is its own.
   ('20260806020000', 'tutor_schema_proof_fixes', 'LISA (tutor runtime)',
    'policy tutor_injection_log_select_own on tutor_injection_log', 'unique',
@@ -241,8 +269,8 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
              WHERE schemaname = 'public' AND tablename = 'tutor_injection_log'
                AND policyname = 'tutor_injection_log_select_own'))),
 
-  -- ── 20260807000000 — TWO FILES CLAIM THIS VERSION ─────────────────────────
-  ('20260807000000', 'diagnostic_pool_plain_invoker  [COLLISION]', 'diagnostic',
+  -- ── 20260807 — the collision pair, renumbered 2026-08-18 ─────────────────
+  ('20260807000000', 'diagnostic_pool_plain_invoker', 'diagnostic',
    'select_diagnostic_pool is SECURITY INVOKER (20260806000000 created it DEFINER)', 'body',
    (COALESCE((SELECT p.prosecdef = false FROM pg_proc p
                WHERE p.oid = to_regprocedure('public.select_diagnostic_pool(integer, text[])')),
@@ -253,7 +281,7 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
   -- read is safe at the assumed baseline. A count between 1 and 4 is neither
   -- class: the migration is a single INSERT block, so a partial result means
   -- something outside it wrote or deleted these rows.
-  ('20260807000000', 'ws_l2_context_config_keys  [COLLISION]', 'LISA (context config)',
+  ('20260807010000', 'ws_l2_context_config_keys', 'LISA (context config)',
    'five tutor_context_runtime_config freshness/threshold keys', 'unique-rows',
    ((SELECT count(*) FROM public.tutor_context_runtime_config
       WHERE key IN ('study_context_freshness_days',
@@ -274,8 +302,8 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
    'none — stripe_webhook_events and entitlements_profile_id_unique both come from genesis; every statement is IF NOT EXISTS', 'inert',
    false),
 
-  -- ── 20260812000000 — TWO FILES CLAIM THIS VERSION ─────────────────────────
-  ('20260812000000', 'snapshot_kind_baseline  [COLLISION]', 'diagnostic baseline',
+  -- ── 20260812 — the collision pair, renumbered 2026-08-18 ─────────────────
+  ('20260812000000', 'snapshot_kind_baseline', 'diagnostic baseline',
    'student_section_projection_snapshots.snapshot_kind + index idx_baseline_once_per_student_section', 'unique',
    (EXISTS (SELECT 1 FROM information_schema.columns
              WHERE table_schema = 'public'
@@ -283,7 +311,7 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
                AND column_name = 'snapshot_kind')
     AND (to_regclass('public.idx_baseline_once_per_student_section') IS NOT NULL))),
 
-  ('20260812000000', 'tutor_messages_idempotency_role  [COLLISION]', 'LISA (tutor runtime)',
+  ('20260812010000', 'tutor_messages_idempotency_role', 'LISA (tutor runtime)',
    'idx_tutor_messages_client_turn_idempotency includes the role column (20260806020000 created it without)', 'body',
    (COALESCE((SELECT i.indexdef LIKE '%, role)%' FROM pg_indexes i
                WHERE i.schemaname = 'public'
@@ -296,16 +324,65 @@ WITH probes(version, file, workstream, discriminator, kind, present) AS (
    ((to_regclass('public.crisis_review_cases') IS NOT NULL)
     AND (to_regclass('public.crisis_review_audit_log') IS NOT NULL))),
 
-  ('20260814000000', 'crisis_audit_log_nullable_case_id  [lisa branch only]', 'LISA (crisis review)',
+  ('20260814000000', 'crisis_audit_log_nullable_case_id', 'LISA (crisis review)',
    'crisis_review_audit_log.case_id and conversation_id are both nullable', 'absence',
    ((SELECT count(*) FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'crisis_review_audit_log'
         AND column_name IN ('case_id', 'conversation_id')
         AND is_nullable = 'YES') = 2)),
 
-  ('20260815000000', 'memory_summary_notify_function  [lisa branch only]', 'LISA (memory)',
+  ('20260815000000', 'memory_summary_notify_function', 'LISA (memory)',
    'function pg_notify_memory_summary(uuid, text)', 'unique',
-   (to_regprocedure('public.pg_notify_memory_summary(uuid, text)') IS NOT NULL))
+   (to_regprocedure('public.pg_notify_memory_summary(uuid, text)') IS NOT NULL)),
+
+  -- ── the seven — presence only; migration-schema-parity.sql is the gate ────
+  ('20260816000000', 'psi_occurred_at_backfill_and_seal', 'mastery unblock',
+   'table psi_occurred_at_backfill_log + CHECK psi_resolved_requires_occurred_at', 'parity',
+   ((to_regclass('public.psi_occurred_at_backfill_log') IS NOT NULL)
+    AND EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conname = 'psi_resolved_requires_occurred_at'))),
+
+  ('20260816010000', 'canonical_domain_checks', 'question bank',
+   'CHECKs questions_domain_section_canonical + psi_question_domain_section_canonical', 'parity',
+   ((SELECT count(*) FROM pg_constraint
+      WHERE conname IN ('questions_domain_section_canonical',
+                        'psi_question_domain_section_canonical')) = 2)),
+
+  ('20260816020000', 'mastery_derivation_gap_detection', 'mastery observability',
+   'views mastery_derivation_gaps/_summary + ledger + idx_mastery_gap_ledger_observed_at + record_mastery_derivation_gap()', 'parity',
+   ((to_regclass('public.mastery_derivation_gaps') IS NOT NULL)
+    AND (to_regclass('public.mastery_derivation_gap_ledger') IS NOT NULL)
+    AND (to_regclass('public.idx_mastery_gap_ledger_observed_at') IS NOT NULL)
+    AND (to_regprocedure('public.record_mastery_derivation_gap()') IS NOT NULL))),
+
+  ('20260817000000', 'diagnostic_once_only_index', 'session lifecycle',
+   'unique index practice_sessions_one_completed_diagnostic_uq', 'parity',
+   (to_regclass('public.practice_sessions_one_completed_diagnostic_uq') IS NOT NULL)),
+
+  ('20260817010000', 'student_diagnostic_state', 'session lifecycle',
+   'view student_diagnostic_states + function student_diagnostic_state(uuid)', 'parity',
+   ((to_regclass('public.student_diagnostic_states') IS NOT NULL)
+    AND (to_regprocedure('public.student_diagnostic_state(uuid)') IS NOT NULL))),
+
+  ('20260817020000', 'practice_session_abandoned_at', 'session lifecycle',
+   'practice_sessions.abandoned_at + CHECK practice_sessions_abandoned_not_completed', 'parity',
+   (EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'practice_sessions'
+               AND column_name = 'abandoned_at')
+    AND EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conname = 'practice_sessions_abandoned_not_completed'))),
+
+  ('20260817030000', 'student_baseline_pending', 'session lifecycle',
+   'view student_baseline_pending', 'parity',
+   (to_regclass('public.student_baseline_pending') IS NOT NULL)),
+
+  -- ── genuinely new: authored in PR #608, never applied anywhere ────────────
+  ('20260818000000', 'gap_detector_excludes_backfilled', 'mastery observability',
+   'mastery_derivation_gaps both branches exclude backfill_recompute events', 'unique',
+   (COALESCE((SELECT (pg_get_viewdef(c.oid) LIKE '%pi.occurred_at <= ral.applied_at%')
+                 AND (pg_get_viewdef(c.oid) LIKE '%ra.occurred_at <= ral.applied_at%')
+                FROM pg_class c WHERE c.oid = to_regclass('public.mastery_derivation_gaps')),
+             false)))
 )
 SELECT
   p.version,
@@ -315,7 +392,9 @@ SELECT
   p.kind                                                        AS evidence_kind,
   p.present                                                     AS discriminator_present,
   CASE
-    WHEN p.kind = 'superseded' THEN 'UNKNOWN — no surviving discriminator'
+    WHEN p.kind = 'superseded-verified'
+      THEN CASE WHEN p.present THEN 'SUPERSEDED (successor verified)'
+                ELSE 'UNKNOWN — successor absent, so supersession is unproven' END
     WHEN p.kind = 'inert'      THEN 'INERT — no-op either way'
     WHEN p.present             THEN 'APPLIED-UNRECORDED'
     WHEN p.kind = 'unique-rows'
@@ -329,10 +408,12 @@ SELECT
     ELSE                            'NOT-APPLIED'
   END                                                           AS classification,
   CASE
-    WHEN p.file LIKE '%[COLLISION]%'
-      THEN 'STOP — version claimed by two files; neither can be recorded. See MIGRATION-VERSION-COLLISIONS.md'
-    WHEN p.kind = 'superseded'
-      THEN 'STOP — undecidable from object state; owner ruling required before repair or push'
+    WHEN p.kind = 'superseded-verified' AND p.present
+      THEN 'REPAIR — safe to skip: a later migration fully replaces its objects AND that replacement is verified present. Both halves required; not a general licence'
+    WHEN p.kind = 'superseded-verified'
+      THEN 'STOP — the successor is NOT present, so nothing proves this was superseded rather than never applied'
+    WHEN p.kind = 'parity'
+      THEN 'REPAIR — but only after migration-schema-parity.sql returns OK; that gate is 28 object-level checks and outranks this row'
     WHEN p.kind = 'inert'
       THEN 'OK — repair or push, both reach the same schema; repair preferred, it keeps the runner quiet'
     WHEN p.present AND p.kind = 'absence'

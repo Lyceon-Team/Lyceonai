@@ -16,13 +16,16 @@
 >
 > **Start here instead:**
 > 1. [`MIGRATION-BRANCH-SPLIT.md`](./MIGRATION-BRANCH-SPLIT.md) — which branch to
->    check out; no CLI command is meaningful before this.
-> 2. [`migration-inventory-classify.sql`](./migration-inventory-classify.sql) —
->    per-file APPLIED-UNRECORDED vs NOT-APPLIED for the other 29.
-> 3. [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) —
->    three versions that cannot be recorded at all until renumbered.
+>    check out; no CLI command is meaningful before this. *Resolved 2026-08-18.*
+> 2. [`MIGRATION-VERSION-COLLISIONS.md`](./MIGRATION-VERSION-COLLISIONS.md) —
+>    three versions that could not be recorded at all until renumbered.
+>    *Resolved 2026-08-18; the renames must reach all four branches before any
+>    `repair` runs.*
+> 3. [`migration-inventory-classify.sql`](./migration-inventory-classify.sql) —
+>    all 37 unrecorded versions, one verdict each. **The advisor verifies these
+>    against prod read-only before any CLI command.**
 >
-> Return to this runbook for the seven once those three are resolved. **Step 5's
+> Return to this runbook for the seven once step 3 is verified. **Step 5's
 > `supabase db push` stays off the table until then.**
 
 

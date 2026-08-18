@@ -1,6 +1,13 @@
 # No single branch holds all the migrations
 
-**Status: blocking. Read before running any Supabase CLI command.**
+**Status: RESOLVED on this branch, 2026-08-18. Owner ruling: land the two
+LISA-only migration FILES on `cleanup`, one reconciliation pass.**
+
+> Two passes would mean the CLI's notion of "pending" differs by branch, so each
+> pass reconciles a different universe and neither ever sees the whole set — the
+> same partial-view failure that produced this situation. The migration files
+> only were moved, not the LISA workstream code. Presence on `cleanup` does not
+> apply them; it completes the universe we reconcile from.
 
 Karl ran `supabase migration list` from `C:\Users\14438\projects\Lyceonai` and the
 local list stopped at `20260815000000`. That is not a missing pull — it is the
@@ -53,26 +60,22 @@ stop, one level up: a tool reporting confidently on a set it cannot see all of.
 1. `git fetch origin`
 2. `git checkout cleanup && git pull origin cleanup` — this gets the seven. All
    of them are already merged; there is nothing to merge.
-3. **Decide the destination of `20260814000000` and `20260815000000`.** They are
-   LISA-lane migrations and `lisa` is their correct integration branch under the
-   branch-targeting rule, but the CLI can only reconcile from one tree. Two
-   options, and this is Karl's call, not mine:
-   - reconcile in two passes, once from `cleanup` and once from `lisa`, each pass
-     touching only the versions its tree can see; or
-   - land the two LISA files on `cleanup` first so one pass covers everything.
+3. Nothing further. `20260814000000_crisis_audit_log_nullable_case_id.sql` and
+   `20260815000000_memory_summary_notify_function.sql` now live on `cleanup` as
+   well, so one tree sees every unrecorded version. They remain byte-identical to
+   the `lisa` copies — `git show origin/lisa:<path>` was the source.
 
-   Option (a) keeps branch discipline and needs care that neither pass runs
-   `db push`, which acts on the whole pending set and not on the versions you had
-   in mind. Option (b) is one pass but moves two LISA files into the cleanup lane.
-
-**Until that is decided, `supabase db push` is unsafe from either branch** — from
-`cleanup` it would push the seven and skip the two; from `lisa` the reverse.
+The reconciliation universe is now **37 migration files, 37 distinct versions**
+(the three collisions having been renumbered), all visible from `cleanup`.
 
 ## What this means for the gate
 
 `scripts/ci/migration-inventory-gate.sh` builds its "everything applied" database
-from the working tree, so on `cleanup` those two files are not applied and the
-classifier correctly reports them `NOT-APPLIED`. The gate asserts exactly that
-rather than pretending otherwise. Their real status on prod is still an open
-question the advisor must answer read-only — the gate proves the probe
-discriminates, it does not know what prod has.
+from the working tree. Before the ruling that tree was missing the two LISA files,
+so the gate asserted they read `NOT-APPLIED` — and a sample verdict rendered from
+that build showed them as `NOT-APPLIED → PUSH`. **That row described the local
+build, never prod.** With the files landed, the same build applies them and they
+classify like any other row.
+
+The gate proves the probe discriminates. It does not know what prod has — that is
+the advisor's read-only check, one probe per row.
