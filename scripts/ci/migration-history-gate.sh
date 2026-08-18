@@ -71,7 +71,7 @@ fail() { echo "FAIL [$1]: $2"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "ok   [$1]: $2"; }
 
 cleanup() {
-  for db in mh_full mh_absent; do
+  for db in mh_full mh_absent mh_named; do
     drop_deletion_rehearsal_db "$db" >/dev/null 2>&1 || true
   done
 }
@@ -94,7 +94,9 @@ make_history() { # $1=db  $2=full|legacy
 }
 recorded_count() {
   psql -tAq -d "$1" -c "SELECT count(*) FROM supabase_migrations.schema_migrations
-                         WHERE version IN ('20260816000000','20260816010000');" 2>/dev/null
+                         WHERE version IN ('20260816000000','20260816010000','20260816020000',
+                                           '20260817000000','20260817010000','20260817020000',
+                                           '20260817030000');" 2>/dev/null
 }
 # Console mode: psql -c, exactly how the operator runs these files.
 # NOTICEs are part of what the operator sees (the repair reports what it skipped),
@@ -105,14 +107,19 @@ run_file_tsv() { PGOPTIONS='-c client_min_messages=notice' psql -tAq -F'|' -d "$
 # The action column the audit reports for one version.
 audit_action() { run_file_tsv "$1" "$AUDIT" | awk -F'|' -v v="$2" '$1==v {print $NF; exit}'; }
 
-# Mark the two versions as applied the way the CLI does, so (R3) can assert the
+# Mark all seven versions as applied the way the CLI does, so (R3) can assert the
 # audit flips to consistent. This is a TEST DOUBLE for `supabase migration repair`,
 # not a shipped artifact — ruling Q9 keeps the real thing in the CLI's hands.
 record_applied() { # $1=db
   psql -q -d "$1" -c "
     INSERT INTO supabase_migrations.schema_migrations (version, name)
     VALUES ('20260816000000','psi_occurred_at_backfill_and_seal'),
-           ('20260816010000','canonical_domain_checks')
+           ('20260816010000','canonical_domain_checks'),
+           ('20260816020000','mastery_derivation_gap_detection'),
+           ('20260817000000','diagnostic_once_only_index'),
+           ('20260817010000','student_diagnostic_state'),
+           ('20260817020000','practice_session_abandoned_at'),
+           ('20260817030000','student_baseline_pending')
     ON CONFLICT (version) DO NOTHING;" >/dev/null 2>&1
 }
 
@@ -125,7 +132,8 @@ if ! setup_genesis_db mh_full; then
 else
   make_history mh_full full
 
-  for v in 20260816000000 20260816010000; do
+  for v in 20260816000000 20260816010000 20260816020000 20260817000000 \
+           20260817010000 20260817020000 20260817030000; do
     a="$(audit_action mh_full "$v")"
     case "$a" in
       REPAIR*) ;;
@@ -134,8 +142,8 @@ else
   done
 
   PAR="$(run_file mh_full "$PARITY")"
-  if ! grep -q 'OK — prod schema matches both migrations' <<<"$PAR"; then
-    fail R1 "schema parity did not report OK on a database carrying both migrations
+  if ! grep -q 'OK — prod schema matches all seven migrations' <<<"$PAR"; then
+    fail R1 "schema parity did not report OK on a database carrying all seven migrations
        got: $(grep -oE '(OK|STOP) —.*' <<<"$PAR" | head -1)"
   else
     pass R1 "audit reports REPAIR for both versions and parity reports OK"
@@ -154,12 +162,12 @@ else
   psql -q -d mh_full -c "ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;" >/dev/null 2>&1
   RESTORED="$(run_file mh_full "$PARITY")"
 
-  if grep -q 'OK — prod schema matches both migrations' <<<"$BROKEN"; then
+  if grep -q 'OK — prod schema matches all seven migrations' <<<"$BROKEN"; then
     fail R2 "parity still reported OK with RLS disabled on the backfill log — it is not checking the statements a manual apply is most likely to skip"
   elif ! grep -q 'RLS is NOT enabled' <<<"$BROKEN"; then
     fail R2 "parity STOPped but not on the RLS branch
        got: $(grep -oE '(OK|STOP) —.*' <<<"$BROKEN" | head -1)"
-  elif ! grep -q 'OK — prod schema matches both migrations' <<<"$RESTORED"; then
+  elif ! grep -q 'OK — prod schema matches all seven migrations' <<<"$RESTORED"; then
     fail R2 "parity did not return to OK after RLS was restored — the check is not reading live state"
   else
     pass R2 "disabling RLS flips parity to STOP on the correct branch; restoring it returns OK"
@@ -170,7 +178,8 @@ else
   # -------------------------------------------------------------------------
   echo "==> (R3) recorded + present -> audit consistent"
   record_applied mh_full
-  for v in 20260816000000 20260816010000; do
+  for v in 20260816000000 20260816010000 20260816020000 20260817000000 \
+           20260817010000 20260817020000 20260817030000; do
     a="$(audit_action mh_full "$v")"
     case "$a" in
       consistent*) pass R3 "$v reports consistent once recorded" ;;
@@ -200,11 +209,58 @@ else
   done
   # And parity must refuse here too — nothing to be consistent with.
   PAR="$(run_file mh_absent "$PARITY")"
-  if grep -q 'OK — prod schema matches both migrations' <<<"$PAR"; then
+  if grep -q 'OK — prod schema matches all seven migrations' <<<"$PAR"; then
     fail R4 "parity reported OK on a database where the migrations have not applied"
   else
     pass R4 "PENDING (not REPAIR), and parity refuses on an unapplied schema"
   fi
+fi
+
+
+# ---------------------------------------------------------------------------
+# (R5) parity NAMES the object it is missing
+# ---------------------------------------------------------------------------
+# "Parity fails" is not the property that matters. An operator holding a STOP with
+# no object name has to go object-hunting across seven migrations, and the most
+# likely response to that is to record anyway. The verdict must say WHICH object.
+#
+# Each object below is dropped inside a transaction that is rolled back, so one
+# provisioned database covers every case and none of them leak into the next.
+echo "==> (R5) a dropped object makes parity STOP, naming that object"
+if ! setup_genesis_db mh_named; then
+  fail R5 "could not provision DB"
+else
+  make_history mh_named full
+  R5_OK=1
+  # drop statement                                                            | substring the verdict must contain
+  while IFS='|' read -r drop expect; do
+    [ -z "$drop" ] && continue
+    OUT="$(PGOPTIONS='-c client_min_messages=warning' psql -tAq -d mh_named <<SQL 2>&1
+BEGIN;
+$drop;
+$(cat "$PARITY")
+ROLLBACK;
+SQL
+)"
+    if ! grep -q 'STOP —' <<<"$OUT"; then
+      fail R5 "dropping [$drop] did not make parity STOP (it may have ERRORED instead — a missing object must be a verdict, not an exception)
+       got: $(echo "$OUT" | grep -E 'ERROR|OK —' | head -1 | cut -c1-120)"
+      R5_OK=0
+    elif ! grep -q "$expect" <<<"$OUT"; then
+      fail R5 "parity STOPped for [$drop] but did not name it (expected to see '$expect')
+       got: $(grep -oE 'STOP —.*' <<<"$OUT" | head -1 | cut -c1-140)"
+      R5_OK=0
+    fi
+  done <<'CASES'
+DROP INDEX public.idx_mastery_gap_ledger_observed_at|idx_mastery_gap_ledger_observed_at
+DROP FUNCTION public.record_mastery_derivation_gap()|record_mastery_derivation_gap
+DROP INDEX public.practice_sessions_one_completed_diagnostic_uq|practice_sessions_one_completed_diagnostic_uq
+DROP VIEW public.student_baseline_pending|student_baseline_pending
+ALTER TABLE public.practice_sessions DROP CONSTRAINT practice_sessions_abandoned_not_completed|practice_sessions_abandoned_not_completed
+ALTER TABLE public.questions DROP CONSTRAINT questions_domain_section_canonical|questions_domain_section_canonical
+REVOKE SELECT ON public.student_diagnostic_states FROM service_role|student_diagnostic_states
+CASES
+  [ "$R5_OK" = 1 ] && pass R5 "seven object classes each produce a STOP naming the object"
 fi
 
 echo
