@@ -2,9 +2,14 @@
 -- MIGRATION INVENTORY — is each unrecorded version APPLIED or NOT APPLIED?
 -- ============================================================================
 -- READ-ONLY. One statement. One row per migration FILE (not per version — see
--- the duplicate-version note below). There is no single verdict line by design:
--- the deliverable IS the per-file classification, because the two classes need
--- opposite treatments.
+-- the duplicate-version note below), and one VERDICT PER ROW rather than one for
+-- the file. That is the point: the deliverable is a per-file decision, because
+-- the two classes need opposite treatments and a single summary line would have
+-- to average them into something that is right for neither.
+--
+-- Read the verdict column top to bottom. Any row beginning STOP blocks that
+-- version — and while any STOP remains, `supabase db push` is unsafe for ALL of
+-- them, because push acts on the whole pending set rather than on one version.
 --
 -- WHY THIS EXISTS
 --   supabase_migrations.schema_migrations stops at 20260624020000 (16 rows).
@@ -324,19 +329,27 @@ SELECT
     ELSE                            'NOT-APPLIED'
   END                                                           AS classification,
   CASE
-    WHEN p.kind = 'superseded'
-      THEN 'do nothing yet — resolve before any CLI operation'
-    WHEN p.kind = 'inert'
-      THEN 'either is safe — repair is preferred, it keeps the runner quiet'
     WHEN p.file LIKE '%[COLLISION]%'
-      THEN 'BLOCKED — version claimed by two files; see MIGRATION-VERSION-COLLISIONS.md'
+      THEN 'STOP — version claimed by two files; neither can be recorded. See MIGRATION-VERSION-COLLISIONS.md'
+    WHEN p.kind = 'superseded'
+      THEN 'STOP — undecidable from object state; owner ruling required before repair or push'
+    WHEN p.kind = 'inert'
+      THEN 'OK — repair or push, both reach the same schema; repair preferred, it keeps the runner quiet'
     WHEN p.present AND p.kind = 'absence'
-      THEN 'likely repair — evidence is a REMOVAL, confirm intent before recording'
+      THEN 'REPAIR (confirm first) — the evidence is a REMOVAL, which another actor could also have caused'
     WHEN p.present AND p.kind = 'chain-head'
-      THEN 'likely repair — read together with the later row that replaces the same object'
+      THEN 'REPAIR (confirm first) — read with the later row that replaces the same object'
     WHEN p.present
-      THEN 'supabase migration repair --status applied ' || p.version
-    ELSE 'supabase db push (it is genuinely pending)'
-  END                                                           AS treatment
+      THEN 'REPAIR — supabase migration repair --status applied ' || p.version
+    WHEN p.kind = 'unique-rows'
+         AND (SELECT count(*) FROM public.tutor_context_runtime_config
+               WHERE key IN ('study_context_freshness_days',
+                             'teaching_profile_freshness_days',
+                             'recent_learning_pattern_freshness_days',
+                             'observation_promotion_threshold',
+                             'friction_long_pause_seconds')) > 0
+      THEN 'STOP — partial row set; something outside the migration wrote or deleted these rows'
+    ELSE 'PUSH — genuinely pending, but only via a push scoped to versions classified this way'
+  END                                                           AS verdict
 FROM probes p
 ORDER BY p.version, p.file;
