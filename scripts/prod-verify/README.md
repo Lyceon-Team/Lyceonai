@@ -129,63 +129,61 @@ asserts the event-time tables are EMPTY — the correct acceptance signature for
 *pure backfill* and nothing else. That STOP is expected and is not a regression.
 After the live path is exercised, `live-event-verify.sql` is the file to run.
 
-### Migration-history reconciliation (separate track — HELD until Priority 0 clears)
+### Migration-history reconciliation — SEVEN versions (do this FIRST)
 
-`20260816000000` and `20260816010000` were applied by direct SQL execution, so the
-migration runner has no record of them.
+`supabase_migrations.schema_migrations` records **none** of the seven migrations
+below, though every object exists on prod. The next `supabase db push` attempts to
+replay all seven. This is the largest unaddressed risk in the repo and it fires the
+next time anyone ships schema.
 
 **Steps live in [`MIGRATION-HISTORY-REPAIR.md`](./MIGRATION-HISTORY-REPAIR.md).**
-The decisions and rationale are in
+Decisions and rationale in
 [`MIGRATION-HISTORY-RECONCILIATION.md`](./MIGRATION-HISTORY-RECONCILIATION.md).
+
+| Version | What it created |
+|---|---|
+| `20260816000000` | backfill log + `psi_resolved_requires_occurred_at` |
+| `20260816010000` | two canonical `(section, domain)` CHECKs |
+| `20260816020000` | gap views, ledger, ledger index, recorder function |
+| `20260817000000` | `practice_sessions_one_completed_diagnostic_uq` |
+| `20260817010000` | `student_diagnostic_states` + `student_diagnostic_state(uuid)` |
+| `20260817020000` | `practice_sessions.abandoned_at` + its seal |
+| `20260817030000` | `student_baseline_pending` |
 
 | # | Step | Writes? | Expected verdict |
 |---|---|---|---|
-| A | `migration-schema-parity.sql` — **runs FIRST, must pass** | no | `OK — prod schema matches both migrations; safe to record them as applied` |
-| B | `migration-history-audit.sql` | no | `REPAIR` for both target versions |
-| C | `supabase migration repair --status applied` ×2 (**CLI**, ruling Q9) | bookkeeping only | `Repaired migration history: [...] => applied` |
-| D | `migration-history-audit.sql` again | no | `consistent` for both target versions |
-| E | `supabase db push` — applies `20260816020000` **through the runner** | yes | — |
-| F | `2.4-post-apply.sql` | no | `OK — gap detector deployed; views, ledger, function and grants all present` |
+| A | `migration-schema-parity.sql` — **runs FIRST, must pass** | no | `OK — prod schema matches all seven migrations; safe to record them as applied` |
+| A1 | `migration-schema-parity-detail.sql` | no | only if A says STOP: every check, deviations first |
+| B | `migration-history-audit.sql` | no | `REPAIR` for all seven |
+| C | `supabase migration repair --status applied` ×7 (**CLI**, ruling Q9) | bookkeeping only | `Repaired migration history: [...] => applied` ×7 |
+| D | `migration-history-audit.sql` again | no | `consistent` for all seven |
 
-Order is load-bearing: parity before recording. Recording "these ran successfully"
-before proving prod matches what they produce records a belief, not a fact — and a
-version marked applied is skipped by the runner forever.
+Order is load-bearing: **parity before recording.** Recording "these ran
+successfully" before proving prod matches what they produce records a belief, not a
+fact — and a version marked applied is skipped by the runner forever, so a wrong
+belief becomes permanent and silent.
 
 There is no `migration-history-repair.sql`. Ruling Q9 puts the repair in the CLI's
-hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing the
-column shape the runner expects. CI fails if that file reappears.
+hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing
+the column shape the runner expects. CI fails if that file reappears.
 
-### Session lifecycle — steps 2, 1, 8 and 9 (four migrations)
+### Gap-detector noise fix — `20260818000000` (AFTER the reconciliation above)
 
-Four migrations close the diagnostic-lifecycle defects. Order is load-bearing in
-one place only, and it is the first row: **`resolve-duplicate-diagnostic.sql` must
-have been RUN before `20260817000000` is applied.** Production holds a student with
-a completed diagnostic and an in-flight one; the index builds happily over that and
-then strands the in-flight session on its fortieth answer, which the student sees
-as a 500. `3.1-pre-apply.sql` is the check that it was run.
+On its first day the detector reported **84 gaps out of 91 answered items** — every
+item the Step 8 backfill rebuilt, because `backfill_recompute_student` writes no
+per-event audit row. An alert that is 100% noise on arrival gets muted.
 
-The other three are independent of each other and of the reconciliation track.
+This is a NEW migration, so it goes **through the runner** (`supabase db push`),
+which is only safe once the seven above are recorded.
 
-| # | File | Writes? | Expected verdict |
+| # | Step | Writes? | Expected verdict |
 |---|---|---|---|
-| S0 | `resolve-duplicate-diagnostic-preview.sql` → `resolve-duplicate-diagnostic.sql` | **yes** | see the rows above; must be run before S1 |
-| S1 | `3.1-pre-apply.sql` | no | `OK — safe to apply 20260817000000` |
-| S2 | *apply* `20260817000000_diagnostic_once_only_index.sql` | yes | — |
-| S3 | `3.1-post-apply.sql` | no | `OK — 20260817000000 applied; one completed diagnostic per student is enforced` |
-| S4 | *apply* `20260817010000_student_diagnostic_state.sql` | yes | — |
-| S5 | `3.2-post-apply.sql` | no | `OK — 20260817010000 applied; the derivation answers for the pinned student` |
-| S5a | `3.2-post-apply-detail.sql` | no | record who is in which state |
-| S6 | `3.3-pre-apply.sql` | no | `OK — safe to apply 20260817020000` |
-| S6a | `3.3-pre-apply-detail.sql` | no | record where each `abandoned_at` comes from |
-| S7 | *apply* `20260817020000_practice_session_abandoned_at.sql` | yes | — |
-| S8 | `3.3-post-apply.sql` | no | `OK — 20260817020000 applied; abandoned rows repaired and sealed, completed sessions untouched` |
-| S9 | *apply* `20260817030000_student_baseline_pending.sql` | yes | — |
-| S10 | `3.4-post-apply.sql` | no | `OK — 20260817030000 applied; the staleness surface reads` |
+| E | *apply* `20260818000000_gap_detector_excludes_backfilled.sql` via `supabase db push` | yes | — |
+| F | `4.1-post-apply.sql` | no | `OK — 20260818000000 applied; both branches exclude backfilled events` |
 
-`3.4-post-apply.sql` reports `stale_students` and deliberately keeps it out of the
-verdict: a non-zero count is a finding about the data, not a failure of the
-migration, and production is expected to show at least one until
-`baseline-repair.sql` has run.
+`4.1-post-apply.sql` reports `open_gaps` and deliberately keeps it out of the
+verdict: after the fix a non-zero count is a genuinely un-emitted event — a finding
+about the data, and exactly what the detector is for.
 
 ### Before every migration apply
 
