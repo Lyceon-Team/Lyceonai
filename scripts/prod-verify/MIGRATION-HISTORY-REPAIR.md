@@ -68,16 +68,22 @@ scripts/prod-verify/migration-schema-parity.sql
 **Required verdict:**
 
 ```
-OK — prod schema matches both migrations; safe to record them as applied
+OK — prod schema matches all seven migrations; safe to record them as applied
 ```
 
-This checks every object the two migrations create, including the statements a
-manual apply is most likely to have skipped and which are invisible afterwards:
-`ENABLE ROW LEVEL SECURITY`, the `REVOKE`/`GRANT` pair, and the primary key on the
-backfill log.
+That is 28 checks across the seven versions. The verdict row also reports
+`checks_run`, `checks_passed`, `checks_failed`, `versions_with_deviations` and
+`deviating_versions` — on a pass those read `28 / 28 / 0 / 0 / (none)`.
 
-**Any other verdict: STOP.** The verdict names which object is wrong. Fix the gap
-first — do not proceed to Step 3. Repairing history over a schema that does not
+It checks every object the seven migrations create, including the statements a
+manual apply is most likely to have skipped and which are invisible afterwards:
+`ENABLE ROW LEVEL SECURITY`, the `REVOKE`/`GRANT` pair, the primary key on the
+backfill log, the R2 RLS gate, each index's uniqueness and validity, and
+`prosecdef` on every SECURITY DEFINER function.
+
+**Any other verdict: STOP.** The verdict names the first failing object; run
+`scripts/prod-verify/migration-schema-parity-detail.sql` for the full list. Fix the
+gap first — do not proceed to Step 3. Repairing history over a schema that does not
 match is the one irreversible mistake available here.
 
 ## Step 2 — confirm the drift is what you think it is (READ-ONLY)
@@ -86,21 +92,22 @@ match is the one irreversible mistake available here.
 scripts/prod-verify/migration-history-audit.sql
 ```
 
-**Required:** both `20260816000000` and `20260816010000` report
+**Required:** all seven versions report
 
 ```
 REPAIR — objects exist but the version is not recorded
 ```
 
-`20260816020000` will report `PENDING — not applied and not recorded`. That is
-correct and expected — it has genuinely never run and is handled in Step 5, not
-here.
+One row per version, seven rows, same verdict on each. `20260816020000` is included:
+its objects — the two gap views, the ledger table, `idx_mastery_gap_ledger_observed_at`
+and `record_mastery_derivation_gap()` — were verified present on prod read-only on
+2026-08-18, so it is a REPAIR like the other six, not a PENDING.
 
 | If a target version reports | Then |
 |---|---|
 | `consistent — nothing to do` | already repaired. Skip to Step 5. |
 | `INVESTIGATE — recorded as applied but the objects are missing` | **STOP.** Something dropped the objects or the version was recorded against a different database. Do not repair. |
-| `PENDING` for any of the seven | the objects are gone. Do not repair — this contradicts Step 1 and one of the two readings is wrong. |
+| `PENDING — not applied and not recorded` for any of the seven | the objects are gone. Do not repair — this contradicts Step 1, and one of the two readings is wrong. |
 
 ## Step 3 — mark the seven versions as applied (WRITES bookkeeping only)
 
@@ -155,16 +162,29 @@ tells you the true state regardless, but the list saves a round of guessing.
 scripts/prod-verify/migration-history-audit.sql
 ```
 
-**Required:** both target versions now report
+**Required:** all seven versions now report
 
 ```
 consistent — nothing to do
 ```
 
-`20260816020000` still reports `PENDING`. Correct.
+Seven rows, one verdict each, no `REPAIR` and no `PENDING` left among them.
 
-If a target version still reports `REPAIR`, the CLI did not write the row — do not
-retry blindly, check the CLI output from Step 3 first.
+If a version still reports `REPAIR`, the CLI did not write the row — do not retry
+blindly, check the CLI output from Step 3 for that version first.
+
+**Then cross-check from the CLI's own side (READ-ONLY):**
+
+```bash
+supabase migration list
+```
+
+The audit reads `supabase_migrations.schema_migrations` directly; this reads it
+through the runner, which is the reader that actually decides what gets replayed.
+All seven versions must appear with a value in BOTH the `Local` and `Remote`
+columns. A version showing `Local` but a blank `Remote` is still un-recorded from
+the runner's point of view no matter what the audit says — **STOP**, and do not
+run `supabase db push` until the two readings agree.
 
 ## Step 5 — from here, every migration goes THROUGH THE RUNNER
 

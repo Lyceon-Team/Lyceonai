@@ -157,6 +157,7 @@ Decisions and rationale in
 | B | `migration-history-audit.sql` | no | `REPAIR` for all seven |
 | C | `supabase migration repair --status applied` ×7 (**CLI**, ruling Q9) | bookkeeping only | `Repaired migration history: [...] => applied` ×7 |
 | D | `migration-history-audit.sql` again | no | `consistent` for all seven |
+| D1 | `supabase migration list` (**CLI**) | no | all seven present in BOTH `Local` and `Remote` |
 
 Order is load-bearing: **parity before recording.** Recording "these ran
 successfully" before proving prod matches what they produce records a belief, not a

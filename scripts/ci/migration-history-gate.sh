@@ -263,6 +263,63 @@ CASES
   [ "$R5_OK" = 1 ] && pass R5 "seven object classes each produce a STOP naming the object"
 fi
 
+# ── R6 — the runbook quotes the verdicts the SQL actually emits ─────────────
+# Karl compares the console output to this doc verbatim, so a verdict string that
+# drifts in the SQL and not in the doc is an operator-facing defect: it reads as a
+# deviation when nothing deviated, or worse, as a match when it is not one. Caught
+# for real on 2026-08-18 — the doc still said "matches both migrations" after the
+# file had moved to seven.
+#
+# Proving mechanism: extract each literal from the SQL, require it in the doc.
+# Mutation that must turn this red: edit a verdict string in
+# migration-schema-parity.sql or migration-history-audit.sql without editing the
+# runbook.
+R6_OK=1
+
+PARITY_OK_VERDICT="$(grep -oE "OK — prod schema matches [^']*" "$PARITY" | head -1)"
+if [ -z "$PARITY_OK_VERDICT" ]; then
+  fail R6 "could not extract the OK verdict from migration-schema-parity.sql"
+  R6_OK=0
+elif ! grep -qF "$PARITY_OK_VERDICT" "$RUNBOOK"; then
+  fail R6 "the runbook does not quote the parity OK verdict verbatim
+       SQL emits: $PARITY_OK_VERDICT"
+  R6_OK=0
+fi
+
+while IFS= read -r verdict; do
+  [ -n "$verdict" ] || continue
+  if ! grep -qF "$verdict" "$RUNBOOK"; then
+    fail R6 "the runbook does not quote an audit verdict verbatim
+       SQL emits: $verdict"
+    R6_OK=0
+  fi
+done < <(grep -oE "'(consistent|REPAIR|INVESTIGATE|PENDING) — [^']*'" "$AUDIT" | tr -d "'" | sort -u)
+
+# Recording order is load-bearing (ascending), so the doc must list it that way.
+EXPECTED_ORDER="20260816000000
+20260816010000
+20260816020000
+20260817000000
+20260817010000
+20260817020000
+20260817030000"
+RUNBOOK_ORDER="$(grep -oE 'supabase migration repair --status applied [0-9]{14}' "$RUNBOOK" \
+                 | awk '{print $NF}')"
+if [ "$RUNBOOK_ORDER" != "$EXPECTED_ORDER" ]; then
+  fail R6 "the runbook's seven repair commands are missing, extra, or out of ascending order
+       got: $(echo "$RUNBOOK_ORDER" | tr '\n' ' ')"
+  R6_OK=0
+fi
+
+# A verdict the SQL can no longer emit is worse than a missing one: it tells the
+# operator a passing run deviated.
+if grep -qE 'matches both migrations|the two migrations create' "$RUNBOOK"; then
+  fail R6 "the runbook still carries two-migration verdict text the SQL cannot emit"
+  R6_OK=0
+fi
+
+[ "$R6_OK" = 1 ] && pass R6 "runbook quotes every verdict the SQL emits, seven commands ascending"
+
 echo
 if [ "$FAILURES" -ne 0 ]; then
   echo "MIGRATION HISTORY GATE: FAIL ($FAILURES case(s))"
