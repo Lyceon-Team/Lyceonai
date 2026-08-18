@@ -2,10 +2,12 @@
  * ╔══════════════════════════════════════════════════════════════════╗
  * ║  THROWAWAY DIAGNOSTIC — delete after the run                   ║
  * ║                                                                ║
- * ║  Ablation V2 (WS-L6): model-half diagnostic per Doc 03D §5.2  ║
- * ║  / §7.4. Exercises all WS-L6 changes: grounding clause,       ║
- * ║  forced-choice diagnostics, few-shot examples, item block      ║
- * ║  with question content, and C5 regression fix.                 ║
+ * ║  Ablation V2 (WS-L7): structural fix — state blocks moved     ║
+ * ║  from user-turn injection to systemInstruction. Previous runs  ║
+ * ║  (L5→L6) placed state blocks as role:"user" content entries,   ║
+ * ║  which the SDK merged with consecutive student messages into    ║
+ * ║  one turn — state blocks lost structural authority. Now         ║
+ * ║  appended to systemInstruction for system-level authority.      ║
  * ║                                                                ║
  * ║  Configs:                                                      ║
  * ║    CASE-01 × 6 (full + 5 ablations)                            ║
@@ -33,7 +35,7 @@ if (!apiKey) {
 }
 
 const client = new GoogleGenAI({ apiKey });
-const MODEL = "gemini-2.5-flash";
+const MODEL = process.env.MODEL_OVERRIDE || "gemini-2.5-flash";
 const TEMPERATURE = 0;
 
 // ── Mastery band helper (from mastery-bands.ts) ────────────────────────
@@ -611,23 +613,25 @@ const CASE_29 = {
 
 // ── Build Gemini contents from scenario ────────────────────────────────
 
-function buildContents(request, stateBlockText) {
+// ── STRUCTURAL FIX (WS-L7): state blocks moved to systemInstruction ──
+// Previous approach: state blocks were injected as a role:"user" content
+// entry with a "[system note]" prefix, right before the final student turn
+// (Doc 03D §7.2 late placement). This produced consecutive user entries
+// that the SDK merged into one turn — the state blocks became text inside
+// a student turn with no structural authority, which is why prohibitions
+// in systemInstruction landed across 18 responses while every directive
+// in the state blocks was ignored.
+//
+// New approach: state blocks are appended to the systemInstruction string,
+// giving them system-level authority. Tradeoff: contradicts §7.2's late-
+// placement rule, but each ablation call is single-turn, and state blocks
+// are appended at the END of the system instruction (maximum recency
+// within the structurally privileged location).
+function buildContents(request) {
   const contents = [];
   const msgs = [...request.recent_messages];
 
-  for (let i = 0; i < msgs.length; i++) {
-    const msg = msgs[i];
-    const isLastStudent = msg.role === "student" && i === msgs.length - 1;
-
-    // Late placement (Doc 03D §7.2): inject state block right before
-    // the final student turn.
-    if (isLastStudent && stateBlockText) {
-      contents.push({
-        role: "user",
-        parts: [{ text: `[system note] ${stateBlockText}` }],
-      });
-    }
-
+  for (const msg of msgs) {
     if (msg.role === "tutor") {
       contents.push({
         role: "model",
@@ -709,12 +713,15 @@ function buildConfigs(request) {
 
 // ── Call Gemini ─────────────────────────────────────────────────────────
 
-async function callGemini(systemInstruction, contents) {
+async function callGemini(systemInstruction, contents, stateBlocks) {
+  const fullSysInstr = stateBlocks
+    ? `${systemInstruction}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`
+    : systemInstruction;
   const response = await client.models.generateContent({
     model: MODEL,
     contents,
     config: {
-      systemInstruction,
+      systemInstruction: fullSysInstr,
       temperature: TEMPERATURE,
       topP: 0.95,
       topK: 40,
@@ -739,8 +746,8 @@ function printSection(label) {
 
 async function main() {
   console.log(SEP);
-  console.log("ABLATION V2 (WS-L6) — MODEL-HALF DIAGNOSTIC");
-  console.log("Doc 03D §5.2 / §7.4 — grounding + forced choice + item block");
+  console.log("ABLATION V2 (WS-L7) — STRUCTURAL FIX: STATE BLOCKS → systemInstruction");
+  console.log("State blocks appended to systemInstruction (not injected in user turns)");
   console.log(`Model: ${MODEL} | Temperature: ${TEMPERATURE}`);
   console.log(SEP);
 
@@ -771,12 +778,12 @@ async function main() {
     console.log(`CONFIG: ${config.label}`);
     console.log(HSEP);
 
-    console.log("\n>>> STATE BLOCK (verbatim):");
-    console.log(config.stateBlocks ?? "(null — no state block)");
+    console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
+    console.log(config.stateBlocks ?? "(null — base systemInstruction only)");
 
-    const contents = buildContents(CASE_01, config.stateBlocks);
+    const contents = buildContents(CASE_01);
 
-    console.log("\n>>> CONVERSATION (as sent to Gemini):");
+    console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
     for (const msg of contents) {
       const text = msg.parts[0].text;
       console.log(`  [${msg.role}] ${text}`);
@@ -784,7 +791,7 @@ async function main() {
 
     console.log("\n>>> CALLING GEMINI...");
     try {
-      const response = await callGemini(sysInstr, contents);
+      const response = await callGemini(sysInstr, contents, config.stateBlocks);
       console.log("\n>>> MODEL RESPONSE:");
       console.log(response);
     } catch (e) {
@@ -807,12 +814,12 @@ async function main() {
 
   const fullStateBlocks18 = renderStateBlocks(CASE_18);
 
-  console.log("\n>>> STATE BLOCK (verbatim):");
+  console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
   console.log(fullStateBlocks18 ?? "(null)");
 
-  const contents18 = buildContents(CASE_18, fullStateBlocks18);
+  const contents18 = buildContents(CASE_18);
 
-  console.log("\n>>> CONVERSATION (as sent to Gemini):");
+  console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
   for (const msg of contents18) {
     const text = msg.parts[0].text;
     console.log(`  [${msg.role}] ${text}`);
@@ -820,7 +827,7 @@ async function main() {
 
   console.log("\n>>> CALLING GEMINI...");
   try {
-    const response18 = await callGemini(sysInstr, contents18);
+    const response18 = await callGemini(sysInstr, contents18, fullStateBlocks18);
     console.log("\n>>> MODEL RESPONSE:");
     console.log(response18);
   } catch (e) {
@@ -837,12 +844,12 @@ async function main() {
 
   const fullStateBlocks29 = renderStateBlocks(CASE_29);
 
-  console.log("\n>>> STATE BLOCK (verbatim):");
+  console.log("\n>>> STATE BLOCK (appended to systemInstruction):");
   console.log(fullStateBlocks29 ?? "(null)");
 
-  const contents29 = buildContents(CASE_29, fullStateBlocks29);
+  const contents29 = buildContents(CASE_29);
 
-  console.log("\n>>> CONVERSATION (as sent to Gemini):");
+  console.log("\n>>> CONVERSATION (as sent to Gemini — no state block injection):");
   for (const msg of contents29) {
     const text = msg.parts[0].text;
     console.log(`  [${msg.role}] ${text}`);
@@ -850,7 +857,7 @@ async function main() {
 
   console.log("\n>>> CALLING GEMINI...");
   try {
-    const response29 = await callGemini(sysInstr, contents29);
+    const response29 = await callGemini(sysInstr, contents29, fullStateBlocks29);
     console.log("\n>>> MODEL RESPONSE:");
     console.log(response29);
   } catch (e) {
@@ -858,7 +865,7 @@ async function main() {
   }
 
   console.log(`\n${SEP}`);
-  console.log("ABLATION V2 (WS-L6) COMPLETE");
+  console.log("ABLATION V2 (WS-L7) COMPLETE");
   console.log(SEP);
 }
 
