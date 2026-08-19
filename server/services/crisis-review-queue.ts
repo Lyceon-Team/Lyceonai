@@ -67,8 +67,8 @@ type UpdateDispositionParams = {
 };
 
 type AuditLogParams = {
-  caseId: string;
-  conversationId: string;
+  caseId: string | null;
+  conversationId: string | null;
   reviewerId: string;
   action: AuditAction;
   metadata?: Record<string, unknown>;
@@ -165,8 +165,8 @@ export async function writeAuditLogEntry(
   const { error } = await supabaseServer
     .from("crisis_review_audit_log")
     .insert({
-      case_id: params.caseId,
-      conversation_id: params.conversationId,
+      case_id: params.caseId ?? undefined,
+      conversation_id: params.conversationId ?? undefined,
       reviewer_id: params.reviewerId,
       action: params.action,
       metadata: params.metadata ?? {},
@@ -194,9 +194,24 @@ export async function writeAuditLogEntry(
 
 /**
  * Lists crisis review cases with pagination, filtered by status.
- * Every call writes an audit log entry per SCL-025.
+ * Every call writes a durable audit log entry per SCL-025.
  *
  * @spec [Doc-03_V3 §21.3, SCL-025]
+ * @implemented 2026-08-14
+ *
+ * plain English: paginated list of crisis review cases for the admin surface.
+ * SCL-025 mandates every read is logged append-only with reviewer identity,
+ * timestamp, and action. The audit write is BLOCKING — if it fails, the read
+ * fails (audit-before-data per SCL-025 §c). A logger.adminAction call is NOT
+ * a durable audit row and does not satisfy SCL-025.
+ *
+ * trade-offs: the list endpoint does not have a single case_id/conversation_id
+ * to log against. We log a "list_viewed" action with the query parameters
+ * and result count in metadata, with case_id and conversation_id set to NULL.
+ * Requires 20260814000000_crisis_audit_log_nullable_case_id.sql migration.
+ *
+ * edge cases: if no cases match the filter, the audit log still records the
+ * read attempt (result_count: 0).
  */
 export async function listCrisisReviewCases(params: {
   reviewerId: string;
@@ -233,10 +248,30 @@ export async function listCrisisReviewCases(params: {
     throw new Error(`failed to list crisis review cases: ${error.message}`);
   }
 
-  return {
-    cases: (data ?? []) as Record<string, unknown>[],
-    total: count ?? 0,
-  };
+  const cases = (data ?? []) as Record<string, unknown>[];
+  const total = count ?? 0;
+
+  // SCL-025: every read logged append-only — durable audit row, not just logger.
+  // case_id and conversation_id are null for aggregate operations (list has no
+  // single case). Requires 20260814000000_crisis_audit_log_nullable_case_id.sql.
+  await writeAuditLogEntry({
+    caseId: null,
+    conversationId: null,
+    reviewerId: params.reviewerId,
+    action: "viewed",
+    metadata: {
+      surface: "list_cases",
+      filter_status: params.status ?? "all",
+      limit: params.limit,
+      offset: params.offset,
+      result_count: cases.length,
+      total,
+    },
+    ip: params.ip,
+    requestId: params.requestId,
+  });
+
+  return { cases, total };
 }
 
 /**
@@ -406,11 +441,31 @@ export async function claimCaseForReview(params: {
 
 /**
  * Finds all open crisis review cases past their SLA deadline.
- * Called by the Cloud Scheduler SLA sweep (sub-task 4).
+ * Called by the Cloud Scheduler SLA sweep (sub-task 4) and the admin
+ * review surface. Writes a durable audit log entry per SCL-025.
  *
- * @spec [Doc-03_V3 §21.3]
+ * @spec [Doc-03_V3 §21.3, SCL-025]
+ * @implemented 2026-08-14
+ *
+ * plain English: returns all open cases past their 48h SLA deadline,
+ * ordered oldest-first. The audit write uses a sentinel case_id because
+ * this is a sweep across all cases, not a single-case view.
+ *
+ * trade-offs: the SLA sweep may be called by Cloud Scheduler (no human
+ * reviewer) or by the admin review surface (human reviewer). Audit params
+ * are optional: when provided, a durable audit row is written per SCL-025.
+ * When omitted (cron sweep), no audit row — the cron sweep is a system
+ * operation, not an admin surface read. SCL-025's mandate applies to
+ * human reviewers accessing crisis content.
+ *
+ * edge cases: zero breached cases still writes an audit row when called
+ * from the admin surface.
  */
-export async function getBreachedCases(): Promise<Record<string, unknown>[]> {
+export async function getBreachedCases(params?: {
+  reviewerId: string;
+  ip: string;
+  requestId: string;
+}): Promise<Record<string, unknown>[]> {
   const now = new Date().toISOString();
 
   const { data, error } = await supabaseServer
@@ -430,13 +485,44 @@ export async function getBreachedCases(): Promise<Record<string, unknown>[]> {
     throw new Error(`breach sweep query failed: ${error.message}`);
   }
 
-  return (data ?? []) as Record<string, unknown>[];
+  const cases = (data ?? []) as Record<string, unknown>[];
+
+  // SCL-025: durable audit row when called from admin surface (params provided).
+  // Cron sweep (no params) skips audit — system operation, not admin surface read.
+  if (params) {
+    await writeAuditLogEntry({
+      caseId: null,
+      conversationId: null,
+      reviewerId: params.reviewerId,
+      action: "viewed",
+      metadata: {
+        surface: "sla_breach_sweep",
+        breached_count: cases.length,
+        sweep_timestamp: now,
+      },
+      ip: params.ip,
+      requestId: params.requestId,
+    });
+  }
+
+  return cases;
 }
 
 /**
- * Returns audit trail for a specific case.
+ * Returns audit trail for a specific case. Writes a durable audit log
+ * entry for the read itself per SCL-025 (reading the audit trail is
+ * itself an auditable action).
  *
  * @spec [SCL-025]
+ * @implemented 2026-08-14
+ *
+ * plain English: fetches all audit log entries for a case, ordered
+ * chronologically. The read is itself audit-logged — an admin viewing
+ * the audit trail is a reviewable event per SCL-025.
+ *
+ * edge cases: the audit row written by this function will appear in
+ * future reads of the same case's audit trail. This is intentional —
+ * the trail shows who looked at it and when.
  */
 export async function getCaseAuditLog(params: {
   caseId: string;
@@ -460,6 +546,23 @@ export async function getCaseAuditLog(params: {
     );
     throw new Error(`audit log read failed: ${error.message}`);
   }
+
+  // SCL-025: reading the audit trail is itself an auditable action.
+  // This write appears in future reads of the same case's trail.
+  // conversation_id is null here — the case_id is sufficient to identify
+  // the access, and the conversation_id is derivable from the case.
+  await writeAuditLogEntry({
+    caseId: params.caseId,
+    conversationId: null,
+    reviewerId: params.reviewerId,
+    action: "viewed",
+    metadata: {
+      surface: "audit_trail_view",
+      entries_returned: (data ?? []).length,
+    },
+    ip: params.ip,
+    requestId: params.requestId,
+  });
 
   return (data ?? []) as Record<string, unknown>[];
 }

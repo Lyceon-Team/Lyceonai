@@ -51,6 +51,7 @@ import type {
   MasterySnapshot,
   KpiState,
   MemoryStructuredFields,
+  QuestionContent,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { getMemorySummaries, getStructuredFields } from "./tutor-memory";
 import { TutorConfig } from "./tutor-config";
@@ -72,6 +73,12 @@ type EnvelopeParams = {
   // Anti-leak field (LISA-FULL-001): resolved BFF-side, passed to worker.
   // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
   correctAnswer: string | null;
+  // Server-derived post-submit flag (Doc 03D §6.3). The BFF resolves this
+  // from practice_session_items.status; the envelope uses it to gate both
+  // explanation release and the correct_answer wire value. correct_answer
+  // stays BFF-local for the output scan when isPostSubmit is false.
+  // @spec [Doc-03D_V1.2 §6.3, INV-03-04]
+  isPostSubmit: boolean;
 };
 
 // ── Self-deprecation keywords (V1 simple scan) ─────────────────────────
@@ -296,6 +303,114 @@ export async function resolveScope(
   }
 
   return parsed.data;
+}
+
+// ── Question Content Resolution ───────────────────────────────────────
+
+/**
+ * @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, INV-03-04]
+ * @implemented 2026-08-18
+ *
+ * plain English: Resolves question content from the practice_session_items
+ * table. The table denormalizes question content alongside the student's
+ * selected answer, so a single query provides everything. Ownership is
+ * guaranteed by the user_id predicate (tutor-context.ts already queries
+ * this table with ownership predicates — we do not weaken them).
+ *
+ * Anti-leak: explanation is set to null when isPostSubmit is false
+ * (pre-submit). Gating keys on the server-derived boolean, never on
+ * correctAnswer presence (Doc 03D §6.3). The correct_answer column is
+ * NEVER included in the select — it does not appear on the wire.
+ *
+ * expected outcome: QuestionContent | null. Degrades to null on DB error
+ * or missing session item (general mode).
+ */
+async function resolveQuestionContent(
+  studentId: string,
+  scope: z.infer<typeof resolvedScopeSchema>,
+  isPostSubmit: boolean,
+): Promise<QuestionContent | null> {
+  // No session item → no question context (general mode)
+  if (!scope.source_session_item_id) return null;
+
+  try {
+    const { data, error } = await supabaseServer
+      .from("practice_session_items")
+      .select(
+        "question_stem, question_passage, question_options, question_item_type, " +
+          "question_explanation, selected_answer, ordinal",
+      )
+      .eq("id", scope.source_session_item_id)
+      .eq("user_id", studentId)
+      .maybeSingle();
+
+    if (error) {
+      logger.warn(
+        "TUTOR_CONTEXT",
+        "question_content_query_failed",
+        "Could not fetch question content; degrading to null",
+        { message: error.message, code: error.code },
+      );
+      return null;
+    }
+
+    if (!data) {
+      logger.warn(
+        "TUTOR_CONTEXT",
+        "question_content_not_found",
+        "practice_session_items row not found for question content; degrading to null",
+        { sessionItemId: scope.source_session_item_id },
+      );
+      return null;
+    }
+
+    // Parse options from JSONB — expected format: [{key: "A", text: "..."}, ...]
+    const rawOptions = data.question_options as unknown;
+    const options: Array<{ key: string; text: string }> = Array.isArray(
+      rawOptions,
+    )
+      ? (rawOptions as Array<Record<string, unknown>>)
+          .filter(
+            (o): o is Record<string, unknown> & { key: string; text: string } =>
+              typeof o === "object" &&
+              o !== null &&
+              typeof o["key"] === "string" &&
+              typeof o["text"] === "string",
+          )
+          .map((o) => ({ key: o.key, text: o.text }))
+      : [];
+
+    const itemType =
+      (data.question_item_type as string) === "grid_in"
+        ? ("grid_in" as const)
+        : ("mcq" as const);
+
+    // Anti-leak gate (INV-03-04, Doc 03D §6.3): explanation is null
+    // pre-submit. Gated on the server-derived isPostSubmit boolean,
+    // never on correctAnswer presence — a caller-supplied field gating
+    // a safety decision is a field an attacker sets (§6.3).
+    const explanation = isPostSubmit
+      ? ((data.question_explanation as string) ?? null)
+      : null;
+
+    return {
+      stem: data.question_stem as string,
+      passage: (data.question_passage as string) ?? null,
+      options,
+      item_type: itemType,
+      explanation,
+      student_answer: (data.selected_answer as string) ?? null,
+      attempt_number: (data.ordinal as number) ?? 0,
+    };
+  } catch (err) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "question_content_unexpected_error",
+      "Unexpected error resolving question content; degrading to null",
+      { error: String(err) },
+    );
+    return null;
+  }
 }
 
 // ── Learning Context Resolution ────────────────────────────────────────
@@ -1063,11 +1178,16 @@ export async function resolveFullEnvelope(
   );
 
   // ── Step 2: Parallel resolution of remaining subsections ───────────
-  const [learningContext, memorySummaries, structuredFields] =
+  const [learningContext, memorySummaries, structuredFields, questionContent] =
     await Promise.all([
       resolveLearningContext(params.studentId, resolvedScope),
       resolveMemorySummariesSafe(params.studentId),
       resolveStructuredFieldsSafe(params.studentId),
+      resolveQuestionContent(
+        params.studentId,
+        resolvedScope,
+        params.isPostSubmit,
+      ),
     ]);
 
   // ── Step 3: Policy assignment (deterministic default) ──────────────
@@ -1092,9 +1212,20 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Anti-leak field (LISA-FULL-001): BFF resolves; worker scans when non-null.
-    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
-    correct_answer: params.correctAnswer,
+    // Question content (Doc 03A §5.4, Doc 03C §4.4): CONTENT, never canonical ID.
+    // Anti-leak: explanation already gated null pre-submit in resolveQuestionContent.
+    question_content: questionContent,
+    // Server-derived post-submit flag (Doc 03D §6.3): resolved from
+    // practice_session_items.status by isPreSubmitForSurface. The worker
+    // reads this to gate answer/explanation in the prompt — never derives
+    // post-submit state from correct_answer presence.
+    // @spec [Doc-03D_V1.2 §6.3, INV-03-04]
+    is_post_submit: params.isPostSubmit,
+    // Anti-leak (INV-03-04, Doc 03D §6.3): correct_answer is null on the
+    // wire pre-submit. The BFF keeps the real value BFF-local for the
+    // output scan (Doc 03B §6.5 step 15) but never forwards it to the
+    // worker pre-submit. Post-submit: the real value for model explanation.
+    correct_answer: params.isPostSubmit ? params.correctAnswer : null,
     // Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless).
     // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
     model_armor_input_template_id:
@@ -1134,6 +1265,7 @@ export async function resolveFullEnvelope(
       hasStructuredFields:
         structuredFields.last_struggled_skill !== null ||
         structuredFields.last_mastered_skill !== null,
+      hasQuestionContent: questionContent !== null,
     },
   );
 
