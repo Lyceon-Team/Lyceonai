@@ -51,20 +51,33 @@ jobs:
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
       # WHOLE SUITE, BLOCKING. This step used to run `test:ci` = `vitest run
-      # tests/ci`, which is 93 of the repo's 182 test files. The other 80 that a
-      # bare `vitest run` executes were reported for weeks as "pre-existing,
-      # gated" while running in no job at all — path scope is a worse
-      # suppression than an accept-list, because it leaves no record and the
-      # files still read as coverage.
+      # tests/ci`, a fraction of the repo's tests. The rest were reported for
+      # weeks as "pre-existing, gated" while running in no job at all — path
+      # scope is a worse suppression than an accept-list, because it leaves no
+      # record and the files still read as coverage.
       #
-      # A bare `vitest run` executes 170 files. The 12 it does not are excluded
-      # deliberately and visibly in vitest.config.ts: 3 integration tests needing
-      # real Supabase (the `integration` job owns those), and 9 Playwright
-      # `.spec.ts` files that match no vitest `include` pattern. Both sets are
-      # named in the PR, not silently dropped.
+      # EXACT ARITHMETIC, re-measured at this head (the earlier comment said
+      # 182/170 and was stale by one file after the dead test was deleted):
       #
-      # Cost measured, not guessed: 17.3s -> 42.2s on this runner class. See the
-      # PR for the runtime table and why no fast/full split is proposed.
+      #   181 tracked *.{test,spec}.{ts,tsx}
+      #   = 169 vitest-selected
+      #   +   9 Playwright .spec.ts   — match no vitest `include`, run in NO job
+      #   +   2 tests/integration/**  — excluded; the `integration` job owns them
+      #   +   1 tests/auth.integration.test.ts — excluded as "moved to
+      #                                  tests/integration/", but the original is
+      #                                  still tracked. A stale duplicate.
+      #
+      # REPORT SELECTED AND PASSED SEPARATELY. A green run reads
+      # `161 passed | 8 skipped (169)` — 169 selected, 161 passed, 8 skipped.
+      # Quoting the passed count as though it were the selected count is how a
+      # skip becomes invisible, which is the same class of error as counting a
+      # file that never ran as coverage.
+      #
+      # Cost measured on the RUNNER, not locally: 17.3s -> 54.3s. The PR body
+      # originally said +25s from local timing; the hosted figure is +37s. Still
+      # well inside the budget for a job that was ~45s, so no fast/full split is
+      # proposed — but the number quoted is the one from the machine that
+      # actually gates merges.
       - name: Run Tests (whole suite — blocking)
         run: pnpm test
 

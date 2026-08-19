@@ -6,14 +6,18 @@
 # with extra steps: it removes the signal and leaves the check in place, which
 # misrepresents the repo's standard to anyone reading the workflow.
 #
-# EVERY entry MUST carry: id, owner, expires, reason, re_arm, command.
+# EVERY entry MUST carry: id, owner, expires, reason, re_arm, command,
+# count_command, findings_ceiling.
 # `scripts/ci/known-gaps-gate.mjs` REJECTS an entry missing any of them, and
 # turns CI red once `expires` is in the past. The schema is the enforcement —
 # not convention, not review diligence.
 #
 # The gate runs BLOCKING. The accepted checks themselves run non-blocking. So a
 # check can fail without failing CI, but the PERMISSION for it to fail cannot be
-# open-ended and cannot be undocumented.
+# open-ended, cannot be undocumented, and cannot silently GROW: `count_command`
+# measures the current finding count and the gate fails when it exceeds
+# `findings_ceiling`. A gap is accepted at a size, not in perpetuity and not at
+# any size.
 #
 # To add an entry you must name a person and a date. If you cannot, it is not an
 # accepted gap — it is an unreported failure, and it belongs in the build.
@@ -24,7 +28,8 @@ entries:
     owner: karl
     expires: 2026-10-01
     command: pnpm exec tsc -p tsconfig.ci.json
-    findings: 41
+    count_command: pnpm exec tsc -p tsconfig.ci.json 2>&1 | grep -cE 'error TS'
+    findings_ceiling: 41
     reason: >
       41 type errors across 6 files, concentrated in server/routes/practice-canonical.ts (18)
       and server/routes/diagnostic-routes.ts (10). Predominantly Supabase row-type inference
@@ -43,14 +48,24 @@ entries:
     owner: karl
     expires: 2026-11-01
     command: pnpm run lint
-    findings: 2368
+    count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
+    findings_ceiling: 2399
     reason: >
-      2,368 problems. Three rules are 96% of them — 943 @typescript-eslint/no-explicit-any,
-      880 no-console, 449 no-undef. The first two are direct Coding Standards §3.2 and §16
-      violations across the legacy tree and are a genuine backlog. The 449 no-undef are almost
-      certainly a CONFIG defect rather than 449 real bugs: no-undef is redundant on a
+      ~2,390 problems. Three rules are 96% of them — 938 @typescript-eslint/no-explicit-any,
+      888 no-console, 466 no-undef. The first two are direct Coding Standards §3.2 and §16
+      violations across the legacy tree and are a genuine backlog. The no-undef findings are
+      almost certainly a CONFIG defect rather than real bugs: no-undef is redundant on a
       TypeScript codebase and is conventionally disabled for .ts/.tsx. Splitting that out is
       the first re-arm step and is not attempted here.
+      .
+      THE CEILING IS A MAXIMUM, NOT A FINGERPRINT. `pnpm run lint` reports 2399 problems;
+      the same run through the JSON formatter yields 2390 per-message records, because the
+      two formatters do not count identically. A figure that moves with the formatter cannot
+      be asserted for equality without going red on an innocent environment, so the gate
+      fails only when the count EXCEEDS the ceiling, and the entry declares the exact
+      command that produced it — a count is comparable only to another count taken the same
+      way. The previously committed 2368/449 were stale on arrival, which is the defect this
+      ceiling exists to prevent.
     re_arm: >
       Two stages. (1) Disable no-undef for TypeScript files and confirm the count drops by
       ~449 with no real finding lost — that alone is a config change, not a backlog burn-down.
