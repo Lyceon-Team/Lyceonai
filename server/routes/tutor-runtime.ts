@@ -954,10 +954,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     );
     const isPostSubmit = !preSubmit;
 
-    // Fetch correct_answer for the BFF-side output scan (step 15).
-    // Pre-submit: needed for answer-aware leak detection in scanAndSubstitute.
-    // Post-submit: forwarded to the worker so the model can explain it.
-    const correctAnswerResult = preSubmit
+    // Fetch correct_answer unconditionally when a question row exists.
+    // Pre-submit: needed BFF-local for answer-aware leak detection (step 15).
+    // Post-submit: forwarded on the wire so the worker prompt can explain it.
+    // The envelope gate (tutor-context.ts) decides what reaches the wire:
+    //   correct_answer: isPostSubmit ? correctAnswer : null
+    // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
+    const correctAnswerResult = effectiveScope.source_question_row_id
       ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
