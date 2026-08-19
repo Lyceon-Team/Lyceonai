@@ -3,9 +3,10 @@
  * @implemented 2026-08-14
  *
  * plain English: hook for creating a diagnostic session via POST /api/practice/
- * diagnostic/sessions. Handles three server-side outcomes:
+ * diagnostic/sessions. Handles four server-side outcomes:
  *  - 201 (fresh creation) → returns sessionId
  *  - 409 diagnostic_session_active → returns existingSessionId (seamless resume)
+ *  - 409 diagnostic_already_completed → refusal; taken once, no retake (ruling Q1)
  *  - 503 diagnostic_insufficient_coverage → curated error (never raw)
  *
  * expected outcome: the dashboard button calls startDiagnostic(), receives a
@@ -74,6 +75,27 @@ export function useDiagnosticStart(): {
       // the student doesn't see an error, we redirect to the existing session.
       if (res.status === 409 && body?.existingSessionId) {
         return body.existingSessionId as string;
+      }
+
+      // 409 — the diagnostic is already COMPLETED (owner ruling Q1: taken once,
+      // no retake). Distinct from the resume case above: there is nothing to
+      // resume and nothing to start, so there is no existingSessionId.
+      //
+      // Reaching this means a stale client or a hand-crafted request — once the
+      // diagnostic surface collapses on completion this is unreachable in normal
+      // use. It is handled explicitly anyway, because the fallback below would
+      // show "Something went wrong", which is not what happened. The copy states
+      // the fact and offers no retake affordance.
+      if (
+        res.status === 409 &&
+        body?.error === "diagnostic_already_completed"
+      ) {
+        setError({
+          message:
+            "You've already completed your diagnostic — it sets your baseline once.",
+          code: "diagnostic_already_completed",
+        });
+        return null;
       }
 
       // 503 — diagnostic pool insufficient coverage. Curated message only;

@@ -8,22 +8,35 @@ const REVIEW_RUNTIME_TABLES = [
   "review_error_attempts",
 ] as const;
 
-const TABLE_MISSING_PATTERN = /Could not find the table 'public\.(.+)' in the schema cache/i;
-const PG_RELATION_MISSING_PATTERN = /relation ["']?public\.(.+?)["']? does not exist/i;
+const TABLE_MISSING_PATTERN =
+  /Could not find the table 'public\.(.+)' in the schema cache/i;
+const PG_RELATION_MISSING_PATTERN =
+  /relation ["']?public\.(.+?)["']? does not exist/i;
 const CACHE_TTL_MS = 60_000;
 
 let cachedCheckedAt = 0;
-let cachedResult: { available: boolean; missingTable?: string | null; error?: string | null } | null = null;
+let cachedResult: {
+  available: boolean;
+  missingTable?: string | null;
+  error?: string | null;
+} | null = null;
 
-async function tableExists(tableName: string): Promise<{ exists: boolean; missingTable?: string; error?: string }> {
+async function tableExists(
+  tableName: string,
+): Promise<{ exists: boolean; missingTable?: string; error?: string }> {
   try {
-    const { error } = await supabaseServer.from(tableName).select("id").limit(1);
+    const { error } = await supabaseServer
+      .from(tableName)
+      .select("id")
+      .limit(1);
     if (!error) {
       return { exists: true };
     }
 
     const message = String(error.message || "");
-    const missingMatch = message.match(TABLE_MISSING_PATTERN) ?? message.match(PG_RELATION_MISSING_PATTERN);
+    const missingMatch =
+      message.match(TABLE_MISSING_PATTERN) ??
+      message.match(PG_RELATION_MISSING_PATTERN);
     if (missingMatch) {
       return { exists: false, missingTable: missingMatch[1] ?? tableName };
     }
@@ -40,7 +53,9 @@ async function tableExists(tableName: string): Promise<{ exists: boolean; missin
     }
 
     const message = String(err?.message || err || "");
-    const missingMatch = message.match(TABLE_MISSING_PATTERN) ?? message.match(PG_RELATION_MISSING_PATTERN);
+    const missingMatch =
+      message.match(TABLE_MISSING_PATTERN) ??
+      message.match(PG_RELATION_MISSING_PATTERN);
     if (missingMatch) {
       return { exists: false, missingTable: missingMatch[1] ?? tableName };
     }
@@ -49,7 +64,11 @@ async function tableExists(tableName: string): Promise<{ exists: boolean; missin
   }
 }
 
-export async function getReviewRuntimeAvailability(): Promise<{ available: boolean; missingTable?: string | null; error?: string | null }> {
+export async function getReviewRuntimeAvailability(): Promise<{
+  available: boolean;
+  missingTable?: string | null;
+  error?: string | null;
+}> {
   const now = Date.now();
   if (cachedResult && now - cachedCheckedAt < CACHE_TTL_MS) {
     return cachedResult;
@@ -73,12 +92,17 @@ export async function getReviewRuntimeAvailability(): Promise<{ available: boole
   return cachedResult;
 }
 
-export function sendReviewRuntimeUnavailable(res: Response, requestId?: string, missingTable?: string | null) {
+export function sendReviewRuntimeUnavailable(
+  res: Response,
+  requestId?: string,
+  missingTable?: string | null,
+) {
   return res.status(503).json({
     error: "Review runtime is temporarily unavailable",
     code: "REVIEW_RUNTIME_UNAVAILABLE",
     missingTable: missingTable ?? null,
-    message: "Review session tables are not present in the live database. Apply the review runtime migration before enabling this feature.",
+    message:
+      "Review session tables are not present in the live database. Apply the review runtime migration before enabling this feature.",
     requestId,
   });
 }

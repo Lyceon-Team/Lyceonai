@@ -6,6 +6,13 @@ const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
 const buildScoreEstimateFromCanonical = vi.fn();
 const readDiagnosticBaseline = vi.fn();
+// Step 1 (2026-08-17): the projection route now reads the canonical diagnostic
+// lifecycle state alongside the baseline. Default to baseline_ready — this suite
+// is about entitlement gating, and every case here has a baseline. The
+// baseline_pending branch has its own coverage in
+// tests/ci/diagnostic-baseline-pending.contract.test.ts.
+const readDiagnosticState = vi.fn();
+const readAnsweredQuestionCount = vi.fn();
 const buildStudentFullLengthReportView = vi.fn((x: any) => x);
 const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
@@ -20,6 +27,8 @@ vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildStudentKpiViewFromCanonical,
   buildStudentFullLengthReportView,
   readDiagnosticBaseline,
+  readDiagnosticState,
+  readAnsweredQuestionCount,
 }));
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -111,6 +120,9 @@ describe("KPI Gating Contract", () => {
       reason:
         "Student entitlement is free/inactive/expired for premium KPI surfaces.",
     });
+
+    readDiagnosticState.mockResolvedValue("baseline_ready");
+    readAnsweredQuestionCount.mockResolvedValue(40);
 
     // Vertical-B Slice 2: default baseline exists (diagnostic completed) + unpaid.
     readDiagnosticBaseline.mockResolvedValue({
