@@ -1,19 +1,22 @@
 /**
- * @spec [Doc-03D_V1.2 §7.2 (late block placement), §7.4 (fact-directive pairing)]
+ * @spec [Doc-03D_V1.2 §7.4 (fact-directive pairing); SCL-041 (systemInstruction
+ *        placement, supersedes §7.2 late block placement)]
  * @implemented 2026-08-17
- * @updated 2026-08-18 — WS-L6: added renderItemBlock (question content from
- *   Supabase), L5.1 fixes (directive dedup, style structure-only, SCL-039
- *   strengthening), C5 regression fix (pre-submit item-level prohibition).
+ * @updated 2026-08-18 — WS-L7: SCL-041 placement (blocks appended to
+ *   systemInstruction, not injected as [system note] user turns). Added
+ *   correct_answer to post-submit item block (ablation-proven). L5.1 fixes
+ *   retained (directive dedup, style structure-only, SCL-039 strengthening),
+ *   C5 regression fix (pre-submit item-level prohibition) retained.
  *
- * plain English: Renders the dynamic state blocks that are placed immediately
- * before the current student turn in the conversation messages. Each block
- * pairs a fact from the context envelope with a directive telling the model
- * what to do with it (§7.4). Naked data without a directive is ignored by the
- * model and will fail ablation.
+ * plain English: Renders the dynamic state blocks that are appended to the
+ * system instruction (after a separator) per SCL-041. Each block pairs a fact
+ * from the context envelope with a directive telling the model what to do
+ * with it (§7.4). Naked data without a directive is ignored by the model and
+ * will fail ablation.
  *
  * expected outcome: renderStateBlocks(request) returns a single string
- * containing all relevant context blocks, ready to be injected as a
- * [system note] user-turn message. Returns null if no context is available.
+ * containing all relevant context blocks, ready to be appended to the system
+ * instruction. Returns null if no context is available.
  *
  * trade-offs:
  *  - Numeric mastery scores are converted to ordinal bands (§7.1) before
@@ -26,7 +29,8 @@
  *  - SCL-034 through SCL-039 directives are embedded directly in the
  *    paired blocks, not as separate instructions.
  *  - Item block includes question content (stem, options, student answer)
- *    but NEVER correct_answer or canonical ID (anti-leak). Explanation
+ *    and correct_answer post-submit. Pre-submit: correct_answer is NEVER
+ *    included, canonical ID is NEVER included (anti-leak). Explanation
  *    is present only post-submit (gated upstream in tutor-context.ts).
  */
 
@@ -114,6 +118,10 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
 
   // Anti-leak directive — directly addresses C5 regression
   if (isPostSubmit) {
+    // Post-submit: include the correct answer so the model can explain it.
+    // Anti-leak: correct_answer is non-null only when the platform has confirmed
+    // submission (gated upstream in tutor-context.ts, derived server-side).
+    parts.push(`Correct answer: ${request.correct_answer}.`);
     parts.push(
       `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
         `the student's answer was wrong.`,

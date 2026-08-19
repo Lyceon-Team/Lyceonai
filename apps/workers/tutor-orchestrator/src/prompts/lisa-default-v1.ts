@@ -54,8 +54,11 @@ export const LISA_DEFAULT_V1: PromptArtifact = {
     );
 
     // ── Grounding clause (Google's technique — prevent hallucination) ──
+    // SCL-041: state blocks are appended to this instruction, not placed as
+    // [system note] user turns. Grounding clause references "context blocks
+    // in this instruction" to match the actual placement.
     sections.push(
-      `Rely only on facts stated in the [system note] blocks below and in ` +
+      `Rely only on facts stated in the context blocks in this instruction and in ` +
         `the student's own messages. If a fact is not there, you do not know ` +
         `it. Do not invent mastery levels, question history, scores, parent ` +
         `context, or any other student data not explicitly provided.`,

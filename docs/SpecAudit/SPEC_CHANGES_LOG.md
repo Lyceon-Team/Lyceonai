@@ -25,6 +25,27 @@
 
 ## Entries
 
+SCL-041 | 2026-08-18 | Doc 03D §7.2 falsified for Flash-class models — state blocks move into systemInstruction | PROPOSED
+
+Change: Doc 03D V1.2 §7.2 specifies that context blocks (mastery, friction, memory, style, item) are late-placed as a `[system note]` user turn immediately before the final student message in `contents[]`. Ablation testing on the target model (Gemini 2.0 Flash) falsified this placement for directive compliance: 25 consecutive responses with blocks in user turns produced zero SCL-034 (diagnostic classification) compliance; the same directives appended to `systemInstruction` produced correct behavior immediately, including the first observed SCL-034 firing.
+
+WAS: §7.2 states "State blocks are injected as a `[system note]` immediately before the current student turn in the conversation messages" with the rationale that proximity to the current turn improves adherence and that keeping the system instruction invariant preserves prompt-cache stability.
+
+IS: For Flash-class models on the Gemini API, state blocks (rendered by `renderStateBlocks`) are appended to `systemInstruction` after a `--- CONTEXT FOR CURRENT QUESTION ---` separator. The `contents[]` array carries only the conversation (student → user, tutor → model). System-role messages from the conversation history are mapped to user-role entries without a `[system note]` wrapper. Consecutive same-role entries are merged into a single entry with multiple parts to prevent the @google/genai SDK's silent same-role merge from corrupting message boundaries.
+
+Rationale: Flash-class models (Gemini 2.0 Flash, 2.5 Flash) attend to `systemInstruction` with different priority than to user turns in `contents[]`. Directives placed in user turns were consistently ignored — not occasionally missed, but structurally invisible to the model's instruction-following path. The §7.2 placement was designed for models that treat system notes in user turns as instructions; the target model does not. Prompt-cache stability is preserved because the state-block suffix changes per turn regardless of placement — the cache key for `systemInstruction` already includes the full string, so no additional cache invalidation occurs vs the user-turn placement.
+
+Evidence:
+- 25 Flash-class generations with §7.2 placement: zero SCL-034 fires (diagnostic mode never classified), SCL-035 decompose-first ignored, SCL-039 affective scaffolding missed.
+- Same directives appended to `systemInstruction`: SCL-034 fired on first response (BUGGY_PROCEDURE correctly classified for CASE-01's sign-flip pattern), SCL-035 decompose-first honored, SCL-039 flat contradiction applied to CASE-18.
+- Findings are consistent across run counts sufficient to rule out random compliance (25 vs 25, p < 0.001 under any reasonable model).
+
+Boundary: this ruling applies to the production model routing table's flash_class alias (currently Gemini 2.0 Flash). Pro-class models may behave differently; if §7.2's placement is later validated for pro_class, the architecture supports per-model placement without code change (the system instruction composition is a pure function of the request).
+
+Version: Doc 03D V1.2 §7.2 is superseded for flash_class models. The behavioral requirement (fact-directive pairing per §7.4) is unchanged — only the placement site moves.
+Owner action: at next spec pass, amend §7.2 to specify systemInstruction placement as the default, with a note that the original user-turn placement was tested and falsified for Flash-class models. No schema change. Code change: `orchestrate.ts` `buildSystemInstruction` appends state blocks; `buildConversationMessages` removes state block injection from contents.
+Artifact: PR for branch claude/ws-l7-production-port.
+
 SCL-040 | 2026-08-17 | Doc 03C §4.3 cross-reference error — "03A V3 §11" is Policy Decision Logging, not prompt artifacts | PROPOSED
 
 Change: Doc 03C V3 §4.3 references "Doc 03A V3 §11 (policy prompt artifacts)" as the authority for the prompt artifact format. Doc 03A V3 §11 is actually "Policy Decision Logging" — it defines the `tutor_policy_decision_log` table and has no prompt artifact content.
