@@ -251,7 +251,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Genesis fresh-apply + determinism + anti-leak gate
         env:
@@ -292,7 +292,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Practice engine integration gate (SQL seam only — no TS handler)
         env:
@@ -379,7 +379,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -441,6 +441,16 @@ jobs:
       # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
       # FIRST and must be strict: it is the only thing between a hand-applied schema
       # and an irreversible "recorded as applied".
+      # The detector reported 84 gaps out of 91 answered items on its first day in
+      # production — every item the Step 8 backfill had correctly rebuilt, because
+      # backfill_recompute_student writes no per-event audit row. An alert that is
+      # 100% noise on arrival gets muted, which is the failure this workstream
+      # exists to prevent. N4 reproduces the 84 before asserting the 0.
+      - name: Gap-detector noise gate (backfill is not a gap)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/gap-detector-noise-gate.sh
+
       - name: Migration history gate
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
@@ -507,7 +517,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: deidentify_user exact-target + idempotency rehearsal
         env:
@@ -581,7 +591,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Mastery formula parity (PL/pgSQL == Python reference == Doc 05A §12)
         env:
@@ -625,7 +635,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Lane-C seam gates (production parity + idempotency replay + txn atomicity + F1/F2/F3 §4.9 re-proof)
         env:
@@ -669,7 +679,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: 05B domain mastery + KPI gates (domain-grain parity + INV-05B-13 + KPI struct)
         env:
@@ -742,7 +752,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Tutor schema-proof gate
         env:

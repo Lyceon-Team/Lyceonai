@@ -4107,6 +4107,31 @@ CREATE TABLE public.mastery_constants_history (
 
 
 --
+-- Name: mastery_domain_refresh_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_domain_refresh_audit_log (
+    audit_row_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid,
+    section text NOT NULL,
+    domain text NOT NULL,
+    mastery_score_before numeric(5,4),
+    mastery_score_after numeric(5,4),
+    mastery_level_before smallint,
+    mastery_level_after smallint,
+    event_count_after integer NOT NULL,
+    constants_snapshot_hash text NOT NULL,
+    mastery_model_version text NOT NULL,
+    triggered_by text NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
+    CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
+    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
+);
+
+
+--
 -- Name: mastery_event_audit_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4263,7 +4288,9 @@ CREATE VIEW public.mastery_derivation_gaps AS
      JOIN public.practice_sessions ps ON ((ps.id = pi.session_id)))
   WHERE ((pi.status = 'answered'::text) AND (pi.user_id IS NOT NULL) AND (NOT (EXISTS ( SELECT 1
            FROM public.mastery_event_audit_log al
-          WHERE ((al.event_id = pi.id) AND (al.event_source_kind = public.practice_session_mode_to_event_kind(ps.mode)))))))
+          WHERE ((al.event_id = pi.id) AND (al.event_source_kind = public.practice_session_mode_to_event_kind(ps.mode)))))) AND (NOT (EXISTS ( SELECT 1
+           FROM public.mastery_domain_refresh_audit_log ral
+          WHERE ((ral.triggered_by = 'backfill_recompute'::text) AND (ral.student_id = pi.user_id) AND (ral.section = pi.question_section) AND (ral.domain = pi.question_domain) AND (pi.occurred_at <= ral.applied_at))))))
 UNION ALL
  SELECT ra.student_id,
     'review_error_attempt'::text AS event_source_kind,
@@ -4274,16 +4301,18 @@ UNION ALL
     ra.question_id,
     ra.occurred_at
    FROM public.review_error_attempts ra
-  WHERE (NOT (EXISTS ( SELECT 1
+  WHERE ((NOT (EXISTS ( SELECT 1
            FROM public.mastery_event_audit_log al
-          WHERE ((al.event_id = ra.id) AND (al.event_source_kind = 'review_error_attempt'::text)))));
+          WHERE ((al.event_id = ra.id) AND (al.event_source_kind = 'review_error_attempt'::text))))) AND (NOT (EXISTS ( SELECT 1
+           FROM public.mastery_domain_refresh_audit_log ral
+          WHERE ((ral.triggered_by = 'backfill_recompute'::text) AND (ral.student_id = ra.student_id) AND (ral.section = ra.section) AND (ral.domain = ra.domain) AND (ra.occurred_at <= ral.applied_at))))));
 
 
 --
 -- Name: VIEW mastery_derivation_gaps; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON VIEW public.mastery_derivation_gaps IS 'Events derivable by canonical_mastery_events that have no attributable mastery_event_audit_log row. Non-empty = mastery emission is failing. Detection only — no writer.';
+COMMENT ON VIEW public.mastery_derivation_gaps IS 'Events derivable by canonical_mastery_events that have no attributable mastery_event_audit_log row AND were not rebuilt by a backfill covering their (student, section, domain) at or before they occurred. Non-empty = mastery emission is failing. Detection only — no writer.';
 
 
 --
@@ -4304,31 +4333,6 @@ CREATE VIEW public.mastery_derivation_gap_summary AS
 --
 
 COMMENT ON VIEW public.mastery_derivation_gap_summary IS 'Per-student rollup of mastery_derivation_gaps. Total across the platform = sum(gap_count).';
-
-
---
--- Name: mastery_domain_refresh_audit_log; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mastery_domain_refresh_audit_log (
-    audit_row_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid,
-    section text NOT NULL,
-    domain text NOT NULL,
-    mastery_score_before numeric(5,4),
-    mastery_score_after numeric(5,4),
-    mastery_level_before smallint,
-    mastery_level_after smallint,
-    event_count_after integer NOT NULL,
-    constants_snapshot_hash text NOT NULL,
-    mastery_model_version text NOT NULL,
-    triggered_by text NOT NULL,
-    applied_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid NOT NULL,
-    CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
-    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
-    CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
-);
 
 
 --
@@ -9863,6 +9867,13 @@ GRANT ALL ON TABLE public.mastery_constants_change_log TO service_role;
 
 
 --
+-- Name: TABLE mastery_domain_refresh_audit_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_domain_refresh_audit_log TO service_role;
+
+
+--
 -- Name: TABLE mastery_event_audit_log; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10148,13 +10159,6 @@ GRANT SELECT ON TABLE public.mastery_derivation_gaps TO service_role;
 --
 
 GRANT SELECT ON TABLE public.mastery_derivation_gap_summary TO service_role;
-
-
---
--- Name: TABLE mastery_domain_refresh_audit_log; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_domain_refresh_audit_log TO service_role;
 
 
 --
