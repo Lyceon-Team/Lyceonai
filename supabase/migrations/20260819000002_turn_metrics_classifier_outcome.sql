@@ -15,10 +15,23 @@
 -- so if this migration is not yet applied the insert simply fails silently
 -- (the existing columns still write) and the turn proceeds unblocked.
 --
+-- The tutor_turn_metrics table is created by a migration on a separate branch.
+-- In genesis-fresh-apply (all migrations from scratch), the table may not exist
+-- yet. Guard the ALTER so this migration is a no-op in that case — the column
+-- will be included when the CREATE TABLE migration eventually lands.
+--
 -- rollback: ALTER TABLE tutor_turn_metrics DROP COLUMN IF EXISTS crisis_classifier_outcome;
 
-ALTER TABLE tutor_turn_metrics
-  ADD COLUMN IF NOT EXISTS crisis_classifier_outcome TEXT;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'tutor_turn_metrics'
+  ) THEN
+    ALTER TABLE tutor_turn_metrics
+      ADD COLUMN IF NOT EXISTS crisis_classifier_outcome TEXT;
 
-COMMENT ON COLUMN tutor_turn_metrics.crisis_classifier_outcome IS
-  'Structured classifier outcome for SCL-023 Cloud Monitoring alerting. Nullable TEXT; values match CrisisResult.source plus no_crisis and classifier_degraded.';
+    COMMENT ON COLUMN tutor_turn_metrics.crisis_classifier_outcome IS
+      'Structured classifier outcome for SCL-023 Cloud Monitoring alerting. Nullable TEXT; values match CrisisResult.source plus no_crisis and classifier_degraded.';
+  END IF;
+END $$;
