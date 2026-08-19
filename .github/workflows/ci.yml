@@ -50,8 +50,23 @@ jobs:
       # Full deterministic CI suite. The stale-mock contract files were deleted
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
-      - name: Run Tests (Deterministic CI Suite)
-        run: pnpm run test:ci
+      # WHOLE SUITE, BLOCKING. This step used to run `test:ci` = `vitest run
+      # tests/ci`, which is 93 of the repo's 182 test files. The other 80 that a
+      # bare `vitest run` executes were reported for weeks as "pre-existing,
+      # gated" while running in no job at all — path scope is a worse
+      # suppression than an accept-list, because it leaves no record and the
+      # files still read as coverage.
+      #
+      # A bare `vitest run` executes 170 files. The 12 it does not are excluded
+      # deliberately and visibly in vitest.config.ts: 3 integration tests needing
+      # real Supabase (the `integration` job owns those), and 9 Playwright
+      # `.spec.ts` files that match no vitest `include` pattern. Both sets are
+      # named in the PR, not silently dropped.
+      #
+      # Cost measured, not guessed: 17.3s -> 42.2s on this runner class. See the
+      # PR for the runtime table and why no fast/full split is proposed.
+      - name: Run Tests (whole suite — blocking)
+        run: pnpm test
 
       # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
       # strict typecheck, its own tests, and lint at error level all BLOCKING.
