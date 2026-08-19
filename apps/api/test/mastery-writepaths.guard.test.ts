@@ -1,6 +1,9 @@
 /**
  * MASTERY WRITE PATH GUARD TEST
  *
+ * @spec [INV-03-01, Doc-05_V2 §6.2]
+ * @implemented 2026-08-14
+ *
  * This test enforces the critical invariant that ALL mastery writes
  * go through the canonical choke point: apps/api/src/services/mastery-write.ts
  *
@@ -11,12 +14,23 @@
  *
  * EXCEPTION: mastery-write.ts itself is allowed to write to mastery tables.
  *
+ * Uses bounded-window scanning (via tests/ci/lib/bounded-window-scanner.ts)
+ * to catch multiline Supabase chains. The previous line-by-line scanner
+ * required both `.from("table")` and `.insert(` on the same line — a pattern
+ * nobody in this codebase writes.
+ *
  * This test MUST pass for the build to succeed.
  */
 
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  scanFileWithBoundedWindow,
+  findTypeScriptFiles,
+  assertRootsExist,
+  type BoundedWindowHit,
+} from "../../../tests/ci/lib/bounded-window-scanner";
 
 const MASTERY_TABLES = [
   "student_skill_mastery",
@@ -40,46 +54,27 @@ interface Violation {
 }
 
 /**
- * Recursively find all .ts and .tsx files in a directory
- */
-function findTypeScriptFiles(dir: string): string[] {
-  const results: string[] = [];
-
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-
-      // Skip node_modules, dist, build, etc.
-      if (
-        entry.name === "node_modules" ||
-        entry.name === "dist" ||
-        entry.name === "build" ||
-        entry.name === "__tests__" ||
-        entry.name === ".next"
-      ) {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        results.push(...findTypeScriptFiles(fullPath));
-      } else if (
-        entry.isFile() &&
-        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
-      ) {
-        results.push(fullPath);
-      }
-    }
-  } catch (err) {
-    // Ignore permission errors or missing directories
-  }
-
-  return results;
-}
-
-/**
- * Check a file for mastery write violations
+ * Check a file for mastery write violations.
+ *
+ * @spec [INV-03-01, Doc-05_V2 §6.2]
+ * @implemented 2026-08-14
+ *
+ * plain English: detects direct writes to mastery tables outside the
+ * canonical choke point. Uses bounded-window scanning: when a line
+ * contains `.from("mastery_table")`, the next CHAIN_WINDOW lines are
+ * collapsed into a single string and tested for write methods (.insert,
+ * .update, .upsert, .delete). This catches multiline Supabase chains
+ * that a line-by-line scanner would miss.
+ *
+ * trade-offs: the bounded window could theoretically false-positive if
+ * an unrelated .insert() appears within 10 lines of a mastery table
+ * .from(). In practice, code within 10 lines of a mastery .from() is
+ * part of the same chain or closely related — a false positive here
+ * is a code smell worth investigating regardless.
+ *
+ * edge cases: legitimate reads (.select) from mastery tables pass
+ * because only write methods trigger a violation. Same-line writes
+ * are still caught (they fall within the 1-line window trivially).
  */
 function checkFileForViolations(filePath: string): Violation[] {
   const violations: Violation[] = [];
@@ -89,56 +84,56 @@ function checkFileForViolations(filePath: string): Violation[] {
     return violations;
   }
 
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const lines = content.split("\n");
+  // ── Table write detection (bounded-window, multiline-safe) ──────
+  for (const table of MASTERY_TABLES) {
+    const anchorPattern = new RegExp(
+      `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\)`,
+    );
+    const writePattern = new RegExp(
+      `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\)` +
+        `.*\\.(insert|update|upsert|delete)\\s*\\(`,
+    );
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lineNumber = i + 1;
+    const hits: BoundedWindowHit[] = scanFileWithBoundedWindow(
+      filePath,
+      anchorPattern,
+      writePattern,
+    );
 
-      // Check for direct table writes
-      for (const table of MASTERY_TABLES) {
-        // Pattern: .from("table_name").insert( / .update( / .upsert( / .delete(
-        const writePatterns = [
-          new RegExp(
-            `\\.from\\s*\\(\\s*["'\`]${table}["'\`]\\s*\\).*\\.(insert|update|upsert|delete)\\s*\\(`,
-          ),
-          new RegExp(
-            `from\\(["'\`]${table}["'\`]\\).*\\.(insert|update|upsert|delete)\\(`,
-          ),
-        ];
+    for (const hit of hits) {
+      violations.push({
+        file: hit.file,
+        line: hit.line,
+        content: hit.content,
+        type: "table_write",
+      });
+    }
+  }
 
-        for (const pattern of writePatterns) {
-          if (pattern.test(line)) {
-            violations.push({
-              file: filePath,
-              line: lineNumber,
-              content: line.trim(),
-              type: "table_write",
-            });
-          }
-        }
-      }
+  // ── RPC detection (single-line — always on one line) ──────────
+  // No try/catch — I/O errors MUST propagate so the guard fails closed.
+  // (LISA-AUDIT-566-002)
+  const content = fs.readFileSync(filePath, "utf-8");
+  const lines = content.split("\n");
 
-      // Check for RPC calls to mastery functions
-      for (const rpcFunc of MASTERY_RPC_FUNCTIONS) {
-        const rpcPattern = new RegExp(
-          `\\.rpc\\s*\\(\\s*["'\`]${rpcFunc}["'\`]`,
-        );
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNumber = i + 1;
 
-        if (rpcPattern.test(line)) {
-          violations.push({
-            file: filePath,
-            line: lineNumber,
-            content: line.trim(),
-            type: "rpc_call",
-          });
-        }
+    for (const rpcFunc of MASTERY_RPC_FUNCTIONS) {
+      const rpcPattern = new RegExp(
+        `\\.rpc\\s*\\(\\s*["'\`]${rpcFunc}["'\`]`,
+      );
+
+      if (rpcPattern.test(line)) {
+        violations.push({
+          file: filePath,
+          line: lineNumber,
+          content: line.trim(),
+          type: "rpc_call",
+        });
       }
     }
-  } catch (err) {
-    // Ignore read errors
   }
 
   return violations;
@@ -147,6 +142,12 @@ function checkFileForViolations(filePath: string): Violation[] {
 describe("Mastery Write Path Guard", () => {
   it("should enforce that all mastery writes go through mastery-write.ts", () => {
     const projectRoot = path.resolve(__dirname, "../../..");
+
+    // Assert every configured root exists BEFORE scanning.
+    // A typo'd root would scan nothing and pass vacuously. (LISA-AUDIT-566-002)
+    const fullRoots = SCAN_DIRECTORIES.map((d) => path.join(projectRoot, d));
+    assertRootsExist(fullRoots);
+
     const allViolations: Violation[] = [];
 
     for (const scanDir of SCAN_DIRECTORIES) {
@@ -211,33 +212,50 @@ This is a CRITICAL security and consistency invariant.
     ).toBe(true);
   });
 
-  it("should verify that diagnostic routes use applyMasteryEvent", () => {
+  /**
+   * @spec [INV-03-01, Doc-05_V2 §6.2]
+   * @implemented 2026-08-14
+   *
+   * plain English: verifies the REAL diagnostic routes file
+   * (server/routes/diagnostic-routes.ts) does not bypass the mastery-write
+   * choke point. The previous test targeted a phantom path
+   * (apps/api/src/routes/diagnostic.ts) that never existed, passing
+   * vacuously via fs.existsSync early return. Rewritten per audit F-08.
+   */
+  it("should verify that diagnostic routes do not bypass mastery-write chokepoint", () => {
     const projectRoot = path.resolve(__dirname, "../../..");
     const diagnosticPath = path.join(
       projectRoot,
-      "apps/api/src/routes/diagnostic.ts",
+      "server/routes/diagnostic-routes.ts",
     );
 
-    if (!fs.existsSync(diagnosticPath)) {
-      // Diagnostic routes not yet implemented - skip this check
-      return;
-    }
+    expect(
+      fs.existsSync(diagnosticPath),
+      "server/routes/diagnostic-routes.ts must exist",
+    ).toBe(true);
 
     const content = fs.readFileSync(diagnosticPath, "utf-8");
 
-    expect(
-      content.includes("applyMasteryEvent"),
-      "diagnostic.ts must use applyMasteryEvent for mastery updates",
-    ).toBe(true);
+    // Diagnostic routes may READ from mastery tables (e.g. weakest-skills
+    // endpoint reads student_skill_mastery). The invariant is about WRITES:
+    // no .insert(), .update(), .upsert(), .delete() on mastery tables.
+    const violations = checkFileForViolations(diagnosticPath);
 
-    expect(
-      !content.includes('.from("student_skill_mastery")'),
-      "diagnostic.ts must NOT directly write to student_skill_mastery",
-    ).toBe(true);
+    if (violations.length > 0) {
+      const report = violations
+        .map((v) => `  L${v.line} [${v.type}]: ${v.content}`)
+        .join("\n");
+      throw new Error(
+        `diagnostic-routes.ts bypasses mastery-write chokepoint:\n${report}`,
+      );
+    }
 
+    expect(violations.length).toBe(0);
+
+    // Diagnostic routes must NOT directly call the mastery RPC
     expect(
-      !content.includes('.from("student_domain_mastery")'),
-      "diagnostic.ts must NOT directly write to student_domain_mastery",
+      !content.includes('.rpc("apply_mastery_event"'),
+      "diagnostic-routes.ts must NOT directly call apply_mastery_event RPC",
     ).toBe(true);
   });
 });
