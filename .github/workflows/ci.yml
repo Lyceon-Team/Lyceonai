@@ -50,8 +50,36 @@ jobs:
       # Full deterministic CI suite. The stale-mock contract files were deleted
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
-      - name: Run Tests (Deterministic CI Suite)
-        run: pnpm run test:ci
+      # WHOLE SUITE, BLOCKING. This step used to run `test:ci` = `vitest run
+      # tests/ci`, a fraction of the repo's tests. The rest were reported for
+      # weeks as "pre-existing, gated" while running in no job at all — path
+      # scope is a worse suppression than an accept-list, because it leaves no
+      # record and the files still read as coverage.
+      #
+      # EXACT ARITHMETIC, re-measured at this head (the earlier comment said
+      # 182/170 and was stale by one file after the dead test was deleted):
+      #
+      #   181 tracked *.{test,spec}.{ts,tsx}
+      #   = 169 vitest-selected
+      #   +   9 Playwright .spec.ts   — match no vitest `include`, run in NO job
+      #   +   2 tests/integration/**  — excluded; the `integration` job owns them
+      #   +   1 tests/auth.integration.test.ts — excluded as "moved to
+      #                                  tests/integration/", but the original is
+      #                                  still tracked. A stale duplicate.
+      #
+      # REPORT SELECTED AND PASSED SEPARATELY. A green run reads
+      # `161 passed | 8 skipped (169)` — 169 selected, 161 passed, 8 skipped.
+      # Quoting the passed count as though it were the selected count is how a
+      # skip becomes invisible, which is the same class of error as counting a
+      # file that never ran as coverage.
+      #
+      # Cost measured on the RUNNER, not locally: 17.3s -> 54.3s. The PR body
+      # originally said +25s from local timing; the hosted figure is +37s. Still
+      # well inside the budget for a job that was ~45s, so no fast/full split is
+      # proposed — but the number quoted is the one from the machine that
+      # actually gates merges.
+      - name: Run Tests (whole suite — blocking)
+        run: pnpm test
 
       # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
       # strict typecheck, its own tests, and lint at error level all BLOCKING.
@@ -131,6 +159,12 @@ jobs:
   # docs/alignment/KNOWN-GAPS.md). Each is promoted into the required `ci` job
   # by the domain pass that fixes it. Nothing here is hidden or faked green.
   # ---------------------------------------------------------------------------
+  # The failures in this job are now ACCEPTED with an owner and an expiry rather
+  # than "known" in perpetuity — see ci/known-gaps.yaml. The JOB ID is left as
+  # `ci-known-gaps` on purpose: renaming it would silently break any
+  # branch-protection required-check that names it, and a merge-blocking config
+  # change is not something to slip into a cleanup PR. Rename proposed as an
+  # owner question in the PR instead.
   ci-known-gaps:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -156,14 +190,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # KNOWN GAP: 2 real type errors (exam `section` field drift) — exam domain pass.
-      - name: TypeScript Check (CI tsconfig) — KNOWN GAP
+      # BLOCKING, and deliberately first. Everything below may fail without
+      # failing this job; this step is what keeps that permission finite. It
+      # rejects an entry missing owner/expiry/reason/re_arm/command, and turns
+      # red once an entry's expiry passes — so a suppression has to be renewed
+      # by a human decision or the check goes back to blocking.
+      - name: Accept-list gate (owner + expiry required) — BLOCKING
+        run: node scripts/ci/known-gaps-gate.mjs
+
+      - name: Accept-list gate self-test (proves it can refuse)
+        run: bash scripts/ci/known-gaps-gate.self-test.sh
+
+      # ACCEPTED under ci/known-gaps.yaml -> typecheck-ci-tsconfig, owner karl,
+      # expires 2026-10-01. The gate step above fails this job once that date
+      # passes. The previous comment here claimed "2 real type errors (exam
+      # section field drift)"; the real count is 41 across 6 files — which is
+      # what an unrenewed suppression decays into.
+      - name: TypeScript Check (CI tsconfig) — accepted, expires 2026-10-01
         continue-on-error: true
         run: pnpm exec tsc -p tsconfig.ci.json
 
-      # KNOWN GAP: advisory-DB dependent; promote to a blocking gate once stable.
-      - name: Security Audit (high/critical) — KNOWN GAP
-        continue-on-error: true
+      # PROMOTED TO BLOCKING 2026-08-19. Measured before promoting: `pnpm run
+      # audit:ci` reports ZERO advisories of any severity, so the
+      # continue-on-error was suppressing nothing at all — it only guaranteed
+      # that the first real high/critical advisory would land silently. There is
+      # no accept-list entry for this because there is nothing to accept.
+      - name: Security Audit (high/critical) — blocking
         run: |
           pnpm run audit:ci
           node -e "
@@ -175,18 +227,20 @@ jobs:
             console.log('No High/Critical vulnerabilities found.');
           "
 
-      # ADVISORY: legacy-tree lint. Graduates to fully blocking when advisory
-      # violations reach zero (ledger graduation criterion); standing rule is that
-      # every wave lint-cleans the files it touches. packages/shared lints BLOCKING
-      # in the required `ci` job.
-      - name: ESLint (legacy tree, advisory) — KNOWN GAP
+      # ACCEPTED under ci/known-gaps.yaml -> eslint-legacy-tree, owner karl,
+      # expires 2026-11-01. 2,368 problems; 96% are three rules, and 449 of those
+      # (no-undef on a TypeScript tree) are a config defect rather than findings.
+      # The standing rule — every wave lint-cleans the files it touches — is
+      # recorded as the re-arm criterion in the entry, where it expires.
+      # packages/shared lints BLOCKING in the required `ci` job.
+      - name: ESLint (legacy tree) — accepted, expires 2026-11-01
         continue-on-error: true
         run: pnpm run lint
 
       - name: Summary
         run: |
-          echo "::notice::ci-known-gaps ran the remaining non-deletable gaps (source typecheck, security audit, legacy-tree lint)."
-          echo "::notice::These are non-blocking by design. See docs/alignment/KNOWN-GAPS.md for owners and re-arm criteria."
+          echo "::notice::Accepted failures are declared in ci/known-gaps.yaml — each with an owner, an expiry and a re-arm criterion."
+          echo "::notice::The accept-list gate is BLOCKING and fails this job when an entry expires. Security audit was promoted to blocking 2026-08-19 (zero advisories)."
 
   # Optional integration tests — only on push to main, when secrets exist.
   # Not required for PR merge.

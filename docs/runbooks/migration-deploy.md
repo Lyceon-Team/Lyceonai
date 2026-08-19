@@ -78,6 +78,51 @@ pre-flight step 1.
 - Any verdict beginning `STOP` means stop. The verdict names the reason and, where
   relevant, the file to read next.
 
+## Launch prerequisites — infrastructure that must change before real students
+
+These are **blockers for launch**, not improvements. Each one is currently
+constrained in a way that is acceptable at four pre-launch users and is not
+acceptable with students on the platform.
+
+### Vercel Pro — required before launch (owner ruling, 2026-08-17)
+
+The project is on the Hobby plan, which permits **daily cron expressions only**.
+This is a hard deploy failure, not a degradation: a more-than-daily schedule in
+`vercel.json` fails the build outright with
+
+```
+Hobby accounts are limited to daily cron jobs. This cron expression (0 * * * *)
+would run more than once per day.
+```
+
+Everything scheduled today is therefore daily, which is fine at current scale and
+will not be. Three jobs need sub-daily frequency before real students arrive:
+
+| Job | Why daily is not enough with students on the platform |
+|---|---|
+| `/api/internal/baseline-pending-sweep` | The threshold is 24h. A daily check means up to a further 24h before an operator learns a student is stuck without a baseline — a student staring at "your baseline is being calculated" for two days. |
+| `/api/internal/stale-session-sweep` | Fine daily for the 7-day window today, but retention work will want a tighter loop. |
+| mastery derivation gap detector | The outage it exists to catch ran for seven weeks. Detection latency is the entire value of the job. |
+
+**Accepted for now** at four users; the ruling is explicit that this is recorded
+as a launch prerequisite rather than a nice-to-have. Revisit the 24h staleness
+threshold at the same time — it was chosen to sit far outside any legitimate
+delay, and a shorter cron makes a shorter threshold useful.
+
+### One alerting surface, not two (owner ruling, 2026-08-17)
+
+`baseline_pending` past its threshold and mastery-derivation gaps are the same
+category of problem: **derived state we owe a student that has not materialized.**
+They get **one** operator surface — the gap-detection ledger — not one channel
+each.
+
+When the gap-detection cron route is built (it is sequenced after `20260816020000`
+is applied), `student_baseline_pending` folds into it rather than keeping its own
+endpoint. Do not add a third channel for the next instance of this category.
+
+The reason is not tidiness: nothing watching one place is why the mastery outage
+ran seven weeks.
+
 ## Related
 
 - [`scripts/prod-verify/README.md`](../../scripts/prod-verify/README.md) — the file
