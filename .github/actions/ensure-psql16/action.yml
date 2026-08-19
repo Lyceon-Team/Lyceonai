@@ -1,0 +1,106 @@
+name: Ensure postgresql-client 16
+description: >-
+  Make a psql 16+ client available on the runner. Skips the network entirely when
+  the image already ships one; otherwise installs with bounded, retried apt calls.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -uo pipefail
+
+        # ------------------------------------------------------------------
+        # WHY THIS IS NOT `sudo apt-get update && sudo apt-get install -y ...`
+        # ------------------------------------------------------------------
+        # That is what it was, in eight jobs, and it HUNG — three times across two
+        # nights, most recently for 9m47s in genesis-fresh-apply and
+        # deletion-deidentify-rehearsal on run 32095330383, until the run was
+        # cancelled and both jobs' gate steps were skipped without ever starting.
+        #
+        # Three things were wrong with the old form, and all three are fixed here:
+        #
+        #   1. UNBOUNDED. A stalled apt mirror connection hangs until the 6-hour
+        #      job timeout. A hang is indistinguishable from slow work, so nothing
+        #      fails and nothing retries. Every apt invocation below is wrapped in
+        #      `timeout`, so a stall becomes a fast, retryable failure.
+        #
+        #   2. UNCONDITIONAL. The runner image already ships a PostgreSQL client.
+        #      The old step reached the network on every job of every run to
+        #      install something that was very likely already present. The check
+        #      below usually makes this a no-op with no network involved at all —
+        #      which is the real fix: the most reliable network call is the one
+        #      not made.
+        #
+        #   3. UNRETRIED. A transient mirror failure killed the job outright.
+        #
+        # NOT chosen: running psql inside the pgvector service container via
+        # `docker exec`. It would remove the host dependency entirely, but every
+        # gate script connects over localhost with PG* env vars and passes local
+        # file paths to `psql -f`; rewriting all of them to marshal files into a
+        # container is a large change to proven scripts to fix a packaging
+        # problem. Revisit only if apt proves unreliable even bounded and retried.
+
+        need_major=16
+
+        have_client() {
+          command -v psql >/dev/null 2>&1 || return 1
+          local v
+          v="$(psql --version 2>/dev/null | grep -oE '[0-9]+' | head -1)" || return 1
+          [ -n "$v" ] && [ "$v" -ge "$need_major" ]
+        }
+
+        if have_client; then
+          echo "psql already present and new enough: $(psql --version)"
+          echo "no apt call made"
+          exit 0
+        fi
+
+        echo "psql 16+ not found on the runner; installing"
+
+        # ------------------------------------------------------------------
+        # ONE OVERALL DEADLINE, not five independent timeouts.
+        # ------------------------------------------------------------------
+        # Per-attempt timeouts alone are a trap: five attempts at 120s plus
+        # backoff is 12.5 minutes worst case, which is LONGER than the 9m47s
+        # stall this replaces. A fix that can take longer than the bug is not a
+        # fix. The budget below caps the entire step at 4 minutes — under half
+        # the observed stall, and ~20x the 11s a healthy run takes.
+        deadline=$(( SECONDS + 240 ))
+        attempt=0
+
+        while [ "$SECONDS" -lt "$deadline" ]; do
+          attempt=$(( attempt + 1 ))
+          remaining=$(( deadline - SECONDS ))
+          echo "--- attempt ${attempt} (${remaining}s of budget left)"
+
+          # Never let a single call outlive the budget.
+          up_t=$(( remaining < 60 ? remaining : 60 ))
+          if timeout "$up_t" sudo apt-get update -qq; then
+            remaining=$(( deadline - SECONDS ))
+            [ "$remaining" -le 0 ] && break
+            in_t=$(( remaining < 120 ? remaining : 120 ))
+            if timeout "$in_t" sudo apt-get install -y -qq postgresql-client-16; then
+              if have_client; then
+                echo "installed: $(psql --version)"
+                exit 0
+              fi
+              echo "install reported success but psql is still missing or too old"
+            else
+              echo "apt-get install failed or timed out"
+            fi
+          else
+            echo "apt-get update failed or timed out"
+          fi
+
+          remaining=$(( deadline - SECONDS ))
+          [ "$remaining" -le 5 ] && break
+          backoff=$(( attempt * 5 ))
+          [ "$backoff" -gt "$remaining" ] && backoff="$remaining"
+          echo "retrying in ${backoff}s"
+          sleep "$backoff"
+        done
+
+        echo "FAILED: could not obtain postgresql-client ${need_major} within the 240s budget (${attempt} attempt(s))."
+        echo "This is an infrastructure failure, not a gate failure — no gate has run."
+        exit 1

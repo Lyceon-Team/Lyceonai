@@ -361,6 +361,22 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-12 w-48 bg-primary-foreground/20" />
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
+              ) : estimateData?.estimateStatus === "baseline_pending" ? (
+                // Owner ruling Q2, 2026-08-17: the student completed the
+                // diagnostic and the numbers are not ready. This arm offers no
+                // way to begin another one, and it sits ABOVE the no_baseline arm
+                // precisely so a completed-but-uncomputed student never reaches
+                // the arm that does. tests/ci/diagnostic-baseline-pending.contract.test.ts
+                // asserts both the ordering and the absence.
+                <div className="space-y-4">
+                  <p className="text-2xl font-semibold leading-tight tracking-tight">
+                    Your baseline is being calculated.
+                  </p>
+                  <p className="text-sm text-primary-foreground/80">
+                    You have finished the diagnostic — your starting point will
+                    appear here shortly.
+                  </p>
+                </div>
               ) : estimateData?.estimateStatus === "no_baseline" ? (
                 // Diagnostic client wiring: button calls POST /diagnostic/sessions
                 // (via useDiagnosticStart), then navigates to /practice/session/:id
@@ -426,10 +442,15 @@ export default function LyceonDashboard() {
                     {getConfidenceLabel(estimateData.estimate.confidence)}{" "}
                     estimate confidence
                   </div>
-                  <p className="text-xs text-primary-foreground/80">
-                    Based on {estimateData.totalQuestionsAttempted} attempted
-                    questions.
-                  </p>
+                  {/* Omitted when the server could not establish the count. A
+                      figure on a student-facing surface is a claim; an
+                      unverified one does not get made. */}
+                  {estimateData.totalQuestionsAttempted !== null && (
+                    <p className="text-xs text-primary-foreground/80">
+                      Based on {estimateData.totalQuestionsAttempted} attempted
+                      questions.
+                    </p>
+                  )}
                 </div>
               ) : (
                 // Fallback: error or truly unavailable data.
