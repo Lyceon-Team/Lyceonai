@@ -747,26 +747,40 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
     // Runs BEFORE orchestration — if crisis is detected, bypass model generation
     // entirely and return regional crisis resources (Doc-03_V3 §21).
-    // The classifier infrastructure may be unavailable (missing tables in test
-    // environments, Vertex outage). In that case the turn proceeds with
-    // forceReview so it lands in the §21.3 safety review queue.
+    //
+    // B1.5: runCrisisClassifier now returns crisis=true when Layer 2 fails AND
+    // Layer 1 has zero crisis signatures (classifier_degraded_no_floor). This
+    // routes into the §4.6 crisis-safe response rather than normal tutoring.
+    // The catch block below handles unexpected infrastructure failure the same
+    // way — fail closed with crisis-safe response.
     let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
     try {
       crisisResult = await runCrisisClassifier(sanitized);
     } catch (crisisErr: unknown) {
-      // Classifier infrastructure failure — treat as degraded, not blocking.
-      // The turn proceeds but is force-enqueued to the review queue.
+      // B1.5: Unexpected infrastructure failure in the entire classifier
+      // pipeline. We cannot determine Layer 1 state, so fail closed — return
+      // crisis-safe response rather than proceeding to normal generation.
+      // The student receives regional crisis resources; the review case is
+      // created. This is strictly safer than the previous behavior (proceed
+      // to normal generation + review case after the fact).
+      // @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21.2, B1.5]
       logger.error(
         "TUTOR_RUNTIME",
         "crisis_classifier_infrastructure_error",
-        "crisis classifier infrastructure error; treating as degraded",
+        "crisis classifier infrastructure error; failing closed with crisis-safe response",
         {
           message:
             crisisErr instanceof Error ? crisisErr.message : String(crisisErr),
           conversationId: conversation.id,
         },
       );
-      crisisResult = { crisis: false, forceReview: true };
+      crisisResult = {
+        crisis: true,
+        source: "infrastructure_failure",
+        signatureId: null,
+        modelConfidence: null,
+        forceReview: true,
+      };
     }
 
     // Step 11: Persist student message.
