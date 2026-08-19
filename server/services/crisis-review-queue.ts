@@ -37,7 +37,13 @@ const SLA_HOURS = 48;
 
 // ── Types ─────────────────────────────────────────────────────────────
 
-type CrisisSource = "signature" | "model" | "both" | "classifier_degraded";
+type CrisisSource =
+  | "signature"
+  | "model"
+  | "both"
+  | "classifier_degraded"
+  | "classifier_degraded_no_floor"
+  | "infrastructure_failure";
 
 type CaseStatus = "open" | "in_review" | "resolved";
 
