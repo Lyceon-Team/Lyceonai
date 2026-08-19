@@ -939,20 +939,32 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const assignmentId = instructionAssignmentResult.assignmentId;
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
-    // envelope — these flow into both the wire request (worker-side scan) and
-    // the BFF-side defense-in-depth scan (step 15, via serializer).
-    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15, LISA-FULL-007]
+    // envelope. Two consumers, two scopes:
+    //   - BFF output scan (step 15): needs the real correct_answer to detect
+    //     leaks in the model response. Stays BFF-local, never crosses the wire
+    //     pre-submit.
+    //   - Worker prompt (step 14): receives is_post_submit (server-derived
+    //     boolean) and correct_answer (null pre-submit, real post-submit).
+    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3,
+    //        LISA-FULL-007]
     const preSubmit = await isPreSubmitForSurface(
       conversation.source_surface,
       effectiveScope.source_session_item_id,
       supabaseServer,
     );
+    const isPostSubmit = !preSubmit;
+
+    // Fetch correct_answer for the BFF-side output scan (step 15).
+    // Pre-submit: needed for answer-aware leak detection in scanAndSubstitute.
+    // Post-submit: forwarded to the worker so the model can explain it.
     const correctAnswerResult = preSubmit
       ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
-    // Build context envelope (Doc 03A §5.4). Anti-leak fields and Model Armor
-    // template IDs are resolved here so the worker receives them on the wire.
+    // Build context envelope (Doc 03A §5.4). Anti-leak: correct_answer is
+    // null on the wire pre-submit (Doc 03D §6.3). The real value stays
+    // BFF-local for the output scan; the envelope carries is_post_submit
+    // so the worker gates on a server-derived boolean, not on field presence.
     const recentMessages = await getRecentMessages(conversation.id);
     const envelope = await resolveFullEnvelope({
       conversationId: conversation.id,
@@ -965,6 +977,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       recentMessages,
       runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
       correctAnswer: correctAnswerResult.value,
+      isPostSubmit,
     });
 
     await logContextResolution({
