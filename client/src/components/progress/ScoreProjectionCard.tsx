@@ -199,9 +199,14 @@ export function ScoreProjectionCard() {
             <AlertCircle className="h-4 w-4" />
             <span>
               Your score estimate isn&apos;t available yet
-              {totalQuestionsAttempted > 0
-                ? " — it appears once enough scored evidence accumulates."
-                : " — start practicing to generate it."}
+              {/* null = the count could not be established. Neither sentence is
+                  safe then: one claims evidence exists, the other claims the
+                  student has not started. Say neither. */}
+              {totalQuestionsAttempted === null
+                ? "."
+                : totalQuestionsAttempted > 0
+                  ? " — it appears once enough scored evidence accumulates."
+                  : " — start practicing to generate it."}
             </span>
           </div>
         </CardContent>
@@ -275,7 +280,9 @@ export function ScoreProjectionCard() {
           </div>
         )}
 
-        {totalQuestionsAttempted > 0 && (
+        {/* Omitted entirely when the count is null — "Based on null questions"
+            and "Based on 0 questions" are both worse than silence. */}
+        {totalQuestionsAttempted !== null && totalQuestionsAttempted > 0 && (
           <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
             <TrendingUp className="h-4 w-4" />
             Based on {totalQuestionsAttempted} questions

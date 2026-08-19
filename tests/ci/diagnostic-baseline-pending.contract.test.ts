@@ -26,6 +26,7 @@ const buildScoreEstimateFromCanonical = vi.fn();
 const buildStudentFullLengthReportView = vi.fn((x: unknown) => x);
 const readDiagnosticBaseline = vi.fn();
 const readDiagnosticState = vi.fn();
+const readAnsweredQuestionCount = vi.fn();
 const canAccessFeature = vi.fn();
 
 vi.mock("../../server/services/kpi-access", () => ({
@@ -38,6 +39,7 @@ vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildStudentFullLengthReportView,
   readDiagnosticBaseline,
   readDiagnosticState,
+  readAnsweredQuestionCount,
 }));
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -94,6 +96,7 @@ describe("baseline_pending — a completed diagnostic is never asked for again",
     // The production shape: the diagnostic completed, the baseline never landed.
     readDiagnosticBaseline.mockResolvedValue(null);
     readDiagnosticState.mockResolvedValue("baseline_pending");
+    readAnsweredQuestionCount.mockResolvedValue(40);
   });
 
   it("serves baseline_pending, not no_baseline", async () => {

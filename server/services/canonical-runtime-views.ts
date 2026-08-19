@@ -756,6 +756,56 @@ export async function readDiagnosticState(
   return parsed.data;
 }
 
+/**
+ * @spec [Doc-05C_V1.0 §7.4; Doc-01_V8 product pillar: honest progress signals;
+ *        owner ruling 2026-08-17 "report the true count in EVERY branch"]
+ * @implemented 2026-08-17
+ *
+ * plain English: how many questions this student has actually answered. Counted
+ * from the durable answer rows, not from a rollup.
+ *
+ * WHY NOT student_overall_kpi.events_total — WHICH IS WHAT THE PROJECTION USES
+ *   events_total is a mastery rollup. Every rollup in this system was EMPTY for
+ *   every student for seven weeks while apply_mastery_event was failing, and a
+ *   student with forty answered questions would have read as events_total = 0 —
+ *   the same false zero this change exists to remove, arriving by a different
+ *   route. practice_session_items rows are written by the answer handler itself
+ *   and do not depend on the mastery pipeline being healthy.
+ *
+ * WHY null AND NOT 0 ON FAILURE
+ *   0 is a legitimate answer — a student who has answered nothing. A failed read
+ *   is not that answer. Collapsing the two is the failure class that produced
+ *   BUG-1 (a skipped baseline capture indistinguishable from no diagnostic) and
+ *   the outage's invisibility, and this function must not add a third instance of
+ *   it. The caller serves null and the surface omits the line: absent beats wrong.
+ *
+ * expected outcome: N for a student with N answered items, 0 for a student with
+ * none, null when the count could not be established.
+ */
+export async function readAnsweredQuestionCount(
+  userId: string,
+): Promise<number | null> {
+  const { count, error } = await supabaseServer
+    .from("practice_session_items")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "answered");
+
+  if (error) {
+    logger.warn(
+      "PROGRESS",
+      "answered_question_count_read_failed",
+      "answered-question count read failed; the surface will omit the figure rather than report zero",
+      { userId, dbError: error.message },
+    );
+    return null;
+  }
+
+  // A null count with no error should not happen with head+exact, but "the
+  // database did not tell us" is not "the student answered nothing".
+  return typeof count === "number" ? count : null;
+}
+
 export function projectGuardianFullLengthReportView(
   view: StudentFullLengthReportView,
 ) {

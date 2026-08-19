@@ -10,6 +10,7 @@ import {
   buildStudentKpiViewFromCanonical,
   readDiagnosticBaseline,
   readDiagnosticState,
+  readAnsweredQuestionCount,
 } from "../../services/canonical-runtime-views";
 import {
   resolveEstimateStatus,
@@ -71,6 +72,19 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     // this is the read that tells them apart. null means the read failed; the
     // mapping degrades to the baseline-presence behaviour shipped before step 1.
     const diagnosticState = await readDiagnosticState(user.id);
+
+    // @spec [owner ruling 2026-08-17: "report the true count of answered items in
+    // EVERY branch"] @implemented 2026-08-17
+    //
+    // Every branch below used to hardcode 0 except the paid one, so a student who
+    // had answered forty questions was told they had answered none. It is a
+    // student-facing number and it was false; Lyceon's honest-signal pillar does
+    // not have a "matches the existing convention" exemption.
+    //
+    // null means the count could not be established — a failed read, which is not
+    // the same answer as "none". Every surface omits the figure rather than
+    // printing a number nobody verified.
+    const answeredQuestionCount = await readAnsweredQuestionCount(user.id);
 
     // Feature-scoped gate: admin bypass at call site, then canAccessFeature.
     // Semantic equivalence confirmed (2026-08-12): for students, hasPaidAccess
@@ -145,10 +159,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
               "Set your first target now; the baseline fills in when the calculation finishes.",
           },
         },
-        // 0 in every branch that serves no live projection — the shipped
-        // convention for this field (branches 1 and 2 both report 0). Not
-        // introduced here; see the open owner question on the PR.
-        totalQuestionsAttempted: 0,
+        totalQuestionsAttempted: answeredQuestionCount,
         lastUpdated: new Date().toISOString(),
         officialScore: null,
         entitlement: {
@@ -195,7 +206,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
               "Set your first target now; the estimate fills in after the diagnostic.",
           },
         },
-        totalQuestionsAttempted: 0,
+        totalQuestionsAttempted: answeredQuestionCount,
         lastUpdated: new Date().toISOString(),
         officialScore: null,
         entitlement: {
@@ -250,7 +261,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
               "Treat this as planning input and verify with your next proctored benchmark.",
           },
         },
-        totalQuestionsAttempted: 0,
+        totalQuestionsAttempted: answeredQuestionCount,
         lastUpdated: baseline.capturedAt,
         officialScore: null,
         entitlement: {
@@ -266,7 +277,10 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
 
     // ── Branch 3: paid — serve live projection + baseline for comparison ─
     const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
-    const totalQuestions = scoreProjection.totalQuestionsAttempted;
+    // Deliberately NOT scoreProjection.totalQuestionsAttempted: that figure comes
+    // from student_overall_kpi.events_total, a mastery rollup that was empty for
+    // every student for seven weeks. One source for the number, in every branch.
+    const totalQuestions = answeredQuestionCount;
 
     // LC-AM3-001 honest-signal: even for paid users, if the live projection is
     // uncomputed (e.g. mastery_constants changed, evidence gate re-evaluated),

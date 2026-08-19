@@ -442,10 +442,15 @@ export default function LyceonDashboard() {
                     {getConfidenceLabel(estimateData.estimate.confidence)}{" "}
                     estimate confidence
                   </div>
-                  <p className="text-xs text-primary-foreground/80">
-                    Based on {estimateData.totalQuestionsAttempted} attempted
-                    questions.
-                  </p>
+                  {/* Omitted when the server could not establish the count. A
+                      figure on a student-facing surface is a claim; an
+                      unverified one does not get made. */}
+                  {estimateData.totalQuestionsAttempted !== null && (
+                    <p className="text-xs text-primary-foreground/80">
+                      Based on {estimateData.totalQuestionsAttempted} attempted
+                      questions.
+                    </p>
+                  )}
                 </div>
               ) : (
                 // Fallback: error or truly unavailable data.

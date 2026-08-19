@@ -65,7 +65,17 @@ export type EstimateStatus =
   | "baseline_only";
 
 interface EstimateResponseBase {
-  totalQuestionsAttempted: number;
+  /**
+   * How many questions the student has actually answered, in EVERY branch —
+   * owner ruling 2026-08-17. It previously read 0 in every branch but `computed`,
+   * which told a student who had answered forty questions that they had answered
+   * none.
+   *
+   * `null` means the server could not establish the count. It is NOT zero, and it
+   * must never be rendered as one: every consumer omits the figure instead.
+   * Absent beats wrong.
+   */
+  totalQuestionsAttempted: number | null;
   lastUpdated: string;
   entitlement: {
     hasPaidAccess: boolean;
