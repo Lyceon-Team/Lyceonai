@@ -22,6 +22,43 @@ vi.mock("../server/lib/review-runtime-gate", () => ({
 
 import { submitReviewSessionAnswer } from "../server/routes/review-session-routes";
 
+/**
+ * @spec [Doc-05E_V1.0 §3 rule 1/rule 3, §6 INV-05E-06] | @implemented [2026-08-19]
+ *
+ * plain English: the authenticated user carries a synthetic grouping identifier
+ * (`actor_id`) that the route copies onto every activity row it writes. These
+ * tests mock the request, so they must model that identifier the way production
+ * produces it, not merely satisfy the presence guard.
+ *
+ * Three properties of the real thing are reproduced here:
+ *   uuid          `profiles.actor_id` and `review_error_attempts.actor_id` are
+ *                 both `uuid NOT NULL`. A string placeholder passes the guard
+ *                 and misrepresents the column — it would let a non-uuid reach
+ *                 the insert assertion without anything noticing.
+ *   born dissociated (§3 rule 1) — not derived from the student id.
+ *   one per user, stable (INV-05E-06) — the map is keyed by student, so the
+ *                 same student always presents the same actor_id across every
+ *                 request in every test. Generating one per call would satisfy
+ *                 the guard while breaking the invariant the column exists for.
+ *
+ * Source of truth in production: `supabase-auth.ts` reads `profile.actor_id`
+ * onto `req.user`; nothing generates it per request.
+ */
+const ACTOR_IDS: Record<string, string> = {
+  "student-1": "6f1a7c48-3f2e-4b91-9d0c-2a5b8e7f4c31",
+  "student-2": "b83d5e02-9c74-4a16-8f5b-1e6d3a09c7f2",
+};
+
+function asUser(id: string): { id: string; actor_id: string } {
+  const actorId = ACTOR_IDS[id];
+  if (!actorId) {
+    throw new Error(
+      `no actor_id fixture for "${id}" — add one to ACTOR_IDS rather than inlining a value, so the one-per-user invariant stays visible`,
+    );
+  }
+  return { id, actor_id: actorId };
+}
+
 function makeRes() {
   let statusCode = 200;
   let body: any = null;
@@ -183,7 +220,7 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       requestId: "req-review-1",
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
@@ -216,7 +253,7 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       requestId: "req-review-2",
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
