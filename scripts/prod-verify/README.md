@@ -155,6 +155,37 @@ There is no `migration-history-repair.sql`. Ruling Q9 puts the repair in the CLI
 hands; hand-inserting into `supabase_migrations.schema_migrations` means guessing the
 column shape the runner expects. CI fails if that file reappears.
 
+### Gap-detector noise fix — `20260818000000`
+
+On its first day in production the detector reported **84 gaps out of 91 answered
+items**. All 84 are items the Step 8 backfill correctly rebuilt:
+`backfill_recompute_student` replays history and writes no per-event
+`mastery_event_audit_log` row, so "rebuilt by backfill" and "never derived" are
+indistinguishable to an anti-join over that log. An alert that is 100% noise on
+arrival gets muted, and a muted detector is the exact failure this workstream
+exists to prevent.
+
+| # | Step | Writes? | Expected verdict |
+|---|---|---|---|
+| 4.1a | `4.1-pre-apply.sql` | no | `PROCEED — the shape matches what the fix targets; apply 20260818000000` |
+| 4.1b | *apply* `20260818000000_gap_detector_excludes_backfilled.sql` | yes | — |
+| 4.1c | `4.1-post-apply.sql` | no | `OK — 20260818000000 applied; both branches exclude backfilled events` |
+
+`4.1-pre-apply.sql` is the negative control for `4.1-post-apply.sql`: it records
+the 84 BEFORE the change, so the 0 afterwards measures the fix rather than an
+empty table. Run it first or the post-apply number proves nothing.
+
+`4.1-post-apply.sql` asserts `open_gaps = 0` in its verdict. It also reports the
+count separately so that a later non-zero reading is legible as what it is — a
+genuinely un-emitted event, which is exactly what the detector is for.
+
+**How it gets applied is an open question.** As a new migration it belongs in the
+runner (`supabase db push`), but push acts on the WHOLE pending set, and the
+migration-history reconciliation that would make that safe is parked. Until that
+clears, applying `20260818000000` means executing its file body directly — which
+is how the unrecorded-version problem was created in the first place. See owner
+question 1 in the PR.
+
 ### Session lifecycle — steps 2, 1, 8 and 9 (four migrations)
 
 Four migrations close the diagnostic-lifecycle defects. Order is load-bearing in
