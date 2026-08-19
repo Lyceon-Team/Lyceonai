@@ -92,6 +92,23 @@ export type {
   AuditLogParams,
 };
 
+// ── Schema-drift tolerance ────────────────────────────────────────────
+
+/**
+ * Source values that were added after the initial CHECK constraint and
+ * may not be present in production if the migration hasn't been applied.
+ * Each maps to the coarser value that the original schema accepts.
+ *
+ * @spec [WS-L8 Item 4b — narrow crisis-path tolerance]
+ */
+const SOURCE_FALLBACK: Partial<Record<CrisisSource, CrisisSource>> = {
+  classifier_degraded_no_floor: "classifier_degraded",
+  infrastructure_failure: "classifier_degraded",
+};
+
+/** PostgreSQL error code for check_violation (23514). */
+const PG_CHECK_VIOLATION = "23514";
+
 // ── Create Case ───────────────────────────────────────────────────────
 
 /**
@@ -103,7 +120,16 @@ export type {
  * A failed case creation means a crisis turn will not be reviewed —
  * that is worse than a failed turn.
  *
- * @spec [Doc-03_V3 §21.3, CR-03C-V3-01 §3.4]
+ * Schema-drift tolerance (WS-L8 Item 4b): if the INSERT fails with a
+ * CHECK violation (PG code 23514) AND the source value is one of the
+ * newer values that may not be in production's CHECK constraint yet,
+ * the function retries once with a coarser source value that the old
+ * schema accepts. The case still persists — only its precision degrades.
+ * This does NOT reverse B1.1d's blocking-write ruling: a real failure
+ * (FK violation, connection error, anything other than an identifiable
+ * schema-version CHECK mismatch) still blocks the turn.
+ *
+ * @spec [Doc-03_V3 §21.3, CR-03C-V3-01 §3.4, WS-L8 Item 4b]
  */
 export async function createCrisisReviewCase(
   params: CreateCaseParams,
@@ -112,18 +138,83 @@ export async function createCrisisReviewCase(
     Date.now() + SLA_HOURS * 60 * 60 * 1000,
   ).toISOString();
 
+  const insertPayload = {
+    conversation_id: params.conversationId,
+    student_id: params.studentId,
+    source: params.source,
+    signature_id: params.signatureId,
+    model_confidence: params.modelConfidence,
+    sla_deadline: slaDeadline,
+  };
+
   const { data, error } = await supabaseServer
     .from("crisis_review_cases")
-    .insert({
-      conversation_id: params.conversationId,
-      student_id: params.studentId,
-      source: params.source,
-      signature_id: params.signatureId,
-      model_confidence: params.modelConfidence,
-      sla_deadline: slaDeadline,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
+
+  // ── Schema-drift retry (WS-L8 Item 4b) ──────────────────────────
+  // Narrow: only when (1) the error is a CHECK violation, (2) the source
+  // has a known fallback, and (3) the retry with the coarser value
+  // succeeds. All other errors propagate immediately.
+  if (error && error.code === PG_CHECK_VIOLATION) {
+    const fallbackSource = SOURCE_FALLBACK[params.source];
+    if (fallbackSource) {
+      logger.warn(
+        "CRISIS_REVIEW",
+        "case_create_schema_drift",
+        "CHECK violation on crisis_review_cases.source — production schema " +
+          "may not include the newer value. Retrying with coarser source. " +
+          "Apply the pending migration to restore full precision.",
+        {
+          conversationId: params.conversationId,
+          originalSource: params.source,
+          fallbackSource,
+          pgCode: error.code,
+        },
+      );
+
+      const { data: retryData, error: retryError } = await supabaseServer
+        .from("crisis_review_cases")
+        .insert({ ...insertPayload, source: fallbackSource })
+        .select("id")
+        .single();
+
+      if (retryError || !retryData) {
+        // Retry also failed — this is a real failure, not schema drift.
+        logger.error(
+          "CRISIS_REVIEW",
+          "case_create_failed",
+          "failed to create crisis review case even with fallback source — " +
+            "crisis turn may not be reviewed",
+          retryError,
+          {
+            conversationId: params.conversationId,
+            source: fallbackSource,
+          },
+        );
+        throw new Error(
+          `crisis review case creation failed (with fallback): ${retryError?.message ?? "no data returned"}`,
+        );
+      }
+
+      logger.warn(
+        "CRISIS_REVIEW",
+        "case_created_degraded",
+        "crisis review case created with degraded source precision " +
+          "(schema drift — apply pending migration)",
+        {
+          caseId: retryData.id,
+          conversationId: params.conversationId,
+          originalSource: params.source,
+          persistedSource: fallbackSource,
+          slaDeadline,
+        },
+      );
+
+      return { id: retryData.id as string, slaDeadline };
+    }
+  }
 
   if (error || !data) {
     logger.error(
