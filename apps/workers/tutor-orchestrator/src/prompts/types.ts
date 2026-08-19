@@ -36,7 +36,7 @@ export type PromptFields = {
   sourceSurface: OrchestrateRequest["source_surface"];
   /** Policy variant (e.g. "default", "concise"). */
   policyVariant: string;
-  /** Whether the question is post-submit (correct_answer present on envelope). */
+  /** Whether the question is post-submit (is_post_submit on envelope, Doc 03D §6.3). */
   isPostSubmit: boolean;
 };
 

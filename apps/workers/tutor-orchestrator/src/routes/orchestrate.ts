@@ -241,7 +241,7 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
     entryMode: request.entry_mode,
     sourceSurface: request.source_surface,
     policyVariant: request.policy_assignment.policy_variant,
-    isPostSubmit: request.correct_answer !== null,
+    isPostSubmit: request.is_post_submit,
   });
 
   // SCL-041: append state blocks to systemInstruction. Flash-class models
@@ -295,10 +295,13 @@ export function buildOrchestrateResponse(
   request: OrchestrateRequest,
   promptVersion: string,
 ): OrchestrateResponse {
-  // Worker-side anti-leak scan: if correct_answer is present (pre-submit
-  // implied) and the response leaks it, substitute with the safe pedagogical
-  // fallback. This is the first anti-leak layer; BFF-side scanAndSubstitute
-  // is defense-in-depth.
+  // Worker-side anti-leak scan: correct_answer is non-null only post-submit
+  // (Doc 03D §6.3 — the BFF nulls it pre-submit). This scan is therefore a
+  // post-submit defense-in-depth layer: it catches model hallucination in
+  // post-submit responses where the answer is already revealed. The primary
+  // pre-submit anti-leak chokepoint is BFF-side scanAndSubstitute (INV-03-04),
+  // which holds the real answer BFF-local for scanning without forwarding it
+  // to the worker.
   let content = vertexResponse.text;
   if (request.correct_answer !== null) {
     const leaked = hasAnswerLeak(content, request.correct_answer);

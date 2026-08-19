@@ -73,6 +73,12 @@ type EnvelopeParams = {
   // Anti-leak field (LISA-FULL-001): resolved BFF-side, passed to worker.
   // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
   correctAnswer: string | null;
+  // Server-derived post-submit flag (Doc 03D §6.3). The BFF resolves this
+  // from practice_session_items.status; the envelope uses it to gate both
+  // explanation release and the correct_answer wire value. correct_answer
+  // stays BFF-local for the output scan when isPostSubmit is false.
+  // @spec [Doc-03D_V1.2 §6.3, INV-03-04]
+  isPostSubmit: boolean;
 };
 
 // ── Self-deprecation keywords (V1 simple scan) ─────────────────────────
@@ -311,9 +317,10 @@ export async function resolveScope(
  * guaranteed by the user_id predicate (tutor-context.ts already queries
  * this table with ownership predicates — we do not weaken them).
  *
- * Anti-leak: explanation is set to null when correctAnswer is null
- * (pre-submit). The correct_answer column is NEVER included in the
- * select — it does not appear on the wire.
+ * Anti-leak: explanation is set to null when isPostSubmit is false
+ * (pre-submit). Gating keys on the server-derived boolean, never on
+ * correctAnswer presence (Doc 03D §6.3). The correct_answer column is
+ * NEVER included in the select — it does not appear on the wire.
  *
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
@@ -321,7 +328,7 @@ export async function resolveScope(
 async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
-  correctAnswer: string | null,
+  isPostSubmit: boolean,
 ): Promise<QuestionContent | null> {
   // No session item → no question context (general mode)
   if (!scope.source_session_item_id) return null;
@@ -378,12 +385,13 @@ async function resolveQuestionContent(
         ? ("grid_in" as const)
         : ("mcq" as const);
 
-    // Anti-leak gate (INV-03-04): explanation is null when
-    // correct_answer is null (pre-submit).
-    const explanation =
-      correctAnswer !== null
-        ? ((data.question_explanation as string) ?? null)
-        : null;
+    // Anti-leak gate (INV-03-04, Doc 03D §6.3): explanation is null
+    // pre-submit. Gated on the server-derived isPostSubmit boolean,
+    // never on correctAnswer presence — a caller-supplied field gating
+    // a safety decision is a field an attacker sets (§6.3).
+    const explanation = isPostSubmit
+      ? ((data.question_explanation as string) ?? null)
+      : null;
 
     return {
       stem: data.question_stem as string,
@@ -1178,7 +1186,7 @@ export async function resolveFullEnvelope(
       resolveQuestionContent(
         params.studentId,
         resolvedScope,
-        params.correctAnswer,
+        params.isPostSubmit,
       ),
     ]);
 
@@ -1207,9 +1215,17 @@ export async function resolveFullEnvelope(
     // Question content (Doc 03A §5.4, Doc 03C §4.4): CONTENT, never canonical ID.
     // Anti-leak: explanation already gated null pre-submit in resolveQuestionContent.
     question_content: questionContent,
-    // Anti-leak field (LISA-FULL-001): BFF resolves; worker scans when non-null.
-    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
-    correct_answer: params.correctAnswer,
+    // Server-derived post-submit flag (Doc 03D §6.3): resolved from
+    // practice_session_items.status by isPreSubmitForSurface. The worker
+    // reads this to gate answer/explanation in the prompt — never derives
+    // post-submit state from correct_answer presence.
+    // @spec [Doc-03D_V1.2 §6.3, INV-03-04]
+    is_post_submit: params.isPostSubmit,
+    // Anti-leak (INV-03-04, Doc 03D §6.3): correct_answer is null on the
+    // wire pre-submit. The BFF keeps the real value BFF-local for the
+    // output scan (Doc 03B §6.5 step 15) but never forwards it to the
+    // worker pre-submit. Post-submit: the real value for model explanation.
+    correct_answer: params.isPostSubmit ? params.correctAnswer : null,
     // Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless).
     // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
     model_armor_input_template_id:

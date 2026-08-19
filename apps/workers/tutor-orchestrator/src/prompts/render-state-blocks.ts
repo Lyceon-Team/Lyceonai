@@ -78,17 +78,19 @@ export function renderStateBlocks(request: OrchestrateRequest): string | null {
  * directive = pre-submit prohibition (C5 regression fix) or post-submit
  * explanation permission.
  *
- * Anti-leak: correct_answer is NEVER included. Explanation is only
- * present post-submit (gated upstream in tutor-context.ts).
+ * Anti-leak: correct_answer is null on the wire pre-submit (Doc 03D §6.3).
+ * Post-submit state is read from request.is_post_submit (server-derived
+ * boolean), never derived from correct_answer presence — a caller-supplied
+ * field gating a safety decision is a field an attacker sets (§6.3).
  *
- * @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, INV-03-04]
+ * @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, Doc-03D_V1.2 §6.3, INV-03-04]
  */
 function renderItemBlock(request: OrchestrateRequest): string | null {
   const qc = request.question_content;
   if (!qc) return null;
 
   const parts: string[] = [];
-  const isPostSubmit = request.correct_answer !== null;
+  const isPostSubmit = request.is_post_submit;
 
   // Question stem
   parts.push(
@@ -119,8 +121,8 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
   // Anti-leak directive — directly addresses C5 regression
   if (isPostSubmit) {
     // Post-submit: include the correct answer so the model can explain it.
-    // Anti-leak: correct_answer is non-null only when the platform has confirmed
-    // submission (gated upstream in tutor-context.ts, derived server-side).
+    // Anti-leak: is_post_submit is server-derived (Doc 03D §6.3); correct_answer
+    // is non-null only when is_post_submit is true (gated in resolveFullEnvelope).
     parts.push(`Correct answer: ${request.correct_answer}.`);
     parts.push(
       `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
