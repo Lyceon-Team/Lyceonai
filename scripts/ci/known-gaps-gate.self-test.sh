@@ -23,6 +23,16 @@
 #   G8  a count above the declared ceiling turns the gate red — an accepted gap
 #       may sit at a size, it may not grow quietly.
 #   G9  MUTATION — with the ceiling comparison removed, G8 goes green.
+#  G10  the count check is ADVISORY off CI and FATAL on it. The owner ruling is
+#       that the CI runner's reading is authoritative; a ratchet that fires or
+#       passes depending on which machine measured last gets loosened until it
+#       stops firing.
+#  G11  `tolerance` is read FROM THE ENTRY: at ceiling+tolerance the gate passes,
+#       one above it the gate is red.
+#  G12  MUTATION — a tolerance widened silently INSIDE the gate makes G8 go green.
+#       That is what proves G8 is the case that catches a gate-side widening, and
+#       why the tolerance belongs on the entry where a reviewer of the accept-list
+#       can see it.
 #
 # Fixtures are written to a temp dir and fed in via KNOWN_GAPS_FILE; the clock
 # is pinned with KNOWN_GAPS_NOW so nothing here depends on the wall date.
@@ -47,16 +57,24 @@ $2
     command: pnpm run nothing
     count_command: echo 1
     findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
     reason: fixture
     re_arm: fixture
 YAML
 }
 
 run_gate() {
-  KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_COUNTS=1 node "$GATE" 2>&1
+  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_COUNTS=1 node "$GATE" 2>&1
 }
+# CI=1 == the authoritative environment. Counts are only fatal there.
 run_gate_with_counts() {
-  KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" node "$GATE" 2>&1
+  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" node "$GATE" 2>&1
+}
+# `env -u CI` is required, not cosmetic: this self-test itself runs under CI=true
+# in the workflow, so the local case has to unset it explicitly.
+run_gate_with_counts_local() {
+  env -u CI KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" node "$GATE" 2>&1
 }
 
 # ── G1 — EVERY required field, omitted one at a time, is rejected ───────────
@@ -70,12 +88,14 @@ entries:
     command: pnpm run nothing
     count_command: echo 1
     findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
     reason: fixture
     re_arm: fixture
 YAML
 }
 G1_OK=1
-for field in id owner expires command count_command findings_ceiling reason re_arm; do
+for field in id owner expires command count_command findings_ceiling tolerance ceiling_source reason re_arm; do
   write_full "$TMP/full.yaml"
   grep -v "^    $field:\|^  - $field:" "$TMP/full.yaml" > "$TMP/missing-$field.yaml"
   OUT="$(run_gate "$TMP/missing-$field.yaml")"; RC=$?
@@ -85,7 +105,7 @@ for field in id owner expires command count_command findings_ceiling reason re_a
     G1_OK=0
   fi
 done
-[ "$G1_OK" = 1 ] && pass G1 "all 8 required fields rejected when omitted"
+[ "$G1_OK" = 1 ] && pass G1 "all 10 required fields rejected when omitted"
 
 # the original single-field case, kept explicit because it is the one with a
 # bespoke message
@@ -152,6 +172,8 @@ entries:
     command: pnpm run nothing
     count_command: echo 1
     findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
     reason: fixture
     re_arm: fixture
 YAML
@@ -174,6 +196,8 @@ entries:
     command: pnpm run nothing
     count_command: echo 7
     findings_ceiling: 3
+    tolerance: 0
+    ceiling_source: fixture
     reason: fixture
     re_arm: fixture
 YAML
@@ -189,7 +213,7 @@ fi
 
 # ── G9 — MUTATION: without the ceiling comparison, G8 must go green ─────────
 MUT2="$TMP/gate-without-ceiling-check.mjs"
-sed 's/^    if (actual > ceiling) {$/    if (false) {/' "$GATE" > "$MUT2"
+sed 's/^    if (actual > limit) {$/    if (false) {/' "$GATE" > "$MUT2"
 if ! grep -q "if (false) {" "$MUT2"; then
   fail G9 "could not stage the mutation — the ceiling comparison was not found where expected"
 else
@@ -200,6 +224,76 @@ else
        $(head -5 <<<"$OUT")"
   else
     pass G9 "removing the ceiling comparison makes the over-ceiling entry pass — it is load-bearing"
+  fi
+fi
+
+# ── G10 — the count check is FATAL on CI and ADVISORY off it ────────────────
+# G8 above already proved the fatal half (it runs with CI=1). This is the other
+# half of the owner ruling: a local reading is information, not a verdict.
+OUT="$(run_gate_with_counts_local "$TMP/over-ceiling.yaml")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G10 "off CI, an over-ceiling count was FATAL. Then the same commit passes on one
+       machine and fails on another, which is how a ceiling gets raised until it stops firing.
+       $(head -5 <<<"$OUT")"
+elif ! grep -q "ADVISORY" <<<"$OUT"; then
+  fail G10 "off CI the gate exited 0 but printed no advisory — the growth is now SILENT,
+       which is worse than fatal. It must still be reported, just not as a verdict.
+       $(head -5 <<<"$OUT")"
+else
+  pass G10 "off CI an over-ceiling count is advisory and reported; on CI it is fatal"
+fi
+
+# ── G11 — the tolerance is read from the ENTRY ──────────────────────────────
+# Same 7 findings, same ceiling of 3. With `tolerance: 4` the limit is exactly 7
+# and the gate must pass; with `tolerance: 3` the limit is 6 and it must be red.
+# If the gate ignored the field, both cases would land the same way.
+write_tolerance_fixture() { # $1=file $2=tolerance
+  cat > "$1" <<YAML
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 7
+    findings_ceiling: 3
+    tolerance: $2
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+}
+write_tolerance_fixture "$TMP/tol-exact.yaml" 4
+write_tolerance_fixture "$TMP/tol-short.yaml" 3
+OUT_EXACT="$(run_gate_with_counts "$TMP/tol-exact.yaml")"; RC_EXACT=$?
+OUT_SHORT="$(run_gate_with_counts "$TMP/tol-short.yaml")"; RC_SHORT=$?
+if [ "$RC_EXACT" -ne 0 ]; then
+  fail G11 "7 findings against ceiling 3 + tolerance 4 was REJECTED — the stated tolerance
+       is not being honoured, so declaring one does nothing
+       $(head -5 <<<"$OUT_EXACT")"
+elif [ "$RC_SHORT" -eq 0 ]; then
+  fail G11 "7 findings against ceiling 3 + tolerance 3 was ACCEPTED — the tolerance is not
+       bounding anything; any value would pass"
+else
+  pass G11 "the tolerance is read from the entry — exact passes, one short is red"
+fi
+
+# ── G12 — MUTATION: a tolerance widened silently IN THE GATE ────────────────
+# This is the mutation the tolerance mechanism exists to make catchable. Widen
+# the limit inside the gate rather than on the entry; G8's scenario must go
+# green, which is what proves G8 is the case that catches it — and why the
+# tolerance lives on the entry, where a reviewer of the accept-list sees it.
+MUT3="$TMP/gate-with-hidden-slack.mjs"
+sed 's/^    const limit = ceiling + tolerance;$/    const limit = ceiling + tolerance + 50;/' "$GATE" > "$MUT3"
+if ! grep -q "tolerance + 50;" "$MUT3"; then
+  fail G12 "could not stage the mutation — the limit expression was not found where expected"
+else
+  OUT="$(CI=1 KNOWN_GAPS_FILE="$TMP/over-ceiling.yaml" KNOWN_GAPS_NOW="2026-08-19" node "$MUT3" 2>&1)"; RC=$?
+  if [ "$RC" -ne 0 ]; then
+    fail G12 "with 50 of hidden slack added inside the gate the over-ceiling entry is STILL
+       red — then G8 is not the case that catches a gate-side widening
+       $(head -5 <<<"$OUT")"
+  else
+    pass G12 "a tolerance widened inside the gate makes G8 go green — G8 is what catches it"
   fi
 fi
 

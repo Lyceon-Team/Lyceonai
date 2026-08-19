@@ -7,7 +7,7 @@
 # misrepresents the repo's standard to anyone reading the workflow.
 #
 # EVERY entry MUST carry: id, owner, expires, reason, re_arm, command,
-# count_command, findings_ceiling.
+# count_command, findings_ceiling, tolerance, ceiling_source.
 # `scripts/ci/known-gaps-gate.mjs` REJECTS an entry missing any of them, and
 # turns CI red once `expires` is in the past. The schema is the enforcement —
 # not convention, not review diligence.
@@ -18,6 +18,20 @@
 # measures the current finding count and the gate fails when it exceeds
 # `findings_ceiling`. A gap is accepted at a size, not in perpetuity and not at
 # any size.
+#
+# WHO MEASURES. The CI runner's reading is authoritative; a local reading is
+# advisory. The gate is fatal on a count only when CI=1 is set. This exists
+# because a ratchet that fires or passes depending on which machine measured last
+# gets loosened until it stops firing, and then it is decoration.
+#
+# `tolerance` is how much genuine environment spread the ceiling absorbs, and it
+# lives HERE rather than in the gate on purpose: a tolerance widened inside the
+# gate is invisible to anyone reading this file to find out what was accepted and
+# at what size. It must be stated even when it is 0.
+#
+# `ceiling_source` names where the number on record was measured. A count is only
+# comparable to another count taken the same way, on the same tree, by the same
+# toolchain.
 #
 # To add an entry you must name a person and a date. If you cannot, it is not an
 # accepted gap — it is an unreported failure, and it belongs in the build.
@@ -30,6 +44,15 @@ entries:
     command: pnpm exec tsc -p tsconfig.ci.json
     count_command: pnpm exec tsc -p tsconfig.ci.json 2>&1 | grep -cE 'error TS'
     findings_ceiling: 41
+    tolerance: 0
+    ceiling_source: >
+      Local Node 22.22.2, `pnpm exec tsc -p tsconfig.ci.json 2>&1 | grep -cE 'error TS'`
+      = 41. CI run 32232947651 (head d987720) passed the gate at this ceiling, which
+      proves CI measured <= 41 but not the exact figure — the tsc output is not
+      individually addressable in that log. From this change on the gate writes each
+      runner's measurement to $GITHUB_STEP_SUMMARY, so the authoritative reading is
+      recorded on the run rather than reconstructed from it. tsc is a pinned
+      deterministic compiler over a fixed file set, hence tolerance 0.
     reason: >
       41 type errors across 6 files, concentrated in server/routes/practice-canonical.ts (18)
       and server/routes/diagnostic-routes.ts (10). Predominantly Supabase row-type inference
@@ -49,25 +72,59 @@ entries:
     expires: 2026-11-01
     command: pnpm run lint
     count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
-    findings_ceiling: 2399
+    findings_ceiling: 2112
+    tolerance: 0
+    ceiling_source: >
+      Local Node 22.22.2 / ESLint 10.4.1: "2112 problems (2111 errors, 1 warning)".
+      To be confirmed against the CI runner on this head — CI is the authoritative
+      measurement and the gate now writes each runner's reading to
+      $GITHUB_STEP_SUMMARY. The previous ceiling of 2399 was verified verbatim from
+      CI run 32232947651 ("2399 problems (2398 errors, 1 warning)"), identical to
+      the local reading on that same tree, which is what established that there is
+      no environment spread here.
     reason: >
-      ~2,390 problems. Three rules are 96% of them — 938 @typescript-eslint/no-explicit-any,
-      888 no-console, 466 no-undef. The first two are direct Coding Standards §3.2 and §16
-      violations across the legacy tree and are a genuine backlog. The no-undef findings are
-      almost certainly a CONFIG defect rather than real bugs: no-undef is redundant on a
-      TypeScript codebase and is conventionally disabled for .ts/.tsx. Splitting that out is
-      the first re-arm step and is not attempted here.
+      2,112 problems. Three rules are 95% of them — 938 @typescript-eslint/no-explicit-any,
+      789 no-console, 287 no-undef. The first two are direct Coding Standards §3.2 and §16
+      violations across the legacy tree and are a genuine backlog. By area: tests/ 877,
+      server/ 380, scripts/ 337, apps/ 229, client/ 129, root 160.
       .
-      THE CEILING IS A MAXIMUM, NOT A FINGERPRINT. `pnpm run lint` reports 2399 problems;
-      the same run through the JSON formatter yields 2390 per-message records, because the
-      two formatters do not count identically. A figure that moves with the formatter cannot
-      be asserted for equality without going red on an innocent environment, so the gate
-      fails only when the count EXCEEDS the ceiling, and the entry declares the exact
-      command that produced it — a count is comparable only to another count taken the same
-      way. The previously committed 2368/449 were stale on arrival, which is the defect this
-      ceiling exists to prevent.
+      The remaining no-undef findings are a CONFIG defect rather than real bugs: no-undef is
+      redundant on a TypeScript codebase and is conventionally disabled for .ts/.tsx.
+      Splitting that out is re_arm stage (1) and is not attempted here.
+      .
+      THE CEILING WENT DOWN, NOT UP (2026-08-19). It was briefly 2399, then measured 2408
+      once this change added lines to scripts/ci/known-gaps-gate.mjs — the ratchet fired on
+      its own enforcement code, twice. The fix was not to raise it. eslint.config.mjs now
+      declares the Node execution environment for scripts/**/*.mjs and carves out no-console
+      there, on the same reasoning as the existing apps/workers carve-out. That removed 296
+      findings, 185 of which were no-undef reporting `process`/`console`/`URL`/`fetch` as
+      undefined in files where they are defined — false findings that were being carried as
+      backlog. 2408 -> 2112. The gate script now contributes nothing to this count, so
+      editing the gate can no longer inflate its own ceiling.
+      .
+      NOT extended to scripts/**/*.ts and scripts/**/*.js — a further 335 findings on the
+      same argument. That is a wider call and it is Karl's, not this change's.
+      .
+      THE 2390-vs-2399 SPREAD, DIAGNOSED. An earlier version of this entry claimed the JSON
+      and stylish formatters count differently. That was wrong and is withdrawn. Measured on
+      one run of this tree: sum(messages[]) = 2399, errorCount + warningCount = 2399,
+      stylish summary = "2399 problems". Three ways, one number.
+      .
+      The 9 was two different TREES, not two environments. origin/cleanup measures 2390;
+      this branch measures 2399; the delta is 3 no-console and 6 no-undef in
+      scripts/ci/known-gaps-gate.mjs, added by the diff that introduced this very ceiling
+      check. The ratchet caught its own author. All 9 are the config defect already named
+      above — 'process' and 'console' undeclared for scripts/**/*.mjs, and no-console in a
+      CLI script whose job is to print — so they are not fixed by hand here; they go with
+      the no-undef config work in re_arm stage (1).
+      .
+      TOLERANCE IS 0 because there is nothing to absorb: the measurement is deterministic
+      given a tree, and local and CI agree exactly. The ceiling stays a MAXIMUM rather than
+      an equality so that a genuine reduction does not go red and train people to edit the
+      number instead of reading it. The previously committed 2368/449 were stale on arrival,
+      which is the defect this ceiling exists to prevent.
     re_arm: >
       Two stages. (1) Disable no-undef for TypeScript files and confirm the count drops by
-      ~449 with no real finding lost — that alone is a config change, not a backlog burn-down.
+      ~287 with no real finding lost — that alone is a config change, not a backlog burn-down.
       (2) The standing rule already in the workflow — every wave lint-cleans the files it
       touches — carries the rest. Delete this entry when `pnpm run lint` exits 0.

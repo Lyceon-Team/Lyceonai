@@ -7,11 +7,16 @@
  * plain English: `ci/known-gaps.yaml` is the only place a check is allowed to
  * fail without failing CI. This gate is what makes that permission finite.
  *
- * It enforces two things, and both are structural rather than conventional:
- *   1. an entry missing owner, expires, reason, re_arm or command is REJECTED —
- *      you cannot add a suppression without saying who owns it and when it dies
+ * It enforces three things, and all of them are structural rather than
+ * conventional:
+ *   1. an entry missing any of the ten required fields is REJECTED — you cannot
+ *      add a suppression without saying who owns it, when it dies, how big it is
+ *      allowed to be, how that size is measured and where the number came from
  *   2. an entry whose `expires` is in the past turns CI RED — the suppression
  *      has to be renewed by a human decision, or the check goes back to blocking
+ *   3. an entry whose measured finding count exceeds `findings_ceiling` plus its
+ *      stated `tolerance` turns CI RED — a gap is accepted at a size, not at any
+ *      size
  *
  * WHY IT IS SHAPED THIS WAY
  *   The mechanism it replaces was three `continue-on-error: true` steps with no
@@ -28,7 +33,7 @@
  * expired entry without depending on the wall clock — see
  * scripts/ci/known-gaps-gate.self-test.sh.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,7 +52,21 @@ const REQUIRED = [
   "command",
   "count_command",
   "findings_ceiling",
+  "tolerance",
+  "ceiling_source",
 ];
+
+/**
+ * WHO MEASURES (owner ruling 2026-08-19). The CI runner's reading is the
+ * authoritative one; a reading taken anywhere else is advisory.
+ *
+ * A ceiling that fires or passes depending on which machine measured last gets
+ * loosened until it stops firing, and then it is decoration. So the count check
+ * is FATAL here and ADVISORY elsewhere — one authoritative reading, everything
+ * else informational. Schema and expiry checks are fatal everywhere; they do not
+ * measure anything and cannot disagree between environments.
+ */
+const AUTHORITATIVE = Boolean(process.env.CI);
 
 /**
  * Minimal YAML reader for exactly the shape this file uses: a top-level
@@ -234,17 +253,36 @@ for (const e of entries) {
  * reading as accepted. That is precisely how "2 real type errors" became 41
  * without anyone noticing.
  *
- * WHY A CEILING AND NOT AN EQUALITY. The same ESLint run reports 2390 through
- * the JSON formatter, 2396 through the stylish summary, and 2399 in the
- * auditor's environment — same command, same commit. A number that varies by
- * formatter and toolchain cannot be asserted for equality without going red on
- * an innocent environment. So `findings_ceiling` is a MAXIMUM, and each entry
- * declares the `count_command` that produced it — a count is only comparable to
- * another count taken the same way.
+ * WHY A CEILING AND NOT AN EQUALITY, and where the number comes from.
+ *
+ *   An earlier revision of this comment claimed the JSON and stylish formatters
+ *   count differently — 2390 vs 2399 from one run. That was WRONG and is
+ *   withdrawn. Measured on this tree: `sum(messages[])` from --format json is
+ *   2399, `errorCount + warningCount` is 2399, and the stylish summary line is
+ *   "2399 problems". Same run, same number, three ways.
+ *
+ *   The real cause of the 9-count spread was two different TREES, not two
+ *   environments: origin/cleanup measures 2390, this branch measures 2399, and
+ *   the delta is 3 no-console + 6 no-undef in THIS FILE — added by the diff that
+ *   introduced this very check. The ratchet caught its own author.
+ *
+ *   The ceiling stays a MAXIMUM rather than an equality because a count that
+ *   must be exact goes red on any innocent change in either direction, which
+ *   trains people to edit the number instead of reading it. `tolerance` is what
+ *   absorbs genuine environment spread — and it is 0 here, because there is no
+ *   environment spread to absorb.
+ *
+ * WHERE THE TOLERANCE LIVES. On the entry, never in this file. A tolerance
+ * widened in the gate is invisible to anyone reviewing the accept-list, which is
+ * the only place a reader looks to find out what has been accepted and at what
+ * size. Self-test G12 stages exactly that mutation and proves G8 catches it.
  *
  * Skipped when KNOWN_GAPS_SKIP_COUNTS is set, which is how the schema-only self
  * -test cases avoid running a real toolchain.
  */
+const advisories = [];
+const measurements = [];
+
 if (!failures.length && !process.env.KNOWN_GAPS_SKIP_COUNTS) {
   for (const e of entries) {
     let raw;
@@ -262,6 +300,7 @@ if (!failures.length && !process.env.KNOWN_GAPS_SKIP_COUNTS) {
     }
     const actual = Number(raw.split("\n").pop());
     const ceiling = Number(e.findings_ceiling);
+    const tolerance = Number(e.tolerance);
 
     if (!Number.isFinite(actual)) {
       failures.push(
@@ -276,6 +315,19 @@ if (!failures.length && !process.env.KNOWN_GAPS_SKIP_COUNTS) {
       failures.push(`[count] ${e.id}: findings_ceiling is not a number: ${e.findings_ceiling}`);
       continue;
     }
+    // A tolerance must be a stated non-negative integer. Anything else — a blank,
+    // a word, a negative — is a tolerance nobody wrote down, which is exactly what
+    // becomes the new floor.
+    if (!Number.isInteger(tolerance) || tolerance < 0) {
+      failures.push(
+        `[count] ${e.id}: tolerance must be a non-negative integer, got "${e.tolerance}".\n` +
+          `          State 0 if the measurement is deterministic. A tolerance that is not\n` +
+          `          written down becomes the new floor.`,
+      );
+      continue;
+    }
+    const limit = ceiling + tolerance;
+
     // A count of zero for a check that is on the accept-list is not good news —
     // it is almost always a broken count_command silently reading as "under the
     // ceiling". That is the same fail-open shape as CI-GATING-001, and it bit
@@ -292,17 +344,51 @@ if (!failures.length && !process.env.KNOWN_GAPS_SKIP_COUNTS) {
       );
       continue;
     }
-    if (actual > ceiling) {
-      failures.push(
-        `[count] ${e.id}: ${actual} finding(s), ceiling ${ceiling} — the accepted gap GREW by ` +
-          `${actual - ceiling}.\n` +
-          `          Owner ${e.owner}. Either fix the new findings, or raise the ceiling\n` +
-          `          deliberately and say why. An accepted failure may sit at a size; it may\n` +
-          `          not expand quietly.`,
-      );
-    } else {
-      console.log(`  ${e.id.padEnd(24)} ${actual} finding(s), ceiling ${ceiling}`);
+
+    const stated = tolerance > 0 ? `ceiling ${ceiling} + tolerance ${tolerance} = ${limit}` : `ceiling ${ceiling}, tolerance 0`;
+    measurements.push(`${e.id.padEnd(24)} ${actual} finding(s), ${stated}`);
+
+    if (actual > limit) {
+      const msg =
+        `[count] ${e.id}: ${actual} finding(s) against ${stated} — the accepted gap GREW by ` +
+        `${actual - limit}.\n` +
+        `          Owner ${e.owner}. Either fix the new findings, or raise the ceiling\n` +
+        `          deliberately and say why. An accepted failure may sit at a size; it may\n` +
+        `          not expand quietly.\n` +
+        `          Ceiling on record was measured on: ${e.ceiling_source}`;
+      // FATAL in CI, ADVISORY anywhere else. The CI runner's reading is the
+      // authoritative one; a local reading that disagrees is information, not a
+      // verdict. Without this split the same commit passes on one machine and
+      // fails on another, and the ceiling gets raised until it stops firing.
+      if (AUTHORITATIVE) failures.push(msg);
+      else advisories.push(msg);
     }
+  }
+}
+
+for (const m of measurements) console.log(`  ${m}`);
+
+if (advisories.length) {
+  console.log(
+    `\nADVISORY — this is not the authoritative measurement.\n` +
+      `  CI is where the ceiling is decided (CI=1 makes these fatal). A local reading can\n` +
+      `  differ because the tree differs, and a local tree is not what merges.\n`,
+  );
+  for (const a of advisories) console.log(`  ${a}\n`);
+}
+
+// Record what THIS runner measured, so the authoritative number is on the run
+// itself rather than only in a file someone updated by hand.
+if (process.env.GITHUB_STEP_SUMMARY && measurements.length) {
+  try {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### known-gaps measurements (authoritative)\n\n` +
+        measurements.map((m) => `- \`${m}\``).join("\n") +
+        `\n`,
+    );
+  } catch (err) {
+    console.error(`WARN: could not write the step summary — ${err.message}`);
   }
 }
 
