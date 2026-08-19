@@ -1,6 +1,15 @@
 /**
- * @spec [Doc-03C_V3 §5.3 (Model Routing), Doc-03B_V4.1 §6.5 step 14]
+ * @spec [Doc-03C_V3 §5.3 (Model Routing), §4.3 (Prompt Artifacts),
+ *        Doc-03D_V1.2 §7.4 (Fact-Directive Pairing),
+ *        SCL-041 (systemInstruction placement, supersedes §7.2),
+ *        Doc-03B_V4.1 §6.5 step 14, Doc-03D_V1.2 §8.1 (prompt_version attribution)]
  * @implemented 2026-08-09
+ * @updated 2026-08-18 — WS-L7: production port of ablation-proven prompt
+ *   architecture (SCL-041). State blocks appended to systemInstruction instead
+ *   of injected as [system note] user turns. Conversation messages carry only
+ *   student/tutor turns with consecutive same-role merging. prompt_version
+ *   returned on the wire per §8.1. System-role conversation messages mapped to
+ *   user without [system note] wrapper.
  *
  * plain English: Worker route for tutor turn orchestration. Receives the assembled
  * context envelope (OrchestrateRequest), invokes the appropriate Vertex model via
@@ -8,8 +17,10 @@
  *
  * expected outcome: POST /orchestrate/turn accepts a validated OrchestrateRequest,
  * routes to the correct model alias (flash_class or pro_class per the 9-rule routing
- * table), invokes Vertex with Model Armor input scanning, and returns the response
- * with Model Armor output scanning applied.
+ * table), builds a system instruction from the prompt artifact with state blocks
+ * appended (SCL-041), builds conversation contents with same-role merging,
+ * invokes Vertex with Model Armor input scanning, and returns the response with
+ * Model Armor output scanning applied and prompt_version on the wire.
  *
  * trade-offs:
  *  - Model routing rules are hardcoded in the 9-rule precedence table (Doc 03C V3
@@ -28,21 +39,34 @@
  *    the enforceable manual-override lever the spec explicitly calls out ("ops can
  *    disable the circuit breaker"); automatic spend-based tripping is a separate,
  *    cost-observability-pipeline concern, not implemented here.
- *  - Prompt assembly implemented here is intentionally minimal: `recent_messages`
- *    are mapped to Gemini `Content[]` per the role table in Doc 03C V3 §4.2, and
- *    `systemInstruction` is a neutral, bounded placeholder. The full prompt
- *    template artifact system (§4.3 versioned policy prompts), the deterministic
- *    PII guard (§4.2.2), content safety pre-pass (§4.5), and candidate-slot
- *    resolution for similar-question links (§5.9) are NOT implemented in this
- *    file — each is a distinct subsystem beyond this route's stated scope
- *    (validate → route → call Vertex → return) and needs its own dedicated pass
- *    before production traffic.
+ *  - Prompt artifact system (§4.3): prompt artifacts are versioned TypeScript
+ *    modules loaded at import time (bootstrap). The registry resolves by
+ *    (policy_variant, prompt_version) from the envelope. Only the "default"
+ *    variant is authored in this pass. §4.3 references "03A V3 §11 (policy
+ *    prompt artifacts)" for artifact authoring, but Doc 03A §11 is actually
+ *    "Policy Decision Logging" — see SCL-040. The artifact format implemented
+ *    here (TypeScript const with a render function) is the pragmatic resolution.
+ *  - State blocks are appended to systemInstruction per SCL-041. §7.2's
+ *    late-placement in user turns was falsified for Flash-class models (25/25
+ *    non-compliance vs immediate compliance in systemInstruction). State blocks
+ *    are separated from behavioral rules by a `--- CONTEXT FOR CURRENT QUESTION ---`
+ *    separator.
+ *  - Consecutive same-role messages are merged into a single entry with multiple
+ *    parts. The @google/genai SDK silently merges consecutive same-role Content
+ *    entries, which corrupts message boundaries. Explicit merging preserves
+ *    message ordering and boundary markers (Doc 03D §7.3).
+ *  - The deterministic PII guard (§4.2.2), content safety pre-pass (§4.5), and
+ *    candidate-slot resolution for similar-question links (§5.9) are NOT
+ *    implemented in this file — each is a distinct subsystem beyond this route's
+ *    stated scope and needs its own dedicated pass before production traffic.
  *  - `question_links` and `instruction_exposures` are returned empty; structured
  *    output enforcement via Vertex `responseSchema` (§5.4 hybrid strictness) is
  *    not wired up in this pass — the model call is plain-text only.
  *  - Idempotency: per Doc 03C V3 §3.6, 03C is deliberately NOT idempotent — the
  *    BFF (Doc 03B V4.1 §13.7) owns the idempotency guard before this endpoint is
  *    ever called. No idempotency_key handling belongs here.
+ *  - prompt_version is returned on the wire per Doc 03D §8.1 (attribution
+ *    requirement: every turn must carry the prompt version that produced it).
  */
 import { Router } from "express";
 import type { Request, Response } from "express";
@@ -59,6 +83,8 @@ import {
   type VertexMessage,
   type VertexResponse,
 } from "../lib/vertex-client.js";
+import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
+import { renderStateBlocks } from "../prompts/render-state-blocks.js";
 
 export const orchestrateRouter: Router = Router();
 
@@ -136,45 +162,97 @@ function isProBudgetCircuitBreakerTripped(): boolean {
 
 /**
  * Maps envelope recent_messages to Gemini-compatible messages per the role
- * table in Doc 03C V3 §4.2: student -> user, tutor -> model, system -> user
- * (Gemini has no native system role inside contents[]; system-level notes
- * are tagged and folded into a user turn).
+ * table in Doc 03C V3 §4.2: student → user, tutor → model, system → user.
  *
- * @spec [Doc-03C_V3 §4.2]
+ * SCL-041: state blocks are NOT placed in contents — they are appended to
+ * systemInstruction by buildSystemInstruction. contents[] carries only the
+ * conversation (student/tutor/system turns).
+ *
+ * Same-role merging: consecutive messages that map to the same Gemini role
+ * are merged into a single VertexMessage. The @google/genai SDK silently
+ * merges consecutive same-role Content entries, corrupting message boundaries.
+ * Explicit merging preserves ordering and boundary markers (Doc 03D §7.3).
+ *
+ * System messages are mapped to user role without a [system note] wrapper —
+ * the model receives the message content directly.
+ *
+ * @spec [Doc-03C_V3 §4.2; Doc-03D_V1.2 §7.3; SCL-041]
  */
 export function buildConversationMessages(
   request: OrchestrateRequest,
 ): VertexMessage[] {
-  return request.recent_messages.map((message) => {
+  // Step 1: map each message to its Gemini role and text.
+  const raw: VertexMessage[] = request.recent_messages.map((message) => {
     if (message.role === "tutor") {
       return { role: "model", text: message.message };
     }
     if (message.role === "system") {
-      return { role: "user", text: `[system note] ${message.message}` };
+      // System messages become user-role (Gemini has no native system role
+      // inside contents[]). No [system note] wrapper — directives are in
+      // systemInstruction per SCL-041.
+      return { role: "user", text: message.message };
     }
     // Student messages are wrapped in boundary markers so the model treats
     // them as data, not instructions (Doc 03A §12.3 Layer 3 injection defense).
     const wrapped = `${STUDENT_INPUT_OPEN}\n${message.message}\n${STUDENT_INPUT_CLOSE}`;
     return { role: "user", text: wrapped };
   });
+
+  // Step 2: merge consecutive same-role messages into a single entry with
+  // multiple parts (newline-separated). Prevents the @google/genai SDK from
+  // silently merging and corrupting boundaries.
+  const merged: VertexMessage[] = [];
+  for (const msg of raw) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : null;
+    if (prev && prev.role === msg.role) {
+      prev.text = `${prev.text}\n\n${msg.text}`;
+    } else {
+      merged.push({ role: msg.role, text: msg.text });
+    }
+  }
+
+  return merged;
 }
 
 /**
- * Builds the system instruction sent to Vertex. This is a bounded, neutral
- * placeholder — NOT the policy-authored prompt artifact system of Doc 03A V3
- * §11 / Doc 03C V3 §4.3. See file header trade-offs.
+ * Builds the full system instruction sent to Vertex: behavioral rules from
+ * the versioned prompt artifact (Doc 03C V3 §4.3) + state blocks appended
+ * after a separator (SCL-041).
  *
- * @spec [Doc-03C_V3 §4.1 (division of concerns) — placeholder pending §4.3]
+ * The artifact is selected by (policy_variant, prompt_version) from the
+ * envelope. The render function receives typed PromptFields for field
+ * substitution — no runtime prompt generation, no string interpolation
+ * of untrusted data.
+ *
+ * State blocks are appended (not late-placed in contents) per SCL-041.
+ * The separator `--- CONTEXT FOR CURRENT QUESTION ---` marks the boundary
+ * between invariant behavioral rules and per-turn context. Each state block
+ * pairs a fact with a directive (§7.4).
+ *
+ * @spec [Doc-03C_V3 §4.3; Doc-03D_V1.2 §7.4; SCL-041]
  */
 export function buildSystemInstruction(request: OrchestrateRequest): string {
-  return [
-    "You are LISA, an SAT tutor for a student aged 13-18.",
-    `Entry mode: ${request.entry_mode}. Source surface: ${request.source_surface}.`,
-    "Be concise, encouraging, and never reveal a correct answer or explanation",
-    "unless the platform has already told you the question is post-submit.",
-    "Never claim to know a predicted score or confidence level that was not",
-    "explicitly provided to you.",
-  ].join(" ");
+  const artifact = resolvePromptArtifact(
+    request.policy_assignment.policy_variant,
+    request.policy_assignment.prompt_version,
+  );
+
+  const behavioralRules = artifact.renderSystemInstruction({
+    entryMode: request.entry_mode,
+    sourceSurface: request.source_surface,
+    policyVariant: request.policy_assignment.policy_variant,
+    isPostSubmit: request.is_post_submit,
+  });
+
+  // SCL-041: append state blocks to systemInstruction. Flash-class models
+  // attend to systemInstruction directives; the same directives placed in
+  // user turns (§7.2's original placement) were consistently ignored.
+  const stateBlocks = renderStateBlocks(request);
+  if (stateBlocks) {
+    return `${behavioralRules}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`;
+  }
+
+  return behavioralRules;
 }
 
 /** Per Doc 03C V3 §8.1: compaction is recommended once a conversation reaches
@@ -207,16 +285,23 @@ import {
  * `instruction_exposures` are empty (see file header trade-offs — candidate-slot
  * resolution is not implemented in this pass).
  *
- * @spec [Doc-03C_V3 §7.1, INV-03-04]
+ * prompt_version is included in orchestration_meta per Doc 03D §8.1 (attribution
+ * requirement: every turn must carry the prompt version that produced it).
+ *
+ * @spec [Doc-03C_V3 §7.1, INV-03-04, Doc-03D_V1.2 §8.1]
  */
 export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
+  promptVersion: string,
 ): OrchestrateResponse {
-  // Worker-side anti-leak scan: if correct_answer is present (pre-submit
-  // implied) and the response leaks it, substitute with the safe pedagogical
-  // fallback. This is the first anti-leak layer; BFF-side scanAndSubstitute
-  // is defense-in-depth.
+  // Worker-side anti-leak scan: correct_answer is non-null only post-submit
+  // (Doc 03D §6.3 — the BFF nulls it pre-submit). This scan is therefore a
+  // post-submit defense-in-depth layer: it catches model hallucination in
+  // post-submit responses where the answer is already revealed. The primary
+  // pre-submit anti-leak chokepoint is BFF-side scanAndSubstitute (INV-03-04),
+  // which holds the real answer BFF-local for scanning without forwarding it
+  // to the worker.
   let content = vertexResponse.text;
   if (request.correct_answer !== null) {
     const leaked = hasAnswerLeak(content, request.correct_answer);
@@ -250,6 +335,7 @@ export function buildOrchestrateResponse(
     instruction_exposures: [],
     orchestration_meta: {
       model_name: vertexResponse.providerModel,
+      prompt_version: promptVersion,
       cache_used: false,
       compaction_recommended: isCompactionRecommended(request),
     },
@@ -317,6 +403,27 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
   const messages = buildConversationMessages(request);
   const systemInstruction = buildSystemInstruction(request);
 
+  // Resolve prompt version for attribution (§8.1) and observability (§4.3).
+  const resolvedArtifact = resolvePromptArtifact(
+    request.policy_assignment.policy_variant,
+    request.policy_assignment.prompt_version,
+  );
+  const promptVersion = resolvedArtifact.version;
+
+  logEvent(
+    "info",
+    "orchestrate_route",
+    "prompt_artifact_resolved",
+    "Resolved prompt artifact for tutor turn",
+    {
+      conversationId: request.conversation_id,
+      policyVariant: request.policy_assignment.policy_variant,
+      requestedPromptVersion: request.policy_assignment.prompt_version,
+      resolvedPromptVersion: promptVersion,
+      modelAlias,
+    },
+  );
+
   const result = await generateTutorResponse(
     modelAlias,
     messages,
@@ -349,6 +456,10 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     return;
   }
 
-  const response = buildOrchestrateResponse(result.value, request);
+  const response = buildOrchestrateResponse(
+    result.value,
+    request,
+    promptVersion,
+  );
   res.status(200).json(response);
 });

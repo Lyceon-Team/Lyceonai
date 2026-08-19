@@ -371,60 +371,69 @@ describe("LISA-FULL-007: output serializer scan classes", () => {
 
 // ── 2. Static gate test ──────────────────────────────────────────────
 //
-// Property-level assertion: tutor-runtime.ts must never import or use
-// raw scan functions that bypass the serializer. If someone re-adds a
-// direct import of hasAnswerLeak, TUTOR_ANTI_LEAK_SUBSTITUTION (from
-// non-serializer source), or removeInternalMetadataMentions, this test
-// fails — forcing them through serializeTutorOutput.
+// Two-layer structural gate:
+//
+//   Layer A (original, retained): tutor-runtime.ts must never import or
+//   use raw scan functions that bypass the serializer.
+//
+//   Layer B (new, F-05 upgrade): ANY route file under server/routes/
+//   that reads tutor_messages and returns a message/content field in a
+//   response MUST import and call serializeTutorOutput. This catches the
+//   gap the original gate missed: a NEW route file that returns tutor
+//   message content without ever touching the serializer.
+//
+// "Tutor message content" is defined concretely as: any route file that
+// queries `tutor_messages` AND contains a response-return pattern where
+// the returned payload includes a `message` or `content` field derived
+// from a tutor-role row. The detection heuristic:
+//   - File reads from("tutor_messages") → tutor message source
+//   - File returns res.json or res.status(...).json with a body containing
+//     `.message` or `.content` (from DB row, not error shapes)
+//   - File must import AND call serializeTutorOutput
+
+/**
+ * Strip comment lines from source text to avoid false positives from
+ * documentation that legitimately references banned symbols.
+ */
+function stripComments(source: string): string {
+  return source
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//")) return false;
+      if (trimmed.startsWith("*") || trimmed.startsWith("/*")) return false;
+      return true;
+    })
+    .join("\n");
+}
 
 describe("LISA-FULL-007: static gate — serializer chokepoint enforcement", () => {
+  // ── Layer A: tutor-runtime.ts raw-function bypass gate ──────────────
+
   const runtimePath = path.resolve(
     __dirname,
     "../../server/routes/tutor-runtime.ts",
   );
 
-  // Read the file once for all assertions
   const rawSource = fs.readFileSync(runtimePath, "utf-8");
-
-  // Strip comment lines (// and block comments) to avoid false positives
-  // from documentation that legitimately references these symbols.
-  const codeLines = rawSource
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      // Skip single-line comments
-      if (trimmed.startsWith("//")) return false;
-      // Skip lines that are purely inside block comments (heuristic)
-      if (trimmed.startsWith("*") || trimmed.startsWith("/*")) return false;
-      return true;
-    })
-    .join("\n");
+  const codeLines = stripComments(rawSource);
 
   it("imports serializeTutorOutput (the chokepoint)", () => {
-    // The route file MUST import the serializer
     expect(rawSource).toContain("serializeTutorOutput");
   });
 
   it("does NOT import hasAnswerLeak directly", () => {
-    // hasAnswerLeak is internal to the serializer — the route file must
-    // never call it directly
     const importPattern = /import\s*\{[^}]*\bhasAnswerLeak\b[^}]*\}/;
     expect(importPattern.test(rawSource)).toBe(false);
   });
 
   it("does NOT import TUTOR_ANTI_LEAK_SUBSTITUTION from tutor-safety-constants", () => {
-    // TUTOR_ANTI_LEAK_SUBSTITUTION is re-exported by the serializer.
-    // The route file must not import it from the constants file or
-    // tutor-antileak.ts — it should only use it via the serializer's
-    // substitution (the route file should never reference it at all).
     const directImportPattern =
       /import\s*\{[^}]*\bTUTOR_ANTI_LEAK_SUBSTITUTION\b[^}]*\}\s*from\s*["'](?!.*tutor-output-serializer)/;
     expect(directImportPattern.test(rawSource)).toBe(false);
   });
 
   it("does NOT use TUTOR_ANTI_LEAK_SUBSTITUTION in code lines", () => {
-    // The route file should never reference the substitution constant in
-    // executable code — all substitution happens inside the serializer.
     expect(codeLines).not.toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
   });
 
@@ -454,7 +463,6 @@ describe("LISA-FULL-007: static gate — serializer chokepoint enforcement", () 
   });
 
   it("does NOT use raw scan functions in code lines", () => {
-    // None of the raw scan functions should appear in executable code
     const bannedInCode = [
       "hasAnswerLeak(",
       "hasCanonicalIdLeak(",
@@ -467,7 +475,225 @@ describe("LISA-FULL-007: static gate — serializer chokepoint enforcement", () 
   });
 
   it("calls serializeTutorOutput in code lines (chokepoint is used)", () => {
-    // The route file must actually CALL the serializer, not just import it
     expect(codeLines).toContain("serializeTutorOutput(");
+  });
+});
+
+// ── Layer B: structural gate — all routes returning tutor message content ──
+//
+// @spec [LISA-FULL-007, Doc-03B_V2 §16.3, INV-03-04]
+// @implemented 2026-08-14
+//
+// plain English: scans every .ts file under server/routes/ for the pattern
+// "reads from tutor_messages AND returns message content in a response."
+// Any file matching that pattern MUST import AND call serializeTutorOutput.
+// A new route file that returns tutor message content without the serializer
+// will fail this gate — closing the gap the original single-file gate missed.
+//
+// The gate is proven by a synthetic bypass test: a temporary file that reads
+// tutor_messages and returns .message without importing the serializer is
+// written, the gate detects it, and the file is removed.
+//
+// "Tutor message content fields" — the concrete definition:
+//   - `message` (from tutor_messages.message — the raw model-generated text)
+//   - `content` (the serialized output field in response shapes)
+//   - `last_message_preview` (list endpoint preview, derived from .message)
+//
+// Exclusions:
+//   - Files that query tutor_messages but do NOT return message content (e.g.
+//     review-session-routes.ts queries tutor_messages for audit signaling
+//     but only reads id/created_at, never the message field).
+//   - Files that return `content` in error shapes or non-tutor contexts are
+//     not false-positives because the gate requires BOTH tutor_messages read
+//     AND message content return.
+
+describe("LISA-FULL-007: structural gate — route-surface serializer enforcement", () => {
+  const routesDir = path.resolve(__dirname, "../../server/routes");
+
+  /**
+   * The concrete fields that constitute "tutor message content" in response
+   * payloads. A route file that reads from tutor_messages AND returns any of
+   * these fields MUST go through serializeTutorOutput.
+   */
+  const TUTOR_CONTENT_RETURN_PATTERNS = [
+    // Dot-access on a row: row.message, msg.message, etc.
+    /\.\bmessage\b(?!\s*(?:Error|error|code|details|limit|_id|_count|_limit))/,
+    // Object literal with message key from a tutor row
+    /message:\s*(?:row|msg|m|lastMessage|existingTutorMsg|rawPreview)\./,
+    // The serialized output field
+    /(?:serialized|replaySerialized|crisisSerialized|rowSerialized|listSerialized)\.\bcontent\b/,
+    // Direct .content on orchestration response
+    /orchestration\.response\.content/,
+    // last_message_preview assignment
+    /last_message_preview/,
+  ];
+
+  /**
+   * Detect whether a source file queries tutor_messages.
+   */
+  function readsTutorMessages(source: string): boolean {
+    return /from\(\s*["'`]tutor_messages["'`]\s*\)/.test(source);
+  }
+
+  /**
+   * Detect whether a source file returns tutor message content in a response.
+   * Requires BOTH: queries tutor_messages AND returns content fields.
+   */
+  function returnsTutorMessageContent(source: string): boolean {
+    if (!readsTutorMessages(source)) return false;
+
+    // Check for message content in response patterns (res.json, return)
+    const code = stripComments(source);
+
+    // Must also select the message field (not just id/created_at)
+    const selectsMessageField =
+      /\.select\([^)]*\bmessage\b[^)]*\)/.test(code) ||
+      /\.select\(\s*["'`]\*["'`]/.test(code);
+    if (!selectsMessageField) return false;
+
+    // Check for any tutor content return pattern
+    return TUTOR_CONTENT_RETURN_PATTERNS.some((pattern) => pattern.test(code));
+  }
+
+  /**
+   * Check whether a source file imports and calls serializeTutorOutput.
+   */
+  function usesSerializer(source: string): {
+    imports: boolean;
+    calls: boolean;
+  } {
+    const code = stripComments(source);
+    const imports = /import\s*\{[^}]*\bserializeTutorOutput\b/.test(source);
+    const calls = code.includes("serializeTutorOutput(");
+    return { imports, calls };
+  }
+
+  it("detects tutor-runtime.ts as returning tutor message content", () => {
+    // Verify the detection heuristic correctly identifies tutor-runtime.ts
+    const source = fs.readFileSync(
+      path.join(routesDir, "tutor-runtime.ts"),
+      "utf-8",
+    );
+    expect(readsTutorMessages(source)).toBe(true);
+    expect(returnsTutorMessageContent(source)).toBe(true);
+  });
+
+  it("confirms tutor-runtime.ts uses the serializer", () => {
+    const source = fs.readFileSync(
+      path.join(routesDir, "tutor-runtime.ts"),
+      "utf-8",
+    );
+    const { imports, calls } = usesSerializer(source);
+    expect(imports).toBe(true);
+    expect(calls).toBe(true);
+  });
+
+  it("does NOT flag admin-crisis-review.ts (does not read tutor_messages)", () => {
+    const source = fs.readFileSync(
+      path.join(routesDir, "admin-crisis-review.ts"),
+      "utf-8",
+    );
+    expect(readsTutorMessages(source)).toBe(false);
+    expect(returnsTutorMessageContent(source)).toBe(false);
+  });
+
+  it("does NOT flag diagnostic-routes.ts (does not read tutor_messages)", () => {
+    const source = fs.readFileSync(
+      path.join(routesDir, "diagnostic-routes.ts"),
+      "utf-8",
+    );
+    expect(readsTutorMessages(source)).toBe(false);
+    expect(returnsTutorMessageContent(source)).toBe(false);
+  });
+
+  it("every route file returning tutor message content uses serializeTutorOutput", () => {
+    // The structural gate: scan ALL route files
+    const routeFiles = fs
+      .readdirSync(routesDir, { recursive: true })
+      .filter(
+        (f): f is string =>
+          typeof f === "string" &&
+          f.endsWith(".ts") &&
+          !f.endsWith(".test.ts") &&
+          !f.endsWith(".spec.ts"),
+      );
+
+    const violations: string[] = [];
+
+    for (const file of routeFiles) {
+      const filePath = path.join(routesDir, file);
+      const source = fs.readFileSync(filePath, "utf-8");
+
+      if (!returnsTutorMessageContent(source)) continue;
+
+      const { imports, calls } = usesSerializer(source);
+      if (!imports || !calls) {
+        violations.push(
+          `${file}: reads tutor_messages and returns message content but ` +
+            `does NOT ${!imports ? "import" : "call"} serializeTutorOutput`,
+        );
+      }
+    }
+
+    expect(
+      violations,
+      `SERIALIZER BYPASS DETECTED — the following route files return tutor ` +
+        `message content without routing through serializeTutorOutput:\n` +
+        violations.join("\n"),
+    ).toEqual([]);
+  });
+
+  // ── Provability test: synthetic bypass route ──────────────────────────
+  //
+  // Writes a temporary route file that reads tutor_messages and returns
+  // .message without importing the serializer. The gate MUST detect it.
+  // The file is removed after the test (regardless of pass/fail).
+  //
+  // This proves the gate catches the class of defect it claims to catch —
+  // a gate never observed failing is not known to work.
+
+  it("catches a synthetic bypass route (provability)", () => {
+    const bypassPath = path.join(routesDir, "_test-bypass-route.ts");
+    const bypassSource = `
+import { Router, Request, Response } from "express";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+const router = Router();
+router.get("/leak", async (req: Request, res: Response) => {
+  const { data } = await supabaseServer
+    .from("tutor_messages")
+    .select("id, message, role")
+    .eq("conversation_id", req.params.id)
+    .limit(1)
+    .maybeSingle();
+  if (!data) return res.status(404).json({ error: { message: "not found" } });
+  // BUG: returns raw message without serializeTutorOutput
+  res.status(200).json({ data: { message: data.message } });
+});
+export default router;
+`;
+    try {
+      fs.writeFileSync(bypassPath, bypassSource, "utf-8");
+
+      const source = fs.readFileSync(bypassPath, "utf-8");
+      expect(
+        returnsTutorMessageContent(source),
+        "bypass route must be detected as returning tutor message content",
+      ).toBe(true);
+
+      const { imports, calls } = usesSerializer(source);
+      expect(
+        imports,
+        "bypass route must NOT import serializeTutorOutput (proving the gate fires)",
+      ).toBe(false);
+      expect(
+        calls,
+        "bypass route must NOT call serializeTutorOutput (proving the gate fires)",
+      ).toBe(false);
+    } finally {
+      // Cleanup: remove the temporary file regardless of pass/fail
+      if (fs.existsSync(bypassPath)) {
+        fs.unlinkSync(bypassPath);
+      }
+    }
   });
 });

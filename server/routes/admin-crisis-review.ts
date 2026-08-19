@@ -94,15 +94,8 @@ adminCrisisReviewRouter.get("/cases", async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
 
-    // Audit log: admin listed cases
-    logger.adminAction(
-      "list_crisis_review_cases",
-      "crisis_review_cases",
-      req.user!.id,
-      req.requestId,
-      req.ip ?? req.socket?.remoteAddress ?? "unknown",
-      { status, limit, offset, resultCount: result.cases.length },
-    );
+    // Durable audit write now happens inside listCrisisReviewCases
+    // per SCL-025 (writeAuditLogEntry, not logger.adminAction).
 
     return res.status(200).json({
       data: {
@@ -313,16 +306,11 @@ adminCrisisReviewRouter.get(
   "/sla-breaches",
   async (req: Request, res: Response) => {
     try {
-      const breachedCases = await getBreachedCases();
-
-      logger.adminAction(
-        "query_sla_breaches",
-        "crisis_review_cases",
-        req.user!.id,
-        req.requestId,
-        req.ip ?? req.socket?.remoteAddress ?? "unknown",
-        { breachedCount: breachedCases.length },
-      );
+      const breachedCases = await getBreachedCases({
+        reviewerId: req.user!.id,
+        ip: req.ip ?? req.socket?.remoteAddress ?? "unknown",
+        requestId: req.requestId,
+      });
 
       return res.status(200).json({
         data: {

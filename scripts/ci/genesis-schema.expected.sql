@@ -2113,6 +2113,26 @@ $$;
 
 
 --
+-- Name: pg_notify_memory_summary(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summary_type text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM pg_notify(
+    'memory_summary_updated',
+    json_build_object(
+      'student_id', p_student_id,
+      'summary_type', p_summary_type
+    )::text
+  );
+END;
+$$;
+
+
+--
 -- Name: practice_session_mode_to_event_kind(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3571,8 +3591,8 @@ CREATE TABLE public.consent_runtime_config_history (
 
 CREATE TABLE public.crisis_review_audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    case_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    case_id uuid,
+    conversation_id uuid,
     reviewer_id uuid NOT NULL,
     action text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -8874,6 +8894,14 @@ GRANT ALL ON FUNCTION public.mastery_model_version() TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
+
+
+--
+-- Name: FUNCTION pg_notify_memory_summary(p_student_id uuid, p_summary_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summary_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summary_type text) TO service_role;
 
 
 --

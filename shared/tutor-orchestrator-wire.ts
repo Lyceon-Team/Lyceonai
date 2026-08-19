@@ -195,6 +195,27 @@ export const memoryStructuredFieldsSchema = z.object({
   style_confidence: z.enum(["low", "medium", "high"]).nullable(),
 });
 
+// ── Question content (Doc 03A §5.4, Doc 03C §4.4) ───────────────────
+// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4]: pass question CONTENT to
+// the worker, never canonical ID. Anti-leak: explanation is null
+// pre-submit (gated by is_post_submit, Doc 03D §6.3). student_answer is
+// null if no submission yet.
+
+export const questionOptionSchema = z.object({
+  key: z.string(),
+  text: z.string(),
+});
+
+export const questionContentSchema = z.object({
+  stem: z.string(),
+  passage: z.string().nullable(),
+  options: z.array(questionOptionSchema),
+  item_type: z.enum(["mcq", "grid_in"]),
+  explanation: z.string().nullable(),
+  student_answer: z.string().nullable(),
+  attempt_number: z.number().int().nonnegative(),
+});
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -212,8 +233,21 @@ export const orchestrateRequestSchema = z.object({
     max_output_tokens: z.number().int().positive(),
     timeout_ms: z.number().int().positive(),
   }),
-  // ── Anti-leak field (LISA-FULL-001): BFF resolves; worker scans when non-null ──
-  // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
+  // ── Question content (Doc 03A §5.4, Doc 03C §4.4) ──────────────────
+  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4]: question CONTENT, never
+  // canonical ID. Anti-leak: explanation null pre-submit.
+  question_content: questionContentSchema.nullable(),
+  // ── Server-derived post-submit flag (Doc 03D §6.3) ─────────────────
+  // @spec [Doc-03D_V1.2 §6.3, INV-03-04]: "Pre-submit gating is derived
+  // server-side from the item's submission state. It is never supplied by
+  // the caller." The BFF resolves this from practice_session_items.status;
+  // the worker reads it as-is. correct_answer is null pre-submit.
+  is_post_submit: z.boolean(),
+  // ── Anti-leak field (LISA-FULL-001): null pre-submit, real value post-submit ──
+  // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15, Doc-03D_V1.2 §6.3]
+  // Pre-submit: always null on the wire. The BFF keeps the real value
+  // BFF-local for the output scan (step 15) but never forwards it to the
+  // worker. Post-submit: the real correct_answer for model explanation.
   correct_answer: z.string().nullable(),
   // ── Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless) ──
   // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
@@ -289,6 +323,7 @@ export const orchestrateResponseSchema = z.object({
   instruction_exposures: z.array(instructionExposureSchema),
   orchestration_meta: z.object({
     model_name: z.string(),
+    prompt_version: z.string(),
     cache_used: z.boolean(),
     compaction_recommended: z.boolean(),
   }),
@@ -339,3 +374,4 @@ export type RecentFriction = z.infer<typeof recentFrictionSchema>;
 export type MasterySnapshot = z.infer<typeof masterySnapshotSchema>;
 export type KpiState = z.infer<typeof kpiStateSchema>;
 export type ExplanationForm = z.infer<typeof explanationFormEnum>;
+export type QuestionContent = z.infer<typeof questionContentSchema>;
