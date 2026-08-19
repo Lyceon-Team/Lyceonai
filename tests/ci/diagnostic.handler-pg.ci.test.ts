@@ -1,10 +1,23 @@
 /**
- * Diagnostic handler → real PostgreSQL proof
+ * Diagnostic handler → real PostgreSQL LOGIC proof (NOT an end-to-end proof)
  *
  * @spec [Doc-05A §11, Codex re-audit Fix C] | @implemented [2026-08-08]
+ * @rescoped [2026-08-16] Claim narrowed to what this test actually covers.
  *
- * Proves the HANDLER actually drives mastery emission and completion against
- * real PostgreSQL — not SQL mimicry. This test:
+ * SCOPE AND LIMITS — read before trusting a green run.
+ * This suite vi.mocks BOTH Supabase clients (see the createPgBackedSupabase
+ * adapter below) and substitutes a node-pg client running as the `postgres`
+ * SUPERUSER. It therefore proves the handler's LOGIC against the real schema and
+ * the real SQL functions, and nothing about:
+ *   - PostgREST (the transport prod actually uses)
+ *   - the service_role identity or any GRANT
+ *   - the supabase-js query builder
+ * It also runs on a FRESH database, so it cannot reproduce a data-state failure
+ * such as a legacy NULL occurred_at row poisoning refresh_overall_kpi student-wide.
+ * A green run here was compatible with a 100%-failure production outage for seven
+ * weeks. tests/ci/mastery-emission.transport.ci.test.ts covers what this cannot.
+ *
+ * What it DOES prove, which is genuinely useful and fast:
  *   1. Applies all migrations to an ephemeral PG16 database
  *   2. Seeds 40 diagnostic questions (8 domains × 5)
  *   3. Creates a diagnostic session + 40 served items

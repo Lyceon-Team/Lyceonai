@@ -25,6 +25,12 @@ import {
   resolveClientInstanceBinding,
 } from "../../shared/question-bank-contract";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
+import { logger } from "../logger";
+import {
+  MASTERY_EMISSION_COMPONENT,
+  MASTERY_EMISSION_EVENT,
+  MASTERY_EMISSION_FAILURE_CODE,
+} from "../../packages/shared/src/mastery-emission";
 
 type SessionStatus = "created" | "active" | "completed" | "abandoned";
 type ItemStatus = "queued" | "served" | "answered" | "skipped";
@@ -1275,12 +1281,17 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       );
       if (!difficultyBucket) {
         masteryErrors.push("Invalid difficulty bucket for mastery emission");
-        console.warn(
-          "[review] mastery emission skipped (invalid difficulty bucket)",
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.SKIPPED,
+          "review mastery emission skipped (invalid difficulty bucket)",
+          undefined,
           {
-            sessionId: session.id,
+            code: MASTERY_EMISSION_FAILURE_CODE.INVALID_DIFFICULTY,
+            reviewSessionId: session.id,
             questionCanonicalId: item.question_canonical_id,
             sourceFamily: "review",
+            eventSourceKind: "review_error_attempt",
             rawDifficulty: item.question_difficulty_bucket ?? null,
           },
         );
@@ -1290,14 +1301,22 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
         masteryErrors.push(
           "Missing section/domain/skill metadata for mastery emission",
         );
-        console.warn("[review] mastery emission skipped (missing metadata)", {
-          sessionId: session.id,
-          questionCanonicalId: item.question_canonical_id,
-          sourceFamily: "review",
-          section: section || null,
-          domain: domain || null,
-          skill: skill || null,
-        });
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.SKIPPED,
+          "review mastery emission skipped (missing metadata)",
+          undefined,
+          {
+            code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
+            reviewSessionId: session.id,
+            questionCanonicalId: item.question_canonical_id,
+            sourceFamily: "review",
+            eventSourceKind: "review_error_attempt",
+            section: section || null,
+            domain: domain || null,
+            skill: skill || null,
+          },
+        );
         return;
       }
       const result = await applyMasteryEvent({
@@ -1314,7 +1333,25 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
         questionId: item.question_canonical_id,
       });
       masteryEvents.push(verifiedIsCorrect ? "review_pass" : "review_fail");
-      if (!result.ok && result.error) masteryErrors.push(result.error);
+      if (!result.ok) {
+        // Previously this branch recorded the error into masteryErrors and emitted
+        // NOTHING to the log — a review mastery failure was invisible by construction.
+        masteryErrors.push(result.error ?? "unknown");
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.FAILED,
+          "review mastery emission returned error — warn-and-continue",
+          undefined,
+          {
+            code: result.code ?? MASTERY_EMISSION_FAILURE_CODE.RPC_ERROR,
+            reviewSessionId: session.id,
+            questionCanonicalId: item.question_canonical_id,
+            sourceFamily: "review",
+            eventSourceKind: "review_error_attempt",
+            dbError: result.error ?? "unknown",
+          },
+        );
+      }
     };
 
     await emit();
@@ -1347,10 +1384,15 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     if (tutorContextError) {
       // Audit-only signal; a failed lookup must not be silent (Coding Standards §13).
       // Log metadata only — never the canonical id payload or any verbatim content (§12.1).
-      console.warn("[review] tutor audit-signal query failed (non-fatal)", {
-        sessionId: session.id,
-        error: tutorContextError.message,
-      });
+      logger.warn(
+        "REVIEW_SESSION",
+        "tutor_audit_signal_query_failed",
+        "review tutor audit-signal query failed (non-fatal)",
+        {
+          reviewSessionId: session.id,
+          dbError: tutorContextError.message,
+        },
+      );
     }
     if (tutorContext) {
       tutorVerifiedRetry = true;

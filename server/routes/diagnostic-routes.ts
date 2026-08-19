@@ -26,6 +26,10 @@ import {
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
 import {
+  resolveDiagnosticStartDecision,
+  type PriorDiagnosticSession,
+} from "../../packages/shared/src/diagnostic-eligibility";
+import {
   toCanonicalQuestionForServing,
   buildSessionItemInsertRows,
   hydrateSessionItemOptionTokens,
@@ -141,29 +145,68 @@ router.post("/sessions", async (req: Request, res: Response) => {
     }
   }
 
-  // 5. Check no active diagnostic session exists
-  const { data: activeDiagnostics, error: activeErr } = await supabaseServer
+  // 5. Two DIFFERENT rules, checked in one read.
+  //
+  // @spec [Doc-05A §11 diagnostic; owner ruling Q1 2026-08-17] @implemented 2026-08-17
+  //
+  // plain English: a diagnostic is taken ONCE. There is no retake. It is a
+  // baseline, deliberately structured as 8 domains x 5 questions so a single
+  // sitting satisfies the mastery and projection minimums.
+  //
+  // Until now this block only looked at ['created','active'], which is an
+  // ANTI-CONCURRENCY guard — "don't run two at the same time". Its own error
+  // string said so: "Resume or complete it before starting a new one". A
+  // COMPLETED diagnostic did not match, so a student who finished one could
+  // start a second, which is exactly the reported defect.
+  //
+  // The two outcomes are deliberately distinct, because the correct client
+  // behaviour differs. In-flight -> resume it (the client follows
+  // existingSessionId). Completed -> there is nothing to resume and nothing to
+  // start; the surface should have collapsed already, so reaching here means a
+  // stale client or a hand-crafted request.
+  //
+  // Per Q1 uniqueness is on 'completed' only. An abandoned diagnostic does NOT
+  // spend the student's one diagnostic — a student who closed their laptop at
+  // question 3 must not be permanently baseline-less.
+  const { data: priorDiagnostics, error: priorErr } = await supabaseServer
     .from("practice_sessions")
-    .select("id")
+    .select("id, status")
     .eq("user_id", userId)
     .eq("mode", "diagnostic")
-    .in("status", ["created", "active"])
-    .limit(1);
+    .in("status", ["created", "active", "completed"])
+    .order("created_at", { ascending: false });
 
-  if (activeErr) {
+  if (priorErr) {
     return res.status(500).json({
       error: "session_lookup_failed",
-      message: activeErr.message,
+      message: priorErr.message,
       requestId,
     });
   }
 
-  if (activeDiagnostics && activeDiagnostics.length > 0) {
+  // The rule itself is a pure function in packages/shared so it can be proven
+  // against every input shape — including the completed+in-flight shape
+  // production holds today — instead of only through a Supabase query-builder
+  // mock. The handler stays plumbing: read, decide, serialize.
+  const decision = resolveDiagnosticStartDecision(
+    (priorDiagnostics ?? []) as PriorDiagnosticSession[],
+  );
+
+  if (decision.kind === "already_completed") {
+    return res.status(409).json({
+      error: "diagnostic_already_completed",
+      message:
+        "You have already completed your diagnostic. It establishes your baseline once and is not retaken.",
+      requestId,
+    });
+  }
+
+  if (decision.kind === "resume") {
     return res.status(409).json({
       error: "diagnostic_session_active",
       message:
         "An active diagnostic session already exists. Resume or complete it before starting a new one.",
-      existingSessionId: (activeDiagnostics[0] as Record<string, unknown>).id,
+      existingSessionId: decision.sessionId,
       requestId,
     });
   }

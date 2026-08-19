@@ -75,6 +75,46 @@ const WRITE_PATTERNS = [
 ];
 
 // Specific mastery RPC calls that should only be in choke point
+
+/**
+ * Blank out `//` and block comments and string-internal noise is deliberately
+ * NOT touched — an RPC name inside a string literal is exactly what we hunt.
+ * Replacement is space-for-character so every subsequent offset, and therefore
+ * every reported line number, is identical to the original file.
+ */
+function stripCommentsPreservingOffsets(source: string): string {
+  let out = "";
+  let i = 0;
+  let inLine = false;
+  let inBlock = false;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (inLine) {
+      if (ch === "\n") { inLine = false; out += ch; } else { out += " "; }
+      i += 1; continue;
+    }
+    if (inBlock) {
+      if (ch === "*" && next === "/") { inBlock = false; out += "  "; i += 2; continue; }
+      out += ch === "\n" ? ch : " ";
+      i += 1; continue;
+    }
+    if (quote) {
+      out += ch;
+      if (ch === "\\") { out += source[i + 1] ?? ""; i += 2; continue; }
+      if (ch === quote) quote = null;
+      i += 1; continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; out += ch; i += 1; continue; }
+    if (ch === "/" && next === "/") { inLine = true; out += "  "; i += 2; continue; }
+    if (ch === "/" && next === "*") { inBlock = true; out += "  "; i += 2; continue; }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 const MASTERY_RPC_CALLS = ["apply_mastery_event"];
 
 // Directories to scan
@@ -297,23 +337,44 @@ describe("Mastery Write Paths Guard", () => {
         }
 
         const content = fs.readFileSync(file, "utf-8");
-        const lines = content.split("\n");
 
-        // Check for mastery RPC calls
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const lineNumber = i + 1;
+        /**
+         * The detector used to be `line.includes(rpcCall)` — a bare substring
+         * match over raw source. That fires on PROSE: a comment explaining why a
+         * value is not read from a mastery rollup mentions `apply_mastery_event`
+         * and was reported as a direct RPC call
+         * (server/services/canonical-runtime-views.ts:769). A guard that fires
+         * on its own documentation is a guard that gets muted, which is the
+         * opposite of what it is for.
+         *
+         * Two changes, both of which STRENGTHEN the assertion rather than relax
+         * it:
+         *   comments are blanked (length-preserving, so line numbers survive)
+         *   the name must appear as the first argument of an `.rpc(` call, not
+         *   merely somewhere on the line
+         *
+         * The match runs over the whole comment-free file rather than per line,
+         * so an `.rpc(` whose argument sits on the next line is still caught —
+         * a per-line regex would have missed it and quietly narrowed the guard.
+         */
+        const codeOnly = stripCommentsPreservingOffsets(content);
 
-          for (const rpcCall of MASTERY_RPC_CALLS) {
-            if (line.includes(rpcCall)) {
-              violations.push({
-                file: normalizedPath,
-                table: "rpc_violation", // Not a real table - indicates RPC call violation
-                writePattern: rpcCall,
-                lineNumber,
-                lineContent: line.trim(),
-              });
-            }
+        for (const rpcCall of MASTERY_RPC_CALLS) {
+          const pattern = new RegExp(
+            String.raw`\.rpc\s*\(\s*["'\`]` + rpcCall + String.raw`["'\`]`,
+            "gs",
+          );
+          let match: RegExpExecArray | null;
+          while ((match = pattern.exec(codeOnly)) !== null) {
+            const lineNumber =
+              codeOnly.slice(0, match.index).split("\n").length;
+            violations.push({
+              file: normalizedPath,
+              table: "rpc_violation", // Not a real table - indicates RPC call violation
+              writePattern: rpcCall,
+              lineNumber,
+              lineContent: content.split("\n")[lineNumber - 1].trim(),
+            });
           }
         }
       }

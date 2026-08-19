@@ -1,3 +1,16 @@
+/**
+ * @spec [Doc-05A_V1.0 §4.2 validation] | @implemented [2026-08-16]
+ * plain English: this suite MOCKS the Supabase client, so it proves the bridge builds
+ * the right RPC call — not that the call succeeds. It cannot detect a transport,
+ * schema-cache, grant, or data fault. tests/ci/mastery-emission.transport.ci.test.ts
+ * is the suite that proves the seam end to end.
+ *
+ * Fixture discipline: the values below must be ones the REAL apply_mastery_event
+ * accepts. They previously read section:"Math" / domain:"algebra" — values §4.2
+ * rejects outright with MASTERY_VALIDATION_FAILED. A mock that accepts what the
+ * database refuses is worse than no test: it trains the reader to believe a call
+ * shape is valid when the database would reject it on sight.
+ */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -24,9 +37,9 @@ describe("Canonical Mastery Event Behavior", () => {
   it("routes mastery events through apply_mastery_event with all required params", async () => {
     const input = {
       studentId: "user-1",
-      section: "Math",
-      domain: "algebra",
-      skill: "linear_equations",
+      section: "M",
+      domain: "Algebra",
+      skill: "ALG.01",
       difficulty: 2,
       sourceFamily: "practice",
       eventSourceKind: "practice_attempt",
@@ -46,9 +59,9 @@ describe("Canonical Mastery Event Behavior", () => {
     expect(rpcCalls[0][1]).toEqual(rpcCalls[1][1]);
     expect(rpcCalls[0][1]).toMatchObject({
       p_student_id: "user-1",
-      p_section: "Math",
-      p_domain: "algebra",
-      p_skill: "linear_equations",
+      p_section: "M",
+      p_domain: "Algebra",
+      p_skill: "ALG.01",
       p_difficulty: 2,
       p_source_family: "practice",
       p_event_source_kind: "practice_attempt",
@@ -62,9 +75,9 @@ describe("Canonical Mastery Event Behavior", () => {
   it("fails closed on invalid difficulty bucket and does not call RPC", async () => {
     const result = await applyMasteryEvent({
       studentId: "user-2",
-      section: "Math",
-      domain: "algebra",
-      skill: "linear_equations",
+      section: "M",
+      domain: "Algebra",
+      skill: "ALG.01",
       difficulty: 4 as unknown as 1,
       sourceFamily: "practice",
       eventSourceKind: "practice_attempt",
@@ -81,9 +94,9 @@ describe("Canonical Mastery Event Behavior", () => {
   it("fails closed on missing event id", async () => {
     const result = await applyMasteryEvent({
       studentId: "user-3",
-      section: "Math",
-      domain: "algebra",
-      skill: "linear_equations",
+      section: "M",
+      domain: "Algebra",
+      skill: "ALG.01",
       difficulty: 1,
       sourceFamily: "practice",
       eventSourceKind: "practice_attempt",
@@ -100,9 +113,9 @@ describe("Canonical Mastery Event Behavior", () => {
   it("fails closed on missing question id", async () => {
     const result = await applyMasteryEvent({
       studentId: "user-4",
-      section: "Math",
-      domain: "algebra",
-      skill: "linear_equations",
+      section: "M",
+      domain: "Algebra",
+      skill: "ALG.01",
       difficulty: 2,
       sourceFamily: "review",
       eventSourceKind: "review_error_attempt",
@@ -119,9 +132,9 @@ describe("Canonical Mastery Event Behavior", () => {
   it("fails closed on missing event source kind", async () => {
     const result = await applyMasteryEvent({
       studentId: "user-5",
-      section: "Math",
-      domain: "algebra",
-      skill: "linear_equations",
+      section: "M",
+      domain: "Algebra",
+      skill: "ALG.01",
       difficulty: 3,
       sourceFamily: "test",
       eventSourceKind: "" as unknown as "practice_attempt",
