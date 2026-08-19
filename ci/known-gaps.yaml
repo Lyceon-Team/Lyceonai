@@ -1,0 +1,58 @@
+# =============================================================================
+# ACCEPTED FAILURES — every entry expires
+# =============================================================================
+# This file replaces the `ci-known-gaps` job's three permanent
+# `continue-on-error` steps. A suppression nobody has to renew is a deletion
+# with extra steps: it removes the signal and leaves the check in place, which
+# misrepresents the repo's standard to anyone reading the workflow.
+#
+# EVERY entry MUST carry: id, owner, expires, reason, re_arm, command.
+# `scripts/ci/known-gaps-gate.mjs` REJECTS an entry missing any of them, and
+# turns CI red once `expires` is in the past. The schema is the enforcement —
+# not convention, not review diligence.
+#
+# The gate runs BLOCKING. The accepted checks themselves run non-blocking. So a
+# check can fail without failing CI, but the PERMISSION for it to fail cannot be
+# open-ended and cannot be undocumented.
+#
+# To add an entry you must name a person and a date. If you cannot, it is not an
+# accepted gap — it is an unreported failure, and it belongs in the build.
+# =============================================================================
+
+entries:
+  - id: typecheck-ci-tsconfig
+    owner: karl
+    expires: 2026-10-01
+    command: pnpm exec tsc -p tsconfig.ci.json
+    findings: 41
+    reason: >
+      41 type errors across 6 files, concentrated in server/routes/practice-canonical.ts (18)
+      and server/routes/diagnostic-routes.ts (10). Predominantly Supabase row-type inference
+      drift — TS2339 on GenericStringError, TS2345 shape mismatches where SessionItemRow gained
+      columns the inline literals never got — plus 10 TS2554 arity mismatches from a helper
+      whose signature changed. These are real violations of Coding Standards §3.1/§3.2, not
+      scaffolding: the fix is in production code and needs its own change with a spec citation.
+      The workflow previously described this as "2 real type errors (exam section field drift)",
+      which was wrong by a factor of 20 and is exactly what an unrenewed suppression decays into.
+    re_arm: >
+      Delete this entry and drop continue-on-error once `pnpm exec tsc -p tsconfig.ci.json`
+      exits 0. Partial progress does not qualify — a lower error count with the suppression
+      still in place is the same defect at a smaller number.
+
+  - id: eslint-legacy-tree
+    owner: karl
+    expires: 2026-11-01
+    command: pnpm run lint
+    findings: 2368
+    reason: >
+      2,368 problems. Three rules are 96% of them — 943 @typescript-eslint/no-explicit-any,
+      880 no-console, 449 no-undef. The first two are direct Coding Standards §3.2 and §16
+      violations across the legacy tree and are a genuine backlog. The 449 no-undef are almost
+      certainly a CONFIG defect rather than 449 real bugs: no-undef is redundant on a
+      TypeScript codebase and is conventionally disabled for .ts/.tsx. Splitting that out is
+      the first re-arm step and is not attempted here.
+    re_arm: >
+      Two stages. (1) Disable no-undef for TypeScript files and confirm the count drops by
+      ~449 with no real finding lost — that alone is a config change, not a backlog burn-down.
+      (2) The standing rule already in the workflow — every wave lint-cleans the files it
+      touches — carries the rest. Delete this entry when `pnpm run lint` exits 0.
