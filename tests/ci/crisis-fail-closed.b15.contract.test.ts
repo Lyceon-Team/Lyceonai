@@ -315,6 +315,25 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
     expect(infraFailure.crisis).toBe(true);
   });
 });
-// B1.5 — CHECK constraint proof: string-check removed (B1.5a Item 1).
-// The real DB proof is in crisis-review-queue.ephemeral-pg.proof.test.ts
-// (tests 6.0–6.4 INSERT all 6 source values; 6.neg rejects invalid).
+
+describe("B1.5 — new source values accepted by CHECK constraint", () => {
+  /**
+   * This test validates the migration SQL for the widened CHECK constraint
+   * by parsing the constraint values from the migration file. The actual
+   * DB proof is in the ephemeral-PG test suite.
+   */
+  it("migration 20260819 includes classifier_degraded_no_floor and infrastructure_failure in CHECK", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+
+    const migrationPath = path.resolve(
+      __dirname,
+      "../../supabase/migrations/20260819000000_crisis_source_no_floor_and_infra.sql",
+    );
+    const sql = fs.readFileSync(migrationPath, "utf8");
+
+    expect(sql).toContain("'classifier_degraded_no_floor'");
+    expect(sql).toContain("'infrastructure_failure'");
+    expect(sql).toContain("crisis_review_cases_source_check");
+  });
+});

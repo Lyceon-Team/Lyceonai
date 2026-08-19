@@ -102,6 +102,36 @@ describe("useDiagnosticStart", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("refuses on 409 diagnostic_already_completed — no retake, and NOT a resume", async () => {
+    // Owner ruling Q1: a diagnostic is taken once. This 409 deliberately carries
+    // no existingSessionId — there is nothing to resume — so it must not fall
+    // into the resume branch above, and must not surface as the generic
+    // "Something went wrong", which would misdescribe a state that is correct.
+    mockFetchForDiagnostic(
+      jsonResponse(
+        {
+          error: "diagnostic_already_completed",
+          message:
+            "You have already completed your diagnostic. It establishes your baseline once and is not retaken.",
+        },
+        409,
+      ),
+    );
+
+    const { result } = renderHook(() => useDiagnosticStart());
+
+    let sessionId: string | null = null;
+    await act(async () => {
+      sessionId = await result.current.startDiagnostic();
+    });
+
+    expect(sessionId).toBeNull();
+    expect(result.current.error?.code).toBe("diagnostic_already_completed");
+    // The copy states the fact and offers no retake affordance.
+    expect(result.current.error?.message).toContain("already completed");
+    expect(result.current.error?.message).not.toContain("Something went wrong");
+  });
+
   it("shows curated error on 503 diagnostic_insufficient_coverage — never raw", async () => {
     mockFetchForDiagnostic(
       jsonResponse(
