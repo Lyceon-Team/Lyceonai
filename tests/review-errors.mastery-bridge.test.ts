@@ -94,7 +94,14 @@ function buildChain(result: { data: any; error: any }) {
   return chain;
 }
 
+/**
+ * Every payload the route hands to `review_error_attempts.insert`. Assertions
+ * read this rather than trusting that the write happened.
+ */
+const capturedAttemptInserts: Array<Record<string, unknown>> = [];
+
 function setupSupabase(options: { hasTutorContext: boolean }) {
+  capturedAttemptInserts.length = 0;
   const reviewSessionId = "11111111-1111-4111-8111-111111111111";
   const reviewSessionItemId = "22222222-2222-4222-8222-222222222222";
   fromMock.mockImplementation((table: string) => {
@@ -169,14 +176,21 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 
     if (table === "review_error_attempts") {
       return {
-        insert: () => ({
-          select: () => ({
-            single: async () => ({
-              data: { id: "attempt-1", question_id: "q-1", is_correct: true },
-              error: null,
+        // CAPTURES the payload. It used to be `insert: () => (...)` — no
+        // parameter, nothing retained. A mock that discards what it is given
+        // cannot verify anything, so the route could have written any actor_id,
+        // or none, and every test here would still have passed.
+        insert: (payload: Record<string, unknown>) => {
+          capturedAttemptInserts.push(payload);
+          return {
+            select: () => ({
+              single: async () => ({
+                data: { id: "attempt-1", question_id: "q-1", is_correct: true },
+                error: null,
+              }),
             }),
-          }),
-        }),
+          };
+        },
         select: () => buildChain({ data: null, error: null }),
       };
     }
@@ -268,6 +282,30 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
+
+    /**
+     * @spec [Doc-05E_V1.0 §3 rule 3, §6 INV-05E-06] | @implemented [2026-08-19]
+     *
+     * The route copies the authenticated user's synthetic grouping identifier
+     * onto the retained activity row (review-session-routes.ts:1197). Until now
+     * five cases REACHED that write and none asserted what it wrote — the mock
+     * threw the payload away. Exercising a write path is not the same as
+     * verifying it, and the difference is exactly the gap this workstream keeps
+     * finding.
+     *
+     * `student_id` is asserted alongside `actor_id` on purpose: INV-05E-06 is
+     * about the pairing being stable per user, and an actor_id checked without
+     * the student it belongs to would pass if the two were ever crossed.
+     */
+    expect(capturedAttemptInserts).toHaveLength(1);
+    expect(capturedAttemptInserts[0]).toMatchObject({
+      student_id: "student-1",
+      actor_id: ACTOR_IDS["student-1"],
+    });
+    expect(capturedAttemptInserts[0].actor_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+
     expect(applyMasteryEventMock).toHaveBeenCalledTimes(1);
     expect(applyMasteryEventMock.mock.calls[0][0]).toEqual(
       expect.objectContaining({
