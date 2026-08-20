@@ -249,6 +249,30 @@ Rationale:
     https://docs.stripe.com/api/refunds/object).
   - **Revocation must be status-gated, not creation-gated.** A `refund.created` in `pending` is not a
     completed refund. Entitlement revokes when the refund object reaches `succeeded`.
+  - **Partial refunds — the Policy sweeps them in, and cannot be read otherwise.** Owner proposed
+    (2026-08-20) that revocation fire only where the refund covers the current period's charge in
+    full, so that a goodwill concession (say $20 against a $99 charge) does not revoke access as a
+    consequence of Lyceon's own gesture. **Refund Policy §8.1 as written cannot carry that
+    distinction.** Its scope clause is explicit: "This applies to **all refunds under this Policy** —
+    Satisfaction Window refunds, Renewal Grace Window refunds, case-by-case refunds under Section 5,
+    and refunds under region-specific rights in Section 6." And §5 (heading verified: "## **5\.
+    Renewal Charges Outside the Grace Window**") expressly contemplates a partial: "we may provide a
+    full refund, **a pro-rated refund based on the time remaining in the Billing Period**, or a
+    service credit toward future subscriptions." A §5 pro-rated refund revoking access is coherent —
+    the customer is refunded the unused remainder and is paid up to today. A goodwill concession
+    revoking access is not, and the Policy has no category for it.
+    **Interim rule for this SCL: revoke on any refund reaching `succeeded`**, per §8.1's scope clause.
+    The Refund Policy is authority level 1 and the spec cannot narrow it.
+    **Operational mitigation, which needs no policy change:** a goodwill concession is not a refund.
+    Stripe distinguishes them — a customer credit balance keeps the money on the account and
+    auto-applies to the next finalized invoice
+    (https://docs.stripe.com/billing/customer/balance), and a credit note can specify `credit_amount`
+    (credit balance) rather than `refund_amount` (money back to the card)
+    (https://docs.stripe.com/invoicing/integration/programmatic-credit-notes). Issuing goodwill as a
+    balance credit produces no `refund.*` event, so §8.1 never engages and access continues. §7.4 and
+    §5 both already name "a service credit toward future Lyceon subscriptions" as an available form.
+    **Whether that operational rule is sufficient, or whether §8.1 needs a carve-out, is deferred to
+    `docs/plans/Stripe_Open_Questions.md` Q4.** Not resolved here.
   - **Doc 09 §5.6 vs Refund Policy §4 — the Refund Policy governs.** Doc 09 §5.6 (heading verified:
     "## **5.6 Refund policy direction**") says renewal charges are "handled case-by-case (not a
     contractual entitlement; vendor support discretion)." Refund Policy §4.1 ("### **4.1 The Renewal
@@ -270,6 +294,9 @@ Owner action: (1) add `refund.created` / `refund.updated` to §22.1 with the act
   when refund status = succeeded"; (2) add a §21 note distinguishing refund-driven revocation from
   status-driven transitions; (3) record in Doc 09 §5.6 that the Refund Policy governs on renewal-window
   mechanics. (4) Separately queue the "Used the Service since renewal" activity signal as a build item.
+  (5) Rule on Q4 (partial refunds) — either adopt the goodwill-as-balance-credit operating rule, which
+  requires no change to the Refund Policy, or amend §8.1 to carve out refunds not tied to time
+  remaining, which is a consumer-contract change and therefore counsel-owned.
 Artifact: not in the Phase C thin slice (thin slice is checkout → entitlement only).
 
 ---

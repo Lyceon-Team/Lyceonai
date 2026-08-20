@@ -1,7 +1,7 @@
 # Stripe Vertical — Open Questions
 
-**Date:** 2026-08-20 · **Produced by:** Stripe vertical, Phase B (deliverable B2).
-Two questions for counsel, one for product. None is answered here; each is stated with the
+**Date:** 2026-08-20 · **Produced by:** Stripe vertical, Phase B (deliverable B2). **Q4 added 2026-08-20** on owner ruling.
+Three questions for counsel, one for product. None is answered here; each is stated with the
 constraint that makes it live, and where relevant both options are spec'd so neither is foreclosed.
 
 ---
@@ -107,6 +107,55 @@ This becomes a real surface under SCL-045, because one subscription item can be 
 sibling item continues billing — so the dashboard will routinely hold students in different states
 within one subscription. It is a product decision with a spec consequence, not a legal one, and it
 does not block Phase C.
+
+---
+
+## Q4 — COUNSEL (with a product option that avoids counsel entirely). Partial refunds and access
+
+Owner proposed (2026-08-20) that entitlement revoke only where a refund covers the current period's
+charge in full, so that a goodwill concession — say $20 against a $99 charge — does not revoke access
+as a consequence of Lyceon's own gesture. The instinct is right. **The Refund Policy as written
+cannot carry it**, which is why this is here rather than in SCL-048.
+
+§8.1 (heading verified: `### **8.1 Cancellation and Access**`) sweeps every case in by name: "When we
+process a refund, your subscription is canceled immediately and your access to paid features ends as
+soon as the cancellation is recorded in our systems. This applies to **all refunds under this
+Policy** — Satisfaction Window refunds, Renewal Grace Window refunds, case-by-case refunds under
+Section 5, and refunds under region-specific rights in Section 6." There is no partial-refund
+exception and no room to read one in.
+
+§5 (heading verified: `## **5\. Renewal Charges Outside the Grace Window**`) makes it sharper, not
+softer, by naming a partial explicitly: "we may provide a full refund, **a pro-rated refund based on
+the time remaining in the Billing Period**, or a service credit toward future subscriptions." So the
+Policy contemplates partial refunds and routes them through §8.1. For a pro-rated refund that is
+entirely coherent — the customer is refunded the unused remainder and access ends because they are
+paid up to today, not beyond it. The perverse case is the concession that is *not* tied to time
+remaining, and the Policy has no category for it.
+
+**Two ways out.**
+
+**(a) Operational, no policy change, no counsel.** A goodwill concession is not a refund. Stripe
+distinguishes them: a customer credit balance holds the amount on the account and auto-applies to the
+next finalized invoice (https://docs.stripe.com/billing/customer/balance), and a credit note can
+specify `credit_amount` rather than `refund_amount`
+(https://docs.stripe.com/invoicing/integration/programmatic-credit-notes). A balance credit emits no
+`refund.*` event, so §8.1 never engages and access continues. §5 and §7.4 already name "a service
+credit toward future Lyceon subscriptions" as an available form, so this is the Policy's own
+mechanism, not a workaround. Cost: support must be trained that partial money-back-to-card is not
+available as a goodwill tool.
+
+**(b) Amend §8.1** to carve out refunds not tied to time remaining in the Billing Period. This is a
+change to a published consumer contract with California, EU/UK, and Quebec exposure, so it is
+counsel-owned and slower. It also needs a definition of the carve-out that support can apply
+consistently, which (a) gets for free by making the distinction mechanical.
+
+**The question:** adopt (a) as an operating rule, or instruct counsel to draft (b)? If (a), no spec
+change is needed beyond a support-policy note, and SCL-048's interim rule — revoke on any refund
+reaching `succeeded` — becomes the permanent rule.
+
+**Status:** SCL-048 carries the interim rule (revoke on any `succeeded` refund, per §8.1 as written),
+which is the conservative choice and matches the published contract. **No Phase C work depends on
+this** — the thin slice handles no refund events.
 
 ---
 

@@ -12,6 +12,34 @@ all migrations to the owner. This file records DDL *needs* with their reasons so
 | D-2 | New consent-record table | SCL-044 | Auto-Renewal Notice §3.3 + §6.7 require a persisted consent record (timestamp, terms version, account) retained ≥3 years from consent or 1 year after termination, whichever is longer. SCL-044 adds session id, customer id, text hash, Stripe's recorded consent value, IP, user agent, entitled student profile, payer relationship. No such table exists — `%consent%` sweep returns only `guardian_consent_requests`, `consent_runtime_config`, `consent_runtime_config_history`. | **Blocks Phase C step 4.** Per Charter §7, if the table does not exist when Phase C reaches it, Phase C stops and reports rather than authoring the migration. |
 | D-3 | `DROP SCHEMA stripe CASCADE` (29 tables, all 0 rows) | SCL-050 | No owning document, no retention rule, absent from the Doc 05D §10 and Doc 07E cascades; mirrors `charges` (42 cols) and `invoices` (68 cols) to serve a binary entitlement. | No. Removal, not a prerequisite. |
 | D-4 | Drop `public._rl_has_active_entitlement(uuid)` | Charter §10 | Charter §10 requires dead database objects queued for removal, with zero-policy use verified. **Verification is owed and not yet run** — Phase C runs it and either confirms zero references or strikes this row. | No. |
+| D-5 | The entitled-status set derives from one source, or the drift is CI-guarded | Owner finding 2026-08-20 (parallel-paths class) | The set `{active, past_due, trialing}` exists in **two independent copies** in production: the body of `entitlement_active(uuid)`, and the predicate of the partial index `idx_entitlements_active`. Verified below. A future SCL revisiting `past_due` that changes one leaves the other silently non-matching — the index stops covering the function's `WHERE`, the function keeps returning correct answers, no test fails, and the only symptom is a sequential scan. Silent because correctness is unaffected; costly because it is invisible. Either derive the predicate from one source, or add a CI parity check asserting the two sets are equal. | No. Performance/maintainability, not correctness. |
+
+**D-5 evidence.** Both copies, printed:
+
+```sql
+SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname='public' AND p.proname='entitlement_active';
+```
+```
+  SELECT EXISTS (
+    SELECT 1 FROM public.entitlements e
+    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due','trialing')
+  );
+```
+```sql
+SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND indexname='idx_entitlements_active';
+```
+```
+CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile_id)
+  WHERE ((status = 'active'::text) OR (status = 'past_due'::text) OR (status = 'trialing'::text))
+```
+Same three values, two syntaxes (`IN (...)` vs `OR`-chain), no shared source.
+
+Note that `tests/ci/entitlement.status-parity.contract.test.ts` already guards a *different* pair —
+the migration file `20260616120000_entitlement_active_include_trialing.sql` against
+`contracts/auth-entitlement-sp25.contract.md`, both by regex on `status IN (...)`. It reads neither
+the index predicate (an `OR`-chain its regex cannot match) nor production. So a third copy is guarded
+and these two are not.
 
 **Not queued — deliberately:** the guardian-link column drift (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`)
 needs no DDL. Production and genesis agree; the schema is correct and the code is wrong.

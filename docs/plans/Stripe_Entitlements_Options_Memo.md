@@ -1,6 +1,7 @@
 # Stripe Entitlements — Options Memo
 
-**Type:** Options memo. **No recommendation.** The owner rules.
+**Type:** Options memo. **RULED 2026-08-20 — REJECTED. See §8. Closed.**
+**Original posture:** no recommendation; the owner ruled from the arguments below.
 **Date:** 2026-08-20
 **Produced by:** Stripe vertical, Phase B (deliverable B1).
 **Question:** should Stripe's own Entitlements product own the paid/not-paid axis, or should
@@ -122,4 +123,30 @@ layer in the interim. Phase C does not do that; it persists Stripe's reported st
 
 ---
 
-**No recommendation is made. The owner rules.**
+## 8. Ruling — 2026-08-20
+
+**Stripe Entitlements is REJECTED. `entitlement_features` stays, as data. This memo is closed.**
+
+The owner ruled on §5 argument 1, explicitly **not** on the seven-versus-one count in §3:
+
+> Stripe Entitlements is keyed on the Customer, who under SCL-043 is the payer and in the
+> unaccompanied case has no Lyceon profile. It answers "is this **payer** entitled" when the only
+> question we ask is "is this **student** entitled," and adopting it creates a second identity graph
+> to reconcile. Managed-service-first applies to needs we have.
+
+Why the distinction between the two arguments matters for future readers: the seven-versus-one count
+(§3) is a *scope* objection — it says the win is small. That argument weakens as soon as any of the
+other six axes moves, and it would have reopened this decision every time the gate changed. The
+Customer-keying argument (§5.1) is a *shape* objection — Stripe's entitlement is attached to the
+wrong identity, and no amount of feature growth changes that. It does not decay.
+
+**What this settles, and what it does not.** Settled: the paid/not-paid axis stays with
+`entitlements` and `entitlement_active()`, and `entitlement_features` remains the declarative feature
+registry per Doc 01 V8 §27.1 — as data, not as a second vendor integration. Not settled by this
+ruling and unaffected by it: SCL-050's removal of the `stripe` sync schema, which was already ruled
+separately; and the six non-paid axes of §27.3, which remain unimplemented (audit G-09, G-10) and are
+Lyceon's to build regardless.
+
+**Consequence for §7.** The deferral cost analysis is moot. The one thing §7 warned against —
+building a second, richer status-derivation layer in the interim — still stands as guidance: Phase C
+persists Stripe's reported status verbatim and derives nothing.
