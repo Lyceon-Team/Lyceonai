@@ -3633,6 +3633,68 @@ CREATE TABLE public.caching_runtime_config_history (
 
 
 --
+-- Name: questions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.questions (
+    id text NOT NULL,
+    section text NOT NULL,
+    source_type integer NOT NULL,
+    domain text NOT NULL,
+    skill_codes text[] NOT NULL,
+    difficulty integer NOT NULL,
+    stem text NOT NULL,
+    passage text,
+    options jsonb NOT NULL,
+    correct_answer text NOT NULL,
+    explanation text NOT NULL,
+    option_metadata jsonb,
+    assets jsonb,
+    status text DEFAULT 'draft'::text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    retired_at timestamp with time zone,
+    source_lineage jsonb,
+    generation_attribution jsonb,
+    estimated_time_seconds integer,
+    premium_flag boolean DEFAULT false,
+    quality_score numeric,
+    issue_flags text[],
+    item_type text DEFAULT 'mcq'::text NOT NULL,
+    correct_variants text[],
+    CONSTRAINT questions_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
+    CONSTRAINT questions_domain_section_canonical CHECK ((((section = 'M'::text) AND (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((section = 'RW'::text) AND (domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
+    CONSTRAINT questions_id_check CHECK ((id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$'::text)),
+    CONSTRAINT questions_item_shape_chk CHECK ((((item_type = 'mcq'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 4) AND (correct_variants IS NULL)) OR ((item_type = 'grid_in'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 0) AND (correct_variants IS NOT NULL) AND (array_length(correct_variants, 1) >= 1)))),
+    CONSTRAINT questions_item_type_check CHECK ((item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
+    CONSTRAINT questions_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT questions_source_type_check CHECK ((source_type = ANY (ARRAY[1, 2]))),
+    CONSTRAINT questions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'qa'::text, 'published'::text, 'retired'::text])))
+);
+
+
+--
+-- Name: canonical_skill_catalog; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.canonical_skill_catalog WITH (security_invoker='true') AS
+ SELECT DISTINCT q.section,
+    q.domain,
+    s.skill
+   FROM (public.questions q
+     CROSS JOIN LATERAL unnest(q.skill_codes) s(skill))
+  WHERE ((q.status = 'published'::text) AND (btrim(s.skill) <> ''::text));
+
+
+--
+-- Name: VIEW canonical_skill_catalog; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, skill) over published questions. The drill-down catalog: replaces the hardcoded SAT_TAXONOMY whose slugs never matched the canonical DB values. Projection-only, carries no question content.';
+
+
+--
 -- Name: consent_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4356,6 +4418,35 @@ COMMENT ON VIEW public.mastery_derivation_gap_summary IS 'Per-student rollup of 
 
 
 --
+-- Name: mastery_levels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_levels (
+    level_key text NOT NULL,
+    level smallint,
+    display_name text NOT NULL,
+    sort_order smallint NOT NULL,
+    CONSTRAINT mastery_levels_display_name_not_blank CHECK ((length(btrim(display_name)) > 0)),
+    CONSTRAINT mastery_levels_level_range CHECK (((level IS NULL) OR ((level >= 0) AND (level <= 4)))),
+    CONSTRAINT mastery_levels_unmeasured_is_null CHECK (((level_key = 'unmeasured'::text) = (level IS NULL)))
+);
+
+
+--
+-- Name: TABLE mastery_levels; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.mastery_levels IS 'Display name per mastery level (0-4) plus the unmeasured state. Reference data: read-only at runtime, names only, never score boundaries (owner ruling 2026-08-20 RULE 2).';
+
+
+--
+-- Name: COLUMN mastery_levels.level; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mastery_levels.level IS 'The integer the mastery formula emits, or NULL for the unmeasured state. NULL is not zero.';
+
+
+--
 -- Name: mobile_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4560,48 +4651,6 @@ CREATE TABLE public.psi_occurred_at_backfill_log (
 --
 
 COMMENT ON TABLE public.psi_occurred_at_backfill_log IS 'One row per practice_session_items row repaired by migration 20260816000000. The only record of which rows the backfill touched — post-state cannot re-derive the set, because a repaired row is indistinguishable from one that always had occurred_at = answered_at.';
-
-
---
--- Name: questions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.questions (
-    id text NOT NULL,
-    section text NOT NULL,
-    source_type integer NOT NULL,
-    domain text NOT NULL,
-    skill_codes text[] NOT NULL,
-    difficulty integer NOT NULL,
-    stem text NOT NULL,
-    passage text,
-    options jsonb NOT NULL,
-    correct_answer text NOT NULL,
-    explanation text NOT NULL,
-    option_metadata jsonb,
-    assets jsonb,
-    status text DEFAULT 'draft'::text NOT NULL,
-    version integer DEFAULT 1 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    published_at timestamp with time zone,
-    retired_at timestamp with time zone,
-    source_lineage jsonb,
-    generation_attribution jsonb,
-    estimated_time_seconds integer,
-    premium_flag boolean DEFAULT false,
-    quality_score numeric,
-    issue_flags text[],
-    item_type text DEFAULT 'mcq'::text NOT NULL,
-    correct_variants text[],
-    CONSTRAINT questions_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
-    CONSTRAINT questions_domain_section_canonical CHECK ((((section = 'M'::text) AND (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((section = 'RW'::text) AND (domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
-    CONSTRAINT questions_id_check CHECK ((id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$'::text)),
-    CONSTRAINT questions_item_shape_chk CHECK ((((item_type = 'mcq'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 4) AND (correct_variants IS NULL)) OR ((item_type = 'grid_in'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 0) AND (correct_variants IS NOT NULL) AND (array_length(correct_variants, 1) >= 1)))),
-    CONSTRAINT questions_item_type_check CHECK ((item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
-    CONSTRAINT questions_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
-    CONSTRAINT questions_source_type_check CHECK ((source_type = ANY (ARRAY[1, 2]))),
-    CONSTRAINT questions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'qa'::text, 'published'::text, 'retired'::text])))
-);
 
 
 --
@@ -5740,6 +5789,14 @@ ALTER TABLE ONLY public.mastery_event_audit_log
 
 
 --
+-- Name: mastery_levels mastery_levels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_levels
+    ADD CONSTRAINT mastery_levels_pkey PRIMARY KEY (level_key);
+
+
+--
 -- Name: mobile_auth_config_history mobile_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6721,6 +6778,20 @@ CREATE INDEX idx_tutor_question_links_student ON public.tutor_question_links USI
 --
 
 CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
+-- Name: mastery_levels_level_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX mastery_levels_level_unique ON public.mastery_levels USING btree (level) WHERE (level IS NOT NULL);
+
+
+--
+-- Name: mastery_levels_sort_order_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX mastery_levels_sort_order_unique ON public.mastery_levels USING btree (sort_order);
 
 
 --
@@ -8108,6 +8179,12 @@ ALTER TABLE public.mastery_domain_refresh_audit_log ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.mastery_event_audit_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mastery_levels; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_levels ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mobile_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9746,6 +9823,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.caching_runtime_config_history
 
 
 --
+-- Name: TABLE questions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
+
+
+--
+-- Name: TABLE canonical_skill_catalog; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.canonical_skill_catalog TO service_role;
+
+
+--
 -- Name: TABLE consent_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10190,6 +10281,13 @@ GRANT SELECT ON TABLE public.mastery_derivation_gap_summary TO service_role;
 
 
 --
+-- Name: TABLE mastery_levels; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.mastery_levels TO service_role;
+
+
+--
 -- Name: TABLE mobile_auth_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10251,13 +10349,6 @@ GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
 --
 
 GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role;
-
-
---
--- Name: TABLE questions; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
 
 
 --
