@@ -30,7 +30,7 @@
 #   delete the `unmeasured` row .................... L1, L2 (via the NULL arm), L3
 #   drop any single level row ...................... L2
 #   add a `band_min numeric` column ................ L6
-#   change any mastery_constants VALUE ............. L7
+#   change any mastery_constants VALUE in a label migration -> L7
 #     (adding an unknown KEY is not a usable mutation: 05D's closed-world
 #      classifier already raises CONSTANT_KEY_UNKNOWN before the gate runs, so
 #      the migration aborts rather than the gate failing. Verified 2026-08-20.)
@@ -43,17 +43,36 @@ export PATH="/usr/lib/postgresql/16/bin:$PATH"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DB=mastery_levels_gate
 
-# Measured on 2026-08-20 against the migration pipeline WITHOUT
-# 20260820000000/20260820010000 applied. Pinned as a literal so this gate proves
-# the two new migrations did not disturb the formula's constant set — a value
-# recomputed live on both sides would agree with itself no matter what changed.
-EXPECTED_CONSTANTS_MD5="6225ebabc555be71bb8e1cecf35941b7"
-
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
-cleanup() { psql_db postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 || true; }
+cleanup() { psql_db postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 || true; rm -f "$ERRF"; }
+ERRF="$(mktemp /tmp/mlgate.XXXX.err)"
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*"; exit 1; }
+
+# Every read goes through this. `set -e` combined with VAR=$(psql ...) kills the
+# script with NO output when a query errors — no FAIL line, no PASS line, just a
+# non-zero exit and a log that looks like the gate never ran. That is the same
+# defect class this gate exists to catch: a failure collapsing into silence.
+# q() turns it into a named, printed error instead.
+# NOTE ON THE >&2: q() is always called as VAR=$(q ...), so its STDOUT is the
+# return value and anything printed there is swallowed into VAR, not shown. The
+# first version of this wrapper printed its diagnostics with a plain echo and was
+# therefore just as silent as the bug it was written to fix — the message went
+# into the variable and `exit 1` ended only the subshell. Diagnostics go to
+# stderr; `set -e` turns the failed substitution into the abort.
+q() { # $1 = label, $2 = sql
+  local out
+  if ! out="$(psql -v ON_ERROR_STOP=1 -tAc "$2" -d "$DB" 2>"$ERRF")"; then
+    {
+      echo "FAIL: query failed [$1]"
+      echo "  sql   : $2"
+      echo "  psql  : $(tr '\n' ' ' < "$ERRF")"
+    } >&2
+    return 1
+  fi
+  printf '%s' "$out"
+}
 
 echo "==> fresh DB + role/auth stub + migration pipeline"
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB;" >/dev/null
@@ -66,11 +85,36 @@ END $$;
 CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
 SQL
-for f in "$ROOT"/supabase/migrations/*.sql; do psql_db "$DB" -q -f "$f" >/dev/null; done
+# Two-stage apply. Everything EXCEPT the two label migrations first, so the
+# constants hash can be measured BEFORE they land and compared against the same
+# database afterwards (L7).
+#
+# The first version of this gate pinned a literal md5 measured on a developer
+# machine. That is the wrong shape for the same reason a pinned lint count was:
+# a number carried across environments proves the environments match, not that
+# the repo is correct — and when it disagreed, CI died inside a command
+# substitution with no output at all. Measuring both sides in one run tests the
+# actual claim ("these two migrations do not move the scoring hash") and cannot
+# drift.
+NEW_MIGRATIONS=("20260820000000_mastery_levels.sql" "20260820010000_canonical_skill_catalog.sql")
+is_new() { local b; b="$(basename "$1")"; for n in "${NEW_MIGRATIONS[@]}"; do [ "$b" = "$n" ] && return 0; done; return 1; }
+
+for f in "$ROOT"/supabase/migrations/*.sql; do
+  is_new "$f" && continue
+  psql_db "$DB" -q -f "$f" >/dev/null
+done
+
+CONSTANTS_BEFORE="$(q 'constants hash before' 'SELECT md5(public.canonicalize_mastery_constants_serialized());')"
+[ -n "$CONSTANTS_BEFORE" ] || fail "could not measure the constants hash before applying the label migrations"
+
+for n in "${NEW_MIGRATIONS[@]}"; do
+  [ -f "$ROOT/supabase/migrations/$n" ] || fail "expected migration missing: $n"
+  psql_db "$DB" -q -f "$ROOT/supabase/migrations/$n" >/dev/null
+done
 
 # ---------------------------------------------------------------------------
 echo "==> L1: exactly six label rows"
-N=$(psql_db "$DB" -tAc "SELECT count(*) FROM public.mastery_levels;")
+N=$(q 'L1 row count' 'SELECT count(*) FROM public.mastery_levels;')
 [ "$N" = "6" ] || fail "mastery_levels has $N row(s), expected 6 (five levels + unmeasured)"
 
 # ---------------------------------------------------------------------------
@@ -79,27 +123,18 @@ echo "==> L2: every level 0-4 has exactly one label (asserted from generate_seri
 # the table's own rows could not tell 'level 3 is absent' from 'level 3 exists' —
 # it would only ever see what is there. Same defect class as counting parsed
 # entries to detect a parse failure.
-UNLABELLED=$(psql_db "$DB" -tAc "
-  SELECT coalesce(string_agg(g.lvl::text, ',' ORDER BY g.lvl), '')
-  FROM generate_series(0, 4) AS g(lvl)
-  LEFT JOIN public.mastery_levels ml ON ml.level = g.lvl
-  WHERE ml.level_key IS NULL;")
+UNLABELLED=$(q 'L2 unlabelled levels' "SELECT coalesce(string_agg(g.lvl::text, ',' ORDER BY g.lvl), '') FROM generate_series(0, 4) AS g(lvl) LEFT JOIN public.mastery_levels ml ON ml.level = g.lvl WHERE ml.level_key IS NULL;")
 [ -z "$UNLABELLED" ] || fail "mastery_level(s) with no label: $UNLABELLED — a level the formula can emit has no display name"
 
-DUPES=$(psql_db "$DB" -tAc "
-  SELECT coalesce(string_agg(level::text, ',' ORDER BY level), '')
-  FROM public.mastery_levels WHERE level IS NOT NULL
-  GROUP BY level HAVING count(*) > 1;")
+DUPES=$(q 'L2 duplicate levels' "SELECT coalesce(string_agg(level::text, ',' ORDER BY level), '') FROM (SELECT level FROM public.mastery_levels WHERE level IS NOT NULL GROUP BY level HAVING count(*) > 1) d;")
 [ -z "$DUPES" ] || fail "level(s) with more than one label: $DUPES"
 
 # ---------------------------------------------------------------------------
 echo "==> L3: the unmeasured row exists with a NULL level (RULE 3)"
-UNMEASURED=$(psql_db "$DB" -tAc "
-  SELECT count(*) FROM public.mastery_levels
-  WHERE level_key = 'unmeasured' AND level IS NULL;")
+UNMEASURED=$(q 'L3 unmeasured row' "SELECT count(*) FROM public.mastery_levels WHERE level_key = 'unmeasured' AND level IS NULL;")
 [ "$UNMEASURED" = "1" ] || fail "no 'unmeasured' row with a NULL level — NULL would fall back to a code branch again"
 
-NAME=$(psql_db "$DB" -tAc "SELECT display_name FROM public.mastery_levels WHERE level_key='unmeasured';")
+NAME=$(q 'L3 unmeasured name' "SELECT coalesce(max(display_name),'') FROM public.mastery_levels WHERE level_key='unmeasured';")
 [ "$NAME" = "Not enough answers yet" ] || fail "unmeasured display_name is '$NAME', expected 'Not enough answers yet' (RULE 1)"
 
 # ---------------------------------------------------------------------------
@@ -119,17 +154,16 @@ fi
 
 # ---------------------------------------------------------------------------
 echo "==> L6: no threshold-shaped column (RULE 2 — names only, never boundaries)"
-BAD_COLS=$(psql_db "$DB" -tAc "
-  SELECT coalesce(string_agg(column_name, ',' ORDER BY column_name), '')
-  FROM information_schema.columns
-  WHERE table_schema = 'public' AND table_name = 'mastery_levels'
-    AND (column_name ~* '(min|max|score|band|threshold|boundary|cutoff|pct)');")
+BAD_COLS=$(q 'L6 threshold columns' "SELECT coalesce(string_agg(column_name, ',' ORDER BY column_name), '') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'mastery_levels' AND (column_name ~* '(min|max|score|band|threshold|boundary|cutoff|pct)');")
 [ -z "$BAD_COLS" ] || fail "mastery_levels acquired threshold-shaped column(s): $BAD_COLS — boundaries belong to mastery_constants, and a second copy is a second source of truth"
 
 # ---------------------------------------------------------------------------
-echo "==> L7: the mastery constants hash is unchanged (RULE 2)"
-ACTUAL_MD5=$(psql_db "$DB" -tAc "SELECT md5(public.canonicalize_mastery_constants_serialized());")
-[ "$ACTUAL_MD5" = "$EXPECTED_CONSTANTS_MD5" ] || fail "mastery constants hash moved: $ACTUAL_MD5 != $EXPECTED_CONSTANTS_MD5 — the label migrations must not touch the formula's constant set"
+echo "==> L7: the mastery constants hash is unchanged across the label migrations (RULE 2)"
+CONSTANTS_AFTER="$(q 'constants hash after' 'SELECT md5(public.canonicalize_mastery_constants_serialized());')"
+[ "$CONSTANTS_AFTER" = "$CONSTANTS_BEFORE" ] || fail "the mastery constants hash MOVED across the label migrations
+  before: $CONSTANTS_BEFORE
+  after : $CONSTANTS_AFTER
+  Naming a level must not touch the formula's constant set (RULE 2)."
 
 # ---------------------------------------------------------------------------
 echo "==> C1/C2/C3: canonical_skill_catalog"
@@ -156,24 +190,18 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 SQL
 
-DOMAIN_COUNT=$(psql_db "$DB" -tAc "SELECT count(DISTINCT domain) FROM public.canonical_skill_catalog;")
+DOMAIN_COUNT=$(q 'C1 domain count' 'SELECT count(DISTINCT domain) FROM public.canonical_skill_catalog;')
 [ "$DOMAIN_COUNT" = "8" ] || fail "canonical_skill_catalog covers $DOMAIN_COUNT domain(s), expected all 8 canonical domains"
 
 # Exact per-domain counts. Algebra is 2 (not 4) only because the published filter
 # discriminates — this line IS check C2.
-ACTUAL_SHAPE=$(psql_db "$DB" -tAc "
-  SELECT string_agg(domain || '=' || n, ',' ORDER BY domain)
-  FROM (SELECT domain, count(*) AS n FROM public.canonical_skill_catalog GROUP BY domain) t;")
+ACTUAL_SHAPE=$(q 'C2 catalog shape' "SELECT coalesce(string_agg(domain || '=' || n, ',' ORDER BY domain),'') FROM (SELECT domain, count(*) AS n FROM public.canonical_skill_catalog GROUP BY domain) t;")
 EXPECTED_SHAPE="Advanced Math=1,Algebra=2,Craft and Structure=1,Expression of Ideas=1,Geometry and Trigonometry=1,Information and Ideas=1,Problem Solving and Data Analysis=2,Standard English Conventions=1"
 [ "$ACTUAL_SHAPE" = "$EXPECTED_SHAPE" ] || fail "catalog shape mismatch
   expected: $EXPECTED_SHAPE
   actual  : $ACTUAL_SHAPE"
 
-LEAKED=$(psql_db "$DB" -tAc "
-  SELECT coalesce(string_agg(column_name, ',' ORDER BY column_name), '')
-  FROM information_schema.columns
-  WHERE table_schema='public' AND table_name='canonical_skill_catalog'
-    AND column_name NOT IN ('section','domain','skill');")
+LEAKED=$(q 'C3 catalog columns' "SELECT coalesce(string_agg(column_name, ',' ORDER BY column_name), '') FROM information_schema.columns WHERE table_schema='public' AND table_name='canonical_skill_catalog' AND column_name NOT IN ('section','domain','skill');")
 [ -z "$LEAKED" ] || fail "canonical_skill_catalog exposes column(s) beyond (section, domain, skill): $LEAKED"
 
 echo
