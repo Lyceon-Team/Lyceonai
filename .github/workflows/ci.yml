@@ -528,6 +528,14 @@ jobs:
           psql -v ON_ERROR_STOP=1 -d mastery_gap_ci -q -f scripts/ci/mastery-gap-detection-gates.sql
         shell: bash
 
+      # Six level names + the drill-down catalog. The catalog replaces SAT_TAXONOMY,
+      # whose invented slugs (math/advanced_math/linear_equations) never matched the
+      # canonical DB values (M/Advanced Math/Linear Equations in One Variable), so the
+      # skill tree resolved every node to NULL for every student.
+      - name: Mastery levels + skill catalog gates (RULE 1/2/3/5)
+        run: bash scripts/ci/mastery-levels-gate.sh
+        shell: bash
+
       # The gate that would have caught this outage on day one.
       - name: Install PostgREST (real transport)
         run: |
