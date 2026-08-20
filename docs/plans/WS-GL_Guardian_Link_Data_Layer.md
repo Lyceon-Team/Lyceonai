@@ -1,6 +1,7 @@
 # WS-GL — Guardian-Link Data Layer Breakage
 
 **Type:** Defect record + workstream. **Not an SCL** — the spec is correct and the code is wrong.
+**Scope widened 2026-08-20:** the same drift class is confirmed on `guardian_consent_requests`. See §8.
 **Status:** Open. Unowned.
 **Date recorded:** 2026-08-20
 **Recorded by:** Stripe vertical Phase B. **Out of edit scope for that vertical** (Charter §4) — reported, not fixed.
@@ -138,3 +139,93 @@ SCL-045's cardinality change.
 3. Decide whether the drift extends beyond `guardian_links` — a repo-wide
    code-columns-vs-`information_schema.columns` sweep would answer it, and the Stripe vertical is
    running that check for its own six tables at Phase C (Charter §3) but no further.
+
+---
+
+## 8. Second instance — `guardian_consent_requests` (added 2026-08-20)
+
+Found while verifying the Stripe vertical's Phase C gate item 4. **Same defect class, different
+table, and this one carries the under-13 COPPA consent flow.**
+
+**Production `guardian_consent_requests` — 10 columns, matching Doc 01 V8 §37.2 (heading verified:
+`### **37.2 Consent request flow**`) and `genesis.sql:240` exactly:**
+
+```sql
+SELECT a.attnum, a.attname, format_type(a.atttypid,a.atttypmod) AS type, a.attnotnull
+FROM pg_attribute a WHERE a.attrelid='public.guardian_consent_requests'::regclass
+  AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum;
+```
+```
+1  id                        uuid         NOT NULL
+2  student_profile_id        uuid         NOT NULL
+3  guardian_email            text         NOT NULL
+4  guardian_profile_id       uuid
+5  status                    text         NOT NULL
+6  consent_token             text         NOT NULL
+7  consent_token_expires_at  timestamptz  NOT NULL
+8  consented_at              timestamptz
+9  denied_at                 timestamptz
+10 created_at                timestamptz  NOT NULL
+```
+
+**The code targets `child_id` and `expires_at`. Neither exists:**
+
+```sql
+SELECT id, child_id, guardian_email, expires_at, status FROM public.guardian_consent_requests LIMIT 1;
+```
+```
+ERROR: 42703: column "child_id" does not exist
+```
+
+| `file:line` | Operation | Broken reference |
+|---|---|---|
+| `server/routes/profile-routes.ts:267-275` | SELECT existing pending request | `child_id`, `expires_at` (also orders by `expires_at`) |
+| `server/routes/profile-routes.ts:294-301` | INSERT new request | writes `child_id`, `expires_at`; **omits `consent_token` and `consent_token_expires_at`, both `NOT NULL` with no default** |
+| `server/routes/guardian-consent-routes.ts:61-64` | SELECT request for the verification UI | joins `profiles:child_id(...)`; reads `request.expires_at` at `:71` |
+| `server/routes/guardian-consent-routes.ts:114` | SELECT request for checkout | `.select("*")` — survives, but downstream reads `request.child_id` at `:159`, `:169` |
+| `server/routes/guardian-consent-routes.ts:277`, `:324` | SELECT / UPDATE during verify | same family |
+
+The INSERT fails twice over: unknown columns, and two `NOT NULL` columns absent from the payload.
+
+**§37.2 is therefore not implemented — not partially, not differently. It is absent.**
+
+```
+$ grep -rn "consent_token" --include="*.ts" --include="*.tsx" . | grep -v node_modules | grep -v "^./docs/"
+   (no output)
+```
+
+Zero hits. `consent_token` **is** the §37.2 mechanism — the spec's step 3 reads "Guardian clicks link
+→ lands on consent page (no auth required; **token is the auth**)." The code substitutes the raw
+`guardian_consent_requests.id` UUID as the bearer capability in the verification URL
+(`profile-routes.ts:318`, `guardian-consent-routes.ts:158`), which is why `digest8`
+(`guardian-consent-routes.ts:17`) exists to keep it out of logs. A substitute for the token is not an
+implementation of it.
+
+### 8.1 Consequence for the Stripe vertical — gate item 4 stops here
+
+The owner ruled the $0.50 guardian verification charge in scope for removal, with Doc 01 V8 §37.2's
+token-and-email flow as the fallback, conditioned on: *"If the route does not already implement it,
+that is a defect for WS-GL; report it and stop."*
+
+**It does not.** Removing the charge mechanics at `guardian-consent-routes.ts:95, 127, 143, 145, 419`
+would delete the only thing the verify path currently gates on and leave a consent route that
+approves on an unverified UUID from the URL — a worse posture than the one being removed, and a
+change of consent mechanism rather than the deletion of a payment step.
+
+**The Stripe vertical has stopped on this item and made no edit to
+`server/routes/guardian-consent-routes.ts`.** Removal becomes safe once §37.2 exists.
+
+### 8.2 Why the CI suite does not catch this either
+
+`tests/ci/guardian-consent.id11.contract.test.ts` mocks the Supabase client wholesale — its
+`if (table === "guardian_consent_requests")` branch at `:77` returns hand-built objects, so no query
+ever reaches a real schema. Same mechanism as `guardian-linking.contract.test.ts` (§3): the suite
+proves route behaviour given a fabricated row shape, and the fabricated shape is the one that does
+not exist.
+
+### 8.3 Scope note
+
+This does not change §6 — still no DDL implied, still not a WS-M item. Production and genesis agree
+on both tables; the code disagrees with both. The open question in §7.3 (does the drift extend
+further than `guardian_links`?) is now answered "yes, at least to `guardian_consent_requests`," which
+raises the priority of the repo-wide sweep.

@@ -47,6 +47,11 @@ Evidence:
     two-value domain that cannot express three tiers.
   - Repo: `server/routes/billing-routes.ts:31-34` — `checkoutSchema` = z.enum(["monthly","quarterly",
     "yearly"]).strict(). Three plans, one premium tier. Consistent with the reading above.
+  - **Live confirmation (owner, 2026-08-20).** Three Stripe Price IDs are configured and in use —
+    `STRIPE_PRICE_PARENT_MONTHLY`, `STRIPE_PRICE_PARENT_QUARTERLY`, `STRIPE_PRICE_PARENT_YEARLY`
+    (`billing-routes.ts:40-42`) — against a `tier` domain that admits exactly two values. Three
+    prices, one entitlement tier, in production configuration. This is the reading of §5.2 confirmed
+    by the runtime state rather than inferred from the text, and it closes the question.
 Version: no version bump. §5.2's substance is unchanged.
 Owner action: at next spec pass, amend Doc 09 §5.2 to say "three paid **billing periods**" (or add a
   one-line vocabulary note binding "tier" in Doc 09 to price point and deferring entitlement-level
@@ -212,7 +217,37 @@ Evidence:
     github_actions | next_public]`). Doc 06B §4.1 (heading verified: "# **§4 — Secret-Class Inventory
     & Per-Platform Binding (Q-06B-1 = a)**") binds Stripe runtime secrets to **Vercel environment
     variables**. SCL-050's endpoint deletion removes those rows and closes this as a side effect.
+AMENDMENT 2026-08-20 (owner) — **the environment split is a CONFIGURATION requirement, and Vercel
+  per-environment scoping is its enforcement point. The handler assertion is defence in depth, not
+  the control.**
+  Owner reports that `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_ENV` are all scoped
+  **All Environments** in Vercel, so production, preview, and development share one key, one webhook
+  signing secret, and one mode selector.
+  **Why the code-side assertion cannot compensate.** `webhookHandlers` would read `STRIPE_ENV` to
+  learn its expected mode. With one value shared across all three environments, every environment
+  computes the *same* expected mode and every environment asserts it identically. A preview
+  deployment holding the live key and the live signing secret would receive a live event, verify its
+  signature successfully, compute `expected = 'live'`, observe `event.livemode = true`, and pass —
+  writing a real entitlement row from a preview build. The assertion is not weak here; it is
+  structurally blind, because the thing it compares against is not per-environment.
+  **This is already a spec violation, not only a new rule.** Doc 06B §4.1 (heading verified:
+  "# **§4 — Secret-Class Inventory & Per-Platform Binding (Q-06B-1 = a)**") binds Vercel BFF/API
+  runtime secrets to "**Vercel environment variables**, environment-scoped
+  (`production` / `staging` / `development`)". All-Environments scoping is not environment-scoped.
+  §4.3 hard rule 2 additionally forbids a privileged secret in "any preview-env runtime."
+  **Ordering consequence: the configuration fix precedes the code.** Building the handler assertion
+  against a shared `STRIPE_ENV` produces a gate that passes in every environment and proves nothing —
+  a gate never observed failing, which Charter §5 rejects by name.
+  **Owner action, Dashboard-only, verify do not assume:** scope `STRIPE_SECRET_KEY`,
+  `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_ENV` per environment, with test-mode
+  values in preview and development and live values in production only.
+  **Not verifiable from this session.** The Vercel MCP surface available here exposes
+  `list_teams` / `list_projects` / `get_project` and no environment-variable read. Verified reachable:
+  team `team_jMcpkTj06ExncZhZCxA2BPMC`, project `prj_Q7cVFOLY753OTXPiZAKfiLczGIIo` ("lyceonai");
+  `get_project` returns domains and `latestDeployment` and no env data. Verification requires the
+  Vercel Dashboard → Settings → Environment Variables, or `vercel env ls` with a token.
 Version: Doc 01 V8 §22 gains a new subsection (§22.5 or renumbered). No existing text is contradicted.
+  Doc 06B §4.1's environment-scoping requirement is unchanged and is cited, not amended.
 Owner action: add the environment model and the `livemode` assertion rule to §22; add the webhook
   signing secret as a named example in Doc 06B §4.1's "Vercel BFF/API runtime secrets" row, and
   register `STRIPE_ENV` / `STRIPE_*_LIVE` / `STRIPE_*_TEST` in `infra/secret-class-inventory.yaml`
