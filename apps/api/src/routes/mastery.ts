@@ -231,7 +231,6 @@ router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
     const weakest = await fetchWeakestSkills({
       userId,
       limit,
-      minAttempts: 2,
     });
 
     const formatted = weakest.map((row) => ({

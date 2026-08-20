@@ -21,16 +21,16 @@ export interface WeaknessQuery {
   userId: string;
   section?: string;
   limit?: number;
-  minAttempts?: number;
-  failOnError?: boolean;
 }
 
 export interface SkillWeakness {
   section: string;
   domain: string | null;
   skill: string;
+  /** Non-null by construction: the query selects only measured rows (see fetchWeakestSkills). */
   mastery_score: number;
-  mastery_level: number | null;
+  /** Non-null by construction: the formula sets score and level together. */
+  mastery_level: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,27 +150,48 @@ export async function fetchDomainMasteryRows(args: {
 
 /**
  * @spec [Doc 05A §7.4 — mastery_score is the canonical DB-computed weakness signal, admin-only;
- *   consumed server-side by adaptiveSelector for deterministic practice-engine selection]
- * | @implemented [2026-06-23]
+ *   Doc 05A §6.2 / Doc 05 Parent §6.6 — NULL score IS the insufficient-evidence signal]
+ * | @implemented [2026-08-20]
+ *
+ * plain English: returns the student's measured weakest skills, ascending by the canonical
+ * mastery_score. "Measured" is not a count this function decides — it is whatever the formula
+ * decided when it wrote the row.
+ *
+ * WHY THE FILTER IS `mastery_score IS NOT NULL` AND NOT AN EVENT COUNT.
+ *   The previous version filtered `event_count_total >= minAttempts` with minAttempts defaulting
+ *   to 2 or 3, while MIN_EVENTS_FOR_MASTERY is 5. Rows with 2-4 events clear that filter but are
+ *   deliberately unscored (Doc 05A §6.2: below the threshold the row is written with
+ *   mastery_score = NULL, mastery_pct = NULL, mastery_level = NULL). `Number(null) || 0` then
+ *   turned each one into 0.0 and ascending order floated them to the top — so the surface told a
+ *   student their LEAST-PRACTICED skills were their WORST skills. In production that was 18 of
+ *   46 skill rows.
+ *
+ *   Re-deriving the threshold in TypeScript is what created the drift, so this does not read
+ *   MIN_EVENTS_FOR_MASTERY either. It filters on the formula's own output: a non-NULL score
+ *   exists if and only if the formula judged the evidence sufficient. One decision, one place,
+ *   no second copy to fall out of step. `minAttempts` is gone from the query contract entirely
+ *   — a caller (including a client query string) can no longer choose the evidence bar.
+ *
  * ANTI-LEAK BOUNDARY: mastery_score is DUAL-USE. This fetch reads the ALREADY-COMPUTED
  * mastery_score column directly (thin-read-surface — no recomputation from raw counts) and keeps
- * it for server-side consumers (adaptiveSelector, planner). The /weakest route strips it at
- * serialization — the score never crosses to the client. There is no synthesized `accuracy`
- * field: the selector consumes the same canonical mastery_score column (parallel-paths rule),
- * never a second derivation of the same value under a different name.
+ * it for server-side consumers (adaptiveSelector, planner). The /weakest and /skills routes strip
+ * it at serialization — the score never crosses to the client.
+ *
+ * Errors THROW. There is no failOnError opt-out: a query failure returning [] renders as "this
+ * student has no weaknesses," which is the same fail-open shape as the NULL-to-zero coercion
+ * above — an error collapsing into a legitimate-looking empty value.
  */
 export async function fetchWeakestSkills(
   query: WeaknessQuery,
 ): Promise<SkillWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
-  const minAttempts = query.minAttempts || 3;
 
   let q = supabase
     .from("student_skill_mastery")
     .select("section, domain, skill, mastery_score, mastery_level")
     .eq("student_id", query.userId)
-    .gte("event_count_total", minAttempts)
+    .not("mastery_score", "is", null)
     .order("mastery_score", { ascending: true })
     .limit(limit);
 
@@ -180,19 +201,30 @@ export async function fetchWeakestSkills(
 
   const { data, error } = await q;
   if (error) {
-    if (query.failOnError) {
-      throw new Error(`weakest_skills_query_failed: ${error.message}`);
-    }
-    return [];
+    throw new Error(`weakest_skills_query_failed: ${error.message}`);
   }
 
-  return (data || []).map((row) => ({
-    section: row.section as string,
-    domain: (row.domain as string | null) ?? null,
-    skill: row.skill as string,
-    mastery_score: Number(row.mastery_score) || 0,
-    mastery_level: row.mastery_level as number | null,
-  }));
+  return (data || []).map((row) => {
+    const score = Number(row.mastery_score);
+    const level = row.mastery_level;
+    // Belt-and-braces on the contract the filter above establishes. If either value is
+    // absent here the row is not what the formula promises, and that is a defect to
+    // surface — never a zero to render.
+    if (!Number.isFinite(score) || level === null || level === undefined) {
+      throw new Error(
+        `weakest_skills_unmeasured_row: ${row.section}/${row.domain ?? "unknown"}/${row.skill} ` +
+          `passed the measured filter but carries score=${String(row.mastery_score)} ` +
+          `level=${String(row.mastery_level)}`,
+      );
+    }
+    return {
+      section: row.section as string,
+      domain: (row.domain as string | null) ?? null,
+      skill: row.skill as string,
+      mastery_score: score,
+      mastery_level: Number(level),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -151,7 +151,6 @@ describe("Mastery Read Contract", () => {
     expect(fetchWeakestSkills).toHaveBeenCalledWith({
       userId: "student-1",
       limit: 5,
-      minAttempts: 2,
     });
     const items = res.body.weakest;
     expect(Array.isArray(items)).toBe(true);
