@@ -105,6 +105,15 @@ Evidence:
     ... STORED` column Doc 01 V8 §4 specifies — a deliberate, documented divergence recorded in
     genesis as "@adaptation A1" (`genesis.sql:30`). The data model supports the under-13 state; the
     consent *method* is what is absent.
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **the published Student Terms
+  contradict the owner ruling this SCL records.** Student Terms §2 states that Lyceon does not
+  knowingly permit under-13 users and does not currently offer verified parental consent flows. The
+  owner has ruled under-13 paid access permitted under a guardian-held account. A published consumer
+  document that disclaims a capability cannot coexist with shipping that capability.
+  **The terms require amendment before the under-13 path is built** — not after, and not in parallel.
+  This compounds rather than replaces the VPC-method gap above: amending §2 removes the contradiction
+  but does not supply a Rule-compliant consent method, and supplying the method does not fix §2. Both
+  must close. Nothing in Phase C depends on either.
 Version: Doc 01 V8 §37 gains an account-holder rule and a VPC-method requirement. No version bump
   proposed; the flow body in §37.2 is unchanged as a linking mechanism.
 Owner action: (1) amend §37 to state the guardian-held-account model for under-13; (2) add a VPC-method
@@ -323,6 +332,20 @@ Evidence:
   - Refund Policy §4.1's precondition — "You must not have Used the Service since the Renewal Charge"
     — has no server-side implementation. There is no activity signal timestamped against a renewal
     (audit G-35). This is a build item, not an SCL: the policy is right and the system has not caught up.
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **two published consumer
+  documents directly conflict on whether refunds exist at all.** Student Terms §11 states that fees
+  are non-refundable with no partial-period refunds. The Refund Policy provides a seven-day
+  Satisfaction Window (§3.1), a three-day Renewal Grace Window (§4.1), case-by-case pro-rated refunds
+  (§5), and region-specific statutory rights (§6). Both sit at authority level 1 under the Charter, so
+  the authority order cannot resolve this — only counsel can.
+  **This SCL's revoke-on-refund model depends on the Refund Policy being the operative document.** If
+  Student Terms §11 were to govern, there would be no refund path to revoke on and §8.1's
+  immediate-access-loss rule would have nothing to attach to. Not designed around and not resolved
+  here: the interim rule (revoke on any `succeeded` refund) is written against the Refund Policy
+  because that is the document this SCL cites, and it must be re-examined if counsel rules the other
+  way. Doc 10 §3 Risk 6 already records that the Dec 2025 ToS drafts say "fees are non-refundable" and
+  that the conflict "must be resolved in the new ToS + new Parent Terms + new standalone Refund
+  Policy" — the standalone Refund Policy shipped; the ToS did not follow.
 Version: Doc 01 V8 §22.1 gains refund rows. §21 gains a note that refund is an entitlement-affecting
   event outside the subscription-status axis.
 Owner action: (1) add `refund.created` / `refund.updated` to §22.1 with the action "revoke entitlement
@@ -584,6 +607,15 @@ Evidence:
     `docs/plans/Stripe_Open_Questions.md` Q1 (California §17602(a) requires auto-renewal offer terms
     be separate and distinct from general terms of use; Stripe Checkout provides exactly one
     `terms_of_service` checkbox).
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **the published terms carry two
+  different version strings.** The page header reads `2024-12-20`; the PDF reads `12/20/2025`. This
+  SCL's consent record captures "the version of the terms you agreed to" (Auto-Renewal Notice §3.3,
+  heading verified: "### **3.3 Records of Consent**"), retained per §6.7 for no less than three years
+  from consent or one year after termination, whichever is longer. **A wrong displayed version makes
+  every consent record wrong for its whole retention life**, and the record is the artifact Lyceon
+  would produce to evidence §17602(a)(4) consent. Not designed around: the version string must be
+  reconciled and made single-sourced before any consent record is written. Consent capture is
+  Phase C.2, so nothing has been persisted against the ambiguous version yet.
 Version: Doc 01 V8 §20 gains a payer-affirmation subsection; a new consent-record table joins
   Appendix B and Appendix E's ownership matrix.
 Owner action: (1) **Dashboard, owner-only:** set the Terms of Service URL in Settings → Business →
