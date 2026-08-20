@@ -38,6 +38,7 @@
 // ────────────────────────────────────────────────────────────────────
 // Script body — for Karl's manual execution
 // ────────────────────────────────────────────────────────────────────
+/* eslint-disable no-console -- CLI provisioning script, console is the output channel */
 
 async function main(): Promise<void> {
   const project = process.env.GOOGLE_CLOUD_PROJECT;
@@ -67,10 +68,8 @@ async function main(): Promise<void> {
   console.log("");
 
   // ── Import SDK ──
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { VertexRagDataServiceClient } = await import(
-    "@google-cloud/aiplatform"
-  );
+  const { VertexRagDataServiceClient } =
+    await import("@google-cloud/aiplatform");
 
   const parent = `projects/${project}/locations/${location}`;
   const client = new VertexRagDataServiceClient({
@@ -125,9 +124,7 @@ async function main(): Promise<void> {
   console.log("Next steps:");
   console.log("  1. Ingest content using the RAG Engine import API");
   console.log("  2. Each document must carry the metadata fields above");
-  console.log(
-    "  3. Test retrieval quality BEFORE wiring to generation (§6.7)",
-  );
+  console.log("  3. Test retrieval quality BEFORE wiring to generation (§6.7)");
 }
 
 main().catch((err) => {

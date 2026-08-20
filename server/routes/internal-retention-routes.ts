@@ -81,16 +81,18 @@ const retentionSweepSchema = z.object({
 
 // ── Tier sweep functions ─────────────────────────────────────────────
 
-type SweepResult = {
-  ok: true;
-  deleted_count: number;
-  tier: string;
-  dry_run: boolean;
-} | {
-  ok: false;
-  reason: string;
-  tier: string;
-};
+type SweepResult =
+  | {
+      ok: true;
+      deleted_count: number;
+      tier: string;
+      dry_run: boolean;
+    }
+  | {
+      ok: false;
+      reason: string;
+      tier: string;
+    };
 
 /**
  * @spec [Doc-03_V1.1 §14.2, INV-03-19]
@@ -112,7 +114,10 @@ async function sweep7d(dryRun: boolean): Promise<SweepResult> {
       .from("tutor_conversations")
       .select("id", { count: "exact", head: true })
       .not("deleted_at", "is", null)
-      .lt("deleted_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+      .lt(
+        "deleted_at",
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      );
 
     if (error) {
       return { ok: false, reason: `count_failed: ${error.message}`, tier };
@@ -125,11 +130,18 @@ async function sweep7d(dryRun: boolean): Promise<SweepResult> {
     .from("tutor_conversations")
     .delete()
     .not("deleted_at", "is", null)
-    .lt("deleted_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .lt(
+      "deleted_at",
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    )
     .select("id, student_id");
 
   if (deleteConvosError) {
-    return { ok: false, reason: `delete_failed: ${deleteConvosError.message}`, tier };
+    return {
+      ok: false,
+      reason: `delete_failed: ${deleteConvosError.message}`,
+      tier,
+    };
   }
 
   const deletedCount = deletedConvos?.length ?? 0;
@@ -138,7 +150,11 @@ async function sweep7d(dryRun: boolean): Promise<SweepResult> {
   // tutor_memory_summaries links by student_id, not conversation FK.
   // Per spec: "retained for 7 days, then purged" — same window.
   if (deletedConvos && deletedConvos.length > 0) {
-    const studentIds = [...new Set(deletedConvos.map((c) => (c as { student_id: string }).student_id))];
+    const studentIds = [
+      ...new Set(
+        deletedConvos.map((c) => (c as { student_id: string }).student_id),
+      ),
+    ];
     for (const sid of studentIds) {
       // Check if student has any remaining non-deleted conversations
       const { count: remainingConvos } = await supabaseServer
@@ -194,7 +210,11 @@ async function sweep90d(dryRun: boolean): Promise<SweepResult> {
       .lt("created_at", cutoff);
 
     if (e1 || e2) {
-      return { ok: false, reason: `count_failed: ${e1?.message ?? e2?.message}`, tier };
+      return {
+        ok: false,
+        reason: `count_failed: ${e1?.message ?? e2?.message}`,
+        tier,
+      };
     }
     return {
       ok: true,
@@ -217,7 +237,11 @@ async function sweep90d(dryRun: boolean): Promise<SweepResult> {
     .select("id");
 
   if (e1 || e2) {
-    return { ok: false, reason: `delete_failed: ${e1?.message ?? e2?.message}`, tier };
+    return {
+      ok: false,
+      reason: `delete_failed: ${e1?.message ?? e2?.message}`,
+      tier,
+    };
   }
 
   return {
@@ -259,7 +283,11 @@ async function sweep180d(dryRun: boolean): Promise<SweepResult> {
       .lt("detected_at", cutoff);
 
     if (e1 || e2) {
-      return { ok: false, reason: `count_failed: ${e1?.message ?? e2?.message}`, tier };
+      return {
+        ok: false,
+        reason: `count_failed: ${e1?.message ?? e2?.message}`,
+        tier,
+      };
     }
     return {
       ok: true,
@@ -285,7 +313,11 @@ async function sweep180d(dryRun: boolean): Promise<SweepResult> {
     .select("id");
 
   if (e1 || e2) {
-    return { ok: false, reason: `delete_failed: ${e1?.message ?? e2?.message}`, tier };
+    return {
+      ok: false,
+      reason: `delete_failed: ${e1?.message ?? e2?.message}`,
+      tier,
+    };
   }
 
   return {
@@ -312,12 +344,13 @@ async function sweep365d(_dryRun: boolean): Promise<SweepResult> {
 
 // ── Tier dispatch ────────────────────────────────────────────────────
 
-const TIER_HANDLERS: Record<string, (dryRun: boolean) => Promise<SweepResult>> = {
-  "7d": sweep7d,
-  "90d": sweep90d,
-  "180d": sweep180d,
-  "365d": sweep365d,
-};
+const TIER_HANDLERS: Record<string, (dryRun: boolean) => Promise<SweepResult>> =
+  {
+    "7d": sweep7d,
+    "90d": sweep90d,
+    "180d": sweep180d,
+    "365d": sweep365d,
+  };
 
 // ── Route ─────────────────────────────────────────────────────────────
 

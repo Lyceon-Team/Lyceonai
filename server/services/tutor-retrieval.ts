@@ -113,14 +113,8 @@ async function retrieveDeterministic(
       .limit(request.max_items * 2); // Over-fetch to account for gating
 
     // §6.3: Pre-submit — exclude the active question's explanation
-    if (
-      request.is_pre_submit &&
-      request.active_question_canonical_id
-    ) {
-      query = query.neq(
-        "canonical_id",
-        request.active_question_canonical_id,
-      );
+    if (request.is_pre_submit && request.active_question_canonical_id) {
+      query = query.neq("canonical_id", request.active_question_canonical_id);
     }
 
     const { data, error } = await query;
@@ -140,11 +134,13 @@ async function retrieveDeterministic(
     }
 
     // Map to RetrievedItem contract (§6.8)
-    return (data as Array<{
-      canonical_id: string;
-      explanation: string;
-      skill_codes: string[];
-    }>).map((row) => ({
+    return (
+      data as Array<{
+        canonical_id: string;
+        explanation: string;
+        skill_codes: string[];
+      }>
+    ).map((row) => ({
       content: row.explanation,
       skill_codes: row.skill_codes ?? [],
       // §6.5: canonical_id is in metadata (provenance), never in text
@@ -185,7 +181,7 @@ async function retrieveDeterministic(
  * Engine's supported list — if so, STOP and report.
  */
 async function retrieveSemantic(
-  request: RetrievalRequest,
+  _request: RetrievalRequest,
 ): Promise<RetrievedItem[]> {
   if (!RAG_CORPUS_RESOURCE_NAME) {
     // Corpus not yet provisioned — expected at V1 scaffold stage
