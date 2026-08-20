@@ -1827,4 +1827,56 @@ No. §4 records observed deltas only. §5 is questions, not answers — each nam
 
 ---
 
-**END — awaiting ruling. No file other than this one was created or modified.**
+## 7. Addendum — Phase A verification and the G-28 correction
+
+Added 2026-08-20 after the Phase A multi-student corpus sweep. The body above is unchanged; this
+section records two amendments to it.
+
+### 7.1 G-28 is WITHDRAWN — not a contradiction
+
+G-28 recorded Doc 01 V8 §20 ("two tiers") against Doc 09 §5.2 ("three paid tiers") as
+`CONTRADICTORY`, and Q-B1 was classified SPEC-CONTRADICTORY on the same basis. **Both are withdrawn.**
+§5.2's own closing sentence resolves it: *"The paid tiers deliver the same product … the
+differentiation is billing-period commitment."* Doc 09 uses "tier" for a price point; Doc 01 V8 uses
+it for an entitlement level. Three Stripe Prices, one `tier='premium'`. The classification was drawn
+from §5.2's headline without reading to the end of the subsection — the exact failure mode §0.2 of
+this audit warns about, committed by this audit. Corrected classification: **Q-B1 is SPEC-DETERMINED**
+(one entitlement tier, three billing periods; no doc names a Price ID or a price-catalog table, which
+is unchanged). Recorded as SCL-052.
+
+Revised tally: SPEC-DETERMINED 21 · SPEC-SILENT 8 · SPEC-CONTRADICTORY 0 · SPEC-VS-REPO-DIVERGENT 2.
+
+### 7.2 Q-A3 (multi-student) — premise verified, and the foreclosure relocated
+
+Q-A3 remains **SPEC-SILENT on the purchasing mechanism** — re-verified on twelve terms; `quantity`,
+`second student`, `additional student`, and `second subscription` all return zero across `docs/Spec/`
+and `docs/plans/`, and `family plan` occurs once corpus-wide as a `(future)` placeholder in Doc 01 V8
+§42. But the audit understated what the corpus *does* determine, and misplaced the foreclosure:
+
+- **Doc 01 V8 §35** (heading verified: `## **§35 Guardian-student linkage**`) states *"Guardians are
+  linked to **one or more** students"*. Multi-student linkage is spec'd, not merely tolerated.
+- **The database does not foreclose it.** `guardian_links` carries only
+  `unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status)` —
+  one active link per *pair*, permitting N students per guardian, matching §35 exactly.
+- **The foreclosure is entirely application-layer**, and `getPrimaryGuardianLink` was only one of
+  four sites. `createGuardianLink` (`server/lib/account.ts:39-72`) refuses the second link outright;
+  `getAllGuardianStudentLinks` (`:575-597`) throws on >1 despite its name. Recorded in SCL-045.
+
+### 7.3 New finding — the guardian-link data layer is broken against production
+
+Not visible in the original sweep. All four guardian-link helpers query `student_user_id`,
+`account_id`, and `linked_at` — columns that exist in production, in `genesis.sql`, and in no
+migration. Every guardian-paid path throws before reaching Stripe. Recorded as a defect, not an SCL,
+in `docs/plans/WS-GL_Guardian_Link_Data_Layer.md`.
+
+### 7.4 G-42 refinement — `tests/ci/guardian-linking.contract.test.ts` is not hollow, but overclaims
+
+It is green because `vi.mock('../../server/lib/account', …)` at line 54 replaces the module, so the
+real (broken) function never runs. It genuinely guards the route's error-code→HTTP mapping
+(`server/routes/guardian-routes.ts:249-279`) — planted-failure verified, yielding
+`expected 500 to be 409`. Its `describe` name claims to enforce the 1:1 invariant, which lives in the
+mocked-out function. Retires with SCL-045's promotion, never before.
+
+---
+
+**END — Phase A addendum applied 2026-08-20. Phase B recorded in `docs/SpecAudit/SPEC_CHANGES_LOG.md` (SCL-042…SCL-052).**
