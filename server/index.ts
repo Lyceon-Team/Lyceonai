@@ -77,6 +77,7 @@ import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
 import internalMemoryRoutes from "./routes/internal-memory-routes";
+import internalRetentionRoutes from "./routes/internal-retention-routes";
 import {
   getPracticeTopics,
   getPracticeQuestions,
@@ -402,8 +403,10 @@ app.use("/api/auth", supabaseAuthRoutes);
 
 // Internal cron-only endpoints (CRON_SECRET-gated; e.g. scheduled legal-acceptance outbox drain).
 app.use("/api/internal", internalCronRoutes);
-// Internal memory routes (CRON_SECRET-gated; Cloud Tasks compaction writeback per Doc 03C §8.3).
+// Internal memory routes (OIDC-gated; Cloud Tasks compaction writeback per Doc 03C §8.3).
 app.use("/api/internal", internalMemoryRoutes);
+// Internal retention sweep (OIDC-gated; Cloud Scheduler per-tier jobs per Doc 03 §14.2).
+app.use("/api/internal", internalRetentionRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
 app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);

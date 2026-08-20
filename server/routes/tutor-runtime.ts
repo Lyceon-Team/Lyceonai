@@ -889,6 +889,28 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisScanContext,
       );
 
+      // Log turn metrics for the crisis path — previously skipped, creating
+      // an observability gap where crisis turns had no metrics row.
+      // @spec [CR-03C-V3-01 §3.4]
+      // modelName: "crisis_bypass" — no model was invoked (crisis-safe response
+      // is server-authored, not model-generated).
+      // orchestrationDurationMs: 0 — turnStartedAt is not yet defined at this
+      // point in the pipeline (defined at line 1017, after crisis return).
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "crisis_bypass",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: true,
+        crisisClassifierOutcome: crisisResult.source,
+      });
+
       res.status(200).json({
         data: {
           conversation_id: conversation.id,
@@ -1155,6 +1177,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // Determine crisis classifier outcome for the normal (non-crisis) path.
+    // If forceReview is true, classifier degraded (Layer 2 failed but Layer 1
+    // had data — turn proceeds but is enqueued for review).
+    const normalPathOutcome: string = crisisResult.forceReview
+      ? "classifier_degraded"
+      : "no_crisis";
+
     await logTurnMetrics({
       conversationId: conversation.id,
       turnOrdinal: 0,
@@ -1168,6 +1197,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       antiLeakTriggered,
       injectionDetected,
       crisisTriggered: false,
+      crisisClassifierOutcome: normalPathOutcome,
     });
 
     await supabaseServer
