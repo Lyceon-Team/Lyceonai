@@ -5,7 +5,6 @@ export interface BuildWeaknessSkillsViewInput {
   userId: string;
   section?: string;
   limit?: number;
-  minAttempts?: number;
 }
 
 /**
@@ -17,12 +16,12 @@ export interface BuildWeaknessSkillsViewInput {
 export async function buildWeaknessSkillsView(
   input: BuildWeaknessSkillsViewInput,
 ) {
+  // No minAttempts, no failOnError: the evidence bar is the formula's (a non-NULL
+  // mastery_score) and query errors always throw. See fetchWeakestSkills.
   const skills = await getWeakestSkills({
     userId: input.userId,
     section: input.section,
     limit: input.limit,
-    minAttempts: input.minAttempts,
-    failOnError: true,
   });
 
   const safeSkills = skills.map((s) => ({

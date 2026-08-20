@@ -72,13 +72,15 @@ entries:
     expires: 2026-11-01
     command: pnpm run lint
     count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
-    findings_ceiling: 2112
+    findings_ceiling: 2111
     tolerance: 0
     ceiling_source: >
-      Local Node 22.22.2 / ESLint 10.4.1: "2112 problems (2111 errors, 1 warning)".
-      To be confirmed against the CI runner on this head — CI is the authoritative
-      measurement and the gate now writes each runner's reading to
-      $GITHUB_STEP_SUMMARY. The previous ceiling of 2399 was verified verbatim from
+      Local Node 22.22.2 / ESLint 10.4.1: "2111 problems". CI run 32235193788 confirmed
+      the prior 2112 verbatim on the same tree, identical to the local reading; the
+      ceiling then dropped to 2111 when the weakest-skills fix deleted the
+      caller-supplied `minAttempts` parse in apps/api/src/routes/weakness.ts. Lowered
+      rather than left slack: a ceiling one above actual is a free finding, and that is
+      how a ratchet starts decaying. The previous ceiling of 2399 was verified verbatim from
       CI run 32232947651 ("2399 problems (2398 errors, 1 warning)"), identical to
       the local reading on that same tree, which is what established that there is
       no environment spread here.
