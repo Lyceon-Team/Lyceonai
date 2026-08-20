@@ -17,8 +17,13 @@ import {
 } from "../lib/account";
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
-import { fetchDomainMasteryRows } from "../../apps/api/src/services/mastery-read";
+import {
+  buildDomainLevelView,
+  fetchDomainMasteryRows,
+} from "../../apps/api/src/services/mastery-read";
 import { masteryTierFromLevel } from "../../packages/shared/src/mastery";
+import { loadMasteryLevels } from "../../apps/api/src/services/mastery-levels-read";
+import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
 import {
   buildStudentKpiViewFromCanonical,
   buildStudentFullLengthReportView,
@@ -881,15 +886,42 @@ router.get(
           .json({ error: "Not authorized to view this student", requestId });
       }
 
-      const domainRows = await fetchDomainMasteryRows({
-        userId: studentId,
-        section,
-      });
-      const domains = domainRows.map((row) => ({
-        section: row.section,
-        domain: row.domain,
-        tier: masteryTierFromLevel(row.mastery_level),
-        masteryLevel: row.mastery_level,
+      // Guardians get the SAME domain vocabulary as the student (owner ruling
+      // 2026-08-20 RULE 7: Doc 05 governs, domain grain only) and no drill-down: no
+      // per-skill endpoint exists for a guardian to call. `tier` is emitted alongside
+      // the level for one transitional PR; PR D removes it.
+      const parsedSection = masterySectionSchema.optional().safeParse(section);
+      if (!parsedSection.success) {
+        return res.status(400).json({
+          error: {
+            message: "Invalid section",
+            code: "INVALID_SECTION",
+            details: parsedSection.error.flatten(),
+          },
+          requestId,
+        });
+      }
+
+      const [labels, domainRows] = await Promise.all([
+        loadMasteryLevels(),
+        fetchDomainMasteryRows({
+          userId: studentId,
+          section: parsedSection.data,
+        }),
+      ]);
+      const levelled = buildDomainLevelView(
+        domainRows,
+        labels,
+        parsedSection.data ? { section: parsedSection.data } : {},
+      );
+      const domains = levelled.map((node) => ({
+        section: node.section,
+        domain: node.domain,
+        levelKey: node.levelKey,
+        level: node.level,
+        displayName: node.displayName,
+        tier: masteryTierFromLevel(node.level),
+        masteryLevel: node.level,
       }));
       logger.info(
         "GUARDIAN",

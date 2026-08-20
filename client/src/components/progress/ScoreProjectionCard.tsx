@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { TrendingUp, Target, AlertCircle, Lock } from "lucide-react";
 import {
   fetchScoreEstimate,
-  getConfidenceLabel,
   getConfidenceColor,
 } from "@/lib/projectionApi";
 import { useLocation } from "wouter";
@@ -225,9 +224,9 @@ export function ScoreProjectionCard() {
             Score Estimate
           </span>
           <span
-            className={`text-sm font-normal ${getConfidenceColor(estimate.confidence)}`}
+            className={`text-sm font-normal ${getConfidenceColor(estimate.confidenceBand)}`}
           >
-            {getConfidenceLabel(estimate.confidence)} Estimate Confidence
+            {estimate.confidenceBand} Estimate Confidence
           </span>
         </CardTitle>
       </CardHeader>
