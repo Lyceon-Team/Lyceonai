@@ -75,24 +75,43 @@ const SELF_REFERENTIAL = new Set([
 ]);
 
 /**
+ * SCOPE IS A DENYLIST, NOT AN EXTENSION ALLOWLIST.
+ *
+ *   This gate previously listed the extensions it would read — `*.ts *.tsx *.js *.mjs *.md
+ *   *.yml *.yaml`. That covered 833 of 1291 tracked files and silently ignored the other
+ *   458: 197 `.sql`, 36 `.sh`, 29 `.json`, 7 `.py`, 2 `.html`. A URL string can live in any
+ *   of them — a curl in a shell script, a Postman export, a fixture — and the gate reported
+ *   a clean tree while `postman/Lyceonai.postman_collection.json:514` called a retired
+ *   endpoint.
+ *
+ *   An allowlist of extensions IS a silent-exclusion mechanism: it grows a blind spot every
+ *   time the repo gains a file type, and nothing announces it. So the scope is inverted.
+ *   Everything tracked is read EXCEPT what cannot contain a readable URL (binaries) and the
+ *   two directories excluded for stated reasons below. A new file type is in scope the day
+ *   it lands, with no one having to remember.
+ *
  * `docs/Spec/**` is the locked canonical corpus — read-only by standing rule, and not a
  * caller. `audit-out/**` holds dated point-in-time audit reports: a record of what the tree
  * looked like on a given day, which stays true even after the endpoint goes. Editing either
  * to satisfy a gate would be falsifying a record, so they are out of scope rather than
- * quietly rewritten. Everything else — live docs, contracts, code, tests — is in scope.
+ * quietly rewritten. Everything else — live docs, contracts, code, tests, collections,
+ * scripts, SQL — is in scope.
  */
+const BINARY_EXTENSIONS = [
+  "pdf", "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff",
+  "woff", "woff2", "ttf", "otf", "eot",
+  "zip", "gz", "tgz", "tar", "bz2", "7z", "rar",
+  "mp3", "mp4", "wav", "mov", "avi", "webm",
+  "wasm", "so", "dylib", "dll", "exe", "bin", "class", "jar",
+];
+
 const DEFAULT_PATHSPEC = [
-  "*.ts",
-  "*.tsx",
-  "*.js",
-  "*.mjs",
-  "*.md",
-  "*.yml",
-  "*.yaml",
+  ".",
   ":(exclude)docs/Spec/**",
   ":(exclude)audit-out/**",
   ":(exclude)**/node_modules/**",
   ":(exclude)dist/**",
+  ...BINARY_EXTENSIONS.map((ext) => `:(exclude)*.${ext}`),
 ];
 
 /**
