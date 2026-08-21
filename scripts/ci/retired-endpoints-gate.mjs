@@ -29,9 +29,12 @@
  *   - empty the RETIRED table                                  → EXIT 1. A gate with nothing
  *     to check is a gate that cannot fail, which is not the same as a clean tree.
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import {
+  listTrackedFiles,
+  parsePathspecOverride,
+} from "./lib/git-tracked-files.mjs";
 
 const REPO_ROOT = resolve(new URL("../..", import.meta.url).pathname);
 
@@ -97,20 +100,15 @@ const DEFAULT_PATHSPEC = [
  * bypass: narrowing it to nothing makes the gate EXIT 1 (see main).
  */
 function listCandidateFiles() {
-  const override = process.env.RETIRED_ENDPOINTS_PATHSPEC;
-  const pathspec = override
-    ? override.split(/\s+/).filter((part) => part.length > 0)
-    : DEFAULT_PATHSPEC;
-  const out = execFileSync("git", ["ls-files", "--", ...pathspec], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
+  const pathspec = parsePathspecOverride(
+    process.env.RETIRED_ENDPOINTS_PATHSPEC,
+    DEFAULT_PATHSPEC,
+  );
+  return listTrackedFiles({
+    repoRoot: REPO_ROOT,
+    pathspec,
+    exclude: SELF_REFERENTIAL,
   });
-  return out
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .filter((line) => !SELF_REFERENTIAL.has(line))
-    .filter((line) => existsSync(resolve(REPO_ROOT, line)));
 }
 
 function main() {
@@ -125,7 +123,18 @@ function main() {
     process.exit(1);
   }
 
-  const files = listCandidateFiles();
+  const { files, skippedMissing } = listCandidateFiles();
+  // Never silent. A tracked path missing from the working tree is reported whether the gate
+  // passes or fails — an unreported skip is how this gate under-scanned 81 files and still
+  // said "clean".
+  if (skippedMissing.length > 0) {
+    console.error(
+      `NOTE: ${skippedMissing.length} tracked path(s) are absent from the working tree and were not scanned:`,
+    );
+    for (const entry of skippedMissing) {
+      console.error(`      ${entry}`);
+    }
+  }
   if (files.length === 0) {
     console.error(
       "FAIL: the retired-endpoints gate scanned ZERO files. A glob that stops matching",

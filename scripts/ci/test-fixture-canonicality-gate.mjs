@@ -48,9 +48,12 @@
  *   - point the gate at zero files                           → EXIT 1. Zero scanned files
  *     is not zero violations: a glob that stops matching reports "clean" forever.
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import {
+  listTrackedFiles,
+  parsePathspecOverride,
+} from "./lib/git-tracked-files.mjs";
 import ts from "typescript";
 
 const REPO_ROOT = resolve(new URL("../..", import.meta.url).pathname);
@@ -131,19 +134,11 @@ const DEFAULT_PATHSPEC = [
  * actually runs.
  */
 function listCandidateFiles() {
-  const override = process.env.FIXTURE_CANONICALITY_PATHSPEC;
-  const pathspec = override
-    ? override.split(/\s+/).filter((part) => part.length > 0)
-    : DEFAULT_PATHSPEC;
-  const out = execFileSync("git", ["ls-files", "--", ...pathspec], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-  });
-  return out
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .filter((line) => existsSync(resolve(REPO_ROOT, line)));
+  const pathspec = parsePathspecOverride(
+    process.env.FIXTURE_CANONICALITY_PATHSPEC,
+    DEFAULT_PATHSPEC,
+  );
+  return listTrackedFiles({ repoRoot: REPO_ROOT, pathspec });
 }
 
 /**
@@ -242,7 +237,17 @@ function checkFile(relPath, canonical, violations) {
 
 function main() {
   const canonical = loadCanonicalDomains();
-  const files = listCandidateFiles();
+  const { files, skippedMissing } = listCandidateFiles();
+  // Never silent — see scripts/ci/lib/git-tracked-files.mjs. An unreported skip is how a
+  // sibling gate under-scanned 81 files and still reported a clean tree.
+  if (skippedMissing.length > 0) {
+    console.error(
+      `NOTE: ${skippedMissing.length} tracked path(s) are absent from the working tree and were not scanned:`,
+    );
+    for (const entry of skippedMissing) {
+      console.error(`      ${entry}`);
+    }
+  }
 
   if (files.length === 0) {
     console.error(
