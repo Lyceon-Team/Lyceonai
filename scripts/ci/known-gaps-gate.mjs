@@ -392,6 +392,236 @@ if (process.env.GITHUB_STEP_SUMMARY && measurements.length) {
   }
 }
 
+/**
+ * RATCHET CHECK (CI-GATING-003). A ceiling may sit or decrease. It may not
+ * increase without an explicit, reviewable marker.
+ *
+ * The ceiling itself lives in ci/known-gaps.yaml, which anyone can edit. The
+ * ceiling check (CI-GATING-002) constrains the measurement to the ceiling, but
+ * nothing constrained the ceiling to its previous value — so a silent bump to
+ * findings_ceiling made the gap "accepted at a new size" without any reviewer
+ * noticing. Karl's ruling: these numbers only go down.
+ *
+ * HOW IT WORKS
+ *   1. Find the base branch: GITHUB_BASE_REF (set on PRs), or KNOWN_GAPS_BASE
+ *      (for testing / non-PR contexts). If neither is set, this check is
+ *      skipped — the ratchet is a PR-time gate, not a post-merge gate.
+ *   2. Read ci/known-gaps.yaml at the merge base via `git show`.
+ *   3. Compare each entry's findings_ceiling against the base. An increase
+ *      without an explicit `Known-Gap-Raise: <id>` commit trailer is fatal.
+ *   4. A new entry (absent at base) is treated as a raise from 0 — it also
+ *      requires the trailer.
+ *   5. A removed entry (present at base, absent at HEAD) is always fine.
+ *
+ * THE ESCAPE HATCH — COMMIT TRAILER
+ *   Any commit on the branch may include:
+ *     Known-Gap-Raise: eslint-legacy-tree
+ *   Multiple entries can be listed one per trailer line, or comma-separated.
+ *   The trailer is visible in `git log` and in PR review — it makes a raise a
+ *   decision someone made rather than a number that drifted.
+ *
+ * WHY BASE BRANCH, NOT A STORED FILE
+ *   A committed "previous value" file is itself editable and reintroduces the
+ *   same problem one layer up. The base branch is the merge target — raising a
+ *   ceiling means the PR diff shows the change, which is exactly where a
+ *   reviewer would catch it (and the trailer forces them to look).
+ *
+ * Skipped when KNOWN_GAPS_SKIP_RATCHET is set (for self-test cases that test
+ * only schema/expiry/ceiling).
+ */
+if (!process.env.KNOWN_GAPS_SKIP_RATCHET) {
+  const baseRef = process.env.GITHUB_BASE_REF || process.env.KNOWN_GAPS_BASE || "";
+
+  if (baseRef) {
+    // Determine the repo-relative path for `git show`. When KNOWN_GAPS_FILE
+    // overrides the path (self-tests), the ratchet uses KNOWN_GAPS_BASE_FILE
+    // to read the base version directly — `git show` only works for tracked
+    // files and self-test fixtures live in /tmp.
+    const useGitShow = !process.env.KNOWN_GAPS_FILE;
+
+    let baseText = "";
+    let baseSha = "";
+    let ratchetAvailable = false;
+
+    if (process.env.KNOWN_GAPS_BASE_FILE) {
+      // Self-test mode: read the base version from a file on disk
+      try {
+        baseText = readFileSync(process.env.KNOWN_GAPS_BASE_FILE, "utf8");
+        ratchetAvailable = true;
+        baseSha = "(test fixture)";
+      } catch {
+        // Base file doesn't exist — treat as "no base" (all entries are new)
+        baseText = "entries:\n";
+        ratchetAvailable = true;
+        baseSha = "(no base file)";
+      }
+    } else if (useGitShow) {
+      // Real mode: read from git
+      try {
+        // Ensure the base ref is fetched — shallow checkouts may not have it.
+        // This is a best-effort fetch; if it fails (already fetched, or not a
+        // remote ref), we proceed and let git-show decide.
+        try {
+          execSync(`git fetch origin ${baseRef} --depth=1 2>/dev/null`, {
+            cwd: ROOT,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+        } catch {
+          // Already fetched or not a remote branch — fine
+        }
+
+        // Resolve the merge base between HEAD and the base ref
+        try {
+          baseSha = execSync(
+            `git merge-base HEAD origin/${baseRef} 2>/dev/null || git merge-base HEAD ${baseRef} 2>/dev/null`,
+            { cwd: ROOT, encoding: "utf8", shell: "/bin/bash" },
+          ).trim();
+        } catch {
+          // If merge-base fails, fall back to the tip of the base ref
+          baseSha = execSync(
+            `git rev-parse origin/${baseRef} 2>/dev/null || git rev-parse ${baseRef}`,
+            { cwd: ROOT, encoding: "utf8", shell: "/bin/bash" },
+          ).trim();
+        }
+
+        // The path in git is always ci/known-gaps.yaml relative to repo root
+        const gitPath = "ci/known-gaps.yaml";
+        baseText = execSync(`git show ${baseSha}:${gitPath}`, {
+          cwd: ROOT,
+          encoding: "utf8",
+        });
+        ratchetAvailable = true;
+      } catch {
+        // File doesn't exist at base — all current entries are new
+        baseText = "entries:\n";
+        ratchetAvailable = true;
+        baseSha = baseSha || "(base resolved, file absent)";
+      }
+    }
+
+    if (ratchetAvailable) {
+      let baseEntries;
+      try {
+        baseEntries = parseEntries(baseText);
+      } catch {
+        // Base file is malformed — we can't compare. This is not a fatal error
+        // for the ratchet; the base had a problem that this PR might be fixing.
+        baseEntries = null;
+      }
+
+      if (baseEntries !== null) {
+        // Build a map of base ceilings
+        const baseCeilings = new Map();
+        for (const be of baseEntries) {
+          if (be.id && be.findings_ceiling !== undefined) {
+            baseCeilings.set(be.id, Number(be.findings_ceiling));
+          }
+        }
+
+        // Scan commit trailers for Known-Gap-Raise
+        const raisedIds = new Set();
+        if (baseSha && baseSha !== "(test fixture)" && baseSha !== "(no base file)") {
+          try {
+            let logRange;
+            if (baseSha.startsWith("(")) {
+              // Test fixture mode — no git log
+              logRange = null;
+            } else {
+              logRange = `${baseSha}..HEAD`;
+            }
+            if (logRange) {
+              const log = execSync(`git log ${logRange} --format=%B`, {
+                cwd: ROOT,
+                encoding: "utf8",
+              });
+              // Parse Known-Gap-Raise trailers. Format:
+              //   Known-Gap-Raise: id1
+              //   Known-Gap-Raise: id1, id2
+              for (const match of log.matchAll(
+                /^Known-Gap-Raise:\s*(.+)$/gim,
+              )) {
+                for (const id of match[1].split(",")) {
+                  raisedIds.add(id.trim());
+                }
+              }
+            }
+          } catch {
+            // git log failed — proceed without trailers (raises will be caught)
+          }
+        }
+        // Also scan trailers via env override for self-tests
+        if (process.env.KNOWN_GAPS_RAISE_IDS) {
+          for (const id of process.env.KNOWN_GAPS_RAISE_IDS.split(",")) {
+            raisedIds.add(id.trim());
+          }
+        }
+
+        // Compare each current entry against the base
+        const ratchetResults = [];
+        for (const e of entries) {
+          if (!e.id || e.findings_ceiling === undefined) continue;
+          const currentCeiling = Number(e.findings_ceiling);
+          const baseCeiling = baseCeilings.has(e.id)
+            ? baseCeilings.get(e.id)
+            : 0; // new entry = raise from 0
+
+          if (currentCeiling > baseCeiling) {
+            const isNew = !baseCeilings.has(e.id);
+            const delta = currentCeiling - baseCeiling;
+            const label = isNew
+              ? `new entry with ceiling ${currentCeiling}`
+              : `ceiling raised ${baseCeiling} → ${currentCeiling} (+${delta})`;
+
+            if (raisedIds.has(e.id)) {
+              ratchetResults.push({
+                id: e.id,
+                status: "accepted",
+                label,
+              });
+            } else {
+              const trailer = isNew
+                ? `Known-Gap-Raise: ${e.id}`
+                : `Known-Gap-Raise: ${e.id}`;
+              failures.push(
+                `[ratchet] ${e.id}: ${label}.\n` +
+                  `          These numbers only go down (Karl ruling). To raise a ceiling,\n` +
+                  `          add a commit trailer to any commit on this branch:\n` +
+                  `            ${trailer}\n` +
+                  `          The trailer makes the raise visible in review. Without it,\n` +
+                  `          a ceiling increase is indistinguishable from drift.`,
+              );
+              ratchetResults.push({
+                id: e.id,
+                status: "rejected",
+                label,
+              });
+            }
+          }
+        }
+
+        if (ratchetResults.length) {
+          console.log(`\nRatchet check (base: ${baseSha.slice(0, 12)}):`);
+          for (const r of ratchetResults) {
+            const icon = r.status === "accepted" ? "⚠️  RAISE ACCEPTED" : "❌ RAISE BLOCKED";
+            console.log(`  ${icon} ${r.id}: ${r.label}`);
+          }
+        } else if (entries.length) {
+          console.log(
+            `\nRatchet check (base: ${baseSha.slice(0, 12)}): no ceiling increases — ok`,
+          );
+        }
+      }
+    }
+  } else if (!process.env.KNOWN_GAPS_SKIP_COUNTS) {
+    // Not a PR context and not explicitly configured — ratchet is a PR-time
+    // gate. Log that it was skipped so it's visible.
+    console.log(
+      `\nRatchet check: skipped (no GITHUB_BASE_REF or KNOWN_GAPS_BASE set — not a PR context)`,
+    );
+  }
+}
+
 if (failures.length) {
   console.error("\nKNOWN-GAPS GATE: FAIL\n");
   for (const f of failures) console.error(`  ${f}\n`);

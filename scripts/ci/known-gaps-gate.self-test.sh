@@ -33,9 +33,18 @@
 #       That is what proves G8 is the case that catches a gate-side widening, and
 #       why the tolerance belongs on the entry where a reviewer of the accept-list
 #       can see it.
+#  G13  a ceiling raised without a Known-Gap-Raise trailer is rejected
+#       (CI-GATING-003). The ratchet is what prevents silent ceiling inflation.
+#  G14  a ceiling raised WITH a trailer is accepted — the escape hatch works.
+#  G15  a ceiling DECREASED passes without a trailer — these numbers going down
+#       is the whole point.
+#  G16  a NEW entry (absent at base) requires a trailer — adding a new accepted
+#       failure is a raise from 0.
 #
 # Fixtures are written to a temp dir and fed in via KNOWN_GAPS_FILE; the clock
 # is pinned with KNOWN_GAPS_NOW so nothing here depends on the wall date.
+# Ratchet tests use KNOWN_GAPS_BASE_FILE and KNOWN_GAPS_RAISE_IDS to avoid
+# depending on real git history.
 # ============================================================================
 set -uo pipefail
 
@@ -65,16 +74,16 @@ YAML
 }
 
 run_gate() {
-  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_COUNTS=1 node "$GATE" 2>&1
+  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_COUNTS=1 KNOWN_GAPS_SKIP_RATCHET=1 node "$GATE" 2>&1
 }
 # CI=1 == the authoritative environment. Counts are only fatal there.
 run_gate_with_counts() {
-  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" node "$GATE" 2>&1
+  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_RATCHET=1 node "$GATE" 2>&1
 }
 # `env -u CI` is required, not cosmetic: this self-test itself runs under CI=true
 # in the workflow, so the local case has to unset it explicitly.
 run_gate_with_counts_local() {
-  env -u CI KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" node "$GATE" 2>&1
+  env -u CI KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_RATCHET=1 node "$GATE" 2>&1
 }
 
 # ── G1 — EVERY required field, omitted one at a time, is rejected ───────────
@@ -298,12 +307,124 @@ else
 fi
 
 # ── the real list must be valid ─────────────────────────────────────────────
-OUT="$(KNOWN_GAPS_SKIP_COUNTS=1 node "$GATE" 2>&1)"; RC=$?
+OUT="$(KNOWN_GAPS_SKIP_COUNTS=1 KNOWN_GAPS_SKIP_RATCHET=1 node "$GATE" 2>&1)"; RC=$?
 if [ "$RC" -ne 0 ]; then
   fail G5 "ci/known-gaps.yaml itself does not pass the gate
        $(head -8 <<<"$OUT")"
 else
   pass G5 "the committed ci/known-gaps.yaml is valid and unexpired"
+fi
+
+# ============================================================================
+# RATCHET TESTS (G13–G16)
+# ============================================================================
+# The ratchet uses KNOWN_GAPS_BASE_FILE and KNOWN_GAPS_RAISE_IDS instead of
+# git operations, so these tests work without a real git history.
+# ============================================================================
+
+# Helper: run gate with ratchet in test mode
+run_gate_ratchet() {
+  # $1 = HEAD file, $2 = base file (empty string if no base), $3 = raise IDs (empty = none)
+  CI=1 KNOWN_GAPS_FILE="$1" KNOWN_GAPS_NOW="2026-08-19" KNOWN_GAPS_SKIP_COUNTS=1 \
+    KNOWN_GAPS_BASE="test-base" \
+    KNOWN_GAPS_BASE_FILE="${2:-__nonexistent__}" \
+    KNOWN_GAPS_RAISE_IDS="${3:-}" \
+    node "$GATE" 2>&1
+}
+
+# ── G13 — a raised ceiling without a trailer is rejected ───────────────────
+cat > "$TMP/ratchet-head.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 50
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+cat > "$TMP/ratchet-base.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 30
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
+if [ "$RC" -eq 0 ]; then
+  fail G13 "a ceiling raised from 30 to 50 without a trailer was ACCEPTED — the ratchet
+       is not enforcing"
+elif ! echo "$OUT" | grep -q "ratchet"; then
+  fail G13 "red, but not for the ratchet: $(head -5 <<<"$OUT" | tr '\n' ' ')"
+else
+  pass G13 "a raised ceiling without a trailer is rejected"
+fi
+
+# ── G14 — a raised ceiling WITH a trailer is accepted ──────────────────────
+OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-base.yaml" "fixture-entry")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G14 "a ceiling raised with a Known-Gap-Raise trailer was REJECTED — the escape
+       hatch is broken
+       $(head -5 <<<"$OUT")"
+else
+  pass G14 "a raised ceiling with a Known-Gap-Raise trailer is accepted"
+fi
+
+# ── G15 — a decreased ceiling passes without a trailer ─────────────────────
+cat > "$TMP/ratchet-lower-head.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 20
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-lower-head.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G15 "a ceiling decreased from 30 to 20 was REJECTED — the ratchet should allow
+       decreases without any marker
+       $(head -5 <<<"$OUT")"
+else
+  pass G15 "a decreased ceiling passes without a trailer"
+fi
+
+# ── G16 — a new entry (absent at base) requires a trailer ──────────────────
+# Base has no entries (empty file → all current entries are new = raise from 0)
+cat > "$TMP/ratchet-empty-base.yaml" <<'YAML'
+entries:
+  - id: placeholder
+    owner: someone
+    expires: 2099-01-01
+    command: echo ok
+    count_command: echo 1
+    findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-empty-base.yaml" "")"; RC=$?
+if [ "$RC" -eq 0 ]; then
+  fail G16 "a new entry (absent at base) was ACCEPTED without a trailer — adding a new
+       accepted failure should require explicit acknowledgment"
+elif ! echo "$OUT" | grep -q "ratchet"; then
+  fail G16 "red, but not for the ratchet: $(head -5 <<<"$OUT" | tr '\n' ' ')"
+else
+  pass G16 "a new entry absent at base requires a trailer"
 fi
 
 echo
