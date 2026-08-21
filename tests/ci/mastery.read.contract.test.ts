@@ -12,7 +12,6 @@ import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
 const fetchSkillMasteryRows = vi.fn();
 const fetchDomainMasteryRows = vi.fn();
-const buildMasterySummaryFromRows = vi.fn();
 const fetchWeakestSkills = vi.fn();
 const fetchSkillsForDomain = vi.fn();
 
@@ -27,7 +26,6 @@ vi.mock("../../apps/api/src/services/mastery-read", async () => {
     buildSkillLevelView: actual.buildSkillLevelView,
     fetchSkillMasteryRows,
     fetchDomainMasteryRows,
-    buildMasterySummaryFromRows,
     fetchWeakestSkills,
   };
 });
@@ -45,25 +43,6 @@ vi.mock("../../apps/api/src/services/skill-catalog-read", async () => {
     fetchSkillsForDomain,
     fetchSkillCatalog: vi.fn(async () => []),
     canonicalDomainPairs: actual.canonicalDomainPairs,
-  };
-});
-
-vi.mock("../../packages/shared/src/mastery", async () => {
-  return {
-    masteryTierFromLevel: (level: number | null) => {
-      if (level === null) return "not_started";
-      if (level >= 3) return "proficient";
-      if (level === 2) return "improving";
-      return "weak";
-    },
-    masteryTierSchema: {
-      enum: ["not_started", "weak", "improving", "proficient"],
-    },
-    masteryLevelSchema: {},
-    skillMasteryNodeSchema: {},
-    domainMasteryNodeSchema: {},
-    sectionMasteryNodeSchema: {},
-    masteryTreeResponseSchema: {},
   };
 });
 
@@ -114,12 +93,6 @@ describe("Mastery Read Contract", () => {
     fetchDomainMasteryRows.mockResolvedValue([
       { section: "M", domain: "Algebra", mastery_level: 2 },
     ]);
-    buildMasterySummaryFromRows.mockReturnValue([
-      {
-        section: "M",
-        domains: [{ domain: "Algebra", tier: "improving", masteryLevel: 2 }],
-      },
-    ]);
     fetchSkillsForDomain.mockResolvedValue([
       "Linear Equations in One Variable",
     ]);
@@ -133,19 +106,6 @@ describe("Mastery Read Contract", () => {
       },
     ]);
   });
-
-  it("uses canonical mastery read layer for summary (domain rows)", async () => {
-    const app = await buildApp();
-    const res = await request(app).get("/api/me/mastery/summary");
-
-    expect(res.status).toBe(200);
-    expect(res.body.sections).toHaveLength(1);
-    expect(fetchDomainMasteryRows).toHaveBeenCalledWith({
-      userId: "student-1",
-      section: undefined,
-    });
-    expect(buildMasterySummaryFromRows).toHaveBeenCalled();
-  }, 15000);
 
   it("serves the domain grid from the canonical read layer, all eight domains", async () => {
     fetchDomainMasteryRows.mockResolvedValue([
@@ -259,7 +219,7 @@ describe("Mastery Read Contract", () => {
     expect(fetchSkillsForDomain).not.toHaveBeenCalled();
   }, 15000);
 
-  it("uses canonical mastery read layer for weakest skills (tier-only response)", async () => {
+  it("uses canonical mastery read layer for weakest skills (level-only response)", async () => {
     const app = await buildApp();
     const res = await request(app).get("/api/me/mastery/weakest");
 
@@ -270,8 +230,16 @@ describe("Mastery Read Contract", () => {
     });
     const items = res.body.weakest;
     expect(Array.isArray(items)).toBe(true);
-    expect(items[0]).toHaveProperty("tier");
-    expect(items[0]).not.toHaveProperty("mastery_score");
-    expect(items[0]).not.toHaveProperty("accuracy");
+    // The four-tier vocabulary is gone; a weakest row now carries the level and its
+    // owner-ruled display name, and nothing about how the level was reached.
+    expect(items[0]).toEqual({
+      section: "M",
+      domain: "Algebra",
+      skill: "Linear Equations in One Variable",
+      levelKey: "L1",
+      level: 1,
+      displayName: "Building",
+    });
+    expect(items[0]).not.toHaveProperty("tier");
   }, 15000);
 });

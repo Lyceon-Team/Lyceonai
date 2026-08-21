@@ -4,17 +4,13 @@ import {
   type AuthenticatedRequest,
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
-import {
-  buildDomainLevelView,
-  buildMasterySummaryFromRows,
-  buildSkillLevelView,
-  fetchDomainMasteryRows,
-  fetchSkillMasteryRows,
-  fetchWeakestSkills,
-} from "../services/mastery-read";
+import { fetchWeakestSkills } from "../services/mastery-read";
 import { loadMasteryLevels } from "../services/mastery-levels-read";
-import { fetchSkillsForDomain } from "../services/skill-catalog-read";
-import { masteryTierFromLevel } from "../../../../packages/shared/src/mastery";
+import {
+  parseSectionFilter,
+  readDomainMasteryView,
+  readSkillPanelView,
+} from "../services/mastery-view";
 import { masterySectionSchema } from "../../../../packages/shared/src/mastery-levels";
 import { isCanonicalDomainForSection } from "../../../../shared/question-bank-contract";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
@@ -68,48 +64,6 @@ const skillPanelParamsSchema = z
   });
 
 /**
- * @spec [Doc 05B §5.4 + AC#20 — tier-only domain summary, no mastery_score/pct/percent] | @implemented [2026-06-23]
- * plain English: returns section→domain tier summary from canonical domain mastery_level.
- * The prior version aggregated non-existent `attempts/correct/accuracy` columns (never worked).
- *
- * TRANSITIONAL: this route still speaks the retiring four-tier vocabulary. It keeps its
- * current shape for exactly one PR while the drill-down below takes over; PR D removes
- * `tier` and `masteryTierFromLevel` once the last consumer has moved.
- */
-router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-    if (
-      !(await ensurePremiumMasteryAccess(req, res, user, "mastery_summary"))
-    ) {
-      return;
-    }
-
-    const section = req.query.section as string | undefined;
-
-    const domainRows = await fetchDomainMasteryRows({
-      userId: user.id,
-      section,
-    });
-    const summary = buildMasterySummaryFromRows(domainRows);
-
-    res.json({
-      ok: true,
-      sections: summary,
-    });
-  } catch (error) {
-    logger.error("MASTERY", "summary", "Failed to get mastery summary", {
-      err: error,
-      requestId: req.requestId,
-    });
-    res.status(500).json({ error: "Failed to get mastery summary" });
-  }
-});
-
-/**
  * @spec [Doc 05B §5.4 — student_domain_mastery is the canonical domain grain;
  *   owner ruling 2026-08-20 RULE 1 (level names), RULE 4 (nine never-exposed columns),
  *   RULE 5 (drill-down: domain first), RULE 6 (NULL is a distinct state)]
@@ -139,33 +93,24 @@ router.get("/domains", async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    const parsedSection = masterySectionSchema
-      .optional()
-      .safeParse(req.query.section);
-    if (!parsedSection.success) {
+    const parsedSection = parseSectionFilter(req.query.section);
+    if (!parsedSection.ok) {
       return res.status(400).json({
         error: {
           message: "Invalid section",
           code: "INVALID_SECTION",
-          details: parsedSection.error.flatten(),
+          details: parsedSection.details,
         },
         requestId: req.requestId,
       });
     }
 
-    const [labels, domainRows] = await Promise.all([
-      loadMasteryLevels(),
-      fetchDomainMasteryRows({
-        userId: user.id,
-        section: parsedSection.data,
-      }),
-    ]);
-
-    const domains = buildDomainLevelView(
-      domainRows,
-      labels,
-      parsedSection.data ? { section: parsedSection.data } : {},
-    );
+    // THE shared read. The guardian route calls this same function with the linked
+    // student's id — see the standing rule in services/mastery-view.ts.
+    const { domains } = await readDomainMasteryView({
+      studentId: user.id,
+      section: parsedSection.section,
+    });
 
     return res.json({ ok: true, domains });
   } catch (err) {
@@ -233,21 +178,13 @@ router.get(
       }
       const { section, domain } = parsed.data;
 
-      const [labels, catalogSkills, skillRows] = await Promise.all([
-        loadMasteryLevels(),
-        fetchSkillsForDomain(section, domain),
-        fetchSkillMasteryRows({ userId: user.id, section, domain }),
-      ]);
-
-      const skills = buildSkillLevelView(catalogSkills, skillRows, labels);
-
-      return res.json({
-        ok: true,
+      const panel = await readSkillPanelView({
+        studentId: user.id,
         section,
         domain,
-        catalogEmpty: catalogSkills.length === 0,
-        skills,
       });
+
+      return res.json({ ok: true, ...panel });
     } catch (err) {
       logger.error("MASTERY", "domain_skills", "Failed to build skill panel", {
         err,
@@ -259,18 +196,18 @@ router.get(
 );
 
 /**
- * @spec [Doc 05A §7.4 + AC#20 — tier-only weakest skills, mastery_score stripped at serialization;
- *   owner ruling 2026-08-20 build question 2 answer — skill names render verbatim]
- * | @implemented [2026-08-20]
- * plain English: returns weakest skills by canonical mastery_score ordering (ascending).
+ * @spec [Doc 05A §7.4 + AC#20 — mastery_score stripped at serialization; owner ruling
+ *   2026-08-20 RULE 1 (level names), build question 2 answer (skill names verbatim),
+ *   Q4 answer 2026-08-21 (one shape per fact)] | @implemented [2026-08-21]
+ * plain English: returns weakest skills by canonical mastery_score ordering (ascending),
+ * each carrying the LEVEL and the NAME of that level.
  * ANTI-LEAK BOUNDARY: mastery_score/accuracy are server-side only (adaptiveSelector needs them);
  * this route strips them before the response crosses to the client.
  *
- * The synthesized `label` field is gone. It title-cased the skill string, which turned
- * "Linear Equations in One Variable" into "...In One Variable" — the database strings are
- * already the student-facing names and are rendered verbatim.
- *
- * TRANSITIONAL: still emits `tier`; see /summary.
+ * `tier` is GONE. It was the retiring four-tier vocabulary, carried for one transitional
+ * PR while the surfaces moved to the six owner-ruled level names. Two vocabularies for
+ * one fact is the shape that let SAT_TAXONOMY's slugs diverge unnoticed, so the second
+ * one does not outlive its transition.
  */
 router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -287,20 +224,24 @@ router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
     const userId = user.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
-    const weakest = await fetchWeakestSkills({
-      userId,
-      limit,
+    const [labels, weakest] = await Promise.all([
+      loadMasteryLevels(),
+      fetchWeakestSkills({ userId, limit }),
+    ]);
+
+    const formatted = weakest.map((row) => {
+      const label = labels.forLevel(row.mastery_level);
+      return {
+        section: row.section,
+        domain: row.domain,
+        skill: row.skill,
+        levelKey: label.levelKey,
+        level: label.level,
+        displayName: label.displayName,
+      };
     });
 
-    const formatted = weakest.map((row) => ({
-      section: row.section,
-      domain: row.domain,
-      skill: row.skill,
-      tier: masteryTierFromLevel(row.mastery_level),
-      masteryLevel: row.mastery_level,
-    }));
-
-    return res.json({ weakest: formatted });
+    return res.json({ ok: true, weakest: formatted });
   } catch (err) {
     logger.error("MASTERY", "weakest", "Failed to get weakest skills", {
       err,

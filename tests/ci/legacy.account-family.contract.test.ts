@@ -46,7 +46,10 @@ function scanFiles(dir: string, repoRoot: string): string[] {
       out.push(...scanFiles(fullPath, repoRoot));
       continue;
     }
-    if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+    if (
+      entry.isFile() &&
+      (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
+    ) {
       out.push(fullPath);
     }
   }
@@ -80,7 +83,11 @@ describe("Canonical Account Family Contract (accounts/account_members)", () => {
 
     expect(
       violations,
-      violations.map((v) => `${v.file}:${v.lineNumber} -> ${v.token} :: ${v.lineContent}`).join("\n"),
+      violations
+        .map(
+          (v) => `${v.file}:${v.lineNumber} -> ${v.token} :: ${v.lineContent}`,
+        )
+        .join("\n"),
     ).toEqual([]);
   });
 

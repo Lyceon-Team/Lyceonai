@@ -22,13 +22,16 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
 
 vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
   createExamSession: vi.fn(async () => {
-    const err: any = new Error("Full-length start limit reached (2 qualifying starts per rolling 7 days).");
+    const err: any = new Error(
+      "Full-length start limit reached (2 qualifying starts per rolling 7 days).",
+    );
     err.code = "FULL_LENGTH_QUOTA_EXCEEDED";
     err.rateLimit = {
       current: 2,
       limit: 2,
       resetAt: "2099-01-01T00:00:00.000Z",
-      message: "Full-length start limit reached (2 qualifying starts per rolling 7 days).",
+      message:
+        "Full-length start limit reached (2 qualifying starts per rolling 7 days).",
     };
     throw err;
   }),
@@ -60,15 +63,14 @@ vi.mock("../../server/services/canonical-runtime-views", () => ({
 
 describe("Full-Length Quota Denial Contract", () => {
   it("returns structured 402 when DB quota gate rejects full-length start", async () => {
-    const { default: fullLengthRouter } = await import("../../server/routes/full-length-exam-routes");
+    const { default: fullLengthRouter } =
+      await import("../../server/routes/full-length-exam-routes");
 
     const app = express();
     app.use(express.json());
     app.use("/api/full-length", fullLengthRouter);
 
-    const res = await request(app)
-      .post("/api/full-length/sessions")
-      .send({});
+    const res = await request(app).post("/api/full-length/sessions").send({});
 
     expect(res.status).toBe(402);
     expect(res.body.code).toBe("FULL_LENGTH_QUOTA_EXCEEDED");

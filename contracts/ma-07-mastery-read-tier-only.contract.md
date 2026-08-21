@@ -1,3 +1,15 @@
+> **SUPERSEDED (2026-08-21) — read this first.**
+> MA-07's *invariants* still hold (no score, no percent, no accuracy, no attempts on any
+> student or guardian surface; domain grain for guardians). Its *vocabulary and routes* do
+> not. The four-tier `weak`/`improving`/`proficient`/`not_started` grouping was replaced by
+> the six owner-ruled level names (2026-08-20 RULE 1), and the per-skill mastery route and
+> the domain summary route were both retired in favour of the domain-then-skill drill-down.
+> `scripts/ci/retired-endpoints-gate.mjs` holds the retired paths and names what replaced
+> each — this document deliberately does not repeat them, because a document that spells a
+> retired path is indistinguishable from a caller to a text search. Where this document and
+> the rulings disagree, the rulings win. Kept for the reasoning, not as an implementation
+> target.
+
 # MA-07 — Mastery Read/Serve Layer: Tier-Only Rebuild + 05C Section Projection Surface — Correctness Contract
 
 **Workstream:** WS-3 mastery read-surface. Rebuilds the student/guardian **read/serve** layer to the locked Doc 05 model. The mastery **producer** side (05A skill, 05B domain, 05C projection, KPI) is already built (`20260610010000`, `20260613010000`, `20260613020000`); MA-07 builds the **read surface only** — it never re-computes mastery.
@@ -22,7 +34,7 @@
 **Status/tier vocabulary** (UI grouping of canonical levels; keep `mapMasteryStatusFromLevel`): `mastery_level` 0–1 → **weak**, 2 → **improving**, 3–4 → **proficient**, `NULL` (no/insufficient evidence, Parent §6.6) → **not_started**. The band is `NULL` until the **8-domain evidence gate** (INV-05C-14) passes → render "not enough evidence yet."
 
 **Hard facts that overturn the repo:**
-- Canonical `student_skill_mastery` **has no `attempts` / `correct` / `accuracy` columns** — those are retired old-gen columns. Querying them is why the current `/mastery/skills` surface returns `[]`. They are dropped, not re-mapped (owner: "those don't exist canonically").
+- Canonical `student_skill_mastery` **has no `attempts` / `correct` / `accuracy` columns** — those are retired old-gen columns. Querying them is why the then-current per-skill mastery surface returned `[]`. They are dropped, not re-mapped (owner: "those don't exist canonically").
 - `mastery_score`/`mastery_pct`/`acc_*`/`event_count_total` are **not in the `authenticated` grant** for either table — Postgres rejects the column reference at the role-grant layer (Doc 05A §2.4 defence-in-depth). The TS read layer must also never select them on a client path.
 
 ---
@@ -45,7 +57,7 @@
 
 ## C — Route handlers (thin: auth → entitlement → parse → domain → serialize)
 
-- **C1** `/api/me/mastery/skills`, `/summary`, `/weakest` rebuilt tier-only. Response carries `masteryLevel`+`tier`+identity+`computedAt` only. No score/percent/accuracy/attempts. `/weakest` orders by `mastery_level` asc (nulls last), not by a leaked accuracy.
+- **C1** the per-skill mastery route, the domain summary route and `/weakest` rebuilt tier-only. (SUPERSEDED: the first two are retired; see the banner.) Response carries `masteryLevel`+`tier`+identity+`computedAt` only. No score/percent/accuracy/attempts. `/weakest` orders by `mastery_level` asc (nulls last), not by a leaked accuracy.
 - **C2 — no projection on the mastery page (container only).** MA-07 adds no projection route and renders no band on the mastery page; `SectionNode` is a pure container. The existing `/api/progress/projection` surface (dashboard `ScoreProjectionCard`) is unchanged and out of MA-07 scope.
 - **C3** **Guardian mastery surfaces conform to AC#19/#20:** guardians get **domain-grain tier** + **section projection band** only. The existing per-skill `/guardian/weaknesses/:studentId` (returns per-skill rows + `accuracyPercent`) is a **spec violation** (AC#19: no per-skill to guardian; + percent + retired columns) → rebuilt to domain-grain tier (or the per-skill path removed from the guardian surface). Entitlement gate stays (active link AND active student entitlement; INV-05C-P3 / guardian-trust model).
 - Proof: `CONTRACT` tests (payload shape) + `DENIAL` tests (guardian unlink/entitlement-loss → no rows; unrelated caller → 404).

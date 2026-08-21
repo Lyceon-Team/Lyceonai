@@ -248,7 +248,6 @@ vi.mock("../../apps/api/src/services/mastery-read", async () => {
     buildSkillLevelView: actual.buildSkillLevelView,
     fetchDomainMasteryRows: masteryReadMocks.fetchDomainMasteryRows,
     fetchSkillMasteryRows: vi.fn(async () => []),
-    buildMasterySummaryFromRows: vi.fn(() => []),
     fetchWeakestSkills: vi.fn(async () => []),
   };
 });
@@ -258,26 +257,20 @@ vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
   resetMasteryLevelsCache: vi.fn(),
 }));
 
-vi.mock("../../packages/shared/src/mastery", () => ({
-  masteryTierFromLevel: (level: number | null) => {
-    if (level === null) return "not_started";
-    if (level >= 3) return "proficient";
-    if (level === 2) return "improving";
-    return "weak";
-  },
-  masteryTierSchema: {
-    enum: ["not_started", "weak", "improving", "proficient"],
-  },
-  masteryLevelSchema: {},
-  skillMasteryNodeSchema: {},
-  domainMasteryNodeSchema: {},
-  sectionMasteryNodeSchema: {},
-  masteryTreeResponseSchema: {},
-}));
 vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
-vi.mock("../../server/services/canonical-runtime-views", () => kpiMocks);
+vi.mock("../../server/services/canonical-runtime-views", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/canonical-runtime-views")
+  >("../../server/services/canonical-runtime-views");
+  return {
+    ...kpiMocks,
+    // projectGuardianKpiView is a pure projection of the student view — the behaviour
+    // under test on this surface. Only the IO-bearing builders are stubbed.
+    projectGuardianKpiView: actual.projectGuardianKpiView,
+  };
+});
 
 function buildApp(role: "guardian" | "student" = "guardian") {
   const app = express();
@@ -784,7 +777,10 @@ describe("Guardian reporting runtime contract", () => {
     // sees the same picture the student does (owner ruling R4 / RULE 6). A domain with
     // no events carries the `unmeasured` label rather than being absent.
     expect(response.body.ok).toBe(true);
-    expect(response.body.count).toBe(8);
+    // `count` is deliberately absent — it was a second shape of `domains.length`, and it
+    // is the field the broken client branched on. Parity with the student envelope is
+    // asserted in tests/ci/guardian-student-path-parity.contract.test.ts.
+    expect(response.body).not.toHaveProperty("count");
     expect(response.body.domains).toHaveLength(8);
     expect(
       response.body.domains.find(
@@ -798,8 +794,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L1",
         level: 1,
         displayName: "Building",
-        tier: "weak",
-        masteryLevel: 1,
       }),
     );
     // NULL is a distinct state, never level 0 (RULE 3 / RULE 6).
@@ -854,8 +848,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L1",
         level: 1,
         displayName: "Building",
-        tier: "weak",
-        masteryLevel: 1,
       }),
     );
     expect(byPair("RW", "Information and Ideas")).toEqual(
@@ -863,8 +855,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L2",
         level: 2,
         displayName: "Developing",
-        tier: "improving",
-        masteryLevel: 2,
       }),
     );
     const json = JSON.stringify(guardianResponse.body);

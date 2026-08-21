@@ -31,7 +31,6 @@ import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
 const fetchSkillMasteryRows = vi.fn();
 const fetchDomainMasteryRows = vi.fn();
-const buildMasterySummaryFromRows = vi.fn();
 const fetchWeakestSkills = vi.fn();
 const fetchSkillsForDomain = vi.fn();
 
@@ -44,7 +43,6 @@ vi.mock("../../apps/api/src/services/mastery-read", async () => {
     buildSkillLevelView: actual.buildSkillLevelView,
     fetchSkillMasteryRows,
     fetchDomainMasteryRows,
-    buildMasterySummaryFromRows,
     fetchWeakestSkills,
   };
 });
@@ -62,25 +60,6 @@ vi.mock("../../apps/api/src/services/skill-catalog-read", async () => {
     fetchSkillsForDomain,
     fetchSkillCatalog: vi.fn(async () => []),
     canonicalDomainPairs: actual.canonicalDomainPairs,
-  };
-});
-
-vi.mock("../../packages/shared/src/mastery", async () => {
-  return {
-    masteryTierFromLevel: (level: number | null) => {
-      if (level === null) return "not_started";
-      if (level >= 3) return "proficient";
-      if (level === 2) return "improving";
-      return "weak";
-    },
-    masteryTierSchema: {
-      enum: ["not_started", "weak", "improving", "proficient"],
-    },
-    masteryLevelSchema: {},
-    skillMasteryNodeSchema: {},
-    domainMasteryNodeSchema: {},
-    sectionMasteryNodeSchema: {},
-    masteryTreeResponseSchema: {},
   };
 });
 
@@ -159,13 +138,6 @@ const INTERNAL_COLUMNS = {
   mastery_model_version: "v1",
   last_event_id: "11111111-1111-4111-8111-111111111111",
 };
-
-const TIER_ONLY_SUMMARY = [
-  {
-    section: "M",
-    domains: [{ domain: "Algebra", tier: "improving", masteryLevel: 2 }],
-  },
-];
 
 const SERVICE_WEAKNESS_ROWS = [
   {
@@ -249,7 +221,6 @@ describe("Mastery Anti-Leak CI Gate", () => {
       "Linear Equations in One Variable",
       "Linear Functions",
     ]);
-    buildMasterySummaryFromRows.mockReturnValue(TIER_ONLY_SUMMARY);
     fetchWeakestSkills.mockResolvedValue(SERVICE_WEAKNESS_ROWS);
   });
 
@@ -290,16 +261,7 @@ describe("Mastery Anti-Leak CI Gate", () => {
     }
   }, 15000);
 
-  it("/mastery/summary response contains NO mastery_score, mastery_pct, accuracy, or percent", async () => {
-    const app = await buildApp();
-    const res = await request(app).get("/api/me/mastery/summary");
-
-    expect(res.status).toBe(200);
-    assertNoLeakedKeys(res.body, "/mastery/summary");
-    expect(res.body.sections).toBeDefined();
-  }, 15000);
-
-  it("/mastery/weakest response contains NO mastery_score, mastery_pct, accuracy, or percent — level only", async () => {
+  it("/mastery/weakest returns level + display name only, with the exact key set pinned", async () => {
     const app = await buildApp();
     const res = await request(app).get("/api/me/mastery/weakest");
 
@@ -309,11 +271,14 @@ describe("Mastery Anti-Leak CI Gate", () => {
     const items = res.body.weakest;
     expect(Array.isArray(items)).toBe(true);
     for (const item of items) {
-      expect(item).toHaveProperty("tier");
-      expect(item).toHaveProperty("masteryLevel");
-      expect(item).not.toHaveProperty("mastery_score");
-      expect(item).not.toHaveProperty("accuracy");
-      expect(item).not.toHaveProperty("attempts");
+      expect(Object.keys(item).sort()).toEqual([
+        "displayName",
+        "domain",
+        "level",
+        "levelKey",
+        "section",
+        "skill",
+      ]);
     }
   }, 15000);
 

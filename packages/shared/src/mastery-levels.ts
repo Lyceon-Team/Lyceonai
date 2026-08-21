@@ -34,6 +34,17 @@ import { z } from "zod";
  * below makes the two unrepresentable as each other, in both directions.
  */
 
+/**
+ * Canonical `mastery_level`: integer 0-4, or null when evidence is absent or insufficient
+ * (Doc 05 Parent §6.6). NULL is not zero.
+ *
+ * Moved here from `packages/shared/src/mastery.ts` when that module — the retired
+ * four-tier vocabulary — was deleted. It is defined ONCE and reused by every schema
+ * below rather than re-inlined, so the range lives in one place.
+ */
+export const masteryLevelSchema = z.number().int().min(0).max(4).nullable();
+export type MasteryLevel = z.infer<typeof masteryLevelSchema>;
+
 /** The six states, in display order. `unmeasured` first: it is where every entity starts. */
 export const MASTERY_LEVEL_KEYS = [
   "unmeasured",
@@ -55,7 +66,7 @@ export type MasteryLevelKey = z.infer<typeof masteryLevelKeySchema>;
 export const masteryLevelLabelSchema = z
   .object({
     levelKey: masteryLevelKeySchema,
-    level: z.number().int().min(0).max(4).nullable(),
+    level: masteryLevelSchema,
     displayName: z.string().min(1),
   })
   .refine(
@@ -80,7 +91,7 @@ export const masteryDomainNodeSchema = z.object({
   section: masterySectionSchema,
   domain: z.string().min(1),
   levelKey: masteryLevelKeySchema,
-  level: z.number().int().min(0).max(4).nullable(),
+  level: masteryLevelSchema,
   displayName: z.string().min(1),
 });
 export type MasteryDomainNode = z.infer<typeof masteryDomainNodeSchema>;
@@ -94,7 +105,7 @@ export type MasteryDomainNode = z.infer<typeof masteryDomainNodeSchema>;
 export const masterySkillNodeSchema = z.object({
   skill: z.string().min(1),
   levelKey: masteryLevelKeySchema,
-  level: z.number().int().min(0).max(4).nullable(),
+  level: masteryLevelSchema,
   displayName: z.string().min(1),
 });
 export type MasterySkillNode = z.infer<typeof masterySkillNodeSchema>;

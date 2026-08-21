@@ -931,9 +931,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     // Call the PRODUCTION baseline-capture function a second time.
     // This exercises: supabaseServer.from(...).insert(rows) → PG raises
     // 23505 from the partial unique index → production catches it as a no-op.
-    const { captureDiagnosticBaseline } = await import(
-      "../../server/routes/practice-canonical"
-    );
+    const { captureDiagnosticBaseline } =
+      await import("../../server/routes/practice-canonical");
     await captureDiagnosticBaseline(TEST_USER_ID, "req-immutability-proof");
 
     // The production catch-23505 path logs "baseline already captured".
