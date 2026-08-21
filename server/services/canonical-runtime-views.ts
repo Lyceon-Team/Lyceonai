@@ -806,6 +806,64 @@ export async function readAnsweredQuestionCount(
   return typeof count === "number" ? count : null;
 }
 
+/**
+ * @spec [owner standing rule 2026-08-21 — the guardian path is the student read plus a
+ *   gate, with the scope narrowing applied as a PROJECTION of the one path; Doc 05B §6.5
+ *   guardian-granted event vocabulary (events / accuracy / streak); owner ruling
+ *   2026-08-17 — an unestablished count is null and is omitted, never rendered as zero]
+ * | @implemented [2026-08-21]
+ *
+ * plain English: narrows the student KPI view to the three metrics a guardian may see, and
+ * passes their values through UNCHANGED. It computes nothing.
+ *
+ * WHAT THIS REPLACES, AND WHY IT MATTERED.
+ *   The guardian route used to pull those metric values out and coerce them with `?? 0`.
+ *   That turned "we could not establish this figure" into a confident zero on a parent's
+ *   screen — the same NULL-to-zero fail-open that told students their least-practised
+ *   skills were their worst. The student surface deliberately carries `null` and omits the
+ *   figure; the guardian surface was contradicting it. `null` now survives to the client,
+ *   which must omit rather than render it.
+ *
+ * It sits beside projectGuardianFullLengthReportView because that function is the pattern:
+ * ONE builder, then a pure projection for the narrower audience.
+ */
+export function projectGuardianKpiView(view: StudentKpiView) {
+  const GUARDIAN_METRIC_IDS = new Set([
+    "week_questions",
+    "week_accuracy",
+    "current_streak",
+  ]);
+
+  const metrics = view.metrics.filter((metric) =>
+    GUARDIAN_METRIC_IDS.has(metric.id),
+  );
+  const byId = new Map(metrics.map((metric) => [metric.id, metric]));
+
+  // `?? null`, never `?? 0`. A metric the builder could not establish stays absent.
+  const numericOrNull = (id: string): number | null => {
+    const value = byId.get(id)?.value;
+    return value === null || value === undefined ? null : Number(value);
+  };
+
+  return {
+    progress: {
+      questionsAttempted: numericOrNull("week_questions"),
+      accuracy: numericOrNull("week_accuracy"),
+      currentStreakDays: numericOrNull("current_streak"),
+      explanations: Object.fromEntries(
+        metrics.map((metric) => [metric.id, metric.explanation]),
+      ),
+    },
+    metrics,
+    measurementModel: {
+      official: [],
+      weighted: [],
+      diagnostic: metrics.map((metric) => metric.id),
+    },
+    modelVersion: view.modelVersion,
+  };
+}
+
 export function projectGuardianFullLengthReportView(
   view: StudentFullLengthReportView,
 ) {

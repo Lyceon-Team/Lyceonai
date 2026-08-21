@@ -18,15 +18,14 @@ import {
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import {
-  buildDomainLevelView,
-  fetchDomainMasteryRows,
-} from "../../apps/api/src/services/mastery-read";
-import { loadMasteryLevels } from "../../apps/api/src/services/mastery-levels-read";
-import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
+  parseSectionFilter,
+  readDomainMasteryView,
+} from "../../apps/api/src/services/mastery-view";
 import {
   buildStudentKpiViewFromCanonical,
   buildStudentFullLengthReportView,
   projectGuardianFullLengthReportView,
+  projectGuardianKpiView,
 } from "../services/canonical-runtime-views";
 import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-month-view";
 
@@ -456,41 +455,15 @@ router.get(
         return res.status(404).json({ error: "Student not found", requestId });
       }
 
+      // Same builder the student KPI route calls (server/routes/legacy/progress.ts),
+      // then a PURE projection to the guardian-granted metric set. No second derivation
+      // and no coercion — see projectGuardianKpiView.
       const studentView = await buildStudentKpiViewFromCanonical(
         studentId,
         true,
       );
-      // Genesis event vocabulary (Doc 05B §6.5 guardian-granted: events/accuracy/streak).
-      // practice-minutes/sessions are not tracked by the event model — dropped (owner ruling).
-      const guardianMetricIds = new Set([
-        "week_questions",
-        "week_accuracy",
-        "current_streak",
-      ]);
-      const guardianMetrics = studentView.metrics.filter((metric) =>
-        guardianMetricIds.has(metric.id),
-      );
-      const metricById = new Map(
-        guardianMetrics.map((metric) => [metric.id, metric]),
-      );
-      const progress = {
-        questionsAttempted: Number(
-          metricById.get("week_questions")?.value ?? 0,
-        ),
-        accuracy:
-          metricById.get("week_accuracy")?.value == null
-            ? null
-            : Number(metricById.get("week_accuracy")?.value),
-        currentStreakDays: Number(metricById.get("current_streak")?.value ?? 0),
-        explanations: Object.fromEntries(
-          guardianMetrics.map((metric) => [metric.id, metric.explanation]),
-        ),
-      };
-      const measurementModel = {
-        official: [],
-        weighted: [],
-        diagnostic: guardianMetrics.map((metric) => metric.id),
-      };
+      const projected = projectGuardianKpiView(studentView);
+
       await emitGuardianAccessEvent({
         eventType: "guardian_report_viewed",
         guardianId,
@@ -504,10 +477,7 @@ router.get(
           id: student.id,
           displayName: student.display_name,
         },
-        progress,
-        metrics: guardianMetrics,
-        measurementModel,
-        modelVersion: studentView.modelVersion,
+        ...projected,
         requestId,
       });
     } catch (err) {
@@ -885,34 +855,31 @@ router.get(
           .json({ error: "Not authorized to view this student", requestId });
       }
 
-      // Guardians get the SAME domain vocabulary as the student (owner ruling
-      // 2026-08-20 RULE 7: Doc 05 governs, domain grain only) and no drill-down: no
-      // per-skill endpoint exists for a guardian to call.
-      const parsedSection = masterySectionSchema.optional().safeParse(section);
-      if (!parsedSection.success) {
+      // EVERYTHING ABOVE THIS LINE IS THE GATE. Everything below is the student read,
+      // unmodified (owner standing rule 2026-08-21). The guardian path does not parse
+      // differently, does not query differently, and does not shape differently — it
+      // calls `readDomainMasteryView`, which is the same function
+      // GET /api/me/mastery/domains calls, with the linked student's id.
+      //
+      // The domain-only narrowing (Doc 05 Parent AC#19 / RULE 7) is the ABSENCE of a
+      // skill call, not a second derivation: there is no guardian skill endpoint.
+      const parsedSection = parseSectionFilter(section);
+      if (!parsedSection.ok) {
         return res.status(400).json({
           error: {
             message: "Invalid section",
             code: "INVALID_SECTION",
-            details: parsedSection.error.flatten(),
+            details: parsedSection.details,
           },
           requestId,
         });
       }
 
-      const [labels, domainRows] = await Promise.all([
-        loadMasteryLevels(),
-        fetchDomainMasteryRows({
-          userId: studentId,
-          section: parsedSection.data,
-        }),
-      ]);
-      const levelled = buildDomainLevelView(
-        domainRows,
-        labels,
-        parsedSection.data ? { section: parsedSection.data } : {},
-      );
-      const domains = levelled;
+      const { domains } = await readDomainMasteryView({
+        studentId,
+        section: parsedSection.section,
+      });
+
       logger.info(
         "GUARDIAN",
         "weaknesses_view",
@@ -927,9 +894,11 @@ router.get(
         details: { surface: "weaknesses", count: domains.length },
       });
 
+      // The body is the student body plus `requestId`. `count` is gone: it was a second
+      // shape of `domains.length`, and it is the field the broken client branched on —
+      // `weaknessData.count === 0` is precisely what hid the `.map` of undefined.
       return res.json({
         ok: true,
-        count: domains.length,
         domains,
         requestId,
       });

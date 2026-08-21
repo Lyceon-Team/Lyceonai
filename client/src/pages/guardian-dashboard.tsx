@@ -48,6 +48,8 @@ import FullLengthResultsView, {
   type FullLengthResultsData,
 } from "@/components/full-length-exam/FullLengthResultsView";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { fetchGuardianDomains } from "@/lib/masteryApi";
+import { LevelPill } from "@/components/mastery/LevelPill";
 
 interface LinkedStudent {
   id: string;
@@ -75,32 +77,6 @@ interface StudentSummary {
     explanation?: {
       whatThisMeans?: string;
     };
-  }>;
-}
-
-/**
- * @spec [Parent AC#19 — guardian surfaces are domain grain only, never per-skill;
- *   owner ruling 2026-08-20 RULE 1 / RULE 7, ruling 2026-08-21 Q7 (the card is NOT
- *   clickable — a distinct non-interactive state)] | @implemented [2026-08-21]
- *
- * WHAT THIS TYPE USED TO CLAIM, AND WHY IT MATTERED.
- *   It declared `skills: Array<{ attempts, correct, accuracyPercent, status }>`. The route
- *   has returned `domains` since the AC#19 closure and has never returned `skills`, so
- *   `weaknessData.skills.map(...)` was reading `.map` off `undefined` for any student who
- *   actually had mastery rows — the card threw, and only a student with ZERO rows rendered
- *   (the `count === 0` branch runs first). A hand-written client type that nothing checks
- *   against the server is not a type, it is a wish; three of the four fields it named are
- *   also on the RULE-4 never-exposed list.
- */
-interface GuardianWeaknessResponse {
-  ok: true;
-  count: number;
-  domains: Array<{
-    section: "M" | "RW";
-    domain: string;
-    levelKey: "unmeasured" | "L0" | "L1" | "L2" | "L3" | "L4";
-    level: number | null;
-    displayName: string;
   }>;
 }
 
@@ -188,26 +164,25 @@ export default function GuardianDashboard() {
     enabled: !!selectedStudentId,
   });
 
+  /**
+   * @spec [owner standing rule 2026-08-21 — one derivation, one DTO, one shape; the
+   *   guardian surface is the student read plus a gate] | @implemented [2026-08-21]
+   *
+   * The response type is `MasteryDomainsResponse` — the SAME type the student mastery grid
+   * consumes — and the fetcher lives in `@/lib/masteryApi` beside the student one, because
+   * the server produces both bodies from one function. The hand-written
+   * `GuardianWeaknessResponse` that used to sit here declared `skills` with
+   * attempts/correct/accuracyPercent against a route that returns `domains`; it read `.map`
+   * off `undefined` and crashed the dashboard for every guardian whose student had rows.
+   */
   const {
     data: weaknessData,
     isLoading: weaknessLoading,
     error: weaknessError,
     refetch: refetchWeakness,
   } = useQuery({
-    queryKey: ["guardian-weaknesses", selectedStudentId],
-    queryFn: async () => {
-      const res = await csrfFetch(
-        // No `minAttempts`: the evidence bar belongs to the mastery formula, not to a
-        // caller, and the server stopped accepting it when the weakest-skills fix landed.
-        `/api/guardian/weaknesses/${selectedStudentId}`,
-        { credentials: "include" },
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to load weaknesses");
-      }
-      return res.json() as Promise<GuardianWeaknessResponse>;
-    },
+    queryKey: ["guardian-domain-mastery", selectedStudentId],
+    queryFn: () => fetchGuardianDomains(selectedStudentId!),
     enabled: !!selectedStudentId,
   });
 
@@ -844,9 +819,10 @@ export default function GuardianDashboard() {
                             <p className="text-sm font-medium text-[#0F2E48]">
                               {node.domain}
                             </p>
-                            <p className="text-sm font-semibold text-[#0F2E48]">
-                              {node.displayName}
-                            </p>
+                            <LevelPill
+                              levelKey={node.levelKey}
+                              displayName={node.displayName}
+                            />
                           </div>
                         </div>
                       ))}

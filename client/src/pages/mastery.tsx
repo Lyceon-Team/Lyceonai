@@ -13,10 +13,10 @@ import {
   fetchMasteryDomains,
   fetchMasterySkills,
   type MasteryDomainNode,
-  type MasteryLevelKey,
   type MasterySection,
   type MasterySkillNode,
 } from "@/lib/masteryApi";
+import { LevelPill } from "@/components/mastery/LevelPill";
 
 /**
  * @spec [owner ruling 2026-08-20 RULE 1 (six level names), RULE 4 (nine columns never
@@ -48,46 +48,6 @@ import {
  * edge cases: `catalogEmpty` renders its own copy, distinct from both "no skills measured"
  * and a failed load. Those are three different facts and they get three different screens.
  */
-
-/**
- * Presentation only. Exhaustive over the six keys with no `default` arm: adding a seventh
- * level would fail the build here rather than silently render as unmeasured — which is the
- * whole reason `unmeasured` is a row rather than a fall-through.
- */
-function levelTone(levelKey: MasteryLevelKey): string {
-  switch (levelKey) {
-    case "unmeasured":
-      return "bg-muted text-muted-foreground border-border";
-    case "L0":
-      return "bg-amber-100 text-amber-900 border-amber-200";
-    case "L1":
-      return "bg-orange-100 text-orange-900 border-orange-200";
-    case "L2":
-      return "bg-sky-100 text-sky-900 border-sky-200";
-    case "L3":
-      return "bg-blue-100 text-blue-900 border-blue-200";
-    case "L4":
-      return "bg-emerald-100 text-emerald-900 border-emerald-200";
-  }
-}
-
-function LevelPill({
-  levelKey,
-  displayName,
-}: {
-  levelKey: MasteryLevelKey;
-  displayName: string;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${levelTone(levelKey)}`}
-      data-testid="level-pill"
-      data-level-key={levelKey}
-    >
-      {displayName}
-    </span>
-  );
-}
 
 function SkillPanel({
   section,

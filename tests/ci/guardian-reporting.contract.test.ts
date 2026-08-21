@@ -260,7 +260,17 @@ vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
 vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
-vi.mock("../../server/services/canonical-runtime-views", () => kpiMocks);
+vi.mock("../../server/services/canonical-runtime-views", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/canonical-runtime-views")
+  >("../../server/services/canonical-runtime-views");
+  return {
+    ...kpiMocks,
+    // projectGuardianKpiView is a pure projection of the student view — the behaviour
+    // under test on this surface. Only the IO-bearing builders are stubbed.
+    projectGuardianKpiView: actual.projectGuardianKpiView,
+  };
+});
 
 function buildApp(role: "guardian" | "student" = "guardian") {
   const app = express();
@@ -767,7 +777,10 @@ describe("Guardian reporting runtime contract", () => {
     // sees the same picture the student does (owner ruling R4 / RULE 6). A domain with
     // no events carries the `unmeasured` label rather than being absent.
     expect(response.body.ok).toBe(true);
-    expect(response.body.count).toBe(8);
+    // `count` is deliberately absent — it was a second shape of `domains.length`, and it
+    // is the field the broken client branched on. Parity with the student envelope is
+    // asserted in tests/ci/guardian-student-path-parity.contract.test.ts.
+    expect(response.body).not.toHaveProperty("count");
     expect(response.body.domains).toHaveLength(8);
     expect(
       response.body.domains.find(

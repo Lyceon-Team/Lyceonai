@@ -66,6 +66,23 @@ export async function fetchMasteryDomains(): Promise<MasteryDomainsResponse> {
   return response.json();
 }
 
+/**
+ * The GUARDIAN read of the same fact. Owner standing rule 2026-08-21: one derivation, one
+ * DTO, one shape. The response type is `MasteryDomainsResponse` — the SAME type the student
+ * grid uses — because the server produces both from one function
+ * (`apps/api/src/services/mastery-view.ts`). A second hand-written guardian type is exactly
+ * what crashed the dashboard: it declared `skills` with attempts/accuracy while the route
+ * had long returned `domains`.
+ */
+export async function fetchGuardianDomains(
+  studentId: string,
+): Promise<MasteryDomainsResponse> {
+  const response = await apiRequest(
+    `/api/guardian/weaknesses/${encodeURIComponent(studentId)}`,
+  );
+  return response.json();
+}
+
 export async function fetchMasterySkills(
   section: MasterySection,
   domain: string,
