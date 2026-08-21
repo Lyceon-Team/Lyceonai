@@ -18,12 +18,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
+
 const masteryMocks2 = vi.hoisted(() => ({
   getWeakestSkills: vi.fn(),
 }));
 
 vi.mock("../../apps/api/src/services/studentMastery", () => ({
   getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+}));
+
+// buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
+// view reaches for a real Supabase client and the case hangs rather than failing.
+vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
+  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
+  resetMasteryLevelsCache: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------

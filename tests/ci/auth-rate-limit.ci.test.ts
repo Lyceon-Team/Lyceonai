@@ -1,20 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import request from 'supertest';
-import type { Express } from 'express';
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import request from "supertest";
+import type { Express } from "express";
 
-vi.mock('../../server/middleware/csrf-double-submit', () => ({
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
-  generateToken: () => 'test-csrf-token',
+  generateToken: () => "test-csrf-token",
 }));
 
-describe('CI Auth Rate Limiting', () => {
+describe("CI Auth Rate Limiting", () => {
   let app: Express;
 
   beforeAll(async () => {
-    process.env.VITEST = 'true';
-    process.env.NODE_ENV = 'test';
+    process.env.VITEST = "true";
+    process.env.NODE_ENV = "test";
 
-    const serverModule = await import('../../server/index');
+    const serverModule = await import("../../server/index");
     app = serverModule.default;
   });
 
@@ -22,14 +22,20 @@ describe('CI Auth Rate Limiting', () => {
     delete process.env.VITEST;
   });
 
-  it('rate-limits repeated POST /api/auth/signin attempts', async () => {
-    const responses = [] as Array<{ status: number; headers: Record<string, string> }>;
+  it("rate-limits repeated POST /api/auth/signin attempts", async () => {
+    const responses = [] as Array<{
+      status: number;
+      headers: Record<string, string>;
+    }>;
 
     for (let i = 0; i < 12; i += 1) {
       const res = await request(app)
-        .post('/api/auth/signin')
-        .set('Origin', 'http://localhost:5000')
-        .send({ email: `ratelimit-${i}@example.com`, password: 'wrong-password' });
+        .post("/api/auth/signin")
+        .set("Origin", "http://localhost:5000")
+        .send({
+          email: `ratelimit-${i}@example.com`,
+          password: "wrong-password",
+        });
 
       responses.push({
         status: res.status,
@@ -41,6 +47,6 @@ describe('CI Auth Rate Limiting', () => {
     expect(statuses.some((status) => status === 429)).toBe(true);
 
     const limited = responses.find((r) => r.status === 429);
-    expect(limited?.headers).toHaveProperty('ratelimit-limit');
+    expect(limited?.headers).toHaveProperty("ratelimit-limit");
   });
 });

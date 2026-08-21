@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { logger } from '../../server/logger';
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { logger } from "../../server/logger";
 
 /**
  * Structured JSON log output — redaction proof
@@ -11,31 +11,39 @@ import { logger } from '../../server/logger';
  * NODE_ENV=test triggers the structured JSON path (non-development),
  * so this test exercises the production output format.
  */
-describe('structured JSON log output — redaction proof', () => {
+describe("structured JSON log output — redaction proof", () => {
   let writeSpy: ReturnType<typeof vi.spyOn>;
 
   afterEach(() => {
     if (writeSpy) writeSpy.mockRestore();
   });
 
-  it('redacts token, password, and raw student answer from JSON output', () => {
-    writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  it("redacts token, password, and raw student answer from JSON output", () => {
+    writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const sensitivePayload = {
-      auth_token: 'eyJhbGciOiJIUzI1NiJ9.secret-jwt-payload',
-      password: 'P@ssw0rd-never-log-this',
-      body: { student_answer: 'B', raw_work: 'I chose B because the passage says...' },
+      auth_token: "eyJhbGciOiJIUzI1NiJ9.secret-jwt-payload",
+      password: "P@ssw0rd-never-log-this",
+      body: {
+        student_answer: "B",
+        raw_work: "I chose B because the passage says...",
+      },
       normalField: 42,
     };
 
-    logger.info('TEST', 'redaction_proof', 'Sensitive data test', sensitivePayload);
+    logger.info(
+      "TEST",
+      "redaction_proof",
+      "Sensitive data test",
+      sensitivePayload,
+    );
 
     // Find the structured JSON line written to stdout
     const jsonCalls = writeSpy.mock.calls.filter((call) => {
       const str = String(call[0]);
       try {
         const parsed = JSON.parse(str);
-        return parsed.event === 'redaction_proof';
+        return parsed.event === "redaction_proof";
       } catch {
         return false;
       }
@@ -46,47 +54,53 @@ describe('structured JSON log output — redaction proof', () => {
     const parsed = JSON.parse(rawJson);
 
     // 1. Sensitive VALUES must not appear anywhere in the raw JSON string
-    expect(rawJson).not.toContain('eyJhbGciOiJIUzI1NiJ9');
-    expect(rawJson).not.toContain('secret-jwt-payload');
-    expect(rawJson).not.toContain('P@ssw0rd-never-log-this');
-    expect(rawJson).not.toContain('I chose B because');
-    expect(rawJson).not.toContain('student_answer');
+    expect(rawJson).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    expect(rawJson).not.toContain("secret-jwt-payload");
+    expect(rawJson).not.toContain("P@ssw0rd-never-log-this");
+    expect(rawJson).not.toContain("I chose B because");
+    expect(rawJson).not.toContain("student_answer");
 
     // 2. Sensitive keys are replaced with [REDACTED]
-    expect(parsed.data.auth_token).toBe('[REDACTED]');
-    expect(parsed.data.password).toBe('[REDACTED]');
-    expect(parsed.data.body).toBe('[REDACTED]');
+    expect(parsed.data.auth_token).toBe("[REDACTED]");
+    expect(parsed.data.password).toBe("[REDACTED]");
+    expect(parsed.data.body).toBe("[REDACTED]");
 
     // 3. Non-sensitive data survives
     expect(parsed.data.normalField).toBe(42);
 
     // 4. Cloud Logging fields are present and correct
-    expect(parsed.severity).toBe('INFO');
+    expect(parsed.severity).toBe("INFO");
     expect(parsed.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(parsed.event).toBe('redaction_proof');
-    expect(parsed.component).toBe('TEST');
+    expect(parsed.event).toBe("redaction_proof");
+    expect(parsed.component).toBe("TEST");
     expect(parsed.service).toBeDefined();
     expect(parsed.environment).toBeDefined();
   });
 
-  it('redacts sensitive fields in error log entries', () => {
-    writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  it("redacts sensitive fields in error log entries", () => {
+    writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    const errorObj = new Error('DB connection failed');
+    const errorObj = new Error("DB connection failed");
     const sensitiveContext = {
-      credential: 'super-secret-db-cred',
-      session_id: 'sess_abc123xyz',
-      query: 'SELECT * FROM users',
+      credential: "super-secret-db-cred",
+      session_id: "sess_abc123xyz",
+      query: "SELECT * FROM users",
     };
 
-    logger.error('DB', 'connection_failed', 'Database error', errorObj, sensitiveContext);
+    logger.error(
+      "DB",
+      "connection_failed",
+      "Database error",
+      errorObj,
+      sensitiveContext,
+    );
 
     // Find the structured JSON line for this specific event
     const jsonCalls = writeSpy.mock.calls.filter((call) => {
       const str = String(call[0]);
       try {
         const parsed = JSON.parse(str);
-        return parsed.event === 'connection_failed';
+        return parsed.event === "connection_failed";
       } catch {
         return false;
       }
@@ -97,31 +111,37 @@ describe('structured JSON log output — redaction proof', () => {
     const parsed = JSON.parse(rawJson);
 
     // Sensitive values absent from raw output
-    expect(rawJson).not.toContain('super-secret-db-cred');
-    expect(rawJson).not.toContain('sess_abc123xyz');
+    expect(rawJson).not.toContain("super-secret-db-cred");
+    expect(rawJson).not.toContain("sess_abc123xyz");
 
     // Sensitive keys redacted
-    expect(parsed.data.credential).toBe('[REDACTED]');
-    expect(parsed.data.session_id).toBe('[REDACTED]');
+    expect(parsed.data.credential).toBe("[REDACTED]");
+    expect(parsed.data.session_id).toBe("[REDACTED]");
 
     // Non-sensitive field survives
-    expect(parsed.data.query).toBe('SELECT * FROM users');
+    expect(parsed.data.query).toBe("SELECT * FROM users");
 
     // Severity is ERROR
-    expect(parsed.severity).toBe('ERROR');
+    expect(parsed.severity).toBe("ERROR");
 
     // Error object is present (serialized)
     expect(parsed.error).toBeDefined();
-    expect(parsed.error.message).toBe('DB connection failed');
+    expect(parsed.error.message).toBe("DB connection failed");
   });
 
-  it('emits valid single-line JSON parseable by Cloud Logging', () => {
-    writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  it("emits valid single-line JSON parseable by Cloud Logging", () => {
+    writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    logger.info('API', 'health_check', 'System healthy', { uptime: 3600 }, {
-      requestId: 'req-123-abc',
-      userId: 'user-456',
-    });
+    logger.info(
+      "API",
+      "health_check",
+      "System healthy",
+      { uptime: 3600 },
+      {
+        requestId: "req-123-abc",
+        userId: "user-456",
+      },
+    );
 
     const jsonCalls = writeSpy.mock.calls.filter((call) => {
       const str = String(call[0]);
@@ -144,15 +164,15 @@ describe('structured JSON log output — redaction proof', () => {
     const parsed = JSON.parse(trimmed);
 
     // All 01A §10 required fields present
-    expect(parsed.severity).toBe('INFO');
+    expect(parsed.severity).toBe("INFO");
     expect(parsed.timestamp).toBeDefined();
-    expect(parsed.message).toBe('System healthy');
-    expect(parsed.event).toBe('health_check');
+    expect(parsed.message).toBe("System healthy");
+    expect(parsed.event).toBe("health_check");
     expect(parsed.service).toBeDefined();
     expect(parsed.environment).toBeDefined();
 
     // Correlation ID threaded through
-    expect(parsed.request_id).toBe('req-123-abc');
-    expect(parsed.user_id).toBe('user-456');
+    expect(parsed.request_id).toBe("req-123-abc");
+    expect(parsed.user_id).toBe("user-456");
   });
 });

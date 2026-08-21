@@ -70,9 +70,7 @@ function scanFiles(dir: string, repoRoot: string): string[] {
   // Fail closed — a missing directory must crash the guard, not pass it
   // vacuously. (LISA-AUDIT-566-002)
   if (!fs.existsSync(dir)) {
-    throw new Error(
-      `scanFiles: configured scan root does not exist: ${dir}`,
-    );
+    throw new Error(`scanFiles: configured scan root does not exist: ${dir}`);
   }
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

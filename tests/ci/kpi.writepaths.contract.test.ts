@@ -58,7 +58,10 @@ function scanFiles(dir: string, repoRoot: string): string[] {
       continue;
     }
 
-    if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+    if (
+      entry.isFile() &&
+      (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
+    ) {
       out.push(fullPath);
     }
   }
@@ -66,7 +69,11 @@ function scanFiles(dir: string, repoRoot: string): string[] {
   return out;
 }
 
-function collectViolations(repoRoot: string, tokens: string[], allowedFiles: Set<string>): Violation[] {
+function collectViolations(
+  repoRoot: string,
+  tokens: string[],
+  allowedFiles: Set<string>,
+): Violation[] {
   const violations: Violation[] = [];
 
   for (const root of RUNTIME_ROOTS) {
@@ -100,25 +107,39 @@ function collectViolations(repoRoot: string, tokens: string[], allowedFiles: Set
 describe("KPI write path contract", () => {
   it("blocks local KPI writer helper ownership in mounted runtime", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const writeHelperViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(0, 2), new Set());
+    const writeHelperViolations = collectViolations(
+      repoRoot,
+      WRITE_TOKENS.slice(0, 2),
+      new Set(),
+    );
 
     expect(
       writeHelperViolations,
       writeHelperViolations
-        .map((violation) => `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`)
-        .join("\n")
+        .map(
+          (violation) =>
+            `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`,
+        )
+        .join("\n"),
     ).toEqual([]);
   });
 
   it("blocks direct writes to compatibility KPI tables/RPC in mounted runtime", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const tableWriteViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(2), new Set());
+    const tableWriteViolations = collectViolations(
+      repoRoot,
+      WRITE_TOKENS.slice(2),
+      new Set(),
+    );
 
     expect(
       tableWriteViolations,
       tableWriteViolations
-        .map((violation) => `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`)
-        .join("\n")
+        .map(
+          (violation) =>
+            `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`,
+        )
+        .join("\n"),
     ).toEqual([]);
   });
 
@@ -133,7 +154,10 @@ describe("KPI write path contract", () => {
     expect(
       invocationViolations,
       invocationViolations
-        .map((violation) => `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`)
+        .map(
+          (violation) =>
+            `${violation.file}:${violation.lineNumber} -> ${violation.token} :: ${violation.lineContent}`,
+        )
         .join("\n"),
     ).toEqual([]);
   });
