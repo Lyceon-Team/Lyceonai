@@ -1,14 +1,6 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import type {
-  WeaknessQuery,
-  SkillWeakness,
-  MasterySummary,
-} from "./mastery-read";
-import {
-  buildMasterySummaryFromRows,
-  fetchDomainMasteryRows,
-  fetchWeakestSkills,
-} from "./mastery-read";
+import type { WeaknessQuery, SkillWeakness } from "./mastery-read";
+import { fetchWeakestSkills } from "./mastery-read";
 
 export interface QuestionMetadataSnapshot {
   test_code: string | null;
@@ -21,21 +13,13 @@ export interface QuestionMetadataSnapshot {
   structure_cluster_id: string | null;
 }
 
-export type { WeaknessQuery, SkillWeakness, MasterySummary };
+export type { WeaknessQuery, SkillWeakness };
 
 // Compatibility wrappers: canonical mastery reads live in mastery-read.
 export async function getWeakestSkills(
   query: WeaknessQuery,
 ): Promise<SkillWeakness[]> {
   return fetchWeakestSkills(query);
-}
-
-export async function getMasterySummary(
-  userId: string,
-  section?: string,
-): Promise<MasterySummary[]> {
-  const domainRows = await fetchDomainMasteryRows({ userId, section });
-  return buildMasterySummaryFromRows(domainRows);
 }
 
 export async function getQuestionMetadataForAttempt(

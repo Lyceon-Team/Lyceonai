@@ -125,7 +125,8 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
 | `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
 | `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection (owner: `submitReviewSessionAnswer`) | `server/index.ts:345` |
-| `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
+| `GET /api/me/mastery/domains` | student, admin | premium (`mastery_domains`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
+| `GET /api/me/mastery/domains/:section/:domain/skills` | student, admin | premium (`mastery_skills`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
 | `GET /api/me/weakness/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/me/weakness/clusters` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:17` |

@@ -11,7 +11,11 @@ function readRepoFile(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-function extractBetween(source: string, startToken: string, endToken: string): string {
+function extractBetween(
+  source: string,
+  startToken: string,
+  endToken: string,
+): string {
   const start = source.indexOf(startToken);
   if (start === -1) {
     throw new Error(`Missing start token: ${startToken}`);
@@ -39,12 +43,12 @@ describe("Canonical runtime materialization law invariants", () => {
     const submitBlock = extractBetween(
       source,
       "export async function submitPracticeAnswer",
-      "async function submitPracticeSkip"
+      "async function submitPracticeSkip",
     );
     const serveBlock = extractBetween(
       source,
       "async function serveNextForSession",
-      "async function findSessionItemForSubmission"
+      "async function findSessionItemForSubmission",
     );
 
     expect(submitBlock.includes('.from("questions")')).toBe(false);
@@ -58,42 +62,55 @@ describe("Canonical runtime materialization law invariants", () => {
     const createBlock = extractBetween(
       source,
       "export async function createExamSession",
-      "export async function getCurrentSession"
+      "export async function getCurrentSession",
     );
     const materializeBlock = extractBetween(
       source,
       "async function materializeModuleFromResolvedForm",
-      "async function prepareDeferredModule2FromPersistedOutcome"
+      "async function prepareDeferredModule2FromPersistedOutcome",
     );
     const submitBlock = extractBetween(
       source,
       "export async function submitAnswer",
-      "export async function persistModuleCalculatorState"
+      "export async function persistModuleCalculatorState",
     );
     const submitModuleBlock = extractBetween(
       source,
       "export async function submitModule",
-      "export async function startExam"
+      "export async function startExam",
     );
-    const reviewBlock = extractFrom(source, "export async function getExamReview(");
+    const reviewBlock = extractFrom(
+      source,
+      "export async function getExamReview(",
+    );
 
     expect(createBlock).toContain("moduleKey(section, 1)");
     expect(createBlock).toContain("moduleIndex: 1");
-    expect(createBlock).not.toContain("for (const moduleIndex of [1, 2] as const)");
+    expect(createBlock).not.toContain(
+      "for (const moduleIndex of [1, 2] as const)",
+    );
     expect(materializeBlock).toContain('.from("questions")');
     expect(submitBlock.includes('.from("questions")')).toBe(false);
     expect(reviewBlock.includes('.from("questions")')).toBe(false);
-    expect(submitBlock).toContain("Runtime fallback to raw questions is disabled by contract.");
-    expect(reviewBlock).toContain("Runtime fallback to raw questions is disabled by contract.");
-    expect(submitModuleBlock).toContain("prepareDeferredModule2FromPersistedOutcome");
+    expect(submitBlock).toContain(
+      "Runtime fallback to raw questions is disabled by contract.",
+    );
+    expect(reviewBlock).toContain(
+      "Runtime fallback to raw questions is disabled by contract.",
+    );
+    expect(submitModuleBlock).toContain(
+      "prepareDeferredModule2FromPersistedOutcome",
+    );
     expect(source).toContain(
-      "Module 2 bucket persisted without deferred materialization proof from persisted Module 1 outcomes"
+      "Module 2 bucket persisted without deferred materialization proof from persisted Module 1 outcomes",
     );
   });
 
   it("review runtime queue/session builders do not use raw questions lookups", () => {
     const queueSource = readRepoFile("server/services/review-queue.ts");
-    const sessionSource = readRepoFile("server/routes/review-session-routes.ts");
+    const sessionSource = readRepoFile(
+      "server/routes/review-session-routes.ts",
+    );
 
     expect(queueSource.includes('.from("questions")')).toBe(false);
     expect(sessionSource.includes('.from("questions")')).toBe(false);

@@ -70,7 +70,11 @@ class FakeSelectBuilder {
   async single() {
     const rows = this.computeRows();
     const row = rows[0] ?? null;
-    if (!row) return { data: null, error: { code: "PGRST116", message: "No rows found" } };
+    if (!row)
+      return {
+        data: null,
+        error: { code: "PGRST116", message: "No rows found" },
+      };
     return { data: row, error: null };
   }
 
@@ -80,10 +84,18 @@ class FakeSelectBuilder {
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: Record<string, any>[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?:
+      | ((value: {
+          data: Record<string, any>[];
+          error: any;
+        }) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve({ data: this.computeRows(), error: null }).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve({ data: this.computeRows(), error: null }).then(
+      onfulfilled ?? undefined,
+      onrejected ?? undefined,
+    );
   }
 
   private computeRows(): Record<string, any>[] {
@@ -92,7 +104,13 @@ class FakeSelectBuilder {
     for (const sort of this.sorts) {
       rows.sort((a, b) => {
         if (a[sort.column] === b[sort.column]) return 0;
-        return a[sort.column] > b[sort.column] ? (sort.ascending ? 1 : -1) : sort.ascending ? -1 : 1;
+        return a[sort.column] > b[sort.column]
+          ? sort.ascending
+            ? 1
+            : -1
+          : sort.ascending
+            ? -1
+            : 1;
       });
     }
     if (this.maxRows != null) rows = rows.slice(0, this.maxRows);
@@ -100,76 +118,78 @@ class FakeSelectBuilder {
   }
 }
 
-const tables = vi.hoisted((): Record<TableName, Record<string, any>[]> => ({
-  student_study_profile: [
-    {
-      user_id: "student-1",
-      timezone: "America/Chicago",
-      daily_minutes: 40,
-      planner_mode: "auto",
-      full_test_cadence: "biweekly",
-      study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
-      preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
-      blocked_weekdays: [],
-      blocked_dates: [],
-      blocked_windows: [],
-    },
-  ],
-  student_study_plan_days: [
-    {
-      id: "day-1",
-      user_id: "student-1",
-      day_date: "2026-03-01",
-      planned_minutes: 45,
-      completed_minutes: 30,
-      focus: [{ section: "Math", weight: 1 }],
-      tasks: [{ type: "practice" }],
-      plan_version: 3,
-      generated_at: "2026-03-01T10:00:00.000Z",
-      is_user_override: true,
-      status: "in_progress",
-      generation_source: "generate",
-      is_exam_day: false,
-      is_taper_day: false,
-      is_full_test_day: false,
-      required_task_count: 1,
-      completed_task_count: 0,
-      study_minutes_target: 45,
-    },
-  ],
-  student_study_plan_tasks: [
-    {
-      id: "task-1",
-      day_id: "day-1",
-      user_id: "student-1",
-      day_date: "2026-03-01",
-      ordinal: 1,
-      task_type: "practice",
-      section: "MATH",
-      duration_minutes: 45,
-      source_skill_code: null,
-      source_domain: null,
-      source_subskill: null,
-      source_reason: {},
-      status: "planned",
-      is_user_override: true,
-      planner_owned: false,
-      metadata: { required: true },
-      completed_at: null,
-    },
-  ],
-  student_question_attempts: [
-    {
-      user_id: "student-1",
-      attempted_at: "2026-03-01T15:00:00.000Z",
-      is_correct: true,
-      time_spent_ms: 120000,
-      event_type: "practice_pass",
-    },
-  ],
-  student_skill_mastery: [],
-  system_event_logs: [],
-}));
+const tables = vi.hoisted(
+  (): Record<TableName, Record<string, any>[]> => ({
+    student_study_profile: [
+      {
+        user_id: "student-1",
+        timezone: "America/Chicago",
+        daily_minutes: 40,
+        planner_mode: "auto",
+        full_test_cadence: "biweekly",
+        study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
+        preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+        blocked_weekdays: [],
+        blocked_dates: [],
+        blocked_windows: [],
+      },
+    ],
+    student_study_plan_days: [
+      {
+        id: "day-1",
+        user_id: "student-1",
+        day_date: "2026-03-01",
+        planned_minutes: 45,
+        completed_minutes: 30,
+        focus: [{ section: "Math", weight: 1 }],
+        tasks: [{ type: "practice" }],
+        plan_version: 3,
+        generated_at: "2026-03-01T10:00:00.000Z",
+        is_user_override: true,
+        status: "in_progress",
+        generation_source: "generate",
+        is_exam_day: false,
+        is_taper_day: false,
+        is_full_test_day: false,
+        required_task_count: 1,
+        completed_task_count: 0,
+        study_minutes_target: 45,
+      },
+    ],
+    student_study_plan_tasks: [
+      {
+        id: "task-1",
+        day_id: "day-1",
+        user_id: "student-1",
+        day_date: "2026-03-01",
+        ordinal: 1,
+        task_type: "practice",
+        section: "MATH",
+        duration_minutes: 45,
+        source_skill_code: null,
+        source_domain: null,
+        source_subskill: null,
+        source_reason: {},
+        status: "planned",
+        is_user_override: true,
+        planner_owned: false,
+        metadata: { required: true },
+        completed_at: null,
+      },
+    ],
+    student_question_attempts: [
+      {
+        user_id: "student-1",
+        attempted_at: "2026-03-01T15:00:00.000Z",
+        is_correct: true,
+        time_spent_ms: 120000,
+        event_type: "practice_pass",
+      },
+    ],
+    student_skill_mastery: [],
+    system_event_logs: [],
+  }),
+);
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
@@ -186,11 +206,14 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../../server/services/kpi-access", () => ({
-  resolvePaidKpiAccessForUser: (...args: any[]) => kpiAccessMocks.resolvePaidKpiAccessForUser(...args),
+  resolvePaidKpiAccessForUser: (...args: any[]) =>
+    kpiAccessMocks.resolvePaidKpiAccessForUser(...args),
 }));
 
 vi.mock("../../server/middleware/supabase-auth", async () => {
-  const actual = await vi.importActual<typeof import("../../server/middleware/supabase-auth")>("../../server/middleware/supabase-auth");
+  const actual = await vi.importActual<
+    typeof import("../../server/middleware/supabase-auth")
+  >("../../server/middleware/supabase-auth");
   return {
     ...actual,
     getSupabaseAdmin: vi.fn(() => ({})),
@@ -227,7 +250,12 @@ function buildStudentApp() {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res, next) => {
-    req.user = { id: "student-1", role: "student", isGuardian: false, isAdmin: false };
+    req.user = {
+      id: "student-1",
+      role: "student",
+      isGuardian: false,
+      isAdmin: false,
+    };
     req.supabase = {};
     next();
   });
@@ -239,7 +267,12 @@ function buildGuardianApp(guardianRouter: any) {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res, next) => {
-    req.user = { id: "guardian-1", role: "guardian", isGuardian: true, isAdmin: false };
+    req.user = {
+      id: "guardian-1",
+      role: "guardian",
+      isGuardian: true,
+      isAdmin: false,
+    };
     req.supabase = {};
     next();
   });
@@ -254,12 +287,17 @@ describe("Calendar student/guardian parity contract", () => {
   });
 
   it("guardian calendar is a projection of the same student month builder output", async () => {
-    const guardianRouter = (await import("../../server/routes/guardian-routes")).default;
+    const guardianRouter = (await import("../../server/routes/guardian-routes"))
+      .default;
     const studentApp = buildStudentApp();
     const guardianApp = buildGuardianApp(guardianRouter);
 
-    const student = await request(studentApp).get("/api/calendar/month?start=2026-03-01&end=2026-03-31");
-    const guardian = await request(guardianApp).get("/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31");
+    const student = await request(studentApp).get(
+      "/api/calendar/month?start=2026-03-01&end=2026-03-31",
+    );
+    const guardian = await request(guardianApp).get(
+      "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
+    );
 
     expect(student.status).toBe(200);
     expect(guardian.status).toBe(200);

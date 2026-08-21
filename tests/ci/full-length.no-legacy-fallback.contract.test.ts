@@ -19,14 +19,24 @@ describe("Full-length canonical scoring/read contract", () => {
   it("does not reference legacy exam_* tables from mounted full-length runtime paths", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const targets = [
-      path.join(repoRoot, "apps", "api", "src", "services", "fullLengthExam.ts"),
+      path.join(
+        repoRoot,
+        "apps",
+        "api",
+        "src",
+        "services",
+        "fullLengthExam.ts",
+      ),
       path.join(repoRoot, "server", "routes", "full-length-exam-routes.ts"),
     ];
 
     const violations: string[] = [];
     for (const filePath of targets) {
       const source = fs.readFileSync(filePath, "utf8");
-      const relative = path.relative(repoRoot, filePath).split(path.sep).join("/");
+      const relative = path
+        .relative(repoRoot, filePath)
+        .split(path.sep)
+        .join("/");
       for (const token of FORBIDDEN_LEGACY_TABLE_TOKENS) {
         if (source.includes(token)) {
           violations.push(`${relative} -> ${token}`);
@@ -39,7 +49,14 @@ describe("Full-length canonical scoring/read contract", () => {
 
   it("anchors scoring/review reads on canonical full-length tables", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const servicePath = path.join(repoRoot, "apps", "api", "src", "services", "fullLengthExam.ts");
+    const servicePath = path.join(
+      repoRoot,
+      "apps",
+      "api",
+      "src",
+      "services",
+      "fullLengthExam.ts",
+    );
     const source = fs.readFileSync(servicePath, "utf8");
 
     expect(source).toContain('.from("full_length_exam_sessions")');
@@ -47,4 +64,3 @@ describe("Full-length canonical scoring/read contract", () => {
     expect(source).toContain('.from("full_length_exam_responses")');
   });
 });
-

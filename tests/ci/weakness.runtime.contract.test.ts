@@ -10,13 +10,11 @@ vi.mock("../../apps/api/src/services/studentMastery", () => ({
   getWeakestSkills: masteryMocks.getWeakestSkills,
 }));
 
-vi.mock("../../packages/shared/src/mastery", () => ({
-  masteryTierFromLevel: (level: number | null) => {
-    if (level === null) return "not_started";
-    if (level >= 3) return "proficient";
-    if (level === 2) return "improving";
-    return "weak";
-  },
+import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
+
+vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
+  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
+  resetMasteryLevelsCache: vi.fn(),
 }));
 
 describe("Weakness runtime contract", () => {
@@ -40,8 +38,10 @@ describe("Weakness runtime contract", () => {
   }
 
   it("fails closed for skills when required-source read fails", async () => {
-    masteryMocks.getWeakestSkills.mockImplementationOnce(async (query: any) => {
-      expect(query.failOnError).toBe(true);
+    // No failOnError flag to assert any more: fetchWeakestSkills always throws on a
+    // query error, so there is no opt-out for a caller to get wrong. What still matters
+    // is that the route surfaces the throw as a 500 rather than an empty success.
+    masteryMocks.getWeakestSkills.mockImplementationOnce(async () => {
       throw new Error("weakest_skills_query_failed");
     });
 
@@ -56,12 +56,12 @@ describe("Weakness runtime contract", () => {
     expect(res.body).toEqual({ error: "Failed to get weakness data" });
   });
 
-  it("preserves success response for skills under healthy source read (tier-only)", async () => {
+  it("preserves success response for skills under healthy source read (level-only)", async () => {
     masteryMocks.getWeakestSkills.mockResolvedValueOnce([
       {
-        section: "math",
+        section: "M",
         domain: "Algebra",
-        skill: "Linear Equations",
+        skill: "Linear Equations in One Variable",
         mastery_score: 0.25,
         mastery_level: 1,
       },
@@ -80,11 +80,12 @@ describe("Weakness runtime contract", () => {
       count: 1,
       skills: [
         expect.objectContaining({
-          section: "math",
+          section: "M",
           domain: "Algebra",
-          skill: "Linear Equations",
-          tier: "weak",
-          masteryLevel: 1,
+          skill: "Linear Equations in One Variable",
+          levelKey: "L1",
+          level: 1,
+          displayName: "Building",
         }),
       ],
     });

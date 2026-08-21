@@ -3,9 +3,9 @@ import express from "express";
 import request from "supertest";
 
 vi.mock("../../server/middleware/supabase-auth", async () => {
-  const actual = await vi.importActual<typeof import("../../server/middleware/supabase-auth")>(
-    "../../server/middleware/supabase-auth"
-  );
+  const actual = await vi.importActual<
+    typeof import("../../server/middleware/supabase-auth")
+  >("../../server/middleware/supabase-auth");
 
   return {
     ...actual,
@@ -76,12 +76,15 @@ describe("Full-Length History Route Contract", () => {
       currentPeriodEnd: "2099-01-01T00:00:00.000Z",
     });
 
-    const router = (await import("../../server/routes/full-length-exam-routes")).default;
+    const router = (await import("../../server/routes/full-length-exam-routes"))
+      .default;
     const app = express();
     app.use(express.json());
     app.use("/api/full-length", router);
 
-    const res = await request(app).get("/api/full-length/sessions?limit=15&include_incomplete=true");
+    const res = await request(app).get(
+      "/api/full-length/sessions?limit=15&include_incomplete=true",
+    );
 
     expect(res.status).toBe(200);
     expect(serviceMocks.listExamSessions).toHaveBeenCalledWith({
@@ -89,7 +92,10 @@ describe("Full-Length History Route Contract", () => {
       limit: 15,
       includeIncomplete: true,
     });
-    expect(kpiAccessMocks.resolvePaidKpiAccessForUser).toHaveBeenCalledWith("student-1", "student");
+    expect(kpiAccessMocks.resolvePaidKpiAccessForUser).toHaveBeenCalledWith(
+      "student-1",
+      "student",
+    );
     expect(res.body.reportAccess).toEqual({
       hasPaidAccess: true,
       reason: "active entitlement",
@@ -118,7 +124,8 @@ describe("Full-Length History Route Contract", () => {
       currentPeriodEnd: null,
     });
 
-    const router = (await import("../../server/routes/full-length-exam-routes")).default;
+    const router = (await import("../../server/routes/full-length-exam-routes"))
+      .default;
     const app = express();
     app.use(express.json());
     app.use("/api/full-length", router);
@@ -143,7 +150,8 @@ describe("Full-Length History Route Contract", () => {
       currentPeriodEnd: null,
     });
 
-    const router = (await import("../../server/routes/full-length-exam-routes")).default;
+    const router = (await import("../../server/routes/full-length-exam-routes"))
+      .default;
     const app = express();
     app.use(express.json());
     app.use("/api/full-length", router);
@@ -167,7 +175,8 @@ describe("Full-Length History Route Contract", () => {
       currentPeriodEnd: null,
     });
 
-    const router = (await import("../../server/routes/full-length-exam-routes")).default;
+    const router = (await import("../../server/routes/full-length-exam-routes"))
+      .default;
     const app = express();
     app.use(express.json());
     app.use("/api/full-length", router);

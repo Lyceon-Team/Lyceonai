@@ -28,7 +28,11 @@
 
 ## Gating Rules
 - Premium KPI surfaces (explicit):
-  - `mastery_hexagon`: `GET /api/me/mastery/skills`.
+  - `mastery_domains`: `GET /api/me/mastery/domains`.
+  - `mastery_skills`: `GET /api/me/mastery/domains/:section/:domain/skills`.
+    (These replace the former `mastery_hexagon` feature and its per-skill route. There is
+    no hexagon: the surface is a domain-then-skill drill-down, and it renders level names
+    rather than any number. `scripts/ci/retired-endpoints-gate.mjs` holds the retired paths.)
   - `historical_trends`: `GET /api/progress/kpis` (`recency` is removed for free tier).
   - `full_test_analytics`: `GET /api/full-length/sessions/:sessionId/report`.
 - Entitlement resolver: `server/services/kpi-access.ts`.

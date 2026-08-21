@@ -104,6 +104,26 @@ jobs:
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
 
+      # SAT_TAXONOMY shipped slugs ('math', 'advanced_math', 'linear_equations')
+      # against a database holding 'M', 'Advanced Math', 'Linear Equations in One
+      # Variable'. Nothing joined and the mastery page said "No Mastery Data Yet" to
+      # every student who had data. It survived because the TESTS seeded the same
+      # slugs: the suite agreed with the broken code instead of with the schema.
+      - name: Test fixture canonicality gate (section/domain must match the DB CHECKs)
+        run: node scripts/ci/test-fixture-canonicality-gate.mjs
+
+      - name: Fixture canonicality self-test (proves each mutation turns it red)
+        run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
+
+      # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
+      # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
+      # cannot see it — only a text search over the committed tree can.
+      - name: Retired endpoints gate (no caller of a deleted route may remain)
+        run: node scripts/ci/retired-endpoints-gate.mjs
+
+      - name: Retired endpoints self-test (proves each mutation turns it red)
+        run: bash scripts/ci/retired-endpoints-gate.selftest.sh
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the
@@ -531,6 +551,14 @@ jobs:
           source scripts/ci/lib/deletion-rehearsal-db.sh
           setup_genesis_db mastery_gap_ci
           psql -v ON_ERROR_STOP=1 -d mastery_gap_ci -q -f scripts/ci/mastery-gap-detection-gates.sql
+        shell: bash
+
+      # Six level names + the drill-down catalog. The catalog replaces SAT_TAXONOMY,
+      # whose invented slugs (math/advanced_math/linear_equations) never matched the
+      # canonical DB values (M/Advanced Math/Linear Equations in One Variable), so the
+      # skill tree resolved every node to NULL for every student.
+      - name: Mastery levels + skill catalog gates (RULE 1/2/3/5)
+        run: bash scripts/ci/mastery-levels-gate.sh
         shell: bash
 
       # The gate that would have caught this outage on day one.

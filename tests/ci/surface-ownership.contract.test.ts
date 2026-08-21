@@ -18,12 +18,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
+
 const masteryMocks2 = vi.hoisted(() => ({
   getWeakestSkills: vi.fn(),
 }));
 
 vi.mock("../../apps/api/src/services/studentMastery", () => ({
   getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+}));
+
+// buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
+// view reaches for a real Supabase client and the case hangs rather than failing.
+vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
+  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
+  resetMasteryLevelsCache: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -191,7 +200,7 @@ describe("Full-length report: single canonical builder", () => {
 //            Clusters deprecated (post-launch revisit); table retained, code removed.
 // ---------------------------------------------------------------------------
 describe("Weakness view: single canonical builder per sub-surface", () => {
-  it("skills route calls buildWeaknessSkillsView with failOnError=true", async () => {
+  it("skills route calls buildWeaknessSkillsView scoped to the session student, with no caller-supplied threshold", async () => {
     masteryMocks2.getWeakestSkills.mockResolvedValue([]);
 
     const { weaknessRouter } =
@@ -207,10 +216,15 @@ describe("Weakness view: single canonical builder per sub-surface", () => {
 
     await request(app).get("/api/me/weakness/skills");
 
-    // buildWeaknessSkillsView internally calls getWeakestSkills with failOnError=true
+    // The skills route owns its own student scope. failOnError is no longer part of the
+    // contract — fetchWeakestSkills always throws on a query error — so what is asserted
+    // here is the scoping, plus the absence of any caller-supplied evidence threshold.
     expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
-      expect.objectContaining({ failOnError: true, userId: "student-2" }),
+      expect.objectContaining({ userId: "student-2" }),
     );
+    const call = masteryMocks2.getWeakestSkills.mock.calls[0]?.[0] ?? {};
+    expect(call).not.toHaveProperty("minAttempts");
+    expect(call).not.toHaveProperty("failOnError");
   });
 });
 
