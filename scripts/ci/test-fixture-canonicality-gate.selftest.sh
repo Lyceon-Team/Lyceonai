@@ -19,10 +19,13 @@ cd "$REPO_ROOT"
 
 GATE="scripts/ci/test-fixture-canonicality-gate.mjs"
 TARGET="tests/ci/mastery.read.contract.test.ts"
+SCRATCH="tests/__selftest_formats__"
 FAILURES=0
 
 restore() {
   git checkout -- "$TARGET" 2>/dev/null || true
+  git rm --cached -q -r "$SCRATCH" >/dev/null 2>&1 || true
+  rm -rf "$SCRATCH"
 }
 
 if ! git diff --quiet -- "$TARGET"; then
@@ -127,6 +130,44 @@ elif ! printf '%s' "$cwd_out" | grep -qE "OK: fixture canonicality — [0-9]+ te
 else
   echo "ok  cwd independence -> same verdict and file count when run from /tmp"
 fi
+
+# --- NDJSON is parsed, not skipped -----------------------------------------------------
+# tests/fixtures/**/*.ndjson held 8 fixture records while the gate scanned only .ts/.tsx —
+# files literally under a directory named `fixtures`, invisible to a gate whose success
+# line reads "no non-canonical fixture found". The claim was broader than the check.
+mkdir -p "$SCRATCH"
+printf '{"section":"math","domain":"Algebra","mastery_level":2}\n' > "$SCRATCH/probe.ndjson"
+git add --intent-to-add "$SCRATCH/probe.ndjson" >/dev/null 2>&1
+nd_out="$(node "$GATE" 2>&1)"; nd_rc=$?
+if [ "$nd_rc" -eq 0 ]; then
+  echo "FAIL  ndjson fixture: gate exited 0 on a non-canonical section in .ndjson." >&2
+  FAILURES=$((FAILURES + 1))
+elif ! printf '%s' "$nd_out" | grep -q "probe.ndjson:1"; then
+  echo "FAIL  ndjson fixture: went red but did not name probe.ndjson at its record line." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok  non-canonical section in .ndjson -> rc=$nd_rc, named at the record's line"
+fi
+restore
+
+# --- a format the gate CANNOT parse must announce itself, not be skipped ---------------
+# #640's lesson applied here: this gate needs a parser per format, so it cannot use a
+# denylist. Instead an unparsed file that looks like a fixture FAILS with an instruction.
+mkdir -p "$SCRATCH"
+printf 'section: "math"\n' > "$SCRATCH/probe.yaml"
+git add --intent-to-add "$SCRATCH/probe.yaml" >/dev/null 2>&1
+tw_out="$(node "$GATE" 2>&1)"; tw_rc=$?
+if [ "$tw_rc" -eq 0 ]; then
+  echo "FAIL  unparsed format: gate exited 0. A file type it cannot read was silently skipped," >&2
+  echo "      which is the blind spot an extension list always grows." >&2
+  FAILURES=$((FAILURES + 1))
+elif ! printf '%s' "$tw_out" | grep -q "unparsed-format"; then
+  echo "FAIL  unparsed format: went red but not via the tripwire rule." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok  fixture in an unparsed format -> rc=$tw_rc, tripwire names it and says what to do"
+fi
+restore
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "" >&2
