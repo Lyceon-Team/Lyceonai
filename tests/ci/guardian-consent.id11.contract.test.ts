@@ -21,8 +21,8 @@ const h = vi.hoisted(() => ({
 vi.mock("../../server/middleware/supabase-auth", () => ({
   getSupabaseAdmin: h.getSupabaseAdmin,
 }));
-vi.mock("../../server/lib/stripeClient", () => ({
-  getUncachableStripeClient: h.getStripe,
+vi.mock("../../server/lib/stripe/client", () => ({
+  getStripeClient: h.getStripe,
 }));
 vi.mock("../../server/lib/account", () => ({
   createGuardianLink: h.createGuardianLink,
@@ -204,7 +204,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -226,7 +226,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -248,7 +248,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -270,7 +270,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -292,7 +292,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -315,7 +315,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
     h.ensureAccountForUser.mockResolvedValue("acct_1");
 
     const app = await buildApp();
@@ -355,7 +355,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app).post("/api/consent/verify-session").send({});
@@ -375,7 +375,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: null,
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)

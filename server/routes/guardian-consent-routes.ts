@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
-import { getUncachableStripeClient } from "../lib/stripeClient";
+import { getStripeClient } from "../lib/stripe/client";
 import { logger } from "../logger";
 import { createGuardianLink, ensureAccountForUser } from "../lib/account";
 import { sendEmail } from "../lib/email";
@@ -120,7 +120,7 @@ router.post(
         return res.status(404).json({ error: "Consent request not found" });
       }
 
-      const stripe = await getUncachableStripeClient();
+      const stripe = getStripeClient();
       const siteUrl =
         process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get("host")}`;
 
@@ -208,7 +208,7 @@ router.post(
     const admin = getSupabaseAdmin();
 
     try {
-      const stripe = await getUncachableStripeClient();
+      const stripe = getStripeClient();
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ["payment_intent"],
       });
