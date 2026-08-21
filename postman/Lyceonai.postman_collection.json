@@ -508,10 +508,17 @@
 			"name": "🧠 Mastery & Weakness",
 			"item": [
 				{
-					"name": "Get Mastery Skills",
+					"name": "Get Mastery Domains",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/me/mastery/skills", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","skills"] }
+						"url": { "raw": "{{baseUrl}}/api/me/mastery/domains", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains"] }
+					}
+				},
+				{
+					"name": "Get Domain Skills",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/me/mastery/domains/M/Algebra/skills", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains","M","Algebra","skills"] }
 					}
 				},
 				{

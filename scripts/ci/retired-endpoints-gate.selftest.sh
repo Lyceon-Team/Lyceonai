@@ -19,11 +19,14 @@ CALLER_TARGET="client/src/lib/masteryApi.ts"
 # A directory whose name carries non-ASCII bytes, mirroring the postman collection's emoji
 # folders. `git ls-files` C-QUOTES such paths, which is what the gate used to choke on.
 NONASCII_DIR="scripts/ci/__selftest_nonascii__/🧠 Mastery"
+# A file type the old extension ALLOWLIST did not cover. `.sql` is the largest unscanned
+# type in this repo (197 files); `.json` is where the real miss lived.
+OFFSCOPE_DIR="scripts/ci/__selftest_offscope__"
 FAILURES=0
 
 restore() {
   git checkout -- "$CALLER_TARGET" "$GATE" 2>/dev/null || true
-  rm -rf "$NONASCII_DIR"
+  rm -rf "$NONASCII_DIR" "$OFFSCOPE_DIR"
 }
 
 if ! git diff --quiet -- "$CALLER_TARGET" "$GATE"; then
@@ -133,6 +136,39 @@ else
 fi
 git rm --cached -q "$NONASCII_DIR/probe.yaml" >/dev/null 2>&1 || true
 rm -rf "scripts/ci/__selftest_nonascii__"
+
+# 5. THE SECOND BLIND SPOT. The scope used to be an extension ALLOWLIST — ts/tsx/js/mjs/
+#    md/yml/yaml — which read 833 of 1291 tracked files and ignored 197 .sql, 36 .sh,
+#    29 .json, 7 .py, 2 .html without saying so. A Postman export at
+#    postman/Lyceonai.postman_collection.json:514 called a retired endpoint while the gate
+#    reported a clean tree. An allowlist grows a new blind spot every time the repo gains a
+#    file type, and nothing announces it. Scope is now a denylist; these two cases pin it.
+mkdir -p "$OFFSCOPE_DIR"
+printf '{ "url": "{{baseUrl}}/api/me/mastery/skills" }\n' > "$OFFSCOPE_DIR/probe.json"
+printf -- '-- SELECT ... /api/me/mastery/add-to-plan\n' > "$OFFSCOPE_DIR/probe.sql"
+git add --intent-to-add "$OFFSCOPE_DIR/probe.json" "$OFFSCOPE_DIR/probe.sql" >/dev/null 2>&1
+if ! git ls-files --error-unmatch "$OFFSCOPE_DIR/probe.json" >/dev/null 2>&1; then
+  echo "FAIL  off-allowlist extension: could not stage the fixture — the case is stale, not passing." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  os_out="$(node "$GATE" 2>&1)"
+  os_rc=$?
+  if [ "$os_rc" -eq 0 ]; then
+    echo "FAIL  off-allowlist extension: gate exited 0. A whole file type is outside the scan and" >&2
+    echo "      nothing says so — the scope is an allowlist again, which is a growing blind spot." >&2
+    FAILURES=$((FAILURES + 1))
+  elif ! printf '%s' "$os_out" | grep -q "probe.json"; then
+    echo "FAIL  off-allowlist extension: .json violation not found." >&2
+    FAILURES=$((FAILURES + 1))
+  elif ! printf '%s' "$os_out" | grep -q "probe.sql"; then
+    echo "FAIL  off-allowlist extension: .sql violation not found." >&2
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok  violation in .json and .sql -> rc=$os_rc, both found (scope is not an allowlist)"
+  fi
+fi
+git rm --cached -q "$OFFSCOPE_DIR/probe.json" "$OFFSCOPE_DIR/probe.sql" >/dev/null 2>&1 || true
+rm -rf "$OFFSCOPE_DIR"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "" >&2
