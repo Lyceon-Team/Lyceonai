@@ -49,6 +49,7 @@ import {
   setProfileStripeCustomerId,
 } from "../lib/account";
 import { logger } from "../logger";
+import { digestId } from "../lib/stripe/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { normalizeRuntimeRole } from "../lib/auth-role";
 
@@ -164,11 +165,13 @@ router.post(
         },
       });
 
+      // Charter §6: on the unaccompanied path the student IS the payer, so the
+      // profile id and the Checkout Session id are both payer identifiers.
       logger.info("BILLING", "checkout", "Checkout session created", {
         requestId,
-        studentProfileId,
+        studentProfileRef: digestId(studentProfileId),
         plan,
-        sessionId: session.id,
+        sessionRef: digestId(session.id),
       });
 
       return res.json({ url: session.url, sessionId: session.id, requestId });
@@ -176,7 +179,7 @@ router.post(
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("BILLING", "checkout", "Failed to create checkout session", {
         requestId,
-        studentProfileId,
+        studentProfileRef: digestId(studentProfileId),
         plan,
         message,
       });
@@ -236,7 +239,7 @@ router.get(
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("BILLING", "status", "Failed to read entitlement", {
         requestId,
-        userId,
+        profileRef: digestId(userId),
         message,
       });
       // Fail closed: an entitlement read failure never renders as free-tier
@@ -297,7 +300,7 @@ router.post(
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("BILLING", "portal", "Failed to create portal session", {
         requestId,
-        userId,
+        profileRef: digestId(userId),
         message,
       });
       return res

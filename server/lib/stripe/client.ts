@@ -13,14 +13,19 @@
  * `event.livemode` against.
  *
  * trade-offs / edge cases:
- *  - `getExpectedLivemode()` THROWS when `STRIPE_ENV` is unset rather than
- *    defaulting. A missing mode selector means the environment cannot assert
- *    mode at all, and a silent default is exactly the blindness SCL-049 exists
- *    to close. Fail closed, loudly.
- *  - `STRIPE_ENV` is only a real control once it is scoped per environment in
- *    Vercel. Today it is scoped All Environments, so every environment computes
- *    the same expected mode. This module is defence in depth; the configuration
- *    is the control. See SCL-049 and docs/plans/Stripe_Phase_C_Preflight.md §3.
+ *  - **The mode is derived from the secret key in use, not declared separately.**
+ *    An earlier revision read a `STRIPE_ENV` variable. That was two independent
+ *    sources with no coupling: a misconfigured environment could hold a live key
+ *    and declare `test`, and the assertion would agree with the declaration
+ *    while the key told the truth. `STRIPE_ENV` has since been deleted from
+ *    Vercel, which would have made the declaration `undefined` at runtime. The
+ *    key prefix is the only fact that cannot disagree with the key.
+ *  - `getExpectedLivemode()` THROWS when the key is missing or its prefix is
+ *    unrecognised, rather than defaulting. An environment that cannot determine
+ *    its own mode must not accept webhooks at all. Fail closed, loudly.
+ *  - Scoping the key per environment in Vercel remains the control (SCL-049);
+ *    this derivation removes the second, contradictable source but does not by
+ *    itself separate environments. See docs/plans/Stripe_Phase_C_Preflight.md §3.
  *  - No `apiVersion` is pinned: the SDK's bundled default governs. Pinning is
  *    desirable but is a deliberate, separately-verified change — guessing a
  *    version string here would break every call.
@@ -29,22 +34,32 @@ import Stripe from "stripe";
 
 export type StripeMode = "live" | "test";
 
+function requireSecretKeyRaw(): string {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY is not configured.");
+  }
+  return key;
+}
+
 /**
- * The environment's declared Stripe mode. Throws when unset — see module header.
+ * The Stripe mode of the key this process is actually using.
+ *
+ * Derived from the key prefix — Stripe secret keys are `sk_live_…` / `sk_test_…`
+ * and restricted keys are `rk_live_…` / `rk_test_…`. There is no separate
+ * declaration to contradict it.
+ *
+ * Throws on an unrecognised prefix: an environment that cannot determine its own
+ * mode has no safe default.
  */
 export function getStripeMode(): StripeMode {
-  const raw = process.env.STRIPE_ENV;
-  if (!raw) {
-    throw new Error(
-      "STRIPE_ENV is not configured. The webhook livemode assertion (SCL-049) " +
-        "cannot run without an explicit per-environment mode.",
-    );
-  }
-  const normalized = raw.trim().toLowerCase();
-  if (normalized === "live") return "live";
-  if (normalized === "test") return "test";
+  const key = requireSecretKeyRaw();
+  if (/^(sk|rk)_live_/.test(key)) return "live";
+  if (/^(sk|rk)_test_/.test(key)) return "test";
   throw new Error(
-    `STRIPE_ENV must be "live" or "test"; received an unrecognised value of length ${raw.length}.`,
+    "STRIPE_SECRET_KEY has an unrecognised prefix; expected sk_live_, sk_test_, " +
+      "rk_live_, or rk_test_. Cannot determine the Stripe mode, so no webhook " +
+      "can be accepted.",
   );
 }
 
@@ -55,20 +70,12 @@ export function getExpectedLivemode(): boolean {
   return getStripeMode() === "live";
 }
 
-function requireSecretKey(): string {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
-    throw new Error("STRIPE_SECRET_KEY is not configured.");
-  }
-  return key;
-}
-
 /**
  * Construct a Stripe client. Not cached: the key is read per call so a rotation
  * takes effect without a redeploy.
  */
 export function getStripeClient(): Stripe {
-  return new Stripe(requireSecretKey());
+  return new Stripe(requireSecretKeyRaw());
 }
 
 /**

@@ -204,7 +204,11 @@ describe("Stripe webhook handler contract", () => {
 
   it("treats a duplicate event id as already processed and does not double-write", async () => {
     dbMocks.insert.mockResolvedValueOnce({
-      error: { code: "23505", message: "duplicate key" },
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "stripe_webhook_events_pkey"',
+      },
     });
 
     const process_ = await handler();
@@ -256,5 +260,104 @@ describe("Stripe webhook handler contract", () => {
     expect(outcome).toMatchObject({ ok: true, status: "ignored" });
     expect(dbMocks.insert).not.toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+  // --- post-audit: Zod parse at the Stripe boundary ---------------------------
+
+  it("rejects a signed payload whose object shape does not match (Zod boundary parse)", async () => {
+    const process_ = await handler();
+    // Correctly signed, but `subscription` is a number and `id` is missing —
+    // a valid signature proves Stripe sent it, not that the shape is usable.
+    const { body, signature } = signedRequest({
+      id: "evt_badshape_1",
+      object: "event",
+      type: "checkout.session.completed",
+      livemode: false,
+      data: {
+        object: {
+          object: "checkout.session",
+          mode: "subscription",
+          subscription: 12345,
+          metadata: { student_profile_id: STUDENT_ID },
+        },
+      },
+    });
+
+    await expect(process_(body, signature)).rejects.toThrow(
+      /failed shape validation/,
+    );
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(dbMocks.delete).toHaveBeenCalledTimes(1); // gate released for retry
+  });
+
+  it("rejects a re-fetched subscription that lacks a status rather than writing a partial row", async () => {
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_test_1",
+      // no `status` at all
+      items: { data: [] },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+
+    await expect(process_(body, signature)).rejects.toThrow(
+      /failed shape validation/,
+    );
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("normalises absent period fields to null instead of undefined", async () => {
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_test_1",
+      status: "active",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_monthly" } }] },
+      // period fields absent
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+    await process_(body, signature);
+
+    expect(accountMocks.upsertEntitlement.mock.calls[0][1]).toMatchObject({
+      current_period_start: null,
+      current_period_end: null,
+      stripe_price_id: "price_monthly",
+    });
+  });
+
+  // --- post-audit: the 23505 gate checks WHICH constraint ----------------------
+
+  it("treats a 23505 on a different constraint as an error, not a replay", async () => {
+    dbMocks.insert.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "some_future_constraint"',
+      },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+
+    await expect(process_(body, signature)).rejects.toThrow(
+      /unexpected unique violation/,
+    );
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  // --- post-audit: payer identifiers are digested in logs ---------------------
+
+  it("never passes a raw profile id or Stripe object id to the logger", async () => {
+    const { logger } = await import("../../server/logger");
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+    await process_(body, signature);
+
+    const emitted = JSON.stringify(
+      (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls,
+    );
+    expect(emitted).not.toContain(STUDENT_ID);
+    expect(emitted).not.toContain("sub_test_1");
+    expect(emitted).toContain("studentProfileRef");
   });
 });
