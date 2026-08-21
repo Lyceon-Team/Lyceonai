@@ -83,6 +83,10 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     }),
 }));
 
+vi.mock("../../server/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 vi.mock("../../server/lib/account", () => ({
   getEntitlementForProfile: accountMocks.getEntitlementForProfile,
   getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
@@ -289,5 +293,22 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(monthly.amountCents).toBe(4242);
     expect(monthly.currency).toBe("usd");
     expect(monthly.intervalLabel).toBe("per month");
+  });
+  // --- post-audit: payer identifiers are digested in logs (Charter §6) --------
+
+  it("never passes a raw profile id or Checkout Session id to the logger", async () => {
+    const { logger } = await import("../../server/logger");
+    await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly" });
+
+    const emitted = JSON.stringify(
+      (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls,
+    );
+    // On the unaccompanied path the student IS the payer, so the profile id is
+    // a payer identifier for a minors' product.
+    expect(emitted).not.toContain(STUDENT_ID);
+    expect(emitted).not.toContain("cs_test");
+    expect(emitted).toContain("studentProfileRef");
   });
 });

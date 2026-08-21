@@ -302,3 +302,81 @@ pnpm run test:security → Test Files 2 passed (2) · Tests 6 passed (6)
 - Consent capture (SCL-044) is Phase C.2.
 - Guardian-paid billing is blocked on `WS-GL` and D-1.
 - Three legal contradictions are recorded as launch gates on SCL-044, SCL-048, and SCL-051.
+
+---
+
+## 8. Post-audit remediation — 2026-08-20
+
+Audit verdict was REJECT. Five findings actioned; two reported rather than actioned.
+
+### 8.1 Fixed
+
+| # | Finding | Fix | Gate |
+|---|---|---|---|
+| 1 | `STRIPE_ENV` still drove the livemode assertion, independently of the key in use — and the variable had since been deleted from Vercel, so it would have read `undefined` at runtime | **The mode is now derived from the secret key prefix** (`sk_live_`/`rk_live_` → live, `sk_test_`/`rk_test_` → test). `server/lib/stripe/client.ts:36-64`. There is no second source to contradict the key. Unrecognised prefix or missing key → throw, no default. | `tests/ci/stripe-client-mode.contract.test.ts` (8 tests), incl. an explicit case proving a stale `STRIPE_ENV=test` cannot soften a live key, and a source assertion that `process.env.STRIPE_ENV` is never read |
+| 2 | No Zod parse on the signed Stripe payload; `event.data.object` cast directly | Four boundary schemas — `subjectSchema`, `checkoutSessionSchema`, `subscriptionEventSchema`, `retrievedSubscriptionSchema` — parsed via `parseOrFail` before dispatch **and** on the re-fetched subscription before any write. Failure raises `StripePayloadShapeError` and releases the idempotency gate for retry. `server/lib/stripe/webhook-handler.ts:60-140, 246-300` | 3 new tests: bad object shape rejected, re-fetched subscription without `status` rejected, absent period fields normalised to `null` not `undefined` |
+| 3 | `studentProfileId` logged verbatim; on the unaccompanied path the student **is** the payer | `server/lib/stripe/redact.ts` — first 8 hex of SHA-256, the same construction the consent routes already use. All payer-linked identifiers now emit as `studentProfileRef` / `sessionRef` / `subscriptionRef` / `profileRef`. | 2 new tests asserting the raw id and the Stripe object id are absent from `logger.info` calls, in both the webhook and the checkout route |
+| 4a | Six dangling `server/lib/webhookHandlers.ts` references in `Lyceonai-threat-model.md` | All six repointed to `server/lib/stripe/webhook-handler.ts`; TM-004's mitigation and the data-flow row updated to describe the rebuilt control chain (signature → livemode → Zod → gate). | `grep -c webhookHandlers Lyceonai-threat-model.md` → `0` |
+| 5 | The 23505 gate treated **any** unique violation as a replay | `claimEvent` now requires the violated constraint to be `stripe_webhook_events_pkey`; any other 23505 is logged and rethrown rather than acknowledged as a replay. `server/lib/stripe/webhook-handler.ts:143-190` | 1 new test asserting a 23505 naming a different constraint throws; the replay test now supplies the real constraint name |
+
+**Four planted failures executed and observed, then reverted:**
+
+```
+PLANT A  mode reads STRIPE_ENV again   → 2 failed | 6 passed  (mode suite)
+PLANT B  drop Zod parse on the session → 1 failed | 13 passed (webhook suite)
+PLANT C  log the raw profile id        → 1 failed | 12 passed (identity suite)
+PLANT D  any 23505 counts as a replay  → 1 failed | 13 passed (webhook suite)
+ALL REVERTED                           → 35 passed (35)
+```
+
+### 8.2 Reported, not actioned
+
+**`server/.env.example` — four dead `_LIVE`/`_TEST` entries plus `STRIPE_ENV=` (finding 3, and the
+residue of finding 1). Owner action: the file is blocked from this session by a permission control**
+covering `.env*` paths — both read and edit were denied. That control is correct secret hygiene and
+was not worked around. The five lines to delete:
+
+```
+STRIPE_ENV=
+STRIPE_PUBLISHABLE_KEY_TEST=
+STRIPE_PUBLISHABLE_KEY_LIVE=
+STRIPE_SECRET_KEY_TEST=
+STRIPE_SECRET_KEY_LIVE=
+```
+
+Nothing reads any of them: `grep -rn "process.env.STRIPE_ENV" --include="*.ts"` returns only the test
+that asserts it is never read, and the `_LIVE`/`_TEST` variants have no reader at all. This is stale
+configuration documentation, not live behaviour — but it is how the next person configures the
+service, so it should not survive.
+
+`ops/env/REPLIT_ENV_KEYS_2026-01-17.txt:129` also lists `STRIPE_ENV`. Left alone: it is a dated
+inventory of a retired platform's keys, not current configuration.
+
+### 8.3 Accepted as reported — no change made
+
+- **`tests/ci/guardian-linking.contract.test.ts` cannot fail when the 1:1 enforcement is deleted.**
+  Correct, and already recorded in SCL-045 and `WS-GL` §3. It is out of Phase C edit scope by Charter
+  §4 and retires with SCL-045's promotion, never before.
+- **`tests/ci/guardian-consent.id11.contract.test.ts` proves behaviour against a row shape that does
+  not exist.** Correct, and already recorded in `WS-GL` §8.2. Pre-existing; the only Phase C change to
+  that route was repointing one import.
+- **The identity-entitlement guardian tests are deferral evidence, not implementation coverage.**
+  Agreed. They assert the deliberate `GUARDIAN_BILLING_UNAVAILABLE` blocker and nothing more, and
+  must not be cited as SCL-043/SCL-045 coverage.
+- **Refund and country-sync remain deferred.** Unchanged; §7 above already carries them.
+- **Report totals.** The `-595` figure was the feature commit `fb883fa`, not the merged head. Stated
+  as such here.
+
+### 8.4 Verification after remediation
+
+```
+pnpm -s run build      → ✓ built; "No *_SECRET tokens found in built output."
+pnpm run test:ci       → Test Files 86 passed | 6 skipped (92)
+                         Tests 615 passed | 52 skipped (667)
+pnpm run test:security → Test Files 2 passed (2) · Tests 6 passed (6)
+```
+
+Dangling-reference sweep over live code and docs returns zero. Remaining hits are the negative
+assertions that guard the fix (`stripe-webhook-mount.contract.test.ts`,
+`debug.production.ci.test.ts`, `webhook-path.ts` header) and one dated 2026-06-27 audit snapshot
+under `audit-out/`.

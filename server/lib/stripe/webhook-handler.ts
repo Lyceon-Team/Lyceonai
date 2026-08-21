@@ -36,6 +36,7 @@ import { getStripeClient, getExpectedLivemode } from "./client";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { upsertEntitlement, mapStripeStatusToEntitlement } from "../account";
 import { logger } from "../../logger";
+import { digestId } from "./redact";
 
 /** Events this handler acts on. Anything else is acknowledged and ignored. */
 const HANDLED_EVENTS = [
@@ -57,7 +58,82 @@ export type WebhookOutcome =
       message: string;
     };
 
+/**
+ * Boundary schemas for the signed Stripe payload.
+ *
+ * A valid signature proves Stripe sent the bytes. It does not prove the object
+ * has the shape this handler needs — a Stripe API-version change, a partial
+ * object, or an event routed here by mistake all arrive correctly signed.
+ * Coding Standards §7.1 requires a Zod parse at every boundary; Stripe is a
+ * boundary. Parse failure is an EXPECTED failure and fails closed.
+ */
 const profileIdSchema = z.string().uuid();
+
+/** The payer-to-student mapping carried on Stripe objects (SCL-043). */
+const subjectSchema = z.object({
+  metadata: z
+    .object({ student_profile_id: profileIdSchema.optional() })
+    .passthrough()
+    .nullish(),
+  client_reference_id: profileIdSchema.nullish(),
+});
+
+/** The Checkout Session fields this handler reads. */
+const checkoutSessionSchema = subjectSchema.extend({
+  id: z.string().min(1),
+  mode: z.string().nullish(),
+  subscription: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
+});
+
+/** The Subscription fields this handler reads. */
+const subscriptionEventSchema = subjectSchema.extend({
+  id: z.string().min(1),
+});
+
+/**
+ * The re-fetched Subscription, parsed before anything is persisted. Period
+ * fields are optional on Stripe's side and are normalised to null rather than
+ * silently becoming `undefined` in the write.
+ */
+const retrievedSubscriptionSchema = z.object({
+  id: z.string().min(1),
+  status: z.string().min(1),
+  cancel_at_period_end: z.boolean().nullish(),
+  current_period_start: z.number().int().nullish(),
+  current_period_end: z.number().int().nullish(),
+  items: z
+    .object({
+      data: z
+        .array(z.object({ price: z.object({ id: z.string() }).nullish() }))
+        .default([]),
+    })
+    .nullish(),
+});
+
+/** Thrown when a signed payload does not match the shape this handler requires. */
+export class StripePayloadShapeError extends Error {
+  constructor(eventType: string, detail: string) {
+    super(`Stripe ${eventType} payload failed shape validation: ${detail}`);
+    this.name = "StripePayloadShapeError";
+  }
+}
+
+function parseOrFail<T>(
+  schema: z.ZodType<T>,
+  value: unknown,
+  eventType: string,
+): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    throw new StripePayloadShapeError(
+      eventType,
+      JSON.stringify(parsed.error.flatten().fieldErrors),
+    );
+  }
+  return parsed.data;
+}
 
 /**
  * Resolve the entitled student profile from a Stripe object.
@@ -76,18 +152,18 @@ const profileIdSchema = z.string().uuid();
  *
  * Throws when no valid subject is present — webhooks fail closed.
  */
-function resolveStudentProfileId(source: {
-  metadata?: Stripe.Metadata | null;
-  client_reference_id?: string | null;
-}): string {
-  const fromMetadata = source.metadata?.student_profile_id;
-  const fromClientRef = source.client_reference_id ?? undefined;
-  const candidate = fromMetadata ?? fromClientRef;
+function resolveStudentProfileId(
+  source: z.infer<typeof subjectSchema>,
+  eventType: string,
+): string {
+  const candidate =
+    source.metadata?.student_profile_id ?? source.client_reference_id ?? undefined;
 
   const parsed = profileIdSchema.safeParse(candidate);
   if (!parsed.success) {
-    throw new Error(
-      "Stripe object carries no valid student_profile_id (metadata or client_reference_id).",
+    throw new StripePayloadShapeError(
+      eventType,
+      "no valid student_profile_id in metadata or client_reference_id",
     );
   }
   return parsed.data;
@@ -110,7 +186,11 @@ async function writeEntitlementFromSubscription(
   eventId: string,
 ): Promise<void> {
   const stripe = getStripeClient();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const subscription = parseOrFail(
+    retrievedSubscriptionSchema,
+    await stripe.subscriptions.retrieve(subscriptionId),
+    eventType,
+  );
 
   const { tier, status } = mapStripeStatusToEntitlement(subscription.status);
   const priceId = subscription.items?.data?.[0]?.price?.id ?? null;
@@ -120,27 +200,33 @@ async function writeEntitlementFromSubscription(
     status,
     stripe_subscription_id: subscription.id,
     stripe_price_id: priceId,
-    current_period_start: epochToIso(
-      (subscription as unknown as { current_period_start?: unknown })
-        .current_period_start,
-    ),
-    current_period_end: epochToIso(
-      (subscription as unknown as { current_period_end?: unknown })
-        .current_period_end,
-    ),
+    current_period_start: epochToIso(subscription.current_period_start),
+    current_period_end: epochToIso(subscription.current_period_end),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
   });
 
+  // Charter §6: the student is the payer on the unaccompanied path, and Stripe
+  // object ids resolve to a named person in the Dashboard. Digest both.
   logger.info("STRIPE_WEBHOOK", eventType, "Entitlement written", {
     eventId,
-    studentProfileId,
-    subscriptionId: subscription.id,
+    studentProfileRef: digestId(studentProfileId),
+    subscriptionRef: digestId(subscription.id),
     tier,
     status,
   });
 }
 
-/** Insert-once gate. Returns false when the event id is already present. */
+/**
+ * The unique key whose violation means "this event id is already recorded".
+ * `stripe_webhook_events` has `id TEXT PRIMARY KEY` and nothing else unique
+ * (genesis.sql:211-215), so today this is the only 23505 the insert can raise.
+ * The name is checked anyway: treating *any* unique violation as a replay is the
+ * collapse-an-error-into-a-legitimate-value pattern, and it would start silently
+ * swallowing a different constraint the moment one is added.
+ */
+const REPLAY_CONSTRAINT = "stripe_webhook_events_pkey";
+
+/** Insert-once gate. Returns false only for a genuine replay of the same event id. */
 async function claimEvent(
   eventId: string,
   eventType: string,
@@ -150,7 +236,23 @@ async function claimEvent(
     .insert({ id: eventId, type: eventType });
 
   if (!error) return true;
-  if (error.code === "23505") return false;
+
+  if (error.code === "23505") {
+    const names = `${error.message ?? ""} ${error.details ?? ""}`;
+    if (names.includes(REPLAY_CONSTRAINT)) return false;
+
+    // A unique violation on some OTHER constraint is not a replay. Do not
+    // acknowledge it as one — that would drop a real event silently.
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "gate_unexpected_unique_violation",
+      "23505 on a constraint other than the event-id primary key",
+      { eventId, eventType, code: error.code, message: error.message },
+    );
+    throw new Error(
+      `Idempotency gate: unexpected unique violation (not ${REPLAY_CONSTRAINT}).`,
+    );
+  }
 
   logger.error(
     "STRIPE_WEBHOOK",
@@ -178,7 +280,13 @@ async function releaseEvent(eventId: string): Promise<void> {
 
 async function dispatch(event: Stripe.Event): Promise<void> {
   if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
+    // Parsed, not cast: a valid signature does not imply a valid shape.
+    const session = parseOrFail(
+      checkoutSessionSchema,
+      event.data.object,
+      event.type,
+    );
+
     if (session.mode !== "subscription" || !session.subscription) {
       logger.info(
         "STRIPE_WEBHOOK",
@@ -188,7 +296,8 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       );
       return;
     }
-    const studentProfileId = resolveStudentProfileId(session);
+
+    const studentProfileId = resolveStudentProfileId(session, event.type);
     const subscriptionId =
       typeof session.subscription === "string"
         ? session.subscription
@@ -202,8 +311,12 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     return;
   }
 
-  const subscription = event.data.object as Stripe.Subscription;
-  const studentProfileId = resolveStudentProfileId(subscription);
+  const subscription = parseOrFail(
+    subscriptionEventSchema,
+    event.data.object,
+    event.type,
+  );
+  const studentProfileId = resolveStudentProfileId(subscription, event.type);
   await writeEntitlementFromSubscription(
     subscription.id,
     studentProfileId,
