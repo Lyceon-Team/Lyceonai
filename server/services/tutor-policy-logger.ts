@@ -51,6 +51,16 @@ export type ContextResolutionLog = {
   scopeType: string;
 };
 
+/**
+ * @spec [Doc-03A_V1 §11.5, CR-03C-V3-01 §3.4]
+ *
+ * crisisClassifierOutcome: structured label for Cloud Monitoring alerting.
+ * Values: "no_crisis", "crisis_signature", "crisis_model", "crisis_both",
+ * "classifier_degraded_no_floor", "infrastructure_failure",
+ * "classifier_degraded" (Layer 2 failed, Layer 1 stands), or null (unknown).
+ * Cloud Monitoring log-based metric filters on this field for SCL-023
+ * alerting — the metric and alert policy are Karl's GCP-console work.
+ */
 export type TurnMetricsLog = {
   conversationId: string;
   turnOrdinal: number;
@@ -63,6 +73,7 @@ export type TurnMetricsLog = {
   antiLeakTriggered: boolean;
   injectionDetected: boolean;
   crisisTriggered: boolean;
+  crisisClassifierOutcome: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -182,12 +193,16 @@ export async function logContextResolution(
 /**
  * Records operational telemetry for a tutor turn.
  *
- * @spec [Doc-03A_V1 §11.5]
- * @implemented 2026-08-09
+ * @spec [Doc-03A_V1 §11.5, CR-03C-V3-01 §3.4]
+ * @implemented 2026-08-19
  * plain English: writes one row to tutor_turn_metrics capturing orchestration
- * duration, model name, token counts, and boolean flags for cache hit, compaction
- * recommendation, anti-leak trigger, injection detection, and crisis trigger.
+ * duration, model name, token counts, boolean flags for cache hit, compaction
+ * recommendation, anti-leak trigger, injection detection, crisis trigger,
+ * and crisis classifier outcome string for Cloud Monitoring alerting.
  * On DB error, logs a warning and returns — never throws.
+ * The crisisClassifierOutcome field gracefully degrades if the migration
+ * (20260819000002) has not yet been applied — the fire-and-forget pattern
+ * catches the DB error and proceeds.
  */
 export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
   try {
@@ -203,6 +218,7 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
       anti_leak_triggered: params.antiLeakTriggered,
       injection_detected: params.injectionDetected,
       crisis_triggered: params.crisisTriggered,
+      crisis_classifier_outcome: params.crisisClassifierOutcome,
       recorded_at: new Date().toISOString(),
     });
 
@@ -219,6 +235,22 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
         },
       );
     }
+
+    // SCL-023 §3.4: structured log line for Cloud Monitoring log-based metric.
+    // Karl creates the metric filter on jsonPayload.crisisClassifierOutcome.
+    // This line fires on EVERY turn so the metric can track both crisis and
+    // no-crisis rates — the filter expression selects the alertable values.
+    logger.info(
+      "TUTOR_POLICY",
+      "turn_metrics_logged",
+      "Turn metrics recorded",
+      {
+        conversationId: params.conversationId,
+        turnOrdinal: params.turnOrdinal,
+        crisisTriggered: params.crisisTriggered,
+        crisisClassifierOutcome: params.crisisClassifierOutcome,
+      },
+    );
   } catch (err: unknown) {
     logger.warn(
       "TUTOR_POLICY",

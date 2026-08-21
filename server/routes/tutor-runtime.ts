@@ -889,6 +889,26 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisScanContext,
       );
 
+      // SCL-023 §3.4: log turn metrics on crisis path. Previously missing —
+      // crisis turns returned before logTurnMetrics (line ~1155), so crisis
+      // turns had no metrics row and no crisisClassifierOutcome for alerting.
+      // orchestrationDurationMs=0 because no LLM orchestration occurs on crisis.
+      // @spec [CR-03C-V3-01 §3.4, Doc-03A_V1 §11.5]
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "crisis_bypass",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: true,
+        crisisClassifierOutcome: crisisResult.source,
+      });
+
       res.status(200).json({
         data: {
           conversation_id: conversation.id,
@@ -1152,6 +1172,14 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // Compute classifier outcome for normal (non-crisis) path.
+    // crisisResult.crisis is false here (crisis path returned earlier).
+    // If forceReview is true, Layer 2 failed but Layer 1 had signatures —
+    // the turn proceeded but was force-enqueued (classifier_degraded).
+    const normalPathOutcome: string = crisisResult.forceReview
+      ? "classifier_degraded"
+      : "no_crisis";
+
     await logTurnMetrics({
       conversationId: conversation.id,
       turnOrdinal: 0,
@@ -1165,6 +1193,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       antiLeakTriggered,
       injectionDetected,
       crisisTriggered: false,
+      crisisClassifierOutcome: normalPathOutcome,
     });
 
     await supabaseServer
