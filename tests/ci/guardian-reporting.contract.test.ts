@@ -248,7 +248,6 @@ vi.mock("../../apps/api/src/services/mastery-read", async () => {
     buildSkillLevelView: actual.buildSkillLevelView,
     fetchDomainMasteryRows: masteryReadMocks.fetchDomainMasteryRows,
     fetchSkillMasteryRows: vi.fn(async () => []),
-    buildMasterySummaryFromRows: vi.fn(() => []),
     fetchWeakestSkills: vi.fn(async () => []),
   };
 });
@@ -258,22 +257,6 @@ vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
   resetMasteryLevelsCache: vi.fn(),
 }));
 
-vi.mock("../../packages/shared/src/mastery", () => ({
-  masteryTierFromLevel: (level: number | null) => {
-    if (level === null) return "not_started";
-    if (level >= 3) return "proficient";
-    if (level === 2) return "improving";
-    return "weak";
-  },
-  masteryTierSchema: {
-    enum: ["not_started", "weak", "improving", "proficient"],
-  },
-  masteryLevelSchema: {},
-  skillMasteryNodeSchema: {},
-  domainMasteryNodeSchema: {},
-  sectionMasteryNodeSchema: {},
-  masteryTreeResponseSchema: {},
-}));
 vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
@@ -798,8 +781,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L1",
         level: 1,
         displayName: "Building",
-        tier: "weak",
-        masteryLevel: 1,
       }),
     );
     // NULL is a distinct state, never level 0 (RULE 3 / RULE 6).
@@ -854,8 +835,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L1",
         level: 1,
         displayName: "Building",
-        tier: "weak",
-        masteryLevel: 1,
       }),
     );
     expect(byPair("RW", "Information and Ideas")).toEqual(
@@ -863,8 +842,6 @@ describe("Guardian reporting runtime contract", () => {
         levelKey: "L2",
         level: 2,
         displayName: "Developing",
-        tier: "improving",
-        masteryLevel: 2,
       }),
     );
     const json = JSON.stringify(guardianResponse.body);

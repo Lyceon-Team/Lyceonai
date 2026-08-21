@@ -38,7 +38,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
         };
       }
 
-      const requestId = typeof args?.p_request_id === "string" ? args.p_request_id : null;
+      const requestId =
+        typeof args?.p_request_id === "string" ? args.p_request_id : null;
       if (requestId && mocks.calendarQuotaSeenRequestIds.has(requestId)) {
         return {
           data: {
@@ -62,7 +63,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
           data: {
             allowed: false,
             code: "CALENDAR_REFRESH_QUOTA_EXCEEDED",
-            message: "Calendar refresh/regeneration limit reached (3 actions per rolling 7 days).",
+            message:
+              "Calendar refresh/regeneration limit reached (3 actions per rolling 7 days).",
             current: mocks.calendarQuotaUsed,
             limit: 3,
             remaining: 0,
@@ -135,7 +137,11 @@ class FakeQueryBuilder {
   private pendingDelete = false;
   private mutationRows: TableRow[] | null = null;
 
-  constructor(store: FakeStore, table: TableName, readError: { message: string } | null = null) {
+  constructor(
+    store: FakeStore,
+    table: TableName,
+    readError: { message: string } | null = null,
+  ) {
     this.store = store;
     this.table = table;
     this.readError = readError;
@@ -188,7 +194,10 @@ class FakeQueryBuilder {
     return this;
   }
 
-  upsert(values: TableRow | TableRow[], options?: { onConflict?: string }): this {
+  upsert(
+    values: TableRow | TableRow[],
+    options?: { onConflict?: string },
+  ): this {
     const rows = Array.isArray(values) ? values : [values];
     const conflictColumns = (options?.onConflict ?? "id")
       .split(",")
@@ -260,16 +269,27 @@ class FakeQueryBuilder {
     }
     const rows = this.computeRows();
     if (rows.length === 0) {
-      return { data: null, error: { code: "PGRST116", message: "No rows found" } };
+      return {
+        data: null,
+        error: { code: "PGRST116", message: "No rows found" },
+      };
     }
     return { data: rows[0], error: null };
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: TableRow[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?:
+      | ((value: {
+          data: TableRow[];
+          error: any;
+        }) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve(this.execute()).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve(this.execute()).then(
+      onfulfilled ?? undefined,
+      onrejected ?? undefined,
+    );
   }
 
   private execute(): { data: TableRow[]; error: any } {
@@ -317,7 +337,9 @@ class FakeQueryBuilder {
   }
 
   private computeRows(): TableRow[] {
-    let rows = (this.mutationRows ?? this.store.tables[this.table]).map((row) => ({ ...row }));
+    let rows = (this.mutationRows ?? this.store.tables[this.table]).map(
+      (row) => ({ ...row }),
+    );
 
     for (const predicate of this.filters) {
       rows = rows.filter(predicate);
@@ -329,7 +351,13 @@ class FakeQueryBuilder {
         if (a[column] === b[column]) return 0;
         if (a[column] == null) return ascending ? -1 : 1;
         if (b[column] == null) return ascending ? 1 : -1;
-        return a[column] > b[column] ? (ascending ? 1 : -1) : ascending ? -1 : 1;
+        return a[column] > b[column]
+          ? ascending
+            ? 1
+            : -1
+          : ascending
+            ? -1
+            : 1;
       });
     }
 
@@ -350,13 +378,27 @@ class FakeSupabaseClient {
   constructor(seed?: Partial<FakeStore["tables"]>) {
     this.store = {
       tables: {
-        student_study_profile: seed?.student_study_profile ? [...seed.student_study_profile] : [],
-        student_study_plan_days: seed?.student_study_plan_days ? [...seed.student_study_plan_days] : [],
-        student_study_plan_tasks: seed?.student_study_plan_tasks ? [...seed.student_study_plan_tasks] : [],
-        student_question_attempts: seed?.student_question_attempts ? [...seed.student_question_attempts] : [],
-        practice_sessions: seed?.practice_sessions ? [...seed.practice_sessions] : [],
-        student_skill_mastery: seed?.student_skill_mastery ? [...seed.student_skill_mastery] : [],
-        system_event_logs: seed?.system_event_logs ? [...seed.system_event_logs] : [],
+        student_study_profile: seed?.student_study_profile
+          ? [...seed.student_study_profile]
+          : [],
+        student_study_plan_days: seed?.student_study_plan_days
+          ? [...seed.student_study_plan_days]
+          : [],
+        student_study_plan_tasks: seed?.student_study_plan_tasks
+          ? [...seed.student_study_plan_tasks]
+          : [],
+        student_question_attempts: seed?.student_question_attempts
+          ? [...seed.student_question_attempts]
+          : [],
+        practice_sessions: seed?.practice_sessions
+          ? [...seed.practice_sessions]
+          : [],
+        student_skill_mastery: seed?.student_skill_mastery
+          ? [...seed.student_skill_mastery]
+          : [],
+        system_event_logs: seed?.system_event_logs
+          ? [...seed.system_event_logs]
+          : [],
       },
       writes: {
         upsert: 0,
@@ -371,11 +413,18 @@ class FakeSupabaseClient {
     if (!Object.prototype.hasOwnProperty.call(this.store.tables, table)) {
       throw new Error(`Unknown table in fake supabase: ${table}`);
     }
-    return new FakeQueryBuilder(this.store, table as TableName, mocks.readErrors[table as TableName] ?? null);
+    return new FakeQueryBuilder(
+      this.store,
+      table as TableName,
+      mocks.readErrors[table as TableName] ?? null,
+    );
   }
 }
 
-import { calendarRouter, syncCalendarDayFromSessions } from "../../apps/api/src/routes/calendar";
+import {
+  calendarRouter,
+  syncCalendarDayFromSessions,
+} from "../../apps/api/src/routes/calendar";
 
 function isoDatePlus(days: number): string {
   return DateTime.now().plus({ days }).toISODate()!;
@@ -413,7 +462,9 @@ function buildCalendarApp(role: "student" | "guardian" = "student") {
   return app;
 }
 
-function defaultSeed(overrides?: Partial<FakeStore["tables"]>): Partial<FakeStore["tables"]> {
+function defaultSeed(
+  overrides?: Partial<FakeStore["tables"]>,
+): Partial<FakeStore["tables"]> {
   return {
     student_study_profile: [
       {
@@ -464,40 +515,57 @@ describe("Calendar Ownership Contract", () => {
     const overrideDay = isoDatePlus(2);
     const end = isoDatePlus(3);
 
-    const generated = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 3 });
+    const generated = await request(app)
+      .post("/api/calendar/generate")
+      .send({ start_date: start, days: 3 });
     expect(generated.status).toBe(200);
 
-    const edit = await request(app).put(`/api/calendar/day/${overrideDay}`).send({
-      planned_minutes: 55,
-      focus: [{ section: "Math", weight: 1, competencies: ["math.algebra"] }],
-      tasks: [
-        {
-          type: "practice",
-          task_type: "practice",
-          section: "Math",
-          mode: "skill-focused",
-          minutes: 55,
-          target: { section: "MATH", skill_code: "math.algebra", domain: null, subskill: null },
-        },
-      ],
-    });
+    const edit = await request(app)
+      .put(`/api/calendar/day/${overrideDay}`)
+      .send({
+        planned_minutes: 55,
+        focus: [{ section: "Math", weight: 1, competencies: ["math.algebra"] }],
+        tasks: [
+          {
+            type: "practice",
+            task_type: "practice",
+            section: "Math",
+            mode: "skill-focused",
+            minutes: 55,
+            target: {
+              section: "MATH",
+              skill_code: "math.algebra",
+              domain: null,
+              subskill: null,
+            },
+          },
+        ],
+      });
     expect(edit.status).toBe(200);
     expect(edit.body.day.is_user_override).toBe(true);
 
-    const refresh = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 3 });
+    const refresh = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 3 });
     expect(refresh.status).toBe(200);
     expect(refresh.body.applied).toBe(true);
     expect(refresh.body.refreshed.skipped_override_days).toContain(overrideDay);
 
-    const month = await request(app).get(`/api/calendar/month?start=${start}&end=${end}`);
+    const month = await request(app).get(
+      `/api/calendar/month?start=${start}&end=${end}`,
+    );
     expect(month.status).toBe(200);
-    const edited = month.body.days.find((day: any) => day.day_date === overrideDay);
+    const edited = month.body.days.find(
+      (day: any) => day.day_date === overrideDay,
+    );
     expect(edited).toBeDefined();
     expect(edited.is_user_override).toBe(true);
     expect(edited.planned_minutes).toBe(55);
     expect(edited.replaces_override).toBe(false);
     expect(edited.replacement_source).toBeNull();
-    expect(edited.tasks.every((task: any) => task.replaces_override === false)).toBe(true);
+    expect(
+      edited.tasks.every((task: any) => task.replaces_override === false),
+    ).toBe(true);
   });
 
   it("regenerate-one-day replaces override for that day only", async () => {
@@ -513,7 +581,17 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 50,
             completed_minutes: 0,
             focus: [{ section: "Math", weight: 1 }],
-            tasks: [{ id: "task-b-1", type: "practice", task_type: "practice", section: "Math", mode: "manual", minutes: 50, is_user_override: true }],
+            tasks: [
+              {
+                id: "task-b-1",
+                type: "practice",
+                task_type: "practice",
+                section: "Math",
+                mode: "manual",
+                minutes: 50,
+                is_user_override: true,
+              },
+            ],
             plan_version: 7,
             generated_at: new Date().toISOString(),
             is_user_override: true,
@@ -533,7 +611,14 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 50,
             completed_minutes: 0,
             focus: [{ section: "Math", weight: 1 }],
-            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            tasks: [
+              {
+                type: "practice",
+                section: "Math",
+                mode: "manual",
+                minutes: 50,
+              },
+            ],
             plan_version: 4,
             generated_at: new Date().toISOString(),
             is_user_override: true,
@@ -576,15 +661,23 @@ describe("Calendar Ownership Contract", () => {
     );
     const app = buildCalendarApp("student");
 
-    const regenerate = await request(app).post(`/api/calendar/day/${dayB}/regenerate`).send({});
+    const regenerate = await request(app)
+      .post(`/api/calendar/day/${dayB}/regenerate`)
+      .send({});
     expect(regenerate.status).toBe(200);
     expect(regenerate.body.day.day_date).toBe(dayB);
     expect(regenerate.body.day.is_user_override).toBe(false);
 
-    const month = await request(app).get(`/api/calendar/month?start=${dayA}&end=${dayB}`);
+    const month = await request(app).get(
+      `/api/calendar/month?start=${dayA}&end=${dayB}`,
+    );
     expect(month.status).toBe(200);
-    const persistedDayA = month.body.days.find((day: any) => day.day_date === dayA);
-    const persistedDayB = month.body.days.find((day: any) => day.day_date === dayB);
+    const persistedDayA = month.body.days.find(
+      (day: any) => day.day_date === dayA,
+    );
+    const persistedDayB = month.body.days.find(
+      (day: any) => day.day_date === dayB,
+    );
     expect(persistedDayA.is_user_override).toBe(true);
     expect(persistedDayA.planned_minutes).toBe(50);
     expect(persistedDayB.is_user_override).toBe(false);
@@ -592,16 +685,26 @@ describe("Calendar Ownership Contract", () => {
     expect(persistedDayB.replaces_override).toBe(true);
     expect(persistedDayB.replacement_source).toBe("regenerate");
     expect(persistedDayB.replaced_override_day_id).toBe("day-b");
-    expect(persistedDayB.tasks.some((task: any) => task.replaces_override === true)).toBe(true);
-    expect(persistedDayB.tasks.some((task: any) => task.replaced_override_task_id != null)).toBe(true);
+    expect(
+      persistedDayB.tasks.some((task: any) => task.replaces_override === true),
+    ).toBe(true);
+    expect(
+      persistedDayB.tasks.some(
+        (task: any) => task.replaced_override_task_id != null,
+      ),
+    ).toBe(true);
   });
 
   it("guardian is read-blocked from student calendar mutation routes", async () => {
     const day = isoDatePlus(2);
     const app = buildCalendarApp("guardian");
 
-    const edit = await request(app).put(`/api/calendar/day/${day}`).send({ planned_minutes: 45 });
-    const regenerate = await request(app).post(`/api/calendar/day/${day}/regenerate`).send({});
+    const edit = await request(app)
+      .put(`/api/calendar/day/${day}`)
+      .send({ planned_minutes: 45 });
+    const regenerate = await request(app)
+      .post(`/api/calendar/day/${day}/regenerate`)
+      .send({});
     expect(edit.status).toBe(403);
     expect(regenerate.status).toBe(403);
   });
@@ -618,9 +721,15 @@ describe("Calendar Ownership Contract", () => {
     });
     const app = buildCalendarApp("student");
 
-    const month = await request(app).get(`/api/calendar/month?start=${start}&end=${end}`);
-    const refresh = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
-    const edit = await request(app).put(`/api/calendar/day/${start}`).send({ planned_minutes: 10 });
+    const month = await request(app).get(
+      `/api/calendar/month?start=${start}&end=${end}`,
+    );
+    const refresh = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 2 });
+    const edit = await request(app)
+      .put(`/api/calendar/day/${start}`)
+      .send({ planned_minutes: 10 });
 
     expect(month.status).toBe(402);
     expect(refresh.status).toBe(402);
@@ -634,10 +743,18 @@ describe("Calendar Ownership Contract", () => {
     const day = isoDatePlus(2);
     const app = buildCalendarApp("student");
 
-    const one = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
-    const two = await request(app).post("/api/calendar/regenerate").send({ start_date: start, days: 2 });
-    const three = await request(app).post(`/api/calendar/day/${day}/regenerate`).send({});
-    const four = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+    const one = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 2 });
+    const two = await request(app)
+      .post("/api/calendar/regenerate")
+      .send({ start_date: start, days: 2 });
+    const three = await request(app)
+      .post(`/api/calendar/day/${day}/regenerate`)
+      .send({});
+    const four = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 2 });
 
     expect(one.status).toBe(200);
     expect(two.status).toBe(200);
@@ -686,26 +803,32 @@ describe("Calendar Ownership Contract", () => {
   it("does not apply calendar quota gate to non-counted actions", async () => {
     const start = isoDatePlus(1);
     const app = buildCalendarApp("student");
-    const generated = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 1 });
+    const generated = await request(app)
+      .post("/api/calendar/generate")
+      .send({ start_date: start, days: 1 });
     expect(generated.status).toBe(200);
 
     mocks.enforceCalendarQuota = true;
     mocks.calendarQuotaUsed = 3;
 
-    const month = await request(app).get(`/api/calendar/month?start=${start}&end=${start}`);
-    const edit = await request(app).put(`/api/calendar/day/${start}`).send({
-      planned_minutes: 25,
-      focus: [{ section: "Math", weight: 1 }],
-      tasks: [
-        {
-          type: "practice",
-          task_type: "practice",
-          section: "Math",
-          mode: "mixed",
-          minutes: 25,
-        },
-      ],
-    });
+    const month = await request(app).get(
+      `/api/calendar/month?start=${start}&end=${start}`,
+    );
+    const edit = await request(app)
+      .put(`/api/calendar/day/${start}`)
+      .send({
+        planned_minutes: 25,
+        focus: [{ section: "Math", weight: 1 }],
+        tasks: [
+          {
+            type: "practice",
+            task_type: "practice",
+            section: "Math",
+            mode: "mixed",
+            minutes: 25,
+          },
+        ],
+      });
 
     expect(month.status).toBe(200);
     expect(edit.status).not.toBe(402);
@@ -737,14 +860,18 @@ describe("Calendar Ownership Contract", () => {
     );
     const app = buildCalendarApp("student");
 
-    const response = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 1 });
+    const response = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 1 });
     expect(response.status).toBe(200);
     expect(response.body.applied).toBe(false);
     expect(response.body.planner_mode).toBe("custom");
     expect(response.body.suggestions[0].type).toBe("catch_up_block");
     expect(mocks.client.store.writes.upsert).toBe(0);
 
-    const events = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "plan_refreshed");
+    const events = mocks.client.store.tables.system_event_logs.filter(
+      (row) => row.event_type === "plan_refreshed",
+    );
     expect(events).toHaveLength(1);
     expect(events[0].details.applied).toBe(false);
   });
@@ -753,37 +880,45 @@ describe("Calendar Ownership Contract", () => {
     const app = buildCalendarApp("student");
     const start = isoDatePlus(1);
 
-    const generated = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 2 });
+    const generated = await request(app)
+      .post("/api/calendar/generate")
+      .send({ start_date: start, days: 2 });
     expect(generated.status).toBe(200);
 
-    const edited = await request(app).put(`/api/calendar/day/${start}`).send({
-      planned_minutes: 40,
-      focus: [{ section: "Math", weight: 1 }],
-      tasks: [
-        {
-          type: "practice",
-          task_type: "practice",
-          section: "Math",
-          mode: "manual",
-          minutes: 40,
-          target: {
-            section: "MATH",
-            domain: "algebra",
-            skill_code: "math.algebra",
-            subskill: null,
-            target_type: "practice_target",
-            review_session_id: null,
-            exam_id: null,
+    const edited = await request(app)
+      .put(`/api/calendar/day/${start}`)
+      .send({
+        planned_minutes: 40,
+        focus: [{ section: "Math", weight: 1 }],
+        tasks: [
+          {
+            type: "practice",
+            task_type: "practice",
+            section: "Math",
+            mode: "manual",
+            minutes: 40,
+            target: {
+              section: "MATH",
+              domain: "algebra",
+              skill_code: "math.algebra",
+              subskill: null,
+              target_type: "practice_target",
+              review_session_id: null,
+              exam_id: null,
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
     expect(edited.status).toBe(200);
 
-    const refresh = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+    const refresh = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 2 });
     expect(refresh.status).toBe(200);
 
-    const eventTypes = mocks.client.store.tables.system_event_logs.map((row) => row.event_type);
+    const eventTypes = mocks.client.store.tables.system_event_logs.map(
+      (row) => row.event_type,
+    );
     expect(eventTypes).toContain("plan_generated");
     expect(eventTypes).toContain("day_edited");
     expect(eventTypes).toContain("override_applied");
@@ -820,8 +955,14 @@ describe("Calendar Ownership Contract", () => {
           {
             user_id: "student-1",
             created_at: DateTime.fromISO(day).set({ hour: 9 }).toUTC().toISO(),
-            completed_at: DateTime.fromISO(day).set({ hour: 10 }).toUTC().toISO(),
-            last_activity_at: DateTime.fromISO(day).set({ hour: 10 }).toUTC().toISO(),
+            completed_at: DateTime.fromISO(day)
+              .set({ hour: 10 })
+              .toUTC()
+              .toISO(),
+            last_activity_at: DateTime.fromISO(day)
+              .set({ hour: 10 })
+              .toUTC()
+              .toISO(),
           },
         ],
       }),
@@ -830,9 +971,13 @@ describe("Calendar Ownership Contract", () => {
     await syncCalendarDayFromSessions("student-1", day, "America/Chicago");
     await syncCalendarDayFromSessions("student-1", day, "America/Chicago");
 
-    const planDay = mocks.client.store.tables.student_study_plan_days.find((row) => row.day_date === day);
+    const planDay = mocks.client.store.tables.student_study_plan_days.find(
+      (row) => row.day_date === day,
+    );
     expect(planDay.completed_minutes).toBe(60);
-    const events = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "block_completed");
+    const events = mocks.client.store.tables.system_event_logs.filter(
+      (row) => row.event_type === "block_completed",
+    );
     expect(events).toHaveLength(1);
     expect(events[0].details.day_date).toBe(day);
   });
@@ -841,15 +986,21 @@ describe("Calendar Ownership Contract", () => {
     const app = buildCalendarApp("student");
     const start = isoDatePlus(1);
 
-    const withoutExam = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 60 });
+    const withoutExam = await request(app)
+      .post("/api/calendar/generate")
+      .send({ start_date: start, days: 60 });
     expect(withoutExam.status).toBe(200);
     expect(withoutExam.body.generated.horizon_days).toBe(28);
 
     const examDate = isoDatePlus(5);
-    const profileUpdate = await request(app).put("/api/calendar/profile").send({ exam_date: examDate });
+    const profileUpdate = await request(app)
+      .put("/api/calendar/profile")
+      .send({ exam_date: examDate });
     expect(profileUpdate.status).toBe(200);
 
-    const withExam = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 28 });
+    const withExam = await request(app)
+      .post("/api/calendar/generate")
+      .send({ start_date: start, days: 28 });
     expect(withExam.status).toBe(200);
     expect(withExam.body.generated.end_date).toBe(examDate);
     expect(withExam.body.generated.horizon_days).toBe(5);
@@ -859,9 +1010,13 @@ describe("Calendar Ownership Contract", () => {
     const app = buildCalendarApp("student");
     const start = isoDatePlus(1);
     const end = isoDatePlus(2);
-    mocks.readErrors.student_question_attempts = { message: "attempts_source_failed" };
+    mocks.readErrors.student_question_attempts = {
+      message: "attempts_source_failed",
+    };
 
-    const response = await request(app).get(`/api/calendar/month?start=${start}&end=${end}`);
+    const response = await request(app).get(
+      `/api/calendar/month?start=${start}&end=${end}`,
+    );
 
     expect(response.status).toBe(500);
     expect(response.body.error).toContain("Failed to load attempts");
@@ -871,14 +1026,20 @@ describe("Calendar Ownership Contract", () => {
   it("fails closed for refresh when attempts source read fails without mutating planner state", async () => {
     const app = buildCalendarApp("student");
     const start = isoDatePlus(1);
-    mocks.readErrors.student_question_attempts = { message: "attempts_source_failed" };
+    mocks.readErrors.student_question_attempts = {
+      message: "attempts_source_failed",
+    };
 
-    const response = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+    const response = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .send({ start_date: start, days: 2 });
 
     expect(response.status).toBe(500);
     expect(response.body.error).toContain("Failed to load attempts");
     expect(mocks.client.store.writes.upsert).toBe(0);
-    const refreshedEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "plan_refreshed");
+    const refreshedEvents = mocks.client.store.tables.system_event_logs.filter(
+      (row) => row.event_type === "plan_refreshed",
+    );
     expect(refreshedEvents).toHaveLength(0);
   });
 
@@ -886,7 +1047,9 @@ describe("Calendar Ownership Contract", () => {
     const app = buildCalendarApp("student");
     const day = isoDatePlus(2);
 
-    const response = await request(app).post(`/api/calendar/day/${day}/reset-to-auto`).send({});
+    const response = await request(app)
+      .post(`/api/calendar/day/${day}/reset-to-auto`)
+      .send({});
 
     expect(response.status).toBe(404);
     expect(response.body.code).toBe("DAY_NOT_FOUND");
@@ -905,7 +1068,9 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 40,
             completed_minutes: 0,
             focus: [],
-            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 40 }],
+            tasks: [
+              { type: "practice", section: "Math", mode: "mixed", minutes: 40 },
+            ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
             is_user_override: false,
@@ -923,7 +1088,9 @@ describe("Calendar Ownership Contract", () => {
     );
     const app = buildCalendarApp("student");
 
-    const response = await request(app).post(`/api/calendar/day/${day}/reset-to-auto`).send({});
+    const response = await request(app)
+      .post(`/api/calendar/day/${day}/reset-to-auto`)
+      .send({});
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe("DAY_NOT_OVERRIDDEN");
@@ -943,7 +1110,14 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 50,
             completed_minutes: 0,
             focus: [{ section: "Math", weight: 1 }],
-            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            tasks: [
+              {
+                type: "practice",
+                section: "Math",
+                mode: "manual",
+                minutes: 50,
+              },
+            ],
             plan_version: 7,
             generated_at: new Date().toISOString(),
             is_user_override: true,
@@ -963,7 +1137,14 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 50,
             completed_minutes: 0,
             focus: [{ section: "Math", weight: 1 }],
-            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            tasks: [
+              {
+                type: "practice",
+                section: "Math",
+                mode: "manual",
+                minutes: 50,
+              },
+            ],
             plan_version: 4,
             generated_at: new Date().toISOString(),
             is_user_override: true,
@@ -981,15 +1162,23 @@ describe("Calendar Ownership Contract", () => {
     );
     const app = buildCalendarApp("student");
 
-    const reset = await request(app).post(`/api/calendar/day/${dayB}/reset-to-auto`).send({});
+    const reset = await request(app)
+      .post(`/api/calendar/day/${dayB}/reset-to-auto`)
+      .send({});
     expect(reset.status).toBe(200);
     expect(reset.body.day.day_date).toBe(dayB);
     expect(reset.body.day.is_user_override).toBe(false);
 
-    const month = await request(app).get(`/api/calendar/month?start=${dayA}&end=${dayB}`);
+    const month = await request(app).get(
+      `/api/calendar/month?start=${dayA}&end=${dayB}`,
+    );
     expect(month.status).toBe(200);
-    const persistedDayA = month.body.days.find((day: any) => day.day_date === dayA);
-    const persistedDayB = month.body.days.find((day: any) => day.day_date === dayB);
+    const persistedDayA = month.body.days.find(
+      (day: any) => day.day_date === dayA,
+    );
+    const persistedDayB = month.body.days.find(
+      (day: any) => day.day_date === dayB,
+    );
     expect(persistedDayA.is_user_override).toBe(true);
     expect(persistedDayB.is_user_override).toBe(false);
   });
@@ -1006,7 +1195,9 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 30,
             completed_minutes: 0,
             focus: [],
-            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 30 }],
+            tasks: [
+              { type: "practice", section: "Math", mode: "mixed", minutes: 30 },
+            ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
             is_user_override: false,
@@ -1045,11 +1236,15 @@ describe("Calendar Ownership Contract", () => {
     );
     const app = buildCalendarApp("student");
 
-    const response = await request(app).patch(`/api/calendar/day/${day}/tasks/task-1`).send({ status: "done" });
+    const response = await request(app)
+      .patch(`/api/calendar/day/${day}/tasks/task-1`)
+      .send({ status: "done" });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe("INVALID_TASK_STATUS");
-    const completionEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "block_completed");
+    const completionEvents = mocks.client.store.tables.system_event_logs.filter(
+      (row) => row.event_type === "block_completed",
+    );
     expect(completionEvents).toHaveLength(0);
   });
 
@@ -1065,7 +1260,9 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 30,
             completed_minutes: 0,
             focus: [],
-            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 30 }],
+            tasks: [
+              { type: "practice", section: "Math", mode: "mixed", minutes: 30 },
+            ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
             is_user_override: false,
@@ -1105,12 +1302,16 @@ describe("Calendar Ownership Contract", () => {
     const app = buildCalendarApp("student");
     const writesBefore = { ...mocks.client.store.writes };
 
-    const response = await request(app).patch(`/api/calendar/day/${day}/tasks/task-1`).send({ status: "completed" });
+    const response = await request(app)
+      .patch(`/api/calendar/day/${day}/tasks/task-1`)
+      .send({ status: "completed" });
 
     expect(response.status).toBe(200);
     expect(response.body.day.day_date).toBe(day);
     expect(mocks.client.store.writes.update).toBe(writesBefore.update);
-    const completionEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "block_completed");
+    const completionEvents = mocks.client.store.tables.system_event_logs.filter(
+      (row) => row.event_type === "block_completed",
+    );
     expect(completionEvents).toHaveLength(0);
   });
 });

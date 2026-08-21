@@ -78,17 +78,29 @@ interface StudentSummary {
   }>;
 }
 
+/**
+ * @spec [Parent AC#19 — guardian surfaces are domain grain only, never per-skill;
+ *   owner ruling 2026-08-20 RULE 1 / RULE 7, ruling 2026-08-21 Q7 (the card is NOT
+ *   clickable — a distinct non-interactive state)] | @implemented [2026-08-21]
+ *
+ * WHAT THIS TYPE USED TO CLAIM, AND WHY IT MATTERED.
+ *   It declared `skills: Array<{ attempts, correct, accuracyPercent, status }>`. The route
+ *   has returned `domains` since the AC#19 closure and has never returned `skills`, so
+ *   `weaknessData.skills.map(...)` was reading `.map` off `undefined` for any student who
+ *   actually had mastery rows — the card threw, and only a student with ZERO rows rendered
+ *   (the `count === 0` branch runs first). A hand-written client type that nothing checks
+ *   against the server is not a type, it is a wish; three of the four fields it named are
+ *   also on the RULE-4 never-exposed list.
+ */
 interface GuardianWeaknessResponse {
   ok: true;
   count: number;
-  skills: Array<{
-    section: string;
-    domain: string | null;
-    skill: string;
-    attempts: number;
-    correct: number;
-    accuracyPercent: number;
-    status: "not_started" | "weak" | "improving" | "proficient";
+  domains: Array<{
+    section: "M" | "RW";
+    domain: string;
+    levelKey: "unmeasured" | "L0" | "L1" | "L2" | "L3" | "L4";
+    level: number | null;
+    displayName: string;
   }>;
 }
 
@@ -138,12 +150,6 @@ export default function GuardianDashboard() {
     string | null
   >(null);
 
-  const formatStatus = (
-    status: GuardianWeaknessResponse["skills"][number]["status"],
-  ) => {
-    return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  };
-
   const {
     data: studentsData,
     isLoading: studentsLoading,
@@ -191,7 +197,9 @@ export default function GuardianDashboard() {
     queryKey: ["guardian-weaknesses", selectedStudentId],
     queryFn: async () => {
       const res = await csrfFetch(
-        `/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`,
+        // No `minAttempts`: the evidence bar belongs to the mastery formula, not to a
+        // caller, and the server stopped accepting it when the weakest-skills fix landed.
+        `/api/guardian/weaknesses/${selectedStudentId}`,
         { credentials: "include" },
       );
       if (!res.ok) {
@@ -202,6 +210,19 @@ export default function GuardianDashboard() {
     },
     enabled: !!selectedStudentId,
   });
+
+  /**
+   * A SUCCESSFUL response whose `domains` is not an array is a contract violation, not an
+   * empty result — so it renders as a recoverable error rather than as "this student has
+   * no mastery yet". This is the same distinction the server makes (a failed read throws
+   * and answers 500; a genuinely empty catalog answers 200 with an explicit flag), carried
+   * through to the last surface that could blur it. The previous code read
+   * `weaknessData.skills.map(...)` off a key the route never sends, which threw and took
+   * the whole dashboard down.
+   */
+  const weaknessDomains = Array.isArray(weaknessData?.domains)
+    ? weaknessData.domains
+    : null;
 
   const {
     data: guardianExamHistoryData,
@@ -767,11 +788,11 @@ export default function GuardianDashboard() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <CardTitle className="text-[#0F2E48]">
-                        Weakest Skills (Live)
+                        Domain Mastery
                       </CardTitle>
                       <CardDescription>
-                        Runtime-backed weaknesses from
-                        `/api/guardian/weaknesses/:studentId`.
+                        Where this student&apos;s answers place them in each
+                        domain. Guardian surfaces are domain-level only.
                       </CardDescription>
                     </div>
                     <Button
@@ -786,9 +807,9 @@ export default function GuardianDashboard() {
                 <CardContent>
                   {weaknessLoading ? (
                     <div className="text-center py-8 text-[#0F2E48]/60">
-                      Loading weaknesses...
+                      Loading domain mastery...
                     </div>
-                  ) : weaknessError ? (
+                  ) : weaknessError || (weaknessData && !weaknessDomains) ? (
                     <div className="py-6">
                       <RecoveryNotice
                         title="We couldn't load weakness data."
@@ -796,34 +817,36 @@ export default function GuardianDashboard() {
                         onRetry={() => void refetchWeakness()}
                       />
                     </div>
-                  ) : !weaknessData || weaknessData.count === 0 ? (
+                  ) : !weaknessDomains || weaknessDomains.length === 0 ? (
                     <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
-                      No weakness rows are currently available for this student.
+                      No domain mastery is available for this student yet.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {weaknessData.skills.map((skill) => (
+                    /*
+                     * Owner ruling 2026-08-21 Q7: these cards are NOT clickable — not
+                     * disabled, not clickable-and-denied. A card that looks interactive and
+                     * then refuses is worse than one that never invites the click, so this
+                     * is a plain <div> list with no button, no link, no cursor affordance
+                     * and no drill-down target. There is no guardian skill endpoint to open
+                     * (RULE 7), so an affordance here could only ever lead to a refusal.
+                     */
+                    <div
+                      className="space-y-3"
+                      data-testid="guardian-domain-list"
+                    >
+                      {weaknessDomains.map((node) => (
                         <div
-                          key={`${skill.section}-${skill.skill}`}
+                          key={`${node.section}-${node.domain}`}
                           className="rounded-lg border border-border/60 bg-secondary/35 p-3"
+                          data-testid="guardian-domain-row"
                         >
-                          <div className="flex items-center justify-between gap-3 mb-1">
+                          <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-medium text-[#0F2E48]">
-                              {skill.skill}
+                              {node.domain}
                             </p>
                             <p className="text-sm font-semibold text-[#0F2E48]">
-                              {formatStatus(skill.status)}
+                              {node.displayName}
                             </p>
-                          </div>
-                          <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
-                            <span>
-                              {skill.section} ·{" "}
-                              {skill.domain || "Unspecified domain"}
-                            </span>
-                            <span>
-                              {skill.correct}/{skill.attempts} correct •{" "}
-                              {skill.accuracyPercent}% accuracy
-                            </span>
                           </div>
                         </div>
                       ))}

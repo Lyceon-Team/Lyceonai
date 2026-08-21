@@ -21,7 +21,6 @@ import {
   buildDomainLevelView,
   fetchDomainMasteryRows,
 } from "../../apps/api/src/services/mastery-read";
-import { masteryTierFromLevel } from "../../packages/shared/src/mastery";
 import { loadMasteryLevels } from "../../apps/api/src/services/mastery-levels-read";
 import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
 import {
@@ -888,8 +887,7 @@ router.get(
 
       // Guardians get the SAME domain vocabulary as the student (owner ruling
       // 2026-08-20 RULE 7: Doc 05 governs, domain grain only) and no drill-down: no
-      // per-skill endpoint exists for a guardian to call. `tier` is emitted alongside
-      // the level for one transitional PR; PR D removes it.
+      // per-skill endpoint exists for a guardian to call.
       const parsedSection = masterySectionSchema.optional().safeParse(section);
       if (!parsedSection.success) {
         return res.status(400).json({
@@ -914,15 +912,7 @@ router.get(
         labels,
         parsedSection.data ? { section: parsedSection.data } : {},
       );
-      const domains = levelled.map((node) => ({
-        section: node.section,
-        domain: node.domain,
-        levelKey: node.levelKey,
-        level: node.level,
-        displayName: node.displayName,
-        tier: masteryTierFromLevel(node.level),
-        masteryLevel: node.level,
-      }));
+      const domains = levelled;
       logger.info(
         "GUARDIAN",
         "weaknesses_view",

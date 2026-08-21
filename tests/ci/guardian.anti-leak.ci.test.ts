@@ -1,56 +1,71 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Request, Response } from 'express';
-import { requireGuardianEntitlement } from '../../server/middleware/guardian-entitlement';
-import * as accountLib from '../../server/lib/account';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Request, Response } from "express";
+import { requireGuardianEntitlement } from "../../server/middleware/guardian-entitlement";
+import * as accountLib from "../../server/lib/account";
 
-vi.mock('../../server/lib/account', () => ({
+vi.mock("../../server/lib/account", () => ({
   resolveLinkedPairPremiumAccessForGuardian: vi.fn(),
 }));
 
-vi.mock('../../server/logger', () => ({
+vi.mock("../../server/logger", () => ({
   logger: {
     warn: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
-  }
+  },
 }));
 
 type GuardianAccessMock = {
-  role: 'guardian';
+  role: "guardian";
   hasPremiumAccess: boolean;
   hasActiveLink: boolean;
-  premiumSource: 'student' | 'guardian' | 'both' | 'none';
+  premiumSource: "student" | "guardian" | "both" | "none";
   reason: string;
   studentUserId: string | null;
   guardianUserId: string | null;
   studentAccountId: string | null;
   guardianAccountId: string | null;
-  studentEntitlementStatus: 'active' | 'trialing' | 'past_due' | 'canceled' | 'inactive' | 'missing';
-  guardianEntitlementStatus: 'active' | 'trialing' | 'past_due' | 'canceled' | 'inactive' | 'missing';
+  studentEntitlementStatus:
+    | "active"
+    | "trialing"
+    | "past_due"
+    | "canceled"
+    | "inactive"
+    | "missing";
+  guardianEntitlementStatus:
+    | "active"
+    | "trialing"
+    | "past_due"
+    | "canceled"
+    | "inactive"
+    | "missing";
   studentEntitlementExpired: boolean;
   guardianEntitlementExpired: boolean;
 };
 
-function buildAccess(overrides: Partial<GuardianAccessMock> = {}): GuardianAccessMock {
+function buildAccess(
+  overrides: Partial<GuardianAccessMock> = {},
+): GuardianAccessMock {
   return {
-    role: 'guardian',
+    role: "guardian",
     hasPremiumAccess: false,
     hasActiveLink: true,
-    premiumSource: 'none',
-    reason: 'Linked student account does not have an active premium entitlement.',
-    studentUserId: 'student-456',
-    guardianUserId: 'guardian-123',
-    studentAccountId: 'acc-789',
-    guardianAccountId: 'acc-guardian-123',
-    studentEntitlementStatus: 'inactive',
-    guardianEntitlementStatus: 'inactive',
+    premiumSource: "none",
+    reason:
+      "Linked student account does not have an active premium entitlement.",
+    studentUserId: "student-456",
+    guardianUserId: "guardian-123",
+    studentAccountId: "acc-789",
+    guardianAccountId: "acc-guardian-123",
+    studentEntitlementStatus: "inactive",
+    guardianEntitlementStatus: "inactive",
     studentEntitlementExpired: false,
     guardianEntitlementExpired: false,
     ...overrides,
   };
 }
 
-describe('Guardian Entitlement Anti-Leak Tests', () => {
+describe("Guardian Entitlement Anti-Leak Tests", () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
   let next: vi.Mock;
@@ -64,98 +79,124 @@ describe('Guardian Entitlement Anti-Leak Tests', () => {
     statusMock = vi.fn().mockReturnValue({ json: jsonMock });
 
     req = {
-      requestId: 'req-123',
+      requestId: "req-123",
       user: {
-        id: 'guardian-123',
-        role: 'guardian',
-        email: 'guardian@test.com'
+        id: "guardian-123",
+        role: "guardian",
+        email: "guardian@test.com",
       } as any,
       params: {
-        studentId: 'student-456'
-      }
+        studentId: "student-456",
+      },
     };
 
     res = {
       status: statusMock,
-      json: jsonMock
+      json: jsonMock,
     };
 
     next = vi.fn();
   });
 
-  it('DENIAL: Unlinked guardian (isGuardianLinkedToStudent = false)', async () => {
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValue(
-      buildAccess({ hasActiveLink: false, studentUserId: null, studentAccountId: null })
-    );
-
-    await requireGuardianEntitlement(req as Request, res as Response, next);
-
-    expect(statusMock).toHaveBeenCalledWith(403);
-    expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Guardian not linked to requested student',
-      code: 'NO_LINKED_STUDENT',
-    }));
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('DENIAL: Revoked link (guardian was linked, but status is now revoked)', async () => {
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValue(
-      buildAccess({ hasActiveLink: false, studentUserId: null, studentAccountId: null })
-    );
-
-    await requireGuardianEntitlement(req as Request, res as Response, next);
-
-    expect(statusMock).toHaveBeenCalledWith(403);
-    expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Guardian not linked to requested student',
-      code: 'NO_LINKED_STUDENT',
-    }));
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('DENIAL: Linked guardian + Inactive student entitlement', async () => {
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValue(
+  it("DENIAL: Unlinked guardian (isGuardianLinkedToStudent = false)", async () => {
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValue(
       buildAccess({
-        studentEntitlementStatus: 'canceled',
-        guardianEntitlementStatus: 'inactive',
-      })
+        hasActiveLink: false,
+        studentUserId: null,
+        studentAccountId: null,
+      }),
+    );
+
+    await requireGuardianEntitlement(req as Request, res as Response, next);
+
+    expect(statusMock).toHaveBeenCalledWith(403);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: "Guardian not linked to requested student",
+        code: "NO_LINKED_STUDENT",
+      }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("DENIAL: Revoked link (guardian was linked, but status is now revoked)", async () => {
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValue(
+      buildAccess({
+        hasActiveLink: false,
+        studentUserId: null,
+        studentAccountId: null,
+      }),
+    );
+
+    await requireGuardianEntitlement(req as Request, res as Response, next);
+
+    expect(statusMock).toHaveBeenCalledWith(403);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: "Guardian not linked to requested student",
+        code: "NO_LINKED_STUDENT",
+      }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("DENIAL: Linked guardian + Inactive student entitlement", async () => {
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValue(
+      buildAccess({
+        studentEntitlementStatus: "canceled",
+        guardianEntitlementStatus: "inactive",
+      }),
     );
 
     await requireGuardianEntitlement(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(402);
-    expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({
-      reason: 'subscription_canceled',
-      error: 'Subscription required'
-    }));
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "subscription_canceled",
+        error: "Subscription required",
+      }),
+    );
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('DENIAL: Guardian loses visibility when student entitlement expires', async () => {
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValue(
+  it("DENIAL: Guardian loses visibility when student entitlement expires", async () => {
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValue(
       buildAccess({
-        studentEntitlementStatus: 'active',
+        studentEntitlementStatus: "active",
         studentEntitlementExpired: true,
-      })
+      }),
     );
 
     await requireGuardianEntitlement(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(402);
-    expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({
-      reason: 'subscription_expired',
-      error: 'Subscription required'
-    }));
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "subscription_expired",
+        error: "Subscription required",
+      }),
+    );
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('DENIAL: Guardian loses visibility immediately after unlink', async () => {
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValueOnce(
+  it("DENIAL: Guardian loses visibility immediately after unlink", async () => {
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValueOnce(
       buildAccess({
         hasPremiumAccess: true,
-        premiumSource: 'student',
-        studentEntitlementStatus: 'active',
-      })
+        premiumSource: "student",
+        studentEntitlementStatus: "active",
+      }),
     );
 
     await requireGuardianEntitlement(req as Request, res as Response, next);
@@ -163,20 +204,30 @@ describe('Guardian Entitlement Anti-Leak Tests', () => {
 
     const secondJsonMock = vi.fn();
     const secondStatusMock = vi.fn().mockReturnValue({ json: secondJsonMock });
-    const secondRes = { status: secondStatusMock, json: secondJsonMock } as unknown as Response;
+    const secondRes = {
+      status: secondStatusMock,
+      json: secondJsonMock,
+    } as unknown as Response;
     const secondNext = vi.fn();
 
-    vi.mocked(accountLib.resolveLinkedPairPremiumAccessForGuardian).mockResolvedValueOnce(
-      buildAccess({ hasActiveLink: false, studentUserId: null, studentAccountId: null })
+    vi.mocked(
+      accountLib.resolveLinkedPairPremiumAccessForGuardian,
+    ).mockResolvedValueOnce(
+      buildAccess({
+        hasActiveLink: false,
+        studentUserId: null,
+        studentAccountId: null,
+      }),
     );
 
     await requireGuardianEntitlement(req as Request, secondRes, secondNext);
 
     expect(secondStatusMock).toHaveBeenCalledWith(403);
-    expect(secondJsonMock).toHaveBeenCalledWith(expect.objectContaining({
-      code: 'NO_LINKED_STUDENT',
-    }));
+    expect(secondJsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "NO_LINKED_STUDENT",
+      }),
+    );
     expect(secondNext).not.toHaveBeenCalled();
   });
 });
-

@@ -10,13 +10,11 @@ vi.mock("../../apps/api/src/services/studentMastery", () => ({
   getWeakestSkills: masteryMocks.getWeakestSkills,
 }));
 
-vi.mock("../../packages/shared/src/mastery", () => ({
-  masteryTierFromLevel: (level: number | null) => {
-    if (level === null) return "not_started";
-    if (level >= 3) return "proficient";
-    if (level === 2) return "improving";
-    return "weak";
-  },
+import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
+
+vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
+  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
+  resetMasteryLevelsCache: vi.fn(),
 }));
 
 describe("Weakness runtime contract", () => {
@@ -58,7 +56,7 @@ describe("Weakness runtime contract", () => {
     expect(res.body).toEqual({ error: "Failed to get weakness data" });
   });
 
-  it("preserves success response for skills under healthy source read (tier-only)", async () => {
+  it("preserves success response for skills under healthy source read (level-only)", async () => {
     masteryMocks.getWeakestSkills.mockResolvedValueOnce([
       {
         section: "M",
@@ -85,8 +83,9 @@ describe("Weakness runtime contract", () => {
           section: "M",
           domain: "Algebra",
           skill: "Linear Equations in One Variable",
-          tier: "weak",
-          masteryLevel: 1,
+          levelKey: "L1",
+          level: 1,
+          displayName: "Building",
         }),
       ],
     });

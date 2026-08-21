@@ -1,5 +1,5 @@
 import { getWeakestSkills } from "./studentMastery";
-import { masteryTierFromLevel } from "../../../../packages/shared/src/mastery";
+import { loadMasteryLevels } from "./mastery-levels-read";
 
 export interface BuildWeaknessSkillsViewInput {
   userId: string;
@@ -8,10 +8,14 @@ export interface BuildWeaknessSkillsViewInput {
 }
 
 /**
- * @spec [Doc 05A §7.4 + AC#20 — tier-only weakness view, mastery_score stripped at serialization]
- * | @implemented [2026-06-23]
- * plain English: returns weakest skills as tier-only DTOs. The service fetch keeps mastery_score
- * for server-side consumers (adaptiveSelector); this view strips it before client serialization.
+ * @spec [Doc 05A §7.4 + AC#20 — mastery_score stripped at serialization; owner ruling
+ *   2026-08-20 RULE 1 (the six level names)] | @implemented [2026-08-21]
+ * plain English: returns weakest skills as level-only DTOs — the level and its display
+ * name, nothing about how the level was reached. The service fetch keeps mastery_score for
+ * server-side consumers (adaptiveSelector); this view strips it before client serialization.
+ *
+ * `tier` is gone with the rest of the four-tier vocabulary; the names come from the
+ * `mastery_levels` table rather than from a switch statement here.
  */
 export async function buildWeaknessSkillsView(
   input: BuildWeaknessSkillsViewInput,
@@ -24,13 +28,18 @@ export async function buildWeaknessSkillsView(
     limit: input.limit,
   });
 
-  const safeSkills = skills.map((s) => ({
-    section: s.section,
-    domain: s.domain,
-    skill: s.skill,
-    tier: masteryTierFromLevel(s.mastery_level),
-    masteryLevel: s.mastery_level,
-  }));
+  const labels = await loadMasteryLevels();
+  const safeSkills = skills.map((s) => {
+    const label = labels.forLevel(s.mastery_level);
+    return {
+      section: s.section,
+      domain: s.domain,
+      skill: s.skill,
+      levelKey: label.levelKey,
+      level: label.level,
+      displayName: label.displayName,
+    };
+  });
 
   return {
     ok: true as const,

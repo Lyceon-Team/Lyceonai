@@ -1,8 +1,4 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import {
-  masteryTierFromLevel,
-  type MasteryTier,
-} from "../../../../packages/shared/src/mastery";
 import type {
   MasteryDomainNode,
   MasterySection,
@@ -37,19 +33,6 @@ export interface SkillWeakness {
   mastery_score: number;
   /** Non-null by construction: the formula sets score and level together. */
   mastery_level: number;
-}
-
-// ---------------------------------------------------------------------------
-// Tier-only summary (rebuilt — the old MasterySummary used non-existent columns)
-// ---------------------------------------------------------------------------
-
-export interface MasterySummary {
-  section: string;
-  domains: Array<{
-    domain: string;
-    tier: MasteryTier;
-    masteryLevel: number | null;
-  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,42 +193,6 @@ export async function fetchWeakestSkills(
       mastery_level: Number(level),
     };
   });
-}
-
-// ---------------------------------------------------------------------------
-// Tier-only summary builder
-// ---------------------------------------------------------------------------
-
-/**
- * @spec [Doc 05B §5.4 — domain mastery_level is the canonical tier source] | @implemented [2026-06-23]
- * plain English: builds a section→domain tier summary from the domain mastery rows. The
- * prior version aggregated non-existent `attempts/correct/accuracy` columns from skill rows
- * (never worked). This version reads the domain's own canonical mastery_level.
- */
-export function buildMasterySummaryFromRows(
-  domainRows: DomainMasteryRow[],
-): MasterySummary[] {
-  const sectionMap = new Map<
-    string,
-    Array<{ domain: string; tier: MasteryTier; masteryLevel: number | null }>
-  >();
-
-  for (const row of domainRows) {
-    if (!sectionMap.has(row.section)) {
-      sectionMap.set(row.section, []);
-    }
-    sectionMap.get(row.section)!.push({
-      domain: row.domain,
-      tier: masteryTierFromLevel(row.mastery_level),
-      masteryLevel: row.mastery_level,
-    });
-  }
-
-  const result: MasterySummary[] = [];
-  for (const [sec, domains] of sectionMap) {
-    result.push({ section: sec, domains });
-  }
-  return result;
 }
 
 // ---------------------------------------------------------------------------

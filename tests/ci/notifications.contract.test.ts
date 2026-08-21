@@ -19,9 +19,16 @@ class FakeQueryBuilder {
   private pendingUpsert: { row: Row; onConflict: string[] } | null = null;
   private head = false;
 
-  constructor(private readonly store: FakeStore, private readonly table: TableName, private readonly readError: { message: string } | null) {}
+  constructor(
+    private readonly store: FakeStore,
+    private readonly table: TableName,
+    private readonly readError: { message: string } | null,
+  ) {}
 
-  select(_columns?: string, options?: { count?: "exact"; head?: boolean }): this {
+  select(
+    _columns?: string,
+    options?: { count?: "exact"; head?: boolean },
+  ): this {
     this.head = Boolean(options?.head);
     return this;
   }
@@ -32,7 +39,9 @@ class FakeQueryBuilder {
   }
 
   is(column: string, value: any): this {
-    this.filters.push((row) => (value === null ? row[column] === null : row[column] === value));
+    this.filters.push((row) =>
+      value === null ? row[column] === null : row[column] === value,
+    );
     return this;
   }
 
@@ -44,7 +53,7 @@ class FakeQueryBuilder {
         const match = rule.match(/^expires_at\.gte\.(.+)$/);
         if (match) return row.expires_at == null || row.expires_at >= match[1];
         return false;
-      })
+      }),
     );
     return this;
   }
@@ -65,7 +74,9 @@ class FakeQueryBuilder {
   }
 
   insert(values: Row | Row[]): this {
-    this.pendingInsert = Array.isArray(values) ? values.map((row) => ({ ...row })) : [{ ...values }];
+    this.pendingInsert = Array.isArray(values)
+      ? values.map((row) => ({ ...row }))
+      : [{ ...values }];
     return this;
   }
 
@@ -73,7 +84,10 @@ class FakeQueryBuilder {
     const row = Array.isArray(values) ? values[0] : values;
     this.pendingUpsert = {
       row: { ...row },
-      onConflict: (options?.onConflict ?? "id").split(",").map((part) => part.trim()).filter(Boolean),
+      onConflict: (options?.onConflict ?? "id")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
     };
     return this;
   }
@@ -87,15 +101,28 @@ class FakeQueryBuilder {
   async single(): Promise<{ data: Row | null; error: any }> {
     if (this.readError) return { data: null, error: this.readError };
     const rows = this.computeRows();
-    if (rows.length === 0) return { data: null, error: { code: "PGRST116", message: "No rows found" } };
+    if (rows.length === 0)
+      return {
+        data: null,
+        error: { code: "PGRST116", message: "No rows found" },
+      };
     return { data: rows[0], error: null };
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: Row[]; error: any; count?: number }) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?:
+      | ((value: {
+          data: Row[];
+          error: any;
+          count?: number;
+        }) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve(this.execute()).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve(this.execute()).then(
+      onfulfilled ?? undefined,
+      onrejected ?? undefined,
+    );
   }
 
   private execute(): { data: Row[]; error: any; count?: number } {
@@ -116,7 +143,9 @@ class FakeQueryBuilder {
     if (this.pendingUpsert) {
       const tableRows = this.store.tables[this.table];
       const { row, onConflict } = this.pendingUpsert;
-      const existingIndex = tableRows.findIndex((existing) => onConflict.every((column) => existing[column] === row[column]));
+      const existingIndex = tableRows.findIndex((existing) =>
+        onConflict.every((column) => existing[column] === row[column]),
+      );
       const now = new Date().toISOString();
       const nextRow = {
         id: row.id ?? `${this.table}-${tableRows.length + 1}`,
@@ -166,7 +195,13 @@ class FakeQueryBuilder {
         if (a[sort.column] === b[sort.column]) return 0;
         if (a[sort.column] == null) return sort.ascending ? -1 : 1;
         if (b[sort.column] == null) return sort.ascending ? 1 : -1;
-        return a[sort.column] > b[sort.column] ? (sort.ascending ? 1 : -1) : sort.ascending ? -1 : 1;
+        return a[sort.column] > b[sort.column]
+          ? sort.ascending
+            ? 1
+            : -1
+          : sort.ascending
+            ? -1
+            : 1;
       });
     }
     if (this.rangeWindow) {
@@ -191,7 +226,9 @@ class FakeSupabaseClient {
     this.store = {
       tables: {
         notifications: seed?.notifications ? [...seed.notifications] : [],
-        user_notification_preferences: seed?.user_notification_preferences ? [...seed.user_notification_preferences] : [],
+        user_notification_preferences: seed?.user_notification_preferences
+          ? [...seed.user_notification_preferences]
+          : [],
       },
     };
   }
@@ -200,7 +237,11 @@ class FakeSupabaseClient {
     if (!Object.prototype.hasOwnProperty.call(this.store.tables, table)) {
       throw new Error(`Unknown table: ${table}`);
     }
-    return new FakeQueryBuilder(this.store, table as TableName, mocks.readErrors[table as TableName] ?? null);
+    return new FakeQueryBuilder(
+      this.store,
+      table as TableName,
+      mocks.readErrors[table as TableName] ?? null,
+    );
   }
 }
 
@@ -343,12 +384,22 @@ describe("Notification contract", () => {
 
   it("marks a notification read with persisted read_at", async () => {
     const app = buildApp();
-    const res = await request(app).patch("/api/notifications/notif-1/read").send({});
+    const res = await request(app)
+      .patch("/api/notifications/notif-1/read")
+      .send({});
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
-    expect(mocks.client?.store.tables.notifications.find((row) => row.id === "notif-1")?.is_read).toBe(true);
-    expect(mocks.client?.store.tables.notifications.find((row) => row.id === "notif-1")?.read_at).toEqual(expect.any(String));
+    expect(
+      mocks.client?.store.tables.notifications.find(
+        (row) => row.id === "notif-1",
+      )?.is_read,
+    ).toBe(true);
+    expect(
+      mocks.client?.store.tables.notifications.find(
+        (row) => row.id === "notif-1",
+      )?.read_at,
+    ).toEqual(expect.any(String));
   });
 
   it("reads and updates persisted notification preferences", async () => {
@@ -436,9 +487,8 @@ describe("Notification contract", () => {
     expect(result.delivered).toBe(2);
     expect(result.suppressed).toBe(0);
     expect(mocks.client.store.tables.notifications).toHaveLength(2);
-    expect(mocks.client.store.tables.notifications.map((row) => row.user_id)).toEqual([
-      "student-1",
-      "student-2",
-    ]);
+    expect(
+      mocks.client.store.tables.notifications.map((row) => row.user_id),
+    ).toEqual(["student-1", "student-2"]);
   });
 });

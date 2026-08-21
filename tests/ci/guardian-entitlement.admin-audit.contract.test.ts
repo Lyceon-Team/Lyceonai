@@ -21,7 +21,13 @@ function mockRes(): Response {
 }
 
 function reqOf(over: Record<string, unknown>): Request {
-  return { params: {}, path: "/x", method: "GET", requestId: "r", ...over } as unknown as Request;
+  return {
+    params: {},
+    path: "/x",
+    method: "GET",
+    requestId: "r",
+    ...over,
+  } as unknown as Request;
 }
 
 describe("requireGuardianEntitlement — admin audit (Doc 01 V6 §543 / §1229 / §561)", () => {
@@ -47,7 +53,7 @@ describe("requireGuardianEntitlement — admin audit (Doc 01 V6 §543 / §1229 /
       "admin_surface_access",
       expect.any(String),
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
 
     // Locks the audit emission contract per §1229/§272/§561 + §12.1.
@@ -61,15 +67,25 @@ describe("requireGuardianEntitlement — admin audit (Doc 01 V6 §543 / §1229 /
     // Both surfaces are locked because both surfaces emit; adding a field
     // to either surface in a future change must update this test, by
     // design.
-    const dataArg = vi.mocked(logger.info).mock.calls[0][3] as Record<string, unknown>;
-    expect(Object.keys(dataArg).sort()).toEqual(["method", "path", "studentId"]);
+    const dataArg = vi.mocked(logger.info).mock.calls[0][3] as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(dataArg).sort()).toEqual([
+      "method",
+      "path",
+      "studentId",
+    ]);
     expect(dataArg).toEqual({
       method: "GET",
       path: "/api/guardian/summary",
       studentId: "stu-9",
     });
 
-    const contextArg = vi.mocked(logger.info).mock.calls[0][4] as Record<string, unknown>;
+    const contextArg = vi.mocked(logger.info).mock.calls[0][4] as Record<
+      string,
+      unknown
+    >;
     expect(Object.keys(contextArg).sort()).toEqual(["requestId", "userId"]);
     expect(contextArg).toEqual({
       userId: "admin-1",
