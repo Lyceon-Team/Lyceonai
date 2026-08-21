@@ -24,12 +24,17 @@ FAILURES=0
 restore() {
   git checkout -- "$TARGET" 2>/dev/null || true
 }
-trap restore EXIT INT TERM
 
 if ! git diff --quiet -- "$TARGET"; then
   echo "FAIL: $TARGET has uncommitted changes; refusing to stage mutations over them." >&2
   exit 1
 fi
+
+# The trap is armed HERE, not beside the function. `restore` runs `git checkout --`, so
+# arming it before the clean-tree check meant the early "refusing to stage over your
+# changes" exit reverted exactly the uncommitted work it claimed to be protecting. A guard
+# that destroys what it guards is worse than no guard.
+trap restore EXIT INT TERM
 
 # --- baseline: the committed tree must be GREEN, or every case below is meaningless --
 if ! node "$GATE" >/dev/null 2>&1; then

@@ -16,17 +16,26 @@ cd "$REPO_ROOT"
 
 GATE="scripts/ci/retired-endpoints-gate.mjs"
 CALLER_TARGET="client/src/lib/masteryApi.ts"
+# A directory whose name carries non-ASCII bytes, mirroring the postman collection's emoji
+# folders. `git ls-files` C-QUOTES such paths, which is what the gate used to choke on.
+NONASCII_DIR="scripts/ci/__selftest_nonascii__/🧠 Mastery"
 FAILURES=0
 
 restore() {
   git checkout -- "$CALLER_TARGET" "$GATE" 2>/dev/null || true
+  rm -rf "$NONASCII_DIR"
 }
-trap restore EXIT INT TERM
 
 if ! git diff --quiet -- "$CALLER_TARGET" "$GATE"; then
   echo "FAIL: the self-test's targets have uncommitted changes; refusing to stage over them." >&2
   exit 1
 fi
+
+# The trap is armed HERE, not at declaration. `restore` runs `git checkout --`, so arming it
+# before the clean-tree check meant the early "refusing to stage over your changes" exit
+# reverted exactly the uncommitted work it claimed to be protecting. A guard that destroys
+# what it guards is worse than no guard.
+trap restore EXIT INT TERM
 
 if ! node "$GATE" >/dev/null 2>&1; then
   echo "FAIL: the gate is already red on the committed tree — no mutation below proves anything." >&2
@@ -93,6 +102,37 @@ else
   fi
 fi
 restore
+
+# 4. THE REGRESSION THIS GATE SHIPPED WITH. `git ls-files` writes C-quoted paths for any
+#    entry containing non-ASCII bytes. The gate used to split on newline and then drop any
+#    line that failed existsSync — and the quoted form never exists on disk, so every
+#    non-ASCII path was discarded in silence. 81 of 830 files went unscanned while the gate
+#    reported "clean", hiding a live Postman request that called a retired endpoint.
+#    A violation at such a path MUST be found. The file is staged in the INDEX, because
+#    `git ls-files` reads the index, not the working tree.
+mkdir -p "$NONASCII_DIR"
+printf 'url: "{{baseUrl}}/api/me/mastery/summary"\n' > "$NONASCII_DIR/probe.yaml"
+git add --intent-to-add "$NONASCII_DIR/probe.yaml" >/dev/null 2>&1
+if ! git ls-files --error-unmatch "$NONASCII_DIR/probe.yaml" >/dev/null 2>&1; then
+  echo "FAIL  non-ASCII path: could not stage the fixture — the case is stale, not passing." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  na_out="$(node "$GATE" 2>&1)"
+  na_rc=$?
+  if [ "$na_rc" -eq 0 ]; then
+    echo "FAIL  non-ASCII path: gate exited 0. A quoted path is being dropped in silence — the" >&2
+    echo "      scan is under-counting and reporting clean, which is a false green." >&2
+    FAILURES=$((FAILURES + 1))
+  elif ! printf '%s' "$na_out" | grep -q "probe.yaml"; then
+    echo "FAIL  non-ASCII path: gate went red but never named the file under the non-ASCII dir." >&2
+    printf '%s\n' "$na_out" >&2
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok  violation at a non-ASCII path -> rc=$na_rc, found and named (not silently dropped)"
+  fi
+fi
+git rm --cached -q "$NONASCII_DIR/probe.yaml" >/dev/null 2>&1 || true
+rm -rf "scripts/ci/__selftest_nonascii__"
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "" >&2
