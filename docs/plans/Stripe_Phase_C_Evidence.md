@@ -380,3 +380,69 @@ Dangling-reference sweep over live code and docs returns zero. Remaining hits ar
 assertions that guard the fix (`stripe-webhook-mount.contract.test.ts`,
 `debug.production.ci.test.ts`, `webhook-path.ts` header) and one dated 2026-06-27 audit snapshot
 under `audit-out/`.
+
+---
+
+## 9. `.env.example` parity check and Replit sweep — 2026-08-20
+
+### 9.1 `server/.env.example` — STILL PERMISSION-BLOCKED, not worked around
+
+Re-tested this session: both `Read` and `Bash` are denied on `.env*` paths. The five stale lines
+remain and are the owner's to remove:
+
+```
+STRIPE_ENV=
+STRIPE_PUBLISHABLE_KEY_TEST=
+STRIPE_PUBLISHABLE_KEY_LIVE=
+STRIPE_SECRET_KEY_TEST=
+STRIPE_SECRET_KEY_LIVE=
+```
+
+### 9.2 The check that makes it self-correcting
+
+`tests/ci/env-example-stripe-parity.contract.test.ts`, backed by
+`STRIPE_ENV_VAR_NAMES` in `packages/shared/src/env.ts` — derived from the schema shape, so there is
+one list rather than two to keep in step. The six Stripe variables the code reads were added to the
+canonical Zod schema, each with its call site cited.
+
+**⚠️ This check is RED at HEAD, deliberately.** It fails on exactly the five names above and names
+them in the failure message. That is the check doing its job on a live defect, not a broken gate.
+`test:ci` → `3 failed | 616 passed`. **One owner edit — deleting those five lines — turns it green.**
+No `ci-known-gaps` entry was added: that would be hiding it.
+
+Both directions were verified by planting a mismatch:
+
+```
+PLANT  schema key STRIPE_PLANTED_NOT_IN_FILE (absent from the file) → 4 failed (4)
+       failure names the missing variable
+REVERT → 3 failed | 1 passed  (the three pre-existing real failures)
+```
+
+### 9.3 Scope of the check — measured, not assumed
+
+Whole-file bidirectional parity was requested and is the right end state. It is **not achievable in
+this session**, for two measured reasons rather than one:
+
+- `server/.env.example` declares **83** names; the canonical schema declares **14**. Whole-file parity
+  requires enumerating all 83 in `packages/shared/src/env.ts`, whose own header carries a **HARD GATE**
+  against expanding it before the Doc 06A/06B reconciliation. Breaching that gate to satisfy this
+  check trades one silent drift for another.
+- Measured delta today: **43 names in the file are read nowhere in source; 52 names read by source are
+  absent from the file.** Closing either direction needs edits to the blocked file.
+
+A "is this name read anywhere" reachability check was built, measured, and **rejected**: it
+false-positives on `STRIPE_PRICE_PARENT_*`, which *are* read — dynamically, through the
+`PRICE_ENV_VAR` record in `server/lib/stripe/client.ts`. Static analysis cannot see a computed
+`process.env[name]` lookup, so that check would fail on correct code. Recorded for the env workstream.
+
+### 9.4 Deletion manifest additions
+
+| Deleted | Surface | Why |
+|---|---|---|
+| `stripe-replit-sync@1.0.0` (`package.json:122` + lockfile) | billing | *"Stripe Sync Engine to sync Stripe data to Postgres"* — zero imports. The provenance of SCL-050's 29-table `stripe` schema. Removing it does not drop the schema (still D-3, owner-applied) but stops anything recreating it. `pnpm install --frozen-lockfile` re-verified clean. |
+| `ops/env/REPLIT_ENV_KEYS_2026-01-17.txt` (+ the now-empty `ops/env/`) | secrets | Owner-approved. Verified names-only: 0 `NAME=VALUE` lines, 0 credential-pattern matches. |
+
+Full sweep, including everything reported-not-deleted, is in `docs/plans/Replit_Remnant_Sweep.md`.
+**Credential sweep result: zero real credential values in the working tree** — the four
+`postgres://…@…` matches are all placeholders or shell interpolation. No rotation indicated. That
+finding covers the working tree only; git history was not searched.
