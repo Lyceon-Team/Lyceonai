@@ -25,7 +25,11 @@ import {
   type StudyPlanDay,
   type StudyProfile,
 } from "@/lib/calendarApi";
-import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
+import {
+  fetchScoreEstimate,
+  getConfidenceLabel,
+  type EstimateResponse,
+} from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
@@ -435,7 +439,8 @@ export default function LyceonDashboard() {
                     {estimateData.estimate.range.high}
                   </p>
                   <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-primary-foreground/15 text-primary-foreground">
-                    {estimateData.estimate.confidenceBand} estimate confidence
+                    {getConfidenceLabel(estimateData.estimate.confidence)}{" "}
+                    estimate confidence
                   </div>
                   {/* Omitted when the server could not establish the count. A
                       figure on a student-facing surface is a claim; an

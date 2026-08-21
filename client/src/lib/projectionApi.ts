@@ -1,14 +1,5 @@
 import { apiRequest } from "./queryClient";
 
-/**
- * DRIFT NOTE: `confidenceBand` is a STRING, not a number, and that is deliberate —
- * owner ruling 2026-08-20 RULE 9. The server bands the 0–1 confidence figure before
- * serialization (packages/shared/src/projection-confidence.ts) so the float never
- * reaches a client that could render, chart, or compare it. Do not reintroduce a
- * numeric `confidence` field here; there is nothing on the wire to populate it.
- */
-export type ConfidenceBand = "High" | "Medium" | "Low" | "Very Low";
-
 export interface ScoreEstimate {
   composite: number;
   math: number;
@@ -17,7 +8,7 @@ export interface ScoreEstimate {
     low: number;
     high: number;
   };
-  confidenceBand: ConfidenceBand;
+  confidence: number;
 }
 
 /**
@@ -36,7 +27,7 @@ export interface BaselineEstimate {
     low: number;
     high: number;
   };
-  confidenceBand: ConfidenceBand;
+  confidence: number;
   capturedAt: string;
 }
 
@@ -49,7 +40,7 @@ export interface BaselineEstimate {
  * LC-AM3-UI-001 honest-signal: mirror the server's discriminated response. The weighted score
  * estimate is UNCOMPUTED while 05C projections are deferred/not-yet-generated — `estimate` is null
  * then, so consumers MUST narrow on estimateStatus/estimate before dereferencing. Once `estimate`
- * can be null, TS forbids .composite/.range/.confidenceBand without a guard — render honest-uncomputed.
+ * can be null, TS forbids .composite/.range/.confidence without a guard — render honest-uncomputed.
  *
  * - no_baseline: student hasn't completed the diagnostic yet. No baseline, no projection.
  * - baseline_pending: diagnostic COMPLETED, baseline not computed yet. Distinct from
@@ -123,20 +114,16 @@ export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   return response.json();
 }
 
-/**
- * The band is now supplied by the server, so there is no label function left to call —
- * render `estimate.confidenceBand` directly. This maps the band to a colour class, which
- * is presentation and belongs on the client.
- */
-export function getConfidenceColor(band: ConfidenceBand): string {
-  switch (band) {
-    case "High":
-      return "text-green-600";
-    case "Medium":
-      return "text-yellow-600";
-    case "Low":
-      return "text-orange-600";
-    case "Very Low":
-      return "text-amber-700";
-  }
+export function getConfidenceLabel(confidence: number): string {
+  if (confidence >= 0.9) return "High";
+  if (confidence >= 0.7) return "Medium";
+  if (confidence >= 0.5) return "Low";
+  return "Very Low";
+}
+
+export function getConfidenceColor(confidence: number): string {
+  if (confidence >= 0.9) return "text-green-600";
+  if (confidence >= 0.7) return "text-yellow-600";
+  if (confidence >= 0.5) return "text-orange-600";
+  return "text-amber-700";
 }

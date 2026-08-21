@@ -61,7 +61,7 @@ const DB_ROWS: Record<string, MockRow[]> = {
       session_id: SESSION_B,
       question_id: QUESTION_B,
       question_skill: "GEO",
-      question_domain: "Geometry and Trigonometry",
+      question_domain: "Geometry",
       question_section: "M",
       status: "answered",
       is_correct: true,
@@ -71,14 +71,7 @@ const DB_ROWS: Record<string, MockRow[]> = {
   ],
   questions: [
     { id: QUESTION_A, section: "M", domain: "Algebra", skill_codes: ["ALG"] },
-    {
-      id: QUESTION_B,
-      section: "M",
-      // questions_domain_section_canonical rejects "Geometry" — the canonical M domain
-      // is "Geometry and Trigonometry".
-      domain: "Geometry and Trigonometry",
-      skill_codes: ["GEO"],
-    },
+    { id: QUESTION_B, section: "M", domain: "Geometry", skill_codes: ["GEO"] },
   ],
   student_skill_mastery: [],
   student_domain_mastery: [],

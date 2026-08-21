@@ -18,7 +18,6 @@ import {
 } from "../../../packages/shared/src/diagnostic-state";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 import { EntitlementService } from "../../services/entitlement-service";
-import { confidenceBandFromScore } from "../../../packages/shared/src/projection-confidence";
 
 function estimateExplanation(
   label: string,
@@ -239,7 +238,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           math: baseline.math,
           rw: baseline.rw,
           range: baseline.range,
-          confidenceBand: confidenceBandFromScore(baseline.confidence),
+          confidence: baseline.confidence,
           capturedAt: baseline.capturedAt,
         },
         estimateStatus: statusWithoutLiveEstimate,
@@ -307,7 +306,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
             math: liveEstimate.math,
             rw: liveEstimate.rw,
             range: liveEstimate.range,
-            confidenceBand: confidenceBandFromScore(liveEstimate.confidence),
+            confidence: liveEstimate.confidence,
           }
         : null,
       baseline: {
@@ -315,7 +314,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         math: baseline.math,
         rw: baseline.rw,
         range: baseline.range,
-        confidenceBand: confidenceBandFromScore(baseline.confidence),
+        confidence: baseline.confidence,
         capturedAt: baseline.capturedAt,
       },
       estimateStatus: resolveEstimateStatus({
