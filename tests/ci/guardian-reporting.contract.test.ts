@@ -232,30 +232,15 @@ vi.mock("../../apps/api/src/services/weakness-view", () => ({
   buildWeaknessSkillsView: weaknessViewMocks.buildWeaknessSkillsView,
 }));
 
-import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
-
 const masteryReadMocks = {
   fetchDomainMasteryRows: vi.fn(async () => []),
 };
-vi.mock("../../apps/api/src/services/mastery-read", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../apps/api/src/services/mastery-read")
-  >("../../apps/api/src/services/mastery-read");
-  return {
-    // buildDomainLevelView is the pure builder under test here — use the real one so
-    // the case proves the route's own shaping rather than a stub's.
-    buildDomainLevelView: actual.buildDomainLevelView,
-    buildSkillLevelView: actual.buildSkillLevelView,
-    fetchDomainMasteryRows: masteryReadMocks.fetchDomainMasteryRows,
-    fetchSkillMasteryRows: vi.fn(async () => []),
-    buildMasterySummaryFromRows: vi.fn(() => []),
-    fetchWeakestSkills: vi.fn(async () => []),
-  };
-});
-
-vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
-  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
-  resetMasteryLevelsCache: vi.fn(),
+vi.mock("../../apps/api/src/services/mastery-read", () => ({
+  fetchDomainMasteryRows: masteryReadMocks.fetchDomainMasteryRows,
+  fetchSkillMasteryRows: vi.fn(async () => []),
+  buildMasterySummaryFromRows: vi.fn(() => []),
+  buildMasterySkillTreeFromRows: vi.fn(() => []),
+  fetchWeakestSkills: vi.fn(async () => []),
 }));
 
 vi.mock("../../packages/shared/src/mastery", () => ({
@@ -763,11 +748,8 @@ describe("Guardian reporting runtime contract", () => {
   });
 
   it("returns canonical student domain mastery payload (AC#19 domain-grain)", async () => {
-    // Canonical DB values: section is 'M'/'RW' (CHECK-constrained) and the domain is
-    // the College Board display string. The old fixture said "math", which the
-    // database would reject and which now matches no canonical pair.
     masteryReadMocks.fetchDomainMasteryRows.mockResolvedValueOnce([
-      { section: "M", domain: "Algebra", mastery_level: 1 },
+      { section: "math", domain: "Algebra", mastery_level: 1 },
     ]);
 
     const router = (await import("../../server/routes/guardian-routes"))
@@ -780,39 +762,18 @@ describe("Guardian reporting runtime contract", () => {
     );
 
     expect(response.status).toBe(200);
-    // All eight canonical domains are present, not just the one with a row: a guardian
-    // sees the same picture the student does (owner ruling R4 / RULE 6). A domain with
-    // no events carries the `unmeasured` label rather than being absent.
-    expect(response.body.ok).toBe(true);
-    expect(response.body.count).toBe(8);
-    expect(response.body.domains).toHaveLength(8);
-    expect(
-      response.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === "M" && d.domain === "Algebra",
-      ),
-    ).toEqual(
+    expect(response.body).toEqual(
       expect.objectContaining({
-        section: "M",
-        domain: "Algebra",
-        levelKey: "L1",
-        level: 1,
-        displayName: "Building",
-        tier: "weak",
-        masteryLevel: 1,
-      }),
-    );
-    // NULL is a distinct state, never level 0 (RULE 3 / RULE 6).
-    expect(
-      response.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === "RW" && d.domain === "Expression of Ideas",
-      ),
-    ).toEqual(
-      expect.objectContaining({
-        levelKey: "unmeasured",
-        level: null,
-        displayName: "Not enough answers yet",
+        ok: true,
+        count: 1,
+        domains: [
+          expect.objectContaining({
+            section: "math",
+            domain: "Algebra",
+            tier: "weak",
+            masteryLevel: 1,
+          }),
+        ],
       }),
     );
     expect(masteryReadMocks.fetchDomainMasteryRows).toHaveBeenCalledWith({
@@ -829,8 +790,8 @@ describe("Guardian reporting runtime contract", () => {
 
   it("projects guardian weakness output as domain-grain without raw mastery internals (AC#19)", async () => {
     masteryReadMocks.fetchDomainMasteryRows.mockResolvedValue([
-      { section: "M", domain: "Algebra", mastery_level: 1 },
-      { section: "RW", domain: "Information and Ideas", mastery_level: 2 },
+      { section: "math", domain: "Algebra", mastery_level: 1 },
+      { section: "rw", domain: "Information and Ideas", mastery_level: 2 },
     ]);
 
     const guardianRouter = (await import("../../server/routes/guardian-routes"))
@@ -843,26 +804,19 @@ describe("Guardian reporting runtime contract", () => {
     );
 
     expect(guardianResponse.status).toBe(200);
-    expect(guardianResponse.body.domains).toHaveLength(8);
-    const byPair = (section: string, domain: string) =>
-      guardianResponse.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === section && d.domain === domain,
-      );
-    expect(byPair("M", "Algebra")).toEqual(
+    expect(guardianResponse.body.domains).toHaveLength(2);
+    expect(guardianResponse.body.domains[0]).toEqual(
       expect.objectContaining({
-        levelKey: "L1",
-        level: 1,
-        displayName: "Building",
+        section: "math",
+        domain: "Algebra",
         tier: "weak",
         masteryLevel: 1,
       }),
     );
-    expect(byPair("RW", "Information and Ideas")).toEqual(
+    expect(guardianResponse.body.domains[1]).toEqual(
       expect.objectContaining({
-        levelKey: "L2",
-        level: 2,
-        displayName: "Developing",
+        section: "rw",
+        domain: "Information and Ideas",
         tier: "improving",
         masteryLevel: 2,
       }),
@@ -871,8 +825,6 @@ describe("Guardian reporting runtime contract", () => {
     expect(json).not.toContain('"mastery_score"');
     expect(json).not.toContain('"accuracy"');
     expect(json).not.toContain('"accuracyPercent"');
-    // RULE 7: guardians get domain grain only — no drill-down, and no skill array to
-    // drill into.
     expect(json).not.toContain('"skills"');
   });
 

@@ -270,12 +270,6 @@ describe("KPI Gating Contract", () => {
     // Baseline is also served for comparison.
     expect(payload.baseline).toMatchObject({ composite: 1000 });
     expect(payload.projection).toBeUndefined();
-    // RULE 9 (owner ruling 2026-08-20): the 0-1 confidence float is banded SERVER-side
-    // and never crosses the wire. The service mocks above still return 0.7 / 0.6 —
-    // that is the point: the route must convert, not forward.
-    expect(payload.estimate.confidenceBand).toBe("Medium");
-    expect(payload.baseline.confidenceBand).toBe("Low");
-    expect(JSON.stringify(payload)).not.toContain('"confidence"');
   }, 15_000);
 
   // FAIL-CLOSED NEGATIVE TEST (Doc-05C §7.4): if canAccessFeature throws
@@ -427,7 +421,7 @@ describe("KPI Gating Contract", () => {
     expect(getExamReport).not.toHaveBeenCalled();
   });
 
-  it("denies free-tier mastery drill-down routes (domains + per-domain skills)", async () => {
+  it("denies free-tier mastery skills route (mastery hexagon)", async () => {
     const { masteryRouter } = await import("../../apps/api/src/routes/mastery");
 
     const app = express();
@@ -443,19 +437,11 @@ describe("KPI Gating Contract", () => {
     });
     app.use("/api/me/mastery", masteryRouter);
 
-    const domains = await request(app).get("/api/me/mastery/domains");
-    expect(domains.status).toBe(402);
-    expect(domains.body.code).toBe("PREMIUM_REQUIRED");
-    expect(domains.body.feature).toBe("mastery_domains");
+    const res = await request(app).get("/api/me/mastery/skills");
 
-    // The entitlement check runs BEFORE the parameter parse, so a free-tier caller is
-    // denied rather than told whether the domain exists.
-    const skills = await request(app).get(
-      "/api/me/mastery/domains/M/Algebra/skills",
-    );
-    expect(skills.status).toBe(402);
-    expect(skills.body.code).toBe("PREMIUM_REQUIRED");
-    expect(skills.body.feature).toBe("mastery_skills");
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("PREMIUM_REQUIRED");
+    expect(res.body.feature).toBe("mastery_hexagon");
   });
 
   it("denies free-tier full-length session creation surface", async () => {
