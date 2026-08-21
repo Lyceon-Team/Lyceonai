@@ -413,12 +413,21 @@ if (process.env.GITHUB_STEP_SUMMARY && measurements.length) {
  *      requires the trailer.
  *   5. A removed entry (present at base, absent at HEAD) is always fine.
  *
- * THE ESCAPE HATCH — COMMIT TRAILER
+ * THE ESCAPE HATCH — COMMIT TRAILER + CEILING_SOURCE
  *   Any commit on the branch may include:
  *     Known-Gap-Raise: eslint-legacy-tree
  *   Multiple entries can be listed one per trailer line, or comma-separated.
  *   The trailer is visible in `git log` and in PR review — it makes a raise a
  *   decision someone made rather than a number that drifted.
+ *
+ *   The trailer alone is not sufficient. The entry's `ceiling_source` must also
+ *   be updated in the same change. The trailer records that a human decided;
+ *   ceiling_source records why — the environment, the measurement, and the
+ *   reason the new ceiling is what it is. A stale ceiling_source means the
+ *   justification for the new number is missing; it must live in the file,
+ *   not in a commit message nobody reads later. The existing entries' format
+ *   is the convention: environment + tool version, exact command + measurement,
+ *   CI run provenance, and tolerance reasoning.
  *
  * WHY BASE BRANCH, NOT A STORED FILE
  *   A committed "previous value" file is itself editable and reintroduces the
@@ -511,11 +520,15 @@ if (!process.env.KNOWN_GAPS_SKIP_RATCHET) {
       }
 
       if (baseEntries !== null) {
-        // Build a map of base ceilings
+        // Build maps of base ceilings and ceiling_source values
         const baseCeilings = new Map();
+        const baseCeilingSources = new Map();
         for (const be of baseEntries) {
           if (be.id && be.findings_ceiling !== undefined) {
             baseCeilings.set(be.id, Number(be.findings_ceiling));
+          }
+          if (be.id && be.ceiling_source !== undefined) {
+            baseCeilingSources.set(be.id, String(be.ceiling_source).trim());
           }
         }
 
@@ -573,21 +586,13 @@ if (!process.env.KNOWN_GAPS_SKIP_RATCHET) {
               ? `new entry with ceiling ${currentCeiling}`
               : `ceiling raised ${baseCeiling} → ${currentCeiling} (+${delta})`;
 
-            if (raisedIds.has(e.id)) {
-              ratchetResults.push({
-                id: e.id,
-                status: "accepted",
-                label,
-              });
-            } else {
-              const trailer = isNew
-                ? `Known-Gap-Raise: ${e.id}`
-                : `Known-Gap-Raise: ${e.id}`;
+            if (!raisedIds.has(e.id)) {
+              // No trailer — block the raise
               failures.push(
                 `[ratchet] ${e.id}: ${label}.\n` +
                   `          These numbers only go down (Karl ruling). To raise a ceiling,\n` +
                   `          add a commit trailer to any commit on this branch:\n` +
-                  `            ${trailer}\n` +
+                  `            Known-Gap-Raise: ${e.id}\n` +
                   `          The trailer makes the raise visible in review. Without it,\n` +
                   `          a ceiling increase is indistinguishable from drift.`,
               );
@@ -596,6 +601,38 @@ if (!process.env.KNOWN_GAPS_SKIP_RATCHET) {
                 status: "rejected",
                 label,
               });
+            } else {
+              // Trailer present — also require ceiling_source to be updated.
+              // The trailer records that a human decided; ceiling_source records
+              // why. A stale ceiling_source means the justification for the new
+              // number is missing — it lives in the file, not in a commit message
+              // nobody reads later.
+              const currentSource = String(e.ceiling_source ?? "").trim();
+              const baseSource = baseCeilingSources.has(e.id)
+                ? baseCeilingSources.get(e.id)
+                : "";
+
+              if (!isNew && currentSource === baseSource) {
+                failures.push(
+                  `[ratchet] ${e.id}: ${label} — Known-Gap-Raise trailer found, but\n` +
+                    `          ceiling_source is unchanged from the base.\n` +
+                    `          The trailer records that someone decided to raise the ceiling;\n` +
+                    `          ceiling_source records why. Update it in the same commit:\n` +
+                    `          document the environment, the measurement, and why the new\n` +
+                    `          ceiling is what it is.`,
+                );
+                ratchetResults.push({
+                  id: e.id,
+                  status: "rejected",
+                  label: `${label} — stale ceiling_source`,
+                });
+              } else {
+                ratchetResults.push({
+                  id: e.id,
+                  status: "accepted",
+                  label,
+                });
+              }
             }
           }
         }

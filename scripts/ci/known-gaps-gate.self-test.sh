@@ -33,13 +33,14 @@
 #       That is what proves G8 is the case that catches a gate-side widening, and
 #       why the tolerance belongs on the entry where a reviewer of the accept-list
 #       can see it.
-#  G13  a ceiling raised without a Known-Gap-Raise trailer is rejected
-#       (CI-GATING-003). The ratchet is what prevents silent ceiling inflation.
-#  G14  a ceiling raised WITH a trailer is accepted — the escape hatch works.
-#  G15  a ceiling DECREASED passes without a trailer — these numbers going down
-#       is the whole point.
-#  G16  a NEW entry (absent at base) requires a trailer — adding a new accepted
-#       failure is a raise from 0.
+#  G13  a ceiling raised without a trailer is rejected (CI-GATING-003)
+#  G14  a ceiling raised with trailer but STALE ceiling_source is rejected —
+#       the trailer records the decision; ceiling_source records the reason
+#  G15  a ceiling raised with trailer AND updated ceiling_source passes
+#  G16  a ceiling DECREASED passes without a trailer
+#  G17  a NEW entry (absent at base) requires a trailer — raise from 0
+#  G18  a REMOVED entry passes — gap closed, no trailer needed
+#  G19  running on the base branch itself (HEAD == base) — no raise, passes
 #
 # Fixtures are written to a temp dir and fed in via KNOWN_GAPS_FILE; the clock
 # is pinned with KNOWN_GAPS_NOW so nothing here depends on the wall date.
@@ -316,10 +317,19 @@ else
 fi
 
 # ============================================================================
-# RATCHET TESTS (G13–G16)
+# RATCHET TESTS (G13–G19)
 # ============================================================================
 # The ratchet uses KNOWN_GAPS_BASE_FILE and KNOWN_GAPS_RAISE_IDS instead of
 # git operations, so these tests work without a real git history.
+#
+# Seven cases — a gate never observed failing is not known to work:
+#  G13  raise without trailer → FAIL
+#  G14  raise with trailer but stale ceiling_source → FAIL
+#  G15  raise with trailer and updated ceiling_source → PASS
+#  G16  lower a ceiling → PASS, no trailer needed
+#  G17  add a new entry without a trailer → FAIL
+#  G18  remove an entry → PASS
+#  G19  run on the base branch itself (HEAD == base) → no raise, PASS
 # ============================================================================
 
 # Helper: run gate with ratchet in test mode
@@ -332,20 +342,7 @@ run_gate_ratchet() {
     node "$GATE" 2>&1
 }
 
-# ── G13 — a raised ceiling without a trailer is rejected ───────────────────
-cat > "$TMP/ratchet-head.yaml" <<'YAML'
-entries:
-  - id: fixture-entry
-    owner: someone
-    expires: 2099-01-01
-    command: pnpm run nothing
-    count_command: echo 1
-    findings_ceiling: 50
-    tolerance: 0
-    ceiling_source: fixture
-    reason: fixture
-    re_arm: fixture
-YAML
+# Shared fixtures: base has ceiling 30 with ceiling_source "original measurement"
 cat > "$TMP/ratchet-base.yaml" <<'YAML'
 entries:
   - id: fixture-entry
@@ -355,11 +352,26 @@ entries:
     count_command: echo 1
     findings_ceiling: 30
     tolerance: 0
-    ceiling_source: fixture
+    ceiling_source: original measurement
     reason: fixture
     re_arm: fixture
 YAML
-OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
+
+# ── G13 — raise without trailer → FAIL ────────────────────────────────────
+cat > "$TMP/ratchet-raised.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 50
+    tolerance: 0
+    ceiling_source: original measurement
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-raised.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
 if [ "$RC" -eq 0 ]; then
   fail G13 "a ceiling raised from 30 to 50 without a trailer was ACCEPTED — the ratchet
        is not enforcing"
@@ -369,18 +381,44 @@ else
   pass G13 "a raised ceiling without a trailer is rejected"
 fi
 
-# ── G14 — a raised ceiling WITH a trailer is accepted ──────────────────────
-OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-base.yaml" "fixture-entry")"; RC=$?
-if [ "$RC" -ne 0 ]; then
-  fail G14 "a ceiling raised with a Known-Gap-Raise trailer was REJECTED — the escape
-       hatch is broken
+# ── G14 — raise with trailer but stale ceiling_source → FAIL ──────────────
+# Same HEAD file as G13: ceiling_source is "original measurement" (unchanged)
+OUT="$(run_gate_ratchet "$TMP/ratchet-raised.yaml" "$TMP/ratchet-base.yaml" "fixture-entry")"; RC=$?
+if [ "$RC" -eq 0 ]; then
+  fail G14 "a ceiling raised with trailer but STALE ceiling_source was ACCEPTED — the
+       justification for the new number is missing
        $(head -5 <<<"$OUT")"
+elif ! echo "$OUT" | grep -q "ceiling_source"; then
+  fail G14 "red, but not for ceiling_source: $(head -5 <<<"$OUT" | tr '\n' ' ')"
 else
-  pass G14 "a raised ceiling with a Known-Gap-Raise trailer is accepted"
+  pass G14 "a raised ceiling with trailer but stale ceiling_source is rejected"
 fi
 
-# ── G15 — a decreased ceiling passes without a trailer ─────────────────────
-cat > "$TMP/ratchet-lower-head.yaml" <<'YAML'
+# ── G15 — raise with trailer and updated ceiling_source → PASS ────────────
+cat > "$TMP/ratchet-raised-justified.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 50
+    tolerance: 0
+    ceiling_source: new measurement after adding 20 findings from new module
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-raised-justified.yaml" "$TMP/ratchet-base.yaml" "fixture-entry")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G15 "a ceiling raised with trailer AND updated ceiling_source was REJECTED — the
+       escape hatch is broken
+       $(head -5 <<<"$OUT")"
+else
+  pass G15 "a raised ceiling with trailer and updated ceiling_source is accepted"
+fi
+
+# ── G16 — lower a ceiling → PASS, no trailer needed ───────────────────────
+cat > "$TMP/ratchet-lowered.yaml" <<'YAML'
 entries:
   - id: fixture-entry
     owner: someone
@@ -389,24 +427,23 @@ entries:
     count_command: echo 1
     findings_ceiling: 20
     tolerance: 0
-    ceiling_source: fixture
+    ceiling_source: original measurement
     reason: fixture
     re_arm: fixture
 YAML
-OUT="$(run_gate_ratchet "$TMP/ratchet-lower-head.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
+OUT="$(run_gate_ratchet "$TMP/ratchet-lowered.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
 if [ "$RC" -ne 0 ]; then
-  fail G15 "a ceiling decreased from 30 to 20 was REJECTED — the ratchet should allow
-       decreases without any marker
+  fail G16 "a ceiling decreased from 30 to 20 was REJECTED — decreases should always pass
        $(head -5 <<<"$OUT")"
 else
-  pass G15 "a decreased ceiling passes without a trailer"
+  pass G16 "a decreased ceiling passes without a trailer"
 fi
 
-# ── G16 — a new entry (absent at base) requires a trailer ──────────────────
-# Base has no entries (empty file → all current entries are new = raise from 0)
-cat > "$TMP/ratchet-empty-base.yaml" <<'YAML'
+# ── G17 — add a new entry without a trailer → FAIL ────────────────────────
+# Base has a different entry; HEAD adds fixture-entry (absent at base = raise from 0)
+cat > "$TMP/ratchet-other-base.yaml" <<'YAML'
 entries:
-  - id: placeholder
+  - id: other-entry
     owner: someone
     expires: 2099-01-01
     command: echo ok
@@ -417,14 +454,71 @@ entries:
     reason: fixture
     re_arm: fixture
 YAML
-OUT="$(run_gate_ratchet "$TMP/ratchet-head.yaml" "$TMP/ratchet-empty-base.yaml" "")"; RC=$?
+OUT="$(run_gate_ratchet "$TMP/ratchet-raised.yaml" "$TMP/ratchet-other-base.yaml" "")"; RC=$?
 if [ "$RC" -eq 0 ]; then
-  fail G16 "a new entry (absent at base) was ACCEPTED without a trailer — adding a new
+  fail G17 "a new entry (absent at base) was ACCEPTED without a trailer — adding a new
        accepted failure should require explicit acknowledgment"
 elif ! echo "$OUT" | grep -q "ratchet"; then
-  fail G16 "red, but not for the ratchet: $(head -5 <<<"$OUT" | tr '\n' ' ')"
+  fail G17 "red, but not for the ratchet: $(head -5 <<<"$OUT" | tr '\n' ' ')"
 else
-  pass G16 "a new entry absent at base requires a trailer"
+  pass G17 "a new entry absent at base requires a trailer"
+fi
+
+# ── G18 — remove an entry → PASS ──────────────────────────────────────────
+# Base has two entries; HEAD keeps only one (fixture-entry was removed = gap closed)
+cat > "$TMP/ratchet-two-base.yaml" <<'YAML'
+entries:
+  - id: fixture-entry
+    owner: someone
+    expires: 2099-01-01
+    command: pnpm run nothing
+    count_command: echo 1
+    findings_ceiling: 30
+    tolerance: 0
+    ceiling_source: original measurement
+    reason: fixture
+    re_arm: fixture
+  - id: other-entry
+    owner: someone
+    expires: 2099-01-01
+    command: echo ok
+    count_command: echo 1
+    findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+cat > "$TMP/ratchet-removed-head.yaml" <<'YAML'
+entries:
+  - id: other-entry
+    owner: someone
+    expires: 2099-01-01
+    command: echo ok
+    count_command: echo 1
+    findings_ceiling: 1
+    tolerance: 0
+    ceiling_source: fixture
+    reason: fixture
+    re_arm: fixture
+YAML
+OUT="$(run_gate_ratchet "$TMP/ratchet-removed-head.yaml" "$TMP/ratchet-two-base.yaml" "")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G18 "removing an entry (gap closed) was REJECTED — entry removal should always pass
+       $(head -5 <<<"$OUT")"
+else
+  pass G18 "removing an entry passes (gap closed)"
+fi
+
+# ── G19 — run on the base branch itself → no raise, PASS ──────────────────
+# HEAD and base are identical — every ceiling equals itself, no raise detected
+OUT="$(run_gate_ratchet "$TMP/ratchet-base.yaml" "$TMP/ratchet-base.yaml" "")"; RC=$?
+if [ "$RC" -ne 0 ]; then
+  fail G19 "running with HEAD == base was REJECTED — the ratchet should be a no-op when
+       nothing changed
+       $(head -5 <<<"$OUT")"
+else
+  pass G19 "running on the base branch itself detects no raise — passes"
 fi
 
 echo
