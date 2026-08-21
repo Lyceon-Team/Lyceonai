@@ -530,6 +530,11 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-history-gate.sh
 
+      - name: Migration inventory gate (applied vs pending discrimination)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-inventory-gate.sh
+
       # Session lifecycle, steps 2/1/8/9. Seven fixture students; the two that
       # earn their place are E (two ALL-NULL diagnostic_baseline rows — what the
       # evidence gate actually writes, so counting snapshot rows calls them

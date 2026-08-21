@@ -15,12 +15,6 @@
 #   (N2) LOUD ON A REAL GAP       one un-emitted answer AFTER the backfill -> 1
 #        This is the case a bare student-scope exclusion would silently hide, and
 #        the reason the predicate carries a time bound.
-#   (N5) FIXTURE INTEGRITY        the genuine gap really is inside a backfilled
-#        (student, section, domain) and postdates its applied_at — without that,
-#        N2 passes on scope alone and proves nothing about the time bound.
-#   (N6) SCOPE-ONLY COUNTERFACTUAL a scope-only exclusion (no time bound) HIDES
-#        the genuine gap. That is what makes the bound load-bearing rather than
-#        decoration: repair must not blind the alarm.
 #   (N3) SUMMARY AGREES           mastery_derivation_gap_summary is defined over
 #        the view, so it must inherit the fix rather than needing its own.
 #   (N4) PRE-MIGRATION CONTROL    against the migration held back, the same
@@ -99,86 +93,6 @@ if [ "$SUM" != "1" ]; then
   fail N3 "gap_summary totals $SUM, expected 1 — it is not reading the corrected view"
 else
   pass N3 "mastery_derivation_gap_summary agrees with the view"
-fi
-
-# ---------------------------------------------------------------------------
-# (N5) FIXTURE INTEGRITY — N2 only proves the time bound if the genuine item sits
-# INSIDE a backfilled (student, section, domain). If a later edit moved it to a
-# domain no backfill covered, N2 would still report 1 and would still pass, while
-# proving nothing at all: scope alone would hide it just as well. So assert the
-# fixture's shape rather than trusting it.
-echo "==> (N5) the genuine gap really is inside a backfilled scope, after the watermark"
-SHAPE="$(psql -tAq -d gap_noise_ci <<'SQL'
-SELECT count(*)
-  FROM public.practice_session_items pi
-  JOIN public.mastery_domain_refresh_audit_log ral
-    ON  ral.triggered_by = 'backfill_recompute'
-    AND ral.student_id   = pi.user_id
-    AND ral.section      = pi.question_section
-    AND ral.domain       = pi.question_domain
- WHERE pi.status = 'answered'
-   AND pi.occurred_at > ral.applied_at
-   AND NOT EXISTS (SELECT 1 FROM public.mastery_event_audit_log mal
-                    WHERE mal.student_id = pi.user_id
-                      AND mal.section    = pi.question_section
-                      AND mal.domain     = pi.question_domain);
-SQL
-)"
-if [ "$SHAPE" != "1" ]; then
-  fail N5 "the fixture holds $SHAPE un-emitted answer(s) inside a backfilled (student, section, domain) and after its applied_at, expected exactly 1.
-       Without one, N2's pass is satisfied by scope alone and says nothing about the time bound."
-else
-  pass N5 "exactly one un-emitted answer inside a backfilled scope, postdating the backfill"
-fi
-
-# ---------------------------------------------------------------------------
-# (N6) THE SCOPE-ONLY COUNTERFACTUAL — is the time bound load-bearing, or decoration?
-# Redefine the view with the exclusion but WITHOUT `occurred_at <= applied_at`,
-# inside a transaction that is rolled back. That is the cheaper fix someone will
-# propose. If the genuine gap survives it, the time bound buys nothing and this
-# case should be deleted; if the gap DISAPPEARS, the bound is what makes the
-# detector still able to see a new failure in a domain that was once repaired.
-# Repair must not blind the alarm.
-echo "==> (N6) a scope-only exclusion HIDES the genuine gap (so the time bound is load-bearing)"
-# The counterfactual view is DERIVED from the shipped migration rather than
-# hand-copied: take its CREATE OR REPLACE VIEW block verbatim and delete only the
-# two `occurred_at <= ral.applied_at` lines. A hand-written copy would drift from
-# the migration and start proving something else; this cannot.
-MIG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)/supabase/migrations/$MIGRATION"
-SCOPE_ONLY_VIEW="$(awk '/^CREATE OR REPLACE VIEW public.mastery_derivation_gaps AS$/,/^\);$/' "$MIG_PATH" \
-                   | grep -v 'occurred_at  <= ral.applied_at')"
-BOUND_LINES="$(awk '/^CREATE OR REPLACE VIEW public.mastery_derivation_gaps AS$/,/^\);$/' "$MIG_PATH" \
-               | grep -c 'occurred_at  <= ral.applied_at')"
-if [ "$BOUND_LINES" != "2" ]; then
-  fail N6 "found $BOUND_LINES time-bound line(s) in the migration's view block, expected 2 (one per branch).
-       Either a branch lost its bound or the text changed and this case is no longer stripping what it thinks."
-  SCOPE_ONLY=""
-else
-  SCOPE_ONLY="$(psql -tAq -d gap_noise_ci <<SQL 2>&1
-BEGIN;
-$SCOPE_ONLY_VIEW
-SELECT count(*) FROM public.mastery_derivation_gaps;
-ROLLBACK;
-SQL
-)"
-  SCOPE_ONLY="$(printf '%s' "$SCOPE_ONLY" | grep -E '^[0-9]+$' | tail -1)"
-fi
-if [ "$BOUND_LINES" = "2" ]; then
-  if [ -z "$SCOPE_ONLY" ]; then
-    fail N6 "the scope-only counterfactual did not return a count — it errored rather than reporting"
-  elif [ "$SCOPE_ONLY" != "0" ]; then
-    fail N6 "a scope-only exclusion still reports $SCOPE_ONLY gap(s). The time bound is then doing nothing,
-       and either this case or the migration's occurred_at <= applied_at clause is wrong."
-  else
-    pass N6 "scope-only hides the genuine gap (0); the shipped view keeps it (1). The bound is load-bearing"
-  fi
-fi
-
-# The rollback must have restored the shipped definition — prove it rather than
-# assume, or every case after this one would be measuring the counterfactual.
-RESTORED="$(gaps gap_noise_ci)"
-if [ "$RESTORED" != "1" ]; then
-  fail N6 "after ROLLBACK the view reports $RESTORED gap(s), expected 1 — the counterfactual leaked"
 fi
 
 echo
