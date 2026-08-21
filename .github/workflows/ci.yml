@@ -104,6 +104,17 @@ jobs:
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
 
+      # SAT_TAXONOMY shipped slugs ('math', 'advanced_math', 'linear_equations')
+      # against a database holding 'M', 'Advanced Math', 'Linear Equations in One
+      # Variable'. Nothing joined and the mastery page said "No Mastery Data Yet" to
+      # every student who had data. It survived because the TESTS seeded the same
+      # slugs: the suite agreed with the broken code instead of with the schema.
+      - name: Test fixture canonicality gate (section/domain must match the DB CHECKs)
+        run: node scripts/ci/test-fixture-canonicality-gate.mjs
+
+      - name: Fixture canonicality self-test (proves each mutation turns it red)
+        run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the

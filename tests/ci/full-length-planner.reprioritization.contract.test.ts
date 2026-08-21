@@ -91,7 +91,10 @@ class FakeQueryBuilder {
     return this;
   }
 
-  upsert(values: TableRow | TableRow[], options?: { onConflict?: string }): this {
+  upsert(
+    values: TableRow | TableRow[],
+    options?: { onConflict?: string },
+  ): this {
     const rows = Array.isArray(values) ? values : [values];
     const conflictColumns = (options?.onConflict ?? "id")
       .split(",")
@@ -157,16 +160,27 @@ class FakeQueryBuilder {
   async single(): Promise<{ data: TableRow | null; error: any }> {
     const rows = this.computeRows();
     if (rows.length === 0) {
-      return { data: null, error: { code: "PGRST116", message: "No rows found" } };
+      return {
+        data: null,
+        error: { code: "PGRST116", message: "No rows found" },
+      };
     }
     return { data: rows[0], error: null };
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: TableRow[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?:
+      | ((value: {
+          data: TableRow[];
+          error: any;
+        }) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve(this.execute()).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve(this.execute()).then(
+      onfulfilled ?? undefined,
+      onrejected ?? undefined,
+    );
   }
 
   private execute(): { data: TableRow[]; error: any } {
@@ -211,7 +225,9 @@ class FakeQueryBuilder {
   }
 
   private computeRows(): TableRow[] {
-    let rows = (this.mutationRows ?? this.store.tables[this.table]).map((row) => ({ ...row }));
+    let rows = (this.mutationRows ?? this.store.tables[this.table]).map(
+      (row) => ({ ...row }),
+    );
 
     for (const predicate of this.filters) {
       rows = rows.filter(predicate);
@@ -223,7 +239,13 @@ class FakeQueryBuilder {
         if (a[column] === b[column]) return 0;
         if (a[column] == null) return ascending ? -1 : 1;
         if (b[column] == null) return ascending ? 1 : -1;
-        return a[column] > b[column] ? (ascending ? 1 : -1) : ascending ? -1 : 1;
+        return a[column] > b[column]
+          ? ascending
+            ? 1
+            : -1
+          : ascending
+            ? -1
+            : 1;
       });
     }
 
@@ -244,11 +266,21 @@ class FakeSupabaseClient {
   constructor(seed?: Partial<FakeStore["tables"]>) {
     this.store = {
       tables: {
-        student_study_profile: seed?.student_study_profile ? [...seed.student_study_profile] : [],
-        student_study_plan_days: seed?.student_study_plan_days ? [...seed.student_study_plan_days] : [],
-        student_study_plan_tasks: seed?.student_study_plan_tasks ? [...seed.student_study_plan_tasks] : [],
-        student_question_attempts: seed?.student_question_attempts ? [...seed.student_question_attempts] : [],
-        student_skill_mastery: seed?.student_skill_mastery ? [...seed.student_skill_mastery] : [],
+        student_study_profile: seed?.student_study_profile
+          ? [...seed.student_study_profile]
+          : [],
+        student_study_plan_days: seed?.student_study_plan_days
+          ? [...seed.student_study_plan_days]
+          : [],
+        student_study_plan_tasks: seed?.student_study_plan_tasks
+          ? [...seed.student_study_plan_tasks]
+          : [],
+        student_question_attempts: seed?.student_question_attempts
+          ? [...seed.student_question_attempts]
+          : [],
+        student_skill_mastery: seed?.student_skill_mastery
+          ? [...seed.student_skill_mastery]
+          : [],
       },
       writes: {
         upsert: 0,
@@ -317,26 +349,45 @@ describe("Full-length planner reprioritization", () => {
       ],
       student_skill_mastery: [
         {
+          // Canonical DB values: student_skill_mastery.section is CHECK-constrained to
+          // 'M'/'RW' and the (section, domain) pair to the College Board strings. The
+          // planner's normalizeSection() accepts both, but a fixture the table would
+          // reject proves nothing about production.
           student_id: "student-1",
-          section: "Math",
-          domain: "algebra",
+          section: "M",
+          domain: "Algebra",
           skill: "math.linear_equations",
           mastery_score: 0.3,
           last_event_occurred_at: "2026-03-30T00:00:00.000Z",
         },
         {
           student_id: "student-1",
-          section: "Reading & Writing",
-          domain: "information_and_ideas",
+          section: "RW",
+          domain: "Information and Ideas",
           skill: "rw.command_of_evidence",
           mastery_score: 0.6,
           last_event_occurred_at: "2026-03-29T00:00:00.000Z",
         },
       ],
       student_study_plan_days: [
-        { id: "day-past", day_date: "2026-04-01", is_user_override: false, ...baseDay },
-        { id: "day-override", day_date: tomorrow, is_user_override: true, ...baseDay },
-        { id: "day-next", day_date: nextDay, is_user_override: false, ...baseDay },
+        {
+          id: "day-past",
+          day_date: "2026-04-01",
+          is_user_override: false,
+          ...baseDay,
+        },
+        {
+          id: "day-override",
+          day_date: tomorrow,
+          is_user_override: true,
+          ...baseDay,
+        },
+        {
+          id: "day-next",
+          day_date: nextDay,
+          is_user_override: false,
+          ...baseDay,
+        },
       ],
       student_study_plan_tasks: [
         {
@@ -395,15 +446,24 @@ describe("Full-length planner reprioritization", () => {
       ],
     });
 
-    const pastDay = store.store.tables.student_study_plan_days.find((day) => day.day_date === "2026-04-01");
+    const pastDay = store.store.tables.student_study_plan_days.find(
+      (day) => day.day_date === "2026-04-01",
+    );
     expect(pastDay?.plan_version).toBe(1);
 
-    const overrideTasks = store.store.tables.student_study_plan_tasks.filter((task) => task.day_date === tomorrow);
+    const overrideTasks = store.store.tables.student_study_plan_tasks.filter(
+      (task) => task.day_date === tomorrow,
+    );
     expect(overrideTasks).toHaveLength(1);
     expect(overrideTasks[0].is_user_override).toBe(true);
 
-    const nextDayTasks = store.store.tables.student_study_plan_tasks.filter((task) => task.day_date === nextDay);
-    const reprioritized = nextDayTasks.find((task) => task.task_type === "focused_drill" && task.metadata?.reprioritized);
+    const nextDayTasks = store.store.tables.student_study_plan_tasks.filter(
+      (task) => task.day_date === nextDay,
+    );
+    const reprioritized = nextDayTasks.find(
+      (task) =>
+        task.task_type === "focused_drill" && task.metadata?.reprioritized,
+    );
     expect(reprioritized).toBeDefined();
     expect(reprioritized?.source_skill_code).toBe("math.linear_equations");
     expect(reprioritized?.metadata?.exam_session_id).toBe("exam-1");
@@ -426,7 +486,10 @@ describe("Full-length planner reprioritization", () => {
       ],
     });
 
-    const nextDayTasksSecond = store.store.tables.student_study_plan_tasks.filter((task) => task.day_date === nextDay);
+    const nextDayTasksSecond =
+      store.store.tables.student_study_plan_tasks.filter(
+        (task) => task.day_date === nextDay,
+      );
     expect(nextDayTasksSecond.length).toBe(countAfterFirst);
   });
 
@@ -474,16 +537,26 @@ describe("Full-length planner reprioritization", () => {
       student_skill_mastery: [
         {
           student_id: "student-2",
-          section: "Math",
-          domain: "problem_solving",
+          section: "M",
+          domain: "Problem Solving and Data Analysis",
           skill: "math.problem_solving",
           mastery_score: 0.4,
           last_event_occurred_at: "2026-03-31T00:00:00.000Z",
         },
       ],
       student_study_plan_days: [
-        { id: "custom-override", day_date: tomorrow, is_user_override: true, ...baseDay },
-        { id: "custom-day", day_date: nextDay, is_user_override: false, ...baseDay },
+        {
+          id: "custom-override",
+          day_date: tomorrow,
+          is_user_override: true,
+          ...baseDay,
+        },
+        {
+          id: "custom-day",
+          day_date: nextDay,
+          is_user_override: false,
+          ...baseDay,
+        },
       ],
       student_study_plan_tasks: [
         {
@@ -563,12 +636,20 @@ describe("Full-length planner reprioritization", () => {
       ],
     });
 
-    const tasksAfter = store.store.tables.student_study_plan_tasks.filter((task) => task.day_date === nextDay);
+    const tasksAfter = store.store.tables.student_study_plan_tasks.filter(
+      (task) => task.day_date === nextDay,
+    );
     expect(tasksAfter.length).toBe(3);
-    expect(tasksAfter.find((task) => task.id === "custom-task-1")?.task_type).toBe("practice");
-    expect(tasksAfter.find((task) => task.id === "custom-task-2")?.task_type).toBe("review_practice");
+    expect(
+      tasksAfter.find((task) => task.id === "custom-task-1")?.task_type,
+    ).toBe("practice");
+    expect(
+      tasksAfter.find((task) => task.id === "custom-task-2")?.task_type,
+    ).toBe("review_practice");
 
-    const reprioritized = tasksAfter.find((task) => task.metadata?.reprioritized);
+    const reprioritized = tasksAfter.find(
+      (task) => task.metadata?.reprioritized,
+    );
     expect(reprioritized).toBeDefined();
     expect(reprioritized?.metadata?.exam_session_id).toBe("exam-2");
 
@@ -587,7 +668,9 @@ describe("Full-length planner reprioritization", () => {
       ],
     });
 
-    const tasksAfterSecond = store.store.tables.student_study_plan_tasks.filter((task) => task.day_date === nextDay);
+    const tasksAfterSecond = store.store.tables.student_study_plan_tasks.filter(
+      (task) => task.day_date === nextDay,
+    );
     expect(tasksAfterSecond.length).toBe(3);
   });
 });
