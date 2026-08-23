@@ -891,11 +891,10 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
 
       // Log turn metrics for the crisis path — previously skipped, creating
       // an observability gap where crisis turns had no metrics row.
-      // @spec [CR-03C-V3-01 §3.4]
+      // orchestrationDurationMs=0 because no LLM orchestration occurs on crisis.
       // modelName: "crisis_bypass" — no model was invoked (crisis-safe response
       // is server-authored, not model-generated).
-      // orchestrationDurationMs: 0 — turnStartedAt is not yet defined at this
-      // point in the pipeline (defined at line 1017, after crisis return).
+      // @spec [CR-03C-V3-01 §3.4, Doc-03A_V1 §11.5]
       await logTurnMetrics({
         conversationId: conversation.id,
         turnOrdinal: 0,
@@ -1177,9 +1176,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // Determine crisis classifier outcome for the normal (non-crisis) path.
-    // If forceReview is true, classifier degraded (Layer 2 failed but Layer 1
-    // had data — turn proceeds but is enqueued for review).
+    // Compute classifier outcome for normal (non-crisis) path.
+    // crisisResult.crisis is false here (crisis path returned earlier).
+    // If forceReview is true, Layer 2 failed but Layer 1 had signatures —
+    // the turn proceeded but was force-enqueued (classifier_degraded).
+    // @spec [CR-03C-V3-01 §3.4]
     const normalPathOutcome: string = crisisResult.forceReview
       ? "classifier_degraded"
       : "no_crisis";
