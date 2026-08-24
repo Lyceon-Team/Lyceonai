@@ -177,6 +177,16 @@ vi.mock("../../server/lib/durable-rate-limiter", () => ({
   createDurableRateLimiter: () => (_req: any, _res: any, next: any) => next(),
 }));
 
+const kpiAccessMocks = {
+  resolveHistoricalTrendsAccess: vi.fn(async () => false),
+};
+vi.mock("../../server/services/kpi-access", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/kpi-access")
+  >("../../server/services/kpi-access");
+  return { ...actual, ...kpiAccessMocks };
+});
+
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => {
@@ -560,9 +570,19 @@ describe("Guardian reporting runtime contract", () => {
     expect(response.body.tutorInteractions).toBeUndefined();
     expect(response.body.mastery_score).toBeUndefined();
     expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledTimes(1);
+    // THIS ASSERTION USED TO READ `true`, AND THAT WAS THE DEFECT IT PINNED.
+    //   The guardian route hardcoded `true` while the student route derived the flag from
+    //   the student's own entitlement, fail-closed — so a guardian saw a premium surface
+    //   the student's entitlement denied the student. Doc 04C invariant #7: "Guardians
+    //   MUST NOT see fields the student does not see." A green test asserting `true` is
+    //   not a specification; it was the divergence, written down.
+    //   Both paths now call resolveHistoricalTrendsAccess, subject = the student.
+    expect(kpiAccessMocks.resolveHistoricalTrendsAccess).toHaveBeenCalledWith(
+      "student-1",
+    );
     expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
       "student-1",
-      true,
+      false,
     );
     expect(response.body.progress).toEqual({
       questionsAttempted: 30,
@@ -864,6 +884,45 @@ describe("Guardian reporting runtime contract", () => {
     // RULE 7: guardians get domain grain only — no drill-down, and no skill array to
     // drill into.
     expect(json).not.toContain('"skills"');
+  });
+
+  it("guardian inherits the STUDENT's historical-trends entitlement, not a wider one", async () => {
+    // The subject is the student on both paths. When the student is entitled, the guardian
+    // sees trends; when the student is not, neither does the guardian. The guardian's own
+    // status never widens it.
+    kpiAccessMocks.resolveHistoricalTrendsAccess.mockResolvedValueOnce(true);
+    const router = (await import("../../server/routes/guardian-routes"))
+      .default;
+    const app = buildApp("guardian");
+    app.use("/api/guardian", router);
+    await request(app)
+      .get("/api/guardian/students/student-1/summary")
+      .expect(200);
+    expect(kpiAccessMocks.resolveHistoricalTrendsAccess).toHaveBeenCalledWith(
+      "student-1",
+    );
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
+      "student-1",
+      true,
+    );
+  });
+
+  it("a failed entitlement read narrows the guardian view, never widens it", async () => {
+    // Fail-closed. An error is not an entitlement: an unreadable entitlement must hide the
+    // premium surface, not grant it. The mutation this catches is `?? true` / a catch that
+    // defaults open.
+    kpiAccessMocks.resolveHistoricalTrendsAccess.mockResolvedValueOnce(false);
+    const router = (await import("../../server/routes/guardian-routes"))
+      .default;
+    const app = buildApp("guardian");
+    app.use("/api/guardian", router);
+    await request(app)
+      .get("/api/guardian/students/student-1/summary")
+      .expect(200);
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
+      "student-1",
+      false,
+    );
   });
 
   it("denies unlinked guardian summary requests and emits denied event", async () => {

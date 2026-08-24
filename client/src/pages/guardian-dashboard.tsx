@@ -93,7 +93,9 @@ interface GuardianFullLengthHistorySession {
   completedAt: string | null;
   createdAt: string;
   reportAvailable: boolean;
-  reviewAvailable: boolean;
+  // `reviewAvailable` is gone. There is no guardian review endpoint, so the server was
+  // asserting `false` for something it could not establish. A type that declares a field
+  // the server does not send is how the crashed weakness card happened.
 }
 
 interface GuardianFullLengthHistoryResponse {

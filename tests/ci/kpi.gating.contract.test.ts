@@ -18,9 +18,15 @@ const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
 const canAccessFeature = vi.fn();
 
-vi.mock("../../server/services/kpi-access", () => ({
-  resolvePaidKpiAccessForUser,
-}));
+// `resolveHistoricalTrendsAccess` is spread in from the REAL module, not stubbed. It is
+// the shared fail-closed derivation both the student and guardian KPI paths now call, and
+// stubbing it here would mock away the very behaviour these cases assert.
+vi.mock("../../server/services/kpi-access", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/kpi-access")
+  >("../../server/services/kpi-access");
+  return { ...actual, resolvePaidKpiAccessForUser };
+});
 
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,

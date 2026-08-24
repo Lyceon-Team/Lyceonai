@@ -70,10 +70,16 @@ describe("Full-length report: single canonical builder", () => {
     persistModuleCalculatorState: vi.fn(),
   }));
 
-  vi.mock("../../server/services/kpi-access", () => ({
-    resolvePaidKpiAccessForUser: (...args: any[]) =>
-      kpiMocks.resolvePaidKpiAccessForUser(...args),
-  }));
+  vi.mock("../../server/services/kpi-access", async () => {
+    const actual = await vi.importActual<
+      typeof import("../../server/services/kpi-access")
+    >("../../server/services/kpi-access");
+    return {
+      ...actual,
+      resolvePaidKpiAccessForUser: (...args: any[]) =>
+        kpiMocks.resolvePaidKpiAccessForUser(...args),
+    };
+  });
 
   vi.mock("../../server/middleware/csrf-double-submit", () => ({
     doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
@@ -291,8 +297,14 @@ describe("KPI summary: canonical builder path", () => {
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 
+    // These two cases assert what getRecencyKpis CALLS, not how the historical-trends flag
+    // is derived. The real resolver reaches a live entitlement client and hangs the case at
+    // the 5s timeout, so it is stubbed here — stubbing it mocks away nothing these cases
+    // claim. The derivation itself is proved in kpi.gating.contract.test.ts, which runs the
+    // real function over a mocked EntitlementService.
     vi.doMock("../../server/services/kpi-access", () => ({
       resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+      resolveHistoricalTrendsAccess: vi.fn(async () => false),
     }));
 
     // Q1 consolidation: getRecencyKpis now uses canAccessFeature('historical_trends').
@@ -350,8 +362,14 @@ describe("KPI summary: canonical builder path", () => {
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 
+    // These two cases assert what getRecencyKpis CALLS, not how the historical-trends flag
+    // is derived. The real resolver reaches a live entitlement client and hangs the case at
+    // the 5s timeout, so it is stubbed here — stubbing it mocks away nothing these cases
+    // claim. The derivation itself is proved in kpi.gating.contract.test.ts, which runs the
+    // real function over a mocked EntitlementService.
     vi.doMock("../../server/services/kpi-access", () => ({
       resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+      resolveHistoricalTrendsAccess: vi.fn(async () => false),
     }));
 
     vi.doMock("../../server/services/entitlement-service", () => ({

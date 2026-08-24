@@ -28,6 +28,53 @@ import {
   projectGuardianKpiView,
 } from "../services/canonical-runtime-views";
 import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-month-view";
+import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
+
+/**
+ * The calendar day shape, DERIVED from the builder's own return type rather than restated.
+ * `payload.days.map((day: any) => ...)` meant a renamed field in buildCalendarMonthView
+ * silently became `undefined` on a parent's screen — an unchecked read wearing the face of
+ * "no data". Deriving it here makes that rename a compile error instead.
+ */
+type CalendarMonthDay = Awaited<
+  ReturnType<typeof buildCalendarMonthView>
+>["days"][number];
+
+/** The exact column list the linked-student queries select. Not `any[]`. */
+type LinkedStudentRow = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  created_at: string;
+};
+
+/**
+ * `catch (e: any)` then `e?.code` / `e.message` is a §3.2 hard stop that also reads
+ * properties off a value of unknown shape. `unknown` at the boundary, narrowed here.
+ *
+ * These return null / a fallback rather than throwing: a thrown error whose shape surprises
+ * us must still reach the error branch it belongs to, not replace it with a second failure.
+ */
+function errorCode(value: unknown): string | null {
+  if (typeof value === "object" && value !== null && "code" in value) {
+    const code = (value as { code: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
+  return null;
+}
+
+function errorMessage(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  if (typeof value === "object" && value !== null && "message" in value) {
+    const message = (value as { message: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+  return "unknown error";
+}
 
 const router = Router();
 
@@ -248,8 +295,8 @@ router.post(
           "student",
         );
         await createGuardianLink(guardianId, student.id, studentAccountId);
-      } catch (linkError: any) {
-        if (linkError?.code === "GUARDIAN_ALREADY_LINKED") {
+      } catch (linkError: unknown) {
+        if (errorCode(linkError) === "GUARDIAN_ALREADY_LINKED") {
           await auditLog(
             guardianId,
             "link_attempt",
@@ -267,7 +314,7 @@ router.post(
           });
         }
 
-        if (linkError?.code === "STUDENT_ALREADY_LINKED") {
+        if (errorCode(linkError) === "STUDENT_ALREADY_LINKED") {
           await auditLog(
             guardianId,
             "link_attempt",
@@ -292,7 +339,7 @@ router.post(
           requestId,
         );
         logger.error("GUARDIAN", "link_student", "Failed to link student", {
-          error: linkError.message,
+          error: errorMessage(linkError),
           requestId,
         });
         return res
@@ -355,8 +402,8 @@ router.delete(
       // CANONICAL: Revoke link in guardian_links
       try {
         await revokeGuardianLink(guardianId, studentId);
-      } catch (revokeError: any) {
-        if (revokeError?.code === "LINK_NOT_ACTIVE") {
+      } catch (revokeError: unknown) {
+        if (errorCode(revokeError) === "LINK_NOT_ACTIVE") {
           logger.warn(
             "GUARDIAN",
             "unlink_conflict",
@@ -370,7 +417,7 @@ router.delete(
           });
         }
         logger.error("GUARDIAN", "unlink_student", "Failed to unlink student", {
-          error: revokeError.message,
+          error: errorMessage(revokeError),
           requestId,
         });
         return res
@@ -397,7 +444,7 @@ router.delete(
       // Return updated student list from canonical source
       const links = await getAllGuardianStudentLinks(guardianId);
       const studentIds = links.map((l) => l.student_user_id);
-      let students: any[] = [];
+      let students: LinkedStudentRow[] = [];
       if (studentIds.length > 0) {
         const { data } = await supabaseServer
           .from("profiles")
@@ -458,9 +505,23 @@ router.get(
       // Same builder the student KPI route calls (server/routes/legacy/progress.ts),
       // then a PURE projection to the guardian-granted metric set. No second derivation
       // and no coercion — see projectGuardianKpiView.
+      //
+      // THE SECOND ARGUMENT USED TO BE A HARDCODED `true`.
+      //   The student route derives it from the student's own entitlement, fail-closed. So
+      //   a guardian saw historical trends the student's entitlement denied the student —
+      //   the payer's view more permissive than the learner's, which inverts the trust
+      //   model and violates Doc 04C invariant #7 ("Guardians MUST NOT see fields the
+      //   student does not see") outright. Both paths now call ONE resolver, and the
+      //   subject is the student on both.
+      //
+      //   No admin escape here: this is the guardian surface, and the owner ruling is that
+      //   it shows exactly what the student sees, no more and no less. An admin who needs
+      //   more uses an admin route.
+      const includeHistoricalTrends =
+        await resolveHistoricalTrendsAccess(studentId);
       const studentView = await buildStudentKpiViewFromCanonical(
         studentId,
-        true,
+        includeHistoricalTrends,
       );
       const projected = projectGuardianKpiView(studentView);
 
@@ -557,8 +618,10 @@ router.get(
         completedAt: session.completedAt,
         createdAt: session.createdAt,
         reportAvailable: session.status === "completed",
-        // Guardian review endpoint is not mounted; fail closed by exposing false.
-        reviewAvailable: false,
+        // `reviewAvailable: false` used to be emitted here. There is no guardian review
+        // endpoint, so the value was not "false" — it was UNKNOWN, asserted as a fact on a
+        // parent's screen. Same class as the `?? 0` that told a parent their child had
+        // answered nothing. A field the surface cannot establish is not emitted at all.
       }));
 
       logger.info(
@@ -771,7 +834,7 @@ router.get(
         end,
         timezone,
       );
-      const projectedDays = payload.days.map((day: any) => ({
+      const projectedDays = payload.days.map((day: CalendarMonthDay) => ({
         day_date: day.day_date,
         planned_minutes: day.planned_minutes,
         completed_minutes: day.completed_minutes,
