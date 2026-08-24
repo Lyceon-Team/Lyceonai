@@ -559,11 +559,12 @@ describe("Guardian reporting runtime contract", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.student).toEqual({
-      id: "student-1",
-      displayName: "Student One",
-    });
-    expect(response.body.student.email).toBeUndefined();
+    // `student: {id, displayName}` was a guardian-ONLY addition — a key the student's own
+    // KPI body never had, so it broke the strict-subset invariant (Doc 04C #7). The
+    // dashboard already knows which student it selected; it does not need the server to
+    // name them back inside a KPI payload.
+    expect(response.body).not.toHaveProperty("student");
+    expect(response.body).not.toHaveProperty("progress");
     expect(response.body.questions).toBeUndefined();
     expect(response.body.correct_answer).toBeUndefined();
     expect(response.body.explanation).toBeUndefined();
@@ -584,22 +585,9 @@ describe("Guardian reporting runtime contract", () => {
       "student-1",
       false,
     );
-    expect(response.body.progress).toEqual({
-      questionsAttempted: 30,
-      accuracy: 80,
-      currentStreakDays: 3,
-      explanations: {
-        week_questions: expect.objectContaining({
-          ruleId: "RULE_WEEK_QUESTIONS",
-        }),
-        week_accuracy: expect.objectContaining({
-          ruleId: "RULE_WEEK_ACCURACY",
-        }),
-        current_streak: expect.objectContaining({
-          ruleId: "RULE_CURRENT_STREAK",
-        }),
-      },
-    });
+    // `progress` is gone. The same three numbers live in `metrics` — where the student has
+    // them — and are asserted from there below. Two shapes for one fact was the
+    // duplication ruled out in Q4.
     const metrics = response.body.metrics as Array<{
       id: string;
       value: number | null;
@@ -614,10 +602,23 @@ describe("Guardian reporting runtime contract", () => {
     expect(metricValue("week_questions")).toBe(30);
     expect(metricValue("week_accuracy")).toBe(80);
     expect(metricValue("current_streak")).toBe(3);
+    // PASSED THROUGH from the builder, unfiltered — it is the student's value verbatim.
+    // The guardian projection used to hardcode `official: []` / `weighted: []` and rebuild
+    // `diagnostic` from its own filtered list; the literals could never track the builder,
+    // so if it ever populated official/weighted the guardian's copy stayed empty forever.
+    //
+    // CONSEQUENCE, FLAGGED NOT FIXED: `diagnostic` therefore still names `recency_accuracy`,
+    // a metric the guardian does not receive. Filtering it would be reshaping the student
+    // envelope, which the ruling forbids. See owner question 2 in the PR.
     expect(response.body.measurementModel).toEqual({
       official: [],
       weighted: [],
-      diagnostic: ["week_questions", "week_accuracy", "current_streak"],
+      diagnostic: [
+        "week_questions",
+        "week_accuracy",
+        "current_streak",
+        "recency_accuracy",
+      ],
     });
     // Old-gen engagement metrics are dropped under the genesis event vocabulary.
     expect(

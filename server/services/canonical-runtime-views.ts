@@ -1,5 +1,8 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import type {
+  CompleteExamResult,
+  FullLengthSessionHistoryItem,
+} from "../../apps/api/src/services/fullLengthExam";
 import { logger } from "../logger";
 import {
   diagnosticStateSchema,
@@ -827,40 +830,141 @@ export async function readAnsweredQuestionCount(
  * It sits beside projectGuardianFullLengthReportView because that function is the pattern:
  * ONE builder, then a pure projection for the narrower audience.
  */
-export function projectGuardianKpiView(view: StudentKpiView) {
+/**
+ * @spec [Doc 04C invariant #7 — "Guardian payloads are a STRICT SUBSET of the student
+ *   payload ... enforced by deriving the guardian payload from the student payload via a
+ *   projection function, not by independent construction"; Doc 05 Parent §15.2 + AC#19 +
+ *   owner ruling 2026-08-23 SCL-043 — the test is "does the student see it", not "is it a
+ *   counter"; owner ruling 2026-08-23 — "the guardian sees exactly what the student sees,
+ *   no more and no less"] | @implemented [2026-08-24]
+ *
+ * plain English: the student's KPI view, with the metric list narrowed to the three a
+ * guardian is granted. Nothing added, nothing reshaped, nothing invented.
+ *
+ * THE RETURN TYPE IS `StudentKpiView` ON PURPOSE.
+ *   Not a `GuardianKpiView`. A separate guardian type is a second place for the shape to be
+ *   decided, and a second place is how it drifts — the hand-written `GuardianWeaknessResponse`
+ *   declaring `skills` against a route returning `domains` crashed the dashboard for every
+ *   guardian whose student had rows. Here the guardian view IS a student view structurally,
+ *   so a field added to the student cannot fail to reach the guardian, and a field the
+ *   student does not have cannot be added to the guardian.
+ *
+ * WHAT THIS REPLACED, AND WHY EACH PIECE WENT.
+ *   - `progress: {questionsAttempted, accuracy, currentStreakDays}` — a second shape of
+ *     three numbers already present in `metrics`. Two shapes for one fact is how
+ *     SAT_TAXONOMY's slugs drifted from the database unnoticed.
+ *   - `measurementModel: {official: [], weighted: []}` — HARDCODED empties duplicating the
+ *     builder's own field. If the builder ever populates them the copy stays empty forever:
+ *     `[]` asserted as fact on a parent's screen, the same class as the `?? 0` that told a
+ *     parent their child had answered nothing.
+ *   - dropping `gating` — `gating.historicalTrends` is how a reader knows a value is
+ *     WITHHELD rather than zero. Removing it does not falsify the number; it removes the
+ *     reader's ability to know the number is incomplete, which is the same defect one layer
+ *     up.
+ *
+ * NOT PASSED THROUGH: the route's `entitlement` block. It is added by the student ROUTE,
+ * not by this builder, and it describes billing rather than learning. See owner question 1
+ * in the PR — this function cannot add it either way, since it only ever narrows the view
+ * it is given.
+ */
+/**
+ * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
+ *   payload, derived via a projection function rather than independently constructed;
+ *   SCL-044 (PROPOSED) — the guardian exam session list has no owning document, capability
+ *   kept and to be specified] | @implemented [2026-08-24]
+ *
+ * plain English: one projection of the full-length session history, and a guardian
+ * narrowing of it.
+ *
+ * WHY THIS EXISTS. The two routes each mapped `listExamSessions` inline, and the two maps
+ * had drifted in three ways at once:
+ *   1. SHAPE — the student spread `...session` (every field the service returns, forever);
+ *      the guardian named six fields.
+ *   2. PRIVILEGE — the student gated `reportAvailable` on the student's paid access; the
+ *      guardian did not gate it at all, so a guardian could be told a report was available
+ *      when the student's own entitlement said otherwise. That is the same defect closed in
+ *      #644 for historical trends, in a second place, and it is why extraction is not
+ *      cosmetic: two inline maps cannot disagree if there is only one map.
+ *   3. INVENTION — the guardian emitted `reviewAvailable: false` for an endpoint that does
+ *      not exist (removed in #644).
+ *
+ * The student projection is the single derivation. The guardian projection is that result
+ * with `reviewAvailable` removed — structurally a subset, not a re-derivation, so a field
+ * added to the student item reaches the guardian automatically and a field the student does
+ * not have cannot be added to the guardian.
+ *
+ * `hasPaidAccess` is the STUDENT's, on both paths. The caller resolves it; this function
+ * never guesses it, and there is no default — an unresolved entitlement is the caller's
+ * problem to fail closed on, not this function's to paper over.
+ */
+export type StudentExamSessionListItem = {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+};
+
+export type GuardianExamSessionListItem = Omit<
+  StudentExamSessionListItem,
+  "reviewAvailable"
+>;
+
+export function projectStudentExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): StudentExamSessionListItem[] {
+  // FIELDS ARE NAMED, NEVER SPREAD.
+  //   `...session` was what both routes did, and the guardian anti-leak gate caught it the
+  //   moment the two were unified: the gate drives `listExamSessions` with rows carrying
+  //   every RULE-4 column and a spread carries all of them to the client. CLAUDE.md states
+  //   the rule directly — "a new field on a spread object bypasses per-field null-outs and
+  //   opens a leak one layer up" (MA-07 #419). The service emits exactly these nine fields
+  //   today, so naming them changes nothing now; what it changes is the FUTURE, where a
+  //   tenth field has to be added here deliberately instead of arriving unreviewed.
+  return sessions.map((session) => ({
+    sessionId: session.sessionId,
+    status: session.status,
+    currentSection: session.currentSection,
+    currentModule: session.currentModule,
+    testFormId: session.testFormId,
+    startedAt: session.startedAt,
+    completedAt: session.completedAt,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    reportAvailable: session.status === "completed" && opts.hasPaidAccess,
+    reviewAvailable: session.status === "completed",
+  }));
+}
+
+export function projectGuardianExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): GuardianExamSessionListItem[] {
+  // Derived FROM the student projection, never alongside it.
+  return projectStudentExamSessionList(sessions, opts).map(
+    ({ reviewAvailable: _reviewAvailable, ...rest }) => rest,
+  );
+}
+
+export function projectGuardianKpiView(view: StudentKpiView): StudentKpiView {
   const GUARDIAN_METRIC_IDS = new Set([
     "week_questions",
     "week_accuracy",
     "current_streak",
   ]);
 
-  const metrics = view.metrics.filter((metric) =>
-    GUARDIAN_METRIC_IDS.has(metric.id),
-  );
-  const byId = new Map(metrics.map((metric) => [metric.id, metric]));
-
-  // `?? null`, never `?? 0`. A metric the builder could not establish stays absent.
-  const numericOrNull = (id: string): number | null => {
-    const value = byId.get(id)?.value;
-    return value === null || value === undefined ? null : Number(value);
-  };
-
   return {
-    progress: {
-      questionsAttempted: numericOrNull("week_questions"),
-      accuracy: numericOrNull("week_accuracy"),
-      currentStreakDays: numericOrNull("current_streak"),
-      explanations: Object.fromEntries(
-        metrics.map((metric) => [metric.id, metric.explanation]),
-      ),
-    },
-    metrics,
-    measurementModel: {
-      official: [],
-      weighted: [],
-      diagnostic: metrics.map((metric) => metric.id),
-    },
-    modelVersion: view.modelVersion,
+    ...view,
+    metrics: view.metrics.filter((metric) =>
+      GUARDIAN_METRIC_IDS.has(metric.id),
+    ),
   };
 }
 

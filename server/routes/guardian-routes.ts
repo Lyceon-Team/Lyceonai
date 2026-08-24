@@ -26,9 +26,13 @@ import {
   buildStudentFullLengthReportView,
   projectGuardianFullLengthReportView,
   projectGuardianKpiView,
+  projectGuardianExamSessionList,
 } from "../services/canonical-runtime-views";
 import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-month-view";
-import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
+import {
+  resolveHistoricalTrendsAccess,
+  resolvePaidKpiAccessForStudent,
+} from "../services/kpi-access";
 
 /**
  * The calendar day shape, DERIVED from the builder's own return type rather than restated.
@@ -493,7 +497,10 @@ router.get(
 
       const { data: student, error: studentError } = await supabaseServer
         .from("profiles")
-        .select("id, display_name")
+        // `display_name` is no longer selected: it is no longer serialised, and Doc 05B
+        // §10.5 is explicit that the handler projects the columns it needs rather than
+        // reading wide and trimming at the edge.
+        .select("id")
         .eq("id", studentId)
         .eq("role", "student")
         .single();
@@ -533,11 +540,10 @@ router.get(
         details: { surface: "summary" },
       });
 
+      // The guardian body IS the student envelope, metrics narrowed. No `student` block:
+      // it was a guardian-only addition, and the dashboard already knows which student it
+      // selected — it does not need the server to name them back inside a KPI payload.
       return res.json({
-        student: {
-          id: student.id,
-          displayName: student.display_name,
-        },
         ...projected,
         requestId,
       });
@@ -611,18 +617,14 @@ router.get(
         includeIncomplete,
       });
 
-      const projected = sessions.map((session) => ({
-        sessionId: session.sessionId,
-        status: session.status,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        createdAt: session.createdAt,
-        reportAvailable: session.status === "completed",
-        // `reviewAvailable: false` used to be emitted here. There is no guardian review
-        // endpoint, so the value was not "false" — it was UNKNOWN, asserted as a fact on a
-        // parent's screen. Same class as the `?? 0` that told a parent their child had
-        // answered nothing. A field the surface cannot establish is not emitted at all.
-      }));
+      // The STUDENT's paid access, resolved for the student — not the guardian's, and not
+      // skipped. The inline map this replaced computed `reportAvailable` with no
+      // entitlement gate at all, so a guardian could be told a report was available when
+      // the student's own entitlement said otherwise (Doc 04C invariant #7).
+      const studentAccess = await resolvePaidKpiAccessForStudent(studentId);
+      const projected = projectGuardianExamSessionList(sessions, {
+        hasPaidAccess: studentAccess.hasPaidAccess,
+      });
 
       logger.info(
         "GUARDIAN",
