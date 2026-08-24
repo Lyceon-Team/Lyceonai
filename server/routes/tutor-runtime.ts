@@ -889,10 +889,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisScanContext,
       );
 
-      // SCL-023 §3.4: log turn metrics on crisis path. Previously missing —
-      // crisis turns returned before logTurnMetrics (line ~1155), so crisis
-      // turns had no metrics row and no crisisClassifierOutcome for alerting.
+      // Log turn metrics for the crisis path — previously skipped, creating
+      // an observability gap where crisis turns had no metrics row.
       // orchestrationDurationMs=0 because no LLM orchestration occurs on crisis.
+      // modelName: "crisis_bypass" — no model was invoked (crisis-safe response
+      // is server-authored, not model-generated).
       // @spec [CR-03C-V3-01 §3.4, Doc-03A_V1 §11.5]
       await logTurnMetrics({
         conversationId: conversation.id,
@@ -988,10 +989,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     );
     const isPostSubmit = !preSubmit;
 
-    // Fetch correct_answer for the BFF-side output scan (step 15).
-    // Pre-submit: needed for answer-aware leak detection in scanAndSubstitute.
-    // Post-submit: forwarded to the worker so the model can explain it.
-    const correctAnswerResult = preSubmit
+    // Fetch correct_answer unconditionally when a question row exists.
+    // Pre-submit: needed BFF-local for answer-aware leak detection (step 15).
+    // Post-submit: forwarded on the wire so the worker prompt can explain it.
+    // The envelope gate (tutor-context.ts) decides what reaches the wire:
+    //   correct_answer: isPostSubmit ? correctAnswer : null
+    // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
+    const correctAnswerResult = effectiveScope.source_question_row_id
       ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
@@ -1176,6 +1180,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // crisisResult.crisis is false here (crisis path returned earlier).
     // If forceReview is true, Layer 2 failed but Layer 1 had signatures —
     // the turn proceeded but was force-enqueued (classifier_degraded).
+    // @spec [CR-03C-V3-01 §3.4]
     const normalPathOutcome: string = crisisResult.forceReview
       ? "classifier_degraded"
       : "no_crisis";

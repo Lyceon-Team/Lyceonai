@@ -32,7 +32,8 @@
  *  - Expected failures: return 200 with `{ ok: false, reason }` so Cloud
  *    Tasks does not retry. Only unexpected errors return 500 (triggers retry).
  *  - Missing OIDC env vars (CLOUD_TASKS_OIDC_AUDIENCE, CLOUD_TASKS_SERVICE_ACCOUNT):
- *    middleware construction fails at startup with a clear error log.
+ *    startup crashes with a descriptive error (fail-fast per Doc 01A §3).
+ *    In test mode the check is skipped — tests mock the middleware.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -47,16 +48,39 @@ const router = Router();
 // ── OIDC config ──────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03C_V3 §9.3]
+ * @spec [Doc-03C_V3 §9.3, Doc-01A §3 fail-fast]
  *
  * OIDC audience: the handler URL that Cloud Tasks targets. The token's
  * audience claim must match this value. Configured per deployment.
  *
  * OIDC service account: the SA that Cloud Tasks uses to mint tokens.
  * Must match `lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com`.
+ *
+ * Fail-fast (Doc 01A §3): missing env vars crash the process at startup
+ * instead of running with empty strings that silently disable auth.
+ * Guarded by NODE_ENV — test mode skips (tests mock the middleware).
  */
+const IS_TEST = process.env.NODE_ENV === "test" || !!process.env.VITEST;
+
 const OIDC_AUDIENCE = process.env.CLOUD_TASKS_OIDC_AUDIENCE ?? "";
 const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
+
+if (!IS_TEST) {
+  if (!OIDC_AUDIENCE) {
+    throw new Error(
+      "CLOUD_TASKS_OIDC_AUDIENCE is not set. " +
+        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
+        "Set it to the Cloud Run handler URL.",
+    );
+  }
+  if (!OIDC_SERVICE_ACCOUNT) {
+    throw new Error(
+      "CLOUD_TASKS_SERVICE_ACCOUNT is not set. " +
+        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
+        "Set it to lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com.",
+    );
+  }
+}
 
 // ── Request schema ────────────────────────────────────────────────────
 

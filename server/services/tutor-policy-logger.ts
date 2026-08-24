@@ -1,6 +1,8 @@
 /**
- * @spec [Doc-03A_V1 §11, INV-03-11]
+ * @spec [Doc-03A_V1 §11, INV-03-11; CR-03C-V3-01 §3.4]
  * @implemented 2026-08-09
+ * @modified 2026-08-20 — added crisisClassifierOutcome to TurnMetricsLog
+ *   for Cloud Monitoring log-based metric alerting per CR-03C-V3-01 §3.4.
  *
  * plain English: WRITE-ONLY audit logger for every policy decision made during a
  * LISA tutor turn. Per Doc 03A §11, every policy evaluation (which prompt variant,
@@ -20,6 +22,11 @@
  *  - No student content (messages, answers) is ever written — only metadata and
  *    counts. No PII in any record (INV-03-11 + privacy invariant).
  *  - This service is never exposed to clients and never read for business logic.
+ *  - crisisClassifierOutcome is a discriminated string field for Cloud Monitoring
+ *    log-based metric extraction. Values: "no_crisis" | "crisis_signature" |
+ *    "crisis_model" | "crisis_both" | "classifier_degraded_no_floor" |
+ *    "infrastructure_failure" | "classifier_degraded" | null (for turns that
+ *    don't reach the classifier, e.g. pre-pipeline guards).
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
@@ -73,6 +80,20 @@ export type TurnMetricsLog = {
   antiLeakTriggered: boolean;
   injectionDetected: boolean;
   crisisTriggered: boolean;
+  /**
+   * @spec [CR-03C-V3-01 §3.4]
+   *
+   * Discriminated per-turn crisis classifier outcome for Cloud Monitoring
+   * log-based metric alerting. Values:
+   *  - "no_crisis"                     — classifier ran, no crisis detected
+   *  - "crisis_signature"              — Layer 1 signature match only
+   *  - "crisis_model"                  — Layer 2 model inference only
+   *  - "crisis_both"                   — both layers flagged crisis
+   *  - "classifier_degraded_no_floor"  — Layer 2 failed + Layer 1 empty (B1.5 fail-closed)
+   *  - "infrastructure_failure"        — classifier threw unexpected error
+   *  - "classifier_degraded"           — Layer 2 failed but Layer 1 had data (force-review)
+   *  - null                            — classifier did not run (pre-pipeline exit)
+   */
   crisisClassifierOutcome: string | null;
 };
 
@@ -247,8 +268,12 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
       {
         conversationId: params.conversationId,
         turnOrdinal: params.turnOrdinal,
-        crisisTriggered: params.crisisTriggered,
+        modelName: params.modelName,
+        orchestrationDurationMs: params.orchestrationDurationMs,
         crisisClassifierOutcome: params.crisisClassifierOutcome,
+        crisisTriggered: params.crisisTriggered,
+        injectionDetected: params.injectionDetected,
+        antiLeakTriggered: params.antiLeakTriggered,
       },
     );
   } catch (err: unknown) {
