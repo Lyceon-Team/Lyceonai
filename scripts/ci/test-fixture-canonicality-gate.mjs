@@ -116,12 +116,28 @@ function loadCanonicalDomains() {
 }
 
 const DEFAULT_PATHSPEC = [
-  "tests/**/*.ts",
-  "tests/**/*.tsx",
+  // The whole test tree, not an extension list. Formats the gate can parse are checked;
+  // formats it cannot are caught by the unparsed-format tripwire rather than skipped. That
+  // is the #640 lesson applied to a gate that genuinely needs a parser per format.
+  "tests/**",
   "client/src/**/*.test.ts",
   "client/src/**/*.test.tsx",
-  "apps/**/__tests__/**/*.ts",
-  "packages/**/__tests__/**/*.ts",
+  "apps/**/__tests__/**",
+  "packages/**/__tests__/**",
+  // Binaries and generated blobs cannot hold a reviewable fixture literal.
+  ":(exclude)*.png",
+  ":(exclude)*.jpg",
+  ":(exclude)*.jpeg",
+  ":(exclude)*.gif",
+  ":(exclude)*.webp",
+  ":(exclude)*.pdf",
+  ":(exclude)*.ico",
+  ":(exclude)*.woff",
+  ":(exclude)*.woff2",
+  ":(exclude)*.ttf",
+  ":(exclude)*.zip",
+  ":(exclude)*.gz",
+  ":(exclude)**/node_modules/**",
 ];
 
 /**
@@ -174,65 +190,226 @@ function stringLiteralProps(node, sf) {
   return props;
 }
 
-function checkFile(relPath, canonical, violations) {
-  const abs = resolve(REPO_ROOT, relPath);
-  const source = readFileSync(abs, "utf8");
-  const sf = ts.createSourceFile(abs, source, ts.ScriptTarget.Latest, true);
+/**
+ * THE THREE RULES, IN ONE PLACE.
+ *
+ * `props` is a Map<key, {value: string|null}> and `report(key, rule, message)` resolves a
+ * key back to a line however the caller's format allows. Everything below is format-blind
+ * on purpose: the TypeScript extractor and the JSON extractor feed the SAME function, so a
+ * rule cannot be true of a `.ts` fixture and false of an `.ndjson` one. Forking these rules
+ * per format is precisely the divergence this gate exists to catch, one level up.
+ */
+function applyFixtureRules(props, canonical, report) {
+  const section = props.get("section");
+  // WHAT COUNTS AS A DB-CANONICAL FIXTURE — and why `stem`/`item_type` are NOT markers.
+  //   `section` alone is not enough: `apps/api/src/services/fullLengthExam.ts:173` declares
+  //   `type SectionType = "rw" | "math"` for EXAM MODULES, with an explicit normalizer at
+  //   :652 mapping "M"/"MATH" -> "math". Exam-state fixtures carrying `section: "math"` are
+  //   therefore correct, not drift, and a gate that flags them fails the build on working
+  //   code. Marking on question-content keys (`stem`, `item_type`) catches exactly those.
+  //
+  //   `domain` is the discriminator. The canonical (section, domain) pair is what these
+  //   rules are ABOUT, it exists only on records shaped like database rows, and exam-module
+  //   state has no domain at all.
+  //   NOT YET ENABLED: adding `props.has("domain")` as a second discriminator surfaces 26
+  //   candidate findings across 8 files (section "Math"/"MATH", snake_case domains and
+  //   skills, and one flatly wrong (RW, "Algebra") pair). Those are real candidates, but
+  //   they belong to the owner's parked section-vocabulary audit, not to a gate-plumbing
+  //   change. Enabling it here would fail the build on a question nobody has ruled on yet.
+  const looksLikeMasteryFixture =
+    section !== undefined && ROW_MARKERS.some((marker) => props.has(marker));
+  if (!looksLikeMasteryFixture || section.value === null) {
+    return;
+  }
 
-  const report = (node, rule, message) => {
-    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-    violations.push({ file: relPath, line: line + 1, rule, message });
-  };
+  // Rule 1 — the section CHECK.
+  if (section.value !== "M" && section.value !== "RW") {
+    report(
+      "section",
+      "section",
+      `section: ${JSON.stringify(section.value)} — the database stores 'M' or 'RW' (CHECK-constrained)`,
+    );
+  } else {
+    // Rule 2 — the (section, domain) pairing.
+    const domain = props.get("domain");
+    if (domain && domain.value !== null) {
+      const allowed = canonical[section.value] ?? [];
+      if (!allowed.includes(domain.value)) {
+        report(
+          "domain",
+          "domain",
+          `(${section.value}, ${JSON.stringify(domain.value)}) is not a canonical pair — allowed for ${section.value}: ${allowed.map((d) => JSON.stringify(d)).join(", ")}`,
+        );
+      }
+    }
+  }
 
+  // Rule 3 — skill shape (see "WHAT IT DOES NOT CHECK" above).
+  const skill = props.get("skill");
+  if (
+    skill &&
+    skill.value !== null &&
+    /^[a-z0-9]+(_[a-z0-9]+)+$/.test(skill.value)
+  ) {
+    report(
+      "skill",
+      "skill",
+      `skill: ${JSON.stringify(skill.value)} is snake_case — canonical skills are College Board display strings such as "Linear Equations in One Variable". (Shape check only: this gate cannot confirm membership in canonical_skill_catalog.)`,
+    );
+  }
+}
+
+/** TypeScript/JavaScript source: object literals, located by AST position. */
+function checkSourceFile(relPath, source, canonical, violations) {
+  const sf = ts.createSourceFile(
+    resolve(REPO_ROOT, relPath),
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  );
   const visit = (node) => {
     if (ts.isObjectLiteralExpression(node)) {
       const props = stringLiteralProps(node, sf);
-      const section = props.get("section");
-      const looksLikeMasteryFixture =
-        section !== undefined &&
-        ROW_MARKERS.some((marker) => props.has(marker));
-
-      if (looksLikeMasteryFixture && section.value !== null) {
-        // Rule 1 — the section CHECK.
-        if (section.value !== "M" && section.value !== "RW") {
-          report(
-            section.node,
-            "section",
-            `section: ${JSON.stringify(section.value)} — the database stores 'M' or 'RW' (CHECK-constrained)`,
-          );
-        } else {
-          // Rule 2 — the (section, domain) pairing.
-          const domain = props.get("domain");
-          if (domain && domain.value !== null) {
-            const allowed = canonical[section.value] ?? [];
-            if (!allowed.includes(domain.value)) {
-              report(
-                domain.node,
-                "domain",
-                `(${section.value}, ${JSON.stringify(domain.value)}) is not a canonical pair — allowed for ${section.value}: ${allowed.map((d) => JSON.stringify(d)).join(", ")}`,
-              );
-            }
-          }
-        }
-
-        // Rule 3 — skill shape (see "WHAT IT DOES NOT CHECK" above).
-        const skill = props.get("skill");
-        if (
-          skill &&
-          skill.value !== null &&
-          /^[a-z0-9]+(_[a-z0-9]+)+$/.test(skill.value)
-        ) {
-          report(
-            skill.node,
-            "skill",
-            `skill: ${JSON.stringify(skill.value)} is snake_case — canonical skills are College Board display strings such as "Linear Equations in One Variable". (Shape check only: this gate cannot confirm membership in canonical_skill_catalog.)`,
-          );
-        }
-      }
+      applyFixtureRules(props, canonical, (key, rule, message) => {
+        const entry = props.get(key);
+        const anchor = entry ? entry.node : node;
+        const { line } = sf.getLineAndCharacterOfPosition(anchor.getStart(sf));
+        violations.push({ file: relPath, line: line + 1, rule, message });
+      });
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
+}
+
+/**
+ * JSON and NDJSON fixtures.
+ *
+ * WHY THIS EXISTS. The gate used to scan `tests/**\/*.ts` and `*.tsx` only, while eight
+ * fixture records lived in `tests/fixtures/**\/*.ndjson` — files literally under a directory
+ * named `fixtures`, invisible to a gate whose success line says "no non-canonical fixture
+ * found". Their values happened to be canonical, so nothing was wrong; the CLAIM was just
+ * broader than the check, which is the same shape as every other defect in this vertical.
+ */
+function checkJsonFile(relPath, source, canonical, violations) {
+  const lines = source.split("\n");
+  const locate = (key, value) => {
+    const needle =
+      typeof value === "string"
+        ? new RegExp(`"${key}"\\s*:\\s*${escapeForRegExp(JSON.stringify(value))}`)
+        : new RegExp(`"${key}"\\s*:`);
+    const idx = lines.findIndex((line) => needle.test(line));
+    return idx === -1 ? 1 : idx + 1;
+  };
+
+  const walk = (value, lineHint) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, lineHint);
+      return;
+    }
+    if (value === null || typeof value !== "object") {
+      return;
+    }
+    /** @type {Map<string, {value: string | null}>} */
+    const props = new Map();
+    for (const [k, v] of Object.entries(value)) {
+      props.set(k, { value: typeof v === "string" ? v : null });
+    }
+    applyFixtureRules(props, canonical, (key, rule, message) => {
+      const entry = props.get(key);
+      violations.push({
+        file: relPath,
+        line: lineHint ?? locate(key, entry ? entry.value : null),
+        rule,
+        message,
+      });
+    });
+    for (const v of Object.values(value)) walk(v, lineHint);
+  };
+
+  if (relPath.endsWith(".ndjson")) {
+    // One record per line: the line number IS the record index, no searching needed.
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        // A malformed line is not this gate's business — the pipeline's own parser owns
+        // that. Skipping is safe here BECAUSE it is reported, not swallowed.
+        violations.push({
+          file: relPath,
+          line: index + 1,
+          rule: "unparsed",
+          message:
+            "line is not valid JSON, so its fixture values could not be checked. A record this gate cannot read must not be reported as a record it approved.",
+        });
+        return;
+      }
+      walk(parsed, index + 1);
+    });
+    return;
+  }
+
+  try {
+    walk(JSON.parse(source), null);
+  } catch {
+    violations.push({
+      file: relPath,
+      line: 1,
+      rule: "unparsed",
+      message:
+        "file is not valid JSON, so its fixture values could not be checked.",
+    });
+  }
+}
+
+function escapeForRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * THE TRIPWIRE — a file type this gate cannot parse must announce itself.
+ *
+ * #640 established that an extension ALLOWLIST is a blind-spot generator: it grows one every
+ * time the repo gains a file type, and nothing says so. This gate genuinely cannot use a
+ * denylist — it needs a parser per format, and there is no parser for CSS or SQL. So instead
+ * of pretending, it FAILS when an unparsed file inside its own scope looks like it holds a
+ * fixture. The next `.yaml` fixture someone adds under `tests/` breaks the build with an
+ * instruction, rather than being silently skipped.
+ */
+const FIXTURE_KEY_TRIPWIRE = /["']?section["']?\s*:\s*["']/;
+
+function checkUnparsedFile(relPath, source, violations) {
+  if (!FIXTURE_KEY_TRIPWIRE.test(source)) {
+    return;
+  }
+  const lines = source.split("\n");
+  const idx = lines.findIndex((line) => FIXTURE_KEY_TRIPWIRE.test(line));
+  violations.push({
+    file: relPath,
+    line: idx === -1 ? 1 : idx + 1,
+    rule: "unparsed-format",
+    message:
+      "this file is in the gate's scope and carries a `section:` literal, but the gate has no parser for its extension — so its fixture values are UNCHECKED. Add a parser branch in checkFile(), or move the fixture to a format the gate reads (.ts/.tsx/.js/.json/.ndjson).",
+  });
+}
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"];
+const JSON_EXTENSIONS = [".json", ".ndjson"];
+
+function checkFile(relPath, canonical, violations) {
+  const source = readFileSync(resolve(REPO_ROOT, relPath), "utf8");
+  if (SOURCE_EXTENSIONS.some((ext) => relPath.endsWith(ext))) {
+    checkSourceFile(relPath, source, canonical, violations);
+    return;
+  }
+  if (JSON_EXTENSIONS.some((ext) => relPath.endsWith(ext))) {
+    checkJsonFile(relPath, source, canonical, violations);
+    return;
+  }
+  checkUnparsedFile(relPath, source, violations);
 }
 
 function main() {
