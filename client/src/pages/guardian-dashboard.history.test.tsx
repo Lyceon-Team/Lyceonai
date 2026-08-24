@@ -132,7 +132,6 @@ describe("GuardianDashboard full-length history view UX", () => {
                 completedAt: "2026-03-20T11:00:00.000Z",
                 createdAt: "2026-03-20T08:58:00.000Z",
                 reportAvailable: true,
-                reviewAvailable: false,
               },
               {
                 sessionId: "sess-live-2",
@@ -141,7 +140,6 @@ describe("GuardianDashboard full-length history view UX", () => {
                 completedAt: null,
                 createdAt: "2026-03-21T08:58:00.000Z",
                 reportAvailable: false,
-                reviewAvailable: false,
               },
             ],
           });

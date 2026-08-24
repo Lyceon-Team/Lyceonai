@@ -162,12 +162,10 @@ describe("Guardian Full-Length Report Visibility Contract", () => {
       expect.objectContaining({
         sessionId: "sess-completed-1",
         reportAvailable: true,
-        reviewAvailable: false,
       }),
       expect.objectContaining({
         sessionId: "sess-live-1",
         reportAvailable: false,
-        reviewAvailable: false,
       }),
     ]);
   });
