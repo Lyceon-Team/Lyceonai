@@ -880,7 +880,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         antiLeakTriggered: false,
         injectionDetected,
         crisisTriggered: crisisResult.crisis,
-        crisisClassifierOutcome: crisisResult.source,
+        crisisClassifierOutcome: crisisResult.crisis
+          ? crisisResult.source
+          : null,
       });
       sendTutorError(res, "canonical_write_failed");
       return;
