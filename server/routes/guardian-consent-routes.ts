@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getStripeClient } from "../lib/stripe/client";
 import { logger } from "../logger";
-import { createGuardianLink, ensureAccountForUser } from "../lib/account";
+import { createGuardianLink } from "../lib/account";
 import { sendEmail } from "../lib/email";
 
 const router = Router();
@@ -398,16 +398,12 @@ router.post(
         });
       }
 
-      // 4. Link Parent and Student
-      // Ensure both have accounts
-      const studentAccountId = await ensureAccountForUser(
-        admin,
-        request.child_id,
-        "student",
-      );
-      await ensureAccountForUser(admin, guardianId, "guardian");
-
-      await createGuardianLink(guardianId, request.child_id, studentAccountId);
+      // @spec [Doc-01_V8, §37.2 step 6] | @implemented [2026-08-25]
+      // plain English: on consent, create the guardian↔student link. The two
+      // ensure-account calls are gone — the `accounts` model is retired on this
+      // surface (owner ruling 2026-08-24) and the RPC they called does not exist
+      // in production, so they could only ever throw.
+      await createGuardianLink(guardianId, request.child_id);
 
       // 5. Removed legacy write to child profile.guardian_profile_id (guardian_links is now canonical truth)
       // 6. Void the Stripe charge if it was an auth

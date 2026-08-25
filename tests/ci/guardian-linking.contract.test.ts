@@ -41,8 +41,17 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
   generateToken: () => 'test-csrf-token',
 }));
 
-vi.mock('../../server/lib/durable-rate-limiter', () => ({
-  createDurableRateLimiter: () => (_req: any, _res: any, next: any) => next(),
+// WS-GL Stage 3: `server/lib/durable-rate-limiter` was deleted (Doc 01A §47
+// migration-path step 2). This test's pass-through is repointed at the middleware
+// that replaced it, so it keeps asserting exactly what it always asserted — the
+// route's error-code -> HTTP mapping — and nothing more. It is NOT rehabilitated by
+// this: it still mocks `server/lib/account`, the module whose behaviour it names,
+// and is therefore disqualified by construction. It stays only because it is a
+// required status check and retiring it is an owner action bundled with its
+// replacement landing (docs/plans/WS-GL_Stage2_Closure_Plan.md §9).
+vi.mock('../../server/middleware/guardian-link-rate-limit', () => ({
+  guardianLinkRateLimit: (_req: any, _res: any, next: any) => next(),
+  GUARDIAN_LINK_BUCKET: 'guardian_link_attempts_daily',
 }));
 
 vi.mock('../../apps/api/src/lib/supabase-server', () => ({

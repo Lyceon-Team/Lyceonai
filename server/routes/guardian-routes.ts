@@ -7,13 +7,12 @@ import { requireGuardianEntitlement } from "../middleware/guardian-entitlement";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { createDurableRateLimiter } from "../lib/durable-rate-limiter";
+import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
 import {
   createGuardianLink,
   revokeGuardianLink,
   isGuardianLinkedToStudent,
   getAllGuardianStudentLinks,
-  ensureAccountForUser,
 } from "../lib/account";
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
@@ -28,7 +27,6 @@ import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-mon
 
 const router = Router();
 
-const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
 const requireGuardianAccess = requireGuardianRole({
   message: "You do not have permission to access guardian resources",
 });
@@ -156,7 +154,7 @@ router.post(
   "/link",
   requireSupabaseAuth,
   requireGuardianAccess,
-  durableRateLimiter,
+  guardianLinkRateLimit,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     try {
@@ -237,14 +235,14 @@ router.post(
         });
       }
 
-      // CANONICAL: Create link in guardian_links with resolved student account_id
+      // @spec [Doc-01_V8, §35] | @implemented [2026-08-25]
+      // plain English: create the guardian↔student link. The `accounts` model is
+      // retired on this surface (owner ruling 2026-08-24) — there is no `accounts`
+      // table, no `account_members`, and no `ensure_account_for_user` RPC in
+      // production, so the accountId this once threaded could never resolve. The
+      // call is gone, not defaulted.
       try {
-        const studentAccountId = await ensureAccountForUser(
-          getSupabaseAdmin(),
-          student.id,
-          "student",
-        );
-        await createGuardianLink(guardianId, student.id, studentAccountId);
+        await createGuardianLink(guardianId, student.id);
       } catch (linkError: any) {
         if (linkError?.code === "GUARDIAN_ALREADY_LINKED") {
           await auditLog(
