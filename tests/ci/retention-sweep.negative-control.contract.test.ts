@@ -21,9 +21,11 @@
  *  - 365d tier is a structured no-op (tables not provisioned) — tested as such.
  *
  * edge cases:
- *  - 180d crisis: only CLOSED cases are swept. Open cases older than 180 days
- *    are retained regardless of age (safety review ongoing). This is the spec's
- *    "hard delete at 180 days or on closure, whichever is later."
+ *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases older
+ *    than 180 days are retained regardless of age (safety review ongoing).
+ *    This is the spec's "hard delete at 180 days or on closure, whichever is
+ *    later." Status values are derived from CRISIS_STATUS (which traces to the
+ *    CHECK constraint), never hardcoded — LISA-GCP-002.
  *  - 7d memory summaries: only purged when a student has zero remaining active
  *    conversations (conservative — spec says "cascade from account/entitlement").
  *  - Cross-table isolation: 7d sweep must not touch 90d/180d tables.
@@ -36,6 +38,7 @@ import {
   sweep180d,
   sweep365d,
   retentionCutoff,
+  CRISIS_STATUS,
 } from "../../server/services/retention-sweep";
 
 // ── Mock logger ──────────────────────────────────────────────────────
@@ -174,6 +177,15 @@ function filteringMockClient(tables: Record<string, Row[]>) {
               (row) => row[col] === null || row[col] === undefined,
             );
           }
+          return chain;
+        };
+
+        chain.gte = (col: string, val: unknown) => {
+          predicates.push((row) => {
+            const rv = row[col];
+            if (rv === null || rv === undefined) return false;
+            return String(rv) >= String(val);
+          });
           return chain;
         };
 
@@ -370,6 +382,61 @@ describe("7d tier — negative control", () => {
     expect(memRows[0].student_id).toBe("s2");
   });
 
+  it("memory summaries survive when student has soft-deleted conversations inside recovery window (BLOCKER 1)", async () => {
+    // LISA-GCP-001: student s1 has two soft-deleted conversations:
+    //   - conv-past-window: deleted 8 days ago (past 7-day recovery window, swept)
+    //   - conv-in-window:   deleted 3 days ago (inside 7-day recovery window, retained)
+    //
+    // After sweep, s1 has zero active conversations BUT one conversation still
+    // inside the recovery window. Memory summaries MUST survive because §14.2
+    // promises "LISA data is recovered with conversation history intact" during
+    // the 7-day window — summaries are per-student, not per-conversation.
+    const client = filteringMockClient({
+      tutor_conversations: [
+        { id: "conv-past-window", student_id: "s1", deleted_at: daysAgo(8) },
+        { id: "conv-in-window", student_id: "s1", deleted_at: daysAgo(3) },
+      ],
+      tutor_memory_summaries: [
+        { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
+      ],
+    });
+
+    await sweep7d(client, false, { now: NOW });
+
+    // The 8-day-old conversation is swept
+    expect(client._store.tutor_conversations).toHaveLength(1);
+    expect(client._store.tutor_conversations[0].id).toBe("conv-in-window");
+
+    // CRITICAL: memory summaries SURVIVE because conv-in-window is still
+    // within the 7-day recovery window. Without the BLOCKER 1 fix, this
+    // would be empty (summaries deleted prematurely).
+    expect(client._store.tutor_memory_summaries).toHaveLength(1);
+    expect(client._store.tutor_memory_summaries[0].id).toBe("mem-s1");
+  });
+
+  it("memory summaries purged when ALL soft-deleted conversations are past recovery window", async () => {
+    // Companion to the recovery window test above: when ALL of a student's
+    // conversations are past the 7-day window AND none are active, summaries
+    // are properly purged.
+    const client = filteringMockClient({
+      tutor_conversations: [
+        { id: "conv-old-1", student_id: "s1", deleted_at: daysAgo(10) },
+        { id: "conv-old-2", student_id: "s1", deleted_at: daysAgo(8) },
+      ],
+      tutor_memory_summaries: [
+        { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
+      ],
+    });
+
+    await sweep7d(client, false, { now: NOW });
+
+    // Both conversations swept (both past window)
+    expect(client._store.tutor_conversations).toHaveLength(0);
+
+    // Memory summaries purged — no active, no recoverable conversations
+    expect(client._store.tutor_memory_summaries).toHaveLength(0);
+  });
+
   it("exact boundary: row at exactly 7 days is NOT expired (strictly less than)", async () => {
     // The cutoff is now - 7d. A row with deleted_at exactly at the cutoff
     // should NOT be deleted because the condition is lt (strictly less than).
@@ -471,11 +538,19 @@ describe("90d tier — negative control", () => {
 // ── 180-day tier ─────────────────────────────────────────────────────
 
 describe("180d tier — negative control", () => {
-  it("deletes expired closed crisis cases + old injection logs, preserves unexpired", async () => {
+  it("deletes expired resolved crisis cases + old injection logs, preserves unexpired", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
-        { id: "crisis-expired", status: "closed", created_at: daysAgo(200) },
-        { id: "crisis-fresh", status: "closed", created_at: daysAgo(90) },
+        {
+          id: "crisis-expired",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
+        {
+          id: "crisis-fresh",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(90),
+        },
       ],
       tutor_injection_log: [
         { id: "inj-expired", detected_at: daysAgo(181) },
@@ -510,8 +585,12 @@ describe("180d tier — negative control", () => {
           status: "in_review",
           created_at: daysAgo(190),
         },
-        // Closed case, 200 days old — should be swept
-        { id: "crisis-closed-old", status: "closed", created_at: daysAgo(200) },
+        // Resolved case, 200 days old — should be swept
+        {
+          id: "crisis-closed-old",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
       ],
       tutor_injection_log: [],
     });
@@ -519,7 +598,7 @@ describe("180d tier — negative control", () => {
     const result = await sweep180d(client, false, { now: NOW });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(1); // only the closed one
+    if (result.ok) expect(result.deleted_count).toBe(1); // only the resolved one
 
     const remaining = client._store.crisis_review_cases;
     expect(remaining).toHaveLength(2);
@@ -532,7 +611,11 @@ describe("180d tier — negative control", () => {
   it("dry-run deletes nothing", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
-        { id: "crisis-expired", status: "closed", created_at: daysAgo(200) },
+        {
+          id: "crisis-expired",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
       ],
       tutor_injection_log: [{ id: "inj-expired", detected_at: daysAgo(181) }],
     });
@@ -554,7 +637,11 @@ describe("180d tier — negative control", () => {
     const exactBoundary = retentionCutoff(NOW, 180);
     const client = filteringMockClient({
       crisis_review_cases: [
-        { id: "crisis-exact", status: "closed", created_at: exactBoundary },
+        {
+          id: "crisis-exact",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: exactBoundary,
+        },
       ],
       tutor_injection_log: [],
     });
@@ -629,7 +716,11 @@ describe("cross-table isolation", () => {
       ],
       tutor_memory_summaries: [],
       crisis_review_cases: [
-        { id: "crisis-old", status: "closed", created_at: daysAgo(200) },
+        {
+          id: "crisis-old",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
       ],
       tutor_injection_log: [{ id: "inj-old", detected_at: daysAgo(200) }],
     });
@@ -651,7 +742,11 @@ describe("cross-table isolation", () => {
         { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
       ],
       crisis_review_cases: [
-        { id: "crisis-old", status: "closed", created_at: daysAgo(200) },
+        {
+          id: "crisis-old",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
       ],
       tutor_injection_log: [],
     });
