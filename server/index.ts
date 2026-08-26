@@ -83,7 +83,8 @@ import {
 } from "./routes/practice-topics-routes";
 import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
-import { WebhookHandlers } from "./lib/webhookHandlers";
+import { processStripeWebhook } from "./lib/stripe/webhook-handler";
+import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
@@ -115,54 +116,42 @@ app.use(cookieParser());
 // Webhook needs raw Buffer, not parsed JSON
 // CSRF_EXEMPT_REASON: Webhook uses Stripe signature verification instead of CSRF
 app.post(
-  "/api/billing/webhook",
+  STRIPE_WEBHOOK_PATH,
   express.raw({ type: "application/json" }),
   async (req: Request, res: Response) => {
-    const requestId = (req as any).requestId;
-    const signature = req.headers["stripe-signature"];
-
-    if (!signature) {
-      console.error("[WEBHOOK] Missing stripe-signature header", { requestId });
-      return res
-        .status(400)
-        .json({ error: "Missing stripe-signature", requestId });
-    }
+    const requestId = req.requestId;
+    const rawSignature = req.headers["stripe-signature"];
+    const signature = Array.isArray(rawSignature) ? rawSignature[0] : rawSignature;
 
     try {
-      const sig = Array.isArray(signature) ? signature[0] : signature;
+      const outcome = await processStripeWebhook(req.body, signature, requestId);
 
-      if (!Buffer.isBuffer(req.body)) {
-        console.error(
-          "[WEBHOOK] req.body is not a Buffer - check middleware order",
-          { requestId },
-        );
-        return res
-          .status(500)
-          .json({ error: "Webhook body not a Buffer", requestId });
+      if (!outcome.ok) {
+        // Signature failure and livemode mismatch are both 400: Stripe should not
+        // retry an event this environment will never accept.
+        return res.status(400).json({
+          error: "Webhook rejected",
+          reason: outcome.reason,
+          requestId,
+        });
       }
 
-      const result = await WebhookHandlers.processWebhook(
-        req.body as Buffer,
-        sig,
-        requestId,
-      );
-      res.status(200).json({
+      return res.status(200).json({
         received: true,
-        eventId: result.eventId,
-        status: result.status,
+        eventId: outcome.eventId,
+        status: outcome.status,
         requestId,
       });
-    } catch (error: any) {
-      console.error("[WEBHOOK] Processing error:", error.message, {
-        requestId,
-      });
-      res.status(400).json({
-        error: "Webhook processing error",
-        message: error.message?.includes("signature")
-          ? "Signature verification failed"
-          : "Processing failed",
-        requestId,
-      });
+    } catch (err: unknown) {
+      // Handler failure. The idempotency gate has been released, so Stripe's
+      // retry can reprocess. 500 asks Stripe to retry; 400 would not.
+      logger.error(
+        "STRIPE_WEBHOOK",
+        "unhandled",
+        "Webhook processing threw",
+        { requestId, message: err instanceof Error ? err.message : "unknown" },
+      );
+      return res.status(500).json({ error: "Webhook processing failed", requestId });
     }
   },
 );

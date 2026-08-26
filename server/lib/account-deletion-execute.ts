@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
-import { getUncachableStripeClient } from "./stripeClient";
+import { getStripeClient } from "./stripe/client";
 import { logger } from "../logger";
 
 // @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9] account-deletion execution —
@@ -72,7 +72,7 @@ async function pauseStripeBilling(
     return;
   }
 
-  const stripe = await getUncachableStripeClient();
+  const stripe = getStripeClient();
   await stripe.subscriptions.update(subId, {
     pause_collection: { behavior: "void" },
   });

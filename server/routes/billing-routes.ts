@@ -1,968 +1,416 @@
+/**
+ * @spec [Doc-01_V8 §20 (verified heading "## **§20 Subscription model**"), §22;
+ *        SCL-043 payer identity; SCL-052 one entitlement tier] @implemented 2026-08-20
+ *
+ * plain English: the billing surface, rebuilt in Phase C for the
+ * unaccompanied-student path. The previous module was not adapted.
+ *
+ * What this serves and what it does not:
+ *  - Unaccompanied student pays for self. The payer IS the student, so the
+ *    Stripe Customer and the entitled profile coincide (SCL-043's simplest case).
+ *  - Guardian-paid and third-party-paid checkout are NOT served here. They are
+ *    blocked on the guardian-link data-layer defect
+ *    (docs/plans/WS-GL_Guardian_Link_Data_Layer.md) and on SCL-045's item-level
+ *    entitlement key, which needs DDL that the WS-M freeze forbids
+ *    (docs/plans/STRIPE_DDL_QUEUE.md D-1). Guardians receive an explicit
+ *    unavailable response naming the blocker rather than a crash or a
+ *    misleading free-tier answer.
+ *  - Consent capture (`consent_collection` / `custom_text`) is deliberately NOT
+ *    built. Owner ruling: consent is Phase C.2, gated on the billing terms page,
+ *    carried as a launch gate on SCL-044. The Dashboard Terms-of-Service URL is
+ *    NOT to be set as a workaround.
+ *
+ * expected outcome: a student can start Checkout, and every entitlement fact the
+ * status endpoint reports is read from the database, never from the caller.
+ *
+ * trade-offs / edge cases:
+ *  - `/status` reports entitlement from `entitlements` only. It does not compute
+ *    access; the canonical gate is `EntitlementService.isEntitlementActiveForProfile`.
+ *  - Entitlement rows are never created here. The Stripe webhook handler is the
+ *    canonical writer (Doc 01 V8 Appendix E ownership matrix).
+ */
 import { Request, Response, Router } from "express";
+import { z } from "zod";
 import {
   requireSupabaseAuth,
   sendUnauthenticated,
 } from "../middleware/supabase-auth";
 import {
-  getUncachableStripeClient,
-  getStripePublishableKeySafe,
-} from "../lib/stripeClient";
-import { billingStorage } from "../lib/billingStorage";
+  getStripeClient,
+  getStripePublishableKey,
+  getPriceId,
+  getConfiguredPriceId,
+  BILLING_PERIODS,
+  type BillingPeriod,
+} from "../lib/stripe/client";
 import {
   getEntitlementForProfile,
   getProfileStripeCustomerId,
   setProfileStripeCustomerId,
-  getPrimaryGuardianLink,
-  resolveLinkedPairPremiumAccessForGuardian,
-  resolveLinkedPairPremiumAccessForStudent,
 } from "../lib/account";
 import { logger } from "../logger";
-import { z } from "zod";
+import { digestId } from "../lib/stripe/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { requireGuardianRole } from "../middleware/guardian-role";
 import { normalizeRuntimeRole } from "../lib/auth-role";
 
 const router = Router();
-const csrfProtection = doubleCsrfProtection;
-const requireGuardianBillingAccess = requireGuardianRole({
-  message: "You do not have permission to access guardian billing resources",
-});
 
-const checkoutSchema = z
-  .object({
-    plan: z.enum(["monthly", "quarterly", "yearly"]),
-  })
-  .strict();
+/**
+ * Guardian-paid billing is unbuilt, not broken-by-omission. One response, one
+ * code, one place — so the reason is greppable when WS-GL lands.
+ */
+const GUARDIAN_BLOCKED = {
+  error:
+    "Guardian-paid billing is not available yet. Student self-purchase is supported.",
+  code: "GUARDIAN_BILLING_UNAVAILABLE" as const,
+};
 
-function resolvePriceIdAndPlan(input: {
-  plan: "monthly" | "quarterly" | "yearly";
-}): { plan: "monthly" | "quarterly" | "yearly"; priceId: string } {
-  const monthly = process.env.STRIPE_PRICE_PARENT_MONTHLY;
-  const quarterly = process.env.STRIPE_PRICE_PARENT_QUARTERLY;
-  const yearly = process.env.STRIPE_PRICE_PARENT_YEARLY;
-
-  if (!monthly || !quarterly || !yearly) {
-    const missing = [
-      !monthly ? "STRIPE_PRICE_PARENT_MONTHLY" : null,
-      !quarterly ? "STRIPE_PRICE_PARENT_QUARTERLY" : null,
-      !yearly ? "STRIPE_PRICE_PARENT_YEARLY" : null,
-    ].filter(Boolean);
-    throw new Error(`Missing price env vars: ${missing.join(", ")}`);
-  }
-
-  const map = {
-    monthly,
-    quarterly,
-    yearly,
-  } as const;
-
-  const plan = input.plan as keyof typeof map;
-  const priceId = map[plan];
-  return { plan, priceId };
+function sendGuardianBlocked(res: Response, requestId?: string): Response {
+  return res.status(503).json({ ...GUARDIAN_BLOCKED, requestId });
 }
 
 /**
- * @spec [Doc-01_V8 §20–§24; genesis.sql:149,168–181] @implemented 2026-08-09
- * plain English: create a Stripe Checkout session for a student or guardian-paid subscription.
- * profile_id = userId (auth.users.id). stripe_customer_id lives on profiles (genesis:149).
- * Entitlement rows are NOT auto-created here — the webhook upsert is the only writer.
+ * The ONLY field a caller supplies. `.strict()` rejects unknown keys, so a
+ * client cannot smuggle a profile id, a price id, or an entitlement claim.
+ */
+const checkoutSchema = z.object({ plan: z.enum(BILLING_PERIODS) }).strict();
+
+function siteBaseUrl(): string {
+  return (
+    process.env.SITE_URL ||
+    (process.env.NODE_ENV === "development"
+      ? "http://localhost:5000"
+      : "https://lyceon.ai")
+  );
+}
+
+/**
+ * POST /api/billing/checkout — start a subscription Checkout Session.
+ *
+ * The entitled student is `req.user.id`, taken from the authenticated session.
+ * Nothing in the request body selects the subject.
  */
 router.post(
   "/checkout",
   requireSupabaseAuth,
-  csrfProtection,
+  doubleCsrfProtection,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    try {
-      const userId = req.user?.id;
-      const role = req.user?.role;
+    const userId = req.user?.id;
+    const role = normalizeRuntimeRole(req.user?.role);
 
-      if (!userId || !role) {
-        return sendUnauthenticated(res, requestId);
-      }
+    if (!userId || !role) return sendUnauthenticated(res, requestId);
 
-      const validation = checkoutSchema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({
-          error: validation.error.errors[0]?.message || "Invalid request",
-          requestId,
-        });
-      }
+    if (role === "admin") {
+      return res
+        .status(403)
+        .json({ error: "Admins cannot initiate checkout", requestId });
+    }
+    if (role === "guardian") {
+      return sendGuardianBlocked(res, requestId);
+    }
 
-      let resolved: {
-        plan: "monthly" | "quarterly" | "yearly";
-        priceId: string;
-      };
-      try {
-        resolved = resolvePriceIdAndPlan(validation.data);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Invalid checkout request";
-        return res.status(400).json({
-          error: msg,
-          requestId,
-        });
-      }
-
-      const { priceId, plan } = resolved;
-
-      logger.info("BILLING", "checkout", "Resolved price for checkout", {
-        plan,
-        priceIdPrefix: priceId.slice(0, 12),
-        priceIdLast4: priceId.slice(-4),
-        priceIdLen: priceId.length,
-        role,
+    const parsed = checkoutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: { message: "Invalid input", details: parsed.error.flatten() },
         requestId,
       });
+    }
 
-      if (!priceId.startsWith("price_")) {
-        logger.error("BILLING", "checkout", "Invalid priceId format", {
-          priceId,
-          plan,
-          requestId,
-        });
-        return res.status(400).json({
-          error: "Invalid price configuration",
-          stripeMessage: `Price ID must start with 'price_', got: ${priceId.slice(0, 10)}...`,
-          plan,
-          requestId,
-        });
-      }
+    const plan: BillingPeriod = parsed.data.plan;
+    const studentProfileId = userId;
 
-      // profile_id = userId for students, = linked student's userId for guardians
-      let profileId: string | null = null;
-      let linkedStudentId: string | null = null;
+    try {
+      const priceId = getPriceId(plan);
+      const stripe = getStripeClient();
 
-      if (role === "admin") {
-        return res
-          .status(403)
-          .json({ error: "Admins cannot initiate checkout", requestId });
-      } else if (role === "student") {
-        profileId = userId;
-      } else if (role === "guardian") {
-        const link = await getPrimaryGuardianLink(userId);
-        linkedStudentId = link?.student_user_id ?? null;
-        if (!linkedStudentId) {
-          return res.status(409).json({
-            error: "Link a student before starting guardian checkout",
-            code: "LINKED_STUDENT_REQUIRED",
-            requestId,
-          });
-        }
-        // Entitlement is student-scoped — profile_id = student's user id
-        profileId = linkedStudentId;
-      } else {
-        return res.status(403).json({ error: "Unsupported role", requestId });
-      }
-
-      const stripe = await getUncachableStripeClient();
-
-      try {
-        await stripe.prices.retrieve(priceId);
-      } catch (priceErr: unknown) {
-        const msg =
-          priceErr instanceof Error
-            ? priceErr.message
-            : "Price does not exist in Stripe";
-        const code = (priceErr as { code?: string })?.code;
-        logger.error("BILLING", "checkout", "Price not found in Stripe", {
-          priceId,
-          plan,
-          stripeError: msg,
-          stripeCode: code,
-          requestId,
-        });
-        return res.status(400).json({
-          error: "Stripe price not found",
-          stripeMessage: msg,
-          plan,
-          priceId: priceId.slice(0, 20) + "...",
-          requestId,
-        });
-      }
-
-      // stripe_customer_id lives on profiles (genesis:149), NOT entitlements
-      let customerId = await getProfileStripeCustomerId(profileId);
-
+      let customerId = await getProfileStripeCustomerId(studentProfileId);
       if (!customerId) {
+        // Unaccompanied case: the payer IS the student, so the Customer email is
+        // the student's own. In the guardian and third-party cases the Customer
+        // email must be the payer's (SCL-044) — one reason those paths are not
+        // served here.
         const customer = await stripe.customers.create({
-          email: req.user!.email,
+          email: req.user?.email,
           metadata: {
-            profile_id: profileId,
-            payer_user_id: userId,
-            payer_role: role,
+            student_profile_id: studentProfileId,
+            payer_profile_id: studentProfileId,
+            payer_relationship: "self",
           },
         });
-
         customerId = customer.id;
-
-        // Persist stripe_customer_id on profiles table (genesis:149)
-        await setProfileStripeCustomerId(profileId, customerId);
-
-        logger.info("BILLING", "checkout", "Created Stripe customer", {
-          userId,
-          profileId,
-          customerId,
-          role,
-          requestId,
-        });
-      } else {
-        logger.info(
-          "BILLING",
-          "checkout",
-          "Reusing existing Stripe customer from profile",
-          {
-            userId,
-            profileId,
-            customerId,
-            role,
-            requestId,
-          },
-        );
+        await setProfileStripeCustomerId(studentProfileId, customerId);
       }
-
-      const baseUrl =
-        process.env.SITE_URL ||
-        (process.env.NODE_ENV === "development"
-          ? "http://localhost:5000"
-          : "https://lyceon.ai");
-
-      const successUrl =
-        role === "student"
-          ? `${baseUrl}/dashboard?checkout=success`
-          : `${baseUrl}/guardian?checkout=success`;
-      const cancelUrl =
-        role === "student"
-          ? `${baseUrl}/dashboard?checkout=cancel`
-          : `${baseUrl}/guardian?checkout=cancel`;
 
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
-        payment_method_types: ["card"],
-        line_items: [{ price: priceId, quantity: 1 }],
         mode: "subscription",
-        success_url: successUrl,
-        cancel_url: cancelUrl,
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: `${siteBaseUrl()}/dashboard?checkout=success`,
+        cancel_url: `${siteBaseUrl()}/dashboard?checkout=cancel`,
+        // SCL-043: the authoritative payer-to-student mapping.
+        client_reference_id: studentProfileId,
         metadata: {
-          profile_id: profileId,
-          payer_user_id: userId,
-          payer_role: role,
-          ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
+          student_profile_id: studentProfileId,
+          payer_relationship: "self",
           plan,
-          environment:
-            process.env.NODE_ENV === "production"
-              ? "production"
-              : "development",
         },
-        client_reference_id: profileId,
         subscription_data: {
           metadata: {
-            profile_id: profileId,
-            payer_user_id: userId,
-            payer_role: role,
-            ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
+            student_profile_id: studentProfileId,
+            payer_relationship: "self",
             plan,
           },
         },
       });
 
-      logger.info("BILLING", "checkout", "Created checkout session", {
-        userId,
-        profileId,
+      // Charter §6: on the unaccompanied path the student IS the payer, so the
+      // profile id and the Checkout Session id are both payer identifiers.
+      logger.info("BILLING", "checkout", "Checkout session created", {
+        requestId,
+        studentProfileRef: digestId(studentProfileId),
         plan,
-        role,
-        linkedStudentId,
-        sessionId: session.id,
-        requestId,
+        sessionRef: digestId(session.id),
       });
 
-      res.json({ url: session.url, sessionId: session.id, requestId });
+      return res.json({ url: session.url, sessionId: session.id, requestId });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      const raw = (err as { raw?: { message?: string } })?.raw?.message;
-      logger.error(
-        "STRIPE_CHECKOUT_FAILED",
-        "checkout",
-        "Failed to create checkout session",
-        {
-          requestId,
-          message: msg,
-          type: (err as { type?: string })?.type,
-          code: (err as { code?: string })?.code,
-          raw,
-        },
-      );
-
-      return res.status(400).json({
-        error: "Failed to create checkout session",
-        stripeMessage: raw || msg,
+      const message = err instanceof Error ? err.message : "Unknown error";
+      logger.error("BILLING", "checkout", "Failed to create checkout session", {
         requestId,
+        studentProfileRef: digestId(studentProfileId),
+        plan,
+        message,
       });
+      return res
+        .status(502)
+        .json({ error: "Failed to start checkout", requestId });
     }
   },
 );
 
 /**
- * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181] @implemented 2026-08-09
- * plain English: billing status endpoint. profile_id = userId. Entitlement is read
- * directly by profile_id — no ensureAccountForUser indirection. tier (not plan) is
- * the genesis column; 'free' when no entitlement row exists.
+ * GET /api/billing/status — the student's own entitlement state, read from the
+ * database. Reports; does not decide. The gate is EntitlementService.
  */
 router.get(
   "/status",
   requireSupabaseAuth,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    const userId = req.user!.id;
-    const userRole = normalizeRuntimeRole(req.user!.role);
+    const userId = req.user?.id;
+    const role = normalizeRuntimeRole(req.user?.role);
 
-    // profile_id for the student whose entitlement we're reading
-    let profileId: string | null = null;
-    let entitlement: Awaited<ReturnType<typeof getEntitlementForProfile>> =
-      null;
-    let hasLinkedStudent = false;
-    let linkRequiredForPremium = false;
-    let premiumSource: "student" | "guardian" | "both" | "none";
-    let effectiveAccess = false;
-    let requiresStudentSubscription = false;
-    let lockedReason:
-      | "link_required"
-      | "student_subscription_required"
-      | "student_subscription_expired"
-      | "student_payment_past_due"
-      | null = null;
-
-    if (userRole === "admin") {
+    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (role === "admin") {
       return res
         .status(403)
         .json({ error: "Admins cannot access billing status", requestId });
     }
+    if (role === "guardian") {
+      return sendGuardianBlocked(res, requestId);
+    }
 
     try {
-      if (userRole === "guardian") {
-        const link = await getPrimaryGuardianLink(userId);
-        hasLinkedStudent = !!link?.student_user_id;
-        linkRequiredForPremium = !hasLinkedStudent;
-        // Entitlement is student-scoped — profile_id = student's userId
-        profileId = link?.student_user_id ?? null;
-      } else {
-        // Student: profile_id = own userId
-        profileId = userId;
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn("BILLING", "status", "Failed to resolve billing profile", {
-        userId,
-        err: msg,
+      const entitlement = await getEntitlementForProfile(userId);
+
+      const tier = entitlement?.tier ?? "free";
+      const status = entitlement?.status ?? "inactive";
+      const currentPeriodEnd = entitlement?.current_period_end ?? null;
+
+      // The entitled set is {active, past_due, trialing} — the canonical SQL
+      // predicate's set (SCL-029). Mirrored here for display only; the gate
+      // itself calls entitlement_active().
+      const entitledStatuses = new Set(["active", "past_due", "trialing"]);
+      const effectiveAccess = tier === "premium" && entitledStatuses.has(status);
+
+      return res.json({
+        plan: tier,
+        stripeStatus: status,
+        currentPeriodEnd,
+        stripeSubscriptionId: entitlement?.stripe_subscription_id ?? null,
+        effectiveAccess,
+        needsPaymentUpdate: status === "past_due" || status === "unpaid",
+        isPaid: effectiveAccess,
         requestId,
       });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      logger.error("BILLING", "status", "Failed to read entitlement", {
+        requestId,
+        profileRef: digestId(userId),
+        message,
+      });
+      // Fail closed: an entitlement read failure never renders as free-tier
+      // success, and never as paid.
       return res.status(503).json({
         error: "Billing status unavailable",
         code: "BILLING_STATUS_UNAVAILABLE",
         requestId,
       });
     }
-
-    try {
-      if (profileId) {
-        entitlement = await getEntitlementForProfile(profileId);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn("BILLING", "status", "Failed to get entitlement", {
-        userId,
-        profileId,
-        err: msg,
-        requestId,
-      });
-      return res.status(503).json({
-        error: "Billing status unavailable",
-        code: "BILLING_STATUS_UNAVAILABLE",
-        requestId,
-      });
-    }
-
-    // Genesis uses `tier` (free/premium), not `plan` (free/paid)
-    const tier = entitlement?.tier ?? "free";
-    const status = entitlement?.status ?? "inactive";
-    const currentPeriodEnd = entitlement?.current_period_end ?? null;
-
-    const isActiveOrTrialing = status === "active" || status === "trialing";
-    let periodExpired = false;
-    if (currentPeriodEnd) {
-      periodExpired = new Date(currentPeriodEnd) < new Date();
-    }
-
-    const billingIsPremium =
-      tier === "premium" && isActiveOrTrialing && !periodExpired;
-
-    try {
-      if (userRole === "guardian") {
-        const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
-        hasLinkedStudent = access.hasActiveLink;
-        linkRequiredForPremium = !hasLinkedStudent;
-        premiumSource = access.premiumSource;
-        effectiveAccess = access.hasPremiumAccess;
-        if (!effectiveAccess && hasLinkedStudent) {
-          lockedReason = access.studentEntitlementExpired
-            ? "student_subscription_expired"
-            : access.studentEntitlementStatus === "past_due"
-              ? "student_payment_past_due"
-              : "student_subscription_required";
-        }
-      } else {
-        const access = await resolveLinkedPairPremiumAccessForStudent(userId);
-        premiumSource = access.premiumSource;
-        effectiveAccess = access.hasPremiumAccess;
-        if (!effectiveAccess) {
-          lockedReason = access.studentEntitlementExpired
-            ? "student_subscription_expired"
-            : access.studentEntitlementStatus === "past_due"
-              ? "student_payment_past_due"
-              : "student_subscription_required";
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn(
-        "BILLING",
-        "status",
-        "Failed to resolve student-owned premium access",
-        {
-          userId,
-          role: userRole,
-          error: msg,
-          requestId,
-        },
-      );
-      return res.status(503).json({
-        error: "Billing status unavailable",
-        code: "BILLING_STATUS_UNAVAILABLE",
-        requestId,
-      });
-    }
-
-    if (linkRequiredForPremium) {
-      lockedReason = "link_required";
-    }
-
-    const needsPaymentUpdate =
-      !effectiveAccess &&
-      !linkRequiredForPremium &&
-      (lockedReason === "student_subscription_expired" ||
-        lockedReason === "student_payment_past_due");
-    requiresStudentSubscription =
-      !effectiveAccess &&
-      !linkRequiredForPremium &&
-      lockedReason === "student_subscription_required";
-
-    logger.info("BILLING", "status", "Billing status retrieved", {
-      userId,
-      profileId,
-      tier,
-      billingStatus: status,
-      effectiveAccess,
-      premiumSource,
-      hasLinkedStudent,
-      linkRequiredForPremium,
-      needsPaymentUpdate,
-      requiresStudentSubscription,
-      lockedReason,
-      requestId,
-    });
-
-    res.json({
-      accountId: profileId,
-      tier,
-      plan: tier === "premium" ? "paid" : "free",
-      stripeStatus: status,
-      currentPeriodEnd,
-      stripeSubscriptionId: entitlement?.stripe_subscription_id ?? null,
-      effectiveAccess,
-      needsPaymentUpdate,
-      requiresStudentSubscription,
-      isPaid: billingIsPremium,
-      premiumSource,
-      hasLinkedStudent,
-      linkRequiredForPremium,
-      lockedReason,
-      billingOwnerRole: "student",
-      requestId,
-    });
   },
 );
-
-router.get(
-  "/products",
-  requireSupabaseAuth,
-  requireGuardianBillingAccess,
-  async (req: Request, res: Response) => {
-    const requestId = req.requestId;
-    try {
-      const products = await billingStorage.listProducts();
-      res.json({ products, requestId });
-    } catch (err: any) {
-      logger.error("BILLING", "products", "Failed to list products", {
-        err: err.message,
-        requestId,
-      });
-      res.status(500).json({ error: "Failed to list products", requestId });
-    }
-  },
-);
-
-type BillingPlanKey = "monthly" | "quarterly" | "yearly";
-
-type BillingPlanMetadata = {
-  plan: BillingPlanKey;
-  label: string;
-  amountCents: number;
-  currency: string;
-  intervalLabel: string;
-  equivalentMonthlyCents?: number;
-  savingsPercent?: number;
-  stripePriceIdConfigured: boolean;
-};
-
-const planFallbacks: Record<
-  BillingPlanKey,
-  Omit<BillingPlanMetadata, "plan" | "stripePriceIdConfigured">
-> = {
-  monthly: {
-    label: "Monthly",
-    amountCents: 9999,
-    currency: "usd",
-    intervalLabel: "per month",
-    equivalentMonthlyCents: 9999,
-    savingsPercent: 0,
-  },
-  quarterly: {
-    label: "Quarterly",
-    amountCents: 19999,
-    currency: "usd",
-    intervalLabel: "per 3 months",
-    equivalentMonthlyCents: 6666,
-    savingsPercent: 33.3,
-  },
-  yearly: {
-    label: "Yearly",
-    amountCents: 69999,
-    currency: "usd",
-    intervalLabel: "per year",
-    equivalentMonthlyCents: 5833,
-    savingsPercent: 41.7,
-  },
-};
-
-function toIntervalLabel(
-  interval: string | null | undefined,
-  intervalCount: number | null | undefined,
-): string | null {
-  if (!interval || !intervalCount || intervalCount < 1) return null;
-  if (interval === "month" && intervalCount === 1) return "per month";
-  if (interval === "month" && intervalCount === 3) return "per 3 months";
-  if (interval === "year" && intervalCount === 1) return "per year";
-  if (intervalCount === 1) return `per ${interval}`;
-  return `per ${intervalCount} ${interval}s`;
-}
-
-async function getPlansHandler(req: Request, res: Response) {
-  const requestId = req.requestId;
-  res.setHeader("Cache-Control", "no-store");
-  try {
-    const monthlyId = process.env.STRIPE_PRICE_PARENT_MONTHLY;
-    const quarterlyId = process.env.STRIPE_PRICE_PARENT_QUARTERLY;
-    const yearlyId = process.env.STRIPE_PRICE_PARENT_YEARLY;
-
-    const ids: Record<BillingPlanKey, string | undefined> = {
-      monthly: monthlyId,
-      quarterly: quarterlyId,
-      yearly: yearlyId,
-    };
-
-    const stripe = await getUncachableStripeClient();
-    const plans: BillingPlanMetadata[] = await Promise.all(
-      (Object.keys(ids) as BillingPlanKey[]).map(async (planKey) => {
-        const fallback = planFallbacks[planKey];
-        const configuredPriceId = ids[planKey];
-
-        if (!configuredPriceId || !configuredPriceId.startsWith("price_")) {
-          return {
-            plan: planKey,
-            ...fallback,
-            stripePriceIdConfigured: false,
-          };
-        }
-
-        try {
-          const stripePrice = await stripe.prices.retrieve(configuredPriceId);
-          const stripeAmount =
-            typeof stripePrice.unit_amount === "number"
-              ? stripePrice.unit_amount
-              : fallback.amountCents;
-          const stripeCurrency =
-            typeof stripePrice.currency === "string"
-              ? stripePrice.currency.toLowerCase()
-              : fallback.currency;
-          const stripeInterval =
-            toIntervalLabel(
-              stripePrice.recurring?.interval ?? null,
-              stripePrice.recurring?.interval_count ?? null,
-            ) ?? fallback.intervalLabel;
-
-          return {
-            plan: planKey,
-            label: fallback.label,
-            amountCents: stripeAmount,
-            currency: stripeCurrency,
-            intervalLabel: stripeInterval,
-            equivalentMonthlyCents: fallback.equivalentMonthlyCents,
-            savingsPercent: fallback.savingsPercent,
-            stripePriceIdConfigured: true,
-          };
-        } catch (err: any) {
-          logger.warn(
-            "BILLING",
-            "plans",
-            "Failed to load Stripe price metadata, returning fallback",
-            {
-              plan: planKey,
-              requestId,
-              error: err?.message,
-            },
-          );
-
-          return {
-            plan: planKey,
-            ...fallback,
-            stripePriceIdConfigured: true,
-          };
-        }
-      }),
-    );
-
-    res.json({ plans, requestId });
-  } catch (err: any) {
-    logger.error("BILLING", "plans", "Failed to list plans", {
-      err: err.message,
-      requestId,
-    });
-    res.status(500).json({ error: "Failed to list plans", requestId });
-  }
-}
-
-router.get("/plans", requireSupabaseAuth, getPlansHandler);
-router.get(
-  "/products/:productId/prices",
-  requireSupabaseAuth,
-  async (req: Request, res: Response) => {
-    const requestId = req.requestId;
-    try {
-      const { productId } = req.params;
-      const product = await billingStorage.getProduct(productId);
-
-      if (!product) {
-        return res.status(404).json({ error: "Product not found", requestId });
-      }
-
-      const prices = await billingStorage.getPricesForProduct(productId);
-      res.json({ prices, requestId });
-    } catch (err: any) {
-      logger.error("BILLING", "prices", "Failed to get prices", {
-        err: err.message,
-        requestId,
-      });
-      res.status(500).json({ error: "Failed to get prices", requestId });
-    }
-  },
-);
-
-router.get("/portal", (req, res) => {
-  return res.status(405).json({
-    error: "Method Not Allowed. Use POST /api/billing/portal.",
-  });
-});
 
 /**
- * @spec [Doc-01_V8 §20–§24; genesis.sql:149] @implemented 2026-08-09
- * plain English: open Stripe billing portal. stripe_customer_id lives on profiles (genesis:149).
- * profile_id = userId for students, = linked student's userId for guardians.
+ * POST /api/billing/portal — Stripe Billing Portal session.
+ *
+ * Stripe supplies the cancellation surface the Subscription and Auto-Renewal
+ * Notice §6.4 requires ("click to cancel" through the customer portal). No
+ * bespoke cancellation surface is built.
+ * https://docs.stripe.com/customer-management/configure-portal
  */
 router.post(
   "/portal",
   requireSupabaseAuth,
-  csrfProtection,
+  doubleCsrfProtection,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
+    const userId = req.user?.id;
+    const role = normalizeRuntimeRole(req.user?.role);
+
+    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (role === "admin") {
+      return res
+        .status(403)
+        .json({ error: "Admins cannot access the billing portal", requestId });
+    }
+    if (role === "guardian") {
+      return sendGuardianBlocked(res, requestId);
+    }
+
     try {
-      const userId = req.user!.id;
-      const userRole = normalizeRuntimeRole(req.user!.role);
-
-      if (userRole === "admin") {
-        return res
-          .status(403)
-          .json({ error: "Admins cannot access billing portal", requestId });
-      }
-
-      let profileId: string | null = null;
-
-      if (userRole === "guardian") {
-        const link = await getPrimaryGuardianLink(userId);
-        if (!link?.student_user_id) {
-          return res.status(409).json({
-            error: "Link a student before opening guardian billing portal",
-            code: "LINKED_STUDENT_REQUIRED",
-            requestId,
-          });
-        }
-        profileId = link.student_user_id;
-      } else {
-        profileId = userId;
-      }
-
-      // stripe_customer_id lives on profiles (genesis:149)
-      const customerId = await getProfileStripeCustomerId(profileId);
-
+      const customerId = await getProfileStripeCustomerId(userId);
       if (!customerId) {
-        return res
-          .status(400)
-          .json({
-            error: "No billing account found for this profile",
-            requestId,
-          });
+        return res.status(409).json({
+          error: "No billing account exists for this profile yet",
+          code: "NO_STRIPE_CUSTOMER",
+          requestId,
+        });
       }
 
-      const stripe = await getUncachableStripeClient();
-      const baseUrl =
-        process.env.SITE_URL ||
-        (process.env.NODE_ENV === "development"
-          ? "http://localhost:5000"
-          : "https://lyceon.ai");
-
-      const returnUrl =
-        userRole === "guardian"
-          ? `${baseUrl}/guardian`
-          : `${baseUrl}/dashboard`;
-
-      const session = await stripe.billingPortal.sessions.create({
+      const session = await getStripeClient().billingPortal.sessions.create({
         customer: customerId,
-        return_url: returnUrl,
+        return_url: `${siteBaseUrl()}/dashboard`,
       });
 
       return res.json({ url: session.url, requestId });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("BILLING", "portal", "Failed to create portal session", {
-        err: msg,
         requestId,
+        profileRef: digestId(userId),
+        message,
       });
       return res
-        .status(500)
-        .json({ error: "Failed to create portal session", requestId });
+        .status(502)
+        .json({ error: "Failed to open billing portal", requestId });
     }
   },
 );
 
-router.get("/publishable-key", async (req: Request, res: Response) => {
-  const requestId = req.requestId;
-  try {
-    const publishableKey = await getStripePublishableKeySafe();
-    res.json({ publishableKey, requestId });
-  } catch (err: any) {
-    logger.error(
-      "BILLING",
-      "publishable-key",
-      "Failed to get publishable key",
-      { err: err.message, requestId },
-    );
-    res.status(500).json({ error: "Failed to get publishable key", requestId });
-  }
-});
+type BillingPlanMetadata = {
+  plan: BillingPeriod;
+  label: string;
+  amountCents: number | null;
+  currency: string | null;
+  intervalLabel: string | null;
+  stripePriceIdConfigured: boolean;
+};
 
-function safeIdInfo(id: string | undefined): {
-  prefix: string | null;
-  last4: string | null;
-  length: number;
-} {
-  if (!id) return { prefix: null, last4: null, length: 0 };
-  return {
-    prefix: id.slice(0, 12),
-    last4: id.length > 4 ? id.slice(-4) : id,
-    length: id.length,
-  };
+const PLAN_LABEL: Record<BillingPeriod, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
+
+function intervalLabel(
+  interval: string | null | undefined,
+  count: number | null | undefined,
+): string | null {
+  if (!interval || !count || count < 1) return null;
+  if (interval === "month" && count === 1) return "per month";
+  if (interval === "month") return `per ${count} months`;
+  if (interval === "year" && count === 1) return "per year";
+  return `per ${count} ${interval}s`;
 }
 
+/**
+ * GET /api/billing/plans — price metadata read live from Stripe.
+ *
+ * No hardcoded amounts. Doc 09 §1.4 and §5.1 make Stripe canonical for pricing
+ * magnitudes at runtime; the previous module carried two hardcoded and mutually
+ * inconsistent USD price sets (STRIPE_GROUNDING_AUDIT G-27). A price Stripe
+ * cannot return is reported as unavailable, never as a guessed number.
+ */
 router.get(
-  "/debug/env",
+  "/plans",
   requireSupabaseAuth,
-  requireGuardianBillingAccess,
   async (req: Request, res: Response) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(404).json({ error: "Not found" });
-    }
-
     const requestId = req.requestId;
-    const stripeEnvRaw = process.env.STRIPE_ENV || null;
-    const stripeEnvNormalized =
-      stripeEnvRaw?.toLowerCase() === "live" ? "live" : "test";
-    const secretKey = process.env.STRIPE_SECRET_KEY || "";
-    const pubKey = process.env.STRIPE_PUBLISHABLE_KEY || "";
-    const monthlyId = process.env.STRIPE_PRICE_PARENT_MONTHLY || "";
-    const quarterlyId = process.env.STRIPE_PRICE_PARENT_QUARTERLY || "";
-    const yearlyId = process.env.STRIPE_PRICE_PARENT_YEARLY || "";
-
-    const keyMode = secretKey.startsWith("sk_live_")
-      ? "live"
-      : secretKey.startsWith("sk_test_")
-        ? "test"
-        : "unknown";
-    const usingEnvSecretKey = !!process.env.STRIPE_SECRET_KEY;
-
-    res.json({
-      stripeEnvRaw,
-      stripeEnvNormalized,
-      keyMode,
-      usingEnvSecretKey,
-      secretKeyPrefix: secretKey.slice(0, 8) || null,
-      secretKeyLast4: secretKey.length > 4 ? secretKey.slice(-4) : null,
-      publishableKeyPrefix: pubKey.slice(0, 8) || null,
-      resolvedPrices: {
-        monthly: safeIdInfo(monthlyId),
-        quarterly: safeIdInfo(quarterlyId),
-        yearly: safeIdInfo(yearlyId),
-      },
-      envVarsSet: {
-        STRIPE_ENV: !!process.env.STRIPE_ENV,
-        STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,
-        STRIPE_PUBLISHABLE_KEY: !!process.env.STRIPE_PUBLISHABLE_KEY,
-        STRIPE_WEBHOOK_SECRET: !!process.env.STRIPE_WEBHOOK_SECRET,
-        STRIPE_PRICE_PARENT_MONTHLY: !!process.env.STRIPE_PRICE_PARENT_MONTHLY,
-        STRIPE_PRICE_PARENT_QUARTERLY:
-          !!process.env.STRIPE_PRICE_PARENT_QUARTERLY,
-        STRIPE_PRICE_PARENT_YEARLY: !!process.env.STRIPE_PRICE_PARENT_YEARLY,
-        SITE_URL: !!process.env.SITE_URL,
-      },
-      siteUrl: process.env.SITE_URL || null,
-      requestId,
-    });
-  },
-);
-
-router.get(
-  "/debug/validate",
-  requireSupabaseAuth,
-  requireGuardianBillingAccess,
-  async (req: Request, res: Response) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    const requestId = req.requestId;
-    const secretKey = process.env.STRIPE_SECRET_KEY || "";
-    const mode = secretKey.startsWith("sk_live_")
-      ? "live"
-      : secretKey.startsWith("sk_test_")
-        ? "test"
-        : "unknown";
-
-    const priceEnvs = {
-      monthly: process.env.STRIPE_PRICE_PARENT_MONTHLY,
-      quarterly: process.env.STRIPE_PRICE_PARENT_QUARTERLY,
-      yearly: process.env.STRIPE_PRICE_PARENT_YEARLY,
-    };
-
-    const results: Record<string, any> = {};
+    res.setHeader("Cache-Control", "no-store");
 
     try {
-      const stripe = await getUncachableStripeClient();
-
-      for (const [plan, priceId] of Object.entries(priceEnvs)) {
-        const idInfo = safeIdInfo(priceId);
-
-        if (!priceId) {
-          results[plan] = {
-            ok: false,
-            error: "Price ID not configured",
-            priceIdPrefix: null,
-            priceIdLast4: null,
-            priceIdLen: 0,
-          };
-          continue;
-        }
-
-        if (!priceId.startsWith("price_")) {
-          results[plan] = {
-            ok: false,
-            error: "Invalid price ID format (must start with price_)",
-            priceIdPrefix: idInfo.prefix,
-            priceIdLast4: idInfo.last4,
-            priceIdLen: idInfo.length,
-          };
-          continue;
-        }
-
-        try {
+      const stripe = getStripeClient();
+      const plans: BillingPlanMetadata[] = await Promise.all(
+        BILLING_PERIODS.map(async (plan) => {
+          const priceId = getConfiguredPriceId(plan);
+          if (!priceId) {
+            return {
+              plan,
+              label: PLAN_LABEL[plan],
+              amountCents: null,
+              currency: null,
+              intervalLabel: null,
+              stripePriceIdConfigured: false,
+            };
+          }
           const price = await stripe.prices.retrieve(priceId);
-          results[plan] = {
-            ok: true,
-            priceIdPrefix: idInfo.prefix,
-            priceIdLast4: idInfo.last4,
-            priceIdLen: idInfo.length,
-            active: price.active,
-            currency: price.currency,
-            unitAmount: price.unit_amount,
-            type: price.type,
-            recurring: price.recurring
-              ? {
-                  interval: price.recurring.interval,
-                  intervalCount: price.recurring.interval_count,
-                }
-              : null,
-            productId:
-              typeof price.product === "string"
-                ? price.product
-                : (price.product as any)?.id,
+          return {
+            plan,
+            label: PLAN_LABEL[plan],
+            amountCents: price.unit_amount ?? null,
+            currency: price.currency?.toLowerCase() ?? null,
+            intervalLabel: intervalLabel(
+              price.recurring?.interval ?? null,
+              price.recurring?.interval_count ?? null,
+            ),
+            stripePriceIdConfigured: true,
           };
-        } catch (err: any) {
-          results[plan] = {
-            ok: false,
-            priceIdPrefix: idInfo.prefix,
-            priceIdLast4: idInfo.last4,
-            priceIdLen: idInfo.length,
-            stripeErrorType: err?.type || null,
-            stripeErrorCode: err?.code || null,
-            stripeErrorMessage: err?.message || "Unknown error",
-            stripeRequestId: err?.requestId || null,
-          };
-        }
-      }
+        }),
+      );
 
-      const allOk = Object.values(results).every((r: any) => r.ok === true);
-      const failedPlans = Object.entries(results)
-        .filter(([_, r]) => !r.ok)
-        .map(([plan]) => plan);
-
-      res.json({
-        ok: allOk,
-        mode,
-        secretKeyPrefix: secretKey.slice(0, 8) || null,
-        secretKeyLast4: secretKey.length > 4 ? secretKey.slice(-4) : null,
-        failedPlans: failedPlans.length > 0 ? failedPlans : null,
-        prices: results,
+      return res.json({ plans, requestId });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      logger.error("BILLING", "plans", "Failed to load plans from Stripe", {
         requestId,
+        message,
       });
-    } catch (err: any) {
-      logger.error("BILLING", "debug/validate", "Failed to validate prices", {
-        err: err.message,
-        requestId,
-      });
-      res.status(500).json({
-        ok: false,
-        error: "Failed to initialize Stripe client",
-        stripeMessage: err?.message,
-        requestId,
-      });
+      return res
+        .status(502)
+        .json({ error: "Failed to load billing plans", requestId });
     }
   },
 );
+
+/** GET /api/billing/publishable-key — public by design. */
+router.get("/publishable-key", (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  try {
+    return res.json({ publishableKey: getStripePublishableKey(), requestId });
+  } catch {
+    logger.error(
+      "BILLING",
+      "publishable_key",
+      "STRIPE_PUBLISHABLE_KEY is not configured",
+      { requestId },
+    );
+    return res
+      .status(503)
+      .json({ error: "Billing is not configured", requestId });
+  }
+});
 
 export default router;

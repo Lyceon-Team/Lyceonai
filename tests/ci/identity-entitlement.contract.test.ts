@@ -1,31 +1,48 @@
+/**
+ * Identity + Entitlement runtime contract — rewritten 2026-08-20 for the Phase C
+ * rebuild of the billing surface.
+ *
+ * @spec [Doc-01_V8 §20, §22; SCL-043 payer identity; Charter §6 safety invariants]
+ *
+ * What changed and why: four tests in the previous version asserted guardian-paid
+ * checkout behaviour that Phase C deliberately removed. Guardian billing is
+ * blocked on the guardian-link data-layer defect
+ * (docs/plans/WS-GL_Guardian_Link_Data_Layer.md) and on SCL-045's item-level
+ * entitlement key (DDL queued as D-1). A test that disagrees with the spec is
+ * retired, not accommodated. The identity assertion is preserved unchanged.
+ */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 
 const authState = vi.hoisted(() => ({
   currentUser: {
-    id: "guardian-1",
-    role: "guardian",
-    email: "guardian@test.com",
-    isGuardian: true,
+    id: "11111111-1111-4111-8111-111111111111",
+    role: "student",
+    email: "student@test.com",
+    isGuardian: false,
     isAdmin: false,
   } as any,
 }));
 
 const accountMocks = vi.hoisted(() => ({
-  getPrimaryGuardianLink: vi.fn(),
-  ensureAccountForUser: vi.fn(),
   getEntitlementForProfile: vi.fn(),
   getProfileStripeCustomerId: vi.fn(),
   setProfileStripeCustomerId: vi.fn(),
-  resolveLinkedPairPremiumAccessForGuardian: vi.fn(),
-  resolveLinkedPairPremiumAccessForStudent: vi.fn(),
-  mapStripeStatusToEntitlement: vi.fn(),
-  upsertEntitlement: vi.fn(),
 }));
 
 const stripeMocks = vi.hoisted(() => ({
-  subscriptionsList: vi.fn(async () => ({ data: [] })),
+  checkoutCreate: vi.fn(async () => ({
+    id: "cs_test",
+    url: "https://checkout.test/session",
+  })),
+  customersCreate: vi.fn(async () => ({ id: "cus_test" })),
+  pricesRetrieve: vi.fn(async (id: string) => ({
+    id,
+    unit_amount: 9900,
+    currency: "USD",
+    recurring: { interval: "month", interval_count: 1 },
+  })),
 }));
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
@@ -42,7 +59,6 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
         requestId: req.requestId,
       });
     }
-
     req.user = authState.currentUser;
     req.requestId ??= "req-identity-entitlement";
     return next();
@@ -56,7 +72,6 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
       });
       return null;
     }
-
     return req.user;
   },
   getSupabaseAdmin: vi.fn(() => ({})),
@@ -68,54 +83,29 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     }),
 }));
 
+vi.mock("../../server/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 vi.mock("../../server/lib/account", () => ({
-  getPrimaryGuardianLink: accountMocks.getPrimaryGuardianLink,
-  ensureAccountForUser: accountMocks.ensureAccountForUser,
   getEntitlementForProfile: accountMocks.getEntitlementForProfile,
   getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
   setProfileStripeCustomerId: accountMocks.setProfileStripeCustomerId,
-  resolveLinkedPairPremiumAccessForGuardian:
-    accountMocks.resolveLinkedPairPremiumAccessForGuardian,
-  resolveLinkedPairPremiumAccessForStudent:
-    accountMocks.resolveLinkedPairPremiumAccessForStudent,
-  mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
-  upsertEntitlement: accountMocks.upsertEntitlement,
 }));
 
-vi.mock("../../server/lib/stripeClient", () => ({
-  getUncachableStripeClient: vi.fn(async () => ({
-    prices: {
-      retrieve: vi.fn(async () => ({ id: "price_monthly" })),
-    },
-    customers: {
-      create: vi.fn(async () => ({ id: "cus_test" })),
-    },
-    checkout: {
-      sessions: {
-        create: vi.fn(async () => ({
-          id: "cs_test",
-          url: "https://checkout.test/session",
-        })),
-      },
-    },
+vi.mock("../../server/lib/stripe/client", () => ({
+  BILLING_PERIODS: ["monthly", "quarterly", "yearly"],
+  getStripeClient: () => ({
+    customers: { create: stripeMocks.customersCreate },
+    prices: { retrieve: stripeMocks.pricesRetrieve },
+    checkout: { sessions: { create: stripeMocks.checkoutCreate } },
     billingPortal: {
-      sessions: {
-        create: vi.fn(async () => ({ url: "https://billing.test/session" })),
-      },
+      sessions: { create: vi.fn(async () => ({ url: "https://portal.test" })) },
     },
-    subscriptions: {
-      list: stripeMocks.subscriptionsList,
-    },
-  })),
-  getStripePublishableKeySafe: vi.fn(() => "pk_test_123"),
-}));
-
-vi.mock("../../server/lib/billingStorage", () => ({
-  billingStorage: {
-    listProducts: vi.fn(async () => []),
-    getProduct: vi.fn(async () => null),
-    getPricesForProduct: vi.fn(async () => []),
-  },
+  }),
+  getStripePublishableKey: () => "pk_test_123",
+  getPriceId: (p: string) => `price_${p}`,
+  getConfiguredPriceId: (p: string) => `price_${p}`,
 }));
 
 function buildApp() {
@@ -125,71 +115,54 @@ function buildApp() {
     req.requestId ??= "req-identity-entitlement";
     next();
   });
-
   return app;
 }
+
+async function billingApp() {
+  const app = buildApp();
+  const billingRoutes = (await import("../../server/routes/billing-routes"))
+    .default;
+  app.use("/api/billing", billingRoutes);
+  return app;
+}
+
+const STUDENT_ID = "11111111-1111-4111-8111-111111111111";
 
 describe("Identity + Entitlement Runtime Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authState.currentUser = {
-      id: "guardian-1",
-      role: "guardian",
-      email: "guardian@test.com",
-      isGuardian: true,
+      id: STUDENT_ID,
+      role: "student",
+      email: "student@test.com",
+      isGuardian: false,
       isAdmin: false,
     } as any;
-
-    accountMocks.getPrimaryGuardianLink.mockResolvedValue(null);
-    accountMocks.ensureAccountForUser.mockResolvedValue("acc-student-1");
     accountMocks.getEntitlementForProfile.mockResolvedValue(null);
     accountMocks.getProfileStripeCustomerId.mockResolvedValue(null);
     accountMocks.setProfileStripeCustomerId.mockResolvedValue(undefined);
-    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
-      role: "guardian",
-      hasPremiumAccess: false,
-      hasActiveLink: false,
-      premiumSource: "none",
-      reason: "Guardian has no linked student.",
-      studentUserId: null,
-      guardianUserId: "guardian-1",
-      studentAccountId: null,
-      guardianAccountId: "acc-guardian-1",
-      studentEntitlementStatus: "missing",
-      guardianEntitlementStatus: "inactive",
-      studentEntitlementExpired: false,
-      guardianEntitlementExpired: false,
+    stripeMocks.checkoutCreate.mockResolvedValue({
+      id: "cs_test",
+      url: "https://checkout.test/session",
     });
-    accountMocks.resolveLinkedPairPremiumAccessForStudent.mockResolvedValue({
-      role: "student",
-      hasPremiumAccess: false,
-      hasActiveLink: false,
-      premiumSource: "none",
-      reason: "Student account does not have an active premium entitlement.",
-      studentUserId: "student-1",
-      guardianUserId: null,
-      studentAccountId: "acc-student-1",
-      guardianAccountId: null,
-      studentEntitlementStatus: "inactive",
-      guardianEntitlementStatus: "missing",
-      studentEntitlementExpired: false,
-      guardianEntitlementExpired: false,
-    });
-    stripeMocks.subscriptionsList.mockResolvedValue({ data: [] });
+    stripeMocks.customersCreate.mockResolvedValue({ id: "cus_test" });
   });
+
+  // --- identity (preserved from the previous version, unchanged) ---------------
 
   it("blocks direct role mutation through PATCH /api/profile and points to support", async () => {
     const app = buildApp();
     const profileRoutes = (await import("../../server/routes/profile-routes"))
       .default;
-    const { requireSupabaseAuth } =
-      await import("../../server/middleware/supabase-auth");
-
+    const { requireSupabaseAuth } = await import(
+      "../../server/middleware/supabase-auth"
+    );
     app.use("/api/profile", requireSupabaseAuth as any, profileRoutes);
 
+    // The authenticated user is a student; attempt to self-escalate to admin.
     const res = await request(app)
       .patch("/api/profile")
-      .send({ role: "student" });
+      .send({ role: "admin" });
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
@@ -199,208 +172,143 @@ describe("Identity + Entitlement Runtime Contract", () => {
     });
   });
 
-  it("returns an explicit guardian placeholder state when no linked student exists", async () => {
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
+  // --- guardian billing is explicitly unavailable, not silently wrong ----------
 
-    const res = await request(app).get("/api/billing/status");
-
-    expect(res.status).toBe(200);
-    expect(res.body.linkRequiredForPremium).toBe(true);
-    expect(res.body.lockedReason).toBe("link_required");
-    expect(res.body.effectiveAccess).toBe(false);
-    expect(res.body.billingOwnerRole).toBe("student");
-  });
-
-  it("denies guardian checkout until a student link exists", async () => {
-    process.env.STRIPE_PRICE_PARENT_MONTHLY = "price_monthly";
-    process.env.STRIPE_PRICE_PARENT_QUARTERLY = "price_quarterly";
-    process.env.STRIPE_PRICE_PARENT_YEARLY = "price_yearly";
-
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
-
-    const res = await request(app)
-      .post("/api/billing/checkout")
-      .set("Origin", "http://localhost:5000")
-      .send({ plan: "monthly" });
-
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual(
-      expect.objectContaining({
-        error: "Link a student before starting guardian checkout",
-        code: "LINKED_STUDENT_REQUIRED",
-      }),
-    );
-  });
-
-  it("uses linked student entitlement state for guardian billing status", async () => {
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
-
-    accountMocks.getPrimaryGuardianLink.mockResolvedValue({
-      student_user_id: "student-1",
-      account_id: "acc-student-1",
-    });
-    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
-      role: "guardian",
-      hasPremiumAccess: false,
-      hasActiveLink: true,
-      premiumSource: "none",
-      reason:
-        "Linked student account does not have an active premium entitlement.",
-      studentUserId: "student-1",
-      guardianUserId: "guardian-1",
-      studentAccountId: "acc-student-1",
-      guardianAccountId: "acc-guardian-1",
-      studentEntitlementStatus: "inactive",
-      guardianEntitlementStatus: "active",
-      studentEntitlementExpired: false,
-      guardianEntitlementExpired: false,
-    });
-
-    const res = await request(app).get("/api/billing/status");
-
-    expect(res.status).toBe(200);
-    // accountId = profile_id = linked student's user_id (not the legacy account_id)
-    expect(res.body).toEqual(
-      expect.objectContaining({
-        accountId: "student-1",
-        effectiveAccess: false,
-        requiresStudentSubscription: true,
-        lockedReason: "student_subscription_required",
-        billingOwnerRole: "student",
-        premiumSource: "none",
-      }),
-    );
-  });
-
-  it("returns canonical billing plan metadata from /api/billing/plans", async () => {
-    process.env.STRIPE_PRICE_PARENT_MONTHLY = "price_monthly";
-    process.env.STRIPE_PRICE_PARENT_QUARTERLY = "price_quarterly";
-    process.env.STRIPE_PRICE_PARENT_YEARLY = "price_yearly";
-
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
-
-    const res = await request(app).get("/api/billing/plans");
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.plans)).toBe(true);
-    expect(res.body.plans).toHaveLength(3);
-    expect(res.body.plans.map((p: any) => p.plan)).toEqual([
-      "monthly",
-      "quarterly",
-      "yearly",
-    ]);
-    expect(
-      res.body.plans.every((p: any) => typeof p.amountCents === "number"),
-    ).toBe(true);
-    expect(
-      res.body.plans.every(
-        (p: any) => typeof p.stripePriceIdConfigured === "boolean",
-      ),
-    ).toBe(true);
-    expect(res.body).not.toHaveProperty("accountId");
-    expect(res.body).not.toHaveProperty("entitlement");
-  });
-
-  it("rejects checkout bodies containing client-controlled billing/account fields", async () => {
-    process.env.STRIPE_PRICE_PARENT_MONTHLY = "price_monthly";
-    process.env.STRIPE_PRICE_PARENT_QUARTERLY = "price_quarterly";
-    process.env.STRIPE_PRICE_PARENT_YEARLY = "price_yearly";
-
+  it("returns an explicit unavailable response for guardian billing status", async () => {
     authState.currentUser = {
-      id: "student-1",
-      role: "student",
-      email: "student@test.com",
-      isGuardian: false,
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
       isAdmin: false,
     } as any;
 
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
+    const res = await request(await billingApp()).get("/api/billing/status");
 
-    const res = await request(app)
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("GUARDIAN_BILLING_UNAVAILABLE");
+  });
+
+  it("returns an explicit unavailable response for guardian checkout", async () => {
+    authState.currentUser = {
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    } as any;
+
+    const res = await request(await billingApp())
       .post("/api/billing/checkout")
-      .set("Origin", "http://localhost:5000")
+      .send({ plan: "monthly" });
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("GUARDIAN_BILLING_UNAVAILABLE");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+  });
+
+  // --- the subject comes from the session, never the body ----------------------
+
+  it("binds the Checkout Session to the authenticated student, not to anything in the body", async () => {
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly" });
+
+    expect(res.status).toBe(200);
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
+
+    const args = stripeMocks.checkoutCreate.mock.calls[0][0] as any;
+    expect(args.client_reference_id).toBe(STUDENT_ID);
+    expect(args.metadata.student_profile_id).toBe(STUDENT_ID);
+    expect(args.subscription_data.metadata.student_profile_id).toBe(STUDENT_ID);
+    expect(args.mode).toBe("subscription");
+  });
+
+  it("rejects checkout bodies carrying client-controlled billing or identity fields", async () => {
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
       .send({
         plan: "monthly",
-        priceId: "price_from_client",
-        accountId: "acc_from_client",
-        studentId: "student_from_client",
-        customerId: "cus_from_client",
+        student_profile_id: "33333333-3333-4333-8333-333333333333",
+        priceId: "price_attacker",
+        tier: "premium",
       });
 
     expect(res.status).toBe(400);
-    expect(String(res.body.error || "")).toMatch(/unrecognized|invalid/i);
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("fails closed when entitlement read fails for billing status", async () => {
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
+  // --- fail closed --------------------------------------------------------------
 
-    authState.currentUser = {
-      id: "student-1",
-      role: "student",
-      email: "student@test.com",
-      isGuardian: false,
-      isAdmin: false,
-    } as any;
-    // profile_id = userId — no ensureAccountForUser call. Simulate entitlement read failure.
-    accountMocks.getEntitlementForProfile.mockRejectedValue(
-      new Error("entitlement read failed"),
+  it("fails closed when the entitlement read throws — never free-tier success, never paid", async () => {
+    accountMocks.getEntitlementForProfile.mockRejectedValueOnce(
+      new Error("db down"),
     );
 
-    const res = await request(app).get("/api/billing/status");
+    const res = await request(await billingApp()).get("/api/billing/status");
 
     expect(res.status).toBe(503);
-    expect(res.body).toEqual(
-      expect.objectContaining({
-        error: "Billing status unavailable",
-        code: "BILLING_STATUS_UNAVAILABLE",
-      }),
-    );
-    expect(res.body).not.toHaveProperty("effectiveAccess");
-    expect(res.body).not.toHaveProperty("billingOwnerRole");
+    expect(res.body.code).toBe("BILLING_STATUS_UNAVAILABLE");
+    expect(res.body.effectiveAccess).toBeUndefined();
+    expect(res.body.isPaid).toBeUndefined();
   });
 
-  it("fails closed when linked premium-access resolution fails for billing status", async () => {
-    const app = buildApp();
-    const billingRoutes = (await import("../../server/routes/billing-routes"))
-      .default;
-    app.use("/api/billing", billingRoutes);
+  // --- entitled set + live pricing ---------------------------------------------
 
-    accountMocks.getPrimaryGuardianLink.mockResolvedValue({
-      student_user_id: "student-1",
-      account_id: "acc-student-1",
+  it.each([
+    ["active", true],
+    ["past_due", true],
+    ["trialing", true],
+    ["canceled", false],
+    ["unpaid", false],
+  ])(
+    "reports effectiveAccess=%s for premium/%s per the canonical entitled set",
+    async (status, expected) => {
+      accountMocks.getEntitlementForProfile.mockResolvedValueOnce({
+        tier: "premium",
+        status,
+        current_period_end: null,
+        stripe_subscription_id: "sub_1",
+      });
+
+      const res = await request(await billingApp()).get("/api/billing/status");
+
+      expect(res.status).toBe(200);
+      expect(res.body.effectiveAccess).toBe(expected);
+    },
+  );
+
+  it("reads plan pricing live from Stripe rather than from hardcoded amounts", async () => {
+    stripeMocks.pricesRetrieve.mockResolvedValue({
+      id: "price_monthly",
+      unit_amount: 4242,
+      currency: "USD",
+      recurring: { interval: "month", interval_count: 1 },
     });
-    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockRejectedValue(
-      new Error("premium access read failed"),
-    );
 
-    const res = await request(app).get("/api/billing/status");
+    const res = await request(await billingApp()).get("/api/billing/plans");
 
-    expect(res.status).toBe(503);
-    expect(res.body).toEqual(
-      expect.objectContaining({
-        error: "Billing status unavailable",
-        code: "BILLING_STATUS_UNAVAILABLE",
-      }),
+    expect(res.status).toBe(200);
+    const monthly = res.body.plans.find((p: any) => p.plan === "monthly");
+    expect(monthly.amountCents).toBe(4242);
+    expect(monthly.currency).toBe("usd");
+    expect(monthly.intervalLabel).toBe("per month");
+  });
+  // --- post-audit: payer identifiers are digested in logs (Charter §6) --------
+
+  it("never passes a raw profile id or Checkout Session id to the logger", async () => {
+    const { logger } = await import("../../server/logger");
+    await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly" });
+
+    const emitted = JSON.stringify(
+      (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls,
     );
-    expect(res.body).not.toHaveProperty("effectiveAccess");
-    expect(res.body).not.toHaveProperty("billingOwnerRole");
+    // On the unaccompanied path the student IS the payer, so the profile id is
+    // a payer identifier for a minors' product.
+    expect(emitted).not.toContain(STUDENT_ID);
+    expect(emitted).not.toContain("cs_test");
+    expect(emitted).toContain("studentProfileRef");
   });
 });
