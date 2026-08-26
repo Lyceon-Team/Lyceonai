@@ -12,10 +12,15 @@
  *
  * expected outcome: given a clock time, each tier function deletes only rows
  * whose retention timestamp is strictly before (now − tier_window).
+ * 90d/180d tiers export rows to BigQuery before deletion (Karl ruling:
+ * archival destination is BigQuery, aggregation at query time).
  *
  * trade-offs:
  *  - Client injection is the same pattern as server/lib/stale-session-sweep.ts.
  *    The route handler passes supabaseServer; tests pass a filtering mock.
+ *  - 90d/180d tiers require an injected ArchiveClient (opts.archiveClient).
+ *    If undefined, they return ok: false — same safe-default as before.
+ *    Archive failure blocks delete — no data loss.
  *  - 365d tier is a structured no-op until tables are provisioned.
  *  - 7d tier: memory summaries are only purged when a student has zero
  *    remaining active conversations (conservative — spec says "cascade
@@ -38,6 +43,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger";
+import { type ArchiveClient, archiveRows } from "./retention-archive";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -47,6 +53,14 @@ export type SweepResult =
 
 export type SweepOpts = {
   now: Date;
+  /**
+   * BigQuery archive client for 90d/180d tiers. If undefined, tiers
+   * that require archival return ok: false with reason
+   * "archive_client_not_configured" — same safe-default as the previous
+   * "archival_destination_pending." Injected by the route handler in
+   * production; tests pass a recording mock.
+   */
+  archiveClient?: ArchiveClient;
 };
 
 export type TierHandler = (
@@ -203,11 +217,19 @@ export async function sweep7d(
 /**
  * @spec [Doc-03_V1.1 §14.2]
  *
- * Delete tutor_instruction_assignments and tutor_instruction_exposures
- * older than 90 days from creation.
+ * Archive then delete tutor_instruction_assignments and
+ * tutor_instruction_exposures older than 90 days from creation.
  *
  * Spec: "90 days from creation, then aggregated" / "Automatic archival
- * at 90 days." We delete (no cold-storage archival at V1).
+ * at 90 days." Karl ruling: archival destination is BigQuery; aggregation
+ * at query time (not at sweep time). Raw rows are exported to BQ tables
+ * `retention__tutor_instruction_assignments` and
+ * `retention__tutor_instruction_exposures` in the archive dataset,
+ * then deleted from Supabase.
+ *
+ * Safety invariant: archive failure blocks delete. If BigQuery insert
+ * fails for either table, the function returns ok: false and no rows
+ * are deleted from either table. Previously LISA-RET-001.
  */
 export async function sweep90d(
   client: SupabaseClient,
@@ -243,24 +265,150 @@ export async function sweep90d(
     };
   }
 
-  // DISABLED (LISA-RET-001): §14.2 requires "automatic archival at 90 days"
-  // in aggregated form for analytics before raw record deletion. The archival
-  // destination is not specified in §14.2 (spec gap — no cold-storage table,
-  // GCS bucket, or BigQuery dataset named). Delete steps disabled until Karl
-  // rules on the destination. Every scheduled run without archival irreversibly
-  // destroys data §14.2 requires retained.
-  return {
-    ok: false,
-    reason:
-      "archival_destination_pending: §14.2 requires archival before deletion; destination unspecified (LISA-RET-001)",
-    tier,
-  };
+  // ── Archive client guard ──────────────────────────────────────────
+  // Without an archive client, deletion is blocked — same safe-default
+  // as the previous "archival_destination_pending" behaviour.
+  if (!opts.archiveClient) {
+    return {
+      ok: false,
+      reason:
+        "archive_client_not_configured: §14.2 requires archival before deletion (LISA-RET-001)",
+      tier,
+    };
+  }
+
+  // ── Step 1: Select expired rows ───────────────────────────────────
+
+  const { data: expiredAssignments, error: selAssignErr } = await client
+    .from("tutor_instruction_assignments")
+    .select("*")
+    .lt("created_at", cutoff);
+
+  if (selAssignErr) {
+    return {
+      ok: false,
+      reason: `select_failed: ${selAssignErr.message}`,
+      tier,
+    };
+  }
+
+  const { data: expiredExposures, error: selExposeErr } = await client
+    .from("tutor_instruction_exposures")
+    .select("*")
+    .lt("created_at", cutoff);
+
+  if (selExposeErr) {
+    return {
+      ok: false,
+      reason: `select_failed: ${selExposeErr.message}`,
+      tier,
+    };
+  }
+
+  const assignRows = (expiredAssignments ?? []) as Record<string, unknown>[];
+  const exposeRows = (expiredExposures ?? []) as Record<string, unknown>[];
+
+  // Nothing to sweep
+  if (assignRows.length === 0 && exposeRows.length === 0) {
+    return { ok: true, deleted_count: 0, tier, dry_run: false };
+  }
+
+  // ── Step 2: Archive to BigQuery ───────────────────────────────────
+  // Both tables must archive successfully before ANY delete proceeds.
+
+  if (assignRows.length > 0) {
+    const archResult = await archiveRows(
+      opts.archiveClient,
+      "tutor_instruction_assignments",
+      assignRows,
+      opts.now,
+    );
+    if (!archResult.ok) {
+      return {
+        ok: false,
+        reason: `archive_blocked_delete: ${archResult.reason}`,
+        tier,
+      };
+    }
+  }
+
+  if (exposeRows.length > 0) {
+    const archResult = await archiveRows(
+      opts.archiveClient,
+      "tutor_instruction_exposures",
+      exposeRows,
+      opts.now,
+    );
+    if (!archResult.ok) {
+      return {
+        ok: false,
+        reason: `archive_blocked_delete: ${archResult.reason}`,
+        tier,
+      };
+    }
+  }
+
+  // ── Step 3: Delete from Supabase ──────────────────────────────────
+  // Same predicates as select — guaranteed to match the same rows because
+  // the cutoff is in the past (no new rows can match).
+
+  let totalDeleted = 0;
+
+  if (assignRows.length > 0) {
+    const { data: deletedAssign, error: delAssignErr } = await client
+      .from("tutor_instruction_assignments")
+      .delete()
+      .lt("created_at", cutoff)
+      .select("id");
+
+    if (delAssignErr) {
+      return {
+        ok: false,
+        reason: `delete_failed: ${delAssignErr.message}`,
+        tier,
+      };
+    }
+    totalDeleted += deletedAssign?.length ?? 0;
+  }
+
+  if (exposeRows.length > 0) {
+    const { data: deletedExpose, error: delExposeErr } = await client
+      .from("tutor_instruction_exposures")
+      .delete()
+      .lt("created_at", cutoff)
+      .select("id");
+
+    if (delExposeErr) {
+      return {
+        ok: false,
+        reason: `delete_failed: ${delExposeErr.message}`,
+        tier,
+      };
+    }
+    totalDeleted += deletedExpose?.length ?? 0;
+  }
+
+  logger.info(
+    "RETENTION_SWEEP",
+    "sweep_90d_archive_delete",
+    `90d sweep: archived and deleted ${totalDeleted} rows`,
+    {
+      assignmentsArchived: assignRows.length,
+      exposuresArchived: exposeRows.length,
+      totalDeleted,
+    },
+  );
+
+  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
 }
 
 // ── 180-day tier ──────────────────────────────────────────────────────
 
 /**
  * @spec [Doc-03_V1.1 §14.2]
+ *
+ * Archive then delete crisis review cases and injection logs older than
+ * 180 days.
  *
  * Crisis review cases: only RESOLVED cases older than 180 days from created_at
  * (the crisis flag timestamp). Open/in-review cases retained regardless of
@@ -274,6 +422,15 @@ export async function sweep90d(
  * zero rows — resolved cases accumulated indefinitely (LISA-GCP-002).
  *
  * Injection log: older than 180 days from detected_at.
+ *
+ * Karl ruling: archival destination is BigQuery; aggregation at query time.
+ * Raw rows exported to BQ archive dataset before deletion.
+ *
+ * Safety invariant: archive failure blocks delete. If BigQuery insert
+ * fails for either table, no rows are deleted. Previously LISA-RET-002.
+ *
+ * Privacy note: crisis review cases are minors' data (students 13–18).
+ * Archived copies in BigQuery are subject to Doc 07E retention classes.
  */
 export async function sweep180d(
   client: SupabaseClient,
@@ -311,16 +468,141 @@ export async function sweep180d(
     };
   }
 
-  // DISABLED (LISA-RET-002): §14.2 requires "automatic archival at 180 days"
-  // before raw record deletion. The archival destination is not specified in
-  // §14.2 (spec gap). Delete steps disabled until Karl rules on the
-  // destination. See LISA-RET-001.
-  return {
-    ok: false,
-    reason:
-      "archival_destination_pending: §14.2 requires archival before deletion; destination unspecified (LISA-RET-002)",
-    tier,
-  };
+  // ── Archive client guard ──────────────────────────────────────────
+  if (!opts.archiveClient) {
+    return {
+      ok: false,
+      reason:
+        "archive_client_not_configured: §14.2 requires archival before deletion (LISA-RET-002)",
+      tier,
+    };
+  }
+
+  // ── Step 1: Select expired rows ───────────────────────────────────
+
+  // Crisis cases: resolved AND older than 180 days
+  const { data: expiredCrisis, error: selCrisisErr } = await client
+    .from("crisis_review_cases")
+    .select("*")
+    .eq("status", CRISIS_STATUS.RESOLVED)
+    .lt("created_at", cutoff);
+
+  if (selCrisisErr) {
+    return {
+      ok: false,
+      reason: `select_failed: ${selCrisisErr.message}`,
+      tier,
+    };
+  }
+
+  // Injection log: older than 180 days from detected_at
+  const { data: expiredInjections, error: selInjErr } = await client
+    .from("tutor_injection_log")
+    .select("*")
+    .lt("detected_at", cutoff);
+
+  if (selInjErr) {
+    return {
+      ok: false,
+      reason: `select_failed: ${selInjErr.message}`,
+      tier,
+    };
+  }
+
+  const crisisRows = (expiredCrisis ?? []) as Record<string, unknown>[];
+  const injectionRows = (expiredInjections ?? []) as Record<string, unknown>[];
+
+  // Nothing to sweep
+  if (crisisRows.length === 0 && injectionRows.length === 0) {
+    return { ok: true, deleted_count: 0, tier, dry_run: false };
+  }
+
+  // ── Step 2: Archive to BigQuery ───────────────────────────────────
+  // Both tables must archive successfully before ANY delete proceeds.
+
+  if (crisisRows.length > 0) {
+    const archResult = await archiveRows(
+      opts.archiveClient,
+      "crisis_review_cases",
+      crisisRows,
+      opts.now,
+    );
+    if (!archResult.ok) {
+      return {
+        ok: false,
+        reason: `archive_blocked_delete: ${archResult.reason}`,
+        tier,
+      };
+    }
+  }
+
+  if (injectionRows.length > 0) {
+    const archResult = await archiveRows(
+      opts.archiveClient,
+      "tutor_injection_log",
+      injectionRows,
+      opts.now,
+    );
+    if (!archResult.ok) {
+      return {
+        ok: false,
+        reason: `archive_blocked_delete: ${archResult.reason}`,
+        tier,
+      };
+    }
+  }
+
+  // ── Step 3: Delete from Supabase ──────────────────────────────────
+
+  let totalDeleted = 0;
+
+  if (crisisRows.length > 0) {
+    const { data: deletedCrisis, error: delCrisisErr } = await client
+      .from("crisis_review_cases")
+      .delete()
+      .eq("status", CRISIS_STATUS.RESOLVED)
+      .lt("created_at", cutoff)
+      .select("id");
+
+    if (delCrisisErr) {
+      return {
+        ok: false,
+        reason: `delete_failed: ${delCrisisErr.message}`,
+        tier,
+      };
+    }
+    totalDeleted += deletedCrisis?.length ?? 0;
+  }
+
+  if (injectionRows.length > 0) {
+    const { data: deletedInjections, error: delInjErr } = await client
+      .from("tutor_injection_log")
+      .delete()
+      .lt("detected_at", cutoff)
+      .select("id");
+
+    if (delInjErr) {
+      return {
+        ok: false,
+        reason: `delete_failed: ${delInjErr.message}`,
+        tier,
+      };
+    }
+    totalDeleted += deletedInjections?.length ?? 0;
+  }
+
+  logger.info(
+    "RETENTION_SWEEP",
+    "sweep_180d_archive_delete",
+    `180d sweep: archived and deleted ${totalDeleted} rows`,
+    {
+      crisisArchived: crisisRows.length,
+      injectionsArchived: injectionRows.length,
+      totalDeleted,
+    },
+  );
+
+  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
 }
 
 // ── 365-day tier ──────────────────────────────────────────────────────
