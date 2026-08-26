@@ -1,5 +1,10 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import { logger } from "../logger";
+import {
+  diagnosticStateSchema,
+  type DiagnosticState,
+} from "../../packages/shared/src/diagnostic-state";
 
 export const CANONICAL_RUNTIME_VIEW_VERSION = "kpi_truth_v1";
 
@@ -692,6 +697,113 @@ export function buildStudentFullLengthReportView(
     }),
     measurementModel: fullTestMeasurementModel(),
   };
+}
+
+/**
+ * @spec [Doc-05C_V1.0 §7.4; owner rulings Q1 + Q2, 2026-08-17] @implemented 2026-08-17
+ *
+ * plain English: read the ONE canonical diagnostic-lifecycle state for a student
+ * from public.student_diagnostic_state() (migration 20260817010000). The
+ * derivation is deliberately not restated here — this function is transport plus
+ * a Zod narrow at the boundary, nothing else.
+ *
+ * expected outcome: one of the four DiagnosticState literals, or null when the
+ * state could not be read.
+ *
+ * WHY null RATHER THAN A DEFAULT. Every default is a lie in some direction:
+ * 'not_taken' re-tells a student who finished the diagnostic to take one (the
+ * defect this workstream exists to remove), and 'baseline_pending' hides the CTA
+ * from a student who genuinely has not started, leaving them no way in. null
+ * means "unknown", and the caller degrades to the pre-existing
+ * baseline-presence derivation — the behaviour shipped today, which is wrong only
+ * for students already in the broken state and wrong in no new way.
+ *
+ * trade-offs: one extra RPC on the projection endpoint. It replaces no read, so
+ * the endpoint issues one more round trip than before; the function is STABLE and
+ * touches two small grouped reads.
+ */
+export async function readDiagnosticState(
+  userId: string,
+): Promise<DiagnosticState | null> {
+  const { data, error } = await supabaseServer.rpc("student_diagnostic_state", {
+    p_student_id: userId,
+  });
+
+  if (error) {
+    logger.warn(
+      "DIAGNOSTIC_STATE",
+      "diagnostic_state_read_failed",
+      "diagnostic lifecycle state read failed; falling back to baseline presence",
+      { userId, dbError: error.message },
+    );
+    return null;
+  }
+
+  // unknown at the boundary, narrowed with Zod (Coding Standards §7.1). A value
+  // outside the enum means the migration and this module have diverged, which the
+  // drift gate should have caught — log it rather than coercing it into a state.
+  const parsed = diagnosticStateSchema.safeParse(data);
+  if (!parsed.success) {
+    logger.warn(
+      "DIAGNOSTIC_STATE",
+      "diagnostic_state_unrecognized",
+      "student_diagnostic_state() returned a value outside the known state set",
+      { userId },
+    );
+    return null;
+  }
+
+  return parsed.data;
+}
+
+/**
+ * @spec [Doc-05C_V1.0 §7.4; Doc-01_V8 product pillar: honest progress signals;
+ *        owner ruling 2026-08-17 "report the true count in EVERY branch"]
+ * @implemented 2026-08-17
+ *
+ * plain English: how many questions this student has actually answered. Counted
+ * from the durable answer rows, not from a rollup.
+ *
+ * WHY NOT student_overall_kpi.events_total — WHICH IS WHAT THE PROJECTION USES
+ *   events_total is a mastery rollup. Every rollup in this system was EMPTY for
+ *   every student for seven weeks while apply_mastery_event was failing, and a
+ *   student with forty answered questions would have read as events_total = 0 —
+ *   the same false zero this change exists to remove, arriving by a different
+ *   route. practice_session_items rows are written by the answer handler itself
+ *   and do not depend on the mastery pipeline being healthy.
+ *
+ * WHY null AND NOT 0 ON FAILURE
+ *   0 is a legitimate answer — a student who has answered nothing. A failed read
+ *   is not that answer. Collapsing the two is the failure class that produced
+ *   BUG-1 (a skipped baseline capture indistinguishable from no diagnostic) and
+ *   the outage's invisibility, and this function must not add a third instance of
+ *   it. The caller serves null and the surface omits the line: absent beats wrong.
+ *
+ * expected outcome: N for a student with N answered items, 0 for a student with
+ * none, null when the count could not be established.
+ */
+export async function readAnsweredQuestionCount(
+  userId: string,
+): Promise<number | null> {
+  const { count, error } = await supabaseServer
+    .from("practice_session_items")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "answered");
+
+  if (error) {
+    logger.warn(
+      "PROGRESS",
+      "answered_question_count_read_failed",
+      "answered-question count read failed; the surface will omit the figure rather than report zero",
+      { userId, dbError: error.message },
+    );
+    return null;
+  }
+
+  // A null count with no error should not happen with head+exact, but "the
+  // database did not tell us" is not "the student answered nothing".
+  return typeof count === "number" ? count : null;
 }
 
 export function projectGuardianFullLengthReportView(

@@ -14,6 +14,12 @@ import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { checkAndReserveFullLengthQuota } from "../lib/rate-limit-ledger";
 import { applyMasteryEvent } from "./mastery-write";
+import { logger } from "../../../../server/logger";
+import {
+  MASTERY_EMISSION_COMPONENT,
+  MASTERY_EMISSION_EVENT,
+  MASTERY_EMISSION_FAILURE_CODE,
+} from "../../../../packages/shared/src/mastery-emission";
 import {
   applyFullLengthExamPlannerReprioritization,
   type ExamSkillDiagnostic,
@@ -2030,8 +2036,18 @@ async function applyFullLengthMasterySignals(
       .eq("session_id", sessionId);
 
     if (moduleError) {
-      console.warn(
-        `[FULL-LENGTH] Failed to load modules for mastery updates: ${moduleError.message}`,
+      logger.error(
+        MASTERY_EMISSION_COMPONENT,
+        MASTERY_EMISSION_EVENT.SKIPPED,
+        "full-length mastery emission skipped — module load failed",
+        undefined,
+        {
+          code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
+          examSessionId: sessionId,
+          sourceFamily: "test",
+          eventSourceKind: "full_length_answer",
+          dbError: moduleError.message,
+        },
       );
       return;
     }
@@ -2052,8 +2068,18 @@ async function applyFullLengthMasterySignals(
       .in("question_id", questionIds);
 
     if (materializedError) {
-      console.warn(
-        `[FULL-LENGTH] Failed to load materialized question metadata for mastery updates: ${materializedError.message}`,
+      logger.error(
+        MASTERY_EMISSION_COMPONENT,
+        MASTERY_EMISSION_EVENT.SKIPPED,
+        "full-length mastery emission skipped — materialized question metadata load failed",
+        undefined,
+        {
+          code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
+          examSessionId: sessionId,
+          sourceFamily: "test",
+          eventSourceKind: "full_length_answer",
+          dbError: materializedError.message,
+        },
       );
       return;
     }
@@ -2111,24 +2137,34 @@ async function applyFullLengthMasterySignals(
         question.question_difficulty,
       );
       if (!difficultyBucket) {
-        console.warn(
-          "[full-length] mastery emission skipped (invalid difficulty bucket)",
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.SKIPPED,
+          "full-length mastery emission skipped (invalid difficulty bucket)",
+          undefined,
           {
-            sessionId,
+            code: MASTERY_EMISSION_FAILURE_CODE.INVALID_DIFFICULTY,
+            examSessionId: sessionId,
             questionCanonicalId: question.question_canonical_id,
             sourceFamily: "test",
+            eventSourceKind: "full_length_answer",
             rawDifficulty: question.question_difficulty ?? null,
           },
         );
         continue;
       }
       if (!section || !domain || !skill) {
-        console.warn(
-          "[full-length] mastery emission skipped (missing metadata)",
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.SKIPPED,
+          "full-length mastery emission skipped (missing metadata)",
+          undefined,
           {
-            sessionId,
+            code: MASTERY_EMISSION_FAILURE_CODE.MISSING_METADATA,
+            examSessionId: sessionId,
             questionCanonicalId: question.question_canonical_id,
             sourceFamily: "test",
+            eventSourceKind: "full_length_answer",
             section: section || null,
             domain: domain || null,
             skill: skill || null,
@@ -2153,22 +2189,56 @@ async function applyFullLengthMasterySignals(
           sectionState: "submitted",
         });
 
-        if (!result.ok && result.error) {
-          console.warn(
-            `[FULL-LENGTH] Canonical mastery update warning for ${question.question_canonical_id}: ${result.error}`,
+        if (!result.ok) {
+          logger.error(
+            MASTERY_EMISSION_COMPONENT,
+            MASTERY_EMISSION_EVENT.FAILED,
+            "full-length mastery emission returned error — warn-and-continue",
+            undefined,
+            {
+              code: result.code ?? MASTERY_EMISSION_FAILURE_CODE.RPC_ERROR,
+              examSessionId: sessionId,
+              questionCanonicalId: question.question_canonical_id,
+              sourceFamily: "test",
+              eventSourceKind: "full_length_answer",
+              dbError: result.error ?? "unknown",
+            },
           );
         }
       } catch (masteryErr: unknown) {
         const message =
           masteryErr instanceof Error ? masteryErr.message : "unknown";
-        console.warn(
-          `[FULL-LENGTH] Canonical mastery update failed for ${question.question_canonical_id}: ${message}`,
+        logger.error(
+          MASTERY_EMISSION_COMPONENT,
+          MASTERY_EMISSION_EVENT.FAILED,
+          "full-length mastery emission threw — warn-and-continue",
+          undefined,
+          {
+            code: MASTERY_EMISSION_FAILURE_CODE.THREW,
+            examSessionId: sessionId,
+            questionCanonicalId: question.question_canonical_id,
+            sourceFamily: "test",
+            eventSourceKind: "full_length_answer",
+            dbError: message,
+          },
         );
       }
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${message}`);
+    logger.error(
+      MASTERY_EMISSION_COMPONENT,
+      MASTERY_EMISSION_EVENT.FAILED,
+      "full-length canonical mastery bridge skipped — warn-and-continue",
+      undefined,
+      {
+        code: MASTERY_EMISSION_FAILURE_CODE.THREW,
+        examSessionId: sessionId,
+        sourceFamily: "test",
+        eventSourceKind: "full_length_answer",
+        dbError: message,
+      },
+    );
   }
 }
 

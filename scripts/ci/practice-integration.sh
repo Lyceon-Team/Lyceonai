@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SCOPE: SQL SEAM ONLY. This gate reimplements the handler's sequence in PL/pgSQL
+# ("mirrors handler's applyMasteryEvent call" below) — no TypeScript executes. It
+# proves the SQL side works when called correctly; it proves nothing about whether
+# the handler calls it. tests/ci/mastery-emission.transport.ci.test.ts covers that.
 # ============================================================================
 # Practice engine integration gate (Doc-02B_V4 §14/§20; Coding Standards §9)
 # ============================================================================

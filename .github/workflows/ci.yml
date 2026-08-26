@@ -50,8 +50,36 @@ jobs:
       # Full deterministic CI suite. The stale-mock contract files were deleted
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
-      - name: Run Tests (Deterministic CI Suite)
-        run: pnpm run test:ci
+      # WHOLE SUITE, BLOCKING. This step used to run `test:ci` = `vitest run
+      # tests/ci`, a fraction of the repo's tests. The rest were reported for
+      # weeks as "pre-existing, gated" while running in no job at all — path
+      # scope is a worse suppression than an accept-list, because it leaves no
+      # record and the files still read as coverage.
+      #
+      # EXACT ARITHMETIC, re-measured at this head (the earlier comment said
+      # 182/170 and was stale by one file after the dead test was deleted):
+      #
+      #   181 tracked *.{test,spec}.{ts,tsx}
+      #   = 169 vitest-selected
+      #   +   9 Playwright .spec.ts   — match no vitest `include`, run in NO job
+      #   +   2 tests/integration/**  — excluded; the `integration` job owns them
+      #   +   1 tests/auth.integration.test.ts — excluded as "moved to
+      #                                  tests/integration/", but the original is
+      #                                  still tracked. A stale duplicate.
+      #
+      # REPORT SELECTED AND PASSED SEPARATELY. A green run reads
+      # `161 passed | 8 skipped (169)` — 169 selected, 161 passed, 8 skipped.
+      # Quoting the passed count as though it were the selected count is how a
+      # skip becomes invisible, which is the same class of error as counting a
+      # file that never ran as coverage.
+      #
+      # Cost measured on the RUNNER, not locally: 17.3s -> 54.3s. The PR body
+      # originally said +25s from local timing; the hosted figure is +37s. Still
+      # well inside the budget for a job that was ~45s, so no fast/full split is
+      # proposed — but the number quoted is the one from the machine that
+      # actually gates merges.
+      - name: Run Tests (whole suite — blocking)
+        run: pnpm test
 
       # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
       # strict typecheck, its own tests, and lint at error level all BLOCKING.
@@ -76,6 +104,29 @@ jobs:
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
 
+      # practice_sessions.mode decides event_source_kind, so accepting it as free
+      # text let a client classify its own activity in the mastery record AND
+      # create a diagnostic session through the practice route, bypassing the
+      # once-only guard. Integrity bypass, not a lifecycle bug.
+      - name: Session-mode boundary gate (BUG-3 — client cannot name its own mode)
+        run: node scripts/ci/session-mode-boundary-gate.mjs
+
+      # The RULE is unit-tested in packages/shared; this covers the seam the unit
+      # test cannot see — narrowing the route's status filter back to
+      # ['created','active'] means the rule never receives the completed row and a
+      # second diagnostic is startable again, with every unit test still green.
+      - name: Diagnostic once-only gate (BUG-2 — no retake)
+        run: node scripts/ci/diagnostic-once-only-gate.mjs
+
+      # The diagnostic lifecycle is declared in three places that cannot import
+      # from each other: the CASE arms in the migration, DIAGNOSTIC_STATES in
+      # packages/shared, and the EstimateStatus union in the client (which has no
+      # module path to packages/shared). A state the SQL emits and the TypeScript
+      # cannot name degrades the student silently; a status the server emits and
+      # the client cannot name renders a blank card, not a type error.
+      - name: Diagnostic state drift gate (SQL <-> shared <-> client)
+        run: node scripts/ci/diagnostic-state-drift-gate.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 
@@ -88,6 +139,18 @@ jobs:
       - name: Safety-constants drift gate (AUD-B1.1c-010 — anti-leak + boundary mirrors)
         run: diff shared/tutor-safety-constants.ts apps/workers/tutor-orchestrator/src/lib/_tutor-safety-constants.generated.ts
 
+      # Mastery emission failed 100% of the time for seven weeks unnoticed. These two
+      # gates block the two defects that made that invisible: console.* on mastery
+      # paths, and a miscalled structured logger that put the data object into `event`
+      # (which no log filter can match).
+      - name: Mastery emission observability gate (M-05 / M-07)
+        run: node scripts/ci/mastery-emission-observability.mjs
+
+      # The destructive rehearsal scripts seed fabricated mastery rows and take PGHOST
+      # from the environment. Six such rows were found unattributed in prod.
+      - name: Destructive-rehearsal target guard — negative control (M-10)
+        run: bash scripts/ci/rehearsal-host-guard-negative-control.sh
+
   # ---------------------------------------------------------------------------
   # Visibility job — NOT required for merge. Steps are continue-on-error so the
   # job stays green, but their failures remain visible in the logs/annotations
@@ -96,6 +159,12 @@ jobs:
   # docs/alignment/KNOWN-GAPS.md). Each is promoted into the required `ci` job
   # by the domain pass that fixes it. Nothing here is hidden or faked green.
   # ---------------------------------------------------------------------------
+  # The failures in this job are now ACCEPTED with an owner and an expiry rather
+  # than "known" in perpetuity — see ci/known-gaps.yaml. The JOB ID is left as
+  # `ci-known-gaps` on purpose: renaming it would silently break any
+  # branch-protection required-check that names it, and a merge-blocking config
+  # change is not something to slip into a cleanup PR. Rename proposed as an
+  # owner question in the PR instead.
   ci-known-gaps:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -121,14 +190,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # KNOWN GAP: 2 real type errors (exam `section` field drift) — exam domain pass.
-      - name: TypeScript Check (CI tsconfig) — KNOWN GAP
+      # BLOCKING, and deliberately first. Everything below may fail without
+      # failing this job; this step is what keeps that permission finite. It
+      # rejects an entry missing owner/expiry/reason/re_arm/command, and turns
+      # red once an entry's expiry passes — so a suppression has to be renewed
+      # by a human decision or the check goes back to blocking.
+      - name: Accept-list gate (owner + expiry required) — BLOCKING
+        run: node scripts/ci/known-gaps-gate.mjs
+
+      - name: Accept-list gate self-test (proves it can refuse)
+        run: bash scripts/ci/known-gaps-gate.self-test.sh
+
+      # ACCEPTED under ci/known-gaps.yaml -> typecheck-ci-tsconfig, owner karl,
+      # expires 2026-10-01. The gate step above fails this job once that date
+      # passes. The previous comment here claimed "2 real type errors (exam
+      # section field drift)"; the real count is 41 across 6 files — which is
+      # what an unrenewed suppression decays into.
+      - name: TypeScript Check (CI tsconfig) — accepted, expires 2026-10-01
         continue-on-error: true
         run: pnpm exec tsc -p tsconfig.ci.json
 
-      # KNOWN GAP: advisory-DB dependent; promote to a blocking gate once stable.
-      - name: Security Audit (high/critical) — KNOWN GAP
-        continue-on-error: true
+      # PROMOTED TO BLOCKING 2026-08-19. Measured before promoting: `pnpm run
+      # audit:ci` reports ZERO advisories of any severity, so the
+      # continue-on-error was suppressing nothing at all — it only guaranteed
+      # that the first real high/critical advisory would land silently. There is
+      # no accept-list entry for this because there is nothing to accept.
+      - name: Security Audit (high/critical) — blocking
         run: |
           pnpm run audit:ci
           node -e "
@@ -140,18 +227,20 @@ jobs:
             console.log('No High/Critical vulnerabilities found.');
           "
 
-      # ADVISORY: legacy-tree lint. Graduates to fully blocking when advisory
-      # violations reach zero (ledger graduation criterion); standing rule is that
-      # every wave lint-cleans the files it touches. packages/shared lints BLOCKING
-      # in the required `ci` job.
-      - name: ESLint (legacy tree, advisory) — KNOWN GAP
+      # ACCEPTED under ci/known-gaps.yaml -> eslint-legacy-tree, owner karl,
+      # expires 2026-11-01. 2,368 problems; 96% are three rules, and 449 of those
+      # (no-undef on a TypeScript tree) are a config defect rather than findings.
+      # The standing rule — every wave lint-cleans the files it touches — is
+      # recorded as the re-arm criterion in the entry, where it expires.
+      # packages/shared lints BLOCKING in the required `ci` job.
+      - name: ESLint (legacy tree) — accepted, expires 2026-11-01
         continue-on-error: true
         run: pnpm run lint
 
       - name: Summary
         run: |
-          echo "::notice::ci-known-gaps ran the remaining non-deletable gaps (source typecheck, security audit, legacy-tree lint)."
-          echo "::notice::These are non-blocking by design. See docs/alignment/KNOWN-GAPS.md for owners and re-arm criteria."
+          echo "::notice::Accepted failures are declared in ci/known-gaps.yaml — each with an owner, an expiry and a re-arm criterion."
+          echo "::notice::The accept-list gate is BLOCKING and fails this job when an entry expires. Security audit was promoted to blocking 2026-08-19 (zero advisories)."
 
   # Optional integration tests — only on push to main, when secrets exist.
   # Not required for PR merge.
@@ -216,7 +305,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Genesis fresh-apply + determinism + anti-leak gate
         env:
@@ -257,9 +346,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
-      - name: Practice engine integration gate (SQL seam)
+      - name: Practice engine integration gate (SQL seam only — no TS handler)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -285,7 +374,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Diagnostic handler → real PG proof
+      - name: Diagnostic handler → real PG LOGIC proof (mocked transport)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -332,6 +421,153 @@ jobs:
         run: pnpm exec vitest run tests/ci/guardian-link.pg.ci.test.ts
 
   # ---------------------------------------------------------------------------
+  # Mastery pipeline gates — HARD GATE.
+  #
+  # Three things nothing else covers:
+  #   1. the unblock migrations, red-before/green-after against a seeded pre-state
+  #   2. derivation-gap detection (the invariant: every derivable event has exactly
+  #      one attributable audit row)
+  #   3. the REAL transport — supabase-js -> PostgREST -> service_role JWT -> GRANT.
+  #      Every other mastery test mocks the Supabase client; all of them were green
+  #      throughout the outage.
+  # ---------------------------------------------------------------------------
+  mastery-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Red-before/green-after on a seeded pre-state, plus the portability case that
+      # regression-tests the hardcoded-count blocker (a migration carrying a prod row
+      # count reds every fresh apply).
+      - name: Mastery unblock migration gates (1.1 + 1.2)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-unblock-gates.sh
+
+      # Every file under scripts/prod-verify/ is pasted by hand into the Supabase
+      # SQL editor and run against production — it is NOT run with `psql -f`.
+      # This executes each one the way the operator does. Every prod-verify file
+      # shipped in #589..#595 failed at its first backslash meta-command and CI
+      # never noticed, because CI only ever ran the CI fixtures.
+      - name: prod-verify console gate (operator SQL must run in a SQL console)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/prod-verify-console-gate.sh
+
+      # captureDiagnosticBaseline is once-only with no retry and silently returns
+      # when the projection is not ready, so a student who completed a diagnostic
+      # during the mastery outage is permanently no_baseline. This guards the
+      # repair — and above all that it stays a repair, never a fabricated score.
+      # One-off exact-target resolution of the single duplicate diagnostic in prod
+      # (ruling Q8). The fixture seeds a SECOND student's active diagnostic, which
+      # is what makes it discriminate a pinned id from its superset.
+      - name: Resolve-duplicate-diagnostic gate (Q8 — exact target)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/resolve-duplicate-diagnostic-gate.sh
+
+      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/baseline-repair-gate.sh
+
+      # Guards scripts/prod-verify/step8-verify.sql, which previously asserted
+      # student_projection_refresh_state > 0 and so reported STOP on a completely
+      # successful production backfill. Runs a REAL backfill and checks the real
+      # file's verdict against it.
+      - name: Step 8 backfill acceptance gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/step8-backfill-acceptance-gates.sh
+
+      # Guards the two read-only files that decide whether a history repair is safe
+      # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
+      # FIRST and must be strict: it is the only thing between a hand-applied schema
+      # and an irreversible "recorded as applied".
+      # The detector reported 84 gaps out of 91 answered items on its first day in
+      # production — every item the Step 8 backfill had correctly rebuilt, because
+      # backfill_recompute_student writes no per-event audit row. An alert that is
+      # 100% noise on arrival gets muted, which is the failure this workstream
+      # exists to prevent. N4 reproduces the 84 before asserting the 0.
+      - name: Gap-detector noise gate (backfill is not a gap)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/gap-detector-noise-gate.sh
+
+      - name: Migration history gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-history-gate.sh
+
+      # Session lifecycle, steps 2/1/8/9. Seven fixture students; the two that
+      # earn their place are E (two ALL-NULL diagnostic_baseline rows — what the
+      # evidence gate actually writes, so counting snapshot rows calls them
+      # "ready") and G (a completed AND an active diagnostic at once, which is
+      # production's real shape and the only way to prove the CASE precedence).
+      - name: Session lifecycle DB gate (once-only index, state, abandoned_at)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/session-lifecycle-db-gate.sh
+
+      - name: Mastery derivation gap detection gate (2.4)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          source scripts/ci/lib/deletion-rehearsal-db.sh
+          setup_genesis_db mastery_gap_ci
+          psql -v ON_ERROR_STOP=1 -d mastery_gap_ci -q -f scripts/ci/mastery-gap-detection-gates.sql
+        shell: bash
+
+      # The gate that would have caught this outage on day one.
+      - name: Install PostgREST (real transport)
+        run: |
+          curl -sL -o /tmp/pgrst.tar.xz \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          tar -xf /tmp/pgrst.tar.xz -C /tmp
+          sudo mv /tmp/postgrest /usr/local/bin/postgrest
+          postgrest --version
+
+      - name: Mastery emission → REAL PostgREST transport proof (3.1)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-transport-gate.sh
+
+  # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
   # staged (owner-run) deletion-lifecycle migration to a throwaway Postgres and
   # proves the IRREVERSIBLE deidentify_user RPC + cron eligibility filter on the
@@ -360,7 +596,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: deidentify_user exact-target + idempotency rehearsal
         env:
@@ -434,7 +670,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Mastery formula parity (PL/pgSQL == Python reference == Doc 05A §12)
         env:
@@ -478,7 +714,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Lane-C seam gates (production parity + idempotency replay + txn atomicity + F1/F2/F3 §4.9 re-proof)
         env:
@@ -522,7 +758,7 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: 05B domain mastery + KPI gates (domain-grain parity + INV-05B-13 + KPI struct)
         env:
@@ -595,7 +831,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Ensure postgresql-client 16
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+        uses: ./.github/actions/ensure-psql16
 
       - name: Tutor schema-proof gate
         env:

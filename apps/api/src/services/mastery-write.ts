@@ -4,6 +4,10 @@
  * All runtime mastery-affecting flows must call applyMasteryEvent().
  */
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import {
+  MASTERY_EMISSION_FAILURE_CODE,
+  type MasteryEmissionFailureCode,
+} from "../../../../packages/shared/src/mastery-emission";
 
 export type LearningSourceFamily = "practice" | "review" | "test";
 
@@ -30,6 +34,8 @@ export type LearningEventInput = {
 
 export type LearningEventResult = {
   ok: boolean;
+  /** Stable machine-readable code, present on every failure. Absent on success. */
+  code?: MasteryEmissionFailureCode;
   error?: string;
 };
 
@@ -71,32 +77,70 @@ export async function applyMasteryEvent(
   const questionId = normalizeText(input.questionId);
 
   if (!studentId)
-    return { ok: false, error: "Missing student id for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing student id for mastery update",
+    };
   if (!section)
-    return { ok: false, error: "Missing section for mastery update" };
-  if (!domain) return { ok: false, error: "Missing domain for mastery update" };
-  if (!skill) return { ok: false, error: "Missing skill for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing section for mastery update",
+    };
+  if (!domain)
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing domain for mastery update",
+    };
+  if (!skill)
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing skill for mastery update",
+    };
   if (
     input.difficulty !== 1 &&
     input.difficulty !== 2 &&
     input.difficulty !== 3
   ) {
-    return { ok: false, error: "Invalid difficulty bucket for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Invalid difficulty bucket for mastery update",
+    };
   }
   if (
     sourceFamily !== "practice" &&
     sourceFamily !== "review" &&
     sourceFamily !== "test"
   ) {
-    return { ok: false, error: "Invalid source family for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Invalid source family for mastery update",
+    };
   }
   if (!eventSourceKind) {
-    return { ok: false, error: "Missing event source kind for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing event source kind for mastery update",
+    };
   }
   if (!eventId)
-    return { ok: false, error: "Missing event id for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing event id for mastery update",
+    };
   if (!questionId)
-    return { ok: false, error: "Missing question id for mastery update" };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.INPUT_INVALID,
+      error: "Missing question id for mastery update",
+    };
 
   const { data, error } = await supabase.rpc("apply_mastery_event", {
     p_student_id: studentId,
@@ -114,15 +158,44 @@ export async function applyMasteryEvent(
   });
 
   if (error) {
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.RPC_ERROR,
+      error: error.message,
+    };
   }
 
-  if (data && typeof data === "object") {
-    const payload = data as Record<string, unknown>;
-    const ok = typeof payload.ok === "boolean" ? payload.ok : true;
-    const rpcError =
-      typeof payload.error === "string" ? payload.error : undefined;
-    return { ok, error: rpcError };
+  // @spec [Doc-05A_V1.0 §4.10] | @implemented [2026-08-16]
+  // plain English: apply_mastery_event RETURNS public.student_skill_mastery, so a call
+  // that actually wrote mastery always yields a row for p_student_id — on the first
+  // write, on the §4.3 Step 2 idempotent re-entry, and on the §4.8 unique_violation
+  // re-entry alike. Success is therefore derivable from evidence and does not have to
+  // be assumed from the absence of an error.
+  //
+  // The previous implementation inferred it: it looked for an `ok` boolean the composite
+  // has never carried, defaulted to true when absent, and returned {ok:true} outright
+  // when `data` was null. That reported success for a call that demonstrably wrote
+  // nothing, which is the shape of failure this pipeline spent seven weeks in.
+  if (!data || typeof data !== "object") {
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.NO_ROW,
+      error:
+        "apply_mastery_event returned no row — mastery was not written for this event",
+    };
+  }
+
+  const row = data as Record<string, unknown>;
+  const returnedStudentId =
+    typeof row.student_id === "string" ? row.student_id : null;
+
+  if (returnedStudentId !== studentId) {
+    return {
+      ok: false,
+      code: MASTERY_EMISSION_FAILURE_CODE.STUDENT_MISMATCH,
+      error:
+        "apply_mastery_event returned a row for a different student than the one submitted",
+    };
   }
 
   return { ok: true };

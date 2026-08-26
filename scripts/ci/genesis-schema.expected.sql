@@ -2386,6 +2386,67 @@ $$;
 
 
 --
+-- Name: mastery_derivation_gap_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_derivation_gap_ledger (
+    observation_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    observed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    total_gap_count integer NOT NULL,
+    students_affected integer NOT NULL,
+    oldest_gap_at timestamp with time zone,
+    detector_version text DEFAULT 'v1.0'::text NOT NULL,
+    CONSTRAINT mastery_derivation_gap_ledger_students_nonneg CHECK ((students_affected >= 0)),
+    CONSTRAINT mastery_derivation_gap_ledger_total_nonneg CHECK ((total_gap_count >= 0))
+);
+
+
+--
+-- Name: TABLE mastery_derivation_gap_ledger; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.mastery_derivation_gap_ledger IS 'Time series of mastery derivation gap observations. total_gap_count > 0 on the latest row is the alert condition.';
+
+
+--
+-- Name: record_mastery_derivation_gap(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_mastery_derivation_gap() RETURNS public.mastery_derivation_gap_ledger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_total    integer;
+  v_students integer;
+  v_oldest   timestamptz;
+  v_row      public.mastery_derivation_gap_ledger;
+BEGIN
+  SELECT
+    COALESCE(sum(s.gap_count), 0)::integer,
+    count(*)::integer,
+    min(s.oldest_gap_at)
+  INTO v_total, v_students, v_oldest
+  FROM public.mastery_derivation_gap_summary s;
+
+  INSERT INTO public.mastery_derivation_gap_ledger
+    (observed_at, total_gap_count, students_affected, oldest_gap_at, detector_version)
+  VALUES (clock_timestamp(), v_total, v_students, v_oldest, 'v1.0')
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION record_mastery_derivation_gap(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.record_mastery_derivation_gap() IS 'Snapshots mastery_derivation_gap_summary into mastery_derivation_gap_ledger. Detection only — writes no mastery table.';
+
+
+--
 -- Name: student_domain_kpi; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3179,6 +3240,29 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.student_diagnostic_state(p_student_id uuid) RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT s.state FROM public.student_diagnostic_states s
+      WHERE s.student_id = p_student_id),
+    'not_taken'
+  );
+$$;
+
+
+--
+-- Name: FUNCTION student_diagnostic_state(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
 
 
 --
@@ -4101,6 +4185,177 @@ CREATE TABLE public.mastery_event_audit_log (
 
 
 --
+-- Name: practice_session_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_session_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id uuid NOT NULL,
+    user_id uuid,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    question_stem text NOT NULL,
+    question_passage text,
+    question_options jsonb NOT NULL,
+    question_correct_answer text NOT NULL,
+    question_explanation text NOT NULL,
+    question_option_metadata jsonb,
+    question_domain text NOT NULL,
+    question_skill text NOT NULL,
+    question_difficulty smallint NOT NULL,
+    question_section text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    selected_answer text,
+    is_correct boolean,
+    outcome text,
+    time_spent_ms integer,
+    client_attempt_id text,
+    answered_at timestamp with time zone,
+    served_at timestamp with time zone,
+    occurred_at timestamp with time zone,
+    actor_id uuid NOT NULL,
+    option_order text[],
+    option_token_map jsonb,
+    client_instance_id text,
+    question_item_type text DEFAULT 'mcq'::text NOT NULL,
+    question_correct_variants text[],
+    question_assets jsonb,
+    question_estimated_time_seconds integer,
+    CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
+    CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT practice_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
+    CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT practice_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text]))),
+    CONSTRAINT psi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb)))),
+    CONSTRAINT psi_question_domain_section_canonical CHECK ((((question_section = 'M'::text) AND (question_domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((question_section = 'RW'::text) AND (question_domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
+    CONSTRAINT psi_resolved_requires_occurred_at CHECK (((status <> ALL (ARRAY['answered'::text, 'skipped'::text])) OR (occurred_at IS NOT NULL)))
+);
+
+
+--
+-- Name: practice_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid,
+    mode text NOT NULL,
+    filters jsonb DEFAULT '{}'::jsonb NOT NULL,
+    target_count integer NOT NULL,
+    platform text NOT NULL,
+    client_instance_id text,
+    status text DEFAULT 'created'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    actor_id uuid NOT NULL,
+    abandoned_at timestamp with time zone,
+    CONSTRAINT practice_sessions_abandoned_not_completed CHECK (((status <> 'abandoned'::text) OR ((completed_at IS NULL) AND (abandoned_at IS NOT NULL)))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
+    CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
+    CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
+    CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
+);
+
+
+--
+-- Name: COLUMN practice_sessions.abandoned_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.practice_sessions.abandoned_at IS 'When the session was abandoned. Mutually exclusive with completed_at — enforced by practice_sessions_abandoned_not_completed.';
+
+
+--
+-- Name: review_error_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_error_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_item_id uuid,
+    student_id uuid,
+    question_id text NOT NULL,
+    selected_answer text,
+    is_correct boolean NOT NULL,
+    seconds_spent integer,
+    client_attempt_id text,
+    used_tutor boolean DEFAULT false NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    skill text NOT NULL,
+    difficulty smallint NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
+    CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
+    CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
+-- Name: mastery_derivation_gaps; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.mastery_derivation_gaps AS
+ SELECT pi.user_id AS student_id,
+    public.practice_session_mode_to_event_kind(ps.mode) AS event_source_kind,
+    pi.id AS event_id,
+    pi.question_section AS section,
+    pi.question_domain AS domain,
+    pi.question_skill AS skill,
+    pi.question_id,
+    pi.occurred_at
+   FROM (public.practice_session_items pi
+     JOIN public.practice_sessions ps ON ((ps.id = pi.session_id)))
+  WHERE ((pi.status = 'answered'::text) AND (pi.user_id IS NOT NULL) AND (NOT (EXISTS ( SELECT 1
+           FROM public.mastery_event_audit_log al
+          WHERE ((al.event_id = pi.id) AND (al.event_source_kind = public.practice_session_mode_to_event_kind(ps.mode)))))) AND (NOT (EXISTS ( SELECT 1
+           FROM public.mastery_domain_refresh_audit_log ral
+          WHERE ((ral.triggered_by = 'backfill_recompute'::text) AND (ral.student_id = pi.user_id) AND (ral.section = pi.question_section) AND (ral.domain = pi.question_domain) AND (pi.occurred_at <= ral.applied_at))))))
+UNION ALL
+ SELECT ra.student_id,
+    'review_error_attempt'::text AS event_source_kind,
+    ra.id AS event_id,
+    ra.section,
+    ra.domain,
+    ra.skill,
+    ra.question_id,
+    ra.occurred_at
+   FROM public.review_error_attempts ra
+  WHERE ((NOT (EXISTS ( SELECT 1
+           FROM public.mastery_event_audit_log al
+          WHERE ((al.event_id = ra.id) AND (al.event_source_kind = 'review_error_attempt'::text))))) AND (NOT (EXISTS ( SELECT 1
+           FROM public.mastery_domain_refresh_audit_log ral
+          WHERE ((ral.triggered_by = 'backfill_recompute'::text) AND (ral.student_id = ra.student_id) AND (ral.section = ra.section) AND (ral.domain = ra.domain) AND (ra.occurred_at <= ral.applied_at))))));
+
+
+--
+-- Name: VIEW mastery_derivation_gaps; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.mastery_derivation_gaps IS 'Events derivable by canonical_mastery_events that have no attributable mastery_event_audit_log row AND were not rebuilt by a backfill covering their (student, section, domain) at or before they occurred. Non-empty = mastery emission is failing. Detection only — no writer.';
+
+
+--
+-- Name: mastery_derivation_gap_summary; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.mastery_derivation_gap_summary AS
+ SELECT student_id,
+    (count(*))::integer AS gap_count,
+    min(occurred_at) AS oldest_gap_at,
+    max(occurred_at) AS newest_gap_at
+   FROM public.mastery_derivation_gaps g
+  GROUP BY student_id;
+
+
+--
+-- Name: VIEW mastery_derivation_gap_summary; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.mastery_derivation_gap_summary IS 'Per-student rollup of mastery_derivation_gaps. Total across the platform = sum(gap_count).';
+
+
+--
 -- Name: mobile_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4231,77 +4486,6 @@ CREATE TABLE public.practice_runtime_config_history (
 
 
 --
--- Name: practice_session_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.practice_session_items (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    session_id uuid NOT NULL,
-    user_id uuid,
-    ordinal integer NOT NULL,
-    question_id text NOT NULL,
-    question_stem text NOT NULL,
-    question_passage text,
-    question_options jsonb NOT NULL,
-    question_correct_answer text NOT NULL,
-    question_explanation text NOT NULL,
-    question_option_metadata jsonb,
-    question_domain text NOT NULL,
-    question_skill text NOT NULL,
-    question_difficulty smallint NOT NULL,
-    question_section text NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    selected_answer text,
-    is_correct boolean,
-    outcome text,
-    time_spent_ms integer,
-    client_attempt_id text,
-    answered_at timestamp with time zone,
-    served_at timestamp with time zone,
-    occurred_at timestamp with time zone,
-    actor_id uuid NOT NULL,
-    option_order text[],
-    option_token_map jsonb,
-    client_instance_id text,
-    question_item_type text DEFAULT 'mcq'::text NOT NULL,
-    question_correct_variants text[],
-    question_assets jsonb,
-    question_estimated_time_seconds integer,
-    CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
-    CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
-    CONSTRAINT practice_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
-    CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
-    CONSTRAINT practice_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text]))),
-    CONSTRAINT psi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb))))
-);
-
-
---
--- Name: practice_sessions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.practice_sessions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid,
-    mode text NOT NULL,
-    filters jsonb DEFAULT '{}'::jsonb NOT NULL,
-    target_count integer NOT NULL,
-    platform text NOT NULL,
-    client_instance_id text,
-    status text DEFAULT 'created'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    actor_id uuid NOT NULL,
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
-    CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
-    CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
-    CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
-);
-
-
---
 -- Name: profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4360,6 +4544,25 @@ ALTER TABLE public.projection_refresh_outbox ALTER COLUMN outbox_id ADD GENERATE
 
 
 --
+-- Name: psi_occurred_at_backfill_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.psi_occurred_at_backfill_log (
+    item_id uuid NOT NULL,
+    occurred_at_applied timestamp with time zone NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    migration_version text NOT NULL
+);
+
+
+--
+-- Name: TABLE psi_occurred_at_backfill_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.psi_occurred_at_backfill_log IS 'One row per practice_session_items row repaired by migration 20260816000000. The only record of which rows the backfill touched — post-state cannot re-derive the set, because a repaired row is indistinguishable from one that always had occurred_at = answered_at.';
+
+
+--
 -- Name: questions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4391,6 +4594,7 @@ CREATE TABLE public.questions (
     item_type text DEFAULT 'mcq'::text NOT NULL,
     correct_variants text[],
     CONSTRAINT questions_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
+    CONSTRAINT questions_domain_section_canonical CHECK ((((section = 'M'::text) AND (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((section = 'RW'::text) AND (domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
     CONSTRAINT questions_id_check CHECK ((id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$'::text)),
     CONSTRAINT questions_item_shape_chk CHECK ((((item_type = 'mcq'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 4) AND (correct_variants IS NULL)) OR ((item_type = 'grid_in'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 0) AND (correct_variants IS NOT NULL) AND (array_length(correct_variants, 1) >= 1)))),
     CONSTRAINT questions_item_type_check CHECK ((item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
@@ -4449,31 +4653,6 @@ CREATE TABLE public.rate_limit_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: review_error_attempts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.review_error_attempts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    session_item_id uuid,
-    student_id uuid,
-    question_id text NOT NULL,
-    selected_answer text,
-    is_correct boolean NOT NULL,
-    seconds_spent integer,
-    client_attempt_id text,
-    used_tutor boolean DEFAULT false NOT NULL,
-    section text NOT NULL,
-    domain text NOT NULL,
-    skill text NOT NULL,
-    difficulty smallint NOT NULL,
-    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid NOT NULL,
-    CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
-    CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
 
 
@@ -4676,31 +4855,6 @@ COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe we
 
 
 --
--- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.student_kpi_rollups_current (
-    student_id uuid NOT NULL,
-    scope text NOT NULL,
-    scope_key text NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    computed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: student_projection_refresh_state; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.student_projection_refresh_state (
-    student_id uuid NOT NULL,
-    events_since_refresh integer DEFAULT 0 NOT NULL,
-    last_refresh_at timestamp with time zone,
-    CONSTRAINT student_projection_refresh_state_events_since_refresh_check CHECK ((events_since_refresh >= 0))
-);
-
-
---
 -- Name: student_section_projection_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4728,6 +4882,97 @@ CREATE TABLE public.student_section_projection_snapshots (
     CONSTRAINT student_section_projection_snapshots_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
     CONSTRAINT student_section_projection_snapshots_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
     CONSTRAINT student_section_projection_snapshots_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
+-- Name: student_diagnostic_states; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.student_diagnostic_states AS
+ WITH diag AS (
+         SELECT ps.user_id AS student_id,
+            count(*) FILTER (WHERE (ps.status = 'completed'::text)) AS completed_count,
+            count(*) FILTER (WHERE (ps.status = ANY (ARRAY['created'::text, 'active'::text]))) AS in_flight_count,
+            max(ps.completed_at) FILTER (WHERE (ps.status = 'completed'::text)) AS diagnostic_completed_at,
+            max(ps.last_activity_at) FILTER (WHERE (ps.status = 'completed'::text)) AS diagnostic_last_activity_at
+           FROM public.practice_sessions ps
+          WHERE ((ps.mode = 'diagnostic'::text) AND (ps.user_id IS NOT NULL))
+          GROUP BY ps.user_id
+        ), baseline AS (
+         SELECT sn.student_id,
+            count(DISTINCT sn.section) FILTER (WHERE (sn.projected_score_mid IS NOT NULL)) AS scored_sections,
+            min(sn.snapshot_at) AS baseline_captured_at
+           FROM public.student_section_projection_snapshots sn
+          WHERE (sn.snapshot_kind = 'diagnostic_baseline'::text)
+          GROUP BY sn.student_id
+        )
+ SELECT d.student_id,
+        CASE
+            WHEN ((d.completed_count > 0) AND (COALESCE(b.scored_sections, (0)::bigint) >= 2)) THEN 'baseline_ready'::text
+            WHEN (d.completed_count > 0) THEN 'baseline_pending'::text
+            WHEN (d.in_flight_count > 0) THEN 'in_progress'::text
+            ELSE 'not_taken'::text
+        END AS state,
+    (d.completed_count)::integer AS completed_diagnostic_count,
+    (d.in_flight_count)::integer AS in_flight_diagnostic_count,
+    d.diagnostic_completed_at,
+    COALESCE(d.diagnostic_completed_at, d.diagnostic_last_activity_at) AS diagnostic_finished_at,
+    b.baseline_captured_at,
+    (COALESCE(b.scored_sections, (0)::bigint))::integer AS baseline_scored_sections
+   FROM (diag d
+     LEFT JOIN baseline b ON ((b.student_id = d.student_id)));
+
+
+--
+-- Name: VIEW student_diagnostic_states; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.student_diagnostic_states IS 'One row per student with any diagnostic session. state is the single canonical answer to "where is this student in the diagnostic lifecycle": not_taken | in_progress | baseline_pending | baseline_ready. Precedence matches resolveDiagnosticStartDecision — completed is checked first and is terminal.';
+
+
+--
+-- Name: student_baseline_pending; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.student_baseline_pending AS
+ SELECT student_id,
+    diagnostic_finished_at,
+    baseline_scored_sections,
+    (EXTRACT(epoch FROM (now() - diagnostic_finished_at)))::bigint AS pending_seconds
+   FROM public.student_diagnostic_states s
+  WHERE (state = 'baseline_pending'::text);
+
+
+--
+-- Name: VIEW student_baseline_pending; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.student_baseline_pending IS 'Students who completed the diagnostic but have no usable diagnostic_baseline snapshot, with the age of that state. Age, not count, is the alert condition — a brief pending state is normal after every completion.';
+
+
+--
+-- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_kpi_rollups_current (
+    student_id uuid NOT NULL,
+    scope text NOT NULL,
+    scope_key text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: student_projection_refresh_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_projection_refresh_state (
+    student_id uuid NOT NULL,
+    events_since_refresh integer DEFAULT 0 NOT NULL,
+    last_refresh_at timestamp with time zone,
+    CONSTRAINT student_projection_refresh_state_events_since_refresh_check CHECK ((events_since_refresh >= 0))
 );
 
 
@@ -5463,6 +5708,14 @@ ALTER TABLE ONLY public.mastery_constants
 
 
 --
+-- Name: mastery_derivation_gap_ledger mastery_derivation_gap_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_derivation_gap_ledger
+    ADD CONSTRAINT mastery_derivation_gap_ledger_pkey PRIMARY KEY (observation_id);
+
+
+--
 -- Name: mastery_domain_refresh_audit_log mastery_domain_refresh_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5580,6 +5833,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.projection_refresh_outbox
     ADD CONSTRAINT projection_refresh_outbox_pkey PRIMARY KEY (outbox_id);
+
+
+--
+-- Name: psi_occurred_at_backfill_log psi_occurred_at_backfill_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.psi_occurred_at_backfill_log
+    ADD CONSTRAINT psi_occurred_at_backfill_log_pkey PRIMARY KEY (item_id);
 
 
 --
@@ -6064,6 +6325,13 @@ CREATE INDEX idx_mastery_domain_refresh_audit_student ON public.mastery_domain_r
 
 
 --
+-- Name: idx_mastery_gap_ledger_observed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mastery_gap_ledger_observed_at ON public.mastery_derivation_gap_ledger USING btree (observed_at DESC);
+
+
+--
 -- Name: idx_mccl_key_time; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6453,6 +6721,20 @@ CREATE INDEX idx_tutor_question_links_student ON public.tutor_question_links USI
 --
 
 CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
+-- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX practice_sessions_one_completed_diagnostic_uq ON public.practice_sessions USING btree (user_id) WHERE ((mode = 'diagnostic'::text) AND (status = 'completed'::text));
+
+
+--
+-- Name: INDEX practice_sessions_one_completed_diagnostic_uq; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner ruling Q1 2026-08-17: a diagnostic is taken once. Uniqueness is on COMPLETED only — an abandoned diagnostic does not spend the student''s one diagnostic, and in-flight sessions are owned by the route''s anti-concurrency guard.';
 
 
 --
@@ -7810,6 +8092,12 @@ ALTER TABLE public.mastery_constants_change_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mastery_constants_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mastery_derivation_gap_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_derivation_gap_ledger ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mastery_domain_refresh_audit_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7921,6 +8209,12 @@ CREATE POLICY projection_snapshots_guardian_read ON public.student_section_proje
 
 CREATE POLICY projection_snapshots_student_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: psi_occurred_at_backfill_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8951,6 +9245,21 @@ GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_sectio
 
 
 --
+-- Name: TABLE mastery_derivation_gap_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.mastery_derivation_gap_ledger TO service_role;
+
+
+--
+-- Name: FUNCTION record_mastery_derivation_gap(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_mastery_derivation_gap() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_mastery_derivation_gap() TO service_role;
+
+
+--
 -- Name: TABLE student_domain_kpi; Type: ACL; Schema: public; Owner: -
 --
 
@@ -9317,6 +9626,14 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 
 --
+-- Name: FUNCTION student_diagnostic_state(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9592,48 +9909,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_event_audit_log TO ser
 
 
 --
--- Name: TABLE mobile_auth_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config TO service_role;
-
-
---
--- Name: TABLE mobile_auth_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO service_role;
-
-
---
--- Name: TABLE notification_outbox; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.notification_outbox TO service_role;
-
-
---
--- Name: TABLE observability_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config TO service_role;
-
-
---
--- Name: TABLE observability_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config_history TO service_role;
-
-
---
--- Name: TABLE practice_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO service_role;
-
-
---
 -- Name: TABLE practice_session_items; Type: ACL; Schema: public; Owner: -
 --
 
@@ -9796,49 +10071,6 @@ GRANT SELECT ON TABLE public.practice_sessions TO authenticated;
 
 
 --
--- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.profiles TO service_role;
-GRANT SELECT ON TABLE public.profiles TO authenticated;
-
-
---
--- Name: TABLE projection_refresh_outbox; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
-
-
---
--- Name: TABLE questions; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
-
-
---
--- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger TO service_role;
-
-
---
--- Name: TABLE rate_limit_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config TO service_role;
-
-
---
--- Name: TABLE rate_limit_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_history TO service_role;
-
-
---
 -- Name: TABLE review_error_attempts; Type: ACL; Schema: public; Owner: -
 --
 
@@ -9941,6 +10173,112 @@ GRANT SELECT(difficulty) ON TABLE public.review_error_attempts TO authenticated;
 --
 
 GRANT SELECT(occurred_at) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: TABLE mastery_derivation_gaps; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.mastery_derivation_gaps TO service_role;
+
+
+--
+-- Name: TABLE mastery_derivation_gap_summary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.mastery_derivation_gap_summary TO service_role;
+
+
+--
+-- Name: TABLE mobile_auth_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config TO service_role;
+
+
+--
+-- Name: TABLE mobile_auth_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO service_role;
+
+
+--
+-- Name: TABLE notification_outbox; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_outbox TO service_role;
+
+
+--
+-- Name: TABLE observability_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE observability_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE practice_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.profiles TO service_role;
+GRANT SELECT ON TABLE public.profiles TO authenticated;
+
+
+--
+-- Name: TABLE projection_refresh_outbox; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
+
+
+--
+-- Name: TABLE psi_occurred_at_backfill_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role;
+
+
+--
+-- Name: TABLE questions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
+
+
+--
+-- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger TO service_role;
+
+
+--
+-- Name: TABLE rate_limit_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE rate_limit_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_history TO service_role;
 
 
 --
@@ -10130,20 +10468,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.stripe_webhook_events TO servi
 
 
 --
--- Name: TABLE student_kpi_rollups_current; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO service_role;
-
-
---
--- Name: TABLE student_projection_refresh_state; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
-
-
---
 -- Name: TABLE student_section_projection_snapshots; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10211,6 +10535,34 @@ GRANT SELECT(snapshot_at) ON TABLE public.student_section_projection_snapshots T
 --
 
 GRANT SELECT(snapshot_kind) ON TABLE public.student_section_projection_snapshots TO authenticated;
+
+
+--
+-- Name: TABLE student_diagnostic_states; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_diagnostic_states TO service_role;
+
+
+--
+-- Name: TABLE student_baseline_pending; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_baseline_pending TO service_role;
+
+
+--
+-- Name: TABLE student_kpi_rollups_current; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO service_role;
+
+
+--
+-- Name: TABLE student_projection_refresh_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
 
 
 --

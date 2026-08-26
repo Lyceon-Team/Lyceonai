@@ -11,6 +11,14 @@
     {
       "path": "/api/internal/execute-deletions",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/internal/stale-session-sweep",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/internal/baseline-pending-sweep",
+      "schedule": "0 4 * * *"
     }
   ],
   "routes": [

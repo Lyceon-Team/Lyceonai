@@ -27,6 +27,43 @@ import {
   submitReviewSessionAnswer,
 } from "../server/routes/review-session-routes";
 
+/**
+ * @spec [Doc-05E_V1.0 §3 rule 1/rule 3, §6 INV-05E-06] | @implemented [2026-08-19]
+ *
+ * plain English: the authenticated user carries a synthetic grouping identifier
+ * (`actor_id`) that the route copies onto every activity row it writes. These
+ * tests mock the request, so they must model that identifier the way production
+ * produces it, not merely satisfy the presence guard.
+ *
+ * Three properties of the real thing are reproduced here:
+ *   uuid          `profiles.actor_id` and `review_error_attempts.actor_id` are
+ *                 both `uuid NOT NULL`. A string placeholder passes the guard
+ *                 and misrepresents the column — it would let a non-uuid reach
+ *                 the insert assertion without anything noticing.
+ *   born dissociated (§3 rule 1) — not derived from the student id.
+ *   one per user, stable (INV-05E-06) — the map is keyed by student, so the
+ *                 same student always presents the same actor_id across every
+ *                 request in every test. Generating one per call would satisfy
+ *                 the guard while breaking the invariant the column exists for.
+ *
+ * Source of truth in production: `supabase-auth.ts` reads `profile.actor_id`
+ * onto `req.user`; nothing generates it per request.
+ */
+const ACTOR_IDS: Record<string, string> = {
+  "student-1": "6f1a7c48-3f2e-4b91-9d0c-2a5b8e7f4c31",
+  "student-2": "b83d5e02-9c74-4a16-8f5b-1e6d3a09c7f2",
+};
+
+function asUser(id: string): { id: string; actor_id: string } {
+  const actorId = ACTOR_IDS[id];
+  if (!actorId) {
+    throw new Error(
+      `no actor_id fixture for "${id}" — add one to ACTOR_IDS rather than inlining a value, so the one-per-user invariant stays visible`,
+    );
+  }
+  return { id, actor_id: actorId };
+}
+
 type Row = Record<string, any>;
 type DbState = Record<string, Row[]>;
 
@@ -153,6 +190,25 @@ function setupSupabase(state: DbState) {
         return this;
       }
       this.filters.push((row) => row[column] === value);
+      return this;
+    }
+
+    /**
+     * `.neq` was absent from this mock entirely. It is added because the
+     * auto-abandon query calls it (review-session-routes.ts:692) and a mock that
+     * throws on a real call site is a trap waiting for the next test.
+     *
+     * It is NOT currently reachable by any test, and that is a finding rather
+     * than an omission: the `.neq("idempotency_key", key)` clause only matters
+     * if a session already carries the incoming key AND the replay branch did
+     * not return first — and the replay branch returns for every status, so it
+     * always does. The clause is defence-in-depth against a concurrent insert
+     * between the replay SELECT and the sweep, which a single-threaded mock
+     * cannot stage. A test asserting it would pass without being able to fail.
+     * See the PR description.
+     */
+    neq(column: string, value: any) {
+      this.filters.push((row) => row[column] !== value);
       return this;
     }
 
@@ -359,7 +415,33 @@ describe("Review session lifecycle contract", () => {
     });
   });
 
-  it("starts one canonical review session and replays without duplicating items", async () => {
+  /**
+   * @spec [lyceon-coding-standards §4.2 (idempotency via `idempotency_key`), §9] |
+   * @rewritten [2026-08-19]
+   *
+   * plain English: a repeat start with no `idempotency_key` does NOT replay. It
+   * auto-abandons the prior session and creates a fresh one.
+   *
+   * WHY THIS TEST CHANGED. It previously asserted 200 + `replayed: true` for a
+   * second start carrying the same `client_instance_id` and no idempotency key.
+   * That contract no longer exists and the spec does not support it: §4.2 keys
+   * idempotency on `idempotency_key`, and `client_instance_id` is the multi-tab
+   * binding (§8.3 — 409 on conflict), not a replay key. The route reads
+   * `body.idempotency_key` and nothing else (review-session-routes.ts:536), so
+   * with no key the replay branch at :574 is skipped entirely and the
+   * auto-abandon sweep at :681 runs — which is what 412c38e introduced and what
+   * production does today.
+   *
+   * The replay contract itself is still asserted, correctly, by
+   * "replays session start deterministically by idempotency key" below.
+   *
+   * Note for anyone re-diagnosing this: the mock's missing `.neq()` was NOT the
+   * cause of the old failure. `.neq` is called only when an idempotency key is
+   * present, and in that case the route returns at the replay branch before ever
+   * reaching the abandon query. It has been added to the mock regardless, and
+   * the test after this one is what actually exercises it.
+   */
+  it("starts one canonical review session; a second start with no idempotency key abandons the first", async () => {
     const questions = [
       {
         canonical_id: "SATM1ABC123",
@@ -415,7 +497,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "all_past_mistakes",
         filter: "all",
@@ -427,13 +509,29 @@ describe("Review session lifecycle contract", () => {
     expect(first.getStatus()).toBe(201);
     expect(state.review_sessions).toHaveLength(1);
     expect(state.review_session_items).toHaveLength(1);
+    const firstSessionId = state.review_sessions[0].id;
 
+    // Second start, same client instance, still no idempotency_key. Replay is
+    // NOT reachable here — see the test name and the block comment above.
     const second = makeRes();
     await startReviewErrorSession(req, second.res);
-    expect(second.getStatus()).toBe(200);
-    expect(second.getBody().replayed).toBe(true);
-    expect(state.review_sessions).toHaveLength(1);
-    expect(state.review_session_items).toHaveLength(1);
+    expect(second.getStatus()).toBe(201);
+    expect(second.getBody().replayed).toBe(false);
+
+    // Exactly one session is startable at a time: the prior one is abandoned,
+    // not left racing the new one.
+    expect(state.review_sessions).toHaveLength(2);
+    const abandoned = state.review_sessions.filter(
+      (row: Row) => row.status === "abandoned",
+    );
+    const live = state.review_sessions.filter(
+      (row: Row) => row.status !== "abandoned",
+    );
+    expect(abandoned).toHaveLength(1);
+    expect(abandoned[0].id).toBe(firstSessionId);
+    expect(abandoned[0].abandoned_at).toBeTruthy();
+    expect(live).toHaveLength(1);
+    expect(live[0].id).not.toBe(firstSessionId);
   });
 
   it("replays session start deterministically by idempotency key", async () => {
@@ -540,7 +638,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "all_past_mistakes",
         filter: "all",
@@ -649,7 +747,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "all_past_mistakes",
         filter: "all",
@@ -688,7 +786,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: { filter: "all", client_instance_id: "client-a" },
     };
     const res = makeRes();
@@ -755,7 +853,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "all_past_mistakes",
         filter: "all",
@@ -835,7 +933,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       params: { sessionId: "11111111-1111-4111-8111-111111111111" },
       query: { client_instance_id: "client-a" },
     };
@@ -932,7 +1030,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const preSubmitStateReq: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       params: { sessionId: "11111111-1111-4111-8111-111111111111" },
       query: { client_instance_id: "client-a" },
     };
@@ -947,7 +1045,7 @@ describe("Review session lifecycle contract", () => {
     ).toBeNull();
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1050,7 +1148,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1145,7 +1243,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1239,7 +1337,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1318,7 +1416,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1398,7 +1496,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1479,7 +1577,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-2" },
+      user: asUser("student-2"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1569,7 +1667,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         session_id: "11111111-1111-4111-8111-111111111111",
         review_session_item_id: "22222222-2222-4222-8222-222222222222",
@@ -1614,7 +1712,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-2" },
+      user: asUser("student-2"),
       params: { sessionId: "11111111-1111-4111-8111-111111111111" },
       query: { client_instance_id: "client-a" },
     };
@@ -1720,7 +1818,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "by_practice_session",
         practice_session_id: "11111111-1111-4111-8111-111111111111",
@@ -1800,7 +1898,7 @@ describe("Review session lifecycle contract", () => {
     setupSupabase(state);
 
     const req: any = {
-      user: { id: "student-1" },
+      user: asUser("student-1"),
       body: {
         mode: "by_full_length_session",
         full_length_session_id: "33333333-3333-4333-8333-333333333333",

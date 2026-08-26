@@ -55,8 +55,7 @@ function buildPublishedFormFixture(formId: string) {
     diagram_present: boolean;
     tags: string[];
     competencies: any[];
-    answer_choice: string;
-    answer: string;
+    correct_answer: string;
     answer_text: string;
     explanation: string;
     exam: string;
@@ -89,8 +88,7 @@ function buildPublishedFormFixture(formId: string) {
         diagram_present: false,
         tags: [],
         competencies: [],
-        answer_choice: 'A',
-        answer: 'A',
+        correct_answer: 'A',
         answer_text: 'Answer',
         explanation: 'Because',
         exam: 'SAT',
@@ -1365,8 +1363,7 @@ function buildPublishedFormFixture(formId: string) {
             diagram_present: false,
             tags: [],
             competencies: [],
-            answer_choice: 'A',
-            answer: 'A',
+            correct_answer: 'A',
             answer_text: 'Answer',
             explanation: 'Because',
             exam: 'SAT',
