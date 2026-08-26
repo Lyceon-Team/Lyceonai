@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { resolve, join } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-scratch");
 const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
+const PROD_CORPUS_PATH = resolve(ROOT, "content/canonical/prod_dedup_corpus.txt");
 
 function runGate(
   partsDir: string,
@@ -13,6 +14,18 @@ function runGate(
 ): { status: number; stdout: string; stderr: string } {
   const outPath = opts.out ?? join(SCRATCH, "out.sql");
   const reportPath = opts.report ?? join(SCRATCH, "report.json");
+  // Every invocation runs against a scratch corpus seeded from the real one,
+  // NEVER against content/canonical/prod_dedup_corpus.txt itself. On a
+  // successful pass the gate appends the batch's stem hashes to whatever
+  // corpus it was given; pointed at the production file, these fixtures write
+  // their own hashes into it and from then on collide with themselves —
+  // BANK_DUPLICATE, gate exit 1, and every non-dry-run test here fails
+  // permanently. That is not hypothetical: it is what commit beecdf4 did.
+  const corpusPath = join(SCRATCH, "dedup-corpus.txt");
+  writeFileSync(
+    corpusPath,
+    existsSync(PROD_CORPUS_PATH) ? readFileSync(PROD_CORPUS_PATH, "utf-8") : "",
+  );
   const args = [
     "exec",
     "tsx",
@@ -23,6 +36,8 @@ function runGate(
     outPath,
     "--report",
     reportPath,
+    "--corpus",
+    corpusPath,
     ...(opts.dryRun ? ["--dry-run"] : []),
   ];
 
@@ -331,7 +346,14 @@ describe("assemble-batch gate", () => {
     const outPath = join(SCRATCH, "multi-out.sql");
     writeParts(dir, [
       validMcqRecord(),
-      validMcqRecord({ difficulty: 2 }),
+      // Distinct stem, not just a distinct difficulty: the gate dedups on
+      // stem+passage, so two records differing only by difficulty are one
+      // question to it and are rejected INTRA_BATCH_DUPLICATE. This test needs
+      // three genuinely distinct questions to prove three distinct IDs.
+      validMcqRecord({
+        difficulty: 2,
+        stem: "If $5x = 20$, what is $x$?",
+      }),
       validGridInRecord(),
     ]);
     const result = runGate(dir, { out: outPath });
