@@ -25,16 +25,25 @@
 
 ## Entries
 
-> **UNRESOLVED ID COLLISION — owner ruling required.** Two different entries were allocated
+> **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
 > `SCL-042` independently, on two branches that could not see each other: the Doc 05B KPI
 > fan-out entry (2026-08-19, authored on `main`) and the Stripe governing-doctrine entry
-> (2026-08-20, authored on `stripe`). Both are reproduced below in date order, **neither
-> renumbered** — this log's own write rules forbid an agent editing an existing entry, and
-> renumbering is an edit. Renumbering also breaks every citation to the number changed.
-> Citation counts measured at the merge, 2026-08-26: the Stripe `SCL-042` has **9** citations
-> across four plan documents and `server/lib/stripe/client.ts`; the Doc 05B `SCL-042` has
-> **zero** outside this file. The wider Stripe block `SCL-042`–`SCL-053` carries **152**
-> citations in total, so renumbering that block is the expensive direction.
+> (2026-08-20, authored on `stripe`). The owner ruled that the collision be resolved by
+> renumbering, and the direction follows the citation counts measured at the merge: the Stripe
+> `SCL-042` had **9** citations across four plan documents and `server/lib/stripe/client.ts`,
+> and the wider Stripe block `SCL-042`–`SCL-053` carried **152**; the Doc 05B `SCL-042` had
+> **zero** anywhere outside this file.
+>
+> **The Doc 05B KPI fan-out entry is therefore renumbered `SCL-042` → `SCL-054`.** The Stripe
+> `SCL-042` keeps its number and every citation to it remains correct. No citation anywhere in
+> the repository pointed at the renumbered entry, so none was rewritten; this was verified by
+> search across the tree before the change, not assumed.
+>
+> `SCL-054` keeps its original 2026-08-19 date and so appears out of ID order in this
+> date-descending file. That is deliberate: the date records when the change was ruled, and
+> altering it to match the new number would falsify the record. Any surviving external reference
+> to "SCL-042" that concerns KPI fan-out, quarantine, or `mastery_data_quality_incidents` means
+> `SCL-054`.
 
 SCL-053 | 2026-08-26 | Doc 01A Appendix A.3 restates Doc 03's daily tutor limit and has drifted from it — 100 vs 120 | PROPOSED
 
@@ -810,7 +819,8 @@ Artifact: `docs/SpecAudit/STRIPE_GROUNDING_AUDIT.md` supplies the delta evidence
 
 ---
 
-SCL-042 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
+SCL-054 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
+Renumbered: allocated `SCL-042` on `main` 2026-08-19; renumbered to `SCL-054` at the `stripe`→`main` merge on 2026-08-26 by owner ruling, resolving an ID collision with the Stripe governing-doctrine entry that independently took `SCL-042` on 2026-08-20. Nothing outside this file cited this entry under its old number, so no citation was rewritten. The 2026-08-19 date is the original and is retained.
 Change: Doc 05B specifies that all four KPI refreshers validate canonical event history and RAISE `KPI_HISTORICAL_DATA_INVALID` on any row with NULL `correct` or NULL `occurred_at` (RB-05B-V1-02, matching 05A's hard-fail pattern per RB-05A-V1-22). Two of the four validate far beyond the event being written: `refresh_section_kpi` scans the whole (student, section) and `refresh_overall_kpi` scans the whole student, with no domain or section filter. Both are invoked by `refresh_domain_mastery` §4.9 inside `apply_mastery_event`'s transaction, downstream of the audit insert. A single malformed row anywhere in a student's history therefore rolls back every mastery write for that student — skill mastery, audit row, domain mastery, and projection refresh counter — permanently and for every domain. This ruling replaces RAISE with counted quarantine in those two functions only.
 WAS: All four KPI refreshers hard-fail on NULL `correct`/`occurred_at`. Deployed function bodies carry the inline comment "RB-05B-V1-02: explicit data-integrity validation, no silent NULL filter." The validation predicate in `refresh_section_kpi` is `pi.user_id = p_student_id AND pi.status = 'answered' AND pi.question_section = p_section` UNION the equivalent over `review_error_attempts`; in `refresh_overall_kpi` it is `pi.user_id = p_student_id AND pi.status = 'answered'` with no section or domain restriction. `refresh_domain_mastery` §4.9 documents that any failure in the chain rolls back the whole chain.
 IS: In `refresh_section_kpi` and `refresh_overall_kpi` only, the identical predicate now classifies rather than aborts: (a) the count of offending rows is computed into `v_excluded_count`; (b) `AND correct IS NOT NULL AND occurred_at IS NOT NULL` is added to the event CTE (`section_events` / `all_events`) so excluded rows enter no aggregate; (c) `v_excluded_count` is persisted on the KPI row via new column `excluded_event_count integer NOT NULL DEFAULT 0` on `student_section_kpi` and `student_overall_kpi`; (d) when `v_excluded_count > 0`, one row is upserted into new table `mastery_data_quality_incidents` (`incident_id`, `student_id`, `actor_id`, `scope CHECK IN ('section','overall')`, `section`, `refresher`, `excluded_event_count CHECK (> 0)`, `first_seen_at`, `last_seen_at`, `kpi_refresh_version`; UNIQUE on `(student_id, refresher, section)` with the overall scope's NULL section normalised so the constraint is not defeated; RLS enabled, service-role-only grants, revoked from PUBLIC, matching `mastery_event_audit_log`). `compute_mastery_for_entity`, `refresh_domain_kpi`, `refresh_skill_kpi`, `apply_mastery_event`, and 05C's `PROJECTION_MASTERY_TERM_NULL` are unchanged.
