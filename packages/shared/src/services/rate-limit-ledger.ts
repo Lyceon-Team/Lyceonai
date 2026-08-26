@@ -141,6 +141,37 @@ async function readConfigValue(
  * them (`tutor_turns_daily = 120`) disagrees with A.3's seed (`limit: 100`). Neither
  * is read by any application code today. That divergence predates WS-GL.
  */
+/**
+ * @spec [Doc-01A_V1.0, §41 Postgres ledger implementation; Appendix A.3 | Doc-01_V8, §36.2]
+ *       | @implemented [2026-08-26]
+ * plain English: given a runtime bucket key, find its `{ limit, window_seconds }`.
+ * What it does: exact lookup in `bucket_definitions` first; failing that, the FAMILY name —
+ * everything before the first `:`. Expected outcome: a per-subject bucket such as
+ * `guardian_link_email_attempts:9f2c…` resolves against one `guardian_link_email_attempts`
+ * definition, instead of needing a config entry per subject.
+ *
+ * Why the family fallback exists: §41 keys the ledger `(profile_id, bucket_key,
+ * window_start)`, so a subject that has no `profiles` row cannot be the ledger's subject.
+ * §36.2's per-student-email control is exactly that case. The discriminator therefore goes
+ * inside `bucket_key` — the pattern `WS-GL_Stage2_Closure_Plan.md` §2.2 established — and
+ * the definition has to be looked up by family. A key with no `:` is unaffected: the
+ * fallback resolves to the key itself, so the exact lookup has already answered.
+ */
+function parseBucketDefinition(def: unknown): BucketDefinition | null {
+  if (!def || typeof def !== "object") return null;
+  const d = def as Record<string, unknown>;
+  const limit = Number(d.limit);
+  const windowSeconds = Number(d.window_seconds);
+  if (!Number.isFinite(limit) || !Number.isFinite(windowSeconds)) return null;
+  return { limit, window_seconds: windowSeconds };
+}
+
+/** The family a runtime bucket key belongs to: everything before the first `:`. */
+export function bucketFamily(bucketKey: string): string {
+  const i = bucketKey.indexOf(":");
+  return i === -1 ? bucketKey : bucketKey.slice(0, i);
+}
+
 async function readBucketDefinition(
   client: LedgerClient,
   bucketKey: string,
@@ -148,13 +179,10 @@ async function readBucketDefinition(
   const raw = await readConfigValue(client, BUCKET_DEFINITIONS_KEY);
   if (raw === null || typeof raw !== "object") return null;
   const map = raw as Record<string, unknown>;
-  const def = map[bucketKey];
-  if (!def || typeof def !== "object") return null;
-  const d = def as Record<string, unknown>;
-  const limit = Number(d.limit);
-  const windowSeconds = Number(d.window_seconds);
-  if (!Number.isFinite(limit) || !Number.isFinite(windowSeconds)) return null;
-  return { limit, window_seconds: windowSeconds };
+  return (
+    parseBucketDefinition(map[bucketKey]) ??
+    parseBucketDefinition(map[bucketFamily(bucketKey)])
+  );
 }
 
 /**

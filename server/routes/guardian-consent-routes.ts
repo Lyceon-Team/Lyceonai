@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getStripeClient } from "../lib/stripe/client";
 import { logger } from "../logger";
-import { createGuardianLink } from "../lib/account";
+import { createGuardianLink, acceptGuardianLink } from "../lib/account";
 import { sendEmail } from "../lib/email";
 
 const router = Router();
@@ -398,12 +398,30 @@ router.post(
         });
       }
 
-      // @spec [Doc-01_V8, §37.2 step 6] | @implemented [2026-08-25]
-      // plain English: on consent, create the guardian↔student link. The two
-      // ensure-account calls are gone — the `accounts` model is retired on this
-      // surface (owner ruling 2026-08-24) and the RPC they called does not exist
-      // in production, so they could only ever throw.
-      await createGuardianLink(guardianId, request.child_id);
+      // @spec [Doc-01_V8, §37.2 step 6; §36.1 Initiation (student-initiated)]
+      // | @implemented [2026-08-26]
+      // plain English: on consent, create the guardian↔student link and make it active.
+      // Expected outcome: an ACTIVE link, exactly as before this change. Why two calls:
+      // §36.1 now routes every link through a pending state, and the under-13 flow is the
+      // student-initiated path (§37.1 — the child signs up, the guardian is asked), so the
+      // row lands in `pending_guardian_accept`. The guardian giving verified consent IS
+      // their acceptance of that link — there is nothing further for them to confirm — so
+      // it is accepted in the same breath rather than left pending.
+      //
+      // Consequence edit, declared: `createGuardianLink` now requires an initiator. This is
+      // the same class as the `resolveLinkedPairPremiumAccessForGuardian` rename — a caller
+      // forced by the callee's contract, with the end state unchanged. The rest of the
+      // consent surface (the §37.2 `consent_token`, the `"approved"` CHECK violation) is
+      // Phase D's work and is untouched here.
+      // The two ensure-account calls are gone — the `accounts` model is retired on this
+      // surface (owner ruling 2026-08-24) and the RPC they called does not exist in
+      // production, so they could only ever throw.
+      const consentLink = await createGuardianLink(
+        guardianId,
+        request.child_id,
+        "student",
+      );
+      await acceptGuardianLink(consentLink.id, guardianId);
 
       // 5. Removed legacy write to child profile.guardian_profile_id (guardian_links is now canonical truth)
       // 6. Void the Stripe charge if it was an auth

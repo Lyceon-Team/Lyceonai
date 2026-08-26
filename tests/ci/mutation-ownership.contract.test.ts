@@ -210,7 +210,12 @@ describe("Mutation Ownership Contract", () => {
 
     it("Guardian: revoke link delegates to account service", async () => {
       accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
-      accountMocks.revokeGuardianLink.mockResolvedValue(undefined);
+      accountMocks.revokeGuardianLink.mockResolvedValue({
+        id: "11111111-1111-1111-1111-111111111111",
+        guardian_profile_id: "guardian-1",
+        student_profile_id: "student-1",
+        status: "revoked",
+      });
       accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
 
       await request(app)
@@ -219,9 +224,15 @@ describe("Mutation Ownership Contract", () => {
       // If it hits the service call, the ownership is correct.
       // We tolerate 500/403 if it happens after the service call or during post-processing
       // but here we just want to ensure it calls revokeGuardianLink.
+      // §36.3 revocation records WHO revoked and (optionally) why, so the delegation
+      // carries the revoker's profile id and the reason. The assertion this test exists
+      // to make — that the route delegates rather than writing the table itself — is
+      // unchanged; only the argument list it delegates with has grown.
       expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith(
         "guardian-1",
         "student-1",
+        "guardian-1",
+        undefined,
       );
     });
 

@@ -25,6 +25,51 @@
 
 ## Entries
 
+SCL-053 | 2026-08-26 | Doc 01A Appendix A.3 restates Doc 03's daily tutor limit and has drifted from it — 100 vs 120 | PROPOSED
+
+Change: Two locked documents state the LISA per-day message limit. They disagree. Doc 03 owns tutor
+  usage limits and its value (120) is canonical; Doc 01A Appendix A.3's conflicting seed (100) is
+  disregarded. The underlying defect is not the value — it is that Appendix A.3 restates a constant
+  another document owns, which is the failure mode Reference-Never-Restate exists to prevent.
+WAS: Doc 01A Appendix A.3 (heading verified: "## **A.3 `rate_limit_runtime_config`**") carries a
+  "Launch seed of bucket definitions (illustrative)" whose entry reads
+  `"tutor_turns_daily": { "limit": 100, "window_seconds": 86400 }`.
+IS: Doc 03 §13.1 (heading verified: "### **13.1 Hard Limits (V1 Locked)**", under
+  "## **§13 Usage Limits**") states the per-day row as `| Per-day | 96 messages | 120 messages |` —
+  soft warning 96, hard limit 120. Doc 03 §25 restates the same figure in its V1 launch scope
+  ("Hard limits (120/day, 2,500/week, 10K/month)"), and CR-03-09 records it as locked. The canonical
+  daily tutor limit is 120.
+Rationale: Doc 03 is the owning document for tutor usage limits — §13 is titled "Usage Limits", §13.1
+  is marked "V1 Locked", and it carries the full five-window table with reset schedules and the
+  definition of "message". Doc 01A Appendix A.3's job is to define the SHAPE of
+  `rate_limit_runtime_config` — the `bucket_definitions` map of bucket_key -> { limit, window_seconds }
+  — not to fix the tutor constant. By copying a value it does not own into an "illustrative" seed, it
+  created a second place for that number to live, and the two have already drifted apart by 20%.
+  The correct amendment is therefore REMOVAL of the tutor constant from Appendix A.3, not a change of
+  its value. Substituting 120 for 100 in the seed would leave the duplication intact and the next
+  drift would be the same defect again.
+Evidence:
+  - Doc 03 §13.1 table, per-day row: 96 soft / 120 hard. Heading verified.
+  - Doc 01A Appendix A.3 launch seed: `"tutor_turns_daily": { "limit": 100, "window_seconds": 86400 }`.
+    Heading verified.
+  - Production corroborates Doc 03, not Appendix A.3: `rate_limit_runtime_config` holds 7 rows, all
+    `tutor_*`, and the live `tutor_turns_daily` value is **120**. Whoever seeded production read
+    Doc 03. Recorded during WS-GL Stage 3 Phase A, 2026-08-25.
+  - Scope note: the same seed's `guardian_link_attempts_daily` entry ({ limit: 10, window_seconds:
+    86400 }) does NOT conflict with its owning section — Doc 01 V8 §36.2 states "max 10 link attempts
+    per day" in prose. Only the tutor entry has drifted. This SCL is scoped to that one entry.
+Version: no version bump to Doc 03. Doc 01A needs the amendment.
+Owner action: at next spec pass, delete the `tutor_turns_daily` entry from Doc 01A Appendix A.3's
+  launch seed and replace it with a reference to Doc 03 §13.1. Consider whether the other eight seed
+  entries restate constants owned elsewhere; this SCL asserts the defect only for the one verified.
+  No schema change. No code change is required by this entry — the value the code will read comes from
+  `rate_limit_runtime_config` at runtime, and the live row already says 120.
+Artifact: none. Surfaced by WS-GL Phase B (docs/plans/WS-GL_Stage2_Closure_Plan.md), which is the first
+  consumer built against the canonical `bucket_definitions` shape and therefore the first to have to
+  choose between the two values.
+
+---
+
 SCL-052 | 2026-08-20 | Doc 09 §5.2 vocabulary — "tier" there means billing period, not entitlement level | PROPOSED
 
 Change: Doc 09 §5.2 calls monthly / multi-month / annual billing "three paid tiers." Doc 01 V8 §20 uses
