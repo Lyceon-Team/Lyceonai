@@ -1,0 +1,13 @@
+[
+  { "name": "id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "conversation_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "student_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "message_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "signature_matched", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "detection_layer", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "action_taken", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "response_substituted", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "detected_at", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "_archived_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "ISO timestamp of the archive operation (set by retention sweep)" },
+  { "name": "_source_table", "type": "STRING", "mode": "REQUIRED", "description": "Supabase source table name (provenance for dedup at query time)" }
+]
