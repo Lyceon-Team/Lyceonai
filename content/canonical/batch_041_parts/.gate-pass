@@ -1,0 +1,10 @@
+GATE PASS — batch 041
+Records: 90
+SQL: infra/supabase/seed/proving_batch_041.sql
+Corpus: 3498 → 3588 hashes (+90 new)
+Date: 2026-08-19
+Audit cycle: 3 (final)
+Fixes applied:
+  - SATRW2TJ2ZMB: semicolon before noun phrase fragment → rewrote so second clause is independent
+  - SATRW2VJG22Z: dual-defensible "Yet,"/"However," → changed to "However," as sole contrast option
+  - SATM2VAKHJI: option B had factually inverted CI overlap claim → rewritten with correct overlap logic
