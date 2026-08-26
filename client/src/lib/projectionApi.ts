@@ -43,14 +43,39 @@ export interface BaselineEstimate {
  * can be null, TS forbids .composite/.range/.confidence without a guard — render honest-uncomputed.
  *
  * - no_baseline: student hasn't completed the diagnostic yet. No baseline, no projection.
+ * - baseline_pending: diagnostic COMPLETED, baseline not computed yet. Distinct from
+ *   no_baseline because the copy must be opposite — there is nothing for the student to
+ *   do, and prompting them to take a diagnostic they already took is both false and
+ *   unactionable (the start route answers 409 diagnostic_already_completed).
+ *   Owner ruling Q2, 2026-08-17.
  * - baseline_only: diagnostic done (baseline exists) but no mastery_detail feature (unpaid).
  *   Frozen baseline + upgrade CTA. No live projection served.
  * - computed: paid — live projection + baseline for comparison.
+ *
+ * DRIFT: this union is the client-side mirror of ESTIMATE_STATUSES in
+ * packages/shared/src/diagnostic-state.ts. The client has no module path to
+ * packages/shared, so the two are kept in step by scripts/ci/diagnostic-state-gate.sh
+ * rather than by a shared import — a status the server can emit and the client cannot
+ * name renders as an unhandled branch, which is a blank card, not a type error.
  */
-export type EstimateStatus = "computed" | "no_baseline" | "baseline_only";
+export type EstimateStatus =
+  | "computed"
+  | "no_baseline"
+  | "baseline_pending"
+  | "baseline_only";
 
 interface EstimateResponseBase {
-  totalQuestionsAttempted: number;
+  /**
+   * How many questions the student has actually answered, in EVERY branch —
+   * owner ruling 2026-08-17. It previously read 0 in every branch but `computed`,
+   * which told a student who had answered forty questions that they had answered
+   * none.
+   *
+   * `null` means the server could not establish the count. It is NOT zero, and it
+   * must never be rendered as one: every consumer omits the figure instead.
+   * Absent beats wrong.
+   */
+  totalQuestionsAttempted: number | null;
   lastUpdated: string;
   entitlement: {
     hasPaidAccess: boolean;
@@ -75,6 +100,11 @@ export type EstimateResponse =
     })
   | (EstimateResponseBase & {
       estimateStatus: "no_baseline";
+      estimate: null;
+      baseline: null;
+    })
+  | (EstimateResponseBase & {
+      estimateStatus: "baseline_pending";
       estimate: null;
       baseline: null;
     });

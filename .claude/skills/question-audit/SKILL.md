@@ -26,10 +26,11 @@ Re-derive every answer **from scratch**. Do not read the stored answer before so
      Diagnostic tells (any one → defect): your reasoning says the key is "more precise"; a distractor "captures [a real reading] but…"; or the distractor's primary denotation overlaps the key's denotation in the passage context.
    - **Grid-in:** your derived value is value-equivalent to the stored `correct_answer`.
 2. **Tags.** `domain` is canonical and section-paired; `skill` ∈ the frozen 29 and is convention-consistent with §A.4. A tag that correctly applies the convention is not a defect.
-3. **Distractors.** Each maps to a real error a student would plausibly make; the `error_taxonomy` label fits.
-4. **SAT-authenticity.** Passages self-contained and answerable from the passage alone; LaTeX valid and unambiguous; difficulty roughly calibrated.
+3. **Skill-content match (comprehension backstop).** Read the stem (and passage) and verify the content **actually tests** its claimed skill — not just that the skill string is valid. The gate proves the string is in the frozen 29 and tallies match; you prove the label is *semantically correct*. A question labeled "Inference from Sample Statistics and Margin of Error" whose stem asks about ratios is mislabeled even though both are valid PSDA skills. Report any skill-content mismatch as a finding.
+4. **Distractors.** Each maps to a real error a student would plausibly make; the `error_taxonomy` label fits.
+5. **SAT-authenticity.** Passages self-contained and answerable from the passage alone; LaTeX valid and unambiguous; difficulty roughly calibrated.
 
-**Do not** check counts, per-domain totals, or distribution. Count is irrelevant — batches may target a single skill or difficulty by design.
+**Do not** check counts, per-domain totals, or distribution. Count is irrelevant — batches may target a single skill or difficulty by design. The gate owns the coverage tally (via `--manifest`); you own whether the content matches the label.
 
 ## Output (JSON)
 
@@ -43,7 +44,7 @@ The verdict **must** include the `auditor` identity header as the first key. Com
   },
   "compliance": "PASS | FAIL",
   "perQuestion": [
-    { "id": "", "derivedAnswer": "", "storedAnswer": "", "match": true, "tagConventionConsistent": true, "issues": [] }
+    { "id": "", "derivedAnswer": "", "storedAnswer": "", "match": true, "tagConventionConsistent": true, "skillContentMatch": true, "issues": [] }
   ],
   "findings": [
     { "severity": "LOW | MEDIUM | HIGH", "questionId": "", "field": "", "issue": "", "evidence": "", "fix": "" }
@@ -61,6 +62,7 @@ The identity header is not optional. Without it, the orchestrator treats the aud
 - Any MCQ with a second defensible answer, or a distractor that is merely weaker rather than wrong.
 - Grid-in stored value not value-equivalent to your derivation.
 - A tag inconsistent with the §A.4 convention, or a non-frozen skill string.
+- Skill-content mismatch: the question's content tests a different skill than its claimed `skill` label (e.g., a ratios question labeled as inference-from-sample-statistics). Valid string + wrong content = defect.
 - Any explanation that names an option by letter (A/B/C/D) or says "the correct answer is \<letter\>." Options are shuffled at serve and letters are never shown; letter references are gibberish to the student. Explanations must reference options by content only. **This is a comprehension check, not a regex scan.** Read the explanation and decide per A–D occurrence whether it is an option reference (must be changed), a math variable/angle/vertex (leave alone), or an ordinary word like the article "A" (leave alone). A capital letter inside LaTeX (`$\sin A$`, `$\cos(B)$`, `triangle $ABC$`) is math, not an option reference.
 
 ## Note on your standing (pre-graduation)

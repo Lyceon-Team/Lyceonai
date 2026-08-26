@@ -1,5 +1,16 @@
 # Known Gaps Register
 
+> **SUPERSEDED FOR CI-ACCEPTED FAILURES, 2026-08-19.** The three permanent
+> `continue-on-error` steps this document described are gone. A CI check may now
+> fail without failing CI **only** if it has an entry in
+> [`ci/known-gaps.yaml`](../../ci/known-gaps.yaml) carrying an owner, an expiry, a
+> reason and a re-arm criterion — enforced by `scripts/ci/known-gaps-gate.mjs`,
+> which runs blocking and turns CI red when an entry expires. The security audit
+> was promoted to blocking (zero advisories). This file remains the prose ledger
+> for everything that is not a CI-suppression; it is no longer where a suppression
+> is granted.
+
+
 Pre-existing red areas on `main`, surfaced (not hidden) by Pass 0. Each runs in the
 non-blocking `ci-known-gaps` job so its output stays visible in CI. **Nothing here is
 excluded silently or faked green.** Each gap is re-armed into the required `ci` job by
