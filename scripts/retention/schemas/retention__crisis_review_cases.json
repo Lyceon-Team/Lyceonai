@@ -1,0 +1,18 @@
+[
+  { "name": "id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "conversation_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "student_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "signature_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "model_confidence", "type": "NUMERIC", "mode": "NULLABLE" },
+  { "name": "status", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "disposition", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "reviewer_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "reviewed_at", "type": "TIMESTAMP", "mode": "NULLABLE" },
+  { "name": "review_notes", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "sla_deadline", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "created_at", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "updated_at", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "_archived_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "ISO timestamp of the archive operation (set by retention sweep)" },
+  { "name": "_source_table", "type": "STRING", "mode": "REQUIRED", "description": "Supabase source table name (provenance for dedup at query time)" }
+]
