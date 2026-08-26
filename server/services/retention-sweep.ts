@@ -243,31 +243,17 @@ export async function sweep90d(
     };
   }
 
-  const { data: delAssignments, error: e1 } = await client
-    .from("tutor_instruction_assignments")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  const { data: delExposures, error: e2 } = await client
-    .from("tutor_instruction_exposures")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (e1 || e2) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${e1?.message ?? e2?.message}`,
-      tier,
-    };
-  }
-
+  // DISABLED (LISA-RET-001): §14.2 requires "automatic archival at 90 days"
+  // in aggregated form for analytics before raw record deletion. The archival
+  // destination is not specified in §14.2 (spec gap — no cold-storage table,
+  // GCS bucket, or BigQuery dataset named). Delete steps disabled until Karl
+  // rules on the destination. Every scheduled run without archival irreversibly
+  // destroys data §14.2 requires retained.
   return {
-    ok: true,
-    deleted_count: (delAssignments?.length ?? 0) + (delExposures?.length ?? 0),
+    ok: false,
+    reason:
+      "archival_destination_pending: §14.2 requires archival before deletion; destination unspecified (LISA-RET-001)",
     tier,
-    dry_run: false,
   };
 }
 
@@ -325,34 +311,15 @@ export async function sweep180d(
     };
   }
 
-  // Crisis: only delete RESOLVED cases. Open/in-review cases are retained.
-  // crisis_review_audit_log cascades via FK.
-  const { data: delCrisis, error: e1 } = await client
-    .from("crisis_review_cases")
-    .delete()
-    .eq("status", CRISIS_STATUS.RESOLVED)
-    .lt("created_at", cutoff)
-    .select("id");
-
-  const { data: delInjection, error: e2 } = await client
-    .from("tutor_injection_log")
-    .delete()
-    .lt("detected_at", cutoff)
-    .select("id");
-
-  if (e1 || e2) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${e1?.message ?? e2?.message}`,
-      tier,
-    };
-  }
-
+  // DISABLED (LISA-RET-002): §14.2 requires "automatic archival at 180 days"
+  // before raw record deletion. The archival destination is not specified in
+  // §14.2 (spec gap). Delete steps disabled until Karl rules on the
+  // destination. See LISA-RET-001.
   return {
-    ok: true,
-    deleted_count: (delCrisis?.length ?? 0) + (delInjection?.length ?? 0),
+    ok: false,
+    reason:
+      "archival_destination_pending: §14.2 requires archival before deletion; destination unspecified (LISA-RET-002)",
     tier,
-    dry_run: false,
   };
 }
 

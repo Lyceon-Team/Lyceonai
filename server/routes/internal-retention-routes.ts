@@ -65,6 +65,33 @@ const OIDC_AUDIENCE =
   "";
 const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
 
+/**
+ * @spec [Doc-03C_V3 §9.3, Doc-01A §3 fail-fast]
+ *
+ * Fail-fast (Doc 01A §3): missing OIDC env vars crash the process at startup
+ * instead of running with empty strings that silently disable auth.
+ * Mirrors internal-memory-routes.ts pattern exactly (LISA-OIDC-001).
+ * Guarded by NODE_ENV — test mode skips (tests mock the middleware).
+ */
+const IS_TEST = process.env.NODE_ENV === "test" || !!process.env.VITEST;
+
+if (!IS_TEST) {
+  if (!OIDC_AUDIENCE) {
+    throw new Error(
+      "CLOUD_TASKS_OIDC_AUDIENCE (or RETENTION_SWEEP_OIDC_AUDIENCE) is not set. " +
+        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
+        "Set it to the Cloud Run handler URL.",
+    );
+  }
+  if (!OIDC_SERVICE_ACCOUNT) {
+    throw new Error(
+      "CLOUD_TASKS_SERVICE_ACCOUNT is not set. " +
+        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
+        "Set it to lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com.",
+    );
+  }
+}
+
 // ── Request schema ────────────────────────────────────────────────────
 
 /**

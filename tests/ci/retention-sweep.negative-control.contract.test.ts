@@ -460,8 +460,8 @@ describe("7d tier — negative control", () => {
 
 // ── 90-day tier ──────────────────────────────────────────────────────
 
-describe("90d tier — negative control", () => {
-  it("deletes expired assignments + exposures, preserves unexpired", async () => {
+describe("90d tier — disabled pending archival (LISA-RET-001)", () => {
+  it("non-dry-run returns ok: false with archival_destination_pending (deletes disabled)", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [
         { id: "assign-expired", created_at: daysAgo(91) },
@@ -475,25 +475,20 @@ describe("90d tier — negative control", () => {
 
     const result = await sweep90d(client, false, { now: NOW });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2); // 1 assignment + 1 exposure
-      expect(result.dry_run).toBe(false);
+    // LISA-RET-001: deletes disabled until archival destination is specified
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("archival_destination_pending");
+      expect(result.reason).toContain("LISA-RET-001");
+      expect(result.tier).toBe("90d");
     }
 
-    // Negative control: unexpired rows survive
-    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
-    expect(client._store.tutor_instruction_assignments[0].id).toBe(
-      "assign-fresh",
-    );
-
-    expect(client._store.tutor_instruction_exposures).toHaveLength(1);
-    expect(client._store.tutor_instruction_exposures[0].id).toBe(
-      "expose-fresh",
-    );
+    // ALL rows survive — no DELETE was issued
+    expect(client._store.tutor_instruction_assignments).toHaveLength(2);
+    expect(client._store.tutor_instruction_exposures).toHaveLength(2);
   });
 
-  it("dry-run deletes nothing", async () => {
+  it("dry-run still counts expired rows (monitoring path preserved)", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [
         { id: "assign-expired", created_at: daysAgo(91) },
@@ -517,7 +512,7 @@ describe("90d tier — negative control", () => {
     expect(client._store.tutor_instruction_exposures).toHaveLength(1);
   });
 
-  it("exact boundary: row at exactly 90 days is NOT expired", async () => {
+  it("exact boundary: dry-run at exactly 90 days reports 0 expired", async () => {
     const exactBoundary = retentionCutoff(NOW, 90);
     const client = filteringMockClient({
       tutor_instruction_assignments: [
@@ -526,7 +521,7 @@ describe("90d tier — negative control", () => {
       tutor_instruction_exposures: [],
     });
 
-    const result = await sweep90d(client, false, { now: NOW });
+    const result = await sweep90d(client, true, { now: NOW });
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.deleted_count).toBe(0);
@@ -537,8 +532,8 @@ describe("90d tier — negative control", () => {
 
 // ── 180-day tier ─────────────────────────────────────────────────────
 
-describe("180d tier — negative control", () => {
-  it("deletes expired resolved crisis cases + old injection logs, preserves unexpired", async () => {
+describe("180d tier — disabled pending archival (LISA-RET-002)", () => {
+  it("non-dry-run returns ok: false with archival_destination_pending (deletes disabled)", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
         {
@@ -560,55 +555,20 @@ describe("180d tier — negative control", () => {
 
     const result = await sweep180d(client, false, { now: NOW });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2); // 1 crisis + 1 injection
-      expect(result.dry_run).toBe(false);
+    // LISA-RET-002: deletes disabled until archival destination is specified
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("archival_destination_pending");
+      expect(result.reason).toContain("LISA-RET-002");
+      expect(result.tier).toBe("180d");
     }
 
-    // Negative control: unexpired rows survive
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-    expect(client._store.crisis_review_cases[0].id).toBe("crisis-fresh");
-
-    expect(client._store.tutor_injection_log).toHaveLength(1);
-    expect(client._store.tutor_injection_log[0].id).toBe("inj-fresh");
+    // ALL rows survive — no DELETE was issued
+    expect(client._store.crisis_review_cases).toHaveLength(2);
+    expect(client._store.tutor_injection_log).toHaveLength(2);
   });
 
-  it("open crisis cases survive even if older than 180 days (safety review)", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        // Open case, 200 days old — must survive (safety review ongoing)
-        { id: "crisis-open-old", status: "open", created_at: daysAgo(200) },
-        // In-review case, 190 days old — must survive
-        {
-          id: "crisis-review-old",
-          status: "in_review",
-          created_at: daysAgo(190),
-        },
-        // Resolved case, 200 days old — should be swept
-        {
-          id: "crisis-closed-old",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep180d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(1); // only the resolved one
-
-    const remaining = client._store.crisis_review_cases;
-    expect(remaining).toHaveLength(2);
-    const ids = remaining.map((r: Row) => r.id);
-    expect(ids).toContain("crisis-open-old");
-    expect(ids).toContain("crisis-review-old");
-    expect(ids).not.toContain("crisis-closed-old");
-  });
-
-  it("dry-run deletes nothing", async () => {
+  it("dry-run still counts expired resolved crisis cases + injection logs (monitoring path preserved)", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
         {
@@ -633,7 +593,40 @@ describe("180d tier — negative control", () => {
     expect(client._store.tutor_injection_log).toHaveLength(1);
   });
 
-  it("exact boundary: crisis case at exactly 180 days is NOT expired", async () => {
+  it("dry-run: open/in-review crisis cases not counted even in dry-run", async () => {
+    const client = filteringMockClient({
+      crisis_review_cases: [
+        // Open case, 200 days old — not counted (safety review)
+        { id: "crisis-open-old", status: "open", created_at: daysAgo(200) },
+        // In-review case, 190 days old — not counted
+        {
+          id: "crisis-review-old",
+          status: "in_review",
+          created_at: daysAgo(190),
+        },
+        // Resolved case, 200 days old — counted
+        {
+          id: "crisis-closed-old",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
+      ],
+      tutor_injection_log: [],
+    });
+
+    const result = await sweep180d(client, true, { now: NOW });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(1); // only the resolved one counted
+      expect(result.dry_run).toBe(true);
+    }
+
+    // ALL survive — dry-run
+    expect(client._store.crisis_review_cases).toHaveLength(3);
+  });
+
+  it("dry-run: exact boundary at 180 days reports 0 expired", async () => {
     const exactBoundary = retentionCutoff(NOW, 180);
     const client = filteringMockClient({
       crisis_review_cases: [
@@ -646,7 +639,7 @@ describe("180d tier — negative control", () => {
       tutor_injection_log: [],
     });
 
-    const result = await sweep180d(client, false, { now: NOW });
+    const result = await sweep180d(client, true, { now: NOW });
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.deleted_count).toBe(0);
@@ -732,7 +725,7 @@ describe("cross-table isolation", () => {
     expect(client._store.tutor_injection_log).toHaveLength(1);
   });
 
-  it("90d sweep does not touch 7d or 180d tables", async () => {
+  it("90d sweep (disabled) does not touch 7d or 180d tables", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [
         { id: "assign-expired", created_at: daysAgo(91) },
@@ -751,12 +744,15 @@ describe("cross-table isolation", () => {
       tutor_injection_log: [],
     });
 
-    await sweep90d(client, false, { now: NOW });
+    const result = await sweep90d(client, false, { now: NOW });
 
-    // 90d table swept
-    expect(client._store.tutor_instruction_assignments).toHaveLength(0);
+    // LISA-RET-001: 90d deletes disabled — returns ok: false
+    expect(result.ok).toBe(false);
 
-    // 7d and 180d tables untouched
+    // 90d table untouched (deletes disabled)
+    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
+
+    // 7d and 180d tables also untouched
     expect(client._store.tutor_conversations).toHaveLength(1);
     expect(client._store.crisis_review_cases).toHaveLength(1);
   });
@@ -780,7 +776,7 @@ describe("empty tables — no rows to sweep", () => {
     }
   });
 
-  it("90d returns ok: true, deleted_count: 0 on empty tables", async () => {
+  it("90d returns ok: false (disabled) regardless of table contents", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [],
       tutor_instruction_exposures: [],
@@ -788,11 +784,13 @@ describe("empty tables — no rows to sweep", () => {
 
     const result = await sweep90d(client, false, { now: NOW });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(0);
+    // LISA-RET-001: deletes disabled — always returns ok: false for non-dry-run
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toContain("archival_destination_pending");
   });
 
-  it("180d returns ok: true, deleted_count: 0 on empty tables", async () => {
+  it("180d returns ok: false (disabled) regardless of table contents", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [],
       tutor_injection_log: [],
@@ -800,7 +798,9 @@ describe("empty tables — no rows to sweep", () => {
 
     const result = await sweep180d(client, false, { now: NOW });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(0);
+    // LISA-RET-002: deletes disabled — always returns ok: false for non-dry-run
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toContain("archival_destination_pending");
   });
 });
