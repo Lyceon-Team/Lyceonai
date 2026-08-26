@@ -33,7 +33,9 @@
  *  - RAG Engine unreachable: semantic path returns empty set. Deterministic
  *    path proceeds unaffected. Logged as warning.
  *  - Pre-submit + active question: the active question's explanation is
- *    excluded from retrieval by canonical ID filter (§6.3 row 1).
+ *    INCLUDED in retrieval (Karl ruling, SCL-043) — LISA needs the
+ *    authored reasoning path (server-to-Vertex only, never reaches
+ *    student). Unseen same-skill questions are EXCLUDED.
  *  - No matching explanations: returns empty set from deterministic path.
  *    No fallback narration (§6.8).
  */
@@ -93,18 +95,75 @@ function passesGate(
  * Retrieves question explanations from Postgres by skill_codes.
  * Deterministic, keyed retrieval — not a similarity search.
  *
- * Scoped to active skill (§6.4). For pre-submit, excludes the active
- * question's explanation by canonical ID (§6.3 row 1).
+ * Scoped to active skill (§6.4). For pre-submit, INCLUDES the active
+ * question's explanation (Karl ruling, SCL-043) and explanations for
+ * previously-answered same-skill questions. EXCLUDES explanations for
+ * same-skill questions the student has NOT answered.
  *
- * Rank by skill match first, then recency of student exposure (§6.4).
+ * "Previously seen" = practice_session_items.status='answered'
+ * (submitted, not merely served). Filter is query-level, not post-retrieval.
  */
 async function retrieveDeterministic(
   request: RetrievalRequest,
 ): Promise<RetrievedItem[]> {
   try {
-    // Query questions by skill_codes overlap. The servable_questions view
-    // enforces the servable gate (only published, non-retired questions).
-    // We select explanations only — never correct_answer in this path.
+    // ── Pre-submit seen-question filter (SCL-043, LISA-RAG-001) ──────
+    //
+    // Karl ruling: INCLUDE active question's explanation pre-submit —
+    // LISA needs the authored reasoning path (server-to-Vertex only,
+    // never reaches student). EXCLUDE explanations for same-skill
+    // questions the student has NOT answered. Entire leak defense
+    // becomes the output serializer (INV-03-04).
+    //
+    // "Previously seen" = practice_session_items.status='answered'
+    // (submitted, not merely served — a served-but-unanswered item is
+    // still an open question). Filter is query-level, not post-retrieval.
+    //
+    // Post-submit: all same-skill explanations permitted (student has
+    // already committed an answer).
+    let allowedIds: string[] | null = null; // null = no filter (post-submit)
+
+    if (request.is_pre_submit) {
+      const { data: answeredItems, error: answeredError } = await supabaseServer
+        .from("practice_session_items")
+        .select("question_id")
+        .eq("user_id", request.student_id)
+        .eq("status", "answered");
+
+      if (answeredError) {
+        logger.warn(
+          "TUTOR_RETRIEVAL",
+          "answered_items_query_failed",
+          "Failed to query answered items for seen-question filter; returning empty set",
+          { dbError: answeredError.message, code: answeredError.code },
+        );
+        return [];
+      }
+
+      const answeredQuestionIds = (answeredItems ?? []).map(
+        (i) => (i as { question_id: string }).question_id,
+      );
+
+      // Active question is always included pre-submit (Karl ruling, SCL-043)
+      allowedIds = [
+        ...new Set([
+          ...answeredQuestionIds,
+          ...(request.active_question_canonical_id
+            ? [request.active_question_canonical_id]
+            : []),
+        ]),
+      ];
+
+      if (allowedIds.length === 0) {
+        // No answered questions and no active question — nothing to retrieve
+        return [];
+      }
+    }
+
+    // ── Query explanations ──────────────────────────────────────────
+    // The servable_questions view enforces the servable gate (only
+    // published, non-retired questions). We select explanations only —
+    // never correct_answer in this path.
     let query = supabaseServer
       .from("servable_questions")
       .select("canonical_id, explanation, skill_codes")
@@ -112,9 +171,9 @@ async function retrieveDeterministic(
       .overlaps("skill_codes", request.active_skill_codes)
       .limit(request.max_items * 2); // Over-fetch to account for gating
 
-    // §6.3: Pre-submit — exclude the active question's explanation
-    if (request.is_pre_submit && request.active_question_canonical_id) {
-      query = query.neq("canonical_id", request.active_question_canonical_id);
+    // Pre-submit: restrict to allowed IDs (answered + active question)
+    if (allowedIds !== null) {
+      query = query.in("canonical_id", allowedIds);
     }
 
     const { data, error } = await query;
@@ -145,12 +204,6 @@ async function retrieveDeterministic(
       skill_codes: row.skill_codes ?? [],
       // §6.5: canonical_id is in metadata (provenance), never in text
       provenance: `question_explanation:${row.canonical_id}`,
-      // Explanations are post_only for pre-submit contexts (§6.3).
-      // However, PRIOR questions' explanations in the same skill ARE
-      // allowed pre-submit. The gate evaluation happens after retrieval.
-      // Mark as post_only — the gate evaluator will pass prior-question
-      // explanations for pre-submit since the active question is already
-      // excluded by the query filter above.
       surface_gate: "pre_and_post" as const,
       content_type: "explanation" as const,
     }));

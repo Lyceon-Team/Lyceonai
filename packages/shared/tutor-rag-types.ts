@@ -87,7 +87,7 @@ export const retrievalRequestSchema = z.object({
   /** Whether the current question is pre-submit (gates explanation access) */
   is_pre_submit: z.boolean(),
 
-  /** The active question's canonical ID (excluded from pre-submit retrieval) */
+  /** The active question's canonical ID (INCLUDED in pre-submit retrieval per SCL-043) */
   active_question_canonical_id: z.string().nullable(),
 
   /** Student ID for personalized ranking (exposure history) */
