@@ -11,13 +11,33 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync, execSync } from "child_process";
-import { mkdirSync, writeFileSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { resolve, join } from "path";
 import pg from "pg";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-apply");
 const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
+const PROD_CORPUS_PATH = resolve(ROOT, "content/canonical/prod_dedup_corpus.txt");
+
+/**
+ * Seed a throwaway dedup corpus from the real one and return its path.
+ *
+ * The gate appends every assembled batch's stem hashes to whatever corpus it
+ * is given. Given the production corpus, these fixtures write their own hashes
+ * into it, then collide with themselves on the next run — and, because this
+ * file runs in parallel with tests/assemble-batch.test.ts, poison that file's
+ * run too. Always pass --corpus.
+ */
+function seedScratchCorpus(name: string): string {
+  mkdirSync(SCRATCH, { recursive: true });
+  const path = join(SCRATCH, `dedup-corpus-${name}.txt`);
+  writeFileSync(
+    path,
+    existsSync(PROD_CORPUS_PATH) ? readFileSync(PROD_CORPUS_PATH, "utf-8") : "",
+  );
+  return path;
+}
 
 const QUESTIONS_DDL = `
 CREATE TABLE IF NOT EXISTS questions (
@@ -173,6 +193,8 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
           outPath,
           "--report",
           reportPath,
+          "--corpus",
+          seedScratchCorpus("apply1"),
         ],
         { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
       );
@@ -252,6 +274,8 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
           outPath,
           "--report",
           reportPath,
+          "--corpus",
+          seedScratchCorpus("apply2"),
         ],
         { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
       );
@@ -365,6 +389,8 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
           outPath,
           "--report",
           reportPath,
+          "--corpus",
+          seedScratchCorpus("apply3"),
         ],
         { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
       );

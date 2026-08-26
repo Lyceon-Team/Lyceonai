@@ -3,7 +3,7 @@
  * mints canonical IDs, derives grid-in variants, renders SQL INSERTs.
  *
  * @spec [questions_governance.md §A.1–A.9]
- * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--manifest <manifest>.json] [--dry-run] [--dry-apply] [--reassemble]
+ * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--manifest <manifest>.json] [--dry-run] [--dry-apply] [--reassemble] [--corpus <dedup_corpus>.txt]
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
@@ -167,12 +167,17 @@ const PROD_CORPUS_PATH = join(
  * The file is the SOLE source of dedup truth. No dynamic branch scanning.
  * New batch hashes are appended after a successful gate pass (see
  * appendCorpusHashes). Branch resets re-seed from prod.
+ *
+ * The path is a parameter, not a constant, so that tests can run the real
+ * assemble path against a scratch corpus. A test that writes the production
+ * corpus poisons it: the gate appends fixture hashes on a pass, the fixtures
+ * then collide with themselves, and every later run fails. See --corpus.
  */
-function loadDedupCorpus(): Map<string, string> {
+function loadDedupCorpus(corpusPath: string): Map<string, string> {
   const corpus = new Map<string, string>();
 
-  if (existsSync(PROD_CORPUS_PATH)) {
-    const lines = readFileSync(PROD_CORPUS_PATH, "utf-8")
+  if (existsSync(corpusPath)) {
+    const lines = readFileSync(corpusPath, "utf-8")
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
@@ -189,19 +194,22 @@ function loadDedupCorpus(): Map<string, string> {
  * the result. Called after a successful gate pass — the batch is not
  * "done" until its hashes are in the corpus and committed alongside it.
  */
-function appendCorpusHashes(records: Array<{ rec: ContentRecord }>): void {
+function appendCorpusHashes(
+  records: Array<{ rec: ContentRecord }>,
+  corpusPath: string,
+): void {
   const newHashes = records.map(({ rec }) => dedupHash(rec.stem, rec.passage));
 
   let existing: string[] = [];
-  if (existsSync(PROD_CORPUS_PATH)) {
-    existing = readFileSync(PROD_CORPUS_PATH, "utf-8")
+  if (existsSync(corpusPath)) {
+    existing = readFileSync(corpusPath, "utf-8")
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
   }
 
   const merged = [...new Set([...existing, ...newHashes])].sort();
-  writeFileSync(PROD_CORPUS_PATH, merged.join("\n") + "\n");
+  writeFileSync(corpusPath, merged.join("\n") + "\n");
   console.log(
     `Corpus updated: ${existing.length} → ${merged.length} hashes (+${merged.length - existing.length} new)`,
   );
@@ -831,6 +839,7 @@ async function main(): Promise<void> {
       "dry-run": { type: "boolean", default: false },
       "dry-apply": { type: "boolean", default: false },
       reassemble: { type: "boolean", default: false },
+      corpus: { type: "string" },
     },
     strict: true,
   });
@@ -842,6 +851,11 @@ async function main(): Promise<void> {
   const dryRun = values["dry-run"] ?? false;
   const dryApplyFlag = values["dry-apply"] ?? false;
   const reassembleFlag = values["reassemble"] ?? false;
+  // Defaults to the living production corpus. Tests MUST pass --corpus with a
+  // scratch path: the gate appends on a successful pass, so a test run against
+  // the production file writes its own fixture hashes into it and every later
+  // run of those fixtures then fails BANK_DUPLICATE against itself.
+  const corpusPath = values["corpus"] ?? PROD_CORPUS_PATH;
 
   if (!partsDir) {
     console.error("--in <parts_dir> is required");
@@ -914,7 +928,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   // Prod-grounded dedup (living corpus file + intra-batch)
   // -----------------------------------------------------------------------
-  const dedupCorpus = loadDedupCorpus();
+  const dedupCorpus = loadDedupCorpus(corpusPath);
 
   // --reassemble: strip the batch's own hashes from the corpus so a
   // previously-assembled batch does not collide with itself during
@@ -1067,7 +1081,7 @@ async function main(): Promise<void> {
 
   // Append new batch hashes to the living dedup corpus — the batch is not
   // "done" until its hashes are in the corpus file, committed alongside it.
-  appendCorpusHashes(records);
+  appendCorpusHashes(records, corpusPath);
 
   console.log(`GATE PASS: ${assembled.length} records assembled to ${outPath}`);
   console.log(`Report: ${reportPath}`);
