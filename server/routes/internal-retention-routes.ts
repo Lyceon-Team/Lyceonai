@@ -47,6 +47,11 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { oidcAuthMiddleware } from "../../packages/shared/internal-auth/verify-oidc-middleware";
 import { TIER_HANDLERS } from "../services/retention-sweep";
+import {
+  createBigQueryArchiveClient,
+  ARCHIVE_DATASET_ENV_KEY,
+  type ArchiveClient,
+} from "../services/retention-archive";
 
 const router = Router();
 
@@ -111,6 +116,48 @@ const retentionSweepSchema = z.object({
 // Extracted for testability — injectable client + controllable clock.
 // TIER_HANDLERS imported above; each handler takes (client, dryRun, opts).
 
+// ── BigQuery archive client ─────────────────────────────────────────
+
+/**
+ * @spec [Doc-03_V1.1 §14.2, Doc-07B_V1.0 §dataset naming]
+ *
+ * Lazily created BigQuery client for 90d/180d archival.
+ * Created once on first use — the @google-cloud/bigquery package is
+ * dynamically required by createBigQueryArchiveClient(), so it doesn't
+ * fail at import time in test mode or before the dependency is installed.
+ *
+ * When BIGQUERY_ARCHIVE_DATASET is not set, archiveClient stays undefined
+ * and archive-requiring tiers return ok: false with a clear reason —
+ * same safe behaviour as the previous "archival_destination_pending."
+ */
+let archiveClient: ArchiveClient | undefined;
+
+function getArchiveClient(): ArchiveClient | undefined {
+  if (archiveClient) return archiveClient;
+
+  const datasetEnv = process.env[ARCHIVE_DATASET_ENV_KEY];
+  if (!datasetEnv) {
+    // No dataset configured — archive client not available. Tiers that
+    // require archival will return ok: false, reason: "archive_client_not_configured".
+    return undefined;
+  }
+
+  try {
+    archiveClient = createBigQueryArchiveClient();
+    return archiveClient;
+  } catch (err: unknown) {
+    logger.warn(
+      "RETENTION_SWEEP",
+      "archive_client_init_failed",
+      "Failed to create BigQuery archive client — 90d/180d tiers will be disabled",
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return undefined;
+  }
+}
+
 // ── Route ─────────────────────────────────────────────────────────────
 
 router.post(
@@ -151,6 +198,7 @@ router.post(
     try {
       const result = await handler(supabaseServer, dry_run, {
         now: new Date(),
+        archiveClient: getArchiveClient(),
       });
 
       if (!result.ok) {

@@ -41,6 +41,8 @@ import {
   CRISIS_STATUS,
 } from "../../server/services/retention-sweep";
 
+import type { ArchiveClient } from "../../server/services/retention-archive";
+
 // ── Mock logger ──────────────────────────────────────────────────────
 
 vi.mock("../../server/logger", () => ({
@@ -51,6 +53,50 @@ vi.mock("../../server/logger", () => ({
     debug: vi.fn(),
   },
 }));
+
+// ── Mock archive client ─────────────────────────────────────────────
+
+/**
+ * Recording mock for ArchiveClient. Records every insertRows call and
+ * can be configured to succeed or fail.
+ */
+function mockArchiveClient(
+  opts: { shouldFail?: boolean; failMessage?: string } = {},
+): ArchiveClient & {
+  calls: Array<{
+    datasetId: string;
+    tableId: string;
+    rows: Record<string, unknown>[];
+  }>;
+} {
+  const calls: Array<{
+    datasetId: string;
+    tableId: string;
+    rows: Record<string, unknown>[];
+  }> = [];
+
+  return {
+    calls,
+    async insertRows(
+      datasetId: string,
+      tableId: string,
+      rows: Record<string, unknown>[],
+    ): Promise<{ insertedCount: number }> {
+      calls.push({ datasetId, tableId, rows });
+      if (opts.shouldFail) {
+        throw new Error(
+          opts.failMessage ?? "BigQuery insert failed (mock error)",
+        );
+      }
+      return { insertedCount: rows.length };
+    },
+  };
+}
+
+// ── Archive module mock ──────────────────────────────────────────────
+// archiveRows reads BIGQUERY_ARCHIVE_DATASET from process.env. Set it
+// for the test process so archiveRows doesn't short-circuit.
+process.env.BIGQUERY_ARCHIVE_DATASET = "lyceon_analytics_archive_test";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -460,8 +506,9 @@ describe("7d tier — negative control", () => {
 
 // ── 90-day tier ──────────────────────────────────────────────────────
 
-describe("90d tier — disabled pending archival (LISA-RET-001)", () => {
-  it("non-dry-run returns ok: false with archival_destination_pending (deletes disabled)", async () => {
+describe("90d tier — archive-before-delete", () => {
+  it("archives and deletes expired rows, preserves unexpired rows", async () => {
+    const archive = mockArchiveClient();
     const client = filteringMockClient({
       tutor_instruction_assignments: [
         { id: "assign-expired", created_at: daysAgo(91) },
@@ -473,19 +520,86 @@ describe("90d tier — disabled pending archival (LISA-RET-001)", () => {
       ],
     });
 
-    const result = await sweep90d(client, false, { now: NOW });
+    const result = await sweep90d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
 
-    // LISA-RET-001: deletes disabled until archival destination is specified
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(2);
+      expect(result.dry_run).toBe(false);
+    }
+
+    // Negative control: unexpired rows survive
+    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
+    expect(client._store.tutor_instruction_assignments[0].id).toBe(
+      "assign-fresh",
+    );
+    expect(client._store.tutor_instruction_exposures).toHaveLength(1);
+    expect(client._store.tutor_instruction_exposures[0].id).toBe(
+      "expose-fresh",
+    );
+
+    // Archive was called for both tables with the expired rows
+    expect(archive.calls).toHaveLength(2);
+    expect(archive.calls[0].tableId).toBe(
+      "retention__tutor_instruction_assignments",
+    );
+    expect(archive.calls[0].rows).toHaveLength(1);
+    expect(archive.calls[0].rows[0]._source_table).toBe(
+      "tutor_instruction_assignments",
+    );
+    expect(archive.calls[1].tableId).toBe(
+      "retention__tutor_instruction_exposures",
+    );
+    expect(archive.calls[1].rows).toHaveLength(1);
+  });
+
+  it("archive failure blocks delete — no data loss", async () => {
+    const archive = mockArchiveClient({ shouldFail: true });
+    const client = filteringMockClient({
+      tutor_instruction_assignments: [
+        { id: "assign-expired", created_at: daysAgo(91) },
+      ],
+      tutor_instruction_exposures: [],
+    });
+
+    const result = await sweep90d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
+
+    // Archive failed → sweep returns ok: false
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toContain("archival_destination_pending");
-      expect(result.reason).toContain("LISA-RET-001");
+      expect(result.reason).toContain("archive_blocked_delete");
       expect(result.tier).toBe("90d");
     }
 
-    // ALL rows survive — no DELETE was issued
-    expect(client._store.tutor_instruction_assignments).toHaveLength(2);
-    expect(client._store.tutor_instruction_exposures).toHaveLength(2);
+    // CRITICAL: ALL rows survive — delete was blocked by archive failure
+    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
+  });
+
+  it("no archive client returns ok: false (safe default)", async () => {
+    const client = filteringMockClient({
+      tutor_instruction_assignments: [
+        { id: "assign-expired", created_at: daysAgo(91) },
+      ],
+      tutor_instruction_exposures: [],
+    });
+
+    // No archiveClient in opts — safe default
+    const result = await sweep90d(client, false, { now: NOW });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("archive_client_not_configured");
+      expect(result.reason).toContain("LISA-RET-001");
+    }
+
+    // ALL rows survive
+    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
   });
 
   it("dry-run still counts expired rows (monitoring path preserved)", async () => {
@@ -528,12 +642,35 @@ describe("90d tier — disabled pending archival (LISA-RET-001)", () => {
 
     expect(client._store.tutor_instruction_assignments).toHaveLength(1);
   });
+
+  it("empty tables: returns ok: true, deleted_count: 0 (no archive calls)", async () => {
+    const archive = mockArchiveClient();
+    const client = filteringMockClient({
+      tutor_instruction_assignments: [],
+      tutor_instruction_exposures: [],
+    });
+
+    const result = await sweep90d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(0);
+      expect(result.dry_run).toBe(false);
+    }
+
+    // No archive calls for empty tables
+    expect(archive.calls).toHaveLength(0);
+  });
 });
 
 // ── 180-day tier ─────────────────────────────────────────────────────
 
-describe("180d tier — disabled pending archival (LISA-RET-002)", () => {
-  it("non-dry-run returns ok: false with archival_destination_pending (deletes disabled)", async () => {
+describe("180d tier — archive-before-delete", () => {
+  it("archives and deletes expired resolved crisis cases + injection logs", async () => {
+    const archive = mockArchiveClient();
     const client = filteringMockClient({
       crisis_review_cases: [
         {
@@ -553,22 +690,134 @@ describe("180d tier — disabled pending archival (LISA-RET-002)", () => {
       ],
     });
 
-    const result = await sweep180d(client, false, { now: NOW });
+    const result = await sweep180d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
 
-    // LISA-RET-002: deletes disabled until archival destination is specified
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(2);
+      expect(result.dry_run).toBe(false);
+    }
+
+    // Negative control: unexpired rows survive
+    expect(client._store.crisis_review_cases).toHaveLength(1);
+    expect(client._store.crisis_review_cases[0].id).toBe("crisis-fresh");
+    expect(client._store.tutor_injection_log).toHaveLength(1);
+    expect(client._store.tutor_injection_log[0].id).toBe("inj-fresh");
+
+    // Archive was called for both tables
+    expect(archive.calls).toHaveLength(2);
+    expect(archive.calls[0].tableId).toBe("retention__crisis_review_cases");
+    expect(archive.calls[0].rows).toHaveLength(1);
+    expect(archive.calls[0].rows[0]._source_table).toBe("crisis_review_cases");
+    expect(archive.calls[1].tableId).toBe("retention__tutor_injection_log");
+    expect(archive.calls[1].rows).toHaveLength(1);
+  });
+
+  it("open/in-review crisis cases retained regardless of age", async () => {
+    const archive = mockArchiveClient();
+    const client = filteringMockClient({
+      crisis_review_cases: [
+        // Open case, 200 days old — NOT swept (safety review ongoing)
+        {
+          id: "crisis-open-old",
+          status: CRISIS_STATUS.OPEN,
+          created_at: daysAgo(200),
+        },
+        // In-review case, 190 days old — NOT swept
+        {
+          id: "crisis-review-old",
+          status: CRISIS_STATUS.IN_REVIEW,
+          created_at: daysAgo(190),
+        },
+        // Resolved case, 200 days old — swept
+        {
+          id: "crisis-resolved-old",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
+      ],
+      tutor_injection_log: [],
+    });
+
+    const result = await sweep180d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(1); // only the resolved one
+    }
+
+    // Open + in-review survive
+    expect(client._store.crisis_review_cases).toHaveLength(2);
+    const ids = client._store.crisis_review_cases.map((r: Row) => r.id);
+    expect(ids).toContain("crisis-open-old");
+    expect(ids).toContain("crisis-review-old");
+    expect(ids).not.toContain("crisis-resolved-old");
+
+    // Archive was called only for crisis (resolved), not injection (empty)
+    expect(archive.calls).toHaveLength(1);
+    expect(archive.calls[0].tableId).toBe("retention__crisis_review_cases");
+  });
+
+  it("archive failure blocks delete — no data loss", async () => {
+    const archive = mockArchiveClient({ shouldFail: true });
+    const client = filteringMockClient({
+      crisis_review_cases: [
+        {
+          id: "crisis-expired",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
+      ],
+      tutor_injection_log: [{ id: "inj-expired", detected_at: daysAgo(181) }],
+    });
+
+    const result = await sweep180d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
+
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toContain("archival_destination_pending");
-      expect(result.reason).toContain("LISA-RET-002");
+      expect(result.reason).toContain("archive_blocked_delete");
       expect(result.tier).toBe("180d");
     }
 
-    // ALL rows survive — no DELETE was issued
-    expect(client._store.crisis_review_cases).toHaveLength(2);
-    expect(client._store.tutor_injection_log).toHaveLength(2);
+    // CRITICAL: ALL rows survive — delete was blocked
+    expect(client._store.crisis_review_cases).toHaveLength(1);
+    expect(client._store.tutor_injection_log).toHaveLength(1);
   });
 
-  it("dry-run still counts expired resolved crisis cases + injection logs (monitoring path preserved)", async () => {
+  it("no archive client returns ok: false (safe default)", async () => {
+    const client = filteringMockClient({
+      crisis_review_cases: [
+        {
+          id: "crisis-expired",
+          status: CRISIS_STATUS.RESOLVED,
+          created_at: daysAgo(200),
+        },
+      ],
+      tutor_injection_log: [],
+    });
+
+    const result = await sweep180d(client, false, { now: NOW });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("archive_client_not_configured");
+      expect(result.reason).toContain("LISA-RET-002");
+    }
+
+    // ALL rows survive
+    expect(client._store.crisis_review_cases).toHaveLength(1);
+  });
+
+  it("dry-run still counts expired rows (monitoring path preserved)", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
         {
@@ -593,18 +842,15 @@ describe("180d tier — disabled pending archival (LISA-RET-002)", () => {
     expect(client._store.tutor_injection_log).toHaveLength(1);
   });
 
-  it("dry-run: open/in-review crisis cases not counted even in dry-run", async () => {
+  it("dry-run: open/in-review crisis cases not counted", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [
-        // Open case, 200 days old — not counted (safety review)
         { id: "crisis-open-old", status: "open", created_at: daysAgo(200) },
-        // In-review case, 190 days old — not counted
         {
           id: "crisis-review-old",
           status: "in_review",
           created_at: daysAgo(190),
         },
-        // Resolved case, 200 days old — counted
         {
           id: "crisis-closed-old",
           status: CRISIS_STATUS.RESOLVED,
@@ -626,7 +872,7 @@ describe("180d tier — disabled pending archival (LISA-RET-002)", () => {
     expect(client._store.crisis_review_cases).toHaveLength(3);
   });
 
-  it("dry-run: exact boundary at 180 days reports 0 expired", async () => {
+  it("exact boundary: dry-run at 180 days reports 0 expired", async () => {
     const exactBoundary = retentionCutoff(NOW, 180);
     const client = filteringMockClient({
       crisis_review_cases: [
@@ -725,7 +971,8 @@ describe("cross-table isolation", () => {
     expect(client._store.tutor_injection_log).toHaveLength(1);
   });
 
-  it("90d sweep (disabled) does not touch 7d or 180d tables", async () => {
+  it("90d sweep does not touch 7d or 180d tables", async () => {
+    const archive = mockArchiveClient();
     const client = filteringMockClient({
       tutor_instruction_assignments: [
         { id: "assign-expired", created_at: daysAgo(91) },
@@ -744,15 +991,18 @@ describe("cross-table isolation", () => {
       tutor_injection_log: [],
     });
 
-    const result = await sweep90d(client, false, { now: NOW });
+    const result = await sweep90d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
 
-    // LISA-RET-001: 90d deletes disabled — returns ok: false
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.deleted_count).toBe(1);
 
-    // 90d table untouched (deletes disabled)
-    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
+    // 90d table: expired row swept
+    expect(client._store.tutor_instruction_assignments).toHaveLength(0);
 
-    // 7d and 180d tables also untouched
+    // 7d and 180d tables untouched
     expect(client._store.tutor_conversations).toHaveLength(1);
     expect(client._store.crisis_review_cases).toHaveLength(1);
   });
@@ -776,31 +1026,47 @@ describe("empty tables — no rows to sweep", () => {
     }
   });
 
-  it("90d returns ok: false (disabled) regardless of table contents", async () => {
+  it("90d returns ok: true, deleted_count: 0 on empty tables", async () => {
+    const archive = mockArchiveClient();
     const client = filteringMockClient({
       tutor_instruction_assignments: [],
       tutor_instruction_exposures: [],
     });
 
-    const result = await sweep90d(client, false, { now: NOW });
+    const result = await sweep90d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
 
-    // LISA-RET-001: deletes disabled — always returns ok: false for non-dry-run
-    expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.reason).toContain("archival_destination_pending");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(0);
+      expect(result.dry_run).toBe(false);
+    }
+
+    // No archive calls for empty tables
+    expect(archive.calls).toHaveLength(0);
   });
 
-  it("180d returns ok: false (disabled) regardless of table contents", async () => {
+  it("180d returns ok: true, deleted_count: 0 on empty tables", async () => {
+    const archive = mockArchiveClient();
     const client = filteringMockClient({
       crisis_review_cases: [],
       tutor_injection_log: [],
     });
 
-    const result = await sweep180d(client, false, { now: NOW });
+    const result = await sweep180d(client, false, {
+      now: NOW,
+      archiveClient: archive,
+    });
 
-    // LISA-RET-002: deletes disabled — always returns ok: false for non-dry-run
-    expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.reason).toContain("archival_destination_pending");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.deleted_count).toBe(0);
+      expect(result.dry_run).toBe(false);
+    }
+
+    // No archive calls for empty tables
+    expect(archive.calls).toHaveLength(0);
   });
 });
