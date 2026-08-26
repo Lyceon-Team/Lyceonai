@@ -20,9 +20,11 @@
  *  - 7d tier: memory summaries are only purged when a student has zero
  *    remaining active conversations (conservative — spec says "cascade
  *    from account / entitlement").
- *  - 180d crisis: only CLOSED cases are swept. Open/in-review cases are
+ *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases are
  *    retained regardless of age (safety review ongoing). Spec: "hard delete
- *    at 180 days or on closure, whichever is later."
+ *    at 180 days or on closure, whichever is later." The crisis_review_cases
+ *    CHECK constraint allows ('open', 'in_review', 'resolved') — there is
+ *    no 'closed' status.
  *
  * edge cases:
  *  - Duplicate delivery: DELETE is idempotent — already-deleted rows don't
@@ -30,7 +32,7 @@
  *  - Empty result: normal for tiers with no expired rows. Returns
  *    { ok: true, deleted_count: 0 }.
  *  - 180d crisis: open cases older than 180 days are retained (safety review
- *    ongoing). The dual condition (status=closed AND created_at<cutoff)
+ *    ongoing). The dual condition (status=resolved AND created_at<cutoff)
  *    naturally implements "hard delete at 180 days or on closure, whichever
  *    is later" — both conditions must be met.
  */
@@ -56,6 +58,23 @@ export type TierHandler = (
 // ── Constants ─────────────────────────────────────────────────────────
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * crisis_review_cases status lifecycle: open → in_review → resolved.
+ * Source of truth: migration 20260813000000_crisis_review_queue.sql,
+ * CHECK (status IN ('open', 'in_review', 'resolved')).
+ *
+ * Exported so tests derive valid status values from the code that uses
+ * them rather than hardcoding strings that can silently drift (LISA-GCP-002).
+ */
+export const CRISIS_STATUS = {
+  /** Initial state when a crisis case is created. */
+  OPEN: "open" as const,
+  /** Reviewer has claimed the case. */
+  IN_REVIEW: "in_review" as const,
+  /** Terminal: incident resolved by reviewer. Only resolved cases are swept. */
+  RESOLVED: "resolved" as const,
+};
 
 /**
  * Pure. Returns ISO cutoff timestamp for a given number of days before now.
@@ -121,7 +140,18 @@ export async function sweep7d(
 
   // Also clean up memory summaries for affected students.
   // tutor_memory_summaries links by student_id, not conversation FK.
-  // Only purge when a student has zero remaining active conversations.
+  //
+  // Purge ONLY when a student has:
+  //   (a) zero active conversations (deleted_at IS NULL), AND
+  //   (b) zero soft-deleted conversations still inside the 7-day recovery
+  //       window (deleted_at >= cutoff).
+  //
+  // Without (b), a student with ALL conversations soft-deleted — some only
+  // 2 days old — would lose memory summaries even though the spec promises
+  // "LISA data is recovered with conversation history intact" during the
+  // 7-day window (§14.2, INV-03-19). The summaries are per-student, not
+  // per-conversation, so they must survive as long as ANY conversation is
+  // still recoverable.
   if (deletedConvos && deletedConvos.length > 0) {
     const studentIds = [
       ...new Set(
@@ -129,26 +159,38 @@ export async function sweep7d(
       ),
     ];
     for (const sid of studentIds) {
-      const { count: remainingConvos } = await client
+      // (a) any active conversations?
+      const { count: activeConvos } = await client
         .from("tutor_conversations")
         .select("id", { count: "exact", head: true })
         .eq("student_id", sid)
         .is("deleted_at", null);
 
-      if (remainingConvos === 0) {
-        const { error: memError } = await client
-          .from("tutor_memory_summaries")
-          .delete()
-          .eq("student_id", sid);
+      if ((activeConvos ?? 0) > 0) continue;
 
-        if (memError) {
-          logger.warn(
-            "RETENTION_SWEEP",
-            "memory_summary_delete_failed",
-            "Failed to delete memory summaries for student with no remaining conversations",
-            { studentId: sid, dbError: memError.message },
-          );
-        }
+      // (b) any soft-deleted conversations still within the recovery window?
+      // Those have deleted_at >= cutoff (i.e. deleted less than 7 days ago).
+      const { count: recoverableConvos } = await client
+        .from("tutor_conversations")
+        .select("id", { count: "exact", head: true })
+        .eq("student_id", sid)
+        .not("deleted_at", "is", null)
+        .gte("deleted_at", cutoff);
+
+      if ((recoverableConvos ?? 0) > 0) continue;
+
+      const { error: memError } = await client
+        .from("tutor_memory_summaries")
+        .delete()
+        .eq("student_id", sid);
+
+      if (memError) {
+        logger.warn(
+          "RETENTION_SWEEP",
+          "memory_summary_delete_failed",
+          "Failed to delete memory summaries for student with no remaining conversations",
+          { studentId: sid, dbError: memError.message },
+        );
       }
     }
   }
@@ -234,11 +276,16 @@ export async function sweep90d(
 /**
  * @spec [Doc-03_V1.1 §14.2]
  *
- * Crisis review cases: only CLOSED cases older than 180 days from created_at
+ * Crisis review cases: only RESOLVED cases older than 180 days from created_at
  * (the crisis flag timestamp). Open/in-review cases retained regardless of
  * age — safety review ongoing. Spec: "hard delete at 180 days or on closure,
- * whichever is later" — the dual condition (status=closed AND created_at<cutoff)
+ * whichever is later" — the dual condition (status=resolved AND created_at<cutoff)
  * naturally implements this.
+ *
+ * Note: the crisis_review_cases CHECK constraint allows ('open', 'in_review',
+ * 'resolved'). The terminal lifecycle state is "resolved", NOT "closed".
+ * Prior to this fix, the sweep filtered on status='closed' which matched
+ * zero rows — resolved cases accumulated indefinitely (LISA-GCP-002).
  *
  * Injection log: older than 180 days from detected_at.
  */
@@ -251,11 +298,11 @@ export async function sweep180d(
   const cutoff = retentionCutoff(opts.now, 180);
 
   if (dryRun) {
-    // Crisis cases: only closed cases older than 180 days
+    // Crisis cases: only resolved cases older than 180 days
     const { count: crisisCount, error: e1 } = await client
       .from("crisis_review_cases")
       .select("id", { count: "exact", head: true })
-      .eq("status", "closed")
+      .eq("status", CRISIS_STATUS.RESOLVED)
       .lt("created_at", cutoff);
 
     const { count: injectionCount, error: e2 } = await client
@@ -278,12 +325,12 @@ export async function sweep180d(
     };
   }
 
-  // Crisis: only delete CLOSED cases. Open/in-review cases are retained.
+  // Crisis: only delete RESOLVED cases. Open/in-review cases are retained.
   // crisis_review_audit_log cascades via FK.
   const { data: delCrisis, error: e1 } = await client
     .from("crisis_review_cases")
     .delete()
-    .eq("status", "closed")
+    .eq("status", CRISIS_STATUS.RESOLVED)
     .lt("created_at", cutoff)
     .select("id");
 

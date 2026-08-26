@@ -638,6 +638,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         "tutor_messages idempotency lookup failed; failing closed",
         { message: existingTurnError.message, code: existingTurnError.code },
       );
+      // LISA-GCP-007: log metrics for idempotency lookup failure.
+      // Pre-pipeline error — no model invocation, no injection/crisis scan.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "idempotency_lookup_error",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected: false,
+        crisisTriggered: false,
+        crisisClassifierOutcome: null,
+      });
       sendTutorError(res, "idempotency_lookup_failed");
       return;
     }
@@ -651,6 +667,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       ) as { id: string; message: string } | undefined;
 
       if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+        // LISA-GCP-007: log metrics for idempotency conflict.
+        // Pre-pipeline error — message mismatch on same client_turn_id.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "idempotency_conflict",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: false,
+          compactionRecommended: false,
+          antiLeakTriggered: false,
+          injectionDetected: false,
+          crisisTriggered: false,
+          crisisClassifierOutcome: null,
+        });
         sendTutorError(res, "idempotency_conflict");
         return;
       }
@@ -679,6 +711,26 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           existingTutorMsg.message,
           replayScanContext,
         );
+
+        // LISA-GCP-007: idempotency replay — cached response, not a new
+        // inference. modelName="idempotency_replay" is a distinct marker so
+        // rate metrics built on turn_metrics don't count replays as model
+        // invocations. Tokens are zero (no model call). crisisClassifierOutcome
+        // is null — the classifier ran on the original turn, not this replay.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "idempotency_replay",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: true,
+          compactionRecommended: false,
+          antiLeakTriggered: replaySerialized.blocked,
+          injectionDetected: false,
+          crisisTriggered: false,
+          crisisClassifierOutcome: null,
+        });
 
         res.status(200).json({
           data: {
@@ -815,6 +867,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           code: studentMessageError?.code,
         },
       );
+      // LISA-GCP-007: log metrics for student message write failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:student_message_write_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: crisisResult.crisis,
+        crisisClassifierOutcome: crisisResult.crisis
+          ? crisisResult.source
+          : null,
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -868,6 +937,21 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
             code: crisisMessageError?.code,
           },
         );
+        // LISA-GCP-007: log metrics for crisis message write failure.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "error:crisis_message_write_failed",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: false,
+          compactionRecommended: false,
+          antiLeakTriggered: false,
+          injectionDetected,
+          crisisTriggered: true,
+          crisisClassifierOutcome: crisisResult.source,
+        });
         sendTutorError(res, "canonical_write_failed");
         return;
       }
@@ -968,6 +1052,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
     if (!instructionAssignmentResult.ok) {
+      // LISA-GCP-007: log metrics for instruction assignment failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:instruction_assignment_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -1055,6 +1156,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           conversationId: conversation.id,
         },
       );
+      // LISA-GCP-007: log metrics for orchestration failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: Date.now() - turnStartedAt,
+        modelName: "error:orchestration_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, orchestrationResult.errorCode, {
         retry_after_ms: 2000,
         failure_layer: "orchestrator",
@@ -1117,6 +1235,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           code: tutorMessageError?.code,
         },
       );
+      // LISA-GCP-007: log metrics for tutor message write failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: Date.now() - turnStartedAt,
+        modelName: "error:tutor_message_write_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -1228,6 +1363,43 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       "Unexpected error in POST /messages",
       err instanceof Error ? err : undefined,
     );
+    // LISA-GCP-007: best-effort metrics for catch-all error.
+    // Variables from the pipeline (conversation, injectionDetected, etc.)
+    // may not exist depending on where the throw occurred. The logTurnMetrics
+    // call itself is fire-and-forget, so a secondary failure is swallowed.
+    try {
+      const catchConvoId =
+        typeof input?.conversation_id === "string"
+          ? input.conversation_id
+          : "unknown";
+      await logTurnMetrics({
+        conversationId: catchConvoId,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:unexpected",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected: false,
+        crisisTriggered: false,
+        crisisClassifierOutcome: null,
+      });
+    } catch (metricsErr: unknown) {
+      // Metrics logging itself failed — swallow so the error response sends.
+      logger.warn(
+        "TUTOR_RUNTIME",
+        "catch_all_metrics_failed",
+        "Failed to log turn metrics in catch-all error handler",
+        {
+          error:
+            metricsErr instanceof Error
+              ? metricsErr.message
+              : String(metricsErr),
+        },
+      );
+    }
     sendTutorError(res, "orchestration_failed");
   }
 });
