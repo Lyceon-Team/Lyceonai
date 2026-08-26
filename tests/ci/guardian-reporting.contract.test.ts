@@ -274,12 +274,11 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/canonical-runtime-views")
   >("../../server/services/canonical-runtime-views");
-  return {
-    ...kpiMocks,
-    // projectGuardianKpiView is a pure projection of the student view — the behaviour
-    // under test on this surface. Only the IO-bearing builders are stubbed.
-    projectGuardianKpiView: actual.projectGuardianKpiView,
-  };
+  // Only the IO-bearing builders are stubbed; everything else stays real. `actual` is
+  // still imported so that a future stub can be layered over the real module rather than
+  // replacing it wholesale.
+  void actual;
+  return { ...kpiMocks };
 });
 
 function buildApp(role: "guardian" | "student" = "guardian") {
@@ -594,22 +593,28 @@ describe("Guardian reporting runtime contract", () => {
     }>;
     const metricValue = (id: string): number | null | undefined =>
       metrics.find((metric) => metric.id === id)?.value;
+    // EVERY metric the builder emitted, in order. Not a guardian-granted subset: the
+    // allowlist that produced one was deleted 2026-08-26 (owner ruling) — it was the field
+    // list of the removed `progress` block, and it re-decided statically what the
+    // entitlement gate already decides dynamically.
     expect(metrics.map((metric) => metric.id)).toEqual([
       "week_questions",
       "week_accuracy",
       "current_streak",
+      "recency_accuracy",
     ]);
     expect(metricValue("week_questions")).toBe(30);
     expect(metricValue("week_accuracy")).toBe(80);
     expect(metricValue("current_streak")).toBe(3);
+    expect(metricValue("recency_accuracy")).toBe(78);
     // PASSED THROUGH from the builder, unfiltered — it is the student's value verbatim.
     // The guardian projection used to hardcode `official: []` / `weighted: []` and rebuild
     // `diagnostic` from its own filtered list; the literals could never track the builder,
     // so if it ever populated official/weighted the guardian's copy stayed empty forever.
     //
-    // CONSEQUENCE, FLAGGED NOT FIXED: `diagnostic` therefore still names `recency_accuracy`,
-    // a metric the guardian does not receive. Filtering it would be reshaping the student
-    // envelope, which the ruling forbids. See owner question 2 in the PR.
+    // `diagnostic` names `recency_accuracy` and the guardian now RECEIVES `recency_accuracy`
+    // — the description and the payload agree again. The mismatch flagged as owner question
+    // 2 was the metric filter, not the diagnostic list, and it went with the filter.
     expect(response.body.measurementModel).toEqual({
       official: [],
       weighted: [],
@@ -620,10 +625,9 @@ describe("Guardian reporting runtime contract", () => {
         "recency_accuracy",
       ],
     });
-    // Old-gen engagement metrics are dropped under the genesis event vocabulary.
-    expect(
-      metrics.find((metric) => metric.id === "recency_accuracy"),
-    ).toBeUndefined();
+    // Old-gen engagement metrics are dropped under the genesis event vocabulary. Note that
+    // `recency_accuracy` is NOT one of them — it is a live, entitlement-gated metric and is
+    // asserted present above.
     expect(
       metrics.find((metric) => metric.id === "week_minutes"),
     ).toBeUndefined();

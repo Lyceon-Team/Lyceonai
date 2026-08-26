@@ -810,64 +810,6 @@ export async function readAnsweredQuestionCount(
 }
 
 /**
- * @spec [owner standing rule 2026-08-21 — the guardian path is the student read plus a
- *   gate, with the scope narrowing applied as a PROJECTION of the one path; Doc 05B §6.5
- *   guardian-granted event vocabulary (events / accuracy / streak); owner ruling
- *   2026-08-17 — an unestablished count is null and is omitted, never rendered as zero]
- * | @implemented [2026-08-21]
- *
- * plain English: narrows the student KPI view to the three metrics a guardian may see, and
- * passes their values through UNCHANGED. It computes nothing.
- *
- * WHAT THIS REPLACES, AND WHY IT MATTERED.
- *   The guardian route used to pull those metric values out and coerce them with `?? 0`.
- *   That turned "we could not establish this figure" into a confident zero on a parent's
- *   screen — the same NULL-to-zero fail-open that told students their least-practised
- *   skills were their worst. The student surface deliberately carries `null` and omits the
- *   figure; the guardian surface was contradicting it. `null` now survives to the client,
- *   which must omit rather than render it.
- *
- * It sits beside projectGuardianFullLengthReportView because that function is the pattern:
- * ONE builder, then a pure projection for the narrower audience.
- */
-/**
- * @spec [Doc 04C invariant #7 — "Guardian payloads are a STRICT SUBSET of the student
- *   payload ... enforced by deriving the guardian payload from the student payload via a
- *   projection function, not by independent construction"; Doc 05 Parent §15.2 + AC#19 +
- *   owner ruling 2026-08-23 SCL-043 — the test is "does the student see it", not "is it a
- *   counter"; owner ruling 2026-08-23 — "the guardian sees exactly what the student sees,
- *   no more and no less"] | @implemented [2026-08-24]
- *
- * plain English: the student's KPI view, with the metric list narrowed to the three a
- * guardian is granted. Nothing added, nothing reshaped, nothing invented.
- *
- * THE RETURN TYPE IS `StudentKpiView` ON PURPOSE.
- *   Not a `GuardianKpiView`. A separate guardian type is a second place for the shape to be
- *   decided, and a second place is how it drifts — the hand-written `GuardianWeaknessResponse`
- *   declaring `skills` against a route returning `domains` crashed the dashboard for every
- *   guardian whose student had rows. Here the guardian view IS a student view structurally,
- *   so a field added to the student cannot fail to reach the guardian, and a field the
- *   student does not have cannot be added to the guardian.
- *
- * WHAT THIS REPLACED, AND WHY EACH PIECE WENT.
- *   - `progress: {questionsAttempted, accuracy, currentStreakDays}` — a second shape of
- *     three numbers already present in `metrics`. Two shapes for one fact is how
- *     SAT_TAXONOMY's slugs drifted from the database unnoticed.
- *   - `measurementModel: {official: [], weighted: []}` — HARDCODED empties duplicating the
- *     builder's own field. If the builder ever populates them the copy stays empty forever:
- *     `[]` asserted as fact on a parent's screen, the same class as the `?? 0` that told a
- *     parent their child had answered nothing.
- *   - dropping `gating` — `gating.historicalTrends` is how a reader knows a value is
- *     WITHHELD rather than zero. Removing it does not falsify the number; it removes the
- *     reader's ability to know the number is incomplete, which is the same defect one layer
- *     up.
- *
- * NOT PASSED THROUGH: the route's `entitlement` block. It is added by the student ROUTE,
- * not by this builder, and it describes billing rather than learning. See owner question 1
- * in the PR — this function cannot add it either way, since it only ever narrows the view
- * it is given.
- */
-/**
  * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
  *   payload, derived via a projection function rather than independently constructed;
  *   SCL-044 (PROPOSED) — the guardian exam session list has no owning document, capability
@@ -951,21 +893,6 @@ export function projectGuardianExamSessionList(
   return projectStudentExamSessionList(sessions, opts).map(
     ({ reviewAvailable: _reviewAvailable, ...rest }) => rest,
   );
-}
-
-export function projectGuardianKpiView(view: StudentKpiView): StudentKpiView {
-  const GUARDIAN_METRIC_IDS = new Set([
-    "week_questions",
-    "week_accuracy",
-    "current_streak",
-  ]);
-
-  return {
-    ...view,
-    metrics: view.metrics.filter((metric) =>
-      GUARDIAN_METRIC_IDS.has(metric.id),
-    ),
-  };
 }
 
 export function projectGuardianFullLengthReportView(

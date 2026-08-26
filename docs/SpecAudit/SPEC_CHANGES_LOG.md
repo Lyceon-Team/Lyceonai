@@ -25,6 +25,22 @@
 
 ## Entries
 
+SCL-045 | 2026-08-26 | Doc 03 INV-03-05 / §1681 / CR-03-20 / CR-03-31 and Doc 03A §1581 — the guardian CALENDAR is named but never specified | PROPOSED
+Change: `GET /api/guardian/students/:studentId/calendar/month` is live and consumed by `client/src/pages/guardian-calendar.tsx`, and five passages across two locked documents name a guardian calendar — but none of them specifies one. This entry asks for a ruling; it proposes no change to either document's intent.
+WAS: five citations, all verbatim:
+  - Doc 03 INV-03-05: "Guardian dashboard pulls only from mastery, KPI, and calendar sources — never from LISA tables."
+  - Doc 03 §1681: "Guardians see KPIs, mastery, and calendar — all of which are derived from Doc 02B runtime engine events and Doc 02C mastery state, none of which flow through LISA."
+  - Doc 03 CR-03-20: "guardians see only KPI, mastery, and calendar per Doc 01 V6."
+  - Doc 03 CR-03-31: "Guardian visibility limited to KPI, mastery, and calendar per Doc 01 V6."
+  - Doc 03A §1581: "A guardian querying `guardian_dashboard_view` sees mastery, KPI, calendar — all derived from Doc 02B and Doc 02C data, never from tutor tables."
+  Every one of the five is a LISA-BOUNDARY statement: each is asserting that guardians see nothing originating in LISA, and names the calendar only as a member of the not-LISA list. None gives the surface a route, a payload shape, an entitlement rule, or an acceptance criterion. Doc 04 owns the calendar and specifies no guardian read of it.
+  Two of the five (CR-03-20, CR-03-31) chain their authority to "Doc 01 V6", a version no longer in the corpus — the surviving unversioned Doc 01 is V8.0, which supersedes it. The authority those two cite cannot be read.
+  Doc 03A §1581 additionally names `guardian_dashboard_view` as the object a guardian queries. No such view exists: it appears exactly once in the entire repository, in that sentence. Zero code references, zero schema references, zero migrations. (`guardian_dashboard_viewed`, which does appear in code, is an audit EVENT TYPE — a different identifier.)
+IS: owner ruling 2026-08-26 — do NOT delete the guardian calendar. All five citations name it in a not-LISA list, and two chain to a superseded Doc 01 version, so the passages are too weak to treat as a specification but not weak enough to treat the surface as drift. The route is kept, and nothing further is invested in it until it is specified.
+Rationale: the standing rule is that code which cannot be traced to a spec section or a recorded ruling is drift and is deleted. This surface sits exactly on the line: it is NAMED in locked documents four times, which is more than drift ever gets, and SPECIFIED zero times, which is less than a surface needs. Deleting a surface four locked passages name would be an agent overruling the corpus on a technicality of citation strength. Recording the ambiguity is the correct move; the repo is not evidence either way.
+Owner action: (a) rule whether a guardian calendar is a specified V1 surface; if yes, name the owning document and §-cite the payload contract, the entitlement rule, and the read grain; if no, mark this entry REJECTED and the route is deleted under the drift rule. (b) Separately, decide the fate of `guardian_dashboard_view` in Doc 03A §1581 — it is a phantom object and the sentence should either name a real view or drop the object reference.
+Build artifact: none. No code change accompanies this entry — that is the point of the ruling.
+
 SCL-044 | 2026-08-24 | Doc 04C §12.4 — the guardian full-length SESSION LIST has no owning document | PROPOSED
 Change: `GET /api/guardian/students/:studentId/exams/full-length/sessions` is live and consumed by the guardian dashboard, and no document in the corpus specifies it. Doc 04C owns the guardian exam surfaces but §12.4 explicitly disclaims multi-session aggregation: "04C does NOT serve an aggregated multi-student endpoint. If Product wants a 'guardian dashboard' with multi-student rollup, that is a separate aggregation layer owned by Doc 01 or a future dashboard doc — NOT by 04C." No such doc exists. The 05 family owns mastery/KPI/projections, not exam session history.
 WAS: unspecified. The route projects `listExamSessions` output inline in the handler (`server/routes/guardian-routes.ts`), independently of the student route's projection of the same service (`server/routes/full-length-exam-routes.ts:268`), so the two shapes can drift with nothing to catch it.

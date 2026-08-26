@@ -3,10 +3,22 @@
  *   payload ... enforced by deriving the guardian payload from the student payload via a
  *   projection function (§12.2), not by independent construction"; Doc 05 Parent §15.2 and
  *   AC#19 with the SCL-043 reading; owner ruling 2026-08-23 — "the guardian sees exactly
- *   what the student sees, no more and no less"] | @implemented [2026-08-24]
+ *   what the student sees, no more and no less"; owner ruling 2026-08-26 — the guardian
+ *   receives the STUDENT'S metrics, gated only by the shared entitlement derivation: no
+ *   second filter, no guardian-specific metric list] | @implemented [2026-08-26]
  *
  * plain English: the shared KPI builder is mocked ONCE, both routes are called, and the
- * guardian body is required to be a key-for-key subset of the student body at every depth.
+ * guardian body is required to be a key-for-key subset of the student body at every depth —
+ * and, for `metrics`, to be that list EXACTLY.
+ *
+ * WHY `metrics` IS NOW AN EQUALITY AND NOT A SUBSET.
+ *   A metric allowlist stood here until 2026-08-26: {week_questions, week_accuracy,
+ *   current_streak}, hardcoded, sourced from no spec constant and no entitlement. It was the
+ *   field list of the guardian-only `progress` block (bf544c8) outliving that block, and it
+ *   duplicated STATICALLY the gate `resolveHistoricalTrendsAccess` makes DYNAMICALLY. Its
+ *   live effect was that the guardian of a PAYING student saw fewer metrics than the student
+ *   — the "no less" half of the rule broken by the remnant of the "no more" half. Equality
+ *   is what makes its return red.
  *
  * PROVENANCE, NOT RESEMBLANCE.
  *   Two independent implementations can agree on a Tuesday. That distinction has caught a
@@ -29,9 +41,6 @@ import request from "supertest";
 
 const STUDENT_ID = "student-1";
 const GUARDIAN_ID = "guardian-1";
-
-/** The three metric ids a guardian is granted. Everything else is student-only. */
-const GRANTED = ["week_questions", "week_accuracy", "current_streak"];
 
 /**
  * THE ONE SHARED VIEW. Deliberately carries `official`/`weighted` NON-EMPTY: a test that
@@ -57,7 +66,8 @@ const SHARED_VIEW = {
     { id: "week_questions", label: "Questions (7d)", value: 12 },
     { id: "week_accuracy", label: "Accuracy (7d)", value: 75 },
     { id: "current_streak", label: "Streak", value: 3 },
-    // Student-only: must NOT reach the guardian.
+    // Entitlement-gated: the builder emits it only when the STUDENT'S entitlement allows
+    // it. When the builder emits it, the guardian gets it — that is the whole ruling.
     { id: "recency_accuracy", label: "Accuracy (30d)", value: 70 },
   ],
   gating: {
@@ -80,7 +90,7 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/canonical-runtime-views")
   >("../../server/services/canonical-runtime-views");
-  // projectGuardianKpiView stays REAL — it is the projection under test.
+  // Everything else stays REAL: the routes under test are the subject, not a projection.
   return { ...actual, buildStudentKpiViewFromCanonical };
 });
 
@@ -329,10 +339,30 @@ describe("Guardian KPI is the student view, narrowed — never rebuilt", () => {
     );
   }, 20000);
 
-  it("only the three granted metrics cross; student-only metrics do not", async () => {
+  it("the guardian's metrics ARE the student's metrics — there is no second filter", async () => {
+    // THE MUTATION THIS EXISTS FOR: reintroduce any metric allowlist in the guardian route
+    // or in a projection it calls, and this case reds. An entitlement-gated metric
+    // (`recency_accuracy`) is deliberately in the fixture, because the allowlist that stood
+    // here stripped exactly that one back out after the entitlement had already granted it.
+    const student = await studentBody();
     const guardian = await guardianBody();
-    const ids = (guardian.metrics as Array<{ id: string }>).map((m) => m.id);
-    expect(ids.sort()).toEqual([...GRANTED].sort());
-    expect(ids).not.toContain("recency_accuracy");
+
+    expect(guardian.metrics).toEqual(student.metrics);
+    expect(guardian.metrics).toEqual(SHARED_VIEW.metrics);
+    expect((guardian.metrics as Array<{ id: string }>).map((m) => m.id)).toContain(
+      "recency_accuracy",
+    );
+  }, 20000);
+
+  it("the ONLY gate is the shared entitlement derivation, applied before the builder", async () => {
+    // The guardian route resolves the STUDENT'S access and passes it into the one builder.
+    // Nothing downstream re-decides visibility, which is why the metric list needs no
+    // second opinion. `resolveHistoricalTrendsAccess` is mocked true at module scope, so
+    // the assertion is on the argument, not on a second filtering step.
+    await guardianBody();
+    expect(buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
+      STUDENT_ID,
+      true,
+    );
   }, 20000);
 });
