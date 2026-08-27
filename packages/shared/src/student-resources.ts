@@ -54,11 +54,18 @@ export type StudentResourceKey = keyof typeof STUDENT_RESOURCE_PATHS;
  * handler rather than tested as a role inside it (owner ruling Q3).
  */
 export const STUDENT_LINK_PATHS = {
+  /** §36.1 step 1, student-initiated — the student invites a guardian by email. */
+  linkInitiate: "/links",
   /** The student half of §36.1 step 5 — accepting a link a guardian initiated. */
   linkAccept: "/links/:linkId/accept",
 } as const;
 
 export type StudentLinkPathKey = keyof typeof STUDENT_LINK_PATHS;
+
+/** Full client-side path for initiating a link, e.g. `/api/students/<id>/links`. */
+export function studentLinkInitiateUrl(studentId: string): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links`;
+}
 
 /** Full client-side path, e.g. `/api/students/<id>/links/<linkId>/accept`. */
 export function studentLinkAcceptUrl(

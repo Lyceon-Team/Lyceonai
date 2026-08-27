@@ -29,8 +29,22 @@ import {
   STUDENT_RESOURCE_PATHS,
   type MasterySection,
 } from "../../packages/shared/src/index";
-import { acceptGuardianLink, getGuardianLinkById } from "../lib/account";
-import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
+import {
+  acceptGuardianLink,
+  createGuardianLink,
+  getGuardianLinkById,
+} from "../lib/account";
+import {
+  GUARDIAN_LINK_ERROR,
+  guardianLinkRequestSchema,
+} from "../../packages/shared/src/guardian-link-schema";
+import {
+  normaliseEmail,
+  subjectDigest,
+  DIGEST_LEN_LOG,
+} from "../../packages/shared/src/services/subject-digest";
+import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { auditGuardianLink } from "../services/guardian-link-audit";
 import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
 import {
@@ -317,6 +331,182 @@ resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
 // --- link lifecycle --------------------------------------------------------
 
 const linkIdParamSchema = z.object({ linkId: z.string().uuid() });
+
+/**
+ * POST /api/students/:studentId/links — §36.1 step 1, student-initiated.
+ *
+ * @spec [Doc-01_V8 §36.1 Initiation (student-initiated → `pending_guardian_accept`);
+ *   §36.2 rate limiting; owner rulings 2026-08-27 Q2 (both directions ship in V1),
+ *   Q3 (subject-scoped mount, `via === 'self'`)] | @implemented [2026-08-27]
+ *
+ * plain English: a student invites a guardian by email. The link lands PENDING on the
+ * guardian, who confirms it through the route that already exists. This is the direction a
+ * student who finds Lyceon themselves needs — they cannot pay, so somebody has to be asked.
+ *
+ * WHAT WAS MISSING. `PENDING_STATUS_FOR_INITIATOR.student` and the whole domain path existed;
+ * the only caller passing `"student"` was the consent flow, which R1 removes. So the sole
+ * producer of a `pending_guardian_accept` link was a flow that is not in V1.
+ *
+ * ANTI-ENUMERATION, THE SAME SHAPE THE GUARDIAN ROUTE USES. An address with no guardian
+ * account gets the SAME 202 as one that has. §36.1 step 3 reaches the invitee by email
+ * either way, so the student learns nothing here they are entitled to learn. The address is
+ * never written to a retained row — only its digest (§12.1).
+ *
+ * RATE LIMITING REUSES `guardianLinkRateLimit` UNCHANGED, and that is a reading worth stating:
+ * §36.2's two controls are written for the guardian direction ("10 per guardian per day, 3 per
+ * student-email per day"), but the middleware keys on the AUTHENTICATED INITIATOR's profile
+ * and on the TARGETED address, neither of which is direction-specific. One account's daily
+ * invitations and one address's daily invitations are the quantities §36.2 is protecting, so
+ * the same buckets are the right buckets. Forking a second pair would double-count nothing and
+ * halve the protection. See owner question — whether §36.2's limits are per-direction or
+ * shared is not something the spec says.
+ *
+ * It runs AFTER `resolveSubject`, so a caller who is not the subject still consumes their OWN
+ * quota before the 404. That is deliberate: probing this route is exactly what a daily cap
+ * should cost something.
+ */
+router.post(
+  `/:studentId${STUDENT_LINK_PATHS.linkInitiate}`,
+  resolveSubject,
+  guardianLinkRateLimit,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    if (subject.via !== "self") {
+      return sendNotFound(res, requestId);
+    }
+
+    const parsed = guardianLinkRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      await auditGuardianLink({
+        action: "guardian_link_denied",
+        actorProfileId: subject.studentId,
+        changes: { reason: "invalid_input" },
+        requestId,
+      });
+      return res.status(400).json({
+        error: { message: "A guardian email address is required" },
+        requestId,
+      });
+    }
+
+    const email = normaliseEmail(parsed.data.email);
+
+    const { data: guardian, error: lookupError } = await supabaseServer
+      .from("profiles")
+      .select("id")
+      .eq("email", email)
+      .eq("role", "guardian")
+      .maybeSingle();
+
+    if (lookupError && lookupError.code !== "PGRST116") {
+      logger.error(
+        "STUDENT_RESOURCES",
+        "link_initiate",
+        "Guardian lookup failed",
+        {
+          requestId,
+          reason: lookupError.message,
+        },
+      );
+      return res.status(500).json({
+        error: { message: "Failed to create link request" },
+        requestId,
+      });
+    }
+
+    if (!guardian) {
+      await auditGuardianLink({
+        action: "guardian_link_denied",
+        actorProfileId: subject.studentId,
+        changes: {
+          reason: "no_matching_guardian",
+          email_digest: subjectDigest(email, DIGEST_LEN_LOG),
+        },
+        requestId,
+      });
+      return res.status(202).json({
+        data: { status: "pending_guardian_accept" },
+        requestId,
+      });
+    }
+
+    let link;
+    try {
+      link = await createGuardianLink(
+        guardian.id,
+        subject.studentId,
+        "student",
+      );
+    } catch (createError: unknown) {
+      const code =
+        typeof createError === "object" &&
+        createError !== null &&
+        "code" in createError &&
+        typeof (createError as { code: unknown }).code === "string"
+          ? (createError as { code: string }).code
+          : null;
+
+      if (code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS) {
+        await auditGuardianLink({
+          action: "guardian_link_denied",
+          actorProfileId: subject.studentId,
+          targetProfileId: guardian.id,
+          changes: { reason: "link_already_exists" },
+          requestId,
+        });
+        return res.status(409).json({
+          error: {
+            message: "A link with this guardian already exists",
+            code,
+          },
+          requestId,
+        });
+      }
+
+      logger.error(
+        "STUDENT_RESOURCES",
+        "link_initiate",
+        "Failed to create link",
+        {
+          requestId,
+          reason:
+            createError instanceof Error ? createError.message : "unknown",
+        },
+      );
+      return res.status(500).json({
+        error: { message: "Failed to create link request" },
+        requestId,
+      });
+    }
+
+    await auditGuardianLink({
+      action: "guardian_link_initiated",
+      actorProfileId: subject.studentId,
+      targetProfileId: guardian.id,
+      changes: { to: link.status },
+      context: { link_id: link.id },
+      requestId,
+    });
+
+    logger.info(
+      "STUDENT_RESOURCES",
+      "link_initiate",
+      "Student initiated link",
+      {
+        studentId: subject.studentId,
+        requestId,
+      },
+    );
+
+    return res.status(202).json({
+      data: { link_id: link.id, status: link.status },
+      requestId,
+    });
+  },
+);
 
 /**
  * POST /api/students/:studentId/links/:linkId/accept — §36.1's student-side acceptance.

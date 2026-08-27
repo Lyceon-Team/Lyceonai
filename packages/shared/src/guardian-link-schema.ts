@@ -51,6 +51,25 @@ export const guardianLinkInitiatorSchema = z.enum(["guardian", "student"]);
 export type GuardianLinkInitiator = z.infer<typeof guardianLinkInitiatorSchema>;
 
 /**
+ * @spec [Doc-01_V8 §36.1 Initiation step 1 — the initiating party enters the OTHER party's
+ *        email; lyceon-coding-standards.md §7.1 (Zod at every boundary)]
+ *        | @implemented [2026-08-26, moved to shared 2026-08-27]
+ *
+ * plain English: the only shape a link-initiation request accepts, in EITHER direction.
+ * `.strict()` so an extra field is a 400 rather than something silently ignored; `.email()`
+ * so the per-address rate bucket in §36.2 is keyed on something that is actually an address.
+ *
+ * It lived in `guardian-routes.ts` while only the guardian could initiate. The student-side
+ * route takes the identical shape — the guardian's address rather than the student's — so it
+ * moved here rather than being written a second time (Coding Standards §7.2). One definition,
+ * so the two directions cannot drift on what they accept.
+ */
+export const guardianLinkRequestSchema = z
+  .object({ email: z.string().trim().min(3).max(320).email() })
+  .strict();
+export type GuardianLinkRequest = z.infer<typeof guardianLinkRequestSchema>;
+
+/**
  * A `timestamptz` as it arrives from whichever transport read it.
  *
  * PostgREST (supabase-js) hands these over as ISO strings; `node-postgres`, used by the

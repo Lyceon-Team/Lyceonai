@@ -18,7 +18,10 @@ import {
 // that imports its error mapping from the module it also imports its functions from loses
 // that mapping whenever the module is substituted, and reports 500 instead of the specified
 // status. See packages/shared/src/guardian-link-schema.ts.
-import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
+import {
+  GUARDIAN_LINK_ERROR,
+  guardianLinkRequestSchema,
+} from "../../packages/shared/src/guardian-link-schema";
 import {
   normaliseEmail,
   subjectDigest,
@@ -97,17 +100,6 @@ async function emitGuardianAccessEvent(args: {
     // Best effort only.
   }
 }
-
-/**
- * @spec [Doc-01_V8, §36.1 Initiation step 1 — "Guardian enters student's email";
- *        lyceon-coding-standards.md §7.1 (Zod at every boundary)] | @implemented [2026-08-26]
- * plain English: the only shape `POST /api/guardian/link` accepts. `.strict()` so an extra
- * field is a 400 rather than something silently ignored; `.email()` so the per-student-email
- * rate bucket in §36.2 is keyed on something that is actually an address.
- */
-const linkRequestSchema = z
-  .object({ email: z.string().trim().min(3).max(320).email() })
-  .strict();
 
 /** Route params are strings; a link id must be a UUID before it reaches the data layer. */
 const UUID_RE =
@@ -222,7 +214,7 @@ router.post(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const parsed = linkRequestSchema.safeParse(req.body);
+      const parsed = guardianLinkRequestSchema.safeParse(req.body);
 
       if (!parsed.success) {
         await auditGuardianLink({

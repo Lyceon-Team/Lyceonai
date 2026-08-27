@@ -472,13 +472,13 @@ jobs:
       # `status`, `accepted_at` and `accepted_by_profile_id` read back from the real row. Before
       # this route existed no path in the codebase could activate a guardian-initiated link,
       # which is why `guardian_links` holds zero rows in production.
-      - name: Student-side link acceptance → real PG proof
+      - name: Student-side link lifecycle → real PG proof
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: pnpm exec vitest run tests/ci/guardian-link-student-accept.pg.ci.test.ts
+        run: pnpm exec vitest run tests/ci/guardian-link-student-side.pg.ci.test.ts
 
   # ---------------------------------------------------------------------------
   # Mastery pipeline gates — HARD GATE.
