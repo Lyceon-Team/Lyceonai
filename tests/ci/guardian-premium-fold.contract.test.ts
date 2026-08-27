@@ -136,6 +136,29 @@ describe("guardian premium folds over ALL active links (§31.3)", () => {
     expect(access.hasActiveLink).toBe(true);
   });
 
+  it("a REVOKED link confers nothing immediately — visibility follows the link", async () => {
+    // Owner ruling 2026-08-27: a guardian revoking a link is a CONSENT action,
+    // and making it wait on a billing cycle would invert the trust model. This
+    // already holds — `revokeGuardianLink` sets status='revoked' and the fold's
+    // reader filters status='active' — so this test pins existing behaviour
+    // rather than introducing it. It exists so the coupling cannot be
+    // reintroduced by someone "fixing" the reader to include paid-through links.
+    //
+    // The MONEY is a separate question, settled by pro-rated refund. That is an
+    // SCL candidate, not assumed here.
+    dbMocks.allLinks.mockResolvedValue({ data: [], error: null }); // revoked -> not returned
+    dbMocks.isActive.mockResolvedValue(true); // student still entitled, and still paid for
+
+    const resolve = await resolver();
+    const access = await resolve(GUARDIAN);
+
+    // Both halves: no premium AND no active link, even though the student's own
+    // entitlement is live and the period is paid through.
+    expect(access.hasPremiumAccess).toBe(false);
+    expect(access.hasActiveLink).toBe(false);
+    expect(dbMocks.isActive).not.toHaveBeenCalled();
+  });
+
   it("reports no link when the guardian has none", async () => {
     dbMocks.allLinks.mockResolvedValue({ data: [], error: null });
 

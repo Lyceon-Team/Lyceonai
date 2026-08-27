@@ -388,6 +388,14 @@ interface Entitlement {
   tier: EntitlementTier;
   status: EntitlementStatus;
   stripe_subscription_id: string | null;
+  /**
+   * SCL-045 / migration 20260827010000: the subscription ITEM this entitlement
+   * is keyed to. One item per entitled student, so one guardian subscription
+   * carries several. Nullable because rows written before 2026-08-27 have no
+   * item id — it is not derivable in SQL and arrives on the next
+   * `customer.subscription.updated`.
+   */
+  stripe_subscription_item_id: string | null;
   stripe_price_id: string | null;
   current_period_start: string | null;
   current_period_end: string | null;
@@ -479,7 +487,7 @@ export async function getEntitlementForProfile(
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .eq("profile_id", profileId)
     .maybeSingle();
@@ -510,7 +518,7 @@ export async function getEntitlementBySubscriptionId(
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .eq("stripe_subscription_id", stripeSubscriptionId)
     .maybeSingle();
@@ -539,7 +547,7 @@ export async function upsertEntitlement(
     .from("entitlements")
     .upsert({ profile_id: profileId, ...updates }, { onConflict: "profile_id" })
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .single();
 

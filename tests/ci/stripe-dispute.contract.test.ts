@@ -44,6 +44,8 @@ const accountMocks = vi.hoisted(() => ({
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  subscriptionsUpdate: vi.fn(),
+  subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
 }));
@@ -57,6 +59,8 @@ vi.mock("../../server/lib/stripe/client", async () => {
       subscriptions: {
         retrieve: stripeApi.subscriptionsRetrieve,
         list: stripeApi.subscriptionsList,
+        update: stripeApi.subscriptionsUpdate,
+        resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
     }),
@@ -198,6 +202,87 @@ describe("Stripe disputes (SCL-073)", () => {
       STUDENT_ID,
       expect.objectContaining({ tier: "premium", status: "active" }),
     );
+  });
+
+  it("pauses collection on the chargeback — the durable marker (SCL-073 option B)", async () => {
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+
+    await process_(body, signature, "req_dispute_pause");
+
+    // `keep_as_draft` deliberately: `void` destroys invoices a WON dispute
+    // would want back, `mark_uncollectible` writes off revenue we may yet win.
+    expect(stripeApi.subscriptionsUpdate).toHaveBeenCalledWith("sub_test_1", {
+      pause_collection: { behavior: "keep_as_draft" },
+    });
+  });
+
+  it("a PAUSED subscription confers no premium even while Stripe reports active", async () => {
+    // The whole point of option B. Stripe leaves `status` unchanged when
+    // collection is paused, so a writer reading only `status` would hand
+    // premium straight back over the chargeback revocation.
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_test_1",
+      object: "subscription",
+      status: "active", // <- Stripe still says active
+      pause_collection: { behavior: "keep_as_draft", resumes_at: null },
+      items: {
+        object: "list",
+        data: [
+          {
+            id: "si_test_1",
+            object: "subscription_item",
+            current_period_start: 1_756_000_000,
+            current_period_end: 1_758_600_000,
+            price: { id: "price_test_1" },
+            metadata: { student_profile_id: STUDENT_ID },
+          },
+        ],
+      },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signed({
+      id: "evt_sub_updated_paused",
+      object: "event",
+      type: "customer.subscription.updated",
+      livemode: false,
+      data: {
+        object: {
+          id: "sub_test_1",
+          object: "subscription",
+          metadata: { student_profile_id: STUDENT_ID },
+        },
+      },
+    });
+
+    await process_(body, signature, "req_paused");
+
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_ID,
+      expect.objectContaining({ tier: "free" }),
+    );
+  });
+
+  it("resumes collection BEFORE re-deriving, or the restore would read the pause", async () => {
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.closed", "won"),
+    );
+
+    await process_(body, signature, "req_dispute_resume");
+
+    expect(stripeApi.subscriptionsResume).toHaveBeenCalledWith("sub_test_1");
+
+    // Ordering is load-bearing: resuming after the re-derive would read a
+    // still-paused subscription and write `free`, restoring nothing.
+    const resumeOrder =
+      stripeApi.subscriptionsResume.mock.invocationCallOrder[0];
+    const retrieveOrder =
+      stripeApi.subscriptionsRetrieve.mock.invocationCallOrder[0];
+    expect(resumeOrder).toBeLessThan(retrieveOrder);
   });
 
   it("a LOST dispute leaves access revoked and writes nothing", async () => {

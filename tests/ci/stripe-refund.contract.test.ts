@@ -42,6 +42,8 @@ const accountMocks = vi.hoisted(() => ({
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  subscriptionsUpdate: vi.fn(),
+  subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
 }));
@@ -55,6 +57,8 @@ vi.mock("../../server/lib/stripe/client", async () => {
       subscriptions: {
         retrieve: stripeApi.subscriptionsRetrieve,
         list: stripeApi.subscriptionsList,
+        update: stripeApi.subscriptionsUpdate,
+        resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
     }),

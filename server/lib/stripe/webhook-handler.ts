@@ -141,12 +141,47 @@ const retrievedSubscriptionSchema = z.object({
   id: z.string().min(1),
   status: z.string().min(1),
   cancel_at_period_end: z.boolean().nullish(),
+  /**
+   * SCL-073 dispute durability, owner ruling 2026-08-27 (option B).
+   *
+   * Read because `status` alone does not carry the fact. Stripe says so in the
+   * `status` field's own documentation: "The `paused` status is different from
+   * pausing collection, which still generates invoices and LEAVES THE
+   * SUBSCRIPTION'S STATUS UNCHANGED." So a subscription whose collection we
+   * paused on a chargeback still reports `active`, and a writer reading only
+   * `status` would hand premium straight back — which is exactly the durability
+   * defect this closes.
+   *
+   * This is reading MORE of Stripe's truth, not storing our own. The
+   * alternative considered and rejected was a local `dispute_revoked_at`
+   * column: that would have made a THIRD copy of the entitled-status set. The
+   * two that exist — `entitlement_active()`'s body and
+   * `idx_entitlements_active`'s predicate — AGREE today, both
+   * {active, past_due, trialing}, because migration 20260616120000 widened them
+   * together in one change. A third copy would be the one to diverge: added by
+   * a different change, for a different reason, with nothing keeping it in step
+   * with the other two.
+   */
+  pause_collection: z
+    .object({
+      behavior: z.string().nullish(),
+      resumes_at: z.number().nullish(),
+    })
+    .nullish(),
   items: z
     .object({
       data: z.array(stripeSubscriptionItemSchema).default([]),
     })
     .nullish(),
 });
+
+/**
+ * Named once so every site that passes a parsed subscription around refers to
+ * the SAME type. Two separate `z.infer<typeof …>` expressions produce
+ * structurally identical but nominally distinct types, which TypeScript then
+ * refuses to assign between — a confusing error for an identical shape.
+ */
+type RetrievedSubscription = z.infer<typeof retrievedSubscriptionSchema>;
 
 /** Thrown when a signed payload does not match the shape this handler requires. */
 export class StripePayloadShapeError extends Error {
@@ -156,11 +191,19 @@ export class StripePayloadShapeError extends Error {
   }
 }
 
-function parseOrFail<T>(
-  schema: z.ZodType<T>,
+/**
+ * Generic over the SCHEMA rather than over its output type. Inferring `T` from
+ * `z.ZodType<T>` produces a fresh anonymous type at each call site, so two
+ * calls against the same schema yield types TypeScript reports as "two
+ * different types with this name … but they are unrelated". Constraining to
+ * `z.ZodTypeAny` and returning `z.infer<S>` makes every call site resolve to
+ * the one named type instead.
+ */
+function parseOrFail<S extends z.ZodTypeAny>(
+  schema: S,
   value: unknown,
   eventType: string,
-): T {
+): z.infer<S> {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
     throw new StripePayloadShapeError(
@@ -230,7 +273,17 @@ async function writeEntitlementFromSubscription(
     eventType,
   );
 
-  const { tier, status } = mapStripeStatusToEntitlement(subscription.status);
+  const mapped = mapStripeStatusToEntitlement(subscription.status);
+
+  // SCL-073 (owner ruling 2026-08-27, option B): collection paused means not
+  // entitled, whatever `status` says. Stripe leaves `status` unchanged when
+  // collection is paused, so without this the next subscription event would
+  // write premium back over a chargeback revocation. The pause IS the durable
+  // marker, and it lives on Stripe's object rather than in a column of ours.
+  const collectionPaused = subscription.pause_collection != null;
+  const { tier, status } = collectionPaused
+    ? { tier: "free" as const, status: mapped.status }
+    : mapped;
 
   // SCL-045: entitlement is keyed on the subscription ITEM. Price and period
   // both come from that one object, so they cannot describe different students.
@@ -256,6 +309,10 @@ async function writeEntitlementFromSubscription(
     tier,
     status,
     stripe_subscription_id: subscription.id,
+    // SCL-045 / migration 20260827010000: the item is the key. Written now so a
+    // guardian subscription's rows are distinguishable from one another; NULL
+    // only where the subscription genuinely has no resolvable item.
+    stripe_subscription_item_id: item?.itemId ?? null,
     stripe_price_id: item?.priceId ?? null,
     current_period_start: epochToIso(item?.currentPeriodStart ?? null),
     current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
@@ -440,6 +497,17 @@ async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
   );
   if (!target) return;
 
+  // SCL-073 option B: pause collection FIRST, so the durable marker exists on
+  // Stripe's object before the local write. If the local write then failed and
+  // Stripe retried, the pause would already be in place and the retry would
+  // re-derive to `free` on its own — the safe ordering.
+  //
+  // `keep_as_draft` deliberately: `void` destroys invoices a WON dispute would
+  // want back, and `mark_uncollectible` writes off revenue we may yet win.
+  await getStripeClient().subscriptions.update(target.subscriptionId, {
+    pause_collection: { behavior: "keep_as_draft" },
+  });
+
   await upsertEntitlement(target.profileId, {
     tier: "free",
     status: "unpaid",
@@ -502,6 +570,11 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
     return;
   }
 
+  // SCL-073 option B: lift the pause BEFORE re-deriving. The re-derivation
+  // reads `pause_collection`, so resuming second would read the still-paused
+  // subscription and write `free` — restoring nothing.
+  await getStripeClient().subscriptions.resume(target.subscriptionId);
+
   await writeEntitlementFromSubscription(
     target.subscriptionId,
     target.profileId,
@@ -511,7 +584,7 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
   logger.info(
     "STRIPE_WEBHOOK",
     event.type,
-    "Dispute closed in our favour; entitlement restored from live subscription",
+    "Dispute closed in our favour; collection resumed and entitlement restored from live subscription",
     {
       eventId: event.id,
       studentProfileRef: digestId(target.profileId),
@@ -565,6 +638,76 @@ async function handleRefundUpdated(event: Stripe.Event): Promise<void> {
       reason: decision.reason,
     },
   );
+}
+
+/**
+ * @spec [SCL-045; §4.8 guardian-paid checkout] | @implemented [2026-08-27]
+ * plain English: write one entitlement row per entitled student on a
+ * subscription that funds several. Expected outcome: N students, N rows, each
+ * keyed to its own subscription item with its own period bounds. Trade-off:
+ * runs sequentially rather than in parallel so a mid-way failure leaves a
+ * prefix written and the rest untouched — Stripe retries the whole event and
+ * `upsertEntitlement` is idempotent on `profile_id`, so a retry converges.
+ * Edge case: an item with no `student_profile_id` is SKIPPED, not guessed at,
+ * and the count of skips is logged — if metadata propagation fails, this grants
+ * nothing rather than granting the wrong person.
+ *
+ * Only reached when MORE THAN ONE item names a student. The single-student
+ * path is unchanged, because individual billing is the one-item case and not a
+ * separate shape (SCL-045).
+ */
+async function writeEntitlementsForAllItems(
+  subscription: RetrievedSubscription,
+  eventType: string,
+  eventId: string,
+): Promise<void> {
+  const items = subscription.items?.data ?? [];
+  const mapped = mapStripeStatusToEntitlement(subscription.status);
+  const collectionPaused = subscription.pause_collection != null;
+  const tier = collectionPaused ? ("free" as const) : mapped.tier;
+
+  let written = 0;
+  let skipped = 0;
+
+  for (const item of items) {
+    const studentProfileId = item.metadata?.student_profile_id;
+    if (!studentProfileId) {
+      skipped += 1;
+      continue;
+    }
+
+    await upsertEntitlement(studentProfileId, {
+      tier,
+      status: mapped.status,
+      stripe_subscription_id: subscription.id,
+      stripe_subscription_item_id: item.id,
+      stripe_price_id: item.price?.id ?? null,
+      current_period_start: epochToIso(item.current_period_start ?? null),
+      current_period_end: epochToIso(item.current_period_end ?? null),
+      cancel_at_period_end: subscription.cancel_at_period_end === true,
+    });
+    written += 1;
+  }
+
+  logger.info("STRIPE_WEBHOOK", eventType, "Multi-student entitlement write", {
+    eventId,
+    subscriptionRef: digestId(subscription.id),
+    itemsWritten: written,
+    itemsSkipped: skipped,
+    tier,
+  });
+
+  if (written === 0) {
+    // Every item lacked a student. Most likely cause: Checkout did not
+    // propagate `line_items[].metadata` onto the SubscriptionItem — the one
+    // mechanism §4.8's plan could not verify without a Stripe key. Fail loudly
+    // rather than acknowledging an event that entitled nobody.
+    throw new StripePayloadShapeError(
+      eventType,
+      `subscription has ${items.length} items and none carries student_profile_id; ` +
+        "no entitlement written (check line_items metadata propagation)",
+    );
+  }
 }
 
 async function dispatch(event: Stripe.Event): Promise<void> {
@@ -644,6 +787,29 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     event.data.object,
     event.type,
   );
+
+  // §4.8: a guardian subscription funds several students, one ITEM each, and
+  // its SUBSCRIPTION-level metadata names the payer rather than any one
+  // student. So the shape has to be read before the subject is: asking
+  // `resolveStudentProfileId` first would either throw or pick the payer.
+  // Annotated with the named type so this and `writeEntitlementsForAllItems`
+  // agree: `parseOrFail`'s generic resolves `T` from `z.ZodType<T>`, which
+  // TypeScript treats as distinct from `z.infer<typeof schema>` even though the
+  // shapes are identical.
+  const retrieved: RetrievedSubscription = parseOrFail(
+    retrievedSubscriptionSchema,
+    await getStripeClient().subscriptions.retrieve(subscription.id),
+    event.type,
+  );
+  const studentBearingItems = (retrieved.items?.data ?? []).filter(
+    (i) => i.metadata?.student_profile_id,
+  );
+
+  if (studentBearingItems.length > 1) {
+    await writeEntitlementsForAllItems(retrieved, event.type, event.id);
+    return;
+  }
+
   const studentProfileId = resolveStudentProfileId(subscription, event.type);
   await writeEntitlementFromSubscription(
     subscription.id,

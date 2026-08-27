@@ -120,6 +120,72 @@ it can ship on its own and fix a live defect early.
 - **No DDL written here.** §2's schema change is Phase 4's to author.
 - **No assumption about metadata propagation.** §3 is a probe first.
 
+## 7a. Guardian-invoice dispute fan-out — ARGUED, NOT DECIDED
+
+Owner ruling 2026-08-27: argue this here; do not decide it in a handler. Both readings below, with
+what Stripe makes possible for each.
+
+**The situation.** After migration `20260827010000` one guardian subscription carries N items, one
+per student, and one invoice covers all of them. A chargeback contests **that invoice**. Dispute
+durability is `pause_collection` (SCL-073 option B), which Stripe applies at the **SUBSCRIPTION**
+level — there is no per-item pause. So one student's chargeback suspends every sibling on the
+subscription.
+
+**Reading 1 — the payment for all of them is genuinely contested.**
+The disputed invoice is the one that paid for every item on it. The issuer has taken back the whole
+amount, not one line of it: `Dispute.amount` is documented as *"Disputed amount. Usually the amount
+of the charge"*, and the charge covers the full invoice. On this reading, continuing to serve the
+siblings is serving students whose payment has been reversed — a straightforward unpaid-access
+problem, and suspending all of them is simply correct.
+*Stripe supports this natively and completely:* `pause_collection` on the subscription, `resume()`
+if the dispute is won. Nothing bespoke.
+
+**Reading 2 — a guardian disputing one line should not silently suspend siblings.**
+The likely real-world case is a guardian who disputes because of ONE student — a duplicate charge, a
+child who stopped using it, a billing surprise. Suspending three siblings for that is a
+disproportionate, invisible consequence they cannot see or appeal, and the first they learn of it is
+lost access. It also punishes students who are not party to the dispute at all.
+*What Stripe makes possible here is weaker.* There is no per-item pause. The nearest native
+mechanisms are: remove the disputed student's item from the subscription
+(`subscriptionItems.del`) so billing continues for the others — but that **cancels that student's
+entitlement outright**, which pre-judges a dispute we may win; or split guardians onto one
+subscription per student, which makes fan-out impossible by construction but abandons SCL-045's
+one-subscription shape and changes the invoice the guardian sees.
+
+**The asymmetry worth naming:** reading 1 is fully supported by Stripe with no local state; reading 2
+requires either an irreversible action (item removal) or a different subscription topology. That is
+not an argument that reading 1 is *right* — it is a statement of what each costs.
+
+**Not decided here.** The handler currently pauses the subscription, which implements reading 1 by
+default because it is the only thing `pause_collection` can do. If the owner rules for reading 2, the
+change is topological (one subscription per student) and belongs in this plan's §2 sequencing, not in
+a webhook branch.
+
+## 7b. Link revoked mid-period — RULED, and already true
+
+Owner ruling 2026-08-27: **visibility follows the link.** A guardian revoking a link is a consent
+action, and making it wait on a billing cycle would invert the trust model.
+
+This required **no code change** — it already holds. `revokeGuardianLink` sets `status='revoked'`,
+and `getAllGuardianStudentLinks` (the fold's reader) filters `status='active'`, so a revoked link is
+excluded from the next request onward. A test now pins it
+(`tests/ci/guardian-premium-fold.contract.test.ts`) so the coupling cannot be reintroduced by
+someone "fixing" the reader to include paid-through links.
+
+**SCL CANDIDATE — noted, not written.** The money is a separate question and the mechanics are not
+specified anywhere:
+
+> **Pro-rated refund on mid-period guardian link revocation.** Visibility ends immediately on
+> revocation, but the guardian has paid through period end. Nothing states whether a refund is owed,
+> who initiates it, whether it is pro-rated by days or by the item's share of the invoice, or how it
+> interacts with SCL-048's full-versus-partial revocation rule — a pro-rated refund is by definition
+> partial, so under SCL-048 it does NOT revoke, which is correct here but only by coincidence rather
+> than by rule. Also unstated: whether revoking the LAST link should cancel the subscription item at
+> period end, and whether the student (who may not be the payer) can trigger a refund to someone
+> else's card.
+
+Surfaced per the ruling rather than assumed. No refund behaviour is implemented.
+
 ## 8. Open questions for the owner
 
 1. **Sequencing (§2).** 5.1 before 4.8, or 4.8 after Phase 4?

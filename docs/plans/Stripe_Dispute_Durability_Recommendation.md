@@ -78,11 +78,18 @@ from production 2026-08-27:
 | copy | predicate |
 |---|---|
 | `entitlement_active()` | `status IN ('active','past_due','trialing')` |
-| `idx_entitlements_active` | `WHERE status = 'active' OR status = 'past_due'` |
+| `idx_entitlements_active` | `WHERE status IN ('active','past_due','trialing')` |
 
-**They already disagree — the index omits `trialing`.** That divergence is pre-existing and is
-reported here rather than fixed in passing, but it is the argument: two copies of one rule have
-already drifted, so adding a third is adding a known failure mode on purpose.
+**They AGREE today**, and that is precisely the argument. Migration `20260616120000` widened both to
+the canonical entitled set in one change, so the two are currently in step. A third copy is the one
+that would diverge — it would be added by a different change, for a different reason, with no
+mechanism keeping it aligned with the other two.
+
+CORRECTION: an earlier version of this document claimed the two already disagreed. That was wrong.
+It compared production's `entitlement_active()` against **genesis.sql:193** — the pre-migration
+declaration — rather than against production's actual index. Genesis declares the narrow predicate
+and `20260616120000` widens it, so a fresh apply and production converge. The error was reading a
+base declaration as an end state.
 
 **Recommended only if B is rejected**, and if so it should come with consolidating all three copies
 into one definition rather than leaving four.
