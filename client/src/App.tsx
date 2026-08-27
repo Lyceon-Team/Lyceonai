@@ -9,6 +9,7 @@ import {
 } from "@/contexts/SupabaseAuthContext";
 import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
+import { Analytics } from "@vercel/analytics/react";
 import "@/styles/tokens.css";
 import "@/styles/accessibility.css";
 
@@ -325,6 +326,7 @@ function App() {
           </SupabaseAuthProvider>
         </QueryClientProvider>
       </HelmetProvider>
+      <Analytics />
     </ErrorBoundary>
   );
 }
