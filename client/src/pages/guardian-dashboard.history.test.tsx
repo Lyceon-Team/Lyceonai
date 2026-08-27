@@ -97,14 +97,29 @@ describe("GuardianDashboard full-length history view UX", () => {
         }
 
         if (url === "/api/guardian/students/student-1/summary") {
+          // The guardian summary IS the student KPI envelope with the metric list
+          // narrowed. The previous fixture carried `student` and `progress` — a shape the
+          // route no longer returns, i.e. a fixture describing a contract that does not
+          // exist, which is how the crashed weakness card got past its own tests.
           return jsonResponse({
-            student: { id: "student-1", displayName: "Alex Student" },
-            progress: {
-              questionsAttempted: 80,
-              accuracy: 75,
-              currentStreakDays: 3,
+            modelVersion: "kpi-v1",
+            timezone: "America/Chicago",
+            week: { questionsSolved: 80, accuracy: 75, explanations: {} },
+            recency: null,
+            metrics: [
+              { id: "week_questions", label: "Questions (7d)", value: 80 },
+              { id: "week_accuracy", label: "Accuracy (7d)", value: 75 },
+              { id: "current_streak", label: "Streak", value: 3 },
+            ],
+            gating: {
+              historicalTrends: {
+                allowed: false,
+                requiredPlan: "paid",
+                reason:
+                  "Historical trend KPIs require an active paid entitlement.",
+              },
             },
-            metrics: [],
+            measurementModel: { official: [], weighted: [], diagnostic: [] },
           });
         }
 
@@ -175,5 +190,74 @@ describe("GuardianDashboard full-length history view UX", () => {
     expect(urls).toContain(
       "/api/guardian/students/student-1/exams/full-length/sessions?limit=12&include_incomplete=true",
     );
+  });
+});
+
+describe("GuardianDashboard linked-students contract", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * @spec [owner ruling 2026-08-24 bucket 2 step 5] | @implemented [2026-08-24]
+   *
+   * A SUCCESSFUL response whose `students` is not an array is a contract violation, not an
+   * empty roster. `|| []` rendered it as "No students linked yet" — a claim about the
+   * parent's account, made from a value never read. Same class as the `?? 0` that told a
+   * parent their child had answered nothing.
+   */
+  it("a malformed success renders the recoverable error, NOT 'no students linked'", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = asUrl(input);
+      if (url === "/api/guardian/students") {
+        // 200 OK, but `students` is not an array.
+        return jsonResponse({ students: null });
+      }
+      if (url === "/api/billing/status") {
+        return jsonResponse({
+          isPaid: true,
+          effectiveAccess: true,
+          hasLinkedStudent: true,
+          linkRequiredForPremium: false,
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<GuardianDashboard />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByText("We couldn't load students.")).toBeTruthy();
+    });
+    // The empty-roster copy must NOT appear: we did not establish that it is empty.
+    expect(screen.queryByText("No students linked yet")).toBeNull();
+  });
+
+  it("a genuinely empty roster still reads as empty, not as an error", async () => {
+    // The counterpart that makes the case above mean something: [] is a real answer.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = asUrl(input);
+      if (url === "/api/guardian/students") {
+        return jsonResponse({ students: [] });
+      }
+      if (url === "/api/billing/status") {
+        return jsonResponse({
+          isPaid: true,
+          effectiveAccess: true,
+          hasLinkedStudent: true,
+          linkRequiredForPremium: false,
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<GuardianDashboard />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("No students linked yet").length,
+      ).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("We couldn't load students.")).toBeNull();
   });
 });

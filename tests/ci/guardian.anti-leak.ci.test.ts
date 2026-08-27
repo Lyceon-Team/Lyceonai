@@ -266,7 +266,8 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/canonical-runtime-views")
   >("../../server/services/canonical-runtime-views");
-  // projectGuardianKpiView stays REAL — it is the projection under test.
+  // The KPI projection is gone (owner ruling 2026-08-26); the guardian route returns the
+  // builder's view directly, so the route itself is what this gate walks.
   return { ...actual, ...kpiMocks };
 });
 vi.mock("../../apps/api/src/services/fullLengthExam", () => examMocks);

@@ -1,5 +1,8 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import type {
+  CompleteExamResult,
+  FullLengthSessionHistoryItem,
+} from "../../apps/api/src/services/fullLengthExam";
 import { logger } from "../logger";
 import {
   diagnosticStateSchema,
@@ -807,61 +810,89 @@ export async function readAnsweredQuestionCount(
 }
 
 /**
- * @spec [owner standing rule 2026-08-21 — the guardian path is the student read plus a
- *   gate, with the scope narrowing applied as a PROJECTION of the one path; Doc 05B §6.5
- *   guardian-granted event vocabulary (events / accuracy / streak); owner ruling
- *   2026-08-17 — an unestablished count is null and is omitted, never rendered as zero]
- * | @implemented [2026-08-21]
+ * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
+ *   payload, derived via a projection function rather than independently constructed;
+ *   SCL-044 (PROPOSED) — the guardian exam session list has no owning document, capability
+ *   kept and to be specified] | @implemented [2026-08-24]
  *
- * plain English: narrows the student KPI view to the three metrics a guardian may see, and
- * passes their values through UNCHANGED. It computes nothing.
+ * plain English: one projection of the full-length session history, and a guardian
+ * narrowing of it.
  *
- * WHAT THIS REPLACES, AND WHY IT MATTERED.
- *   The guardian route used to pull those metric values out and coerce them with `?? 0`.
- *   That turned "we could not establish this figure" into a confident zero on a parent's
- *   screen — the same NULL-to-zero fail-open that told students their least-practised
- *   skills were their worst. The student surface deliberately carries `null` and omits the
- *   figure; the guardian surface was contradicting it. `null` now survives to the client,
- *   which must omit rather than render it.
+ * WHY THIS EXISTS. The two routes each mapped `listExamSessions` inline, and the two maps
+ * had drifted in three ways at once:
+ *   1. SHAPE — the student spread `...session` (every field the service returns, forever);
+ *      the guardian named six fields.
+ *   2. PRIVILEGE — the student gated `reportAvailable` on the student's paid access; the
+ *      guardian did not gate it at all, so a guardian could be told a report was available
+ *      when the student's own entitlement said otherwise. That is the same defect closed in
+ *      #644 for historical trends, in a second place, and it is why extraction is not
+ *      cosmetic: two inline maps cannot disagree if there is only one map.
+ *   3. INVENTION — the guardian emitted `reviewAvailable: false` for an endpoint that does
+ *      not exist (removed in #644).
  *
- * It sits beside projectGuardianFullLengthReportView because that function is the pattern:
- * ONE builder, then a pure projection for the narrower audience.
+ * The student projection is the single derivation. The guardian projection is that result
+ * with `reviewAvailable` removed — structurally a subset, not a re-derivation, so a field
+ * added to the student item reaches the guardian automatically and a field the student does
+ * not have cannot be added to the guardian.
+ *
+ * `hasPaidAccess` is the STUDENT's, on both paths. The caller resolves it; this function
+ * never guesses it, and there is no default — an unresolved entitlement is the caller's
+ * problem to fail closed on, not this function's to paper over.
  */
-export function projectGuardianKpiView(view: StudentKpiView) {
-  const GUARDIAN_METRIC_IDS = new Set([
-    "week_questions",
-    "week_accuracy",
-    "current_streak",
-  ]);
+export type StudentExamSessionListItem = {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+};
 
-  const metrics = view.metrics.filter((metric) =>
-    GUARDIAN_METRIC_IDS.has(metric.id),
+export type GuardianExamSessionListItem = Omit<
+  StudentExamSessionListItem,
+  "reviewAvailable"
+>;
+
+export function projectStudentExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): StudentExamSessionListItem[] {
+  // FIELDS ARE NAMED, NEVER SPREAD.
+  //   `...session` was what both routes did, and the guardian anti-leak gate caught it the
+  //   moment the two were unified: the gate drives `listExamSessions` with rows carrying
+  //   every RULE-4 column and a spread carries all of them to the client. CLAUDE.md states
+  //   the rule directly — "a new field on a spread object bypasses per-field null-outs and
+  //   opens a leak one layer up" (MA-07 #419). The service emits exactly these nine fields
+  //   today, so naming them changes nothing now; what it changes is the FUTURE, where a
+  //   tenth field has to be added here deliberately instead of arriving unreviewed.
+  return sessions.map((session) => ({
+    sessionId: session.sessionId,
+    status: session.status,
+    currentSection: session.currentSection,
+    currentModule: session.currentModule,
+    testFormId: session.testFormId,
+    startedAt: session.startedAt,
+    completedAt: session.completedAt,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    reportAvailable: session.status === "completed" && opts.hasPaidAccess,
+    reviewAvailable: session.status === "completed",
+  }));
+}
+
+export function projectGuardianExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): GuardianExamSessionListItem[] {
+  // Derived FROM the student projection, never alongside it.
+  return projectStudentExamSessionList(sessions, opts).map(
+    ({ reviewAvailable: _reviewAvailable, ...rest }) => rest,
   );
-  const byId = new Map(metrics.map((metric) => [metric.id, metric]));
-
-  // `?? null`, never `?? 0`. A metric the builder could not establish stays absent.
-  const numericOrNull = (id: string): number | null => {
-    const value = byId.get(id)?.value;
-    return value === null || value === undefined ? null : Number(value);
-  };
-
-  return {
-    progress: {
-      questionsAttempted: numericOrNull("week_questions"),
-      accuracy: numericOrNull("week_accuracy"),
-      currentStreakDays: numericOrNull("current_streak"),
-      explanations: Object.fromEntries(
-        metrics.map((metric) => [metric.id, metric.explanation]),
-      ),
-    },
-    metrics,
-    measurementModel: {
-      official: [],
-      weighted: [],
-      diagnostic: metrics.map((metric) => metric.id),
-    },
-    modelVersion: view.modelVersion,
-  };
 }
 
 export function projectGuardianFullLengthReportView(

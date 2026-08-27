@@ -25,10 +25,13 @@ import {
   buildStudentKpiViewFromCanonical,
   buildStudentFullLengthReportView,
   projectGuardianFullLengthReportView,
-  projectGuardianKpiView,
+  projectGuardianExamSessionList,
 } from "../services/canonical-runtime-views";
 import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-month-view";
-import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
+import {
+  resolveHistoricalTrendsAccess,
+  resolvePaidKpiAccessForStudent,
+} from "../services/kpi-access";
 
 /**
  * The calendar day shape, DERIVED from the builder's own return type rather than restated.
@@ -493,7 +496,10 @@ router.get(
 
       const { data: student, error: studentError } = await supabaseServer
         .from("profiles")
-        .select("id, display_name")
+        // `display_name` is no longer selected: it is no longer serialised, and Doc 05B
+        // §10.5 is explicit that the handler projects the columns it needs rather than
+        // reading wide and trimming at the edge.
+        .select("id")
         .eq("id", studentId)
         .eq("role", "student")
         .single();
@@ -502,9 +508,24 @@ router.get(
         return res.status(404).json({ error: "Student not found", requestId });
       }
 
-      // Same builder the student KPI route calls (server/routes/legacy/progress.ts),
-      // then a PURE projection to the guardian-granted metric set. No second derivation
-      // and no coercion — see projectGuardianKpiView.
+      // Same builder the student KPI route calls (server/routes/legacy/progress.ts).
+      // ONE derivation, no projection: the guardian body IS the student view.
+      //
+      // THE METRIC ALLOWLIST IS GONE (owner ruling 2026-08-26).
+      //   `projectGuardianKpiView` filtered `metrics` to a hardcoded
+      //   {week_questions, week_accuracy, current_streak}. That set was not read from a
+      //   spec constant, an entitlement, or the database — it was the field list of the
+      //   guardian-only `progress` block (bf544c8, 2026-08-21), and it outlived the block
+      //   that needed it. It is exactly the base set `buildStudentMetrics` emits
+      //   unconditionally, so it was a STATIC restatement of the gate
+      //   `resolveHistoricalTrendsAccess` already makes DYNAMICALLY one line below.
+      //
+      //   Live consequence while it stood: for a student WITH paid access the builder
+      //   emitted `recency_accuracy` and the filter stripped it back out, so the guardian
+      //   of a paying student saw LESS than the student — the "no less" half of the rule,
+      //   broken by the remnant. It also left `measurementModel.diagnostic` (built from
+      //   the student's full metric list) naming a metric the payload no longer carried.
+      //   Deleting the filter closes both; the mismatch was the filter, not the diagnostic.
       //
       // THE SECOND ARGUMENT USED TO BE A HARDCODED `true`.
       //   The student route derives it from the student's own entitlement, fail-closed. So
@@ -523,7 +544,6 @@ router.get(
         studentId,
         includeHistoricalTrends,
       );
-      const projected = projectGuardianKpiView(studentView);
 
       await emitGuardianAccessEvent({
         eventType: "guardian_report_viewed",
@@ -533,12 +553,18 @@ router.get(
         details: { surface: "summary" },
       });
 
+      // The guardian body IS the student envelope. Not a subset of it, not a reshaping of
+      // it — the same object, gated only by the shared entitlement derivation above. No
+      // `student` block: it was a guardian-only addition, and the dashboard already knows
+      // which student it selected.
+      //
+      // The student route additionally attaches an `entitlement` block, which this builder
+      // does not produce and this route does not add. Under Doc 05B §10.3 there is ONE
+      // route and therefore one response, so nothing decides what reaches "the guardian
+      // version" — the question is moot at the topology change and is not answered here
+      // (owner ruling 2026-08-26, Q1).
       return res.json({
-        student: {
-          id: student.id,
-          displayName: student.display_name,
-        },
-        ...projected,
+        ...studentView,
         requestId,
       });
     } catch (err) {
@@ -611,18 +637,14 @@ router.get(
         includeIncomplete,
       });
 
-      const projected = sessions.map((session) => ({
-        sessionId: session.sessionId,
-        status: session.status,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        createdAt: session.createdAt,
-        reportAvailable: session.status === "completed",
-        // `reviewAvailable: false` used to be emitted here. There is no guardian review
-        // endpoint, so the value was not "false" — it was UNKNOWN, asserted as a fact on a
-        // parent's screen. Same class as the `?? 0` that told a parent their child had
-        // answered nothing. A field the surface cannot establish is not emitted at all.
-      }));
+      // The STUDENT's paid access, resolved for the student — not the guardian's, and not
+      // skipped. The inline map this replaced computed `reportAvailable` with no
+      // entitlement gate at all, so a guardian could be told a report was available when
+      // the student's own entitlement said otherwise (Doc 04C invariant #7).
+      const studentAccess = await resolvePaidKpiAccessForStudent(studentId);
+      const projected = projectGuardianExamSessionList(sessions, {
+        hasPaidAccess: studentAccess.hasPaidAccess,
+      });
 
       logger.info(
         "GUARDIAN",

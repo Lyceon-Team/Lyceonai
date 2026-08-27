@@ -1,6 +1,6 @@
 /**
  * Full-Length SAT Exam API Routes
- * 
+ *
  * Implements server-authoritative exam flow with:
  * - Cookie-only auth (no Bearer tokens)
  * - CSRF protection on all POST endpoints
@@ -10,13 +10,22 @@
  */
 
 import { Router, Request, Response, type NextFunction } from "express";
-import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
+import {
+  requireRequestUser,
+  requireSupabaseAuth,
+} from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { buildCsrfAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
+import {
+  buildCsrfAllowedOrigins,
+  normalizeOrigin,
+} from "../middleware/origin-utils";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
-import { buildStudentFullLengthReportView } from "../services/canonical-runtime-views";
+import {
+  buildStudentFullLengthReportView,
+  projectStudentExamSessionList,
+} from "../services/canonical-runtime-views";
 import { z } from "zod";
 
 const router = Router();
@@ -55,7 +64,7 @@ function sendRouteError(
   res: Response,
   status: number,
   error: string,
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
 ) {
   if (error === "csrf_blocked") {
     return res.status(status).json({
@@ -79,7 +88,12 @@ function sendPremiumRequired(
   req: Request,
   res: Response,
   feature: string,
-  access: { reason: string; plan: string; status: string; currentPeriodEnd?: string | null },
+  access: {
+    reason: string;
+    plan: string;
+    status: string;
+    currentPeriodEnd?: string | null;
+  },
 ) {
   return res.status(402).json({
     error: "Premium feature required",
@@ -102,7 +116,10 @@ async function ensureFullLengthPremium(
   user: { id: string; role: string },
   feature = "full_length",
 ): Promise<boolean> {
-  const access = await resolvePaidKpiAccessForUser(user.id, user.role as "student" | "guardian" | "admin");
+  const access = await resolvePaidKpiAccessForUser(
+    user.id,
+    user.role as "student" | "guardian" | "admin",
+  );
   if (!access.hasPaidAccess) {
     sendPremiumRequired(req, res, feature, {
       reason: access.reason,
@@ -115,7 +132,11 @@ async function ensureFullLengthPremium(
   return true;
 }
 
-function sendClientInstanceConflict(req: Request, res: Response, clientInstanceId: string | null) {
+function sendClientInstanceConflict(
+  req: Request,
+  res: Response,
+  clientInstanceId: string | null,
+) {
   return res.status(409).json({
     error: "client_instance_conflict",
     code: "CLIENT_INSTANCE_CONFLICT",
@@ -126,7 +147,11 @@ function sendClientInstanceConflict(req: Request, res: Response, clientInstanceI
 }
 
 function isClientInstanceConflict(message: string): boolean {
-  return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
+  return (
+    message.includes("client instance conflict") ||
+    message.includes("client_instance") ||
+    message.includes("Session client instance conflict")
+  );
 }
 
 function getClientInstanceIdFromError(error: unknown): string | null {
@@ -137,7 +162,11 @@ function getClientInstanceIdFromError(error: unknown): string | null {
   return null;
 }
 
-function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction) {
+function enforceMutatingGetCsrf(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   const origin = req.headers.origin ? String(req.headers.origin) : "";
   const referer = req.headers.referer ? String(req.headers.referer) : "";
 
@@ -169,221 +198,284 @@ function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction)
 /**
  * POST /api/full-length/sessions
  * Create a new full-length exam session
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-      return;
-    }
+router.post(
+  "/sessions",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+      if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+        return;
+      }
 
-    const parsed = createSessionSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = createSessionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    const session = await fullLengthExamService.createExamSession({
-      userId: user.id,
-      testFormId: parsed.data.test_form_id,
-      clientInstanceId: parsed.data.client_instance_id,
-      role: user.role,
-    });
-
-    return res.status(201).json({ session });
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Create session error:", error);
-    const message = error instanceof Error ? error.message : "";
-
-    if (message.includes("Test form not found")) {
-      return sendRouteError(req, res, 404, "Test form not found");
-    }
-
-    if (message.includes("Test form is not published")) {
-      return sendRouteError(req, res, 400, "Test form is not published");
-    }
-
-    if (message.includes("Test form has") || message.includes("Test form is structurally incomplete") || message.includes("Active session exists for a different test form")) {
-      return sendRouteError(req, res, 409, message);
-    }
-
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
-    }
-
-    const rateLimitCode = (error as any)?.code as string | undefined;
-    if (rateLimitCode === "FULL_LENGTH_QUOTA_EXCEEDED") {
-      const gate = (error as any)?.rateLimit as any;
-      return res.status(402).json({
-        error: "Full-length quota reached",
-        code: "FULL_LENGTH_QUOTA_EXCEEDED",
-        limitType: "full_length",
-        current: gate?.current ?? null,
-        limit: gate?.limit ?? 2,
-        resetAt: gate?.resetAt ?? null,
-        message: gate?.message ?? "You have reached the full-length start limit.",
-        requestId: req.requestId,
+      const session = await fullLengthExamService.createExamSession({
+        userId: user.id,
+        testFormId: parsed.data.test_form_id,
+        clientInstanceId: parsed.data.client_instance_id,
+        role: user.role,
       });
-    }
 
-    if (rateLimitCode === "RATE_LIMIT_DB_UNAVAILABLE") {
-      return res.status(503).json({
-        error: "Rate-limit check unavailable",
-        code: "RATE_LIMIT_DB_UNAVAILABLE",
-        message: "Unable to verify full-length quota right now. Please retry shortly.",
-        requestId: req.requestId,
-      });
-    }
+      return res.status(201).json({ session });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Create session error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+      if (message.includes("Test form not found")) {
+        return sendRouteError(req, res, 404, "Test form not found");
+      }
+
+      if (message.includes("Test form is not published")) {
+        return sendRouteError(req, res, 400, "Test form is not published");
+      }
+
+      if (
+        message.includes("Test form has") ||
+        message.includes("Test form is structurally incomplete") ||
+        message.includes("Active session exists for a different test form")
+      ) {
+        return sendRouteError(req, res, 409, message);
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      const rateLimitCode = (error as any)?.code as string | undefined;
+      if (rateLimitCode === "FULL_LENGTH_QUOTA_EXCEEDED") {
+        const gate = (error as any)?.rateLimit as any;
+        return res.status(402).json({
+          error: "Full-length quota reached",
+          code: "FULL_LENGTH_QUOTA_EXCEEDED",
+          limitType: "full_length",
+          current: gate?.current ?? null,
+          limit: gate?.limit ?? 2,
+          resetAt: gate?.resetAt ?? null,
+          message:
+            gate?.message ?? "You have reached the full-length start limit.",
+          requestId: req.requestId,
+        });
+      }
+
+      if (rateLimitCode === "RATE_LIMIT_DB_UNAVAILABLE") {
+        return res.status(503).json({
+          error: "Rate-limit check unavailable",
+          code: "RATE_LIMIT_DB_UNAVAILABLE",
+          message:
+            "Unable to verify full-length quota right now. Please retry shortly.",
+          requestId: req.requestId,
+        });
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
+    }
+  },
+);
 
 /**
  * GET /api/full-length/sessions
  * List user's full-length sessions for history/report navigation.
  */
-router.get("/sessions", requireSupabaseAuth, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+router.get(
+  "/sessions",
+  requireSupabaseAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+      if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+        return;
+      }
+
+      const rawLimit = Number(req.query.limit ?? 20);
+      const limit = Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(Math.trunc(rawLimit), 50))
+        : 20;
+      const includeIncompleteRaw = String(
+        req.query.include_incomplete ?? "",
+      ).toLowerCase();
+      const includeIncomplete =
+        includeIncompleteRaw === "1" || includeIncompleteRaw === "true";
+
+      const sessions = await fullLengthExamService.listExamSessions({
+        userId: user.id,
+        limit,
+        includeIncomplete,
+      });
+      const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+
+      return res.json({
+        // ONE projection, shared with the guardian route (services/canonical-runtime-views).
+        // These used to be two inline maps that had drifted in shape, in privilege, and in
+        // invented fields.
+        sessions: projectStudentExamSessionList(sessions, {
+          hasPaidAccess: access.hasPaidAccess,
+        }),
+        reportAccess: {
+          hasPaidAccess: access.hasPaidAccess,
+          reason: access.reason,
+        },
+        requestId: req.requestId,
+      });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] List sessions error:", error);
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-      return;
-    }
-
-    const rawLimit = Number(req.query.limit ?? 20);
-    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(Math.trunc(rawLimit), 50)) : 20;
-    const includeIncompleteRaw = String(req.query.include_incomplete ?? "").toLowerCase();
-    const includeIncomplete = includeIncompleteRaw === "1" || includeIncompleteRaw === "true";
-
-    const sessions = await fullLengthExamService.listExamSessions({
-      userId: user.id,
-      limit,
-      includeIncomplete,
-    });
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-
-    return res.json({
-      sessions: sessions.map((session) => ({
-        ...session,
-        reportAvailable: session.status === "completed" && access.hasPaidAccess,
-        reviewAvailable: session.status === "completed",
-      })),
-      reportAccess: {
-        hasPaidAccess: access.hasPaidAccess,
-        reason: access.reason,
-      },
-      requestId: req.requestId,
-    });
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] List sessions error:", error);
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * GET /api/full-length/sessions/current
  * Get current session state with current question
- * 
+ *
  * Security:
  * - Requires auth
  * - Returns only user's own sessions
  * - No answers/explanations in response (anti-leak)
  */
-router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.get(
+  "/sessions/current",
+  requireSupabaseAuth,
+  enforceMutatingGetCsrf,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const sessionId = req.query.sessionId as string;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId query parameter required");
-    }
+      const sessionId = req.query.sessionId as string;
+      if (!sessionId) {
+        return sendRouteError(
+          req,
+          res,
+          400,
+          "sessionId query parameter required",
+        );
+      }
 
-    const clientInstanceId = typeof req.query.client_instance_id === "string" ? req.query.client_instance_id : undefined;
-    const result = await fullLengthExamService.getCurrentSession(sessionId, user.id, clientInstanceId);
+      const clientInstanceId =
+        typeof req.query.client_instance_id === "string"
+          ? req.query.client_instance_id
+          : undefined;
+      const result = await fullLengthExamService.getCurrentSession(
+        sessionId,
+        user.id,
+        clientInstanceId,
+      );
 
-    return res.json(result);
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Get current session error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
+      return res.json(result);
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Get current session error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/start
  * Start the exam
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.post(
+  "/sessions/:sessionId/start",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
 
-    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    await fullLengthExamService.startExam(sessionId, user.id, parsed.data.client_instance_id);
+      await fullLengthExamService.startExam(
+        sessionId,
+        user.id,
+        parsed.data.client_instance_id,
+      );
 
-    return res.json({ success: true });
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Start exam error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-    
-    if (message.includes("already started")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
+      return res.json({ success: true });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Start exam error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("already started")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/answer
  * Submit an answer to a question
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
@@ -391,64 +483,75 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtect
  * - Idempotent
  * - Validates question belongs to current module
  */
-router.post("/sessions/:sessionId/answer", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.post(
+  "/sessions/:sessionId/answer",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
 
-    const parsed = submitAnswerSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = submitAnswerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    await fullLengthExamService.submitAnswer({
-      sessionId,
-      userId: user.id,
-      questionId: parsed.data.questionId,
-      selectedAnswer: parsed.data.selectedAnswer,
-      clientInstanceId: parsed.data.client_instance_id,
-      clientAttemptId: parsed.data.client_attempt_id,
-    });
+      await fullLengthExamService.submitAnswer({
+        sessionId,
+        userId: user.id,
+        questionId: parsed.data.questionId,
+        selectedAnswer: parsed.data.selectedAnswer,
+        clientInstanceId: parsed.data.client_instance_id,
+        clientAttemptId: parsed.data.client_attempt_id,
+      });
 
-    return res.json({ success: true });
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Submit answer error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
+      return res.json({ success: true });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Submit answer error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (message.includes("already submitted with different selection")) {
-      return sendRouteError(req, res, 409, "Duplicate answer submission");
-    }
-    
-    if (message.includes("not in progress")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
-    
-    if (message.includes("time has expired")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
-    
-    if (message.includes("not found in current module")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+      if (message.includes("already submitted with different selection")) {
+        return sendRouteError(req, res, 409, "Duplicate answer submission");
+      }
+
+      if (message.includes("not in progress")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (message.includes("time has expired")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (message.includes("not found in current module")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/modules/:moduleId/calculator-state
@@ -472,7 +575,9 @@ router.post(
 
       const parsed = calculatorStateSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
-        return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
       }
 
       await fullLengthExamService.persistModuleCalculatorState({
@@ -505,252 +610,301 @@ router.post(
       }
 
       if (isClientInstanceConflict(message)) {
-        return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
       }
 
       return sendRouteError(req, res, 500, "Internal error");
     }
-  }
+  },
 );
 
 /**
  * POST /api/full-length/sessions/:sessionId/module/submit
  * Submit the current module (end module, compute performance)
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
  * - User ID from auth only
  * - Computes Module 2 difficulty deterministically
  */
-router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.post(
+  "/sessions/:sessionId/module/submit",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
 
-    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    const result = await fullLengthExamService.submitModule({
-      sessionId,
-      userId: user.id,
-      clientInstanceId: parsed.data.client_instance_id,
-    });
+      const result = await fullLengthExamService.submitModule({
+        sessionId,
+        userId: user.id,
+        clientInstanceId: parsed.data.client_instance_id,
+      });
 
-    return res.json(result);
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Submit module error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-    
-    if (message.includes("not in progress")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
-    
-    if (message.includes("already submitted")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
+      return res.json(result);
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Submit module error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("not in progress")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (message.includes("already submitted")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/break/continue
  * Continue from break to Math Module 1
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.post(
+  "/sessions/:sessionId/break/continue",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
 
-    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    await fullLengthExamService.continueFromBreak(sessionId, user.id, parsed.data.client_instance_id);
+      await fullLengthExamService.continueFromBreak(
+        sessionId,
+        user.id,
+        parsed.data.client_instance_id,
+      );
 
-    return res.json({ success: true });
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Continue from break error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-    
-    if (message.includes("Not on break")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
+      return res.json({ success: true });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Continue from break error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("Not on break")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/complete
  * Complete the exam and get final results
- * 
+ *
  * Security:
  * - Requires auth
  * - CSRF protected
  * - User ID from auth only
  * - Returns answers/explanations only after completion
  */
-router.post("/sessions/:sessionId/complete", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+router.post(
+  "/sessions/:sessionId/complete",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
 
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
 
-    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
-    }
+      const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", {
+          details: parsed.error.errors,
+        });
+      }
 
-    const result = await fullLengthExamService.completeExam({
-      sessionId,
-      userId: user.id,
-      clientInstanceId: parsed.data.client_instance_id,
-    });
+      const result = await fullLengthExamService.completeExam({
+        sessionId,
+        userId: user.id,
+        clientInstanceId: parsed.data.client_instance_id,
+      });
 
-    return res.json(result);
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Complete exam error:", error);
-    const message = error instanceof Error ? error.message : "";
-    
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-    
-    if (message.includes("Invalid exam state")) {
-      return sendRouteError(req, res, 400, "Invalid exam state");
-    }
+      return res.json(result);
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Complete exam error:", error);
+      const message = error instanceof Error ? error.message : "";
 
-    if (isClientInstanceConflict(message)) {
-      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
-    }
-    
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
 
+      if (message.includes("Invalid exam state")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendClientInstanceConflict(
+          req,
+          res,
+          getClientInstanceIdFromError(error),
+        );
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
+    }
+  },
+);
 
 /**
  * GET /api/full-length/sessions/:sessionId/report
  * Get full score report (raw/scaled/domain/skill) after completion.
  */
-router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+router.get(
+  "/sessions/:sessionId/report",
+  requireSupabaseAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+      if (
+        !(await ensureFullLengthPremium(req, res, user, "full_test_analytics"))
+      ) {
+        return;
+      }
+
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
+
+      const result = await fullLengthExamService.getExamReport({
+        sessionId,
+        userId: user.id,
+      });
+
+      return res.json(buildStudentFullLengthReportView(result));
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Get report error:", error);
+      const message = error instanceof Error ? error.message : "";
+
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("Results locked until completion")) {
+        return sendRouteError(req, res, 423, "Results locked until completion");
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_test_analytics"))) {
-      return;
-    }
-
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
-
-    const result = await fullLengthExamService.getExamReport({
-      sessionId,
-      userId: user.id,
-    });
-
-    return res.json(buildStudentFullLengthReportView(result));
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Get report error:", error);
-    const message = error instanceof Error ? error.message : "";
-
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-
-    if (message.includes("Results locked until completion")) {
-      return sendRouteError(req, res, 423, "Results locked until completion");
-    }
-
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 /**
  * GET /api/full-length/sessions/:sessionId/review
  * Review unlocks only after exam completion.
  */
-router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+router.get(
+  "/sessions/:sessionId/review",
+  requireSupabaseAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+
+      const { sessionId } = req.params;
+      if (!sessionId) {
+        return sendRouteError(req, res, 400, "sessionId required");
+      }
+
+      const review = await fullLengthExamService.getExamReviewAfterCompletion({
+        sessionId,
+        userId: user.id,
+      });
+
+      return res.json(review);
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Get review error:", error);
+      const message = error instanceof Error ? error.message : "";
+
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("Review locked until completion")) {
+        return sendRouteError(req, res, 423, "Review locked until completion");
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
     }
-
-    const { sessionId } = req.params;
-    if (!sessionId) {
-      return sendRouteError(req, res, 400, "sessionId required");
-    }
-
-    const review = await fullLengthExamService.getExamReviewAfterCompletion({
-      sessionId,
-      userId: user.id,
-    });
-
-    return res.json(review);
-  } catch (error: unknown) {
-    console.error("[FULL-LENGTH] Get review error:", error);
-    const message = error instanceof Error ? error.message : "";
-
-    if (message.includes("not found") || message.includes("access denied")) {
-      return sendRouteError(req, res, 404, "Session not found");
-    }
-
-    if (message.includes("Review locked until completion")) {
-      return sendRouteError(req, res, 423, "Review locked until completion");
-    }
-
-    return sendRouteError(req, res, 500, "Internal error");
-  }
-});
+  },
+);
 export default router;
-

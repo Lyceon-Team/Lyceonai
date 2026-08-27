@@ -386,7 +386,34 @@ export default function GuardianDashboard() {
     return <Redirect to="/dashboard" />;
   }
 
-  const students = studentsData?.students || [];
+  /**
+   * A SUCCESSFUL response whose `students` is not an array is a contract violation, not an
+   * empty roster. `|| []` rendered it as "Connection Required" — which reads to a parent as
+   * a fact about their account ("you have no linked student") when the truth is that we
+   * could not establish the roster at all. Same distinction as `weaknessDomains` above, and
+   * the same class as the `?? 0` that told a parent their child had answered nothing.
+   */
+  const students = Array.isArray(studentsData?.students)
+    ? studentsData.students
+    : null;
+  const studentsMalformed = studentsData !== undefined && students === null;
+
+  const selectedStudent =
+    students?.find((student) => student.id === selectedStudentId) ?? null;
+
+  /**
+   * The guardian summary IS the student KPI envelope with the metric list narrowed — there
+   * is no `progress` object any more, because `progress.questionsAttempted` and
+   * `metrics[id=week_questions].value` were the same number twice. Derived in the render
+   * body: a pure function of fetched data never belongs in a useEffect (§11.4).
+   */
+  const summaryMetricValue = (id: string): number | null => {
+    const metric = summaryData?.metrics?.find(
+      (candidate: { id: string; value: number | null }) => candidate.id === id,
+    );
+    const value = metric?.value;
+    return value === null || value === undefined ? null : Number(value);
+  };
   const showPaidUnlinkedCta =
     !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
@@ -447,7 +474,17 @@ export default function GuardianDashboard() {
             </Alert>
           )}
 
-          {students.length === 0 && (
+          {studentsMalformed && (
+            <div className="py-2">
+              <RecoveryNotice
+                title="We couldn't load your linked students."
+                message="Try again. If this keeps happening, refresh the page."
+                onRetry={() => void refetchStudents()}
+              />
+            </div>
+          )}
+
+          {students?.length === 0 && (
             <Card className="bg-card border-border/60">
               <CardHeader>
                 <CardTitle className="text-[#0F2E48]">
@@ -568,9 +605,11 @@ export default function GuardianDashboard() {
                 </div>
               </div>
               <CardDescription>
-                {students.length === 0
-                  ? "No students linked yet. Use the form above to link a student."
-                  : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
+                {students === null
+                  ? "Linked students unavailable."
+                  : students.length === 0
+                    ? "No students linked yet. Use the form above to link a student."
+                    : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -578,7 +617,12 @@ export default function GuardianDashboard() {
                 <div className="text-center py-8 text-[#0F2E48]/60">
                   Loading students...
                 </div>
-              ) : studentsError ? (
+              ) : studentsError || students === null ? (
+                /* `students === null` is a SUCCESSFUL response whose `students` was not an
+                   array. It renders here, beside the failed fetch, because both mean the
+                   same thing to a parent: we could not establish the roster. What it must
+                   NOT do is fall through to "No students linked yet" — that is a claim
+                   about their account, made from a value we never read. */
                 <div className="py-6">
                   <RecoveryNotice
                     title="We couldn't load students."
@@ -664,8 +708,10 @@ export default function GuardianDashboard() {
                     Student Progress
                   </CardTitle>
                   <CardDescription>
-                    {summaryData?.student?.displayName || "Student"}'s activity
-                    in the last 7 days
+                    {selectedStudent?.display_name ||
+                      selectedStudent?.email?.split("@")[0] ||
+                      "Student"}
+                    's activity in the last 7 days
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -687,7 +733,7 @@ export default function GuardianDashboard() {
                         <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
                           <Clock className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.currentStreakDays}
+                            {summaryMetricValue("current_streak") ?? "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
                             Day Streak
@@ -696,7 +742,7 @@ export default function GuardianDashboard() {
                         <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
                           <Target className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.questionsAttempted}
+                            {summaryMetricValue("week_questions") ?? "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
                             Questions Attempted (7d)
@@ -707,8 +753,8 @@ export default function GuardianDashboard() {
                             %
                           </div>
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.accuracy !== null
-                              ? `${summaryData.progress.accuracy}%`
+                            {summaryMetricValue("week_accuracy") !== null
+                              ? `${summaryMetricValue("week_accuracy")}%`
                               : "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
@@ -735,7 +781,7 @@ export default function GuardianDashboard() {
                             ))}
                           </div>
                         )}
-                      {summaryData.progress.questionsAttempted === 0 && (
+                      {summaryMetricValue("week_questions") === 0 && (
                         <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
                           <p className="text-amber-800 text-sm">
                             No practice activity in the last 7 days. Encourage

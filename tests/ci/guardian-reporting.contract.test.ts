@@ -274,12 +274,11 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/canonical-runtime-views")
   >("../../server/services/canonical-runtime-views");
-  return {
-    ...kpiMocks,
-    // projectGuardianKpiView is a pure projection of the student view — the behaviour
-    // under test on this surface. Only the IO-bearing builders are stubbed.
-    projectGuardianKpiView: actual.projectGuardianKpiView,
-  };
+  // Only the IO-bearing builders are stubbed; everything else stays real. `actual` is
+  // still imported so that a future stub can be layered over the real module rather than
+  // replacing it wholesale.
+  void actual;
+  return { ...kpiMocks };
 });
 
 function buildApp(role: "guardian" | "student" = "guardian") {
@@ -559,11 +558,12 @@ describe("Guardian reporting runtime contract", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.student).toEqual({
-      id: "student-1",
-      displayName: "Student One",
-    });
-    expect(response.body.student.email).toBeUndefined();
+    // `student: {id, displayName}` was a guardian-ONLY addition — a key the student's own
+    // KPI body never had, so it broke the strict-subset invariant (Doc 04C #7). The
+    // dashboard already knows which student it selected; it does not need the server to
+    // name them back inside a KPI payload.
+    expect(response.body).not.toHaveProperty("student");
+    expect(response.body).not.toHaveProperty("progress");
     expect(response.body.questions).toBeUndefined();
     expect(response.body.correct_answer).toBeUndefined();
     expect(response.body.explanation).toBeUndefined();
@@ -584,45 +584,50 @@ describe("Guardian reporting runtime contract", () => {
       "student-1",
       false,
     );
-    expect(response.body.progress).toEqual({
-      questionsAttempted: 30,
-      accuracy: 80,
-      currentStreakDays: 3,
-      explanations: {
-        week_questions: expect.objectContaining({
-          ruleId: "RULE_WEEK_QUESTIONS",
-        }),
-        week_accuracy: expect.objectContaining({
-          ruleId: "RULE_WEEK_ACCURACY",
-        }),
-        current_streak: expect.objectContaining({
-          ruleId: "RULE_CURRENT_STREAK",
-        }),
-      },
-    });
+    // `progress` is gone. The same three numbers live in `metrics` — where the student has
+    // them — and are asserted from there below. Two shapes for one fact was the
+    // duplication ruled out in Q4.
     const metrics = response.body.metrics as Array<{
       id: string;
       value: number | null;
     }>;
     const metricValue = (id: string): number | null | undefined =>
       metrics.find((metric) => metric.id === id)?.value;
+    // EVERY metric the builder emitted, in order. Not a guardian-granted subset: the
+    // allowlist that produced one was deleted 2026-08-26 (owner ruling) — it was the field
+    // list of the removed `progress` block, and it re-decided statically what the
+    // entitlement gate already decides dynamically.
     expect(metrics.map((metric) => metric.id)).toEqual([
       "week_questions",
       "week_accuracy",
       "current_streak",
+      "recency_accuracy",
     ]);
     expect(metricValue("week_questions")).toBe(30);
     expect(metricValue("week_accuracy")).toBe(80);
     expect(metricValue("current_streak")).toBe(3);
+    expect(metricValue("recency_accuracy")).toBe(78);
+    // PASSED THROUGH from the builder, unfiltered — it is the student's value verbatim.
+    // The guardian projection used to hardcode `official: []` / `weighted: []` and rebuild
+    // `diagnostic` from its own filtered list; the literals could never track the builder,
+    // so if it ever populated official/weighted the guardian's copy stayed empty forever.
+    //
+    // `diagnostic` names `recency_accuracy` and the guardian now RECEIVES `recency_accuracy`
+    // — the description and the payload agree again. The mismatch flagged as owner question
+    // 2 was the metric filter, not the diagnostic list, and it went with the filter.
     expect(response.body.measurementModel).toEqual({
       official: [],
       weighted: [],
-      diagnostic: ["week_questions", "week_accuracy", "current_streak"],
+      diagnostic: [
+        "week_questions",
+        "week_accuracy",
+        "current_streak",
+        "recency_accuracy",
+      ],
     });
-    // Old-gen engagement metrics are dropped under the genesis event vocabulary.
-    expect(
-      metrics.find((metric) => metric.id === "recency_accuracy"),
-    ).toBeUndefined();
+    // Old-gen engagement metrics are dropped under the genesis event vocabulary. Note that
+    // `recency_accuracy` is NOT one of them — it is a live, entitlement-gated metric and is
+    // asserted present above.
     expect(
       metrics.find((metric) => metric.id === "week_minutes"),
     ).toBeUndefined();

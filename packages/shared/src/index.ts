@@ -9,3 +9,4 @@ export * from "./diagnostic-state.js";
 export * from "./id.js";
 export * from "./rng.js";
 export * from "./env.js";
+export * from "./guardian-subject.js";

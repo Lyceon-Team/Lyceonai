@@ -75,14 +75,32 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
-vi.mock("../../server/lib/account", () => accountMocks);
-vi.mock("../../apps/api/src/services/fullLengthExam", () => reportServiceMocks);
-vi.mock("../../server/services/kpi-access", () => ({
+const kpiAccessMocks = {
+  // One mock for this module, not two. A second `vi.mock` for the same path silently wins
+  // or loses depending on order — the kind of ambiguity that makes a test's meaning depend
+  // on where it sits in the file.
   resolvePaidKpiAccessForUser: vi.fn(async () => ({
     hasPaidAccess: true,
     reason: "allowed",
   })),
-}));
+  resolvePaidKpiAccessForStudent: vi.fn(async () => ({
+    hasPaidAccess: true,
+    accountId: "acc-1",
+    plan: "paid" as const,
+    status: "active" as const,
+    currentPeriodEnd: null,
+    reason: "Active paid entitlement.",
+  })),
+};
+vi.mock("../../server/services/kpi-access", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/kpi-access")
+  >("../../server/services/kpi-access");
+  return { ...actual, ...kpiAccessMocks };
+});
+
+vi.mock("../../server/lib/account", () => accountMocks);
+vi.mock("../../apps/api/src/services/fullLengthExam", () => reportServiceMocks);
 vi.mock("../../server/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -168,6 +186,51 @@ describe("Guardian Full-Length Report Visibility Contract", () => {
         reportAvailable: false,
       }),
     ]);
+    // `reportAvailable` is now gated on the STUDENT's paid access, resolved for the student.
+    expect(kpiAccessMocks.resolvePaidKpiAccessForStudent).toHaveBeenCalledWith(
+      "student-1",
+    );
+  });
+
+  it("reportAvailable follows the STUDENT's entitlement, never the guardian's", async () => {
+    // The inline map this replaced computed `status === "completed"` with no entitlement
+    // term, so a guardian could be told a report was available when the student's own
+    // entitlement said otherwise — the #644 privilege divergence, in a second place.
+    kpiAccessMocks.resolvePaidKpiAccessForStudent.mockResolvedValueOnce({
+      hasPaidAccess: false,
+      accountId: null,
+      plan: "free" as const,
+      status: "inactive" as const,
+      currentPeriodEnd: null,
+      reason: "No active entitlement.",
+    } as never);
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    reportServiceMocks.listExamSessions.mockResolvedValue([
+      {
+        sessionId: "sess-completed-1",
+        status: "completed",
+        currentSection: "math",
+        currentModule: 2,
+        testFormId: "form-1",
+        startedAt: "2026-03-20T09:00:00.000Z",
+        completedAt: "2026-03-20T11:15:00.000Z",
+        createdAt: "2026-03-20T08:58:00.000Z",
+        updatedAt: "2026-03-20T11:15:00.000Z",
+      },
+    ]);
+
+    const router = (await import("../../server/routes/guardian-routes"))
+      .default;
+    const app = express();
+    app.use(express.json());
+    app.use("/api/guardian", router);
+
+    const res = await request(app).get(
+      "/api/guardian/students/student-1/exams/full-length/sessions",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.sessions[0].reportAvailable).toBe(false);
   });
 
   it("denies unlinked guardian for full-length history projection", async () => {
