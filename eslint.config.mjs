@@ -64,9 +64,10 @@ export default tseslint.config(
     //
     // Removing 287 false findings from an accepted count is not loosening the
     // ratchet — it is making the number mean what it claims to measure. Deliberately
-    // NOT extended to scripts/**/*.ts and scripts/**/*.js (335 further findings):
-    // that is a wider call than this change, and it is Karl's.
-    files: ["scripts/**/*.mjs"],
+    // Extended to scripts/assemble-batch.ts (17 no-console findings — all
+    // legitimate CLI output, same reasoning as the .mjs carve-out). The broader
+    // scripts/**/*.ts extension (335 findings) remains Karl's call.
+    files: ["scripts/**/*.mjs", "scripts/assemble-batch.ts"],
     languageOptions: {
       globals: {
         console: "readonly",
