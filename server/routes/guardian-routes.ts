@@ -4,6 +4,7 @@ import { requireGuardianEntitlement } from "../middleware/guardian-entitlement";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { auditGuardianLink } from "../services/guardian-link-audit";
 import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
 import { z } from "zod";
 import {
@@ -128,62 +129,6 @@ function errorCode(err: unknown): string | null {
   if (typeof err !== "object" || err === null) return null;
   const code = (err as { code?: unknown }).code;
   return typeof code === "string" ? code : null;
-}
-
-/**
- * @spec [Doc-01_V8, §35 Guardian-student linkage — "Additional audit table … captures every
- *        status change for traceability"] | @implemented [2026-08-26]
- *
- * plain English: record a guardian-link status change in `audit_logs`. What it does: writes
- * one row naming who acted, who it was about, what happened, and the before/after status.
- * Expected outcome: a durable trail of every link transition, queryable by actor or target.
- * Trade-off: this is best-effort — a failed audit write is logged and does not fail the
- * request, because refusing a successful link because its audit row would not write is the
- * worse outcome. Edge case: `changes` carries only status values and never an email, a code,
- * or any student content (§12.1).
- *
- * REPLACES the `guardian_link_audit` writer this file used to hold. That table does not exist
- * in production (`WS-GL_Stage1_Audit.md` §0), so every one of those inserts failed silently
- * inside its own try/catch. `audit_logs` does exist, is empty, and had no writer at all —
- * owner ruling 2026-08-24 chose it over creating the missing table, since `rate_limit_ledger`
- * already covers the rate-limiting half of what `guardian_link_audit` was doing.
- */
-type GuardianLinkAuditAction =
-  | "guardian_link_initiated"
-  | "guardian_link_accepted"
-  | "guardian_link_revoked"
-  | "guardian_link_denied";
-
-async function auditGuardianLink(args: {
-  action: GuardianLinkAuditAction;
-  actorProfileId: string;
-  targetProfileId?: string | null;
-  changes?: Record<string, unknown>;
-  context?: Record<string, unknown>;
-  requestId?: string;
-}): Promise<void> {
-  try {
-    const { error } = await supabaseServer.from("audit_logs").insert({
-      actor_profile_id: args.actorProfileId,
-      target_profile_id: args.targetProfileId ?? null,
-      action: args.action,
-      changes: args.changes ?? null,
-      context: { request_id: args.requestId ?? null, ...(args.context ?? {}) },
-    });
-    if (error) {
-      logger.error("GUARDIAN", "audit_log", "Failed to write audit_logs row", {
-        requestId: args.requestId,
-        action: args.action,
-        reason: error.message,
-      });
-    }
-  } catch (err: unknown) {
-    logger.error("GUARDIAN", "audit_log", "Failed to write audit_logs row", {
-      requestId: args.requestId,
-      action: args.action,
-      reason: err instanceof Error ? err.message : "unknown",
-    });
-  }
 }
 
 router.get(

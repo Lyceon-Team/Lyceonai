@@ -91,6 +91,48 @@ export async function getGuardianLinkForStudent(
 }
 
 /**
+ * @spec [Doc-01_V8, §36.1 Initiation; owner ruling 2026-08-27 Q7 — "404 if the caller is not
+ *   a party to the link at all; keep the informative response if they are"]
+ *   | @implemented [2026-08-27]
+ *
+ * plain English: read one link by its id, whatever its status. Expected outcome: the row, or
+ * null if no such link exists.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `acceptGuardianLink`, WHICH ALSO READS THE ROW.
+ *   Q7 draws the enumeration line at PARTY-HOOD, not at authorization: a caller named on the
+ *   link already knows it exists, so telling them "awaiting the other party" leaks nothing,
+ *   while a caller who is not on it must not learn the link exists at all. `acceptGuardianLink`
+ *   raises the same `WRONG_ACCEPTOR` for both — the party who must wait, and the stranger —
+ *   so a route cannot tell those two apart from its error alone. This read is how the route
+ *   answers "are you on this link?" BEFORE the accept attempt, and it is deliberately status-
+ *   agnostic: a revoked link the caller is named on is still theirs to be told about.
+ *
+ * trade-off: the row is read twice on the success path, once here and once inside
+ * `acceptGuardianLink`. That is accepted rather than optimised away, because the alternative —
+ * widening the domain function's error contract — changes a function the guardian route also
+ * calls, and that unification is its own step (adoption plan step 6). The second read costs a
+ * primary-key lookup; the compare-and-swap inside `acceptGuardianLink` still owns correctness
+ * against a concurrent transition, so nothing here is load-bearing for the race.
+ */
+export async function getGuardianLinkById(
+  linkId: string,
+): Promise<GuardianLink | null> {
+  const { data, error } = await supabaseServer
+    .from("guardian_links")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("id", linkId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    logger.error("GUARDIAN", "get_link_by_id", "Failed to read guardian link", {
+      reason: error.message,
+    });
+    throw new Error(`Failed to get guardian link: ${error.message}`);
+  }
+  return data ? parseGuardianLink(data) : null;
+}
+
+/**
  * @spec [Doc-01_V8, §35; §38 Guardian visibility model] | @implemented [2026-08-26]
  * plain English: the gate every guardian read surface calls before showing a student's data.
  * Expected outcome: true only when an ACTIVE link exists — a pending link grants nothing,
