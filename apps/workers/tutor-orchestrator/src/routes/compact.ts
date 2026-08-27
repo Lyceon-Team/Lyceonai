@@ -93,7 +93,10 @@ export function buildCompactionMessages(
       return { role: "model", text: message.message };
     }
     if (message.role === "system") {
-      return { role: "user", text: `[system note] ${message.message}` };
+      // No [system note] wrapper — a tagged string inside a user turn carries
+      // false authority. System messages are mapped to user role with content
+      // directly, same as WS-L7 fix in /orchestrate/turn (SCL-041).
+      return { role: "user", text: message.message };
     }
     return { role: "user", text: message.message };
   });

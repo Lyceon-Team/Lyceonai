@@ -25,6 +25,18 @@
 
 ## Entries
 
+SCL-060 | 2026-08-26 | Doc 03D §6.6 retrieval scope — active question explanation INCLUDED pre-submit; unseen same-skill EXCLUDED | PROPOSED
+
+Change: Karl ruling inverts the retrieval scope for the deterministic path (§6.6 Path 1). The active question's authored explanation is INCLUDED in pre-submit retrieval because LISA needs the authored reasoning path to ground its tutoring (server-to-Vertex only, never reaches student via INV-03-04 output serializer). Explanations for same-skill questions the student has NOT answered are EXCLUDED — serving unseen explanations risks leaking answer content for questions the student may encounter next.
+WAS: `tutor-retrieval.ts` excluded the active question's explanation pre-submit via `.neq("canonical_id", request.active_question_canonical_id)` and included all same-skill explanations regardless of whether the student had seen them.
+IS: Pre-submit retrieval queries `practice_session_items` for the student's answered question IDs (`status='answered'`), unions them with the active question's canonical ID, and restricts the `servable_questions` query to that allowlist via `.in("canonical_id", allowedIds)`. Post-submit: no filter change (all same-skill explanations permitted — student has already committed an answer).
+Rationale: explanations contain the answer value. Including them in the LISA retrieval context is safe only because INV-03-04 (the output serializer) is the chokepoint that prevents answer leakage to the student. The consequence of this ruling is that the entire leak defense for explanation content shifts from "don't retrieve it" to "retrieve it but never serialize it outward." If INV-03-04 fails, the explanation (and with it the answer) reaches the student. This is an honest narrowing of the defense perimeter — previously, even a broken serializer couldn't leak what was never retrieved. The ruling accepts this tradeoff because LISA's tutoring quality requires the authored reasoning path.
+"Previously seen" means `practice_session_items.status='answered'` — submitted, not merely served. A served-but-unanswered item is still an open question whose explanation must not be retrievable (it may contain the answer to a question the student is about to see).
+Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit filtering. §6.3 surface gate and §6.8 contract are unchanged. INV-03-04 is now load-bearing for explanation leak prevention in the retrieval path (was defense-in-depth; is now sole defense).
+Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
+Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
+
+SCL-042 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
 > **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
 > `SCL-042` independently, on two branches that could not see each other: the Doc 05B KPI
 > fan-out entry (2026-08-19, authored on `main`) and the Stripe governing-doctrine entry
@@ -1438,7 +1450,7 @@ Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer=
   conflation of grading-acceptance with `correct_variants` caused the false-positive class.
   Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
 Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
-SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | OPEN (owner-promoted 2026-08-14)
+SCL-069 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | OPEN (owner-promoted 2026-08-14)
 Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
 WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
   failed with 422 (MCQ-only `normalizeAnswerKey` rejected numeric answers). Anti-leak was structurally
@@ -1844,6 +1856,7 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03C, Doc 03C.1, Doc 03A — SCL-023 (add crisis classifier stage; add classifier_class alias; add crisis test scenarios; rename §4.5)
 - questions_governance.md §A.4 — SCL-022 (review skill-classification disambiguation table and tiebreak rule)
 - questions_governance.md §A.3/§A.8 — SCL-021 (confirm value-equivalence correctness model; align with Doc 04B)
+- Doc 02B §14, contracts/mcfr-coexistence.contract.md — SCL-069 (practice grid-in serve + grade end-to-end; migration + anti-leak integration test)
 - questions_governance.md §A.4 — SCL-020 (confirm 29-skill Title Case convention)
 - Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
 - Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
@@ -1854,3 +1867,4 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03D §3.2, §5.1 coverage taxonomy — SCL-036 (add disengagement signal replacing frustration model; reclassify self-deprecation category)
 - Doc 03D §0, §5.1 authoring brief — SCL-037 (INV-03-04 justification narrowed to product decision; redirect-over-refuse posture grounded)
 - Doc 03D §9 — SCL-038 (record expected effect-size range and power consequences; coordinate marketing substantiation)
+- Doc 03D §6.6 — SCL-043 (retrieval scope inversion: active question explanation included pre-submit; unseen same-skill excluded; INV-03-04 sole defense annotation)

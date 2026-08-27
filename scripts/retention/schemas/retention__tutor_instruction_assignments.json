@@ -1,0 +1,21 @@
+[
+  { "name": "id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "conversation_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "student_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "related_message_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_session_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_session_item_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_question_row_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_question_canonical_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "policy_family", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "policy_variant", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "policy_version", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "prompt_version", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "assignment_mode", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "assignment_key", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "emotional_register", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "reason_snapshot", "type": "JSON", "mode": "REQUIRED" },
+  { "name": "created_at", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "_archived_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "ISO timestamp of the archive operation (set by retention sweep)" },
+  { "name": "_source_table", "type": "STRING", "mode": "REQUIRED", "description": "Supabase source table name (provenance for dedup at query time)" }
+]
