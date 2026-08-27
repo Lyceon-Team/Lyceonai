@@ -47,10 +47,18 @@ After each worker returns, run `wc -l` on its part-file. The file must exist and
 Once all part-files are present and counts match:
 
 ```
-pnpm assemble-batch --in infra/supabase/seed/parts/batch_<NNN> --out infra/supabase/seed/proving_batch_<NNN>.sql --report /tmp/batch_<NNN>_report.json
+pnpm assemble-batch --in infra/supabase/seed/parts/batch_<NNN> --out infra/supabase/seed/proving_batch_<NNN>.sql --report infra/supabase/seed/parts/batch_<NNN>/gate_report.json
+```
+
+**Reassembly:** If `proving_batch_<NNN>.sql` already exists (re-run, regeneration, or re-validation), add `--reassemble` so the gate strips the batch's own hashes from the dedup corpus before checking. Without it, every record will collide with its own prior assembly.
+
+```
+pnpm assemble-batch --reassemble --in infra/supabase/seed/parts/batch_<NNN> --out infra/supabase/seed/proving_batch_<NNN>.sql --report infra/supabase/seed/parts/batch_<NNN>/gate_report.json
 ```
 
 If the gate exits non-zero: **stop.** Surface the report's violations. Do **not** run the auditor on a batch that failed structural validation. Structure must be clean before content is judged.
+
+**Gate-pass marker:** On a clean pass the gate writes `proving_batch_<NNN>.sql.gate-pass` alongside the SQL. This marker is what downstream barriers (Codex completion check) look for. It is emitted automatically by the gate — never hand-create it.
 
 ## Step 6 — Trigger the auditor
 
@@ -75,6 +83,16 @@ This batch was not audited by the registered question-auditor. Re-run the audit.
 
 Do **not** accept the verdict. Do **not** report it as an APPROVE.
 
-## Step 8 — Report
+## Step 8 — Commit artifacts
+
+Stage and commit:
+- The assembled SQL: `infra/supabase/seed/proving_batch_<NNN>.sql`
+- The gate-pass marker: `infra/supabase/seed/proving_batch_<NNN>.sql.gate-pass`
+- The gate report: `infra/supabase/seed/parts/batch_<NNN>/gate_report.json`
+- The part-files: `infra/supabase/seed/parts/batch_<NNN>/*.ndjson`
+
+All four groups must be committed together — a batch without its `.gate-pass` is invisible to downstream barriers.
+
+## Step 9 — Report
 
 Surface: the assembled SQL path, the gate report, the auditor identity verification, and the auditor verdict. Stop there. Applying to prod and merging are Karl's actions — never apply or merge.

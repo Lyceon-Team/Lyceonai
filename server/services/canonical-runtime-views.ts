@@ -818,7 +818,7 @@ export async function readAnsweredQuestionCount(
 /**
  * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
  *   payload, derived via a projection function rather than independently constructed;
- *   SCL-044 (PROPOSED) — the guardian exam session list has no owning document, capability
+ *   SCL-075 (PROPOSED) — the guardian exam session list has no owning document, capability
  *   kept and to be specified] | @implemented [2026-08-24]
  *
  * plain English: one projection of the full-length session history, and a guardian

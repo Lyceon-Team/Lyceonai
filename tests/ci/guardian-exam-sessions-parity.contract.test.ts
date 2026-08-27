@@ -1,7 +1,7 @@
 /**
  * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
  *   payload, derived via a projection function rather than independently constructed;
- *   SCL-044 (PROPOSED) — the guardian exam session list has no owning document]
+ *   SCL-075 (PROPOSED) — the guardian exam session list has no owning document]
  * | @implemented [2026-08-24]
  *
  * plain English: the full-length session list has ONE projection. The guardian's is that

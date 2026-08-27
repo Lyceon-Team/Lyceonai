@@ -22,10 +22,8 @@ vi.mock("../../apps/api/src/lib/rag-service", () => ({
   }),
 }));
 
-vi.mock("../../server/lib/webhookHandlers", () => ({
-  WebhookHandlers: {
-    processWebhook: processWebhookMock,
-  },
+vi.mock("../../server/lib/stripe/webhook-handler", () => ({
+  processStripeWebhook: processWebhookMock,
 }));
 
 setupSecurityMocks();
@@ -60,7 +58,7 @@ describe("CI parser limit guardrails", () => {
       },
     });
     processWebhookMock.mockResolvedValue({
-      received: true,
+      ok: true,
       eventId: "evt_test",
       status: "processed",
     });

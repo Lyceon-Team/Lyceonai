@@ -206,8 +206,8 @@ never lands.
 | `GET /api/guardian/students/{id}/tests/{sessionId}/report` | Doc 04C §895 | RENAMED from `…/exams/full-length/:sessionId/report`. **Stays a separate guardian route** — 04C specifies two routes and invariant #7 is payload subsetting, already delivered in #645 |
 | `GET /api/guardian/students` | none | KEPT, guardian-only. Roster has no student analogue |
 | `POST /api/guardian/links`, `POST …/accept`, `DELETE …` | Doc 01 §36 | REBUILT — §3 |
-| `GET /api/guardian/students/{id}/exams/full-length/sessions` | none | HOLD pending SCL-044 |
-| `GET /api/guardian/students/{id}/calendar/month` | none | **HOLD per SCL-045. Invest nothing.** |
+| `GET /api/guardian/students/{id}/exams/full-length/sessions` | none | HOLD pending SCL-075 |
+| `GET /api/guardian/students/{id}/calendar/month` | none | **HOLD per SCL-076. Invest nothing.** |
 | `/api/consent/*` (3 routes) | — | **DELETE (R1)** |
 
 **Skills grain, unresolved:** §10.3 names `/mastery/skills` **flat**; the live drill-down is
@@ -471,11 +471,15 @@ ruling. Drift. Moot under R1 in any case, but recorded so the mechanism is not r
 the consent flow post-launch.
 Owner action: confirm REJECTED-as-drift, or name the ruling that authorised it.
 
-**Numbering.** `cleanup` holds **044**; `lisa` holds **042**; **SCL-045 exists only on
-`claude/guardian-parity-step2`** (appended in `1946405`, unmerged). So the next free id is **046**
-*only if #645 merges first* — if these SCLs land before it, 045 collides. Verify against `cleanup`
-at the moment of appending, and if #645 is still open, append 046/047 and leave 045 to #645.
-This is the second cycle in which the numbering premise needed checking rather than assuming.
+**Numbering — SUPERSEDED 2026-08-27; the collision this note predicted happened.** The premise
+above was measured against `cleanup` alone, which could not see `stripe`/`main`. The Stripe
+workstream had independently allocated **043**, **044** and **045** on 2026-08-20. At the
+`main`→`cleanup` integration merge the guardian entries were renumbered **043→074, 044→075,
+045→076**, following the citation-count direction the owner ruled on `SCL-042`/`SCL-054`: the
+Stripe ids carried 36/19/28 citations outside the log, these carried 1/4/3. Read every `SCL-074`,
+`SCL-075`, `SCL-076` in this document as the entry formerly numbered 043, 044, 045.
+The lesson is the one this note half-learned: allocate against **every remote branch**, never
+against the current one. The register is not a per-branch fact.
 
 ---
 

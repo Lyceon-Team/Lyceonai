@@ -18,8 +18,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as authMiddleware from "../middleware/supabase-auth";
 
 const stripePauseMock = vi.hoisted(() => vi.fn(async () => ({})));
-vi.mock("../lib/stripeClient.js", () => ({
-  getUncachableStripeClient: vi.fn(async () => ({
+vi.mock("../lib/stripe/client.js", () => ({
+  getStripeClient: vi.fn(() => ({
     subscriptions: { update: stripePauseMock },
   })),
 }));
