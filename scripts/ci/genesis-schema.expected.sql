@@ -3801,6 +3801,7 @@ CREATE TABLE public.entitlements (
     tier text NOT NULL,
     status text NOT NULL,
     stripe_subscription_id text,
+    stripe_subscription_item_id text,
     stripe_price_id text,
     current_period_start timestamp with time zone,
     current_period_end timestamp with time zone,
@@ -3811,6 +3812,13 @@ CREATE TABLE public.entitlements (
     CONSTRAINT entitlements_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'unpaid'::text, 'incomplete'::text, 'incomplete_expired'::text, 'trialing'::text]))),
     CONSTRAINT entitlements_tier_check CHECK ((tier = ANY (ARRAY['free'::text, 'premium'::text])))
 );
+
+
+--
+-- Name: COLUMN entitlements.stripe_subscription_item_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: the subscription ITEM this entitlement is keyed to. One item per entitled student, so one guardian subscription can carry several. NULL on rows written before 2026-08-27 and backfilled by the next customer.subscription.updated for that subscription — the item id is not derivable in SQL.';
 
 
 --
@@ -5548,14 +5556,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: entitlements entitlements_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
-
-
---
 -- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6163,6 +6163,13 @@ CREATE UNIQUE INDEX entitlements_profile_id_unique ON public.entitlements USING 
 
 
 --
+-- Name: entitlements_stripe_subscription_item_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_stripe_subscription_item_id_key ON public.entitlements USING btree (stripe_subscription_item_id) WHERE (stripe_subscription_item_id IS NOT NULL);
+
+
+--
 -- Name: idx_abuse_incidents_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6272,6 +6279,13 @@ CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile
 --
 
 CREATE INDEX idx_entitlements_profile ON public.entitlements USING btree (profile_id);
+
+
+--
+-- Name: idx_entitlements_stripe_subscription; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL);
 
 
 --
