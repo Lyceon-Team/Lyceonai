@@ -651,7 +651,7 @@ Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer=
   conflation of grading-acceptance with `correct_variants` caused the false-positive class.
   Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
 Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
-SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | OPEN (owner-promoted 2026-08-14)
+SCL-069 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | OPEN (owner-promoted 2026-08-14)
 Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
 WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
   failed with 422 (MCQ-only `normalizeAnswerKey` rejected numeric answers). Anti-leak was structurally
@@ -1057,6 +1057,7 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03C, Doc 03C.1, Doc 03A — SCL-023 (add crisis classifier stage; add classifier_class alias; add crisis test scenarios; rename §4.5)
 - questions_governance.md §A.4 — SCL-022 (review skill-classification disambiguation table and tiebreak rule)
 - questions_governance.md §A.3/§A.8 — SCL-021 (confirm value-equivalence correctness model; align with Doc 04B)
+- Doc 02B §14, contracts/mcfr-coexistence.contract.md — SCL-069 (practice grid-in serve + grade end-to-end; migration + anti-leak integration test)
 - questions_governance.md §A.4 — SCL-020 (confirm 29-skill Title Case convention)
 - Doc 02A §15/§16/§23 — SCL-018 (promote grid-in into spec; update QA gate to exempt grid-in from "four options present")
 - Doc 05A §4.6/§11.4 — SCL-014 (update source table names to match live schema)
