@@ -37,6 +37,10 @@ import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { upsertEntitlement, mapStripeStatusToEntitlement } from "../account";
 import { logger } from "../../logger";
 import { digestId } from "./redact";
+import {
+  resolveEntitlementItem,
+  stripeSubscriptionItemSchema,
+} from "./subscription-item";
 
 /** Events this handler acts on. Anything else is acknowledged and ignored. */
 const HANDLED_EVENTS = [
@@ -93,21 +97,23 @@ const subscriptionEventSchema = subjectSchema.extend({
 });
 
 /**
- * The re-fetched Subscription, parsed before anything is persisted. Period
- * fields are optional on Stripe's side and are normalised to null rather than
- * silently becoming `undefined` in the write.
+ * The re-fetched Subscription, parsed before anything is persisted.
+ *
+ * NOTE the absent `current_period_start` / `current_period_end`. Stripe removed
+ * them from the Subscription object in API version `2025-03-31.basil` and moved
+ * them to SubscriptionItem; this repo's pinned SDK bundles `2026-02-25.clover`
+ * and pins no `apiVersion`, so every retrieve here returns the item-level shape.
+ * Declaring them at this level would parse to null forever and write NULL period
+ * bounds onto live entitlement rows — which is exactly what it did. Periods and
+ * price now come from the resolved ITEM (SCL-045), via `resolveEntitlementItem`.
  */
 const retrievedSubscriptionSchema = z.object({
   id: z.string().min(1),
   status: z.string().min(1),
   cancel_at_period_end: z.boolean().nullish(),
-  current_period_start: z.number().int().nullish(),
-  current_period_end: z.number().int().nullish(),
   items: z
     .object({
-      data: z
-        .array(z.object({ price: z.object({ id: z.string() }).nullish() }))
-        .default([]),
+      data: z.array(stripeSubscriptionItemSchema).default([]),
     })
     .nullish(),
 });
@@ -157,7 +163,9 @@ function resolveStudentProfileId(
   eventType: string,
 ): string {
   const candidate =
-    source.metadata?.student_profile_id ?? source.client_reference_id ?? undefined;
+    source.metadata?.student_profile_id ??
+    source.client_reference_id ??
+    undefined;
 
   const parsed = profileIdSchema.safeParse(candidate);
   if (!parsed.success) {
@@ -193,15 +201,34 @@ async function writeEntitlementFromSubscription(
   );
 
   const { tier, status } = mapStripeStatusToEntitlement(subscription.status);
-  const priceId = subscription.items?.data?.[0]?.price?.id ?? null;
+
+  // SCL-045: entitlement is keyed on the subscription ITEM. Price and period
+  // both come from that one object, so they cannot describe different students.
+  const items = subscription.items?.data ?? [];
+  const item = resolveEntitlementItem(items, studentProfileId);
+
+  // Absence and ambiguity are NOT the same failure, and must not share a branch.
+  //
+  //  - Zero items carries no period information. That is the shape a canceled or
+  //    deleted subscription can arrive in, and revocation must never be blocked
+  //    on a missing period: status is the load-bearing field there. Write nulls.
+  //  - Several items with none naming this student IS ambiguous, and guessing
+  //    `data[0]` would bill one student's period onto another's entitlement.
+  //    Fail closed.
+  if (!item && items.length > 0) {
+    throw new StripePayloadShapeError(
+      eventType,
+      `no subscription item resolves to the subject student (items=${items.length})`,
+    );
+  }
 
   await upsertEntitlement(studentProfileId, {
     tier,
     status,
     stripe_subscription_id: subscription.id,
-    stripe_price_id: priceId,
-    current_period_start: epochToIso(subscription.current_period_start),
-    current_period_end: epochToIso(subscription.current_period_end),
+    stripe_price_id: item?.priceId ?? null,
+    current_period_start: epochToIso(item?.currentPeriodStart ?? null),
+    current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
   });
 
