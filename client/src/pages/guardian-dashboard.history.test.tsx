@@ -123,7 +123,7 @@ describe("GuardianDashboard full-length history view UX", () => {
           });
         }
 
-        if (url.startsWith("/api/guardian/weaknesses/student-1")) {
+        if (url.startsWith("/api/students/:studentId/mastery/domains/student-1")) {
           // Domain grain, not per-skill (AC#19). The old `skills: []` fixture described a
           // shape this route has never returned.
           return jsonResponse({

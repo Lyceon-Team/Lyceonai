@@ -5,7 +5,7 @@ import {
   fetchSkillMasteryRows,
 } from "./mastery-read";
 import { loadMasteryLevels } from "./mastery-levels-read";
-import { fetchSkillsForDomain } from "./skill-catalog-read";
+import { fetchSkillCatalog } from "./skill-catalog-read";
 import {
   masterySectionSchema,
   type MasteryDomainNode,
@@ -93,39 +93,40 @@ export async function readDomainMasteryView(args: {
   };
 }
 
-export type SkillPanelView = {
-  section: MasterySection;
-  domain: string;
+export type SkillCatalogView = {
   catalogEmpty: boolean;
   skills: MasterySkillNode[];
 };
 
 /**
- * One domain's skills for one student. STUDENT SURFACE ONLY — no guardian route calls
- * this, and none may be added (Doc 05 Parent AC#19; owner ruling RULE 7). It lives beside
- * the domain view so the route layer stays thin, not so a guardian can reach it.
+ * EVERY skill the question bank publishes, for one student, in one read — FLAT.
+ *
+ * This replaced `readSkillPanelView(studentId, section, domain)` on 2026-08-27 (owner
+ * ruling, PR 2). Doc 05B §10.3 names the resource `/api/students/{student_id}/mastery/skills`
+ * with no path or query segment, and §10.7 bounds it at ~80 rows and says presentation
+ * belongs to "the API surface doc that wraps these routes — not in 05B's table contract".
+ * The drill-down filters by domain in the CLIENT, from this one fetch, so a student opening
+ * three domains makes one request rather than three.
+ *
+ * STUDENT GRAIN. Doc 05A :73 — "Guardians have NO SELECT policy on student_skill_mastery,
+ * so guardian queries return zero rows regardless of column projection." The route, not this
+ * function, applies §10.4's empty-list semantics for a guardian caller; this function has no
+ * idea who is asking, which is why it can be shared.
+ *
+ * `catalogEmpty` reports on the QUESTION BANK, not on the student, and is distinct from an
+ * empty `skills` array. A failed read THROWS before reaching here.
  */
-export async function readSkillPanelView(args: {
+export async function readSkillCatalogView(args: {
   studentId: string;
-  section: MasterySection;
-  domain: string;
-}): Promise<SkillPanelView> {
-  const [labels, catalogSkills, skillRows] = await Promise.all([
+}): Promise<SkillCatalogView> {
+  const [labels, catalog, skillRows] = await Promise.all([
     loadMasteryLevels(),
-    fetchSkillsForDomain(args.section, args.domain),
-    fetchSkillMasteryRows({
-      userId: args.studentId,
-      section: args.section,
-      domain: args.domain,
-    }),
+    fetchSkillCatalog(),
+    fetchSkillMasteryRows({ userId: args.studentId }),
   ]);
 
   return {
-    section: args.section,
-    domain: args.domain,
-    // `catalogEmpty` reports on the QUESTION BANK, not on the student. A failed read
-    // throws before reaching here (owner ruling 2026-08-21 Q6).
-    catalogEmpty: catalogSkills.length === 0,
-    skills: buildSkillLevelView(catalogSkills, skillRows, labels),
+    catalogEmpty: catalog.length === 0,
+    skills: buildSkillLevelView(catalog, skillRows, labels),
   };
 }

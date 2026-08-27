@@ -49,8 +49,7 @@ const DERIVATION_CALLER = "server/services/guardian-subject.ts";
  * A route is subject-scoped iff its FULL path begins `/api/students/:studentId`. Route files
  * spell paths relative to their mount, so the prefix cannot be read off the registration —
  * `router.get("/students/:studentId/summary")` in guardian-routes.ts mounts at
- * `/api/guardian`, making its full path `/api/guardian/students/:studentId/summary`, which is
- * NOT subject-scoped. Matching the relative string alone flagged all four guardian routes on
+ * `/api/guardian`, so its full path sits under the guardian prefix and is NOT subject-scoped. Matching the relative string alone flagged all four guardian routes on
  * the first run of this gate. The mount table is therefore resolved from server/index.ts.
  */
 const APP_ENTRY = "server/index.ts";
@@ -80,10 +79,17 @@ const ROLE_TELLS = [
   { re: /\bfrom\(\s*["'`]guardian_consent_requests["'`]/, what: 'from("guardian_consent_requests")' },
 ];
 
-/** Entering the two-argument derivation. The application mirror of SQL GATE 10. */
+/**
+ * Entering the two-argument derivation. The application mirror of SQL GATE 10.
+ *
+ * These match a CALL — `.rpc("guardian_view_decision", …)` — not a mention. Matching the bare
+ * name flagged `server/routes/student-resources.ts`, whose only reference is a comment
+ * explaining that it must NOT re-derive the gate. A gate that cannot tell code from prose
+ * fails on the documentation of the rule it enforces.
+ */
 const DERIVATION_TELLS = [
-  /["'`]guardian_view_decision["'`]/,
-  /["'`]guardian_can_view_student_as["'`]/,
+  /\.rpc\(\s*["'`]guardian_view_decision["'`]/,
+  /\.rpc\(\s*["'`]guardian_can_view_student_as["'`]/,
 ];
 
 function resolveSubjectScopedModules(repoRootDir) {
@@ -109,12 +115,19 @@ function resolveSubjectScopedModules(repoRootDir) {
 
   const modules = new Set();
   for (const m of entry.matchAll(MOUNT_RE)) {
-    for (const ident of (m[1].match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])) {
-      const spec = importsByIdent.get(ident);
-      if (!spec || !spec.startsWith(".")) continue;
-      const rel = spec.replace(/^\.\//, "server/").replace(/^\.\.\//, "");
-      modules.add(rel.endsWith(".ts") ? rel : `${rel}.ts`);
-    }
+    // ONLY THE LAST IDENTIFIER. `app.use(path, mwA, mwB, router)` — the router is Express's
+    // final argument; the others are middleware. The first version of this gate treated every
+    // identifier in the chain as a mounted module and reported `server/middleware/supabase-auth.ts`
+    // as an unguarded subject-scoped route file, which is a false positive with a very
+    // plausible-looking message. A gate that cries wolf gets its findings waved through.
+    const idents = (m[1].match(/\b[A-Za-z_$][\w$]*\b/g) ?? []).filter((ident) =>
+      importsByIdent.get(ident)?.startsWith("."),
+    );
+    const routerIdent = idents[idents.length - 1];
+    if (!routerIdent) continue;
+    const spec = importsByIdent.get(routerIdent);
+    const rel = spec.replace(/^\.\//, "server/").replace(/^\.\.\//, "");
+    modules.add(rel.endsWith(".ts") ? rel : `${rel}.ts`);
   }
 
   // Routes registered directly on `app` under the subject prefix make the entry file itself
@@ -176,12 +189,36 @@ for (const rel of sources) {
     }
   }
 
-  // ---- R3: every subject-scoped route is behind the resolver ----------------
-  if (routeCount > 0 && !/\bresolveSubject\b/.test(text)) {
-    failures.push(
-      `R3: ${rel} registers ${routeCount} route(s) under ${SUBJECT_MOUNT} but never mounts ` +
-        `\`resolveSubject\`. A subject-scoped route without the resolver has no path-layer authz.`,
-    );
+  // ---- R3: every subject-scoped route is behind the REAL resolver -----------
+  //
+  // Checking for the token alone was not enough, and a mutation proved it: shadowing the
+  // import with `const resolveSubject = (_r, _s, n) => n();` left the token present, so the
+  // gate passed while every route was unguarded. A gate that matches a NAME can be satisfied
+  // by anything wearing that name. So R3 now requires the binding to come FROM the resolver
+  // module and forbids a local re-declaration of it.
+  //
+  // Static analysis still cannot prove the middleware is actually applied to each route —
+  // that is proved at runtime by tests/ci/student-resources.contract.test.ts, whose 404/402
+  // cases all fail if the resolver does not run. The two are complementary, and neither is
+  // claimed to do the other's job.
+  if (routeCount > 0) {
+    const importsResolver =
+      /import\s*\{[^}]*\bresolveSubject\b[^}]*\}\s*from\s*["'`][^"'`]*subject-resolver["'`]/.test(text);
+    const shadowed =
+      /\b(?:const|let|var|function)\s+resolveSubject\b/.test(text);
+    if (!importsResolver) {
+      failures.push(
+        `R3: ${rel} registers ${routeCount} route(s) under ${SUBJECT_MOUNT} but does not import ` +
+          `\`resolveSubject\` from the resolver module. A subject-scoped route without the ` +
+          `resolver has no path-layer authz.`,
+      );
+    }
+    if (shadowed) {
+      failures.push(
+        `R3: ${rel} re-declares \`resolveSubject\` locally, shadowing the real middleware. ` +
+          `The name is not the gate; the middleware is.`,
+      );
+    }
   }
 }
 
@@ -198,10 +235,14 @@ if (skippedMissing.length > 0) {
   for (const p of skippedMissing) console.log(`  - ${p}`);
 }
 
+// The call-site count is a DIAGNOSTIC, not an assertion, and it is deliberately labelled as
+// what it counts. A `router.get()` inside a helper registers several routes from one site, so
+// this number is a lower bound on routes — printing it as "routes" would be a smaller-value
+// version of the very failure this repo keeps hitting: a plausible number read as coverage.
 console.log(
   `subject-resolver chokepoint: ${sources.length} source file(s) scanned; ` +
     `${subjectModules.length} module(s) mounted under ${SUBJECT_MOUNT}; ` +
-    `${subjectRouteCount} subject-scoped route registration(s).`,
+    `${subjectRouteCount} route-registration CALL SITE(s) in them.`,
 );
 if (subjectRouteCount === 0) {
   console.log(

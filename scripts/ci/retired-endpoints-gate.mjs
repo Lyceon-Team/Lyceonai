@@ -62,6 +62,51 @@ const RETIRED = [
     replacement:
       "nothing — planner ownership lives in the /api/calendar day edit and regenerate flows",
   },
+  // --- Guardian rebuild PR 2 (owner ruling 2026-08-27) ---------------------
+  // The whole /api/me/mastery family moved onto the subject-scoped topology Doc 05B §10.3
+  // specifies. The route prefix is retired, not just the individual paths: under the single-
+  // route contract there is no "my" resource distinct from "this student's" resource.
+  // NAMED PATHS, NOT THE `/api/me/mastery` PREFIX. A prefix entry also matched
+  // `tests/ci/forbidden-routes.ci.test.ts` and `runtime-law-lockdown.ci.test.ts`, which
+  // assert that `/api/me/mastery/diagnostic` is ABSENT — a negative assertion about a
+  // different route is not a caller, and a gate that flags one trains people to wave it
+  // through.
+  {
+    path: "/api/me/mastery/domains",
+    retiredIn: "PR 2 (Doc 05B §10.3 single-route contract)",
+    replacement:
+      "GET /api/students/:studentId/mastery/domains and /mastery/skills — one route each, served to the student and to a linked guardian by the same handler",
+  },
+  {
+    path: "/api/me/mastery/weakest",
+    retiredIn: "PR 2 (owner ruling 2026-08-27 OQ4)",
+    replacement:
+      "nothing — no document specifies a weakest-skills route, and it ordered by mastery_score, which Parent AC#20 confines to admin/internal. Ordering by a forbidden column is a projection of it",
+  },
+  {
+    path: "/api/me/weakness/skills",
+    retiredIn: "PR 2 (owner ruling 2026-08-27 OQ4)",
+    replacement:
+      "nothing — no document specifies a weakest-skills route, and this one ordered by mastery_score, which Parent AC#20 confines to admin/internal. Ordering by a forbidden column is a projection of it",
+  },
+  {
+    path: "/api/guardian/weaknesses",
+    retiredIn: "PR 2 (Doc 05B §10.3)",
+    replacement:
+      "GET /api/students/:studentId/mastery/domains — the guardian read IS the student query",
+  },
+  {
+    path: "/api/guardian/students/:studentId/summary",
+    retiredIn: "PR 2 (Doc 05B §10.3)",
+    replacement:
+      "GET /api/students/:studentId/kpi/overall — the same envelope, one route",
+  },
+  {
+    path: "/exams/full-length/:sessionId/report",
+    retiredIn: "PR 2 (renamed to match Doc 04C §895)",
+    replacement:
+      "GET /api/guardian/students/:studentId/tests/:sessionId/report — same resource, the path the spec names. 04C keeps this a SEPARATE guardian route by design",
+  },
 ];
 
 /**
@@ -72,6 +117,13 @@ const RETIRED = [
 const SELF_REFERENTIAL = new Set([
   "scripts/ci/retired-endpoints-gate.mjs",
   "scripts/ci/retired-endpoints-gate.selftest.sh",
+  // These two documents EXIST to record the guardian migration — the audit that found the
+  // routes and the plan that retired them. Every retired path appears in them by necessity,
+  // as history. Kept deliberately short: an exemption list is an allowlist, and an allowlist
+  // grows a blind spot every time something is added to it, so nothing joins this set unless
+  // its whole purpose is describing a deletion.
+  "docs/SpecAudit/guardian-rebuild-design-spec.md",
+  "docs/SpecAudit/guardian-route-topology-migration-plan.md",
 ]);
 
 /**

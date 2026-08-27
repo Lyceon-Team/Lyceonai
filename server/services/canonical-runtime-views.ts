@@ -116,7 +116,13 @@ function metricListToExplanationMap(
 
 // Genesis accuracy_* columns are 0–1 fractions (Doc 05B §6.5). Present as an integer
 // percent; null (not 0) when the window has zero events — an honest "no data" signal.
-function toAccuracyPercent(fraction: unknown, events: number): number | null {
+/**
+ * Fraction -> integer percent, with the empty-vs-failed rule built in: zero events yields
+ * `null`, never `0`. Exported so the section/domain KPI readers share this exact conversion
+ * rather than restating "no events means null" — a second copy is how one surface starts
+ * telling a parent their child scored 0% when the truth is that nothing was measured.
+ */
+export function toAccuracyPercent(fraction: unknown, events: number): number | null {
   if (events <= 0) return null;
   if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
   return Math.round(Math.max(0, Math.min(1, fraction)) * 100);

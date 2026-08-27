@@ -24,6 +24,15 @@ vi.mock("@tanstack/react-query", async (importActual) => {
   const actual = await importActual<typeof import("@tanstack/react-query")>();
   return { ...actual, useQuery: queryMock.useQuery };
 });
+// The page reads the signed-in student's id to build its subject-scoped URLs. The provider
+// is not mounted in a unit render, so the hook is stubbed — same pattern as
+// guardian-dashboard.history.test.tsx.
+vi.mock("@/contexts/SupabaseAuthContext", () => ({
+  useSupabaseAuth: () => ({
+    user: { id: "11111111-1111-4111-8111-111111111111" },
+  }),
+}));
+
 vi.mock("wouter", () => ({
   useLocation: () => ["/mastery", vi.fn()],
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
@@ -70,7 +79,11 @@ function ok(data: unknown): QueryResult {
  */
 function mockQueries(args: { domains?: QueryResult; skills?: QueryResult }) {
   queryMock.useQuery.mockImplementation((options: { queryKey: unknown[] }) => {
-    const isSkills = options.queryKey.includes("skills");
+    // The keys are now full subject-scoped URLs (`/api/students/<id>/mastery/skills`), one
+    // string per key, so membership no longer distinguishes them — the suffix does.
+    const isSkills = options.queryKey.some(
+      (k) => typeof k === "string" && k.endsWith("/mastery/skills"),
+    );
     if (isSkills) {
       return args.skills ?? ok({ ok: true, catalogEmpty: false, skills: [] });
     }
@@ -183,10 +196,8 @@ describe("MasteryPage — skill panel (RULE 5: domain first, then skills)", () =
         domains: ok({ ok: true, domains: [domainNode(LEVELS[2], "Algebra")] }),
         skills: ok({
           ok: true,
-          section: "M",
-          domain: "Algebra",
           catalogEmpty: false,
-          skills: [{ skill: "Linear Equations in One Variable", ...level }],
+          skills: [{ section: "M" as const, domain: "Algebra", skill: "Linear Equations in One Variable", ...level }],
         }),
       });
       render(<MasteryPage />);
@@ -206,13 +217,11 @@ describe("MasteryPage — skill panel (RULE 5: domain first, then skills)", () =
       domains: ok({ ok: true, domains: [domainNode(LEVELS[2], "Algebra")] }),
       skills: ok({
         ok: true,
-        section: "M",
-        domain: "Algebra",
         catalogEmpty: false,
         skills: [
-          { skill: "Linear Equations in One Variable", ...LEVELS[0] },
-          { skill: "Linear Functions", ...LEVELS[4] },
-          { skill: "Systems of Two Linear Equations", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Equations in One Variable", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Functions", ...LEVELS[4] },
+          { section: "M" as const, domain: "Algebra", skill: "Systems of Two Linear Equations", ...LEVELS[0] },
         ],
       }),
     });
@@ -229,14 +238,12 @@ describe("MasteryPage — skill panel (RULE 5: domain first, then skills)", () =
       domains: ok({ ok: true, domains: [domainNode(LEVELS[0], "Algebra")] }),
       skills: ok({
         ok: true,
-        section: "M",
-        domain: "Algebra",
         catalogEmpty: false,
         skills: [
-          { skill: "Linear Equations in One Variable", ...LEVELS[0] },
-          { skill: "Linear Functions", ...LEVELS[0] },
-          { skill: "Systems of Two Linear Equations", ...LEVELS[0] },
-          { skill: "Linear Inequalities", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Equations in One Variable", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Functions", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Systems of Two Linear Equations", ...LEVELS[0] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Inequalities", ...LEVELS[0] },
         ],
       }),
     });
@@ -252,12 +259,10 @@ describe("MasteryPage — skill panel (RULE 5: domain first, then skills)", () =
       domains: ok({ ok: true, domains: [domainNode(LEVELS[3], "Algebra")] }),
       skills: ok({
         ok: true,
-        section: "M",
-        domain: "Algebra",
         catalogEmpty: false,
         skills: [
-          { skill: "Linear Equations in One Variable", ...LEVELS[3] },
-          { skill: "Linear Functions", ...LEVELS[5] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Equations in One Variable", ...LEVELS[3] },
+          { section: "M" as const, domain: "Algebra", skill: "Linear Functions", ...LEVELS[5] },
         ],
       }),
     });

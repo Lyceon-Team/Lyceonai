@@ -49,7 +49,12 @@ echo "ok  baseline: gate is green on the committed tree"
 
 # 1. a caller comes back. This is the whole point: the endpoint is gone, and a string
 #    referencing it is invisible to tsc.
-sed -i 's|"/api/me/mastery/domains"|"/api/me/mastery/summary"|' "$CALLER_TARGET"
+# The mutation must target a string that CURRENTLY exists in the caller file, or the case
+# silently stops mutating anything and "passes" while proving nothing. It went stale exactly
+# once, in PR 2, when the path it used was itself retired — the guard below caught it, which
+# is why the guard exists. `"mastery/domains"` is the resource label the fetcher passes to its
+# parser, not a URL, so it survives a path change.
+sed -i 's|"mastery/domains"|"/api/me/mastery/summary"|' "$CALLER_TARGET"
 if git diff --quiet -- "$CALLER_TARGET"; then
   echo "FAIL  caller reintroduced: could not stage the mutation — the case is stale, not passing." >&2
   FAILURES=$((FAILURES + 1))

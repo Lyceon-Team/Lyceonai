@@ -48,7 +48,8 @@ import FullLengthResultsView, {
   type FullLengthResultsData,
 } from "@/components/full-length-exam/FullLengthResultsView";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-import { fetchGuardianDomains } from "@/lib/masteryApi";
+import { fetchMasteryDomains } from "@/lib/masteryApi";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
 
 interface LinkedStudent {
@@ -153,8 +154,12 @@ export default function GuardianDashboard() {
   } = useQuery({
     queryKey: ["guardian-student-summary", selectedStudentId],
     queryFn: async () => {
+      // ONE route per resource (Doc 05B §10.3). This is the SAME endpoint the student
+      // dashboard calls; the only difference is whose id is in the path. The guardian-only
+      // `/api/guardian/students/:id/summary` it replaced was the second path that produced
+      // privilege divergences #1 and #3.
       const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/summary`,
+        studentResourceUrl(selectedStudentId ?? "", "kpiOverall"),
         { credentials: "include" },
       );
       if (!res.ok) {
@@ -183,8 +188,8 @@ export default function GuardianDashboard() {
     error: weaknessError,
     refetch: refetchWeakness,
   } = useQuery({
-    queryKey: ["guardian-domain-mastery", selectedStudentId],
-    queryFn: () => fetchGuardianDomains(selectedStudentId!),
+    queryKey: [studentResourceUrl(selectedStudentId ?? "", "masteryDomains")],
+    queryFn: () => fetchMasteryDomains(selectedStudentId ?? ""),
     enabled: !!selectedStudentId,
   });
 
@@ -244,7 +249,7 @@ export default function GuardianDashboard() {
       }
 
       const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/exams/full-length/${encodeURIComponent(requestedReportSessionId)}/report`,
+        `/api/guardian/students/${selectedStudentId}/tests/${encodeURIComponent(requestedReportSessionId)}/report`,
         { credentials: "include" },
       );
       const data = await res.json().catch(() => ({}));
@@ -1027,7 +1032,7 @@ export default function GuardianDashboard() {
                     <FullLengthResultsView
                       data={guardianExamReportData.report}
                       title="Guardian Report View"
-                      description="Read-only student-truth view from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
+                      description="Read-only student-truth view from `/api/guardian/students/:studentId/tests/:sessionId/report`."
                     />
                   )}
                 </CardContent>

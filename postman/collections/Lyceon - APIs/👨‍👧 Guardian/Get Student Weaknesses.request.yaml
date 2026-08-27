@@ -1,4 +1,4 @@
 $kind: http-request
-url: "{{baseUrl}}/api/guardian/weaknesses/{{studentId}}"
+url: "{{baseUrl}}/api/students/{{studentId}}/mastery/domains"
 method: GET
 order: 6000

@@ -511,21 +511,21 @@
 					"name": "Get Mastery Domains",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/me/mastery/domains", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains"] }
+						"url": { "raw": "{{baseUrl}}/api/students/{{studentId}}/mastery/domains", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains"] }
 					}
 				},
 				{
 					"name": "Get Domain Skills",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/me/mastery/domains/M/Algebra/skills", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains","M","Algebra","skills"] }
+						"url": { "raw": "{{baseUrl}}/api/students/{{studentId}}/mastery/domains/M/Algebra/skills", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","domains","M","Algebra","skills"] }
 					}
 				},
 				{
 					"name": "Get Weakness Skills",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/me/weakness/skills", "host": ["{{baseUrl}}"], "path": ["api","me","weakness","skills"] }
+						"url": { "raw": "{{baseUrl}}/api/students/{{studentId}}/mastery/skills", "host": ["{{baseUrl}}"], "path": ["api","me","weakness","skills"] }
 					}
 				},
 				{
@@ -658,7 +658,7 @@
 					"name": "Get Student Summary",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/guardian/students/{{studentId}}/summary", "host": ["{{baseUrl}}"], "path": ["api","guardian","students","{{studentId}}","summary"] }
+						"url": { "raw": "{{baseUrl}}/api/students/{{studentId}}/kpi/overall", "host": ["{{baseUrl}}"], "path": ["api","guardian","students","{{studentId}}","summary"] }
 					}
 				},
 				{
@@ -680,7 +680,7 @@
 					"name": "Get Student Weaknesses",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/guardian/weaknesses/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["api","guardian","weaknesses","{{studentId}}"] }
+						"url": { "raw": "{{baseUrl}}/api/students/{{studentId}}/mastery/domains", "host": ["{{baseUrl}}"], "path": ["api","guardian","weaknesses","{{studentId}}"] }
 					}
 				},
 				{

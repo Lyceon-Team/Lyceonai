@@ -433,36 +433,9 @@ describe("KPI Gating Contract", () => {
     expect(getExamReport).not.toHaveBeenCalled();
   });
 
-  it("denies free-tier mastery drill-down routes (domains + per-domain skills)", async () => {
-    const { masteryRouter } = await import("../../apps/api/src/routes/mastery");
-
-    const app = express();
-    app.use((req: any, _res, next) => {
-      req.user = {
-        id: "student-1",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      };
-      req.requestId ??= "req-mastery-skills";
-      next();
-    });
-    app.use("/api/me/mastery", masteryRouter);
-
-    const domains = await request(app).get("/api/me/mastery/domains");
-    expect(domains.status).toBe(402);
-    expect(domains.body.code).toBe("PREMIUM_REQUIRED");
-    expect(domains.body.feature).toBe("mastery_domains");
-
-    // The entitlement check runs BEFORE the parameter parse, so a free-tier caller is
-    // denied rather than told whether the domain exists.
-    const skills = await request(app).get(
-      "/api/me/mastery/domains/M/Algebra/skills",
-    );
-    expect(skills.status).toBe(402);
-    expect(skills.body.code).toBe("PREMIUM_REQUIRED");
-    expect(skills.body.feature).toBe("mastery_skills");
-  });
+  // The free-tier denial for the mastery drill-down moved with the routes. It is asserted
+  // against the new topology in tests/ci/student-resources.contract.test.ts, where the gate
+  // is the SUBJECT's entitlement rather than the caller's role — see PR 2.
 
   it("denies free-tier full-length session creation surface", async () => {
     const router = (await import("../../server/routes/full-length-exam-routes"))
