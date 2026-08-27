@@ -1,0 +1,17 @@
+[
+  { "name": "id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "assignment_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "conversation_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "student_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "exposure_type", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "content_variant_key", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "content_version", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "rendered_difficulty", "type": "INT64", "mode": "NULLABLE" },
+  { "name": "hint_depth", "type": "INT64", "mode": "NULLABLE" },
+  { "name": "tone_style", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "sequence_ordinal", "type": "INT64", "mode": "REQUIRED" },
+  { "name": "shown_at", "type": "TIMESTAMP", "mode": "REQUIRED" },
+  { "name": "consumed_ms", "type": "INT64", "mode": "NULLABLE" },
+  { "name": "_archived_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "ISO timestamp of the archive operation (set by retention sweep)" },
+  { "name": "_source_table", "type": "STRING", "mode": "REQUIRED", "description": "Supabase source table name (provenance for dedup at query time)" }
+]
