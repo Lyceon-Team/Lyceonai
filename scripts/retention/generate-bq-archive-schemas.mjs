@@ -240,17 +240,17 @@ async function main() {
       bqMkCommands.push(
         `bq mk --table \\`,
         `  "$PROJECT:$DATASET.${bqTableName}" \\`,
-        `  schemas/${bqTableName}.json`,
+        `  scripts/retention/schemas/${bqTableName}.json`,
         ``,
       );
     }
 
     // Print bq mk commands for Karl
     console.log(`\n${"═".repeat(60)}`);
-    console.log("Commands for Karl (run from scripts/retention/):");
+    console.log("Commands for Karl (run from repo root):");
     console.log(`${"═".repeat(60)}\n`);
     console.log("# Set these to your target:");
-    console.log("PROJECT=lyceon-lisa-prod");
+    console.log("PROJECT=replit-cop");
     console.log("DATASET=lyceon_analytics_archive_prod\n");
     for (const line of bqMkCommands) {
       console.log(line);
