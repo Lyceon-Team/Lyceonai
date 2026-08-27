@@ -10,9 +10,9 @@
   - `GET /api/progress/kpis` -> `server/routes/legacy/progress.ts`.
   - `server/routes/legacy/progress.ts` is intentionally active runtime code despite its file path name.
   - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts` (returns `estimate` payload key).
-  - `GET /api/guardian/students/:studentId/summary` -> `server/routes/guardian-routes.ts`.
+  - `GET /api/students/:studentId/kpi/overall` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.
-  - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report` -> `server/routes/guardian-routes.ts`.
+  - `GET /api/guardian/students/:studentId/tests/:sessionId/report` -> `server/routes/guardian-routes.ts`.
 
 ## Segmentation Rules
 - Student view:
@@ -28,8 +28,8 @@
 
 ## Gating Rules
 - Premium KPI surfaces (explicit):
-  - `mastery_domains`: `GET /api/me/mastery/domains`.
-  - `mastery_skills`: `GET /api/me/mastery/domains/:section/:domain/skills`.
+  - `mastery_domains`: `GET /api/students/{{studentId}}/mastery/domains`.
+  - `mastery_skills`: `GET /api/students/:studentId/mastery/skills`.
     (These replace the former `mastery_hexagon` feature and its per-skill route. There is
     no hexagon: the surface is a domain-then-skill drill-down, and it renders level names
     rather than any number. `scripts/ci/retired-endpoints-gate.mjs` holds the retired paths.)
@@ -90,7 +90,7 @@ This audit is based on mounted routes in `server/index.ts` and is required befor
 - Canonical (student KPI surfaces):
 `/api/progress/kpis`, `/api/progress/projection`, `/api/full-length/sessions/:sessionId/report`
 - Canonical (guardian KPI surfaces):
-`/api/guardian/students/:studentId/summary`, `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`
+`/api/students/:studentId/kpi/overall`, `/api/guardian/students/:studentId/tests/:sessionId/report`
 - Compatibility-only:
 None for KPI product truth.
 - Dead/disabled:

@@ -10,3 +10,5 @@ export * from "./id.js";
 export * from "./rng.js";
 export * from "./env.js";
 export * from "./guardian-subject.js";
+export * from "./rule4-columns.js";
+export * from "./student-resources.js";

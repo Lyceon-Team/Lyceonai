@@ -624,116 +624,6 @@ router.delete(
   },
 );
 
-router.get(
-  "/students/:studentId/summary",
-  requireSupabaseAuth,
-  requireGuardianAccess,
-  requireGuardianEntitlement,
-  async (req: Request, res: Response) => {
-    const requestId = req.requestId;
-    try {
-      const guardianId = req.user!.id;
-      const { studentId } = req.params;
-
-      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-      if (!linked && req.user!.role !== "admin") {
-        logger.warn(
-          "GUARDIAN",
-          "summary_access_denied",
-          "Student not found or not linked to guardian",
-          { guardianId, studentId, requestId },
-        );
-        await emitGuardianAccessEvent({
-          eventType: "guardian_access_denied",
-          guardianId,
-          studentId,
-          requestId,
-          details: { surface: "summary", reason: "not_linked" },
-        });
-        return res.status(404).json({ error: "Student not found", requestId });
-      }
-
-      const { data: student, error: studentError } = await supabaseServer
-        .from("profiles")
-        // `display_name` is no longer selected: it is no longer serialised, and Doc 05B
-        // §10.5 is explicit that the handler projects the columns it needs rather than
-        // reading wide and trimming at the edge.
-        .select("id")
-        .eq("id", studentId)
-        .eq("role", "student")
-        .single();
-
-      if (studentError || !student) {
-        return res.status(404).json({ error: "Student not found", requestId });
-      }
-
-      // Same builder the student KPI route calls (server/routes/legacy/progress.ts).
-      // ONE derivation, no projection: the guardian body IS the student view.
-      //
-      // THE METRIC ALLOWLIST IS GONE (owner ruling 2026-08-26).
-      //   `projectGuardianKpiView` filtered `metrics` to a hardcoded
-      //   {week_questions, week_accuracy, current_streak}. That set was not read from a
-      //   spec constant, an entitlement, or the database — it was the field list of the
-      //   guardian-only `progress` block (bf544c8, 2026-08-21), and it outlived the block
-      //   that needed it. It is exactly the base set `buildStudentMetrics` emits
-      //   unconditionally, so it was a STATIC restatement of the gate
-      //   `resolveHistoricalTrendsAccess` already makes DYNAMICALLY one line below.
-      //
-      //   Live consequence while it stood: for a student WITH paid access the builder
-      //   emitted `recency_accuracy` and the filter stripped it back out, so the guardian
-      //   of a paying student saw LESS than the student — the "no less" half of the rule,
-      //   broken by the remnant. It also left `measurementModel.diagnostic` (built from
-      //   the student's full metric list) naming a metric the payload no longer carried.
-      //   Deleting the filter closes both; the mismatch was the filter, not the diagnostic.
-      //
-      // THE SECOND ARGUMENT USED TO BE A HARDCODED `true`.
-      //   The student route derives it from the student's own entitlement, fail-closed. So
-      //   a guardian saw historical trends the student's entitlement denied the student —
-      //   the payer's view more permissive than the learner's, which inverts the trust
-      //   model and violates Doc 04C invariant #7 ("Guardians MUST NOT see fields the
-      //   student does not see") outright. Both paths now call ONE resolver, and the
-      //   subject is the student on both.
-      //
-      //   No admin escape here: this is the guardian surface, and the owner ruling is that
-      //   it shows exactly what the student sees, no more and no less. An admin who needs
-      //   more uses an admin route.
-      const includeHistoricalTrends =
-        await resolveHistoricalTrendsAccess(studentId);
-      const studentView = await buildStudentKpiViewFromCanonical(
-        studentId,
-        includeHistoricalTrends,
-      );
-
-      await emitGuardianAccessEvent({
-        eventType: "guardian_report_viewed",
-        guardianId,
-        studentId,
-        requestId,
-        details: { surface: "summary" },
-      });
-
-      // The guardian body IS the student envelope. Not a subset of it, not a reshaping of
-      // it — the same object, gated only by the shared entitlement derivation above. No
-      // `student` block: it was a guardian-only addition, and the dashboard already knows
-      // which student it selected.
-      //
-      // The student route additionally attaches an `entitlement` block, which this builder
-      // does not produce and this route does not add. Under Doc 05B §10.3 there is ONE
-      // route and therefore one response, so nothing decides what reaches "the guardian
-      // version" — the question is moot at the topology change and is not answered here
-      // (owner ruling 2026-08-26, Q1).
-      return res.json({
-        ...studentView,
-        requestId,
-      });
-    } catch (err) {
-      logger.error("GUARDIAN", "student_summary", "Error", { err, requestId });
-      return res
-        .status(500)
-        .json({ error: "Internal server error", requestId });
-    }
-  },
-);
 function isIsoDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -842,7 +732,13 @@ router.get(
 );
 
 router.get(
-  "/students/:studentId/exams/full-length/:sessionId/report",
+  // RENAMED 2026-08-27 to match Doc 04C §895, which specifies
+  // `GET /api/guardian/students/:student_id/tests/:session_id/report`. The live path was
+  // the exams/full-length report path — same resource, a path the spec does not name.
+  // 04C keeps this as a SEPARATE guardian route on purpose; its invariant #7 is about the
+  // payload being a projected subset of the student's, which #645 delivered, not about
+  // folding it into the student topology.
+  "/students/:studentId/tests/:sessionId/report",
   requireSupabaseAuth,
   requireGuardianAccess,
   requireGuardianEntitlement,
@@ -1059,98 +955,5 @@ router.get(
 // ============================================================================
 // GUARDIAN WEAKNESS ROLLUPS - Domain-grain only (AC#19: no per-skill mastery for guardians)
 // ============================================================================
-/**
- * @spec [Parent AC#19 — guardian surfaces expose domain-grain only, never per-skill mastery;
- *   Doc 05B §5.4 — student_domain_mastery is student-readable] | @implemented [2026-06-23]
- * plain English: returns domain-level mastery tiers for a linked student. Per-skill rows and
- * accuracyPercent are removed (AC#19 violation closure). mastery_score/mastery_pct never cross
- * to the guardian surface.
- */
-router.get(
-  "/weaknesses/:studentId",
-  requireSupabaseAuth,
-  requireGuardianAccess,
-  requireGuardianEntitlement,
-  async (req: Request, res: Response) => {
-    const requestId = req.requestId;
-    try {
-      const guardianId = req.user!.id;
-      const { studentId } = req.params;
-      const section =
-        typeof req.query.section === "string" ? req.query.section : undefined;
-
-      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-      if (!linked && req.user!.role !== "admin") {
-        logger.warn(
-          "GUARDIAN",
-          "weaknesses_denied",
-          "Guardian tried to view non-linked student",
-          { guardianId, studentId, requestId },
-        );
-        await emitGuardianAccessEvent({
-          eventType: "guardian_access_denied",
-          guardianId,
-          studentId,
-          requestId,
-          details: { surface: "weaknesses", reason: "not_linked" },
-        });
-        return res
-          .status(403)
-          .json({ error: "Not authorized to view this student", requestId });
-      }
-
-      // EVERYTHING ABOVE THIS LINE IS THE GATE. Everything below is the student read,
-      // unmodified (owner standing rule 2026-08-21). The guardian path does not parse
-      // differently, does not query differently, and does not shape differently — it
-      // calls `readDomainMasteryView`, which is the same function
-      // GET /api/me/mastery/domains calls, with the linked student's id.
-      //
-      // The domain-only narrowing (Doc 05 Parent AC#19 / RULE 7) is the ABSENCE of a
-      // skill call, not a second derivation: there is no guardian skill endpoint.
-      const parsedSection = parseSectionFilter(section);
-      if (!parsedSection.ok) {
-        return res.status(400).json({
-          error: {
-            message: "Invalid section",
-            code: "INVALID_SECTION",
-            details: parsedSection.details,
-          },
-          requestId,
-        });
-      }
-
-      const { domains } = await readDomainMasteryView({
-        studentId,
-        section: parsedSection.section,
-      });
-
-      logger.info(
-        "GUARDIAN",
-        "weaknesses_view",
-        "Guardian viewed student domain mastery",
-        { guardianId, studentId, count: domains.length, requestId },
-      );
-      await emitGuardianAccessEvent({
-        eventType: "guardian_report_viewed",
-        guardianId,
-        studentId,
-        requestId,
-        details: { surface: "weaknesses", count: domains.length },
-      });
-
-      // The body is the student body plus `requestId`. `count` is gone: it was a second
-      // shape of `domains.length`, and it is the field the broken client branched on —
-      // `weaknessData.count === 0` is precisely what hid the `.map` of undefined.
-      return res.json({
-        ok: true,
-        domains,
-        requestId,
-      });
-    } catch (err) {
-      logger.error("GUARDIAN", "weaknesses", "Error", { err, requestId });
-      res.status(500).json({ error: "Internal server error", requestId });
-    }
-  },
-);
 
 export default router;

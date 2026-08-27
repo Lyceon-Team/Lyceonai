@@ -125,9 +125,9 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
 | `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
 | `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection (owner: `submitReviewSessionAnswer`) | `server/index.ts:345` |
-| `GET /api/me/mastery/domains` | student, admin | premium (`mastery_domains`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
-| `GET /api/me/mastery/domains/:section/:domain/skills` | student, admin | premium (`mastery_skills`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
-| `GET /api/me/weakness/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/students/{{studentId}}/mastery/domains` | student, admin | premium (`mastery_domains`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
+| `GET /api/students/:studentId/mastery/skills` | student, admin | premium (`mastery_skills`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
+| `GET /api/students/{{studentId}}/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/me/weakness/clusters` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:17` |
 | `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:114` |
@@ -141,9 +141,9 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/guardian/students` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:51-72` |
 | `POST /api/guardian/link` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:74-135` |
 | `DELETE /api/guardian/link/:studentId` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:135` |
-| `GET /api/guardian/students/:studentId/summary` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:184-265` |
+| `GET /api/students/:studentId/kpi/overall` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:184-265` |
 | `GET /api/guardian/students/:studentId/calendar/month` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts` + `apps/api/src/services/calendar-month-view.ts#buildCalendarMonthView` |
-| `GET /api/guardian/weaknesses/:studentId` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:435-517` |
+| `GET /api/students/:studentId/mastery/domains` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:435-517` |
 
 ### Admin APIs
 

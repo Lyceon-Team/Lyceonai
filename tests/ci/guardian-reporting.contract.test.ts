@@ -300,6 +300,13 @@ function buildApp(role: "guardian" | "student" = "guardian") {
   return app;
 }
 
+// SUMMARY AND WEAKNESS CASES MOVED WITH THEIR ROUTES (PR 2).
+// `/guardian/students/:id/summary` and `/guardian/weaknesses/:id` are deleted: both were
+// guardian-only paths to a resource that also had a student twin, and every such twin in this
+// vertical produced a privilege divergence. The same resources are now
+// `/api/students/:studentId/kpi/overall` and `/mastery/domains`, ONE route each, asserted on
+// BOTH `via` values in tests/ci/student-resources.contract.test.ts. What remains in this file
+// is the exam and linking surface, which Doc 04C keeps as separate guardian routes by design.
 describe("Guardian reporting runtime contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -534,134 +541,8 @@ describe("Guardian reporting runtime contract", () => {
     });
   });
 
-  it("denies non-guardian users at guardian reporting routes", async () => {
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("student");
-    app.use("/api/guardian", router);
 
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/summary",
-    );
 
-    expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Guardian role required");
-  });
-
-  it("denies entitlement-gated summary surfaces when entitlement check fails", async () => {
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app)
-      .get("/api/guardian/students/student-1/summary")
-      .set("x-entitled", "false");
-
-    expect(response.status).toBe(402);
-    expect(response.body.code).toBe("PAYMENT_REQUIRED");
-  });
-
-  it("returns guardian-safe summary payload and emits guardian_report_viewed", async () => {
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/summary",
-    );
-
-    expect(response.status).toBe(200);
-    // `student: {id, displayName}` was a guardian-ONLY addition — a key the student's own
-    // KPI body never had, so it broke the strict-subset invariant (Doc 04C #7). The
-    // dashboard already knows which student it selected; it does not need the server to
-    // name them back inside a KPI payload.
-    expect(response.body).not.toHaveProperty("student");
-    expect(response.body).not.toHaveProperty("progress");
-    expect(response.body.questions).toBeUndefined();
-    expect(response.body.correct_answer).toBeUndefined();
-    expect(response.body.explanation).toBeUndefined();
-    expect(response.body.tutorInteractions).toBeUndefined();
-    expect(response.body.mastery_score).toBeUndefined();
-    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledTimes(1);
-    // THIS ASSERTION USED TO READ `true`, AND THAT WAS THE DEFECT IT PINNED.
-    //   The guardian route hardcoded `true` while the student route derived the flag from
-    //   the student's own entitlement, fail-closed — so a guardian saw a premium surface
-    //   the student's entitlement denied the student. Doc 04C invariant #7: "Guardians
-    //   MUST NOT see fields the student does not see." A green test asserting `true` is
-    //   not a specification; it was the divergence, written down.
-    //   Both paths now call resolveHistoricalTrendsAccess, subject = the student.
-    expect(kpiAccessMocks.resolveHistoricalTrendsAccess).toHaveBeenCalledWith(
-      "student-1",
-    );
-    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
-      "student-1",
-      false,
-    );
-    // `progress` is gone. The same three numbers live in `metrics` — where the student has
-    // them — and are asserted from there below. Two shapes for one fact was the
-    // duplication ruled out in Q4.
-    const metrics = response.body.metrics as Array<{
-      id: string;
-      value: number | null;
-    }>;
-    const metricValue = (id: string): number | null | undefined =>
-      metrics.find((metric) => metric.id === id)?.value;
-    // EVERY metric the builder emitted, in order. Not a guardian-granted subset: the
-    // allowlist that produced one was deleted 2026-08-26 (owner ruling) — it was the field
-    // list of the removed `progress` block, and it re-decided statically what the
-    // entitlement gate already decides dynamically.
-    expect(metrics.map((metric) => metric.id)).toEqual([
-      "week_questions",
-      "week_accuracy",
-      "current_streak",
-      "recency_accuracy",
-    ]);
-    expect(metricValue("week_questions")).toBe(30);
-    expect(metricValue("week_accuracy")).toBe(80);
-    expect(metricValue("current_streak")).toBe(3);
-    expect(metricValue("recency_accuracy")).toBe(78);
-    // PASSED THROUGH from the builder, unfiltered — it is the student's value verbatim.
-    // The guardian projection used to hardcode `official: []` / `weighted: []` and rebuild
-    // `diagnostic` from its own filtered list; the literals could never track the builder,
-    // so if it ever populated official/weighted the guardian's copy stayed empty forever.
-    //
-    // `diagnostic` names `recency_accuracy` and the guardian now RECEIVES `recency_accuracy`
-    // — the description and the payload agree again. The mismatch flagged as owner question
-    // 2 was the metric filter, not the diagnostic list, and it went with the filter.
-    expect(response.body.measurementModel).toEqual({
-      official: [],
-      weighted: [],
-      diagnostic: [
-        "week_questions",
-        "week_accuracy",
-        "current_streak",
-        "recency_accuracy",
-      ],
-    });
-    // Old-gen engagement metrics are dropped under the genesis event vocabulary. Note that
-    // `recency_accuracy` is NOT one of them — it is a live, entitlement-gated metric and is
-    // asserted present above.
-    expect(
-      metrics.find((metric) => metric.id === "week_minutes"),
-    ).toBeUndefined();
-    expect(
-      metrics.find((metric) => metric.id === "week_sessions"),
-    ).toBeUndefined();
-
-    const reportViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_report_viewed",
-    );
-    expect(reportViewed).toBeDefined();
-    expect(reportViewed).toMatchObject({
-      user_id: "guardian-1",
-      details: expect.objectContaining({
-        student_id: "student-1",
-        surface: "summary",
-      }),
-    });
-  });
 
   it("returns guardian-safe calendar payload and emits guardian_calendar_viewed", async () => {
     const router = (await import("../../server/routes/guardian-routes"))
@@ -710,26 +591,6 @@ describe("Guardian reporting runtime contract", () => {
     });
   });
 
-  it("fails closed when canonical student KPI snapshot source fails", async () => {
-    kpiMocks.buildStudentKpiViewFromCanonical.mockRejectedValueOnce(
-      new Error("snapshot_failed"),
-    );
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/summary",
-    );
-
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Internal server error");
-    const reportViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_report_viewed",
-    );
-    expect(reportViewed).toBeUndefined();
-  });
 
   it("fails closed when canonical student calendar source fails", async () => {
     calendarMocks.buildCalendarMonthView.mockRejectedValueOnce(
@@ -771,206 +632,9 @@ describe("Guardian reporting runtime contract", () => {
     expect(calendarViewed).toBeUndefined();
   });
 
-  it("fails closed when canonical weakness view source fails", async () => {
-    masteryReadMocks.fetchDomainMasteryRows.mockRejectedValueOnce(
-      new Error("domain_mastery_fetch_failed"),
-    );
 
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
 
-    const response = await request(app).get(
-      "/api/guardian/weaknesses/student-1",
-    );
 
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Internal server error");
-    const weaknessViewed = systemEventInserts.find(
-      (row) =>
-        row.event_type === "guardian_report_viewed" &&
-        (row.details as any)?.surface === "weaknesses",
-    );
-    expect(weaknessViewed).toBeUndefined();
-  });
 
-  it("returns canonical student domain mastery payload (AC#19 domain-grain)", async () => {
-    // Canonical DB values: section is 'M'/'RW' (CHECK-constrained) and the domain is
-    // the College Board display string. The old fixture said "math", which the
-    // database would reject and which now matches no canonical pair.
-    masteryReadMocks.fetchDomainMasteryRows.mockResolvedValueOnce([
-      { section: "M", domain: "Algebra", mastery_level: 1 },
-    ]);
 
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/weaknesses/student-1",
-    );
-
-    expect(response.status).toBe(200);
-    // All eight canonical domains are present, not just the one with a row: a guardian
-    // sees the same picture the student does (owner ruling R4 / RULE 6). A domain with
-    // no events carries the `unmeasured` label rather than being absent.
-    expect(response.body.ok).toBe(true);
-    // `count` is deliberately absent — it was a second shape of `domains.length`, and it
-    // is the field the broken client branched on. Parity with the student envelope is
-    // asserted in tests/ci/guardian-student-path-parity.contract.test.ts.
-    expect(response.body).not.toHaveProperty("count");
-    expect(response.body.domains).toHaveLength(8);
-    expect(
-      response.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === "M" && d.domain === "Algebra",
-      ),
-    ).toEqual(
-      expect.objectContaining({
-        section: "M",
-        domain: "Algebra",
-        levelKey: "L1",
-        level: 1,
-        displayName: "Building",
-      }),
-    );
-    // NULL is a distinct state, never level 0 (RULE 3 / RULE 6).
-    expect(
-      response.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === "RW" && d.domain === "Expression of Ideas",
-      ),
-    ).toEqual(
-      expect.objectContaining({
-        levelKey: "unmeasured",
-        level: null,
-        displayName: "Not enough answers yet",
-      }),
-    );
-    expect(masteryReadMocks.fetchDomainMasteryRows).toHaveBeenCalledWith({
-      userId: "student-1",
-      section: undefined,
-    });
-    const weaknessViewed = systemEventInserts.find(
-      (row) =>
-        row.event_type === "guardian_report_viewed" &&
-        (row.details as any)?.surface === "weaknesses",
-    );
-    expect(weaknessViewed).toBeDefined();
-  });
-
-  it("projects guardian weakness output as domain-grain without raw mastery internals (AC#19)", async () => {
-    masteryReadMocks.fetchDomainMasteryRows.mockResolvedValue([
-      { section: "M", domain: "Algebra", mastery_level: 1 },
-      { section: "RW", domain: "Information and Ideas", mastery_level: 2 },
-    ]);
-
-    const guardianRouter = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const guardianApp = buildApp("guardian");
-    guardianApp.use("/api/guardian", guardianRouter);
-
-    const guardianResponse = await request(guardianApp).get(
-      "/api/guardian/weaknesses/student-1",
-    );
-
-    expect(guardianResponse.status).toBe(200);
-    expect(guardianResponse.body.domains).toHaveLength(8);
-    const byPair = (section: string, domain: string) =>
-      guardianResponse.body.domains.find(
-        (d: { section: string; domain: string }) =>
-          d.section === section && d.domain === domain,
-      );
-    expect(byPair("M", "Algebra")).toEqual(
-      expect.objectContaining({
-        levelKey: "L1",
-        level: 1,
-        displayName: "Building",
-      }),
-    );
-    expect(byPair("RW", "Information and Ideas")).toEqual(
-      expect.objectContaining({
-        levelKey: "L2",
-        level: 2,
-        displayName: "Developing",
-      }),
-    );
-    const json = JSON.stringify(guardianResponse.body);
-    expect(json).not.toContain('"mastery_score"');
-    expect(json).not.toContain('"accuracy"');
-    expect(json).not.toContain('"accuracyPercent"');
-    // RULE 7: guardians get domain grain only — no drill-down, and no skill array to
-    // drill into.
-    expect(json).not.toContain('"skills"');
-  });
-
-  it("guardian inherits the STUDENT's historical-trends entitlement, not a wider one", async () => {
-    // The subject is the student on both paths. When the student is entitled, the guardian
-    // sees trends; when the student is not, neither does the guardian. The guardian's own
-    // status never widens it.
-    kpiAccessMocks.resolveHistoricalTrendsAccess.mockResolvedValueOnce(true);
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-    await request(app)
-      .get("/api/guardian/students/student-1/summary")
-      .expect(200);
-    expect(kpiAccessMocks.resolveHistoricalTrendsAccess).toHaveBeenCalledWith(
-      "student-1",
-    );
-    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
-      "student-1",
-      true,
-    );
-  });
-
-  it("a failed entitlement read narrows the guardian view, never widens it", async () => {
-    // Fail-closed. An error is not an entitlement: an unreadable entitlement must hide the
-    // premium surface, not grant it. The mutation this catches is `?? true` / a catch that
-    // defaults open.
-    kpiAccessMocks.resolveHistoricalTrendsAccess.mockResolvedValueOnce(false);
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-    await request(app)
-      .get("/api/guardian/students/student-1/summary")
-      .expect(200);
-    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
-      "student-1",
-      false,
-    );
-  });
-
-  it("denies unlinked guardian summary requests and emits denied event", async () => {
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(false);
-
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/summary",
-    );
-
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe("Student not found");
-
-    const denied = systemEventInserts.find(
-      (row) => row.event_type === "guardian_access_denied",
-    );
-    expect(denied).toBeDefined();
-    expect(denied).toMatchObject({
-      user_id: "guardian-1",
-      details: expect.objectContaining({
-        student_id: "student-1",
-        surface: "summary",
-        reason: "not_linked",
-      }),
-    });
-  });
 });

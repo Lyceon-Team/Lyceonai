@@ -12,10 +12,13 @@ import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   fetchMasteryDomains,
   fetchMasterySkills,
+  skillsForDomain,
   type MasteryDomainNode,
   type MasterySection,
   type MasterySkillNode,
 } from "@/lib/masteryApi";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { LevelPill } from "@/components/mastery/LevelPill";
 
 /**
@@ -53,18 +56,23 @@ function SkillPanel({
   section,
   domain,
   onBack,
+  allSkills,
+  isLoading,
+  error,
+  refetch,
 }: {
   section: MasterySection;
   domain: string;
   onBack: () => void;
+  allSkills: readonly MasterySkillNode[];
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
 }) {
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["/api/me/mastery/domains", section, domain, "skills"],
-    queryFn: () => fetchMasterySkills(section, domain),
-    retry: 1,
-  });
-
-  const skills = data?.skills ?? [];
+  // NO SECOND REQUEST. Doc 05B §10.3 names `/mastery/skills` flat and §10.7 bounds it at
+  // ~80 rows, so the page fetches every skill once and each panel filters the rows it needs
+  // (owner ruling 2026-08-27, OQ3). Opening three domains used to cost three round trips.
+  const skills = skillsForDomain(allSkills, section, domain);
   // RULE 6: ONE call to action for the panel, shown only when something in it is
   // unmeasured — never one per card. Eight "Practise this" buttons on eight unmeasured
   // skills is a wall of identical asks, and it makes "we have not measured this yet" look
@@ -102,9 +110,11 @@ function SkillPanel({
         />
       )}
 
-      {!isLoading && !error && data?.catalogEmpty && (
-        // Distinct from "no skills measured" AND from a failed load. The question bank
-        // publishes nothing here yet; saying "no data" would blame the student for it.
+      {!isLoading && !error && skills.length === 0 && (
+        // Distinct from "no skills measured" AND from a failed load. `skills` is the
+        // question bank's catalogue for this domain unioned with the student's own rows, so
+        // an empty list means the BANK publishes nothing here — never that the student has
+        // done nothing, and never that the read failed (that is `error`, above).
         <p
           className="text-sm text-muted-foreground"
           data-testid="catalog-empty"
@@ -114,7 +124,7 @@ function SkillPanel({
         </p>
       )}
 
-      {!isLoading && !error && !data?.catalogEmpty && (
+      {!isLoading && !error && skills.length > 0 && (
         <>
           <ul className="space-y-2" data-testid="skill-list">
             {skills.map((skill: MasterySkillNode) => (
@@ -147,14 +157,27 @@ function SkillPanel({
 
 export default function MasteryPage() {
   const [, navigate] = useLocation();
+  const { user } = useSupabaseAuth();
   const [selected, setSelected] = useState<{
     section: MasterySection;
     domain: string;
   } | null>(null);
 
+  // The subject is the signed-in student. The SAME fetchers serve the guardian dashboard
+  // with a linked student's id — one route per resource, per Doc 05B §10.3.
+  const studentId = user?.id ?? "";
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["/api/me/mastery/domains"],
-    queryFn: fetchMasteryDomains,
+    queryKey: [studentResourceUrl(studentId, "masteryDomains")],
+    queryFn: () => fetchMasteryDomains(studentId),
+    enabled: studentId.length > 0,
+    retry: 1,
+  });
+
+  const skillsQuery = useQuery({
+    queryKey: [studentResourceUrl(studentId, "masterySkills")],
+    queryFn: () => fetchMasterySkills(studentId),
+    enabled: studentId.length > 0,
     retry: 1,
   });
 
@@ -221,6 +244,10 @@ export default function MasteryPage() {
             section={selected.section}
             domain={selected.domain}
             onBack={() => setSelected(null)}
+            allSkills={skillsQuery.data?.skills ?? []}
+            isLoading={skillsQuery.isLoading}
+            error={skillsQuery.error}
+            refetch={() => void skillsQuery.refetch()}
           />
         )}
 

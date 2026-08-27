@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { useParams, useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Loader2, Flame, ArrowLeft } from "lucide-react";
@@ -134,7 +135,7 @@ export default function GuardianCalendarPage() {
   const { data: studentData } = useQuery({
     queryKey: ['guardian-student-summary', studentId],
     queryFn: async () => {
-      const res = await csrfFetch(`/api/guardian/students/${studentId}/summary`, { credentials: 'include' });
+      const res = await csrfFetch(studentResourceUrl(studentId, 'kpiOverall'), { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch student info');
       return res.json();
     },

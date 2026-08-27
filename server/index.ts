@@ -61,11 +61,10 @@ import {
   doubleCsrfProtection,
   generateToken,
 } from "./middleware/csrf-double-submit";
-import { weaknessRouter } from "./routes/legacy/weakness";
-import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
+import studentResourceRoutes from "./routes/student-resources";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
@@ -418,20 +417,17 @@ app.use(
   notificationRoutes,
 );
 
-// Weakness & Mastery Routes (student weakness tracking)
+// Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
+// to the student and to a linked guardian by the same handler; `resolveSubject` inside the
+// router turns the principal into the subject and is the only role-aware branch in the
+// stack. Deliberately NOT behind `requireStudentOrAdmin`: a guardian is a legitimate caller
+// here, and the resolver — not a role gate — decides whether this caller may see this
+// student.
 app.use(
-  "/api/me/weakness",
+  "/api/students",
   requireSupabaseAuth,
-  requireStudentOrAdmin,
   doubleCsrfProtection,
-  weaknessRouter,
-);
-app.use(
-  "/api/me/mastery",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  masteryRouter,
+  studentResourceRoutes,
 );
 app.use(
   "/api/calendar",
