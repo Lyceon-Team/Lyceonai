@@ -151,3 +151,31 @@ Recorded here so the charter stays the single rules document. Not part of the 20
 3. **SCL-G amended** for partial refunds. Refund Policy §8.1 cannot carry a partial-no-revoke carve-out; the distinction became `Stripe_Open_Questions.md` Q4.
 4. **New DDL queue item D-5** — parallel-paths class: the entitled-status set exists in two independent copies (`entitlement_active()` body and `idx_entitlements_active` predicate).
 5. **B1 ruled — Stripe Entitlements REJECTED**, on the Customer-keying argument, not the seven-versus-one count. `entitlement_features` stays, as data.
+
+## Amendment to §5 Tests (owner, 2026-08-27)
+
+**A plant that fails to fail is a FINDING requiring a second formulation — never evidence the test
+works.**
+
+§5 already says to plant the failure and watch it fail. It did not say what to do when the plant
+*passes*. The tempting reading — "the behaviour must be covered some other way" — is exactly
+backwards: a plant that does not fail proves the test cannot see the defect it names.
+
+The rule: when a plant passes, the test is not validated, it is **disproven**. Reformulate the test
+so the plant fails, and keep the reformulated test. State in the commit that the second formulation
+exists because the first could not catch the defect — that sentence is the audit trail.
+
+Two instances, both real:
+
+1. **The 1:1 rule under the two-step flow (WS-GL Phase B).** The planted violation did not fail
+   because the guard was reached only on a path the test never drove.
+2. **The refund list-price substitution (Phase 3 §4.3, 2026-08-27).** Substituting a hard-coded list
+   price for `charge.amount` **passed**. Every handler refund test used charge `4900`, equal to the
+   planted list price, so the substitution was arithmetically invisible and the tests were not
+   pinning SCL-072 at all. Second formulation: a **discounted** charge — 2450 charged, 2450 refunded,
+   where charged and list differ. The same plant then failed. That test exists solely because the
+   first formulation could not catch it.
+
+The common shape in both: the plant was invisible because the *fixture* made two different values
+coincide. When choosing plant values, prefer inputs where the correct and incorrect implementations
+must diverge — equal values hide substitutions.

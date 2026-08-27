@@ -852,6 +852,44 @@ export async function resolveLinkedPairPremiumAccessForStudent(
 }
 
 /**
+ * @spec [Doc 01 V8 §31.3 — a guardian's premium derives from ANY ONE active
+ *        premium student; SP25-001 single evaluator] | @implemented [2026-08-27]
+ * plain English: find the linked student whose entitlement gives this guardian
+ * premium. Expected outcome: the first active link whose student is entitled;
+ * or the first active link when none is; or null when there are no links.
+ * Trade-off: asks the canonical evaluator once per link and short-circuits on
+ * the first hit, so a guardian with an entitled student costs one call and only
+ * an all-free guardian pays for every link — deterministic because
+ * `getAllGuardianStudentLinks` orders by `created_at`. Edge case: a guardian
+ * with links but no entitled student must still report `hasActiveLink: true`,
+ * which is why the fallback returns the first link rather than null — "linked
+ * but not premium" and "not linked at all" are different facts.
+ *
+ * Consumes WS-GL Phase B's reader. No second link reader is built here.
+ */
+async function resolveConferringLink(
+  guardianProfileId: string,
+): Promise<{ link: GuardianLink; active: boolean } | null> {
+  const links = await getAllGuardianStudentLinks(guardianProfileId);
+  if (links.length === 0) return null;
+
+  for (const candidate of links) {
+    if (!candidate.student_profile_id) continue;
+    const active = await EntitlementService.isEntitlementActiveForProfile(
+      candidate.student_profile_id,
+    );
+    // The verdict travels WITH the link. Returning only the link would make the
+    // caller ask the evaluator the same question again for the same student —
+    // a second round trip for an answer already computed, on a path that runs
+    // per request.
+    if (active) return { link: candidate, active: true };
+  }
+
+  const first = links[0];
+  return first ? { link: first, active: false } : null;
+}
+
+/**
  * @spec [Doc-01_V8 §20–§24; SP25-001; guardian trust model] @implemented 2026-08-09
  * plain English: resolve premium access for a guardian. Guardian access derives from the
  * LINKED STUDENT's entitlement — guardian's own entitlement is diagnostic-only metadata.
@@ -864,9 +902,24 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   // profile_id = userId — read guardian entitlement directly (diagnostic only)
   const guardianEntitlement = await getEntitlementForProfile(guardianUserId);
 
+  // §31.3: a guardian's premium derives from ANY ONE active premium student —
+  // a fold over every active link, not a lookup of one.
+  //
+  // The defect this replaces: `getPrimaryGuardianLink` returns the OLDEST
+  // active link, so a guardian with two linked students where only the SECOND
+  // is premium derived `free`. The link that confers access is whichever
+  // student is actually entitled, and until this fold existed nothing looked
+  // past the first.
+  //
+  // Asking about a NAMED student is a different question and keeps its
+  // single-link behaviour: "does this guardian have access at all" folds,
+  // "what is this guardian's access to THIS student" does not.
+  const folded = requestedStudentId
+    ? null
+    : await resolveConferringLink(guardianUserId);
   const link = requestedStudentId
     ? await getGuardianLinkForStudent(guardianUserId, requestedStudentId)
-    : await getPrimaryGuardianLink(guardianUserId);
+    : (folded?.link ?? null);
 
   // Consequence edit, declared per WS-GL Stage 2 Closure Plan §10 (ruling 3): the callee's
   // contract now names the column the table actually has. Field rename only — no behaviour
@@ -897,9 +950,15 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
   // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
   // visibility requires active link (resolved above) AND active student entitlement (here).
-  const studentActive = await EntitlementService.isEntitlementActiveForProfile(
-    link.student_profile_id,
-  );
+  // Reuse the fold's verdict when it produced one: it evaluated THIS student on
+  // THIS request, so asking again would be a second round trip for an answer we
+  // already hold. The named-student path has no fold and still evaluates here.
+  const studentActive =
+    folded !== null
+      ? folded.active
+      : await EntitlementService.isEntitlementActiveForProfile(
+          link.student_profile_id,
+        );
   const hasPremiumAccess = studentActive;
 
   return {

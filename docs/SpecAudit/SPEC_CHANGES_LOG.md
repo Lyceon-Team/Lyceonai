@@ -749,6 +749,62 @@ Owner action: amend §22.1's action cell; add a one-line note to Doc 03 INV-03-0
 Artifact: not in the Phase C thin slice (unaccompanied path: payer and student are the same person, so
   the distinction does not bite — deliberately, per Charter §9).
 
+AMENDED 2026-08-27 — WHERE THE GATE LIVES, AND WHY IT IS OURS.
+  Owner ruling: exhaust the Stripe-native options before building anything, and name the surfaces
+  rejected so nobody re-litigates this. FOUR were evaluated against INV-03-08; all four fail. The
+  survey ships as a gate — `tests/ci/stripe-country-control-survey.contract.test.ts` — which PRINTS
+  the evaluation and FAILS the day Stripe ships a native billing-country allowlist, so our control is
+  deleted rather than carried forever.
+
+  1. `shipping_address_collection.allowed_countries` — REJECTED. The only `allowed_countries` in
+     Checkout create params (verified: exactly one occurrence in stripe@20.4.1
+     Checkout/SessionsResource.d.ts), and it sits inside `interface ShippingAddressCollection`,
+     documented "which countries Checkout should provide as options for shipping locations". Moot
+     regardless: owner ruling is that NO shipping address is collected.
+  2. Stripe Tax / `automatic_tax` — REJECTED. Its params are `enabled` and `liability` only. It
+     COLLECTS a billing address for calculation ("Enabling this parameter causes Checkout to collect
+     any billing address information necessary for tax calculation") and restricts nothing. Tax
+     registrations decide whether tax is CHARGED, not whether checkout proceeds — an unregistered
+     country is charged zero tax, not refused.
+  3. `payment_method_configuration` — REJECTED. A configuration id selecting which payment METHODS
+     appear. Per-country availability of methods is not a country allowlist for the customer;
+     removing a method does not stop a card from an ineligible country.
+  4. Radar rules + Value Lists — REJECTED, and this is the closest one. Radar IS a genuine native
+     country mechanism: `Radar.ValueList.item_type` includes `'country'` (verified in the SDK), and
+     a Dashboard rule can reference an API-managed list. It fails on SUBJECT and on MOMENT.
+     INV-03-08 gates LISA ACCESS on the BILLING ADDRESS, enforced on every request inside
+     `canAccessFeature` (Doc 03B). Radar decides ONE PAYMENT at ONE MOMENT. It cannot gate a
+     free-tier student, a student entitled before any rule existed, or the SCL-043 guardian case
+     where the payer's country is not the student's. WHERE THE USER LANDS also matters: a Radar rule
+     blocks the payment, so the user reaches Checkout, enters a card, and is declined — a worse
+     experience than never being offered the purchase, and it produces no server-side record of the
+     eligibility decision. Worth adding as DEFENCE IN DEPTH; it cannot be the control.
+
+  THEREFORE the control is ours, and it is a gate rather than a subsystem: one pure function,
+  `server/lib/stripe/country-eligibility.ts`, reading the Tier-1 list from
+  `entitlement_runtime_config` (key `tier_1_countries`) rather than a constant in code.
+
+  TIMING CORRECTION — the gate cannot live wholly at session creation. At that moment there is no
+  billing address to gate on: the customer types it DURING Checkout. The SDK states it —
+  `customer_details.address` is "The customer's address after a completed Checkout Session". So the
+  one rule has three call sites:
+      session creation            block only a country ALREADY known (returning payer). Unknown must
+                                  NOT block, or every first-time buyer is refused.
+      checkout.session.completed  the DERIVATION point: read the billing country, persist it to the
+                                  entitled student's `profiles.country_code`, deny entitlement if
+                                  ineligible.
+      customer.updated            EGRESS: the Portal permits customer-initiated billing-address
+                                  changes, so eligibility can lapse after purchase.
+
+  ABSENCE IS NOT INELIGIBILITY. `unknown` does not block checkout but DOES deny entitlement;
+  `profiles.country_code` is null on 0 of 115 rows, so collapsing the two would revoke everyone.
+  An unseeded Tier-1 list FAILS CLOSED — `entitlement_runtime_config` holds 0 rows in production, and
+  an empty list is a configuration not yet made, not a decision that everyone qualifies.
+
+  OWNER ACTION ADDED: seed `entitlement_runtime_config` key `tier_1_countries` (value_type `array`)
+  with INV-03-08's set {US, CA, UK, AU, NZ, IE, SG}. Until it is seeded the gate denies entitlement
+  by design, which is why this is an owner action and not a default in code.
+
 ---
 
 SCL-045 | 2026-08-20 | Doc 01 V8 §20 — multi-student billing is one subscription item per student, not quantity | PROPOSED
