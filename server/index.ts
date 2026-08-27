@@ -736,7 +736,25 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
 // SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
 // Keeps sitemap legal slugs indexable with canonical title/description metadata.
 app.get("/legal/:slug", (req, res, next) => {
-  const slug = String(req.params.slug || "");
+  // @spec [CodeQL js/reflected-xss alert #36; Coding Standards §7.1, §12.2]
+  //   | @implemented [2026-08-27]
+  //
+  // plain English: the slug echoed into the page is the TABLE'S OWN KEY, never the
+  // request's string. `slug` below is an element of `Object.keys(LEGAL_META)` — a server
+  // constant — and the request only chooses WHICH element. Same characters, different
+  // provenance, so no user-controlled value reaches the HTML at `/legal/${slug}` below.
+  // Fixed at the source rather than escaped at the sink: `injectBodyContent` interpolates
+  // raw, so an escape here would be one call away from being forgotten by the next caller.
+  //
+  // This also closes a hole the previous `LEGAL_META[slug]` truthiness check left open.
+  // LEGAL_META is a plain object literal, so a bare index resolves INHERITED members too:
+  // `/legal/constructor` returned `Object`, passed `if (!meta)`, and reflected
+  // "constructor" back into the page. `Object.keys` enumerates own keys only, so the
+  // guard is now an allowlist rather than a truthiness test.
+  const requestedSlug = String(req.params.slug || "");
+  const slug = Object.keys(LEGAL_META).find((key) => key === requestedSlug);
+  if (slug === undefined) return next();
+
   const meta = LEGAL_META[slug];
   if (!meta) return next();
 
