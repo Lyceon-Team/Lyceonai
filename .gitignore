@@ -50,3 +50,16 @@ tests/__fixtures__/assemble-batch-apply/
 # verifies the committed copy matches the source of truth in shared/.
 # apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated.ts
 .claude/worktrees/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# NOTE: .terraform.lock.hcl is NOT ignored — commit it (pins provider versions)
