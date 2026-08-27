@@ -40,7 +40,12 @@ type CrisisResult =
   | { crisis: false; forceReview: boolean }
   | {
       crisis: true;
-      source: "signature" | "model" | "both";
+      source:
+        | "signature"
+        | "model"
+        | "both"
+        | "classifier_degraded_no_floor"
+        | "infrastructure_failure";
       signatureId: string | null;
       modelConfidence: number | null;
       forceReview: boolean;
@@ -49,6 +54,8 @@ type CrisisResult =
 type SignatureResult = {
   triggered: boolean;
   signatureId: string | null;
+  /** True when the signature set returned zero crisis rows — Layer 1 is inert. */
+  layer1Empty: boolean;
 };
 
 type ClassifierResult = {
@@ -106,12 +113,17 @@ export async function checkCrisisSignatures(
       error,
     );
     // Fail CLOSED — SCL-023: "Layer 1 signature table unreadable: fail closed on the turn"
-    // Returning triggered=true so the orchestrator blocks the turn
-    return { triggered: true, signatureId: null };
+    // Returning triggered=true so the orchestrator blocks the turn.
+    // layer1Empty=false: the table is unreadable, not known-empty.
+    return { triggered: true, signatureId: null, layer1Empty: false };
   }
 
   if (!data || data.length === 0) {
-    return { triggered: false, signatureId: null };
+    // Layer 1 has no crisis signatures — it cannot detect anything.
+    // The caller uses layer1Empty to decide fail-closed behavior on
+    // Layer 2 failure (B1.5: SCL-023 §3.4 "Layer 1 result stands"
+    // presumes Layer 1 can produce a meaningful result).
+    return { triggered: false, signatureId: null, layer1Empty: true };
   }
 
   const lowerText = text.toLowerCase();
@@ -136,11 +148,11 @@ export async function checkCrisisSignatures(
         "Layer 1 crisis signature match detected",
         { signatureId: row.id },
       );
-      return { triggered: true, signatureId: row.id as string };
+      return { triggered: true, signatureId: row.id as string, layer1Empty: false };
     }
   }
 
-  return { triggered: false, signatureId: null };
+  return { triggered: false, signatureId: null, layer1Empty: false };
 }
 
 // ── Layer 2: Model Inference ───────────────────────────────────────────
@@ -330,6 +342,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
 
   const layer1Positive = signatureResult.triggered;
   const layer2Positive = classifierResult.isCrisis;
+  const layer1Empty = signatureResult.layer1Empty;
 
   // Layer 2 failure detection: confidence 0 with isCrisis false suggests
   // the classifier could not run (returned default). Force review in this case.
@@ -337,14 +350,38 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     !classifierResult.isCrisis && classifierResult.confidence === 0;
 
   if (!layer1Positive && !layer2Positive) {
+    if (layer2MayHaveFailed && layer1Empty) {
+      // B1.5 — FAIL CLOSED: Layer 2 failed AND Layer 1 has no signatures.
+      // SCL-023 §3.4 permits "turn proceeds" only when "Layer 1 result
+      // stands." With zero crisis signatures, Layer 1 has never stood for
+      // anything — the premise does not hold. Proceeding to normal
+      // generation here means a potentially-in-crisis student receives an
+      // SAT tutoring reply with no detection having occurred from either
+      // layer. Return crisis=true to route into the §4.6 crisis-safe
+      // response (regional resources). The review case is still created.
+      // @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21.2, B1.5]
+      logger.error(
+        "TUTOR_CRISIS",
+        "classifier_degraded_no_floor",
+        "Layer 2 crisis classifier failed AND Layer 1 has zero crisis signatures; " +
+          "failing closed with crisis-safe response because Layer 1 cannot provide a floor",
+      );
+      return {
+        crisis: true,
+        source: "classifier_degraded_no_floor",
+        signatureId: null,
+        modelConfidence: null,
+        forceReview: true,
+      };
+    }
     if (layer2MayHaveFailed) {
-      // Layer 2 could not run — Layer 1 result stands per SCL-023,
-      // but the turn must be force-enqueued to the §21.3 review queue
-      // with classifier_degraded (CR-03C-V3-01 §3.4 condition 3).
+      // SCL-023 §3.4 condition 3: Layer 2 failed, Layer 1 has signatures
+      // and returned a result (no match). Layer 1 result stands — turn
+      // proceeds to normal generation, force-enqueued to §21.3 review queue.
       logger.warn(
         "TUTOR_CRISIS",
         "classifier_degraded",
-        "Layer 2 crisis classifier failed; Layer 1 stands, turn force-enqueued to review queue",
+        "Layer 2 crisis classifier failed; Layer 1 stands (has signatures), turn force-enqueued to review queue",
       );
     }
     return { crisis: false, forceReview: layer2MayHaveFailed };
@@ -421,7 +458,13 @@ export function getCrisisResponse(country: string): string {
 export async function flagConversationForReview(
   conversationId: string,
   studentId: string,
-  source: "signature" | "model" | "both" | "classifier_degraded",
+  source:
+    | "signature"
+    | "model"
+    | "both"
+    | "classifier_degraded"
+    | "classifier_degraded_no_floor"
+    | "infrastructure_failure",
   signatureId: string | null,
   modelConfidence: number | null,
 ): Promise<string> {

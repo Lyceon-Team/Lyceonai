@@ -203,7 +203,11 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
         };
       }
 
-      if (table === "guardian_link_audit") {
+      // WS-GL Phase B: the guardian-link audit trail moved from `guardian_link_audit` —
+      // a table that does not exist in production — to `audit_logs`, which does. Owner
+      // ruling 2026-08-24. This capture follows the writer; the assertions below follow
+      // the new row shape.
+      if (table === "audit_logs") {
         return {
           insert: async (payload: any) => {
             if (Array.isArray(payload)) {
@@ -304,7 +308,13 @@ describe("Guardian reporting runtime contract", () => {
     profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
-      { student_user_id: "student-1", linked_at: "2026-03-01T00:00:00.000Z" },
+      // WS-GL Phase B: the real column is `student_profile_id`; `linked_at` does not
+      // exist on this table (`created_at` does).
+      {
+        student_profile_id: "student-1",
+        status: "active",
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
     ]);
 
     kpiMocks.buildStudentKpiViewFromCanonical.mockResolvedValue({
@@ -488,15 +498,21 @@ describe("Guardian reporting runtime contract", () => {
     expect(response.status).toBe(409);
     expect(response.body.code).toBe("LINK_NOT_ACTIVE");
     const unlinkSuccess = guardianAuditInserts.find(
-      (row: any) =>
-        row.action === "unlink_success" && row.outcome === "success",
+      (row: any) => row.action === "guardian_link_revoked",
     );
     expect(unlinkSuccess).toBeUndefined();
   });
 
   it("keeps valid unlink transition behavior and emits unlink success audit", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
-    accountMocks.revokeGuardianLink.mockResolvedValueOnce(undefined);
+    // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
+    // `revoked_by_profile_id` and `revocation_reason` to be observable).
+    accountMocks.revokeGuardianLink.mockResolvedValueOnce({
+      id: "11111111-1111-1111-1111-111111111111",
+      guardian_profile_id: "guardian-1",
+      student_profile_id: "student-1",
+      status: "revoked",
+    });
     accountMocks.getAllGuardianStudentLinks.mockResolvedValueOnce([]);
     const router = (await import("../../server/routes/guardian-routes"))
       .default;
@@ -509,13 +525,12 @@ describe("Guardian reporting runtime contract", () => {
     expect(response.body.ok).toBe(true);
     expect(response.body.students).toEqual([]);
     const unlinkSuccess = guardianAuditInserts.find(
-      (row: any) =>
-        row.action === "unlink_success" && row.outcome === "success",
+      (row: any) => row.action === "guardian_link_revoked",
     );
     expect(unlinkSuccess).toBeDefined();
     expect(unlinkSuccess).toMatchObject({
-      guardian_profile_id: "guardian-1",
-      student_profile_id: "student-1",
+      actor_profile_id: "guardian-1",
+      target_profile_id: "student-1",
     });
   });
 

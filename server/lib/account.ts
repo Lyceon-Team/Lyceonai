@@ -1,158 +1,306 @@
 /**
- * Get guardian link for a specific studentId from canonical guardian_links table.
- * Only returns ACTIVE links.
- * Returns { account_id, student_user_id } if linked, else null.
+ * Guardian↔student linkage — the canonical `guardian_links` data layer.
+ *
+ * @spec [Doc-01_V8, §35 Guardian-student linkage; §36.1 Initiation; §36.3 Revocation]
+ *       | @implemented [2026-08-26]
+ *
+ * plain English: create, read, accept and revoke the links between a guardian and the
+ * students they can see. What it does: writes rows to `guardian_links` using the column
+ * names and status domain the table actually has, and moves a link through the two-step
+ * lifecycle §36.1 specifies rather than writing it straight to `active`. Expected outcome:
+ * a guardian-initiated link lands in `pending_student_accept` and becomes `active` only
+ * when the student accepts; the reverse for a student-initiated one; a guardian may hold
+ * links to more than one student. Trade-offs and edge cases are stated per function.
+ *
+ * WHAT THIS REPLACES, AND WHY. The previous implementation referenced four columns that
+ * do not exist on this table — `student_user_id`, `account_id`, `linked_at`, and an
+ * `upsert` onConflict target built from two of them — so every read and every write
+ * failed at the database (`WS-GL_Stage1_Audit.md` §1, §3.2). It also enforced a 1:1
+ * guardian↔student rule that §35 does not state and §31.3 explicitly contradicts:
+ * *"If a guardian has multiple linked students, any one active premium student grants the
+ * guardian premium derivation."* That rule was a retired V6 artifact; it is gone.
+ *
+ * The `accounts` model is retired on this surface (owner ruling 2026-08-24). There is no
+ * `accounts` table, no `account_members`, and no `ensure_account_for_user` RPC in
+ * production, so `account_id` could never resolve. It is removed, not defaulted.
+ */
+
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { logger } from "../logger";
+import {
+  GUARDIAN_LINK_ERROR,
+  GuardianLinkError,
+  GUARDIAN_LINK_COLUMNS,
+  OCCUPYING_STATUSES,
+  PENDING_STATUS_FOR_INITIATOR,
+  parseGuardianLink,
+  parseGuardianLinks,
+  type GuardianLink,
+  type GuardianLinkInitiator,
+} from "../../packages/shared/src/guardian-link-schema";
+
+/**
+ * The row contract lives in `packages/shared` per coding-standards §7.2 — Zod first, types
+ * inferred, one definition. Re-exported here so existing importers of `account.ts` keep
+ * resolving without a second declaration to drift from it.
+ */
+export type {
+  GuardianLink,
+  GuardianLinkStatus,
+  GuardianLinkInitiator,
+} from "../../packages/shared/src/guardian-link-schema";
+
+/**
+ * Error contract re-exported from `packages/shared` so importers of this module keep
+ * resolving. The definitions live there, not here — see that file for why.
+ */
+export {
+  GUARDIAN_LINK_ERROR,
+  GuardianLinkError,
+} from "../../packages/shared/src/guardian-link-schema";
+
+/**
+ * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
+ * plain English: is this guardian actively linked to this student? Returns the active row
+ * or null. Expected outcome: a single row, because `unique_active_link` makes more than one
+ * active row for a pair impossible. Edge case: PostgREST's `PGRST116` (no rows) is not an
+ * error here — it is the "not linked" answer — so it is filtered out rather than thrown.
  */
 export async function getGuardianLinkForStudent(
   guardianProfileId: string,
-  studentId: string,
-): Promise<{ account_id: string | null; student_user_id: string } | null> {
+  studentProfileId: string,
+): Promise<GuardianLink | null> {
   const { data, error } = await supabaseServer
     .from("guardian_links")
-    .select("account_id, student_user_id")
+    .select(GUARDIAN_LINK_COLUMNS)
     .eq("guardian_profile_id", guardianProfileId)
-    .eq("student_user_id", studentId)
+    .eq("student_profile_id", studentProfileId)
     .eq("status", "active")
-    .single();
+    .maybeSingle();
+
   if (error && error.code !== "PGRST116") {
-    console.error("[Account] Failed to get guardian link for student:", error);
+    logger.error(
+      "GUARDIAN",
+      "get_link_for_student",
+      "Failed to read guardian link",
+      { reason: error.message },
+    );
     throw new Error(`Failed to get guardian link: ${error.message}`);
   }
-  return data || null;
+  return data ? parseGuardianLink(data) : null;
 }
 
 /**
- * Check if a guardian is actively linked to a specific student.
- * Canonical check: guardian_links WHERE status = 'active'.
+ * @spec [Doc-01_V8, §35; §38 Guardian visibility model] | @implemented [2026-08-26]
+ * plain English: the gate every guardian read surface calls before showing a student's data.
+ * Expected outcome: true only when an ACTIVE link exists — a pending link grants nothing,
+ * which is the point of §36.1's two-step flow.
  */
 export async function isGuardianLinkedToStudent(
   guardianProfileId: string,
-  studentId: string,
+  studentProfileId: string,
 ): Promise<boolean> {
-  const link = await getGuardianLinkForStudent(guardianProfileId, studentId);
+  const link = await getGuardianLinkForStudent(
+    guardianProfileId,
+    studentProfileId,
+  );
   return link !== null;
 }
 
 /**
- * Create a new guardian↔student link in the canonical guardian_links table.
+ * @spec [Doc-01_V8, §36.1 Initiation] | @implemented [2026-08-26]
+ * plain English: start a link. What it does: writes one `guardian_links` row in the pending
+ * state §36.1 assigns to the initiating party, with `initiated_by` and `initiated_at` set.
+ * Expected outcome: `pending_student_accept` for a guardian-initiated link,
+ * `pending_guardian_accept` for a student-initiated one — never `active`, because §36.1
+ * makes acceptance by the counterparty the only route to `active`.
+ * Trade-off: §35 permits a guardian to hold links to more than one student, so this refuses
+ * only a duplicate of the SAME pair, not a second student. Edge case: a pair that already
+ * has an active or pending row raises ALREADY_EXISTS rather than writing a second row, which
+ * `unique_active_link` would reject anyway — this turns a 23505 into a typed error.
  */
 export async function createGuardianLink(
   guardianProfileId: string,
-  studentId: string,
-  accountId?: string,
-): Promise<{
-  id: string;
-  guardian_profile_id: string;
-  student_user_id: string;
-}> {
-  const { data: guardianActiveLinks, error: guardianLinksError } =
-    await supabaseServer
-      .from("guardian_links")
-      .select("student_user_id")
-      .eq("guardian_profile_id", guardianProfileId)
-      .eq("status", "active")
-      .order("linked_at", { ascending: true })
-      .limit(2);
+  studentProfileId: string,
+  initiatedBy: GuardianLinkInitiator,
+): Promise<GuardianLink> {
+  const { data: existing, error: existingError } = await supabaseServer
+    .from("guardian_links")
+    .select("id, status")
+    .eq("guardian_profile_id", guardianProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .in("status", OCCUPYING_STATUSES);
 
-  if (guardianLinksError) {
+  if (existingError) {
     throw new Error(
-      `Failed to validate guardian active links: ${guardianLinksError.message}`,
+      `Failed to check existing guardian link: ${existingError.message}`,
     );
   }
 
-  if (
-    (guardianActiveLinks || []).some(
-      (row: any) => row.student_user_id !== studentId,
-    )
-  ) {
-    const conflictErr = new Error(
-      "Guardian already has an active linked student",
-    );
-    (conflictErr as any).code = "GUARDIAN_ALREADY_LINKED";
-    throw conflictErr;
-  }
-
-  const { data: studentActiveLinks, error: studentLinksError } =
-    await supabaseServer
-      .from("guardian_links")
-      .select("guardian_profile_id")
-      .eq("student_user_id", studentId)
-      .eq("status", "active")
-      .order("linked_at", { ascending: true })
-      .limit(2);
-
-  if (studentLinksError) {
-    throw new Error(
-      `Failed to validate student active links: ${studentLinksError.message}`,
+  if ((existing ?? []).length > 0) {
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+      "A link between this guardian and student already exists",
     );
   }
 
-  if (
-    (studentActiveLinks || []).some(
-      (row: any) => row.guardian_profile_id !== guardianProfileId,
-    )
-  ) {
-    const conflictErr = new Error(
-      "Student is already linked to another guardian",
-    );
-    (conflictErr as any).code = "STUDENT_ALREADY_LINKED";
-    throw conflictErr;
-  }
-
+  const now = new Date().toISOString();
   const { data, error } = await supabaseServer
     .from("guardian_links")
-    .upsert(
-      {
-        guardian_profile_id: guardianProfileId,
-        student_user_id: studentId,
-        account_id: accountId || null,
-        status: "active",
-        linked_at: new Date().toISOString(),
-        revoked_at: null,
-      },
-      { onConflict: "guardian_profile_id,student_user_id" },
-    )
-    .select("id, guardian_profile_id, student_user_id")
+    .insert({
+      guardian_profile_id: guardianProfileId,
+      student_profile_id: studentProfileId,
+      status: PENDING_STATUS_FOR_INITIATOR[initiatedBy],
+      initiated_by: initiatedBy,
+      initiated_at: now,
+    })
+    .select(GUARDIAN_LINK_COLUMNS)
     .single();
 
-  if (error) {
-    console.error("[Account] Failed to create guardian link:", error);
-    throw new Error(`Failed to create guardian link: ${error.message}`);
+  if (error || !data) {
+    logger.error("GUARDIAN", "create_link", "Failed to create guardian link", {
+      reason: error?.message ?? "no row returned",
+    });
+    throw new Error(
+      `Failed to create guardian link: ${error?.message ?? "no row returned"}`,
+    );
   }
 
-  return data;
+  return parseGuardianLink(data);
 }
 
 /**
- * Revoke a guardian↔student link. Sets status='revoked' in guardian_links.
- * Immediately revokes guardian visibility without affecting student data.
+ * @spec [Doc-01_V8, §36.1 Initiation steps 5] | @implemented [2026-08-26]
+ * plain English: the counterparty confirms, and the link goes live. What it does: sets
+ * `status='active'`, `accepted_at` and `accepted_by_profile_id` on a pending row.
+ * Expected outcome: the three columns §36.1 leaves unwritten until this moment are all
+ * populated in one statement. Trade-off: the acceptor is checked against the pending status
+ * server-side — a guardian cannot accept a link that is waiting on the student, which is the
+ * whole content of the two-step flow. Edge case: a link already active, or already revoked,
+ * raises NOT_PENDING rather than silently re-accepting.
  */
-export async function revokeGuardianLink(
-  guardianProfileId: string,
-  studentId: string,
-): Promise<void> {
-  // Revoke in canonical table
+export async function acceptGuardianLink(
+  linkId: string,
+  acceptingProfileId: string,
+): Promise<GuardianLink> {
+  const { data: link, error: readError } = await supabaseServer
+    .from("guardian_links")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("id", linkId)
+    .maybeSingle();
+
+  if (readError && readError.code !== "PGRST116") {
+    throw new Error(`Failed to read guardian link: ${readError.message}`);
+  }
+  if (!link) {
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.NOT_PENDING,
+      "Guardian link not found",
+    );
+  }
+
+  const current = parseGuardianLink(link);
+  if (
+    current.status !== "pending_student_accept" &&
+    current.status !== "pending_guardian_accept"
+  ) {
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.NOT_PENDING,
+      `Guardian link is ${current.status}, not pending acceptance`,
+    );
+  }
+
+  // §36.1: the party who did NOT initiate is the party who accepts.
+  const requiredAcceptor =
+    current.status === "pending_student_accept"
+      ? current.student_profile_id
+      : current.guardian_profile_id;
+
+  if (requiredAcceptor !== acceptingProfileId) {
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR,
+      "This link is awaiting acceptance by the other party",
+    );
+  }
+
+  const now = new Date().toISOString();
   const { data, error } = await supabaseServer
     .from("guardian_links")
-    .update({ status: "revoked", revoked_at: new Date().toISOString() })
-    .eq("guardian_profile_id", guardianProfileId)
-    .eq("student_user_id", studentId)
-    .eq("status", "active")
-    .select("id")
+    .update({
+      status: "active",
+      accepted_at: now,
+      accepted_by_profile_id: acceptingProfileId,
+    })
+    .eq("id", linkId)
+    .eq("status", current.status)
+    .select(GUARDIAN_LINK_COLUMNS)
     .maybeSingle();
 
   if (error) {
-    console.error("[Account] Failed to revoke guardian link:", error);
+    throw new Error(`Failed to accept guardian link: ${error.message}`);
+  }
+  if (!data) {
+    // The status moved between the read and the write.
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.NOT_PENDING,
+      "Guardian link is no longer pending acceptance",
+    );
+  }
+
+  return parseGuardianLink(data);
+}
+
+/**
+ * @spec [Doc-01_V8, §36.3 Revocation] | @implemented [2026-08-26]
+ * plain English: either party ends an active link. What it does: sets `status='revoked'`,
+ * `revoked_at`, `revoked_by_profile_id` and `revocation_reason`. Expected outcome:
+ * revocation is immediate and the guardian loses visibility on the next read, because every
+ * read gate requires `status='active'`. Trade-off: §36.3 lets *either* party revoke, so the
+ * revoker is passed in rather than assumed to be the guardian. Edge case: revoking a link
+ * that is not active raises NOT_ACTIVE rather than writing a second revocation.
+ *
+ * §36.4's "keep or cancel the subscription?" prompt and §36.5's NOTIFY are NOT emitted here.
+ * §36.5 has no listener (grounding audit G-07: the Supabase HTTP client cannot LISTEN), so
+ * emitting it would be a write nothing reads; both are recorded as deferred in
+ * `WS-GL_Stage2_Closure_Plan.md` §4.
+ */
+export async function revokeGuardianLink(
+  guardianProfileId: string,
+  studentProfileId: string,
+  revokedByProfileId: string,
+  revocationReason?: string,
+): Promise<GuardianLink> {
+  const { data, error } = await supabaseServer
+    .from("guardian_links")
+    .update({
+      status: "revoked",
+      revoked_at: new Date().toISOString(),
+      revoked_by_profile_id: revokedByProfileId,
+      revocation_reason: revocationReason ?? null,
+    })
+    .eq("guardian_profile_id", guardianProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .eq("status", "active")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .maybeSingle();
+
+  if (error) {
+    logger.error("GUARDIAN", "revoke_link", "Failed to revoke guardian link", {
+      reason: error.message,
+    });
     throw new Error(`Failed to revoke guardian link: ${error.message}`);
   }
 
-  if (!data?.id) {
-    const conflictErr = new Error("Guardian link is not active");
-    (conflictErr as any).code = "LINK_NOT_ACTIVE";
-    throw conflictErr;
+  if (!data) {
+    throw new GuardianLinkError(
+      GUARDIAN_LINK_ERROR.NOT_ACTIVE,
+      "Guardian link is not active",
+    );
   }
+
+  return parseGuardianLink(data);
 }
-import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+
 import { SupabaseClient } from "@supabase/supabase-js";
 import { EntitlementService } from "../services/entitlement-service";
 
@@ -531,102 +679,95 @@ export async function checkUsageLimit(
 }
 
 /**
- * Get the primary linked student for a guardian.
- * CANONICAL: Reads from guardian_links WHERE status='active'.
- * Returns the first linked student's user_id.
- */
-export async function getPrimaryGuardianLink(
-  guardianUserId: string,
-): Promise<{ student_user_id: string; account_id: string | null } | null> {
-  const { data, error } = await supabaseServer
-    .from("guardian_links")
-    .select("student_user_id, account_id, linked_at")
-    .eq("guardian_profile_id", guardianUserId)
-    .eq("status", "active")
-    .order("linked_at", { ascending: true })
-    .limit(2);
-
-  if (error) {
-    console.error("[Account] Failed to get primary guardian link:", error);
-    throw new Error(`Failed to get primary guardian link: ${error.message}`);
-  }
-
-  if ((data || []).length > 1) {
-    throw new Error(
-      "Guardian has multiple active student links; 1:1 invariant violated",
-    );
-  }
-
-  const link = data?.[0];
-  if (!link?.student_user_id) {
-    return null;
-  }
-
-  return {
-    student_user_id: link.student_user_id,
-    account_id: link.account_id ?? null,
-  };
-}
-
-/**
- * Get ALL active student links for a guardian.
- * CANONICAL: Reads from guardian_links WHERE status='active'.
+ * @spec [Doc-01_V8, §35 Guardian-student linkage; §31.3 Guardian with multiple linked students]
+ *       | @implemented [2026-08-26]
+ * plain English: every ACTIVE link a guardian holds. What it does: reads `guardian_links`
+ * for this guardian where status is active, oldest first. Expected outcome: a list, not a
+ * list-of-at-most-one — §35 says guardians are linked to "one or more students" and §31.3
+ * spells out the multi-student case explicitly. Trade-off: this used to be plural-named and
+ * singular-behaved — it capped at `.limit(2)` and threw "1:1 invariant violated" on the
+ * second row. That invariant is a retired V6 rule the spec never restates; both the cap and
+ * the throw are gone. Edge case: no links returns `[]`, not null.
  */
 export async function getAllGuardianStudentLinks(
-  guardianUserId: string,
-): Promise<Array<{ student_user_id: string; linked_at: string }>> {
+  guardianProfileId: string,
+): Promise<GuardianLink[]> {
   const { data, error } = await supabaseServer
     .from("guardian_links")
-    .select("student_user_id, linked_at")
-    .eq("guardian_profile_id", guardianUserId)
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("guardian_profile_id", guardianProfileId)
     .eq("status", "active")
-    .order("linked_at", { ascending: true })
-    .limit(2);
+    .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("[Account] Failed to get guardian student links:", error);
+    logger.error(
+      "GUARDIAN",
+      "list_links",
+      "Failed to read guardian student links",
+      { reason: error.message },
+    );
     throw new Error(`Failed to get guardian student links: ${error.message}`);
   }
 
-  if ((data || []).length > 1) {
-    throw new Error(
-      "Guardian has multiple active student links; 1:1 invariant violated",
-    );
-  }
-
-  return data || [];
+  return parseGuardianLinks(data ?? []);
 }
 
-export async function getLinkedGuardianForStudent(
-  studentUserId: string,
-): Promise<{ guardian_profile_id: string; account_id: string | null } | null> {
+/**
+ * @spec [Doc-01_V8, §35; §31.3] | @implemented [2026-08-26]
+ * plain English: the guardian's oldest active link, or null. What it does: returns the first
+ * row `getAllGuardianStudentLinks` yields. Expected outcome: with one link, identical to the
+ * previous behaviour; with several, a deterministic choice (oldest `created_at`) instead of
+ * the thrown "1:1 invariant violated".
+ *
+ * TRADE-OFF, STATED PLAINLY: this function is a 1:1-era shape. §31.3 says a guardian's
+ * premium derives from *any one* active premium student, which is a fold over ALL links, not
+ * a lookup of one. Making `resolveLinkedPairPremiumAccessForGuardian` perform that fold is a
+ * behaviour change on the entitlement surface, which is outside WS-GL's edit scope (Charter
+ * §0). So this keeps its single-link contract and stops throwing; the §31.3 derivation is
+ * reported as an entitlement-surface item, not silently half-built here.
+ */
+export async function getPrimaryGuardianLink(
+  guardianProfileId: string,
+): Promise<GuardianLink | null> {
+  const links = await getAllGuardianStudentLinks(guardianProfileId);
+  return links[0] ?? null;
+}
+
+/**
+ * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
+ * plain English: the guardians actively linked to a given student. Expected outcome: a list
+ * — §35 constrains neither side to one, and the previous "Student has multiple active
+ * guardian links; 1:1 invariant violated" throw enforced a rule the spec does not state.
+ * Edge case: ordering is by `created_at` so the result is deterministic.
+ */
+export async function getActiveGuardianLinksForStudent(
+  studentProfileId: string,
+): Promise<GuardianLink[]> {
   const { data, error } = await supabaseServer
     .from("guardian_links")
-    .select("guardian_profile_id, account_id, linked_at")
-    .eq("student_user_id", studentUserId)
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("student_profile_id", studentProfileId)
     .eq("status", "active")
-    .order("linked_at", { ascending: true })
-    .limit(2);
+    .order("created_at", { ascending: true });
 
   if (error) {
-    throw new Error(`Failed to get linked guardian: ${error.message}`);
+    throw new Error(`Failed to get linked guardians: ${error.message}`);
   }
 
-  if ((data || []).length > 1) {
-    throw new Error(
-      "Student has multiple active guardian links; 1:1 invariant violated",
-    );
-  }
+  return parseGuardianLinks(data ?? []);
+}
 
-  const link = data?.[0];
-  if (!link?.guardian_profile_id) {
-    return null;
-  }
-
-  return {
-    guardian_profile_id: link.guardian_profile_id,
-    account_id: link.account_id ?? null,
-  };
+/**
+ * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
+ * plain English: the student's oldest active guardian link, or null. Same 1:1-era shape and
+ * same trade-off as `getPrimaryGuardianLink` — kept for its existing callers, no longer
+ * throwing when the student has more than one guardian.
+ */
+export async function getLinkedGuardianForStudent(
+  studentProfileId: string,
+): Promise<GuardianLink | null> {
+  const links = await getActiveGuardianLinksForStudent(studentProfileId);
+  return links[0] ?? null;
 }
 
 /**
@@ -694,7 +835,10 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
     ? await getGuardianLinkForStudent(guardianUserId, requestedStudentId)
     : await getPrimaryGuardianLink(guardianUserId);
 
-  if (!link?.student_user_id) {
+  // Consequence edit, declared per WS-GL Stage 2 Closure Plan §10 (ruling 3): the callee's
+  // contract now names the column the table actually has. Field rename only — no behaviour
+  // delta, and unbreakable by this change because `student_user_id` exists on no table.
+  if (!link?.student_profile_id) {
     return {
       role: "guardian",
       hasPremiumAccess: false,
@@ -712,16 +856,16 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
     };
   }
 
-  // profile_id = student_user_id — read entitlement directly
+  // profile_id = student_profile_id — read entitlement directly
   const studentEntitlement = await getEntitlementForProfile(
-    link.student_user_id,
+    link.student_profile_id,
   );
 
   // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
   // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
   // visibility requires active link (resolved above) AND active student entitlement (here).
   const studentActive = await EntitlementService.isEntitlementActiveForProfile(
-    link.student_user_id,
+    link.student_profile_id,
   );
   const hasPremiumAccess = studentActive;
 
@@ -733,9 +877,9 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
     reason: hasPremiumAccess
       ? "Linked student has active premium entitlement."
       : "Linked student account does not have an active premium entitlement.",
-    studentUserId: link.student_user_id,
+    studentUserId: link.student_profile_id,
     guardianUserId,
-    studentAccountId: link.student_user_id,
+    studentAccountId: link.student_profile_id,
     guardianAccountId: guardianUserId,
     studentEntitlementStatus: studentEntitlement?.status ?? "missing",
     guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",

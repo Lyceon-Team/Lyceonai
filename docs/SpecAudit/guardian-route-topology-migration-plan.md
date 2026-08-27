@@ -97,9 +97,9 @@ below.
 | `GET /api/progress/projection` | DELETE | `GET /api/students/{id}/projection/total` (05C §10.2) |
 | `GET /api/guardian/students` | KEEP | roster, not a per-student resource; no student equivalent exists |
 | `POST /api/guardian/link`, `DELETE /api/guardian/link/:studentId` | KEEP | link management, guardian-only by nature |
-| `GET /api/guardian/students/:id/exams/full-length/sessions` | KEEP | 04C topology (see scope correction); SCL-044 still owed |
+| `GET /api/guardian/students/:id/exams/full-length/sessions` | KEEP | 04C topology (see scope correction); SCL-075 still owed |
 | `GET /api/guardian/students/:id/exams/full-length/:sessionId/report` | KEEP | 04C §895 — but the live PATH does not match the spec's `/tests/:session_id/report`; see Open question 3 |
-| `GET /api/guardian/students/:id/calendar/month` | KEEP, UNTOUCHED | owner ruling 2026-08-26; SCL-045 PROPOSED |
+| `GET /api/guardian/students/:id/calendar/month` | KEEP, UNTOUCHED | owner ruling 2026-08-26; SCL-076 PROPOSED |
 
 ### 3.2 Client call sites — 9 files, 12 call sites
 

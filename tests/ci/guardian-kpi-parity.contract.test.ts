@@ -2,7 +2,7 @@
  * @spec [Doc 04C invariant #7 — "Guardian payloads are a STRICT SUBSET of the student
  *   payload ... enforced by deriving the guardian payload from the student payload via a
  *   projection function (§12.2), not by independent construction"; Doc 05 Parent §15.2 and
- *   AC#19 with the SCL-043 reading; owner ruling 2026-08-23 — "the guardian sees exactly
+ *   AC#19 with the SCL-074 reading; owner ruling 2026-08-23 — "the guardian sees exactly
  *   what the student sees, no more and no less"; owner ruling 2026-08-26 — the guardian
  *   receives the STUDENT'S metrics, gated only by the shared entitlement derivation: no
  *   second filter, no guardian-specific metric list] | @implemented [2026-08-26]

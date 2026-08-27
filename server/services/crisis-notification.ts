@@ -46,7 +46,13 @@ import { logger } from "../logger";
 type CrisisNotificationPayload = {
   caseId: string;
   conversationId: string;
-  source: "signature" | "model" | "both" | "classifier_degraded";
+  source:
+    | "signature"
+    | "model"
+    | "both"
+    | "classifier_degraded"
+    | "classifier_degraded_no_floor"
+    | "infrastructure_failure";
   slaDeadline: string;
   timestamp: string;
 };
@@ -74,6 +80,9 @@ const SOURCE_LABELS: Readonly<
   model: "Model classification (Layer 2)",
   both: "Signature + Model (both layers)",
   classifier_degraded: "Classifier degraded — force review",
+  classifier_degraded_no_floor:
+    "Classifier degraded, no crisis signatures — fail closed",
+  infrastructure_failure: "Infrastructure failure — fail closed",
 };
 
 // ── Slack Payload Builder ─────────────────────────────────────────────
