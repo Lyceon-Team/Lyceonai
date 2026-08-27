@@ -93,17 +93,34 @@ FROM (
 ) all_objects
 -- ACCEPTED-DRIFT ALLOWLIST — applied identically to BOTH sides.
 --
--- These three objects exist in production and not in genesis. Each lands via
--- its own PR; until then the gate must not fail on them. They are excluded by
--- EXACT NAME, not by weakening any comparison: every other object in every
--- category is still compared in full, and a fourth drift fails immediately.
+-- FOUR objects exist in production and not in genesis. Each is excluded by
+-- EXACT NAME. The comparison itself is NOT weakened: every other object in
+-- every category is still compared in full, and a fifth drift fails on sight.
 --
--- EXPIRY: delete each line as its PR lands. `mastery_levels` also carries 6
--- rows, so its absence from genesis is a data question as well as a schema one.
--- If these are still here after the three PRs merge, the gate is hiding real
--- drift and has stopped doing its job.
+-- All four are created by migrations on `origin/cleanup`, so all four close
+-- when PR #631 (cleanup -> main) lands. Verified 2026-08-27 by searching that
+-- branch's migrations for each object's CREATE.
+--
+--   mastery_levels                 table     — expiry: PR #631. Also carries 6
+--                                              rows, so its absence from genesis
+--                                              is a data question too, not only
+--                                              a schema one.
+--   guardian_can_view_student_as   function  — expiry: PR #631
+--   guardian_view_decision         function  — expiry: PR #631
+--   canonical_skill_catalog        view      — expiry: PR #631. Found 2026-08-27
+--                                              while reconciling grants: it was
+--                                              the whole residual grant gap
+--                                              (105 vs 106) and was NOT in the
+--                                              original three-object drift
+--                                              inventory. Owner ruled allowlist,
+--                                              not add, since it lands on #631.
+--
+-- If any line is still here after #631 merges, the gate is hiding real drift
+-- and has stopped doing its job. Delete each as it closes.
 WHERE identity <> 'mastery_levels'
   AND identity NOT LIKE 'mastery_levels.%'
   AND identity NOT LIKE 'guardian_can_view_student_as(%'
   AND identity NOT LIKE 'guardian_view_decision(%'
+  AND identity <> 'canonical_skill_catalog'
+  AND identity NOT LIKE 'canonical_skill_catalog.%'
 ORDER BY category, identity, detail;

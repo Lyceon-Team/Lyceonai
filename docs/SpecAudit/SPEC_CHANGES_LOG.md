@@ -72,6 +72,177 @@ This rule overrides any instruction to the contrary.
 > to "SCL-042" that concerns KPI fan-out, quarantine, or `mastery_data_quality_incidents` means
 > `SCL-054`.
 
+SCL-073 | 2026-08-27 | Doc 01A §52 knows a chargeback as an ABUSE SIGNAL; no section gives it an entitlement consequence | PROPOSED
+
+Change: A dispute does NOT cancel a Stripe subscription. Current behaviour is therefore: access
+  retained, dispute fee paid, no entitlement change. This entry proposes the handling and names the
+  seam it must not bypass.
+WAS: the corpus is NOT silent on chargebacks, and an earlier draft of this entry wrongly claimed it
+  was. Doc 01A §52 (heading verified: "## **§52 Incident taxonomy**") lists, among 12 launch
+  incident types:
+      | `payment_dispute` | 5 | Chargeback or fraud claim |
+  with incident types living in `abuse_score_runtime_config.incident_types` with base weights, and
+  Doc 06B referencing all 12. So a chargeback is already modelled — as an ABUSE SIGNAL with the
+  joint-highest launch severity.
+  What no section specifies is its ENTITLEMENT consequence: which Stripe event signals it, whether
+  it revokes, and what happens when it is won. That is the actual gap, and it is narrower and more
+  awkward than "uncovered" — the corpus has an opinion about disputes that the billing surface does
+  not implement.
+IS (PROPOSED, not built): subscribe `charge.dispute.created` and, on it, do BOTH:
+    (a) revoke the entitlement, and
+    (b) record a `payment_dispute` incident per Doc 01A §52, at its existing severity.
+  Doing only (a) would silently drop a signal the abuse model already expects; doing only (b) leaves
+  paid access on a charge the bank has pulled back.
+  A won dispute needs a restore path, which requires subscribing `charge.dispute.closed` and reading
+  its outcome. That event is NOT in SCL-070's 18, and adding it is part of this ruling rather than
+  something SCL-070 already decided.
+Interaction with SCL-048 — the load-bearing part: a dispute is NOT a refund and must NOT route
+  through the refund path. SCL-048's rule is full-refund-revokes / partial-does-not, a comparison
+  against a settled amount (basis fixed by SCL-072). A dispute is an unsettled assertion by the
+  cardholder's bank that may be won or lost, and its amount is not a refund amount. Routing it
+  through the refund comparison would revoke on a dispute the merchant later wins, with no path back.
+Evidence: `charge.dispute.created` verified present in stripe@20.4.1's event union; Stripe's own
+  description shipped in that SDK reads "Occurs whenever a customer disputes a charge with their
+  bank." Corpus coverage established by `grep -rniE "dispute|chargeback" docs/Spec/` -> 68 hits,
+  read rather than counted; the load-bearing one is Doc 01A §52 above.
+  Docs: https://docs.stripe.com/disputes and https://docs.stripe.com/api/disputes
+Owner action: rule on this entry BEFORE any dispute code is written. Explicitly unresolved and
+  deliberately left so: (1) whether revocation is immediate on `dispute.created` or deferred to
+  `dispute.closed` with outcome `lost` — immediate is standard but punishes a customer whose bank
+  later finds for the merchant; (2) whether a won dispute restores the ORIGINAL period bounds or
+  issues a fresh period; (3) whether the `payment_dispute` incident should also fire on a dispute
+  the merchant WINS, since the signal's value to the abuse model may not depend on the outcome.
+Artifact: none. No implementation. Per the work block, dispute handling is out of scope until
+  this SCL is ruled on.
+
+---
+
+SCL-072 | 2026-08-27 | Doc 01 V8 §24 / SCL-048 — refund full-vs-partial compares the CHARGED amount, never list price | PROPOSED
+
+Change: Coupons and promotion codes mean the amount actually charged can differ from the price's
+  list amount. SCL-048 rules "full refund revokes, partial does not". If that comparison is made
+  against the LIST price, a full refund of a discounted subscription reads as partial and fails to
+  revoke — the customer keeps access after being made whole. This entry fixes the comparison basis
+  and amends SCL-048 by reference.
+WAS: SCL-048 states the full/partial rule without naming what "full" is measured against. With no
+  discounts in play the two readings coincide, which is why the ambiguity survived.
+IS: the comparison basis is the amount actually charged, never the price's list amount. Concretely,
+  sum the succeeded refunds against the charge's captured amount, both of which Stripe reports in
+  the same minor unit:
+    - `Refund.amount` — "Amount, in cents (or local equivalent)" (stripe@20.4.1 types/Refunds.d.ts)
+    - `Charge.amount_captured` — "Amount in cents (or local equivalent) captured (can be less than
+      the amount attribute on the charge if a partial capture was made)" (types/Charges.d.ts)
+  Full refund (revokes) is refunded-total >= captured amount. Anything less is partial and does not.
+Discount and promotion-code handling posture, stated explicitly because "we did not decide" is not a
+  posture: `customer.discount.created`, `customer.discount.updated`, `customer.discount.deleted`,
+  `promotion_code.created` and `promotion_code.updated` are ACKNOWLEDGED WITH NO ENTITLEMENT EFFECT.
+  They are subscribed so the surface is observable and so a discount change is not a silent event,
+  but none of them writes, alters or revokes an entitlement. Entitlement follows subscription status
+  and settled payment; a discount changes the amount, not the entitlement.
+  The one place a discount DOES matter is this comparison basis, which is the whole point of the entry.
+Amends: SCL-048, by reference. SCL-048's rule is unchanged in substance; only its comparison basis is
+  now named. This does not reopen the full/partial question.
+Owner action: fold the comparison basis into Doc 01 V8 §24 at the next spec pass.
+Artifact: none yet. Implementation is Phase 3 §4.3 of the launch-scope work block.
+
+---
+
+SCL-071 | 2026-08-27 | Doc 01 V8 §22 — entitlement is written on payment SETTLEMENT, not on Checkout Session completion | PROPOSED
+
+Change: A delayed payment method completes the Checkout Session BEFORE the money arrives. Writing
+  entitlement from `checkout.session.completed` alone therefore grants access on an unsettled
+  payment. Writing it only on settlement would leave a card payer waiting for access they have
+  already paid for. Both failure modes are real; the field that separates them is `payment_status`.
+WAS: Doc 01 V8 §22 treats `checkout.session.completed` as the entitlement trigger without
+  qualification, which is correct only because every method enabled today settles synchronously.
+IS: entitlement is written when payment is confirmed SETTLED, whichever event carries that fact.
+  The distinguishing field is `Checkout.Session.payment_status`, whose Stripe-authored description
+  shipped in stripe@20.4.1 (types/Checkout/Sessions.d.ts) reads:
+    "The payment status of the Checkout Session, one of `paid`, `unpaid`, or `no_payment_required`.
+     You can use this value to decide when to fulfill your customer's order."
+  The union is exactly `'no_payment_required' | 'paid' | 'unpaid'`.
+  So: on `checkout.session.completed`, write entitlement only when `payment_status` is `paid` or
+  `no_payment_required`. When it is `unpaid`, write nothing and wait.
+  `checkout.session.async_payment_succeeded` — "Occurs when a payment intent using a delayed payment
+  method finally succeeds" — is the event that then carries settlement, and it writes the entitlement.
+  `checkout.session.async_payment_failed` — "Occurs when a payment intent using a delayed payment
+  method fails" — produces NO entitlement, and must not be treated as a revocation of something that
+  was never granted.
+Inert today, live on a flag flip — which is exactly why it is written now: card and Link settle
+  synchronously and never emit the async pair, so this changes no behaviour on the current
+  configuration. It becomes load-bearing the moment any delayed method is enabled in the Dashboard,
+  which is a configuration change no code review would catch. A conditional written before the
+  condition arrives is cheap; the same rule discovered afterwards is an incident.
+Docs: https://docs.stripe.com/payments/checkout/fulfill-orders and
+  https://docs.stripe.com/api/checkout/sessions/object#checkout_session_object-payment_status
+Owner action: fold into Doc 01 V8 §22 at the next spec pass.
+Artifact: none yet. Implementation is Phase 3 of the launch-scope work block.
+
+---
+
+SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 18 events, not 7 | PROPOSED
+
+Change: §22.1 specifies seven events. The owner has finalised eighteen. This records the surface,
+  the delta, the reason for each addition, and two deliberate exclusions.
+WAS: Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") lists seven events
+  covering checkout completion and the subscription lifecycle. Read and enumerated 2026-08-27; the
+  seven are exactly those shown as "Already in §22.1" below.
+IS: eighteen. All eighteen verified present in stripe@20.4.1's event-type union
+  (types/EventTypes.d.ts) on 2026-08-27 — a name that does not exist cannot be subscribed, and a
+  typo here fails silently.
+
+  Already in §22.1 (7):
+    checkout.session.completed
+    customer.subscription.created
+    customer.subscription.updated
+    customer.subscription.deleted
+    invoice.payment_succeeded
+    invoice.payment_failed
+    customer.updated
+
+  Added (11), with the reason each is needed:
+    checkout.session.async_payment_succeeded  settlement for delayed methods (SCL-071)
+    checkout.session.async_payment_failed     non-settlement for delayed methods (SCL-071)
+    customer.deleted                          a deleted Customer orphans an entitlement row that
+                                              Doc 05D's cascade cannot see, because that cascade
+                                              knows nothing about Stripe objects (see amendment below)
+    customer.discount.created                 discount changes the charged amount, which is the
+    customer.discount.updated                 comparison basis for the refund rule (SCL-072)
+    customer.discount.deleted
+    promotion_code.created                    same, via promotion codes
+    promotion_code.updated
+    refund.created                            revocation on refund (SCL-048, amended by SCL-072)
+    refund.updated                            a refund reaching status `succeeded` is the revoking
+                                              transition; creation alone is not
+    charge.dispute.created                    chargebacks are uncovered corpus-wide (SCL-073)
+
+  DELIBERATELY EXCLUDED — `charge.refunded` and `charge.refund.updated`.
+  Both exist in the SDK's event union, so this is a choice and not an oversight. Stripe's own
+  descriptions, shipped verbatim in stripe@20.4.1, direct integrators away from them:
+    charge.refunded       "Occurs whenever a charge is refunded, including partial refunds.
+                           Listen to `refund.created` for information about the refund."
+    charge.refund.updated "Occurs whenever a refund is updated on selected payment methods.
+                           For updates on all refunds, listen to `refund.updated` instead."
+  Subscribing both families would deliver every refund twice in two different shapes, and the
+  handler would have to decide which copy is authoritative on every delivery — a dedup problem
+  created for no gain. The `refund.*` family is the one Stripe points at and is complete;
+  `charge.refund.updated` is explicitly the partial one.
+Docs: https://docs.stripe.com/api/events/types and https://docs.stripe.com/webhooks
+Amendment recorded here rather than as a separate entry — `customer.deleted` and the deletion
+  cascade: an entitlement row referencing a `stripe_customer_id` that no longer exists is an orphan
+  Doc 05D's cascade cannot detect, because that cascade operates on Lyceon rows and has no knowledge
+  of Stripe object lifetimes. Intended behaviour: `customer.deleted` revokes the entitlements keyed
+  to that Customer. Flagged as a seam, not built here.
+Amendment recorded here rather than as a separate entry — portal as an input to country derivation
+  (SCL-046): the Customer Portal is configured to permit billing-address changes, which fire
+  `customer.updated`. So country egress can be triggered by the CUSTOMER, not only by an operator.
+  SCL-046 assumes operator-initiated change; that assumption is now false.
+Owner action: fold the 18-event surface into Doc 01 V8 §22.1 at the next spec pass, and rule on the
+  two amendments above.
+Artifact: none yet. Handler disposition for all 18 is a Phase 3 exit criterion.
+
+---
+
 SCL-053 | 2026-08-26 | Doc 01A Appendix A.3 restates Doc 03's daily tutor limit and has drifted from it — 100 vs 120 | PROPOSED
 
 Change: Two locked documents state the LISA per-day message limit. They disagree. Doc 03 owns tutor
