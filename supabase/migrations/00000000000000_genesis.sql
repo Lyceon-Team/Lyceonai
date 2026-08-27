@@ -179,7 +179,12 @@ CREATE TABLE public.entitlements (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE public.entitlements ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
+-- Production holds this as a unique INDEX, not a table constraint: migration
+-- 20260809000000_entitlements_profile_id_unique_and_webhook_events.sql:21 created it
+-- with CREATE UNIQUE INDEX IF NOT EXISTS. Genesis declared ADD CONSTRAINT, which no
+-- migration ever ran. Corrected toward production — production is right and the file
+-- was wrong. Still a valid ON CONFLICT (profile_id) target either way.
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
 CREATE INDEX idx_entitlements_profile ON public.entitlements (profile_id);
 CREATE INDEX idx_entitlements_active  ON public.entitlements (profile_id) WHERE status = 'active' OR status = 'past_due';
 

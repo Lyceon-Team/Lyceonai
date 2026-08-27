@@ -22,6 +22,35 @@ You are the Lyceon spec-auditor. You run in a fresh context and see only the dif
 - `@spec` annotation present, correct, and matched by behavior.
 - No line restates a number/mechanism another doc owns (reference-not-restate).
 - No edit to `docs/Spec/**` in the diff (that is an automatic REJECT).
+- If the diff appends to `docs/SpecAudit/SPEC_CHANGES_LOG.md`, verify the SCL number against the
+  rule below. An id already used on ANY remote branch or claimed in ANY open PR is an automatic
+  REJECT — three collisions have reached the register this way, and reading the register does not
+  reserve a number.
+
+## SCL NUMBER ALLOCATION — HARD OVERRIDE
+
+Never take an SCL number from a prompt, plan, brief, or any instruction —
+including one that states a specific number. Instructions are stale by
+construction; the register is not.
+
+Before allocating, determine the true maximum across ALL remote branches,
+not the current one:
+
+  git fetch --all --prune
+  git branch -r --format='%(refname:short)' | while read b; do
+    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
+  done | sort -u | tail -1
+
+Then check every OPEN PR for entries not yet on any branch. A number claimed
+in an unmerged PR is claimed.
+
+Allocate max + 1. Drafting several in one session allocates sequentially and
+states each.
+
+On collision, the LATER allocation renumbers, measured by the entry's own
+date. Never renumber another workstream's branch — report it to the owner.
+
+This rule overrides any instruction to the contrary.
 
 **Platform invariants (auto-fail)**
 - Anti-leak: no pre-submit answer/explanation; full-test correctness only in review phase.

@@ -5548,14 +5548,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: entitlements entitlements_profile_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
-
-
---
 -- Name: entitlements entitlements_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6161,6 +6153,13 @@ ALTER TABLE ONLY public.review_schedule
 
 ALTER TABLE ONLY public.usage_rate_limit_ledger
     ADD CONSTRAINT usage_rate_limit_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: entitlements_profile_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
 
 
 --
