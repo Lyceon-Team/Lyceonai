@@ -1,0 +1,77 @@
+-- ============================================================================
+-- B1.5: Crisis signature seed template — MECHANISM ONLY
+-- @spec [Doc-03_V3 §21.1, SCL-023, CR-03C-V3-01 §3.4, B1.5]
+-- @implemented 2026-08-19
+--
+-- plain English: Until this table has rows with signature_type = 'crisis',
+-- Layer 1 of the crisis classifier cannot detect anything. B1.5 fails
+-- closed when Layer 1 is empty AND Layer 2 fails (returning a crisis-safe
+-- response instead of proceeding to normal tutoring), but this is a
+-- DEGRADED posture — every Layer 2 failure becomes a false-alarm crisis
+-- response. Seeding the signatures restores the spec-intended behavior
+-- where Layer 1 is a meaningful floor.
+--
+-- CONTENT IS NOT IN THIS MIGRATION. This file provides:
+--   1. The exact column shape for crisis signature rows.
+--   2. A documented INSERT template Karl copies and populates.
+--   3. A verification query to confirm seeding succeeded.
+--
+-- Karl supplies: the signature_pattern values (regex or substring patterns
+-- that match the Doc 03 §21.1 detection thresholds — "explicit self-harm
+-- keywords, suicide ideation keywords, severe distress indicators").
+-- Those are safety-sensitive content that must not be authored by AI.
+--
+-- DO NOT APPLY TO PROD — Karl applies after review.
+-- LYCEON-MIGRATION-REVIEWED (INV-06): rollback reviewed — see DOWN MIGRATION.
+-- ============================================================================
+
+-- ┌─────────────────────────────────────────────────────────────────────┐
+-- │ SEED TEMPLATE — Karl: copy the INSERT below and fill in patterns   │
+-- │                                                                     │
+-- │ Each row needs:                                                     │
+-- │   signature_pattern  TEXT   — regex or substring to match against   │
+-- │                               the student message (case-insensitive │
+-- │                               match in code). Use \b for word       │
+-- │                               boundaries if regex.                  │
+-- │   signature_type     TEXT   — must be 'crisis' (the filter value    │
+-- │                               used by checkCrisisSignatures)        │
+-- │   severity           TEXT   — 'critical' for all crisis patterns    │
+-- │   action             TEXT   — 'flag' for crisis detection (routes   │
+-- │                               to §4.6 crisis-safe response + §21.3 │
+-- │                               review queue)                         │
+-- │   added_by           TEXT   — identifier of person who authored     │
+-- │                               the pattern (audit trail)             │
+-- └─────────────────────────────────────────────────────────────────────┘
+
+-- EXAMPLE (do NOT apply — this is the template shape):
+--
+-- INSERT INTO public.tutor_injection_signatures
+--   (signature_pattern, signature_type, severity, action, added_by)
+-- VALUES
+--   -- Doc 03 §21.1: explicit self-harm keywords
+--   ('PATTERN_HERE', 'crisis', 'critical', 'flag', 'karl'),
+--   -- Doc 03 §21.1: suicide ideation keywords
+--   ('PATTERN_HERE', 'crisis', 'critical', 'flag', 'karl'),
+--   -- Doc 03 §21.1: severe distress indicators
+--   ('PATTERN_HERE', 'crisis', 'critical', 'flag', 'karl');
+
+-- ┌─────────────────────────────────────────────────────────────────────┐
+-- │ VERIFICATION — run after seeding to confirm Layer 1 is populated   │
+-- └─────────────────────────────────────────────────────────────────────┘
+
+-- SELECT count(*) AS crisis_signature_count
+-- FROM public.tutor_injection_signatures
+-- WHERE signature_type = 'crisis';
+--
+-- Expected: count > 0. If count = 0, Layer 1 is inert and the system is
+-- in B1.5 fail-closed posture (every Layer 2 failure → crisis response).
+
+-- ============================================================================
+-- DOWN MIGRATION (rollback)
+-- LYCEON-MIGRATION-REVIEWED (INV-06): rollback reviewed.
+-- ============================================================================
+-- Since this migration is template-only (no DML), rollback is a no-op.
+-- If Karl applied an INSERT using this template, rollback is:
+--
+-- DELETE FROM public.tutor_injection_signatures
+-- WHERE signature_type = 'crisis' AND added_by = 'karl';

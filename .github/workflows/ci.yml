@@ -175,6 +175,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history required for the ratchet check (CI-GATING-003):
+          # git merge-base needs common ancestry with the PR base branch.
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

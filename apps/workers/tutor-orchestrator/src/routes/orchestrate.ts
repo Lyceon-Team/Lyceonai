@@ -295,15 +295,15 @@ export function buildOrchestrateResponse(
   request: OrchestrateRequest,
   promptVersion: string,
 ): OrchestrateResponse {
-  // Worker-side anti-leak scan: correct_answer is non-null only post-submit
-  // (Doc 03D §6.3 — the BFF nulls it pre-submit). This scan is therefore a
-  // post-submit defense-in-depth layer: it catches model hallucination in
-  // post-submit responses where the answer is already revealed. The primary
-  // pre-submit anti-leak chokepoint is BFF-side scanAndSubstitute (INV-03-04),
-  // which holds the real answer BFF-local for scanning without forwarding it
-  // to the worker.
+  // Worker-side anti-leak scan: fires PRE-SUBMIT ONLY (defense-in-depth).
+  // Post-submit the model is EXPECTED to discuss the answer — suppressing it
+  // would break the explanation flow. Gate on is_post_submit (server-derived
+  // boolean), never on correct_answer presence — a caller-supplied field
+  // gating a safety decision is a field an attacker sets (Doc 03D §6.3).
+  // The primary pre-submit chokepoint is BFF-side scanAndSubstitute (INV-03-04).
+  // @spec [Doc-03D_V1.2 §6.3, INV-03-04, Doc-03B_V4.1 §6.5 step 15]
   let content = vertexResponse.text;
-  if (request.correct_answer !== null) {
+  if (!request.is_post_submit && request.correct_answer !== null) {
     const leaked = hasAnswerLeak(content, request.correct_answer);
     if (leaked) {
       logEvent(
@@ -313,7 +313,7 @@ export function buildOrchestrateResponse(
         "Worker-side anti-leak scan detected answer leak in pre-submit response; substituting",
         {
           conversationId: request.conversation_id,
-          hasCorrectAnswer: request.correct_answer !== null,
+          isPostSubmit: request.is_post_submit,
         },
       );
       content = WORKER_ANTI_LEAK_SUBSTITUTION;

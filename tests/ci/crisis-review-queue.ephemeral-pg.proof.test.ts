@@ -1,6 +1,8 @@
 /**
- * @spec [Doc-03_V3 §21.3, SCL-025, CR-03C-V3-01 §3.4]
+ * @spec [Doc-03_V3 §21.3, SCL-025, CR-03C-V3-01 §3.4, B1.5]
  * @implemented 2026-08-13
+ * @updated 2026-08-19  B1.5a Item 1 — widened CHECK to 6 source values,
+ *   INSERT proof for each, negative control for invalid source.
  *
  * plain English: Ephemeral-PostgreSQL proof that the crisis review queue DDL
  * works correctly against a real database. Proves:
@@ -12,11 +14,18 @@
  *      crisis_review_cases (RLS blocks).
  *   4. ADMIN_READ_PRODUCES_AUDIT — reading a case writes an audit row
  *      with the reviewer's identity and conversation_id.
+ *   6. ALL_SOURCES_ACCEPTED — all 6 CHECK-valid source values INSERT
+ *      successfully (signature, model, both, classifier_degraded,
+ *      classifier_degraded_no_floor, infrastructure_failure).
+ *   6.neg. INVALID_SOURCE_REJECTED — an invented source value is
+ *      rejected by the CHECK constraint.
  *
  * trade-offs: requires a local PostgreSQL instance (skips gracefully if
  * unavailable). Uses a disposable database per run. Does NOT apply all
  * migrations — uses minimal DDL that mirrors the crisis review queue
- * migration (20260813000000) plus required FK targets.
+ * migration (20260813000000) plus required FK targets. The hand-copied
+ * DDL can drift from the real migration — see B1.5a Item 1 report on
+ * feasibility of building from actual migration files.
  *
  * edge cases:
  *   - Duplicate case for same conversation: the UNIQUE partial index
@@ -42,6 +51,10 @@ const STUDENT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const ADMIN_A = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const CONV_A = "11111111-1111-1111-1111-111111111111";
 const CONV_B = "22222222-2222-2222-2222-222222222222";
+const CONV_C = "33333333-3333-3333-3333-333333333333";
+const CONV_D = "44444444-4444-4444-4444-444444444444";
+const CONV_E = "55555555-5555-5555-5555-555555555555";
+const CONV_F = "66666666-6666-6666-6666-666666666666";
 const CONV_NONEXISTENT = "99999999-9999-9999-9999-999999999999";
 
 // ── Minimal DDL ──────────────────────────────────────────────────────
@@ -67,7 +80,7 @@ CREATE TABLE crisis_review_cases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID NOT NULL REFERENCES tutor_conversations(id) ON DELETE RESTRICT,
   student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
-  source TEXT NOT NULL CHECK (source IN ('signature', 'model', 'both', 'classifier_degraded')),
+  source TEXT NOT NULL CHECK (source IN ('signature', 'model', 'both', 'classifier_degraded', 'classifier_degraded_no_floor', 'infrastructure_failure')),
   signature_id UUID,
   model_confidence NUMERIC,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_review', 'resolved')),
@@ -137,7 +150,11 @@ INSERT INTO profiles (id, role) VALUES
 
 INSERT INTO tutor_conversations (id, student_id) VALUES
   ('${CONV_A}', '${STUDENT_A}'),
-  ('${CONV_B}', '${STUDENT_B}');
+  ('${CONV_B}', '${STUDENT_B}'),
+  ('${CONV_C}', '${STUDENT_A}'),
+  ('${CONV_D}', '${STUDENT_B}'),
+  ('${CONV_E}', '${STUDENT_A}'),
+  ('${CONV_F}', '${STUDENT_B}');
 `;
 
 // ── Test Suite ────────────────────────────────────────────────────────
@@ -317,23 +334,50 @@ describe.skipIf(!CAN_RUN)("crisis review queue — ephemeral PG proof", () => {
     ).rejects.toThrow(/idx_crisis_review_cases_conversation_active/);
   });
 
-  it("6. classifier_degraded source is a valid review case source", async () => {
+  it.each([
+    { source: "classifier_degraded", conv: CONV_B, student: STUDENT_B },
+    {
+      source: "classifier_degraded_no_floor",
+      conv: CONV_C,
+      student: STUDENT_A,
+    },
+    { source: "infrastructure_failure", conv: CONV_D, student: STUDENT_B },
+    { source: "model", conv: CONV_E, student: STUDENT_A },
+    { source: "both", conv: CONV_F, student: STUDENT_B },
+  ])(
+    "6.$#. source '$source' is accepted by CHECK constraint",
+    async ({ source, conv, student }) => {
+      const slaDeadline = new Date(
+        Date.now() + 48 * 60 * 60 * 1000,
+      ).toISOString();
+
+      const result = await rootClient.query(
+        `INSERT INTO crisis_review_cases
+            (conversation_id, student_id, source, sla_deadline)
+          VALUES ($1, $2, $3, $4)
+          RETURNING *`,
+        [conv, student, source, slaDeadline],
+      );
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].source).toBe(source);
+      expect(result.rows[0].status).toBe("open");
+    },
+  );
+
+  it("6.neg. invalid source 'invented_value' is rejected by CHECK constraint", async () => {
     const slaDeadline = new Date(
       Date.now() + 48 * 60 * 60 * 1000,
     ).toISOString();
 
-    // CONV_B has no existing case — should succeed
-    const result = await rootClient.query(
-      `INSERT INTO crisis_review_cases
-          (conversation_id, student_id, source, sla_deadline)
-        VALUES ($1, $2, $3, $4)
-        RETURNING *`,
-      [CONV_B, STUDENT_B, "classifier_degraded", slaDeadline],
-    );
-
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].source).toBe("classifier_degraded");
-    expect(result.rows[0].status).toBe("open");
+    await expect(
+      rootClient.query(
+        `INSERT INTO crisis_review_cases
+            (conversation_id, student_id, source, sla_deadline)
+          VALUES ($1, $2, $3, $4)`,
+        [CONV_B, STUDENT_B, "invented_value", slaDeadline],
+      ),
+    ).rejects.toThrow(/check/i);
   });
 
   it("7. resolving a case allows a new case for the same conversation", async () => {

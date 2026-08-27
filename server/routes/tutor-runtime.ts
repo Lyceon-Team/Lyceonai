@@ -638,6 +638,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         "tutor_messages idempotency lookup failed; failing closed",
         { message: existingTurnError.message, code: existingTurnError.code },
       );
+      // LISA-GCP-007: log metrics for idempotency lookup failure.
+      // Pre-pipeline error — no model invocation, no injection/crisis scan.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "idempotency_lookup_error",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected: false,
+        crisisTriggered: false,
+        crisisClassifierOutcome: null,
+      });
       sendTutorError(res, "idempotency_lookup_failed");
       return;
     }
@@ -651,6 +667,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       ) as { id: string; message: string } | undefined;
 
       if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+        // LISA-GCP-007: log metrics for idempotency conflict.
+        // Pre-pipeline error — message mismatch on same client_turn_id.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "idempotency_conflict",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: false,
+          compactionRecommended: false,
+          antiLeakTriggered: false,
+          injectionDetected: false,
+          crisisTriggered: false,
+          crisisClassifierOutcome: null,
+        });
         sendTutorError(res, "idempotency_conflict");
         return;
       }
@@ -679,6 +711,26 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           existingTutorMsg.message,
           replayScanContext,
         );
+
+        // LISA-GCP-007: idempotency replay — cached response, not a new
+        // inference. modelName="idempotency_replay" is a distinct marker so
+        // rate metrics built on turn_metrics don't count replays as model
+        // invocations. Tokens are zero (no model call). crisisClassifierOutcome
+        // is null — the classifier ran on the original turn, not this replay.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "idempotency_replay",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: true,
+          compactionRecommended: false,
+          antiLeakTriggered: replaySerialized.blocked,
+          injectionDetected: false,
+          crisisTriggered: false,
+          crisisClassifierOutcome: null,
+        });
 
         res.status(200).json({
           data: {
@@ -747,26 +799,40 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
     // Runs BEFORE orchestration — if crisis is detected, bypass model generation
     // entirely and return regional crisis resources (Doc-03_V3 §21).
-    // The classifier infrastructure may be unavailable (missing tables in test
-    // environments, Vertex outage). In that case the turn proceeds with
-    // forceReview so it lands in the §21.3 safety review queue.
+    //
+    // B1.5: runCrisisClassifier now returns crisis=true when Layer 2 fails AND
+    // Layer 1 has zero crisis signatures (classifier_degraded_no_floor). This
+    // routes into the §4.6 crisis-safe response rather than normal tutoring.
+    // The catch block below handles unexpected infrastructure failure the same
+    // way — fail closed with crisis-safe response.
     let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
     try {
       crisisResult = await runCrisisClassifier(sanitized);
     } catch (crisisErr: unknown) {
-      // Classifier infrastructure failure — treat as degraded, not blocking.
-      // The turn proceeds but is force-enqueued to the review queue.
+      // B1.5: Unexpected infrastructure failure in the entire classifier
+      // pipeline. We cannot determine Layer 1 state, so fail closed — return
+      // crisis-safe response rather than proceeding to normal generation.
+      // The student receives regional crisis resources; the review case is
+      // created. This is strictly safer than the previous behavior (proceed
+      // to normal generation + review case after the fact).
+      // @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21.2, B1.5]
       logger.error(
         "TUTOR_RUNTIME",
         "crisis_classifier_infrastructure_error",
-        "crisis classifier infrastructure error; treating as degraded",
+        "crisis classifier infrastructure error; failing closed with crisis-safe response",
         {
           message:
             crisisErr instanceof Error ? crisisErr.message : String(crisisErr),
           conversationId: conversation.id,
         },
       );
-      crisisResult = { crisis: false, forceReview: true };
+      crisisResult = {
+        crisis: true,
+        source: "infrastructure_failure",
+        signatureId: null,
+        modelConfidence: null,
+        forceReview: true,
+      };
     }
 
     // Step 11: Persist student message.
@@ -801,6 +867,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           code: studentMessageError?.code,
         },
       );
+      // LISA-GCP-007: log metrics for student message write failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:student_message_write_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: crisisResult.crisis,
+        crisisClassifierOutcome: crisisResult.crisis
+          ? crisisResult.source
+          : null,
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -854,6 +937,21 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
             code: crisisMessageError?.code,
           },
         );
+        // LISA-GCP-007: log metrics for crisis message write failure.
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: 0,
+          modelName: "error:crisis_message_write_failed",
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheHit: false,
+          compactionRecommended: false,
+          antiLeakTriggered: false,
+          injectionDetected,
+          crisisTriggered: true,
+          crisisClassifierOutcome: crisisResult.source,
+        });
         sendTutorError(res, "canonical_write_failed");
         return;
       }
@@ -874,6 +972,27 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisContent,
         crisisScanContext,
       );
+
+      // Log turn metrics for the crisis path — previously skipped, creating
+      // an observability gap where crisis turns had no metrics row.
+      // orchestrationDurationMs=0 because no LLM orchestration occurs on crisis.
+      // modelName: "crisis_bypass" — no model was invoked (crisis-safe response
+      // is server-authored, not model-generated).
+      // @spec [CR-03C-V3-01 §3.4, Doc-03A_V1 §11.5]
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "crisis_bypass",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: true,
+        crisisClassifierOutcome: crisisResult.source,
+      });
 
       res.status(200).json({
         data: {
@@ -933,6 +1052,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
     if (!instructionAssignmentResult.ok) {
+      // LISA-GCP-007: log metrics for instruction assignment failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:instruction_assignment_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -954,10 +1090,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     );
     const isPostSubmit = !preSubmit;
 
-    // Fetch correct_answer for the BFF-side output scan (step 15).
-    // Pre-submit: needed for answer-aware leak detection in scanAndSubstitute.
-    // Post-submit: forwarded to the worker so the model can explain it.
-    const correctAnswerResult = preSubmit
+    // Fetch correct_answer unconditionally when a question row exists.
+    // Pre-submit: needed BFF-local for answer-aware leak detection (step 15).
+    // Post-submit: forwarded on the wire so the worker prompt can explain it.
+    // The envelope gate (tutor-context.ts) decides what reaches the wire:
+    //   correct_answer: isPostSubmit ? correctAnswer : null
+    // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
+    const correctAnswerResult = effectiveScope.source_question_row_id
       ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
@@ -1017,6 +1156,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           conversationId: conversation.id,
         },
       );
+      // LISA-GCP-007: log metrics for orchestration failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: Date.now() - turnStartedAt,
+        modelName: "error:orchestration_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, orchestrationResult.errorCode, {
         retry_after_ms: 2000,
         failure_layer: "orchestrator",
@@ -1079,6 +1235,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           code: tutorMessageError?.code,
         },
       );
+      // LISA-GCP-007: log metrics for tutor message write failure.
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: Date.now() - turnStartedAt,
+        modelName: "error:tutor_message_write_failed",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: crisisResult.forceReview
+          ? "classifier_degraded"
+          : "no_crisis",
+      });
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -1138,6 +1311,15 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // Compute classifier outcome for normal (non-crisis) path.
+    // crisisResult.crisis is false here (crisis path returned earlier).
+    // If forceReview is true, Layer 2 failed but Layer 1 had signatures —
+    // the turn proceeded but was force-enqueued (classifier_degraded).
+    // @spec [CR-03C-V3-01 §3.4]
+    const normalPathOutcome: string = crisisResult.forceReview
+      ? "classifier_degraded"
+      : "no_crisis";
+
     await logTurnMetrics({
       conversationId: conversation.id,
       turnOrdinal: 0,
@@ -1151,6 +1333,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       antiLeakTriggered,
       injectionDetected,
       crisisTriggered: false,
+      crisisClassifierOutcome: normalPathOutcome,
     });
 
     await supabaseServer
@@ -1180,6 +1363,43 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       "Unexpected error in POST /messages",
       err instanceof Error ? err : undefined,
     );
+    // LISA-GCP-007: best-effort metrics for catch-all error.
+    // Variables from the pipeline (conversation, injectionDetected, etc.)
+    // may not exist depending on where the throw occurred. The logTurnMetrics
+    // call itself is fire-and-forget, so a secondary failure is swallowed.
+    try {
+      const catchConvoId =
+        typeof input?.conversation_id === "string"
+          ? input.conversation_id
+          : "unknown";
+      await logTurnMetrics({
+        conversationId: catchConvoId,
+        turnOrdinal: 0,
+        orchestrationDurationMs: 0,
+        modelName: "error:unexpected",
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected: false,
+        crisisTriggered: false,
+        crisisClassifierOutcome: null,
+      });
+    } catch (metricsErr: unknown) {
+      // Metrics logging itself failed — swallow so the error response sends.
+      logger.warn(
+        "TUTOR_RUNTIME",
+        "catch_all_metrics_failed",
+        "Failed to log turn metrics in catch-all error handler",
+        {
+          error:
+            metricsErr instanceof Error
+              ? metricsErr.message
+              : String(metricsErr),
+        },
+      );
+    }
     sendTutorError(res, "orchestration_failed");
   }
 });
