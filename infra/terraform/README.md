@@ -65,26 +65,22 @@ Same RAI and PI/jailbreak filters as input, plus:
 - `gcloud` CLI installed and authenticated
 - Run `gcloud auth application-default login` (one-time — sets up ADC credentials)
 
-### Step 0: Verify existing resources (before any Terraform)
+### Step 0: Verify the Cloud Run service exists
 
-Run these commands to get the ACTUAL config of the live resources.
-Update the `.tf` files if any values differ from the defaults.
+BigQuery dataset location and Cloud Tasks queue config are verified
+(Karl ran the describes 2026-08-27). The remaining imported resource:
 
 ```bash
-# BigQuery dataset — check the location (expected: "US")
-bq show --format=prettyjson replit-cop:lyceon_analytics_archive_prod | jq .location
-
-# Cloud Tasks queue — check rate limits and retry config
-gcloud tasks queues describe lisa-crisis-notification \
-  --location=us-central1 --format=json
-
 # Cloud Run service — verify it exists and check the service account
 gcloud run services describe lyceon-tutor-orchestrator \
-  --region=us-central1 --format=json | jq '{name: .metadata.name, sa: .spec.template.spec.serviceAccountName}'
+  --region=us-central1 --format=json \
+  | jq '{name: .metadata.name, sa: .spec.template.spec.serviceAccountName}'
 ```
 
-If any value differs from what's in the `.tf` files, update the HCL
-to match reality BEFORE running `terraform plan`.
+The Cloud Run HCL uses `ignore_changes` on template, so the only
+values that must match are `name` and `location` (both hardcoded).
+If the service doesn't exist or has a different name, the import fails
+with a clear error.
 
 ### Step 1: Create the GCS state bucket (one-time)
 

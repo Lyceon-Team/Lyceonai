@@ -16,16 +16,11 @@ resource "google_bigquery_dataset" "archive" {
   dataset_id = "lyceon_analytics_archive_prod"
   project    = var.project
 
-  # ╔══════════════════════════════════════════════════════════════════╗
-  # ║ VERIFY before apply — run:                                     ║
-  # ║   bq show --format=prettyjson \                                ║
-  # ║     replit-cop:lyceon_analytics_archive_prod | jq .location    ║
-  # ║                                                                ║
-  # ║ BigQuery defaults to "US" (multi-region) when no location is   ║
-  # ║ specified at creation. If the command returns a different       ║
-  # ║ value, update this line to match.                              ║
-  # ╚══════════════════════════════════════════════════════════════════╝
-  location = "US"
+  # Verified by Karl via:
+  #   bq show --format=prettyjson replit-cop:lyceon_analytics_archive_prod | grep location
+  # Returns "us-central1" (regional, not the multi-region "US" default).
+  # BigQuery location is immutable — a mismatch here would propose destroy+recreate.
+  location = "us-central1"
 
   description = "LISA analytics archive — retention pipeline destination"
 

@@ -15,27 +15,23 @@ resource "google_cloud_tasks_queue" "crisis_notification" {
   location = var.region
   project  = var.project
 
-  # ╔══════════════════════════════════════════════════════════════════╗
-  # ║ VERIFY before apply — run:                                     ║
-  # ║   gcloud tasks queues describe lisa-crisis-notification \       ║
-  # ║     --location=us-central1 --format=json                       ║
-  # ║                                                                ║
-  # ║ The values below are GCP defaults. If the live queue has       ║
-  # ║ different rate limits or retry config, update these to match   ║
-  # ║ EXACTLY — otherwise the plan proposes changes Karl did not     ║
-  # ║ ask for.                                                       ║
-  # ╚══════════════════════════════════════════════════════════════════╝
+  # Verified by Karl via:
+  #   gcloud tasks queues describe lisa-crisis-notification \
+  #     --location=us-central1 --format=json
+  # Karl tightened retry from GCP defaults (100 attempts / unlimited duration)
+  # to 5 attempts / 600s — permanently-bad Slack payloads should not retry for days.
 
   rate_limits {
+    max_burst_size            = 100
     max_dispatches_per_second = 500
     max_concurrent_dispatches = 1000
   }
 
   retry_config {
-    max_attempts       = 100
-    max_retry_duration = "0s"
-    min_backoff        = "0.100s"
-    max_backoff        = "3600s"
+    max_attempts       = 5
+    max_retry_duration = "600s"
+    min_backoff        = "10s"
+    max_backoff        = "300s"
     max_doublings      = 16
   }
 
