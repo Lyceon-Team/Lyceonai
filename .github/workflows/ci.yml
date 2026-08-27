@@ -124,6 +124,13 @@ jobs:
       - name: Retired endpoints self-test (proves each mutation turns it red)
         run: bash scripts/ci/retired-endpoints-gate.selftest.sh
 
+      # "Every subject-scoped handler is role-blind" is an ALL-ROUTES property, and any
+      # all-routes property is a chokepoint: enforced once, never per route. Three privilege
+      # divergences in this vertical were each found by collapsing two independently-written
+      # paths; while two paths serve one resource a fourth instance is a schedule, not a risk.
+      - name: Subject-resolver chokepoint gate (no handler below the resolver learns the caller's role)
+        run: node scripts/ci/subject-resolver-chokepoint-gate.mjs
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the
@@ -336,6 +343,20 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/genesis-fresh-apply.sh
+
+      # The guardian gate has never executed in production: guardian_links holds zero rows,
+      # and the TypeScript that would have written one addressed columns that exist in no
+      # spec, no schema, and no prod table. Every guardian test to date mocked the link layer
+      # away, which is how that survived ten weeks. This gate inserts REAL rows.
+      - name: guardian_view_decision gate (ONE derivation, on real guardian_links rows)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-view-decision-gate.sh
 
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published

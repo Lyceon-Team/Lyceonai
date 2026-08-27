@@ -2013,13 +2013,62 @@ CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS bool
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.guardian_links gl
-    WHERE gl.guardian_profile_id = auth.uid()        -- the requesting user is the guardian on the link
-      AND gl.student_profile_id  = p_student_id       -- linked to THIS specific student (server-side record)
-      AND gl.status              = 'active'           -- active link (Doc 01 guardian trust; not pending/revoked)
-  ) AND public.entitlement_active(p_student_id);       -- AND the student's entitlement is active (grace-inclusive)
+  SELECT public.guardian_can_view_student_as(auth.uid(), p_student_id);
 $$;
+
+
+--
+-- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.guardian_can_view_student(p_student_id uuid) IS 'RLS entry point for guardian visibility. Delegates to guardian_can_view_student_as with auth.uid() as the principal, so a caller may only ask about themselves as guardian. Body moved to guardian_view_decision 2026-08-27 so the application gate and the six RLS policies share ONE derivation.';
+
+
+--
+-- Name: guardian_can_view_student_as(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT public.guardian_view_decision(p_guardian_id, p_student_id) = 'allow';
+$$;
+
+
+--
+-- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) IS 'Boolean form of guardian_view_decision with the principal passed explicitly, for application callers on the service-role connection where auth.uid() is NULL. Service-role only, for the same reason as guardian_view_decision.';
+
+
+--
+-- Name: guardian_view_decision(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM public.guardian_links gl
+      WHERE gl.guardian_profile_id = p_guardian_id
+        AND gl.student_profile_id  = p_student_id
+        AND gl.status              = 'active'
+    ) THEN 'not_linked'
+    WHEN NOT public.entitlement_active(p_student_id) THEN 'student_unentitled'
+    ELSE 'allow'
+  END;
+$$;
+
+
+--
+-- Name: FUNCTION guardian_view_decision(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3). Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. guardian_can_view_student_as and guardian_can_view_student both delegate here.';
 
 
 --
@@ -9234,6 +9283,22 @@ GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid,
 REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_view_decision(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) TO service_role;
 
 
 --
