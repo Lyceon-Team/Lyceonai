@@ -44,6 +44,15 @@ jobs:
       - name: Validate Route Registry
         run: pnpm run route:validate
 
+      # No SCL id may head two entries in the register. Three collisions
+      # (SCL-021, SCL-024, SCL-042) reached it despite every author having read
+      # the register first — reading does not reserve a number, so only a
+      # mechanical check closes the same-day race. The two pre-existing
+      # collisions are allowlisted by exact count inside the script, with an
+      # expiry note; a third heading on either still fails.
+      - name: SCL register — no duplicate ids
+        run: node scripts/ci/scl-duplicate-check.mjs
+
       - name: Run Security Tests (IDOR + entitlements regression)
         run: pnpm run test:security
 
