@@ -103,8 +103,34 @@ Owner action: rule on this entry BEFORE any dispute code is written. Explicitly 
   later finds for the merchant; (2) whether a won dispute restores the ORIGINAL period bounds or
   issues a fresh period; (3) whether the `payment_dispute` incident should also fire on a dispute
   the merchant WINS, since the signal's value to the abuse model may not depend on the outcome.
-Artifact: none. No implementation. Per the work block, dispute handling is out of scope until
-  this SCL is ruled on.
+Artifact (updated 2026-08-27 after the owner ruled this IN SCOPE for launch):
+  RULING: revocation ships; the `payment_dispute` incident is a NAMED LAUNCH GATE, blocked, and
+  referred as a Doc 01A platform workstream.
+  BUILT — `server/lib/stripe/dispute.ts` + `webhook-handler.ts`:
+    `charge.dispute.created` revokes (tier free, status unpaid).
+    `charge.dispute.closed` restores on `won` and on `warning_closed`, leaves revoked on `lost`.
+    All EIGHT members of the SDK's `Dispute.Status` union carry an explicit disposition; an
+    unrecognised member fails the Zod parse rather than being read as "not won", because deciding
+    entitlement by omission is how a silent default becomes a policy.
+    `warning_closed` RESTORES because an inquiry that closes without becoming a dispute withdrew no
+    funds at all — the SDK documents `balance_transactions` as "zero, one, or two" entries, and an
+    inquiry has zero.
+    A dispute does NOT route through the refund path (SCL-048): a refund is money we return, a
+    chargeback is money an issuer takes back over our objection.
+  NOT BUILT — the incident record. Doc 01A §51 defines `AbuseScoreService.recordIncident` as the
+    entry point and §54 binds any severity >= 4 incident to immediate re-scoring; §52 rates
+    `payment_dispute` at 5. That re-scoring writes `abuse_scores`, which §55 classes
+    "single-writer — only AbuseScoreService writes". AbuseScoreService does not exist in
+    TypeScript (zero references repo-wide, verified 2026-08-27), so writing the incident from the
+    billing vertical would satisfy half of §54 and skip the half another document owns. Supporting
+    state is absent too: `abuse_score_runtime_config` holds 0 rows, so §53 has no base weights,
+    and there are 0 cron jobs, so §54's nightly batch does not exist — an incident written today
+    would sit inert in a table nothing reads. The interim signal is a WARN log naming the omission.
+  DURABILITY LIMIT, reported not designed around: `entitlements.status` (genesis.sql:172) admits
+    only Stripe's own subscription statuses, so nothing records that a revocation was caused by a
+    dispute. A dispute leaves the subscription ACTIVE, so the next `customer.subscription.updated`
+    re-derives from Stripe and undoes this revocation. Closing it needs DDL — a
+    `dispute_revoked_at` column or equivalent — which is Phase 4 work and is proposed there.
 
 ---
 
@@ -171,10 +197,21 @@ Artifact: none yet. Implementation is Phase 3 of the launch-scope work block.
 
 ---
 
-SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 18 events, not 7 | PROPOSED
+SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 19 events, not 7 | PROPOSED
 
-Change: §22.1 specifies seven events. The owner has finalised eighteen. This records the surface,
+Change: §22.1 specifies seven events. The owner has finalised nineteen. This records the surface,
   the delta, the reason for each addition, and two deliberate exclusions.
+
+  AMENDED 2026-08-27 (owner ruling, same day): `charge.dispute.closed` added at the Dashboard,
+  taking the surface from eighteen to NINETEEN. It is the restore path for SCL-073: a dispute does
+  not cancel the subscription, so a customer whose dispute we WIN would otherwise be left revoked
+  while having paid. The event carries the deciding fact — stripe@20.4.1 ships its description as
+  "Occurs when a dispute is closed and the dispute status changes to `lost`, `warning_closed`, or
+  `won`" — so no second call is needed to learn the outcome.
+  `charge.dispute.funds_reinstated` was deliberately NOT added alongside it: it reports the same
+  resolution as a money movement, and subscribing both would deliver every won dispute twice in two
+  shapes, recreating the duplicate-delivery problem that the `charge.refunded` exclusion below
+  avoids.
 WAS: Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") lists seven events
   covering checkout completion and the subscription lifecycle. Read and enumerated 2026-08-27; the
   seven are exactly those shown as "Already in §22.1" below.
@@ -206,6 +243,11 @@ IS: eighteen. All eighteen verified present in stripe@20.4.1's event-type union
     refund.updated                            a refund reaching status `succeeded` is the revoking
                                               transition; creation alone is not
     charge.dispute.created                    chargebacks are uncovered corpus-wide (SCL-073)
+
+  Added by the 2026-08-27 amendment (1), bringing the total to 19:
+    charge.dispute.closed                     the restore path — a WON dispute must return access
+                                              (SCL-073); carries `status`, so the outcome needs no
+                                              second call
 
   DELIBERATELY EXCLUDED — `charge.refunded` and `charge.refund.updated`.
   Both exist in the SDK's event union, so this is a choice and not an oversight. Stripe's own

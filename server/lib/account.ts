@@ -492,6 +492,39 @@ export async function getEntitlementForProfile(
 }
 
 /**
+ * @spec [SCL-073 disputes; genesis.sql:173 `stripe_subscription_id TEXT UNIQUE`]
+ * @implemented [2026-08-27]
+ * plain English: find the entitlement a Stripe subscription pays for. Expected
+ * outcome: exactly one row, or null when the subscription pays for nothing we
+ * hold. Trade-off: the column is UNIQUE today, so one subscription maps to one
+ * student and `maybeSingle` is safe; SCL-045 moves the key to the subscription
+ * ITEM so one subscription may later pay for several students, at which point
+ * this returns the wrong shape and must become a list — that migration is
+ * Phase 4 item 5.1 and this function is named in it. Edge case: a subscription
+ * id we never recorded returns null rather than throwing, because a dispute on
+ * a charge unrelated to any entitlement is a fact, not an error.
+ */
+export async function getEntitlementBySubscriptionId(
+  stripeSubscriptionId: string,
+): Promise<Entitlement | null> {
+  const { data, error } = await supabaseServer
+    .from("entitlements")
+    .select(
+      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+    )
+    .eq("stripe_subscription_id", stripeSubscriptionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Failed to fetch entitlement by subscription: ${error.message}`,
+    );
+  }
+
+  return data as Entitlement | null;
+}
+
+/**
  * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181 | STRIPE-001] @implemented 2026-08-09
  * plain English: webhook-only upsert keyed on UNIQUE(profile_id). Persists Stripe's
  * authoritative subscription state verbatim into the genesis entitlements table.

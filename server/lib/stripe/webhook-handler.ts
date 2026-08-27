@@ -8,7 +8,7 @@
  *   2. signature verification — Stripe's constructEvent
  *   3. livemode assertion     — reject a mode this environment does not serve
  *   4. idempotency gate       — insert-once on stripe_webhook_events.id
- *   5. dispatch               — subscription lifecycle only
+ *   5. dispatch               — subscription lifecycle, refunds, disputes
  * Steps 2 and 3 precede all processing (Charter §6). Nothing the caller sends
  * influences an entitlement decision: the subject is read from Stripe's own
  * signature-verified payload, and subscription state is re-fetched from Stripe
@@ -27,28 +27,49 @@
  *    that migration is a later phase and no local variant is designed here.
  *  - On handler failure the gate row is rolled back so Stripe's retry can
  *    reprocess. A failed rollback is logged, never swallowed.
- *  - Refund events are NOT handled here. SCL-048 rules that they must revoke;
- *    that is outside the thin slice and is recorded, not silently skipped.
+ *  - Refunds revoke on `refund.updated` reaching `succeeded` with the charge
+ *    fully refunded (SCL-048 as amended by SCL-072). Disputes revoke on
+ *    `charge.dispute.created` and restore on a won `charge.dispute.closed`
+ *    (SCL-073). A dispute is NOT a refund and does not share that path.
  */
 import Stripe from "stripe";
 import { z } from "zod";
 import { getStripeClient, getExpectedLivemode } from "./client";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
-import { upsertEntitlement, mapStripeStatusToEntitlement } from "../account";
+import {
+  upsertEntitlement,
+  mapStripeStatusToEntitlement,
+  getEntitlementBySubscriptionId,
+} from "../account";
 import { logger } from "../../logger";
 import { digestId } from "./redact";
 import {
   resolveEntitlementItem,
   stripeSubscriptionItemSchema,
 } from "./subscription-item";
+import { dispositionFor } from "./event-surface";
+import {
+  disputeEventSchema,
+  dispositionForClosedDispute,
+  refToId,
+} from "./dispute";
+import { refundEventSchema, decideRefundRevocation } from "./refund";
 
-/** Events this handler acts on. Anything else is acknowledged and ignored. */
-const HANDLED_EVENTS = [
-  "checkout.session.completed",
-  "customer.subscription.created",
-  "customer.subscription.updated",
-  "customer.subscription.deleted",
-] as const;
+/**
+ * How many of a Customer's subscriptions to scan when mapping a dispute back to
+ * an entitlement. A Customer with more than this many subscriptions is not a
+ * shape this product produces — SCL-045 puts several students on ONE
+ * subscription as separate items — so the limit bounds the scan without
+ * truncating a real case. If it ever truncates, the ambiguity branch below
+ * fails closed rather than guessing.
+ */
+const SUBSCRIPTION_SCAN_LIMIT = 100;
+
+/**
+ * Which events this handler acts on, and the stated reason for each it does
+ * not, live in `event-surface.ts` — one list consumed by both this handler and
+ * the disposition gate, so the two cannot drift.
+ */
 
 export type WebhookOutcome =
   | {
@@ -87,6 +108,15 @@ const checkoutSessionSchema = subjectSchema.extend({
   id: z.string().min(1),
   mode: z.string().nullish(),
   subscription: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
+  /**
+   * §4.7: present only when the session came from a Payment Link. Its presence
+   * is the whole signal — a Payment Link session carries no server-set
+   * `client_reference_id`, so nothing on it can name a student except a
+   * caller-supplied URL parameter.
+   */
+  payment_link: z
     .union([z.string().min(1), z.object({ id: z.string().min(1) })])
     .nullish(),
 });
@@ -305,7 +335,254 @@ async function releaseEvent(eventId: string): Promise<void> {
   }
 }
 
+/**
+ * Resolve the entitlement a disputed charge underwrites.
+ *
+ * The route is forced by the API version: `Charge.invoice` does not exist in
+ * stripe@20.4.1 and neither does `PaymentIntent.invoice`, so a dispute has no
+ * forward path to the invoice or the subscription. The Customer on the Charge
+ * is the only available key. Re-fetched from Stripe rather than read off the
+ * delivered object, matching `writeEntitlementFromSubscription`.
+ *
+ * Returns null when the disputed charge underwrites no entitlement we hold —
+ * absence, which is a fact and not an error. Throws on ambiguity.
+ */
+async function resolveEntitlementForCharge(
+  chargeId: string,
+  eventType: string,
+  eventId: string,
+): Promise<{
+  profileId: string;
+  subscriptionId: string;
+  charge: Stripe.Charge;
+} | null> {
+  const stripe = getStripeClient();
+  const charge = await stripe.charges.retrieve(chargeId);
+
+  const customerRef = charge.customer;
+  if (!customerRef) {
+    // Absence of the only key. A charge with no Customer cannot be a
+    // subscription charge, so there is nothing of ours to revoke.
+    logger.info("STRIPE_WEBHOOK", eventType, "Charge has no Customer", {
+      eventId,
+      chargeRef: digestId(chargeId),
+    });
+    return null;
+  }
+  const customerId =
+    typeof customerRef === "string" ? customerRef : customerRef.id;
+
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: SUBSCRIPTION_SCAN_LIMIT,
+  });
+
+  const matches: {
+    profileId: string;
+    subscriptionId: string;
+    charge: Stripe.Charge;
+  }[] = [];
+  for (const subscription of subscriptions.data) {
+    const entitlement = await getEntitlementBySubscriptionId(subscription.id);
+    if (entitlement) {
+      matches.push({
+        profileId: entitlement.profile_id,
+        subscriptionId: subscription.id,
+        charge,
+      });
+    }
+  }
+
+  // Absence and ambiguity are not the same failure — the same rule the
+  // subscription-item resolver follows.
+  //
+  //  - Zero matches: this Customer's charge underwrites no entitlement of ours.
+  //    A fact. Nothing to revoke, nothing to restore.
+  //  - Exactly one: unambiguous.
+  //  - Several: the dispute is against ONE charge for ONE invoice, and picking
+  //    a subscription would revoke a student whose payment was never disputed.
+  //    Fail closed.
+  if (matches.length === 0) {
+    logger.info("STRIPE_WEBHOOK", eventType, "Charge maps to no entitlement", {
+      eventId,
+      chargeRef: digestId(chargeId),
+    });
+    return null;
+  }
+  if (matches.length > 1) {
+    throw new StripePayloadShapeError(
+      eventType,
+      `charge maps to ${matches.length} entitlements; refusing to guess which student's access to change`,
+    );
+  }
+
+  return matches[0] ?? null;
+}
+
+/**
+ * A dispute takes the money back, so premium access comes off.
+ *
+ * NOT the refund path: SCL-048's full-versus-partial amount comparison governs
+ * money we return deliberately and has no meaning for money an issuer claws
+ * back over our objection.
+ */
+async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
+  const dispute = parseOrFail(
+    disputeEventSchema,
+    event.data.object,
+    event.type,
+  );
+  const target = await resolveEntitlementForCharge(
+    refToId(dispute.charge),
+    event.type,
+    event.id,
+  );
+  if (!target) return;
+
+  await upsertEntitlement(target.profileId, {
+    tier: "free",
+    status: "unpaid",
+  });
+
+  // Doc 01A §52 rates `payment_dispute` severity 5 and §54 binds a severity-5
+  // incident to immediate re-scoring through AbuseScoreService.recordIncident.
+  // That service does not exist in TypeScript, and `abuse_scores` is
+  // governance-class single-writer (Doc 01A §55), so recording the incident
+  // here would implement half of §54's contract and skip the half owned by
+  // another document. The incident is a named launch gate, referred as a Doc
+  // 01A platform workstream. This log is the interim operator signal, and it is
+  // NOT a substitute for the incident record.
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Chargeback: entitlement revoked. Doc 01A §52 payment_dispute incident NOT recorded — AbuseScoreService absent (launch gate).",
+    {
+      eventId: event.id,
+      studentProfileRef: digestId(target.profileId),
+      subscriptionRef: digestId(target.subscriptionId),
+      disputeStatus: dispute.status,
+    },
+  );
+}
+
+/**
+ * A closed dispute either gives the money back or does not, and access follows.
+ *
+ * On restore the entitlement is re-derived from Stripe's live subscription
+ * rather than reconstructed locally: Stripe's subscription state is the truth,
+ * and rebuilding it from memory of what we revoked would be a second writer.
+ */
+async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
+  const dispute = parseOrFail(
+    disputeEventSchema,
+    event.data.object,
+    event.type,
+  );
+  const decision = dispositionForClosedDispute(dispute.status);
+  const target = await resolveEntitlementForCharge(
+    refToId(dispute.charge),
+    event.type,
+    event.id,
+  );
+  if (!target) return;
+
+  if (decision.action === "leave_revoked") {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "Dispute closed; entitlement stays revoked",
+      {
+        eventId: event.id,
+        studentProfileRef: digestId(target.profileId),
+        disputeStatus: dispute.status,
+        reason: decision.reason,
+      },
+    );
+    return;
+  }
+
+  await writeEntitlementFromSubscription(
+    target.subscriptionId,
+    target.profileId,
+    event.type,
+    event.id,
+  );
+  logger.info(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Dispute closed in our favour; entitlement restored from live subscription",
+    {
+      eventId: event.id,
+      studentProfileRef: digestId(target.profileId),
+      disputeStatus: dispute.status,
+      reason: decision.reason,
+    },
+  );
+}
+
+/**
+ * A fully refunded payment removes premium access; a partial one does not.
+ *
+ * SCL-048 as amended by SCL-072. NOT the dispute path — see refund.ts.
+ */
+async function handleRefundUpdated(event: Stripe.Event): Promise<void> {
+  const refund = parseOrFail(refundEventSchema, event.data.object, event.type);
+  const target = await resolveEntitlementForCharge(
+    refToId(refund.charge),
+    event.type,
+    event.id,
+  );
+  if (!target) return;
+
+  const decision = decideRefundRevocation(
+    refund.status,
+    target.charge.amount,
+    target.charge.amount_refunded,
+  );
+
+  if (!decision.revoke) {
+    logger.info("STRIPE_WEBHOOK", event.type, "Refund does not revoke", {
+      eventId: event.id,
+      studentProfileRef: digestId(target.profileId),
+      reason: decision.reason,
+    });
+    return;
+  }
+
+  await upsertEntitlement(target.profileId, {
+    tier: "free",
+    status: "canceled",
+  });
+  logger.info(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Full refund: entitlement revoked",
+    {
+      eventId: event.id,
+      studentProfileRef: digestId(target.profileId),
+      subscriptionRef: digestId(target.subscriptionId),
+      reason: decision.reason,
+    },
+  );
+}
+
 async function dispatch(event: Stripe.Event): Promise<void> {
+  if (event.type === "refund.updated") {
+    await handleRefundUpdated(event);
+    return;
+  }
+
+  if (event.type === "charge.dispute.created") {
+    await handleDisputeCreated(event);
+    return;
+  }
+
+  if (event.type === "charge.dispute.closed") {
+    await handleDisputeClosed(event);
+    return;
+  }
+
   if (event.type === "checkout.session.completed") {
     // Parsed, not cast: a valid signature does not imply a valid shape.
     const session = parseOrFail(
@@ -313,6 +590,30 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       event.data.object,
       event.type,
     );
+
+    // §4.7 Payment Link defence. A Payment Link purchase carries `payment_link`
+    // and no server-set `client_reference_id`, so the only thing that could
+    // name a student is a URL query parameter — a caller-supplied value, which
+    // Charter §6 forbids from gating entitlement by name. Refusing is not the
+    // worst outcome here; granting the wrong student access is, and so is a
+    // real charge that grants nothing with no operator signal. Hence: reject,
+    // and alert.
+    if (session.payment_link) {
+      logger.error(
+        "STRIPE_WEBHOOK",
+        event.type,
+        "PAYMENT LINK PURCHASE REJECTED — a real charge has been taken and NO entitlement was granted. Refund it or complete it manually.",
+        {
+          eventId: event.id,
+          sessionRef: digestId(session.id),
+          paymentLinkRef: digestId(refToId(session.payment_link)),
+        },
+      );
+      throw new StripePayloadShapeError(
+        event.type,
+        "checkout session originated from a Payment Link; entitlement cannot be attributed to a student without a caller-supplied value (Charter §6)",
+      );
+    }
 
     if (session.mode !== "subscription" || !session.subscription) {
       logger.info(
@@ -445,14 +746,29 @@ export async function processStripeWebhook(
     };
   }
 
-  const isHandled = (HANDLED_EVENTS as readonly string[]).includes(event.type);
-  if (!isHandled) {
-    logger.info(
+  const disposition = dispositionFor(event.type);
+
+  if (disposition.kind === "unsubscribed") {
+    // Not a shrug: this means the Dashboard endpoint and `event-surface.ts`
+    // disagree about what is being delivered. Acknowledge it — refusing would
+    // make Stripe retry an event nothing will ever handle — but say so loudly,
+    // because the disagreement is the finding.
+    logger.warn(
       "STRIPE_WEBHOOK",
-      "ignored",
-      "Unhandled event type acknowledged",
+      "unsubscribed_event",
+      "Delivered an event that is not on the subscribed surface",
       { requestId, eventId: event.id, eventType: event.type },
     );
+    return { ok: true, eventId: event.id, status: "ignored" };
+  }
+
+  if (disposition.kind === "ignored") {
+    logger.info("STRIPE_WEBHOOK", "ignored", "Event ignored by design", {
+      requestId,
+      eventId: event.id,
+      eventType: event.type,
+      reason: disposition.reason,
+    });
     return { ok: true, eventId: event.id, status: "ignored" };
   }
 
