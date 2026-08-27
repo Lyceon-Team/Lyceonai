@@ -25,7 +25,7 @@
 
 ## Entries
 
-SCL-043 | 2026-08-26 | Doc 03D §6.6 retrieval scope — active question explanation INCLUDED pre-submit; unseen same-skill EXCLUDED | PROPOSED
+SCL-060 | 2026-08-26 | Doc 03D §6.6 retrieval scope — active question explanation INCLUDED pre-submit; unseen same-skill EXCLUDED | PROPOSED
 
 Change: Karl ruling inverts the retrieval scope for the deterministic path (§6.6 Path 1). The active question's authored explanation is INCLUDED in pre-submit retrieval because LISA needs the authored reasoning path to ground its tutoring (server-to-Vertex only, never reaches student via INV-03-04 output serializer). Explanations for same-skill questions the student has NOT answered are EXCLUDED — serving unseen explanations risks leaking answer content for questions the student may encounter next.
 WAS: `tutor-retrieval.ts` excluded the active question's explanation pre-submit via `.neq("canonical_id", request.active_question_canonical_id)` and included all same-skill explanations regardless of whether the student had seen them.
