@@ -899,7 +899,7 @@ async function main() {
 
     console.log("\n>>> CALLING GEMINI...");
     try {
-      const { text: responseText, fullSystemInstruction } = await callGemini(
+      const { text: responseText, fullSystemInstruction: _fullSystemInstruction } = await callGemini(
         sysInstr, contents, stateBlocks, curriculumBlock
       );
 
