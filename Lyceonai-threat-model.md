@@ -1,7 +1,7 @@
 # Lyceonai Threat Model
 
 ## Executive summary
-Lyceon is a public, internet-exposed SAT learning platform with cookie-based Supabase auth, a Node/Express API, and third-party integrations for payments (Stripe) and AI tutoring (Gemini). The highest-risk themes are cross-tenant data access because authorization is enforced at the application layer (service-role Supabase access is used in several paths), abuse of authenticated session cookies (XSS/CSRF and session fixation), and integrity risks around billing webhooks and admin-only capabilities if misconfigured. AI/RAG features add prompt injection and answer leakage risks, but there are explicit server-side reveal gates that reduce the impact. Evidence: `server/index.ts`, `server/middleware/supabase-auth.ts`, `apps/api/src/routes/rag-v2.ts`, `server/routes/tutor-runtime.ts`, `server/lib/webhookHandlers.ts`, `server/routes/billing-routes.ts`.
+Lyceon is a public, internet-exposed SAT learning platform with cookie-based Supabase auth, a Node/Express API, and third-party integrations for payments (Stripe) and AI tutoring (Gemini). The highest-risk themes are cross-tenant data access because authorization is enforced at the application layer (service-role Supabase access is used in several paths), abuse of authenticated session cookies (XSS/CSRF and session fixation), and integrity risks around billing webhooks and admin-only capabilities if misconfigured. AI/RAG features add prompt injection and answer leakage risks, but there are explicit server-side reveal gates that reduce the impact. Evidence: `server/index.ts`, `server/middleware/supabase-auth.ts`, `apps/api/src/routes/rag-v2.ts`, `server/routes/tutor-runtime.ts`, `server/lib/stripe/webhook-handler.ts`, `server/routes/billing-routes.ts`.
 
 ## Scope and assumptions
 In-scope paths:
@@ -28,7 +28,7 @@ Open questions that could change risk ranking:
 - Browser SPA (React) served from Express static output. Evidence: `server/index.ts` (staticPath + express.static).
 - Express API server with auth, practice, and tutoring routes. Evidence: `server/index.ts` (route mounts), `server/routes/tutor-runtime.ts`.
 - Supabase Auth + Supabase Postgres accessed via anon and service role keys. Evidence: `server/middleware/supabase-auth.ts`, `apps/api/src/lib/supabase-server.ts`.
-- Stripe billing and webhook processing. Evidence: `server/routes/billing-routes.ts`, `server/lib/webhookHandlers.ts`.
+- Stripe billing and webhook processing. Evidence: `server/routes/billing-routes.ts`, `server/lib/stripe/webhook-handler.ts`.
 - Gemini LLM and embeddings for RAG/tutor. Evidence: `apps/api/src/lib/embeddings.ts`, `apps/api/src/routes/rag-v2.ts`.
 - Google OAuth routes for auth flow. Evidence: `server/index.ts` (google OAuth route mounts), `server/routes/supabase-auth-routes.ts`.
 
@@ -48,7 +48,7 @@ Open questions that could change risk ranking:
 - Express API -> Stripe API (checkout/portal/prices) and Stripe -> webhook endpoint.
   - Data: billing metadata, account_id, subscription status.
   - Channel: HTTPS.
-  - Security: Stripe signature verification, idempotency gate. Evidence: `server/routes/billing-routes.ts`, `server/lib/webhookHandlers.ts`, `server/index.ts` (raw webhook route).
+  - Security: Stripe signature verification, `livemode` assertion, Zod payload parse, idempotency gate. Evidence: `server/routes/billing-routes.ts`, `server/lib/stripe/webhook-handler.ts`, `server/index.ts` (raw webhook route).
 - Express API -> Gemini (LLM/embeddings).
   - Data: student prompts, context, question metadata.
   - Channel: HTTPS.
@@ -98,7 +98,7 @@ flowchart LR
 | `/api/practice/*` and `/api/full-length/*` | Authenticated HTTP | Browser -> API | Practice/session state changes | `server/index.ts` (practice/full-length mounts) |
 | `/api/profile`, `/api/notifications` | Authenticated HTTP | Browser -> API | PII/profile updates | `server/index.ts`, `server/routes/profile-routes.ts` |
 | `/api/billing/*` | Authenticated HTTP | Browser -> API | Stripe checkout/portal/status | `server/routes/billing-routes.ts` |
-| `/api/billing/webhook` | Stripe -> API | Stripe -> API | Signature verified webhook | `server/index.ts`, `server/lib/webhookHandlers.ts` |
+| `/api/billing/webhook` | Stripe -> API | Stripe -> API | Signature verified webhook | `server/index.ts`, `server/lib/stripe/webhook-handler.ts` |
 | `/api/health`, `/healthz` | Public HTTP | Internet -> API | Service health | `server/index.ts` |
 | `/api/csrf-token` | Public HTTP | Browser -> API | CSRF token issuer | `server/index.ts`, `server/middleware/csrf-double-submit.ts` |
 
@@ -151,7 +151,7 @@ Abuse Path 8 (Secret exposure through debug paths)
 | TM-001 | Authenticated user | User has valid session; endpoint lacks user_id filter | Access or modify another user’s data via crafted IDs | PII/education record exposure, integrity loss | Profiles, practice data, question attempts | App-layer auth via `requireSupabaseAuth` and role checks. Evidence: `server/middleware/supabase-auth.ts`, `server/index.ts` | Authorization relies on per-route filters; service role bypasses RLS | Centralize data access with explicit user_id scoping, add row ownership assertions in db layer, expand regression tests for IDOR | Log cross-user access attempts; add anomaly alerts on mismatched user_id | Medium | High | High |
 | TM-002 | External attacker | Victim has active session; missing CSRF on a mutating route | CSRF to change profile or billing state | Unauthorized state changes | Profiles, billing state | Double-submit CSRF on many routes. Evidence: `server/middleware/csrf-double-submit.ts`, `server/index.ts` | Coverage depends on correct middleware usage for every mutating route | Enforce CSRF middleware for all POST/PATCH/DELETE globally; add origin checks for sensitive routes | Add CSRF failure metrics and log origin/referrer | Medium | Medium | Medium |
 | TM-003 | External attacker | XSS in SPA or injected content | Issue authenticated API requests from victim browser | Account actions performed without consent | Auth cookies, user data | CSP and security headers. Evidence: `server/middleware/security-headers.ts` | CSP allows unsafe-inline; SPA content sanitization not shown | Tighten CSP (remove unsafe-inline where possible), audit content rendering for sanitization, add client-side escaping guidelines | Content-Security-Policy violation reports; unusual action patterns | Medium | High | High |
-| TM-004 | External attacker | Stripe webhook secret leaked or misconfigured | Forge or replay webhook events | Incorrect premium entitlements | Billing entitlements | Stripe signature verification + idempotency gate. Evidence: `server/lib/webhookHandlers.ts`, `server/index.ts` | Webhook endpoint is public; relies solely on secret | Rotate webhook secret, restrict to Stripe IPs if possible, verify event livemode and account_id mapping | Alert on duplicate or unexpected webhook types, track entitlement changes | Low | High | Medium |
+| TM-004 | External attacker | Stripe webhook secret leaked or misconfigured | Forge or replay webhook events | Incorrect premium entitlements | Billing entitlements | Stripe signature verification, then a `livemode` assertion against the mode derived from the secret key in use, then a Zod shape parse, then the insert-once idempotency gate. Evidence: `server/lib/stripe/webhook-handler.ts`, `server/lib/stripe/client.ts`, `server/index.ts` | Webhook endpoint is public; signature secret is the primary control | Rotate webhook secret; environment-scope the key and secret per SCL-049 so the derived mode differs per environment; the subject is read from `metadata.student_profile_id` (SCL-043), never from a caller | Alert on duplicate or unexpected webhook types, track entitlement changes | Low | High | Medium |
 | TM-005 | External attacker | ADMIN_PROVISION_ENABLE enabled + passcode leaked | Provision admin account | Full admin access | Admin accounts, all data | Admin provision blocked in production. Evidence: `server/routes/supabase-auth-routes.ts` | Risk if NODE_ENV mis-set or previews expose route | Remove admin provision from production builds, IP allowlist for provisioning, alert when ADMIN_PROVISION_ENABLE is true | Audit logs for admin provisioning events | Low | High | Medium |
 | TM-006 | Authenticated user | Access to tutor/RAG endpoints | Prompt injection or attempt answer leakage | Integrity loss, potential data leakage | Question bank, student data | Answer reveal gate and sanitization. Evidence: `server/routes/tutor-runtime.ts`, `apps/api/src/routes/rag-v2.ts` | LLM behavior can be unpredictable; relies on logic correctness | Add tests for reveal policy, limit context fields passed to LLM, segregate sensitive data from prompts | Log cases where reveal is suppressed; alert on large prompt sizes | Medium | Medium | Medium |
 | TM-007 | External attacker | Ability to send high-volume traffic | DoS or cost escalation on RAG/tutor/auth | Availability degradation, cost | Service availability, AI usage limits | Rate limits and usage limits. Evidence: `server/index.ts` (ragLimiter), `server/middleware/usage-limits.ts`, `server/routes/supabase-auth-routes.ts` | Rate limits are per-IP; distributed attacks possible | Add WAF/bot protection, per-account and per-token limits, adaptive rate limiting | Monitor request rates, 429 spikes, and model usage anomalies | Medium | Medium | Medium |
@@ -173,7 +173,7 @@ Abuse Path 8 (Secret exposure through debug paths)
 | `server/routes/supabase-auth-routes.ts` | Auth flows + admin provisioning | TM-002, TM-005, TM-008 |
 | `server/routes/tutor-runtime.ts` | LLM prompt construction and answer reveal gates | TM-006 |
 | `apps/api/src/routes/rag-v2.ts` | RAG endpoint sanitization | TM-006 |
-| `server/lib/webhookHandlers.ts` | Stripe webhook verification and idempotency | TM-004 |
+| `server/lib/stripe/webhook-handler.ts` | Stripe signature verification, livemode assertion, Zod shape parse, idempotency gate | TM-004 |
 | `server/routes/billing-routes.ts` | Checkout, portal, billing state | TM-004 |
 | `server/middleware/security-headers.ts` | CSP and browser hardening | TM-003 |
 | `apps/api/src/middleware/cors.ts` | CORS allowlist enforcement | TM-002, TM-003 |

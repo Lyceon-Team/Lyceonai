@@ -1,0 +1,12 @@
+GATE PASS — batch 040
+Records: 90
+SQL: infra/supabase/seed/proving_batch_040.sql
+Corpus: 3408 → 3498 hashes (+90 new)
+Date: 2026-08-19
+Audit cycle: 3 (final)
+Fixes applied:
+  - SATM2CIAG0R: ambiguous stem (both roots positive) → changed equation
+  - SATRW2W7IOSO: wrong key (semicolon before appositive) → changed to comma
+  - SATRW2ZHHWS3: second defensible answer (comma+and) → replaced option C
+  - SATM2SZHM76: arithmetic error (12621.76 → 12618.24)
+  - SATM2K10F4Z: skill-content mismatch (solve equation ≠ Functions) → rewrote as growth factor question

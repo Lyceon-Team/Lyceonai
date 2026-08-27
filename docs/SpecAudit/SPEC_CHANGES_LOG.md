@@ -37,6 +37,802 @@ Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answe
 Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
 
 SCL-042 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
+> **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
+> `SCL-042` independently, on two branches that could not see each other: the Doc 05B KPI
+> fan-out entry (2026-08-19, authored on `main`) and the Stripe governing-doctrine entry
+> (2026-08-20, authored on `stripe`). The owner ruled that the collision be resolved by
+> renumbering, and the direction follows the citation counts measured at the merge: the Stripe
+> `SCL-042` had **9** citations across four plan documents and `server/lib/stripe/client.ts`,
+> and the wider Stripe block `SCL-042`–`SCL-053` carried **152**; the Doc 05B `SCL-042` had
+> **zero** anywhere outside this file.
+>
+> **The Doc 05B KPI fan-out entry is therefore renumbered `SCL-042` → `SCL-054`.** The Stripe
+> `SCL-042` keeps its number and every citation to it remains correct. No citation anywhere in
+> the repository pointed at the renumbered entry, so none was rewritten; this was verified by
+> search across the tree before the change, not assumed.
+>
+> `SCL-054` keeps its original 2026-08-19 date and so appears out of ID order in this
+> date-descending file. That is deliberate: the date records when the change was ruled, and
+> altering it to match the new number would falsify the record. Any surviving external reference
+> to "SCL-042" that concerns KPI fan-out, quarantine, or `mastery_data_quality_incidents` means
+> `SCL-054`.
+
+SCL-053 | 2026-08-26 | Doc 01A Appendix A.3 restates Doc 03's daily tutor limit and has drifted from it — 100 vs 120 | PROPOSED
+
+Change: Two locked documents state the LISA per-day message limit. They disagree. Doc 03 owns tutor
+  usage limits and its value (120) is canonical; Doc 01A Appendix A.3's conflicting seed (100) is
+  disregarded. The underlying defect is not the value — it is that Appendix A.3 restates a constant
+  another document owns, which is the failure mode Reference-Never-Restate exists to prevent.
+WAS: Doc 01A Appendix A.3 (heading verified: "## **A.3 `rate_limit_runtime_config`**") carries a
+  "Launch seed of bucket definitions (illustrative)" whose entry reads
+  `"tutor_turns_daily": { "limit": 100, "window_seconds": 86400 }`.
+IS: Doc 03 §13.1 (heading verified: "### **13.1 Hard Limits (V1 Locked)**", under
+  "## **§13 Usage Limits**") states the per-day row as `| Per-day | 96 messages | 120 messages |` —
+  soft warning 96, hard limit 120. Doc 03 §25 restates the same figure in its V1 launch scope
+  ("Hard limits (120/day, 2,500/week, 10K/month)"), and CR-03-09 records it as locked. The canonical
+  daily tutor limit is 120.
+Rationale: Doc 03 is the owning document for tutor usage limits — §13 is titled "Usage Limits", §13.1
+  is marked "V1 Locked", and it carries the full five-window table with reset schedules and the
+  definition of "message". Doc 01A Appendix A.3's job is to define the SHAPE of
+  `rate_limit_runtime_config` — the `bucket_definitions` map of bucket_key -> { limit, window_seconds }
+  — not to fix the tutor constant. By copying a value it does not own into an "illustrative" seed, it
+  created a second place for that number to live, and the two have already drifted apart by 20%.
+  The correct amendment is therefore REMOVAL of the tutor constant from Appendix A.3, not a change of
+  its value. Substituting 120 for 100 in the seed would leave the duplication intact and the next
+  drift would be the same defect again.
+Evidence:
+  - Doc 03 §13.1 table, per-day row: 96 soft / 120 hard. Heading verified.
+  - Doc 01A Appendix A.3 launch seed: `"tutor_turns_daily": { "limit": 100, "window_seconds": 86400 }`.
+    Heading verified.
+  - Production corroborates Doc 03, not Appendix A.3: `rate_limit_runtime_config` holds 7 rows, all
+    `tutor_*`, and the live `tutor_turns_daily` value is **120**. Whoever seeded production read
+    Doc 03. Recorded during WS-GL Stage 3 Phase A, 2026-08-25.
+  - Scope note: the same seed's `guardian_link_attempts_daily` entry ({ limit: 10, window_seconds:
+    86400 }) does NOT conflict with its owning section — Doc 01 V8 §36.2 states "max 10 link attempts
+    per day" in prose. Only the tutor entry has drifted. This SCL is scoped to that one entry.
+Version: no version bump to Doc 03. Doc 01A needs the amendment.
+Owner action: at next spec pass, delete the `tutor_turns_daily` entry from Doc 01A Appendix A.3's
+  launch seed and replace it with a reference to Doc 03 §13.1. Consider whether the other eight seed
+  entries restate constants owned elsewhere; this SCL asserts the defect only for the one verified.
+  No schema change. No code change is required by this entry — the value the code will read comes from
+  `rate_limit_runtime_config` at runtime, and the live row already says 120.
+Artifact: none. Surfaced by WS-GL Phase B (docs/plans/WS-GL_Stage2_Closure_Plan.md), which is the first
+  consumer built against the canonical `bucket_definitions` shape and therefore the first to have to
+  choose between the two values.
+
+---
+
+SCL-052 | 2026-08-20 | Doc 09 §5.2 vocabulary — "tier" there means billing period, not entitlement level | PROPOSED
+
+Change: Doc 09 §5.2 calls monthly / multi-month / annual billing "three paid tiers." Doc 01 V8 §20 uses
+  "tier" for entitlement level over a two-value domain. Read on its headline alone, §5.2 appears to
+  contradict §20. It does not; the word is overloaded across two documents.
+WAS: Doc 09 §5.2 (heading verified: "## **5.2 The current tier-structure direction**") opens
+  "Lyceon's V1 pricing posture is a **freemium-plus-three-paid-tiers shape**" and lists "**Three paid
+  tiers**, differentiated by billing period."
+IS: §5.2's own closing sentence already resolves it — "The paid tiers deliver the same product (full
+  premium access per Doc 02B V4 §11.4 right column); the differentiation is billing-period commitment."
+  Three Stripe Prices map to ONE entitlement tier (`premium`). Doc 09 "tier" = price point.
+  Doc 01 V8 "tier" = entitlement level. The two are not in conflict and never were.
+Rationale: STRIPE_GROUNDING_AUDIT G-28 recorded this as SPEC-CONTRADICTORY on the strength of the
+  §5.2 headline. That classification is withdrawn. Doc 09 §2.2's ownership boundary table already
+  splits the concerns — "Pricing tier structure direction | Doc 09 (directional) + Stripe (runtime)"
+  — while entitlement semantics stay with Doc 01. The defect is lexical, not architectural, but it
+  cost one audit finding and will cost the next reader the same unless the word is disambiguated.
+Evidence:
+  - Prod: `entitlements_tier_check` = CHECK ((tier = ANY (ARRAY['free'::text, 'premium'::text]))) — a
+    two-value domain that cannot express three tiers.
+  - Repo: `server/routes/billing-routes.ts:31-34` — `checkoutSchema` = z.enum(["monthly","quarterly",
+    "yearly"]).strict(). Three plans, one premium tier. Consistent with the reading above.
+  - **Live confirmation (owner, 2026-08-20).** Three Stripe Price IDs are configured and in use —
+    `STRIPE_PRICE_PARENT_MONTHLY`, `STRIPE_PRICE_PARENT_QUARTERLY`, `STRIPE_PRICE_PARENT_YEARLY`
+    (`billing-routes.ts:40-42`) — against a `tier` domain that admits exactly two values. Three
+    prices, one entitlement tier, in production configuration. This is the reading of §5.2 confirmed
+    by the runtime state rather than inferred from the text, and it closes the question.
+Version: no version bump. §5.2's substance is unchanged.
+Owner action: at next spec pass, amend Doc 09 §5.2 to say "three paid **billing periods**" (or add a
+  one-line vocabulary note binding "tier" in Doc 09 to price point and deferring entitlement-level
+  "tier" to Doc 01 V8 §20). No schema change. No code change.
+Artifact: none.
+
+---
+
+SCL-051 | 2026-08-20 | Doc 01 V8 §37 — under-13 requires a guardian-held account AND a Rule-compliant VPC method | PROPOSED
+
+Change: Owner ruled under-13 users permitted at launch where the **guardian holds the account** and the
+  child has a supervised profile. That ruling is necessary but not sufficient: Doc 01 V8 §37's consent
+  mechanism is email-token-based, which the amended COPPA Rule does not accept for the disclosure
+  posture Lyceon operates under. This SCL records the ruling and the gap it leaves open.
+WAS: Doc 01 V8 §37.2 (heading verified: "### **37.2 Consent request flow**") specifies an eight-step
+  flow: consent request created → email with unique token → guardian clicks link → guardian creates or
+  signs into a guardian account → guardian reviews and consents → `profiles.guardian_consent = true`
+  + `guardian_links` row `status='active'` → student notified → token invalidated. §37.1 gates the
+  student account until that completes. The student is the account holder throughout.
+IS: (a) For under-13, the **guardian is the account holder**; the child holds a supervised profile
+  beneath it. (b) The §37.2 email-token flow is retained as the linking mechanism but is NOT by itself
+  verifiable parental consent for third-party disclosure. (c) A Rule-compliant VPC method is required
+  before under-13 is enabled.
+Rationale: The amended Children's Online Privacy Protection Rule is effective 2025-06-23 with a full
+  compliance deadline of **2026-04-22** — already passed and enforceable as of this entry
+  (https://www.federalregister.gov/documents/2025/04/22/2025-05904/childrens-online-privacy-protection-rule).
+  Two consequences bind Lyceon:
+  1. **Email-plus covers internal-use collection only.** Where personal information is disclosed to a
+     third party, a higher-tier method is required — knowledge-based authentication, government ID
+     matched against a facial image, or text-to-parent with confirmation (the amended Rule newly
+     permits text messages to facilitate VPC). See FTC guidance:
+     https://www.ftc.gov/business-guidance/privacy-security/verifiable-parental-consent-childrens-online-privacy-rule
+  2. **Separate consent is required for third-party disclosure.** The amended Rule requires operators
+     to obtain separate verifiable parental consent to disclose children's personal information to
+     third parties (https://www.ftc.gov/news-events/news/press-releases/2025/01/ftc-finalizes-changes-childrens-privacy-rule-limiting-companies-ability-monetize-kids-data).
+  **Open counsel question, flagged not answered:** whether LISA's calls to Vertex AI constitute an
+  internal operation or a third-party disclosure. If disclosure, under-13 tutor access requires a
+  second, separate VPC — not the same consent that established the guardian link. Doc 03 already gates
+  LISA on Tier-1 country (INV-03-08) and paid entitlement; it does not gate on a disclosure-tier
+  consent, because no document contemplates one.
+Evidence:
+  - Doc 10 CR-10-02 records that the §9.4 Parent Terms summary was corrected to remove the COPPA
+    "verifiable parental consent" term-of-art, noting "**Lyceon does not implement COPPA-grade VPC**."
+    The corpus already knows this gap exists.
+  - Doc 09 §14 criterion #6 and watch item **W-09-10** hold the under-13 paid-user decision OPEN and
+    "LAUNCH-GATING IF UNDER-13 PAID USERS POSSIBLE." Doc 10:224 asserts the opposite — that V1 blocks
+    under-13 paid users. That contradiction (audit G-31) is resolved by this ruling in favour of
+    permitting under-13, which makes the §9.6 counsel-review gate launch-gating.
+  - Repo: `profiles.is_under_13` exists at `supabase/migrations/00000000000000_genesis.sql:147`,
+    maintained from `date_of_birth` by a trigger (`:118-121`) rather than as the `GENERATED ALWAYS
+    ... STORED` column Doc 01 V8 §4 specifies — a deliberate, documented divergence recorded in
+    genesis as "@adaptation A1" (`genesis.sql:30`). The data model supports the under-13 state; the
+    consent *method* is what is absent.
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **the published Student Terms
+  contradict the owner ruling this SCL records.** Student Terms §2 states that Lyceon does not
+  knowingly permit under-13 users and does not currently offer verified parental consent flows. The
+  owner has ruled under-13 paid access permitted under a guardian-held account. A published consumer
+  document that disclaims a capability cannot coexist with shipping that capability.
+  **The terms require amendment before the under-13 path is built** — not after, and not in parallel.
+  This compounds rather than replaces the VPC-method gap above: amending §2 removes the contradiction
+  but does not supply a Rule-compliant consent method, and supplying the method does not fix §2. Both
+  must close. Nothing in Phase C depends on either.
+Version: Doc 01 V8 §37 gains an account-holder rule and a VPC-method requirement. No version bump
+  proposed; the flow body in §37.2 is unchanged as a linking mechanism.
+Owner action: (1) amend §37 to state the guardian-held-account model for under-13; (2) add a VPC-method
+  subsection naming the chosen Rule-compliant method; (3) put the Vertex-AI-disclosure question to
+  counsel before under-13 is enabled. **This is a launch gate, not a build item — no Phase C work
+  depends on it.** No schema change identified. No code change proposed.
+Artifact: none. Counsel question recorded in `docs/plans/Stripe_Open_Questions.md` Q2.
+
+---
+
+SCL-050 | 2026-08-20 | UNSPECIFIED `stripe` sync schema and both webhook endpoints — remove | PROPOSED
+
+Change: Production carries a 29-table `stripe` schema (the Supabase Stripe sync integration) and two
+  registered Stripe webhook endpoints, neither of which appears anywhere in `docs/Spec/`. Remove both.
+WAS: No spec section. Six-term proof of absence across the corpus:
+    $ grep -rn -F -i "sync engine" docs/Spec/           # 0 hit(s)
+    $ grep -rn -F -i "Stripe Sync" docs/Spec/           # 0 hit(s)
+    $ grep -rn -F -i "foreign data wrapper" docs/Spec/  # 0 hit(s)
+    $ grep -rn -F -i "wrappers" docs/Spec/              # 0 hit(s)
+    $ grep -rn -F -i "stripe schema" docs/Spec/         # 0 hit(s)
+    $ grep -rn -F -i "stripe." docs/Spec/               # 0 hit(s)
+IS: The `stripe` schema is dropped. Both webhook endpoints are deleted from the Stripe Dashboard and
+  replaced by one test-mode endpoint per SCL-049's one-account-one-environment-per-mode rule.
+Rationale:
+  - **No owning document, therefore no retention rule.** The schema is registered in neither the
+    Doc 05D §10 deletion cascade nor the Doc 07E retention registry. Rows would accumulate with no
+    deletion trigger and no retention class.
+  - **PII multiplication for a minors' product with no need behind it.** `stripe.customers` (26 cols),
+    `stripe.charges` (42), `stripe.invoices` (68) mirror full raw Stripe objects — guardian email,
+    billing address, card metadata — to serve a binary paid/not-paid decision that
+    `entitlement_active(profile_id)` already answers from four columns. Doc 01A §14 (heading verified:
+    "## **§14 PII redaction rules (extends V8 §5.1)**") forbids "full Stripe customer metadata" in
+    logs and requires Stripe event payloads be reduced to "`stripe_customer_id` reference only, not
+    full customer object." §14 governs logs, not tables — but mirroring the whole object into a table
+    inverts the posture §14 exists to express.
+  - **It is already failing open.** `server/lib/billingStorage.ts:6` calls RPC `query_stripe_products`,
+    which does not exist:
+      SELECT n.nspname, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE p.proname LIKE 'query_stripe%';
+      -- []  (zero rows)
+    The `catch` at `billingStorage.ts:8-16` silently falls through to a `stripe.products` read that
+    returns 0 rows, so `GET /api/billing/plans` and `GET /api/billing/products` serve empty lists with
+    no error. A failed lookup collapsed into a legitimate empty result — Charter §6.
+  - **Managed-service-first counter-argument, and why it loses.** The standing rule prefers a platform
+    feature over hand-rolled infrastructure. It applies to needs Lyceon has. Lyceon's need is one
+    boolean per student, sourced from webhook events it already receives and verifies. A read-replica
+    of the entire Stripe object graph is not the managed version of that need; it is a different and
+    much larger thing. If a future need arises for invoice history or dispute tracking, the sync
+    integration is the right answer *then*, scoped to the tables that need exist for, with a
+    retention class and a cascade entry.
+Evidence:
+  - 29 tables, all `rls = false`, all at **0 rows** (`_managed_webhooks` = 2, `_sync_status` = 0):
+      SELECT c.relname, c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='stripe' AND c.relkind='r';
+  - Boundary currently holds — schema ACL grants USAGE to `postgres` and `service_role` only:
+      SELECT nspname, nspacl::text FROM pg_namespace WHERE nspname='stripe';
+      -- stripe | {postgres=UC/postgres,service_role=U/postgres}
+    No `anon`, no `authenticated`. So this is a removal on principle and cost, not an open exposure.
+  - Two endpoints, **89 subscribed event types each**, one `livemode=false` and one `livemode=true`,
+    each with a non-null `secret` column (signing secret stored in Postgres — see SCL-049 and
+    audit G-22):
+      SELECT id, livemode, status, jsonb_array_length(enabled_events) FROM stripe._managed_webhooks;
+      -- we_1SoYHjBqixZkD6HCeRTg2ozZ | false | enabled | 89
+      -- we_1SoaTPDPtjyWEVqEdguPV2TE | true  | enabled | 89
+    Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") specifies seven.
+Version: no spec section is amended — this creates a negative rule where none existed.
+Owner action: (1) **Owner-only, Dashboard:** delete both endpoints; create one test-mode endpoint
+  against Vercel. (2) **Owner-only, DDL:** `DROP SCHEMA stripe CASCADE` — queued in
+  `docs/plans/STRIPE_DDL_QUEUE.md`, not authored here (WS-M freeze, Charter §7). (3) Code: delete
+  `server/lib/billingStorage.ts` and its two consuming routes in the Phase C rebuild.
+Artifact: DDL queued. Deletion recorded in the Phase C deletion manifest.
+
+---
+
+SCL-049 | 2026-08-20 | Doc 01 V8 §22 — assert `event.livemode` before processing; one account, one Lyceon environment per mode | PROPOSED
+
+Change: The spec is silent on the Stripe environment model and on `livemode`. Production has a test-mode
+  and a live-mode endpoint pointing at the same database. This SCL creates the rule.
+WAS: Nothing. Proof of absence across the corpus on four terms:
+    $ grep -rn -i "livemode" docs/Spec/        # 0 hit(s)
+    $ grep -rn -i "Stripe account" docs/Spec/  # 0 hit(s)
+    $ grep -rn -i "test key" docs/Spec/        # 0 hit(s)
+    $ grep -rn -i "test mode" docs/Spec/
+      docs/Spec/…Guardian Trust (V6).md:646: … test subscription lifecycle end-to-end in Stripe test mode …
+  The single "test mode" hit is in the retired V6 file and is a pre-refactor checklist item, not a
+  model. Doc 01 V8 §22.3 ("### **22.3 Webhook signature verification**") specifies signature
+  verification and says nothing about mode.
+IS: **One Stripe account. One Lyceon environment per mode** — test-mode events belong to the
+  non-production Lyceon environment, live-mode events to production. The webhook handler asserts
+  `event.livemode` against the environment's expected mode **after** signature verification and
+  **before** any processing, and **rejects on mismatch**. Fail closed: an unexpected mode is a
+  rejection, never a pass-through, never a log-and-continue.
+Rationale: Stripe recommends checking `livemode` on receipt — "It's recommended that you check the
+  livemode value when receiving an event webhook to determine whether users need to take action"
+  (https://docs.stripe.com/api/events/object). Signature verification alone does not establish mode:
+  a valid test-mode signing secret produces a validly-signed test event, so a handler that verifies
+  and proceeds will write a real entitlement row from a test subscription. Stripe's webhook guidance
+  covers verification (https://docs.stripe.com/webhooks) but leaves environment segregation to the
+  integrator, which is why this must be a Lyceon rule rather than an inherited pattern.
+Evidence:
+  - Repo: `server/lib/webhookHandlers.ts:281` logs `livemode: event.livemode` and **never branches on
+    it**. The switch at `:297-334` runs identically for both modes.
+  - Repo: `server/lib/stripeClient.ts:4-29` implements a `STRIPE_ENV` = `"live" | "test"` selector
+    with `_LIVE`/`_TEST` key suffixes — an environment model invented in code with no corpus basis
+    (audit G-24), and undocumented in `docs/ENV.md` (audit G-23).
+  - Prod: both endpoints registered against the same database, one per mode (SQL in SCL-050).
+  - Prod: signing secrets are stored in `stripe._managed_webhooks.secret` (non-null on both rows),
+    which is not one of the `store:` values Doc 06B §4.2 defines
+    (`[service_auth_secrets_table | vercel_env | worker_host_native | gcp_secret_manager |
+    github_actions | next_public]`). Doc 06B §4.1 (heading verified: "# **§4 — Secret-Class Inventory
+    & Per-Platform Binding (Q-06B-1 = a)**") binds Stripe runtime secrets to **Vercel environment
+    variables**. SCL-050's endpoint deletion removes those rows and closes this as a side effect.
+AMENDMENT 2026-08-20 (owner) — **the environment split is a CONFIGURATION requirement, and Vercel
+  per-environment scoping is its enforcement point. The handler assertion is defence in depth, not
+  the control.**
+  Owner reports that `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_ENV` are all scoped
+  **All Environments** in Vercel, so production, preview, and development share one key, one webhook
+  signing secret, and one mode selector.
+  **Why the code-side assertion cannot compensate.** `webhookHandlers` would read `STRIPE_ENV` to
+  learn its expected mode. With one value shared across all three environments, every environment
+  computes the *same* expected mode and every environment asserts it identically. A preview
+  deployment holding the live key and the live signing secret would receive a live event, verify its
+  signature successfully, compute `expected = 'live'`, observe `event.livemode = true`, and pass —
+  writing a real entitlement row from a preview build. The assertion is not weak here; it is
+  structurally blind, because the thing it compares against is not per-environment.
+  **This is already a spec violation, not only a new rule.** Doc 06B §4.1 (heading verified:
+  "# **§4 — Secret-Class Inventory & Per-Platform Binding (Q-06B-1 = a)**") binds Vercel BFF/API
+  runtime secrets to "**Vercel environment variables**, environment-scoped
+  (`production` / `staging` / `development`)". All-Environments scoping is not environment-scoped.
+  §4.3 hard rule 2 additionally forbids a privileged secret in "any preview-env runtime."
+  **Ordering consequence: the configuration fix precedes the code.** Building the handler assertion
+  against a shared `STRIPE_ENV` produces a gate that passes in every environment and proves nothing —
+  a gate never observed failing, which Charter §5 rejects by name.
+  **Owner action, Dashboard-only, verify do not assume:** scope `STRIPE_SECRET_KEY`,
+  `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_ENV` per environment, with test-mode
+  values in preview and development and live values in production only.
+  **Not verifiable from this session.** The Vercel MCP surface available here exposes
+  `list_teams` / `list_projects` / `get_project` and no environment-variable read. Verified reachable:
+  team `team_jMcpkTj06ExncZhZCxA2BPMC`, project `prj_Q7cVFOLY753OTXPiZAKfiLczGIIo` ("lyceonai");
+  `get_project` returns domains and `latestDeployment` and no env data. Verification requires the
+  Vercel Dashboard → Settings → Environment Variables, or `vercel env ls` with a token.
+Version: Doc 01 V8 §22 gains a new subsection (§22.5 or renumbered). No existing text is contradicted.
+  Doc 06B §4.1's environment-scoping requirement is unchanged and is cited, not amended.
+Owner action: add the environment model and the `livemode` assertion rule to §22; add the webhook
+  signing secret as a named example in Doc 06B §4.1's "Vercel BFF/API runtime secrets" row, and
+  register `STRIPE_ENV` / `STRIPE_*_LIVE` / `STRIPE_*_TEST` in `infra/secret-class-inventory.yaml`
+  (which does not yet exist — Doc 06B §4.4's proving mechanism has no registry to read).
+Artifact: implemented in the Phase C webhook handler.
+
+---
+
+SCL-048 | 2026-08-20 | Doc 01 V8 §22.1 — refund events are absent and must revoke; Refund Policy governs over Doc 09 §5.6 | PROPOSED
+
+Change: Doc 01 V8 §22.1's seven handled events contain no refund event. The Refund Policy requires
+  immediate access loss on refund, so a refund must be a webhook-driven revocation. Separately, Doc 09
+  §5.6 and Refund Policy §4 disagree on whether a renewal refund is a right; the Refund Policy governs.
+WAS: Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") enumerates seven event
+  types. None of them is a refund event. §21 ("## **§21 Subscription states and transitions**") maps
+  Stripe subscription statuses to entitlement, and a refund does not change subscription status — so
+  a refunded student retains premium under the spec as written.
+IS: Refunds revoke entitlement on receipt. Lyceon subscribes to and handles the refund event family.
+Rationale:
+  - **The Refund Policy is authority level 1 and is unambiguous.** §8.1 (heading verified: "### **8.1
+    Cancellation and Access**"): "your subscription is canceled immediately and your access to paid
+    features ends as soon as the cancellation is recorded in our systems. **This applies to all
+    refunds under this Policy**" — satisfaction-window, renewal-grace-window, case-by-case, and
+    region-specific alike. §3.2 and §4.3 say the same for their respective windows.
+  - **Which event — a correction to the brief.** The brief names `charge.refunded`. Stripe's own
+    changelog supersedes that: since API version Acacia (2024-10-28) Stripe emits `refund.created`,
+    `refund.updated`, and `refund.failed` for **all** refund types, explicitly so integrators no
+    longer need to listen to `charge.refunded` and decide which applies
+    (https://docs.stripe.com/changelog/acacia/2024-10-28/refund-webhook-update). Under the Charter's
+    Stripe-supremacy rule, `refund.*` is the correct family. `charge.refunded` still fires and remains
+    valid (https://docs.stripe.com/api/events/types); handling both is redundant, and Stripe's
+    guidance is to prefer `refund.*`. Recommend `refund.created` + `refund.updated` (a refund reaching
+    `succeeded` may arrive via update, since refund status can be `pending` at creation —
+    https://docs.stripe.com/api/refunds/object).
+  - **Revocation must be status-gated, not creation-gated.** A `refund.created` in `pending` is not a
+    completed refund. Entitlement revokes when the refund object reaches `succeeded`.
+  - **Partial refunds — the Policy sweeps them in, and cannot be read otherwise.** Owner proposed
+    (2026-08-20) that revocation fire only where the refund covers the current period's charge in
+    full, so that a goodwill concession (say $20 against a $99 charge) does not revoke access as a
+    consequence of Lyceon's own gesture. **Refund Policy §8.1 as written cannot carry that
+    distinction.** Its scope clause is explicit: "This applies to **all refunds under this Policy** —
+    Satisfaction Window refunds, Renewal Grace Window refunds, case-by-case refunds under Section 5,
+    and refunds under region-specific rights in Section 6." And §5 (heading verified: "## **5\.
+    Renewal Charges Outside the Grace Window**") expressly contemplates a partial: "we may provide a
+    full refund, **a pro-rated refund based on the time remaining in the Billing Period**, or a
+    service credit toward future subscriptions." A §5 pro-rated refund revoking access is coherent —
+    the customer is refunded the unused remainder and is paid up to today. A goodwill concession
+    revoking access is not, and the Policy has no category for it.
+    **Interim rule for this SCL: revoke on any refund reaching `succeeded`**, per §8.1's scope clause.
+    The Refund Policy is authority level 1 and the spec cannot narrow it.
+    **Operational mitigation, which needs no policy change:** a goodwill concession is not a refund.
+    Stripe distinguishes them — a customer credit balance keeps the money on the account and
+    auto-applies to the next finalized invoice
+    (https://docs.stripe.com/billing/customer/balance), and a credit note can specify `credit_amount`
+    (credit balance) rather than `refund_amount` (money back to the card)
+    (https://docs.stripe.com/invoicing/integration/programmatic-credit-notes). Issuing goodwill as a
+    balance credit produces no `refund.*` event, so §8.1 never engages and access continues. §7.4 and
+    §5 both already name "a service credit toward future Lyceon subscriptions" as an available form.
+    **Whether that operational rule is sufficient, or whether §8.1 needs a carve-out, is deferred to
+    `docs/plans/Stripe_Open_Questions.md` Q4.** Not resolved here.
+  - **Doc 09 §5.6 vs Refund Policy §4 — the Refund Policy governs.** Doc 09 §5.6 (heading verified:
+    "## **5.6 Refund policy direction**") says renewal charges are "handled case-by-case (not a
+    contractual entitlement; vendor support discretion)." Refund Policy §4.1 ("### **4.1 The Renewal
+    Grace Window**") grants an unconditional three-day full refund where the service has not been used
+    since the renewal charge. Doc 09's own header labels it "a **directional document**, not a contract
+    document." The Refund Policy is a published consumer contract. Authority order settles it; audit
+    G-30 is closed in the Refund Policy's favour.
+Evidence:
+  - Repo: `server/lib/webhookHandlers.ts:297-334` — no refund case. `refund.created`, `refund.updated`,
+    and `charge.refunded` are all among the 89 event types **already subscribed** at the live endpoint
+    (SCL-050 evidence), so these events are being delivered and silently dropped through the `default`
+    branch at `:324-333` today.
+  - Refund Policy §4.1's precondition — "You must not have Used the Service since the Renewal Charge"
+    — has no server-side implementation. There is no activity signal timestamped against a renewal
+    (audit G-35). This is a build item, not an SCL: the policy is right and the system has not caught up.
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **two published consumer
+  documents directly conflict on whether refunds exist at all.** Student Terms §11 states that fees
+  are non-refundable with no partial-period refunds. The Refund Policy provides a seven-day
+  Satisfaction Window (§3.1), a three-day Renewal Grace Window (§4.1), case-by-case pro-rated refunds
+  (§5), and region-specific statutory rights (§6). Both sit at authority level 1 under the Charter, so
+  the authority order cannot resolve this — only counsel can.
+  **This SCL's revoke-on-refund model depends on the Refund Policy being the operative document.** If
+  Student Terms §11 were to govern, there would be no refund path to revoke on and §8.1's
+  immediate-access-loss rule would have nothing to attach to. Not designed around and not resolved
+  here: the interim rule (revoke on any `succeeded` refund) is written against the Refund Policy
+  because that is the document this SCL cites, and it must be re-examined if counsel rules the other
+  way. Doc 10 §3 Risk 6 already records that the Dec 2025 ToS drafts say "fees are non-refundable" and
+  that the conflict "must be resolved in the new ToS + new Parent Terms + new standalone Refund
+  Policy" — the standalone Refund Policy shipped; the ToS did not follow.
+Version: Doc 01 V8 §22.1 gains refund rows. §21 gains a note that refund is an entitlement-affecting
+  event outside the subscription-status axis.
+Owner action: (1) add `refund.created` / `refund.updated` to §22.1 with the action "revoke entitlement
+  when refund status = succeeded"; (2) add a §21 note distinguishing refund-driven revocation from
+  status-driven transitions; (3) record in Doc 09 §5.6 that the Refund Policy governs on renewal-window
+  mechanics. (4) Separately queue the "Used the Service since renewal" activity signal as a build item.
+  (5) Rule on Q4 (partial refunds) — either adopt the goodwill-as-balance-credit operating rule, which
+  requires no change to the Refund Policy, or amend §8.1 to carve out refunds not tied to time
+  remaining, which is a consumer-contract change and therefore counsel-owned.
+Artifact: not in the Phase C thin slice (thin slice is checkout → entitlement only).
+
+---
+
+SCL-047 | 2026-08-20 | Doc 01 V8 — country egress: `cancel_at_period_end`, access to period end, gate at renewal | PROPOSED
+
+Change: Nothing specifies what happens when an existing subscriber's billing country leaves the Tier-1
+  set. Owner ruled option (b): cancel at period end, retain access until the period ends, apply the
+  gate at renewal.
+WAS: Silent. Three mechanisms exist and compose only to a feature-level outcome, never a
+  subscription-level one: §22.1's `customer.updated` row syncs the billing address to
+  `profiles.country_code`; §29.2 ("### **29.2 Invalidation triggers**") lists country change as
+  invalidation trigger 2; §27.3 ("### **27.3 Feature access evaluation order**") step 4 then denies
+  with `region_blocked` for any feature carrying `requires_tier_1_country`. Proof of absence on the
+  subscription-level question:
+    $ grep -rn -i "country change" docs/Spec/
+      …Guardian Trust.md:1145: * Called by Stripe webhook handler after entitlement DB write, and by
+        `profile-service.ts` after profile updates that affect entitlement (country change, age change, soft-delete)
+    $ grep -rn -i "changes country" docs/Spec/      # 0 hit(s)
+    $ grep -rn -i "moves to a non-Tier" docs/Spec/  # 0 hit(s)
+  One hit, and it is the invalidation-trigger list.
+IS: On `customer.updated` moving the billing country out of `entitlement_runtime_config.tier_1_countries`:
+  set `cancel_at_period_end = true` on the subscription; the student retains access through
+  `current_period_end`; no renewal occurs; entitlement transitions to free at period end. No immediate
+  cut, no refund, no proration.
+Rationale (why option (a) — cancel immediately with a prorated refund — was rejected): **Stripe does
+  not automatically refund negative prorations.** Cancelling mid-period generates a credit that lands
+  on the customer balance, not on the card: "negative prorations aren't automatically refunded and
+  positive prorations aren't immediately billed, although you can do both manually"
+  (https://docs.stripe.com/billing/subscriptions/prorations). Converting that credit into a card
+  refund requires issuing the refund and then manually adjusting the customer balance back to zero
+  (https://docs.stripe.com/billing/subscriptions/cancel). That is a two-step manual reconciliation
+  with a real failure mode — a refund issued and a balance left un-zeroed silently double-credits the
+  customer. Option (b) is one API call Stripe supports natively
+  (https://docs.stripe.com/api/subscriptions/cancel), needs no reconciliation, and honours the paid
+  period the customer already bought. Per Charter §8, the rejected Stripe feature is named: manual
+  proration refund + balance adjustment.
+  Secondary reason: option (b) is also the kinder reading of the Refund Policy, which nowhere obliges
+  Lyceon to refund on an eligibility change the customer caused.
+Evidence:
+  - Prod: `profiles.country_code IS NOT NULL` on **0 of 115 rows**:
+      SELECT count(*) FROM public.profiles WHERE country_code IS NOT NULL;  -- 0
+      SELECT count(*) FROM public.profiles;                                  -- 115
+    The egress rule has no data to act on until SCL-046 lands.
+  - Repo: `customer.updated` is not handled at all (`webhookHandlers.ts:297-334`), so the trigger this
+    rule hangs off does not exist yet (audit G-02).
+Version: Doc 01 V8 §21 gains a country-egress row, or §22.1's `customer.updated` action is extended.
+Owner action: amend §22.1's `customer.updated` action to include the egress branch, and add the
+  resulting transition to §21. No schema change.
+Artifact: not in the Phase C thin slice.
+
+---
+
+SCL-046 | 2026-08-20 | Doc 01 V8 §22.1 / INV-03-08 — student country derives from the PAYER's Stripe billing address | PROPOSED
+
+Change: INV-03-08 gates the **student** on billing-address country. Doc 01 V8 §22.1 syncs
+  `customer.updated` to the profile of the Stripe **Customer**. Under SCL-043's payer model those are
+  not the same profile in the guardian-paid or third-party-paid case, and in the unaccompanied case
+  the Customer may have no Lyceon profile at all. The sync target must be stated as the entitled
+  student, not the Customer.
+WAS: Doc 03 Part XI Invariant Registry (heading verified: "# **Part XI — Invariants**" →
+  "## **Invariant Registry**"), INV-03-08: "LISA access requires billing address country IN
+  {US, CA, UK, AU, NZ, IE, SG} at V1 launch. **The authoritative signal is Stripe billing address**,
+  not IP geolocation or self-declared country." Doc 01 V8 §4 ("## **§4 Profile schema (target-state)**")
+  carries `country_code TEXT, -- ISO 3166-1 alpha-2, from billing address (authoritative)` with the
+  rationale "populated from Stripe billing address (not self-declared at signup) per entitlement
+  invariant that country follows billing." Doc 01 V8 §22.1's `customer.updated` action reads
+  "Sync billing address → `profiles.country_code` for entitlement gating" — with no statement of
+  *whose* profile.
+IS: `customer.updated` writes the payer's billing country to the **entitled student's**
+  `profiles.country_code`, resolved through the subscription item's `metadata.student_profile_id`
+  (SCL-045). Where one payer funds several students, each entitled student receives the payer's
+  country. Where the payer has no Lyceon profile, the country is still written to the student.
+Rationale: INV-03-08's purpose is compliance exposure on *LISA access*, which is a student-side gate.
+  Deriving it from a guardian's profile row that the student never touches would leave the invariant
+  reading a value nobody sets. Stripe places the billing address on the Customer object, not the
+  subscription (https://docs.stripe.com/api/customers/object), so the payer's address is the only
+  address Stripe has — the mapping to the student must be Lyceon's, which is precisely the carve-out
+  the Charter reserves from Stripe supremacy.
+Evidence:
+  - **The invariant has no data source in either model.** `country_code` is non-null on **0 of 115**
+    profile rows (SQL in SCL-047). This is not a guardian-model artifact; it is unset for everyone,
+    because `customer.updated` has never been handled.
+  - `requires_tier_1_country` is `true` on all 8 `entitlement_features` rows in production and is read
+    by **zero** application code (audit G-10):
+      $ grep -rn "requires_tier_1_country" --include=*.ts --include=*.tsx --include=*.sql . \
+          | grep -v node_modules | grep -v "^./docs/"
+      ./supabase/migrations/00000000000000_genesis.sql:191:  requires_tier_1_country BOOLEAN DEFAULT TRUE,
+      ./scripts/ci/genesis-schema.expected.sql:3662:    requires_tier_1_country boolean DEFAULT true,
+    Two hits, both DDL. INV-03-08 is currently enforced nowhere.
+Version: Doc 01 V8 §22.1's `customer.updated` action gains "of the entitled student(s), resolved via
+  subscription-item metadata." INV-03-08's text is unchanged — its authoritative signal is still the
+  Stripe billing address; only the write target is disambiguated.
+Owner action: amend §22.1's action cell; add a one-line note to Doc 03 INV-03-08 that the billing
+  address is the payer's and the gate is the student's. No schema change.
+Artifact: not in the Phase C thin slice (unaccompanied path: payer and student are the same person, so
+  the distinction does not bite — deliberately, per Charter §9).
+
+---
+
+SCL-045 | 2026-08-20 | Doc 01 V8 §20 — multi-student billing is one subscription item per student, not quantity | PROPOSED
+
+Change: Owner ruled multi-student households in scope at launch. Doc 01 V8 §20 specifies "Stripe
+  Subscription per entitled profile," which does not describe how one payer funds several students.
+  This SCL fixes the shape: one Customer per payer, one Subscription, one **SubscriptionItem per
+  student**, each carrying `metadata.student_profile_id`.
+WAS: Doc 01 V8 §20 (heading verified: "## **§20 Subscription model**"): "Stripe Customer per Lyceon
+  profile (one-to-one, `profiles.stripe_customer_id`)" and "Stripe Subscription per entitled profile."
+  Doc 01 V8 §35 ("## **§35 Guardian-student linkage**") permits the linkage — "Guardians are linked to
+  **one or more** students via `guardian_links`" — and §31.3 ("### **31.3 Guardian with multiple linked
+  students**") specifies the derivation, but no section specifies the *purchase*. Proof of absence:
+    $ grep -rn -i "quantity" docs/Spec/ docs/plans/            # 0 hit(s)
+    $ grep -rn -i "second student" docs/Spec/ docs/plans/      # 0 hit(s)
+    $ grep -rn -i "additional student" docs/Spec/ docs/plans/  # 0 hit(s)
+    $ grep -rn -i "second subscription" docs/Spec/ docs/plans/ # 0 hit(s)
+  "family plan" occurs exactly once corpus-wide, in Doc 01 V8 §42's cross-doc table as
+  "family plan handling **(future)**"; Doc 01 V8 §20 likewise defers "Future tiers (e.g., Family,
+  School)". Both are placeholders naming no mechanism.
+IS: One Stripe Customer per payer. One Subscription per payer. One SubscriptionItem per entitled
+  student, each carrying `metadata.student_profile_id`. Individual billing is the one-item case — it
+  is not a separate code path. Entitlement is keyed on the subscription **item**, not the subscription.
+Rationale:
+  - **Stripe supports it natively.** Multiple prices on one subscription are modelled as separate
+    subscription items producing a single combined invoice per period
+    (https://docs.stripe.com/billing/subscriptions/multiple-products), and each item carries its own
+    independent `metadata` (https://docs.stripe.com/api/subscription_items/object). Adding or removing
+    a student is `subscription_items.create` / `.delete`
+    (https://docs.stripe.com/api/subscription_items).
+  - **Quantity is rejected because students are not fungible.** Quantity is documented for "product or
+    subscription quantities" where units are interchangeable
+    (https://docs.stripe.com/billing/subscriptions/quantities). Decrementing quantity from 2 to 1
+    carries no information about *which* student lost access, so the entitlement write would have no
+    subject. Per-item metadata is the only shape that names the student on the Stripe object.
+  - **Spec-level support for per-student granularity.** Doc 01 V8 §36.4 (heading verified:
+    "### **36.4 Unlinking and billing implications**") already models money at per-student granularity:
+    on unlink the guardian is prompted "You are still paying for **this student's** subscription. Keep
+    or cancel?" — a question that is unanswerable under a quantity model and natural under one item
+    per student.
+  - **Known consequence, recorded not resolved:** items on one subscription share one billing cycle,
+    so adding a student mid-cycle prorates onto the existing period, and removing one generates a
+    proration credit that Stripe does not auto-refund (see SCL-047's citation). That is acceptable —
+    it is the same mechanism SCL-047 already rules on — but it means "cancel one student" is not
+    "refund one student," and the Refund Policy governs if a refund is owed.
+Evidence — the DDL delta, and a correction to the brief:
+  - `entitlements` currently carries two unique constraints:
+      SELECT con.conname, pg_get_constraintdef(con.oid) FROM pg_constraint con
+      JOIN pg_class c ON c.oid=con.conrelid WHERE c.relname='entitlements';
+      -- entitlements_stripe_subscription_id_key | UNIQUE (stripe_subscription_id)
+      -- entitlements_profile_id_unique (index)  | UNIQUE (profile_id)
+    **Only the first forecloses group billing.** Two students on one subscription need two
+    `entitlements` rows sharing one `stripe_subscription_id`, which
+    `entitlements_stripe_subscription_id_key` rejects. `UNIQUE (profile_id)` is *correct* and must be
+    **kept** — one entitlement per student is the invariant, and it is the `upsert` `onConflict`
+    target at `server/lib/account.ts:353-370`. The brief characterised both as foreclosing; that is
+    wrong for the second, and acting on it would delete the constraint the write path depends on.
+  - DDL required (queued, not authored — WS-M freeze): drop `entitlements_stripe_subscription_id_key`;
+    add `stripe_subscription_item_id TEXT UNIQUE` as the Stripe-side entitlement key. Recorded in
+    `docs/plans/STRIPE_DDL_QUEUE.md`.
+  - **Application-layer foreclosure, and the CI gate that must retire with it.** The database does not
+    foreclose multi-student — `guardian_links` carries only
+    `unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status)`,
+    which permits N students per guardian and matches §35 exactly. The foreclosure is entirely in code:
+      * `server/lib/account.ts:39-72` `createGuardianLink` — `.limit(2)` then throws
+        `GUARDIAN_ALREADY_LINKED`. **No second link can be created.**
+      * `server/lib/account.ts:538-568` `getPrimaryGuardianLink` — throws on >1.
+      * `server/lib/account.ts:575-597` `getAllGuardianStudentLinks` — throws on >1 despite its name
+        and its "Get ALL active student links" docstring.
+      * `tests/ci/guardian-linking.contract.test.ts:94` —
+        `describe('Guardian Linking 1:1 Enforcement Contract')`, **green in the required `ci` job**,
+        asserting 409 on a second student. Verified: it passes because `vi.mock('../../server/lib/
+        account', () => accountMocks)` at line 54 replaces the module, so `createGuardianLink` never
+        runs; the test asserts only the route's error-code→HTTP mapping at
+        `server/routes/guardian-routes.ts:249-266`. It is a real assertion of that mapping (planted
+        failure confirmed: changing the matched code string yields "expected 500 to be 409"), but its
+        name overclaims — the 1:1 invariant it names is enforced in the mocked-out function.
+    **This gate must retire with this SCL's promotion, never before** — removing it early leaves the
+    invariant unenforced with no replacement.
+Version: Doc 01 V8 §20 gains the multi-student billing shape; §36.4's prompt is unchanged and becomes
+  per-item. Doc 09 §5.4's "family plan" placeholder can be struck or pointed at §20.
+Owner action: (1) amend §20; (2) apply the queued DDL when the freeze lifts; (3) retire
+  `tests/ci/guardian-linking.contract.test.ts` **bundled with this promotion**; (4) note that the
+  guardian-paid path additionally blocks on the defect recorded in
+  `docs/plans/WS-GL_Guardian_Link_Data_Layer.md`.
+Artifact: DDL queued. Not in the Phase C thin slice (thin slice is the one-item unaccompanied case).
+
+---
+
+SCL-044 | 2026-08-20 | Doc 01 V8 §20 — payer affirmation at Checkout; no cardholder name, no ID verification | PROPOSED
+
+Change: No document specifies what the person entering the card affirms, or what Lyceon persists about
+  that affirmation. This SCL creates both rules.
+WAS: Nothing. Doc 01 V8 §20's "Who pays" subsection distinguishes the three payer cases but specifies
+  no affirmation and no consent artifact. The Auto-Renewal Notice §3.3 requires a consent record but
+  is a consumer contract, not an engineering spec — no `docs/Spec/` section implements it.
+IS:
+  1. **Affirmation.** At Checkout the payer affirms they are 18+ and authorized to use the payment
+     method, via `consent_collection[terms_of_service] = 'required'`, with the affirmation language
+     carried in `custom_text[terms_of_service_acceptance]`.
+  2. **No cardholder name is stored.** Cardholder name is unverified by every card network, so it
+     carries no evidentiary value and is pure PII duplication. Lyceon does not collect, store, or
+     match it.
+  3. **No identity verification.** No document scan, no KBA, no age-assurance vendor at Checkout.
+     (Distinct from SCL-051's under-13 VPC requirement, which is a separate flow with a separate
+     legal basis.)
+  4. **What is persisted — a consent record**, not a name: Checkout Session id, Stripe Customer id,
+     terms version, hash of the exact text displayed, Stripe's recorded consent value, timestamp, IP,
+     user agent, entitled student profile id, and payer relationship (`self` | `guardian` |
+     `third_party`). No name, no address, no card data.
+  5. **`customer_email` is the payer's, never the student's.** In the unaccompanied case these
+     coincide. In the guardian and third-party cases they must not be conflated: the Customer email
+     receives receipts, renewal reminders, and the Billing Portal link.
+Rationale:
+  - Stripe supplies the mechanism. `consent_collection[terms_of_service]='required'` renders a
+    checkbox and blocks payment until it is checked; when accepted the Session's
+    `consent.terms_of_service` is set to `accepted`
+    (https://docs.stripe.com/api/checkout/sessions/create). `custom_text[terms_of_service_acceptance]`
+    replaces the default agreement text, up to 1200 characters, with Markdown links permitted
+    (https://docs.stripe.com/payments/checkout/customization/policies).
+  - **Hard prerequisite, and it fails silently:** the Terms of Service URL must be set in the
+    Dashboard business public details *before* `terms_of_service: 'required'` will work — Stripe's own
+    wording is "Before requiring agreement to your terms, set your terms of service URL in your public
+    details of your business" (same page). Without it the Session creation throws and every checkout
+    returns 500 with no code-level signal that the cause is configuration.
+  - **Stripe's own caution applies to the custom text**, and the Charter's authority order makes it
+    binding: Stripe states the custom text may not "violate or create ambiguity with the
+    Stripe-generated text on Checkout" or applicable law. The affirmation language is therefore
+    counsel-owned, not engineering-owned.
+  - The record shape is what the Auto-Renewal Notice already requires: §3.3 (heading verified:
+    "### **3.3 Records of Consent**") requires "the date and time of consent, the version of the terms
+    you agreed to, and the account associated with the consent," retained per §6.7 for "no less than
+    three (3) years from the date of consent or one (1) year after termination of the subscription,
+    whichever is longer." The text hash is added beyond the Notice's minimum because a version string
+    alone cannot prove *what* was displayed if the version file is later edited.
+  - Refund Policy §10 already contemplates a payer who is neither student nor guardian — "If your
+    subscription was paid for with a promotional credit, a gift subscription, or a scholarship
+    provided by Lyceon or a **third party**" — which is why `payer_relationship` carries three values
+    rather than two.
+Evidence:
+  - No consent surface exists. `server/routes/billing-routes.ts:236-259` creates the Session with no
+    `consent_collection` and no `custom_text` (audit G-33).
+  - No billing-consent table exists in production. Sweep of `%consent%` returns three tables, none of
+    them a billing consent artifact — one is the under-13 linking flow, two are the Doc 01A §2 config
+    pair:
+      SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relname ILIKE '%consent%' AND c.relkind='r';
+      -- guardian_consent_requests
+      -- consent_runtime_config
+      -- consent_runtime_config_history
+  - The one checkbox constraint is a live legal question, not an engineering one — see
+    `docs/plans/Stripe_Open_Questions.md` Q1 (California §17602(a) requires auto-renewal offer terms
+    be separate and distinct from general terms of use; Stripe Checkout provides exactly one
+    `terms_of_service` checkbox).
+LAUNCH GATE 2026-08-20 (owner-acknowledged, assigned to counsel) — **the published terms carry two
+  different version strings.** The page header reads `2024-12-20`; the PDF reads `12/20/2025`. This
+  SCL's consent record captures "the version of the terms you agreed to" (Auto-Renewal Notice §3.3,
+  heading verified: "### **3.3 Records of Consent**"), retained per §6.7 for no less than three years
+  from consent or one year after termination, whichever is longer. **A wrong displayed version makes
+  every consent record wrong for its whole retention life**, and the record is the artifact Lyceon
+  would produce to evidence §17602(a)(4) consent. Not designed around: the version string must be
+  reconciled and made single-sourced before any consent record is written. Consent capture is
+  Phase C.2, so nothing has been persisted against the ambiguous version yet.
+Version: Doc 01 V8 §20 gains a payer-affirmation subsection; a new consent-record table joins
+  Appendix B and Appendix E's ownership matrix.
+Owner action: (1) **Dashboard, owner-only:** set the Terms of Service URL in Settings → Business →
+  Public details. (2) Approve the affirmation text with counsel. (3) Apply the queued consent-record
+  table DDL when the freeze lifts. (4) Amend §20 and the appendices.
+Artifact: consent-record table DDL queued in `docs/plans/STRIPE_DDL_QUEUE.md`. Checkout parameters are
+  in the Phase C thin slice; **if the table does not exist at Phase C, Phase C stops and reports
+  rather than authoring DDL** (Charter §7).
+
+---
+
+SCL-043 | 2026-08-20 | Doc 01 V8 §31.4 / §20 — the Stripe Customer is the PAYER; entitlement always attaches to the student | PROPOSED
+
+Change: Doc 01 V8 §31.4 is directionally right and incompletely stated; the code implements the retired
+  V6 model. This SCL states the rule for all three payer cases and records the consequence for
+  `profiles.stripe_customer_id`.
+WAS: Doc 01 V8 §20's "Who pays" subsection covers "Student pays for self" and "Guardian pays for linked
+  student"; §31.4 (heading verified: "### **31.4 Guardian paying for linked student**") states
+  "Guardian pays for student (Stripe Customer is guardian; `stripe_customer_id` on guardian's
+  profile). Subscription produces entitlement on **student's profile**, not guardian's." §20 also
+  states "Stripe Customer per Lyceon profile (one-to-one, `profiles.stripe_customer_id`)" — which
+  presumes every Customer is a Lyceon user.
+IS: **The Stripe Customer is the payer.** Three cases, one rule:
+  - Unaccompanied student pays for self → the student is the Customer.
+  - Guardian pays → the **guardian** is the Customer.
+  - Third party pays (gift, scholarship, sponsor) → **the payer is the Customer, and may have no
+    Lyceon profile at all.**
+  In every case **entitlement attaches to the student profile**, resolved through
+  `metadata.student_profile_id` on the subscription item (SCL-045).
+  Consequence: **`metadata.student_profile_id` becomes the authoritative payer→student mapping, and
+  `profiles.stripe_customer_id` degrades to a convenience index.** §20's one-to-one presumption breaks
+  in the third-party case — there is no profile row to hold the id.
+Rationale:
+  - Stripe places the Customer at the payer: the Customer object holds the payment method, billing
+    address, receipt email, and Billing Portal session
+    (https://docs.stripe.com/api/customers/object). Modelling the student as Customer while the
+    guardian's card funds it puts the guardian's billing address and receipt email on the child's
+    record — which is both wrong on the Stripe object model and a PII placement error in a minors'
+    product.
+  - Stripe has no concept of who a subscription is *for*. That mapping is Lyceon's, which is exactly
+    the Charter §1 carve-out. It lives in item metadata because that is where Stripe supports
+    integrator-owned data on a per-student object
+    (https://docs.stripe.com/api/subscription_items/object).
+  - Refund Policy §10 already contemplates the third-party payer ("a gift subscription, or a
+    scholarship provided by Lyceon or **a third party**"), and §7.4 constrains refunds to "the original
+    payment method … We do not issue refunds … to a different person than the original payer" —
+    a rule that is only expressible if the payer is a first-class identity, which the Customer is and
+    the student-as-Customer model is not.
+  - Doc 02B V4 §494 (heading verified: "## **Guardian-Paid Student Entitlement**") already states the
+    entitlement half correctly: "entitlement lives on the student's profile … The student is treated
+    as premium at runtime regardless of who paid. … Payment source does not change runtime entitlement
+    semantics." This SCL changes nothing there; it fixes only the Customer side.
+Evidence — repo implements the retired V6 model:
+  - `server/routes/billing-routes.ts:131-142` sets `profileId = linkedStudentId` for
+    `role === "guardian"`; `:184` reads `getProfileStripeCustomerId(profileId)`; `:186-196` creates the
+    Customer against that **student** `profileId` with `email: req.user!.email` — the **guardian's**
+    email on the **student's** Stripe Customer — and persists it to the student's profile via
+    `setProfileStripeCustomerId` (`server/lib/account.ts:400-418`).
+  - The retired V6 file says exactly this: `docs/Spec/Lyceon — Document 01_ … (V6).md:1767` —
+    "Checkout: student is the Stripe customer (identified by `profiles.stripe_customer_id` on
+    student's profile); guardian's payment method is the funding source." V8 (last commit 2026-06-27)
+    reversed it; the code (`@implemented 2026-08-09`) is newer than V8 and follows V6.
+  - **The V6 file is still present in `docs/Spec/` and is therefore still citable**, which is how this
+    divergence survived. Per Charter §1 it is treated as absent and reported here:
+      $ ls -la "docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust (V6).md"
+      -rw-r--r-- 1 root root 103918 Aug 19 08:46 …
+    Quarantining it is an owner prerequisite for Phase C.
+  - Prod: four orphan `profiles.stripe_customer_id` rows predate both models and are abandoned per
+    Charter §4 (`SELECT count(*) FROM public.profiles WHERE stripe_customer_id IS NOT NULL;` → 4).
+Version: Doc 01 V8 §20 and §31.4 both amended. §20's "one-to-one" claim is narrowed.
+Owner action: (1) amend §20's "Who pays" to add the third-party case and to state the Customer is the
+  payer; (2) amend §20's Customer/profile relationship from one-to-one to "one Customer per payer;
+  `profiles.stripe_customer_id` is populated only where the payer is a Lyceon user"; (3) state
+  `metadata.student_profile_id` as the authoritative mapping in §22; (4) **quarantine the V6 file.**
+Artifact: implemented in the Phase C thin slice for the unaccompanied case (payer = student).
+
+---
+
+SCL-042 | 2026-08-20 | Governing doctrine — Stripe-native supersedes the spec on MECHANISM, with two carve-outs | PROPOSED
+
+Change: Records the owner's 2026-08-19 ruling on authority order for the billing and entitlement
+  surface. This entry governs every future session touching Stripe and should be read before the
+  others.
+WAS: No corpus-wide statement of precedence between `docs/Spec/` and a payment vendor's documented
+  patterns. Doc 09's header comes closest — it excludes "Stripe API runtime behavior — billing-period
+  mechanics, customer/subscription/invoice/charge object lifecycle, deletion API semantics,
+  anonymization API capabilities (**Stripe owns; Doc 09 references Stripe as canonical at runtime and
+  never invents Stripe mechanics**)" — but that is one document disclaiming one area, not a rule.
+  Doc 00 V6 establishes the spec corpus as authoritative without contemplating a vendor exception.
+IS: **Where Stripe documents a pattern, that pattern wins on mechanism, and the spec gets an SCL.**
+  In scope: subscription modelling, idempotency keying, proration, consent collection at Checkout,
+  webhook verification and replay, dunning.
+  **Two carve-outs, neither negotiable:**
+  1. **The Refund Policy and the Subscription / Auto-Renewal Notice.** Published consumer contracts
+     with statutory backing. Stripe supplies the mechanism; it has no opinion on Lyceon's refund
+     windows or on California Business & Professions Code §17602. **Where Stripe's default and the
+     Notice differ, Stripe is configured to match the Notice.**
+  2. **Entitlement is student-scoped.** Stripe has no concept of who a subscription is *for*. That
+     mapping is Lyceon's and stays in `docs/Spec/`.
+  **Corollary — managed-service-first, with a receipt.** Before hand-rolling scheduling, retries,
+  dunning, proration, tax, or a billing portal, the rejected Stripe feature is named with its
+  documentation page and the reason for rejection. "We already have code for it" is not a reason.
+  **Corollary — an unlinked appeal to Stripe is not an appeal.** A claim that "Stripe does it this
+  way" without a specific documentation page is not reviewable and carries no authority. Without this,
+  the supremacy rule becomes a licence for whatever the implementer already wanted to build.
+Rationale: Lyceon's billing surface accumulated three parallel models — an `accounts`-keyed entitlement
+  model, a V6 student-as-Customer model, and a partially-built V8 model — none reconciled to Stripe's
+  object graph. The audit found 47 deltas, of which seven were code with no spec basis and four were
+  documents disagreeing with each other. A vendor whose object model is already the source of truth at
+  runtime cannot be second-guessed by a document that has never been executed. Making that explicit
+  removes the recurring argument and replaces it with a citation requirement.
+  **Scope boundary — this is a mechanism rule, not a product rule.** Stripe decides how a subscription
+  is shaped, how idempotency is keyed, how consent is collected. `docs/Spec/` decides who a
+  subscription is for, what entitlement means, and what a guardian may see. Stripe cannot arbitrate
+  those and must not be cited as though it could.
+Evidence — the four SCLs in this set where the rule is load-bearing and produces a concrete outcome:
+  - SCL-045: subscription items over quantity
+    (https://docs.stripe.com/billing/subscriptions/multiple-products).
+  - SCL-047: `cancel_at_period_end` over a manual proration refund, because Stripe does not
+    auto-refund negative prorations
+    (https://docs.stripe.com/billing/subscriptions/prorations).
+  - SCL-048: `refund.*` over `charge.refunded`, per Stripe's own changelog
+    (https://docs.stripe.com/changelog/acacia/2024-10-28/refund-webhook-update) — this one corrected
+    the brief.
+  - SCL-049: `livemode` assertion on receipt (https://docs.stripe.com/api/events/object).
+  And one where the carve-out bites in the other direction: the Auto-Renewal Notice §6.4 requires
+  click-to-cancel through the customer portal, so the Stripe Billing Portal is configured to permit
+  cancellation (https://docs.stripe.com/customer-management/configure-portal) rather than Lyceon
+  building a bespoke cancellation surface — Stripe supplies the mechanism, the Notice supplies the
+  requirement.
+Version: no existing spec section is contradicted. This is a new governing rule and should land in
+  Doc 00 or as a preamble to Doc 01 V8 Part IV.
+Owner action: fold into Doc 00 as a vendor-authority clause, or into Doc 01 V8 Part IV §20 as a
+  preamble. No schema change. No code change.
+Artifact: `docs/SpecAudit/STRIPE_GROUNDING_AUDIT.md` supplies the delta evidence this ruling responds to.
+
+---
+
+SCL-054 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
+Renumbered: allocated `SCL-042` on `main` 2026-08-19; renumbered to `SCL-054` at the `stripe`→`main` merge on 2026-08-26 by owner ruling, resolving an ID collision with the Stripe governing-doctrine entry that independently took `SCL-042` on 2026-08-20. Nothing outside this file cited this entry under its old number, so no citation was rewritten. The 2026-08-19 date is the original and is retained.
 Change: Doc 05B specifies that all four KPI refreshers validate canonical event history and RAISE `KPI_HISTORICAL_DATA_INVALID` on any row with NULL `correct` or NULL `occurred_at` (RB-05B-V1-02, matching 05A's hard-fail pattern per RB-05A-V1-22). Two of the four validate far beyond the event being written: `refresh_section_kpi` scans the whole (student, section) and `refresh_overall_kpi` scans the whole student, with no domain or section filter. Both are invoked by `refresh_domain_mastery` §4.9 inside `apply_mastery_event`'s transaction, downstream of the audit insert. A single malformed row anywhere in a student's history therefore rolls back every mastery write for that student — skill mastery, audit row, domain mastery, and projection refresh counter — permanently and for every domain. This ruling replaces RAISE with counted quarantine in those two functions only.
 WAS: All four KPI refreshers hard-fail on NULL `correct`/`occurred_at`. Deployed function bodies carry the inline comment "RB-05B-V1-02: explicit data-integrity validation, no silent NULL filter." The validation predicate in `refresh_section_kpi` is `pi.user_id = p_student_id AND pi.status = 'answered' AND pi.question_section = p_section` UNION the equivalent over `review_error_attempts`; in `refresh_overall_kpi` it is `pi.user_id = p_student_id AND pi.status = 'answered'` with no section or domain restriction. `refresh_domain_mastery` §4.9 documents that any failure in the chain rolls back the whole chain.
 IS: In `refresh_section_kpi` and `refresh_overall_kpi` only, the identical predicate now classifies rather than aborts: (a) the count of offending rows is computed into `v_excluded_count`; (b) `AND correct IS NOT NULL AND occurred_at IS NOT NULL` is added to the event CTE (`section_events` / `all_events`) so excluded rows enter no aggregate; (c) `v_excluded_count` is persisted on the KPI row via new column `excluded_event_count integer NOT NULL DEFAULT 0` on `student_section_kpi` and `student_overall_kpi`; (d) when `v_excluded_count > 0`, one row is upserted into new table `mastery_data_quality_incidents` (`incident_id`, `student_id`, `actor_id`, `scope CHECK IN ('section','overall')`, `section`, `refresher`, `excluded_event_count CHECK (> 0)`, `first_seen_at`, `last_seen_at`, `kpi_refresh_version`; UNIQUE on `(student_id, refresher, section)` with the overall scope's NULL section normalised so the constraint is not defeated; RLS enabled, service-role-only grants, revoked from PUBLIC, matching `mastery_event_audit_log`). `compute_mastery_for_entity`, `refresh_domain_kpi`, `refresh_skill_kpi`, `apply_mastery_event`, and 05C's `PROJECTION_MASTERY_TERM_NULL` are unchanged.
@@ -438,6 +1234,9 @@ Rationale: The idempotency model at §9 and the retry model at §13.3 require tw
   outage).
 Version: Spec defect — §18.2 constraint must be widened to include role in the uniqueness key.
 Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messages_idempotency_role.sql.
+(That file was renamed 2026-08-18 to 20260812010000_tutor_messages_idempotency_role.sql — its version
+string collided with 20260812000000_snapshot_kind_baseline.sql. The record above is left as written;
+see scripts/prod-verify/MIGRATION-VERSION-COLLISIONS.md.)
 Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
   equivalently the partial unique index form with role included.
 

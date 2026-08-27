@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   getSupabaseAdmin: vi.fn(),
   getStripe: vi.fn(),
   createGuardianLink: vi.fn(),
+  acceptGuardianLink: vi.fn(),
   ensureAccountForUser: vi.fn(),
   sendEmail: vi.fn(),
 }));
@@ -21,11 +22,15 @@ const h = vi.hoisted(() => ({
 vi.mock("../../server/middleware/supabase-auth", () => ({
   getSupabaseAdmin: h.getSupabaseAdmin,
 }));
-vi.mock("../../server/lib/stripeClient", () => ({
-  getUncachableStripeClient: h.getStripe,
+vi.mock("../../server/lib/stripe/client", () => ({
+  getStripeClient: h.getStripe,
 }));
+// WS-GL Phase B: §36.1 routes every link through a pending state, so §37.2 step 6 now
+// creates the link and accepts it in the same breath — the guardian's verified consent IS
+// their acceptance. The end state is unchanged (an ACTIVE link); the call count is not.
 vi.mock("../../server/lib/account", () => ({
   createGuardianLink: h.createGuardianLink,
+  acceptGuardianLink: h.acceptGuardianLink,
   ensureAccountForUser: h.ensureAccountForUser,
 }));
 vi.mock("../../server/lib/email", () => ({
@@ -204,7 +209,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -226,7 +231,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -248,7 +253,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -270,7 +275,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -292,7 +297,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)
@@ -315,8 +320,22 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
     h.ensureAccountForUser.mockResolvedValue("acct_1");
+    // §36.1: the link is created pending and then accepted, so `createGuardianLink`
+    // returns the row whose id `acceptGuardianLink` is called with.
+    h.createGuardianLink.mockResolvedValue({
+      id: "44444444-4444-4444-4444-444444444444",
+      guardian_profile_id: "g1",
+      student_profile_id: CHILD_ID,
+      status: "pending_guardian_accept",
+    });
+    h.acceptGuardianLink.mockResolvedValue({
+      id: "44444444-4444-4444-4444-444444444444",
+      guardian_profile_id: "g1",
+      student_profile_id: CHILD_ID,
+      status: "active",
+    });
 
     const app = await buildApp();
     const res = await request(app)
@@ -324,6 +343,13 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       .send({ sessionId: "cs_test_1", requestId: REQUEST_ID });
 
     expect(res.status).toBe(200);
+    // The consent flow must leave an ACTIVE link, not a pending one — the guardian's
+    // verified consent is their acceptance and there is nothing further for them to do.
+    expect(h.createGuardianLink).toHaveBeenCalledWith("g1", CHILD_ID, "student");
+    expect(h.acceptGuardianLink).toHaveBeenCalledWith(
+      "44444444-4444-4444-4444-444444444444",
+      "g1",
+    );
     expect(res.body.success).toBe(true);
     const consentUpdate = mutations.find(
       (m) => m.table === "guardian_consent_requests" && m.op === "update",
@@ -355,7 +381,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: { id: "pi_1", status: "requires_capture" },
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app).post("/api/consent/verify-session").send({});
@@ -375,7 +401,7 @@ describe("GAP-ID-11 — guardian consent verify is bound to Stripe session metad
       payment_intent: null,
     });
     h.getSupabaseAdmin.mockReturnValue(admin);
-    h.getStripe.mockResolvedValue(stripe);
+    h.getStripe.mockReturnValue(stripe);
 
     const app = await buildApp();
     const res = await request(app)

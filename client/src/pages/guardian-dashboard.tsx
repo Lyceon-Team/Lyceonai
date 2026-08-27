@@ -123,7 +123,12 @@ interface GuardianBillingStatus {
 export default function GuardianDashboard() {
   const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
   const queryClient = useQueryClient();
-  const [linkCode, setLinkCode] = useState("");
+  // @spec [Doc-01_V8, §36.1 Initiation step 1] | @implemented [2026-08-26]
+  // plain English: the guardian identifies the student by EMAIL, not by an 8-character code.
+  // The code mechanism appears nowhere in the locked spec corpus; §36.1 step 1 reads
+  // "Guardian enters student's email on their dashboard". Consequence edit forced by the
+  // route's contract — see docs/plans/WS-GL_PhaseB_Report.md §4.1.
+  const [linkEmail, setLinkEmail] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
@@ -279,22 +284,29 @@ export default function GuardianDashboard() {
     retry: 1,
   });
   const linkMutation = useMutation({
-    mutationFn: async (code: string) => {
+    mutationFn: async (email: string) => {
       const res = await csrfFetch("/api/guardian/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to link student");
+      if (!res.ok)
+        throw new Error(
+          data.error?.message || data.error || "Failed to link student",
+        );
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
+      // §36.1: the link is created PENDING. The student has to accept before the
+      // guardian sees anything, so the message must not claim the link is live.
+      // The response is deliberately identical whether or not the address matches a
+      // student account (anti-enumeration), so it cannot name the student either.
       setLinkSuccess(
-        `Successfully linked to ${data.student?.display_name || "student"}!`,
+        "Request sent. Your student will get an email asking them to confirm.",
       );
-      setLinkCode("");
+      setLinkEmail("");
       setLinkError(null);
       setIsRateLimited(false);
       setLastUpdated(new Date());
@@ -344,11 +356,11 @@ export default function GuardianDashboard() {
     e.preventDefault();
     setLinkError(null);
     setLinkSuccess(null);
-    if (!linkCode.trim()) {
-      setLinkError("Please enter a student link code");
+    if (!linkEmail.trim()) {
+      setLinkError("Please enter your student's email address");
       return;
     }
-    linkMutation.mutate(linkCode.trim());
+    linkMutation.mutate(linkEmail.trim());
   };
 
   const handleUnlinkClick = (student: LinkedStudent) => {
@@ -488,31 +500,25 @@ export default function GuardianDashboard() {
                 className="flex flex-col sm:flex-row gap-3"
               >
                 <div className="flex-1">
-                  <Label htmlFor="linkCode" className="sr-only">
-                    Student Link Code
+                  <Label htmlFor="linkEmail" className="sr-only">
+                    Student Email Address
                   </Label>
                   <Input
-                    id="linkCode"
-                    placeholder="Enter 8-character code (e.g., ABC12345)"
-                    value={linkCode}
-                    onChange={(e) =>
-                      setLinkCode(
-                        e.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9]/g, "")
-                          .slice(0, 8),
-                      )
-                    }
-                    className="uppercase font-mono tracking-wider"
-                    maxLength={8}
+                    id="linkEmail"
+                    type="email"
+                    autoComplete="off"
+                    placeholder="Enter your student's email address"
+                    value={linkEmail}
+                    onChange={(e) => setLinkEmail(e.target.value)}
+                    maxLength={320}
                   />
                 </div>
                 <Button
                   type="submit"
-                  disabled={linkMutation.isPending || linkCode.length !== 8}
+                  disabled={linkMutation.isPending || !linkEmail.includes("@")}
                   className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
                 >
-                  {linkMutation.isPending ? "Linking..." : "Link Student"}
+                  {linkMutation.isPending ? "Sending..." : "Send Request"}
                 </Button>
               </form>
               {linkError && (

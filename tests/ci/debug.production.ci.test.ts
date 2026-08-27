@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { setupSecurityMocks } from "../utils/securityTestUtils";
@@ -47,13 +49,25 @@ describe.sequential("Production Debug Surface Hardening", () => {
     expect(apiHealth.body).toEqual({ status: "ok" });
   });
 
+  // Phase C (2026-08-20): the billing debug routes were DELETED, not hidden.
+  // They previously returned `secretKeyLast4` behind a NODE_ENV check — a
+  // key-material fragment guarded by a runtime branch. The stronger property is
+  // that no such route is registered at all, so this asserts absence rather than
+  // a 404 body emitted by a route that still exists.
   it("production_hides_billing_debug_routes", async () => {
     const envRes = await request(app).get("/api/billing/debug/env");
     expect(envRes.status).toBe(404);
-    expect(envRes.body).toEqual({ error: "Not found" });
 
     const validateRes = await request(app).get("/api/billing/debug/validate");
     expect(validateRes.status).toBe(404);
-    expect(validateRes.body).toEqual({ error: "Not found" });
+
+    // Absence proof: re-adding a debug route to the billing surface fails here,
+    // in production or otherwise.
+    const billingSource = readFileSync(
+      path.resolve(__dirname, "..", "..", "server", "routes", "billing-routes.ts"),
+      "utf8",
+    );
+    expect(billingSource).not.toContain("/debug/");
+    expect(billingSource).not.toContain("secretKeyLast4");
   });
 });
