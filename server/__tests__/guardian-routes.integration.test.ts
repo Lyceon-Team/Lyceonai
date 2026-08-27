@@ -59,7 +59,7 @@ describe('Guardian routes integration - access enforcement', () => {
 
         const app = makeApp();
         const res = await request(app)
-            .get('/api/guardian/students/student_123/exams/full-length/session_123/report');
+            .get('/api/guardian/students/student_123/tests/session_123/report');
 
         expect(res.status).toBe(403);
         expect(res.body).toEqual(expect.objectContaining({ code: 'NO_LINKED_STUDENT' }));
@@ -74,7 +74,7 @@ describe('Guardian routes integration - access enforcement', () => {
 
         const app = makeApp();
         const res = await request(app)
-            .get('/api/guardian/students/student_123/exams/full-length/session_123/report');
+            .get('/api/guardian/students/student_123/tests/session_123/report');
 
         expect(res.status).toBe(403);
         expect(res.body).toEqual(expect.objectContaining({ code: 'NO_LINKED_STUDENT' }));
@@ -91,7 +91,7 @@ describe('Guardian routes integration - access enforcement', () => {
 
         const app = makeApp();
         const res = await request(app)
-            .get('/api/guardian/students/student_123/exams/full-length/session_123/report');
+            .get('/api/guardian/students/student_123/tests/session_123/report');
 
         expect(res.status).toBe(402);
         expect(res.body).toEqual(expect.objectContaining({ code: 'PAYMENT_REQUIRED', reason: 'no_active_subscription' }));
@@ -108,7 +108,7 @@ describe('Guardian routes integration - access enforcement', () => {
 
         const app = makeApp();
         const res = await request(app)
-            .get('/api/guardian/students/student_123/exams/full-length/session_123/report');
+            .get('/api/guardian/students/student_123/tests/session_123/report');
 
         expect(res.status).toBe(402);
         expect(res.body).toEqual(expect.objectContaining({ code: 'PAYMENT_REQUIRED', reason: 'subscription_expired' }));

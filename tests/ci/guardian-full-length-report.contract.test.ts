@@ -124,7 +124,7 @@ describe("Guardian Full-Length Report Visibility Contract", () => {
     app.use("/api/guardian", router);
 
     const res = await request(app).get(
-      "/api/guardian/students/student-404/exams/full-length/session-xyz/report",
+      "/api/guardian/students/student-404/tests/session-xyz/report",
     );
 
     expect(res.status).toBe(403);
@@ -315,7 +315,7 @@ describe("Guardian Full-Length Report Visibility Contract", () => {
     app.use("/api/guardian", router);
 
     const res = await request(app).get(
-      "/api/guardian/students/student-1/exams/full-length/session-safe-1/report",
+      "/api/guardian/students/student-1/tests/session-safe-1/report",
     );
 
     expect(res.status).toBe(200);
@@ -401,7 +401,7 @@ describe("Guardian Full-Length Report Visibility Contract", () => {
     guardianApp.use(express.json());
     guardianApp.use("/api/guardian", guardianRouter);
     const guardianRes = await request(guardianApp).get(
-      "/api/guardian/students/student-1/exams/full-length/session-safe-1/report",
+      "/api/guardian/students/student-1/tests/session-safe-1/report",
     );
 
     expect(studentRes.status).toBe(200);

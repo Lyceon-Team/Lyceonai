@@ -9,7 +9,6 @@
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
  *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
- *   - Weakness view                 → buildWeaknessSkillsView → getWeakestSkills
  *   - Calendar month view           → buildCalendarMonthView (getMonthPayload alias in calendar route)
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
@@ -21,12 +20,8 @@ import request from "supertest";
 import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
 const masteryMocks2 = vi.hoisted(() => ({
-  getWeakestSkills: vi.fn(),
 }));
 
-vi.mock("../../apps/api/src/services/studentMastery", () => ({
-  getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
-}));
 
 // buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
 // view reaches for a real Supabase client and the case hangs rather than failing.
@@ -175,64 +170,21 @@ describe("Full-length report: single canonical builder", () => {
     expect(res.body).toHaveProperty("error");
   }, 15000);
 
-  it("report is premium-gated: returns 402 when entitlement resolves to free", async () => {
-    kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-      hasPaidAccess: false,
-      reason: "no active plan",
-      plan: "free",
-      status: "inactive",
-      currentPeriodEnd: null,
-    });
-
-    const { default: fullLengthRouter } =
-      await import("../../server/routes/full-length-exam-routes");
-    const app = buildReportApp();
-    app.use("/api/full-length", fullLengthRouter);
-
-    const res = await request(app).get(
-      "/api/full-length/sessions/sess-gate/report",
-    );
-
-    expect(res.status).toBe(402);
-    // Builder must NOT be called if gating fails
-    expect(kpiMocks.buildStudentFullLengthReportView).not.toHaveBeenCalled();
-    expect(examMocks.getExamReport).not.toHaveBeenCalled();
-  });
+  // The weakness skills route is GONE (owner ruling 2026-08-27, OQ4). Nothing specified it,
+  // and it ordered by `mastery_score` — a column Parent AC#20 confines to admin/internal.
+  // Ordering by a forbidden column is a projection of it: the ranking carries the column's
+  // information content even though the value never appeared in the body.
 });
 
 // ---------------------------------------------------------------------------
-// Surface 3: Weakness — /skills route through canonical builder only.
-//            buildWeaknessSkillsView owns the skills shape. No inline fork.
-//            Clusters deprecated (post-launch revisit); table retained, code removed.
+// Surface 3: Weakness — DELETED 2026-08-27 (owner ruling, OQ4).
+//   The weakness-skills route and the weakest-skills route were the same capability at two
+//   paths, neither named by any document. Both ranked by `mastery_score`, which Parent AC#20
+//   confines to admin/internal/audit — and ordering by a forbidden column is a projection of
+//   it, because the ranking carries the column's information content even when the value
+//   never appears in the body. A recursive key-walk cannot see that; only reading the query
+//   can. The route, its view, its service and its tests are gone.
 // ---------------------------------------------------------------------------
-describe("Weakness view: single canonical builder per sub-surface", () => {
-  it("skills route calls buildWeaknessSkillsView scoped to the session student, with no caller-supplied threshold", async () => {
-    masteryMocks2.getWeakestSkills.mockResolvedValue([]);
-
-    const { weaknessRouter } =
-      await import("../../apps/api/src/routes/weakness");
-
-    const app = express();
-    app.use(express.json());
-    app.use((req: any, _res, next) => {
-      req.user = { id: "student-2", role: "student" };
-      next();
-    });
-    app.use("/api/me/weakness", weaknessRouter);
-
-    await request(app).get("/api/me/weakness/skills");
-
-    // The skills route owns its own student scope. failOnError is no longer part of the
-    // contract — fetchWeakestSkills always throws on a query error — so what is asserted
-    // here is the scoping, plus the absence of any caller-supplied evidence threshold.
-    expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "student-2" }),
-    );
-    const call = masteryMocks2.getWeakestSkills.mock.calls[0]?.[0] ?? {};
-    expect(call).not.toHaveProperty("minAttempts");
-    expect(call).not.toHaveProperty("failOnError");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Surface 4: Calendar month view — getMonthPayload MUST be the buildCalendarMonthView

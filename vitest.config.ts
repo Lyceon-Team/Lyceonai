@@ -33,6 +33,11 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./client/src"),
       "@shared": path.resolve(__dirname, "./shared"),
+      // Mirrors the vite.config.ts alias so client code under test resolves the shared
+      // contract the same way it does in a build. Without it every client test importing a
+      // shared schema fails to resolve — and a test that cannot import the contract is a
+      // test that cannot check it.
+      "@lyceon/shared": path.resolve(__dirname, "./packages/shared/src"),
     },
   },
 })

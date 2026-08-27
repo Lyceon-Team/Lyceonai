@@ -18,7 +18,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 GATE="scripts/ci/test-fixture-canonicality-gate.mjs"
-TARGET="tests/ci/mastery.read.contract.test.ts"
+# Repointed in PR 2: the previous target was deleted with the routes it tested, and the
+# "sed matched nothing" guard below caught the staleness rather than letting three cases
+# pass while mutating an absent file. This target carries the same three canonical shapes
+# (a bare `section: "M",` line, an `(M, Algebra)` pairing, and a Title Case skill string).
+TARGET="tests/ci/student-resources.contract.test.ts"
 SCRATCH="tests/__selftest_formats__"
 FAILURES=0
 

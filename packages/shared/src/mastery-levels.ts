@@ -63,19 +63,30 @@ export type MasteryLevelKey = z.infer<typeof masteryLevelKeySchema>;
  * mirrors the `mastery_levels_unmeasured_is_null` CHECK so a row that somehow escaped
  * the database constraint still cannot be serialised to a client.
  */
-export const masteryLevelLabelSchema = z
-  .object({
-    levelKey: masteryLevelKeySchema,
-    level: masteryLevelSchema,
-    displayName: z.string().min(1),
-  })
-  .refine(
-    (value) => (value.levelKey === "unmeasured") === (value.level === null),
-    {
-      message:
-        "levelKey 'unmeasured' must carry level null, and a null level must carry levelKey 'unmeasured'",
-    },
-  );
+export const masteryLevelLabelBaseSchema = z.object({
+  levelKey: masteryLevelKeySchema,
+  level: masteryLevelSchema,
+  displayName: z.string().min(1),
+});
+
+/**
+ * RULE 3 as a predicate, exported so a schema that EXTENDS the label shape applies the same
+ * invariant rather than restating it. A `.refine`d schema is a ZodEffects and cannot be
+ * `.extend`ed, so the base object and the predicate are exported separately — that is a
+ * single source split into two usable halves, not two definitions of one rule.
+ */
+export const masteryLevelLabelInvariant = (value: {
+  levelKey: MasteryLevelKey;
+  level: number | null;
+}): boolean => (value.levelKey === "unmeasured") === (value.level === null);
+
+export const MASTERY_LEVEL_LABEL_INVARIANT_MESSAGE =
+  "levelKey 'unmeasured' must carry level null, and a null level must carry levelKey 'unmeasured'";
+
+export const masteryLevelLabelSchema = masteryLevelLabelBaseSchema.refine(
+  masteryLevelLabelInvariant,
+  { message: MASTERY_LEVEL_LABEL_INVARIANT_MESSAGE },
+);
 export type MasteryLevelLabel = z.infer<typeof masteryLevelLabelSchema>;
 
 /** Canonical section codes as the database stores them (`questions.section` CHECK). */
@@ -103,6 +114,8 @@ export type MasteryDomainNode = z.infer<typeof masteryDomainNodeSchema>;
  * catalogue would be a second source of truth for text nobody asked to change.
  */
 export const masterySkillNodeSchema = z.object({
+  section: masterySectionSchema,
+  domain: z.string().min(1),
   skill: z.string().min(1),
   levelKey: masteryLevelKeySchema,
   level: masteryLevelSchema,
@@ -113,6 +126,7 @@ export type MasterySkillNode = z.infer<typeof masterySkillNodeSchema>;
 export const masteryDomainsResponseSchema = z.object({
   ok: z.literal(true),
   domains: z.array(masteryDomainNodeSchema),
+  requestId: z.string().optional(),
 });
 export type MasteryDomainsResponse = z.infer<
   typeof masteryDomainsResponseSchema
@@ -128,11 +142,16 @@ export type MasteryDomainsResponse = z.infer<
  * fails if the catalog does not cover all eight canonical domains — so `catalogEmpty`
  * is a state the UI must handle, not a state production is expected to reach.
  */
+/**
+ * FLAT as of 2026-08-27 (owner ruling, PR 2). `section` and `domain` moved ONTO each node and
+ * off the envelope: Doc 05B §10.3 names the resource `/mastery/skills` with no path or query
+ * segment, and §10.7 bounds it at ~80 rows with "no 05B route requires server-side
+ * pagination". The drill-down filters by domain in the client, from one fetch.
+ */
 export const masterySkillsResponseSchema = z.object({
   ok: z.literal(true),
-  section: masterySectionSchema,
-  domain: z.string().min(1),
   catalogEmpty: z.boolean(),
   skills: z.array(masterySkillNodeSchema),
+  requestId: z.string().optional(),
 });
 export type MasterySkillsResponse = z.infer<typeof masterySkillsResponseSchema>;

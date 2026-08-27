@@ -408,27 +408,12 @@ describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
     ]);
   });
 
-  it("domain mastery — /guardian/weaknesses/:studentId", async () => {
-    const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/weaknesses/${STUDENT_ID}`,
-    );
-    expect(res.status).toBe(200);
-    assertNoForbiddenKeys("weaknesses", res.body, [
-      ...RULE_4_KEYS,
-      ...MASTERY_SURFACE_EXTRA_KEYS,
-    ]);
-  }, 15000);
-
-  it("KPI summary — /guardian/students/:studentId/summary", async () => {
-    const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/students/${STUDENT_ID}/summary`,
-    );
-    expect(res.status).toBe(200);
-    // RULE-4 machinery only: `accuracy` here is the 7-day figure the student also sees,
-    // sanctioned by the owner's Q1 ruling 2026-08-23.
-    assertNoForbiddenKeys("summary", res.body, RULE_4_KEYS);
-  }, 15000);
-
+  // `/guardian/weaknesses/:studentId` and `/guardian/students/:studentId/summary` are GONE
+  // (PR 2). Both were guardian-only paths to a resource that also had a student twin, and
+  // every such twin in this vertical produced a privilege divergence. They are now
+  // `/api/students/:studentId/mastery/domains` and `/kpi/overall`, walked for RULE-4 keys on
+  // BOTH `via` values by tests/ci/student-resources.contract.test.ts — which is the gap this
+  // file never covered: it sets `isGuardian: false` and has never exercised a guardian path.
   it("full-length history — /guardian/students/:studentId/exams/full-length/sessions", async () => {
     const res = await request(await buildGuardianApp()).get(
       `/api/guardian/students/${STUDENT_ID}/exams/full-length/sessions`,
@@ -441,9 +426,9 @@ describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
     expect(keys.has("module2_path")).toBe(false);
   }, 15000);
 
-  it("full-length report — /guardian/students/:studentId/exams/full-length/:sessionId/report", async () => {
+  it("full-length report — /guardian/students/:studentId/tests/:sessionId/report", async () => {
     const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/students/${STUDENT_ID}/exams/full-length/${SESSION_ID}/report`,
+      `/api/guardian/students/${STUDENT_ID}/tests/${SESSION_ID}/report`,
     );
     expect(res.status).toBe(200);
     assertNoForbiddenKeys("exam-report", res.body, RULE_4_KEYS);
