@@ -10,7 +10,6 @@ function read(relativePath: string): string {
 
 describe("Feedback UX hardening contract", () => {
   it("uses shared recovery/session notices on key customer surfaces", () => {
-    const chat = read("client/src/pages/chat.tsx");
     const calendar = read("client/src/pages/calendar.tsx");
     const fullTest = read("client/src/pages/full-test.tsx");
     const userProfile = read("client/src/pages/UserProfile.tsx");
@@ -18,12 +17,10 @@ describe("Feedback UX hardening contract", () => {
       "client/src/components/guardian/SubscriptionPaywall.tsx",
     );
 
-    // chat.tsx uses code-dispatched error handling (classifyTutorError +
-    // AppNotice) instead of the generic RecoveryNotice / SessionNotice
-    // two-bin classifier. Same intent — structured, never-raw error
-    // feedback — different (more granular) mechanism.
-    expect(chat).toContain("classifyTutorError");
-    expect(chat).toContain("AppNotice");
+    // chat.tsx: behavioral render test in
+    // client/src/pages/chat.error-rendering.contract.test.tsx proves the
+    // property directly (errors render through structured notice, raw
+    // server text never surfaces). No static name-matching needed.
     expect(calendar).toContain("RecoveryNotice");
     expect(calendar).toContain("SessionNotice");
     expect(fullTest).toContain("RecoveryNotice");
