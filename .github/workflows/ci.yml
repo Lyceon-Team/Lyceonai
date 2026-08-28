@@ -480,6 +480,22 @@ jobs:
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/guardian-link-student-side.pg.ci.test.ts
 
+      # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
+      # The proof above can only be trusted if its cases can FAIL. Three times in three
+      # consecutive steps a case read green while proving nothing — a mutation that never
+      # applied, a mutation that reddened an earlier assertion than the one it named, and a
+      # precondition that put a different mechanism in the path. Each was caught by hand,
+      # which is not a mechanism. This runs the declared mutations and fails the build unless
+      # each one turns EXACTLY the cases it claims. It is the LAST step in this job because it
+      # patches source files in the working tree and restores them in a finally.
+      - name: Student-side link lifecycle → mutation harness
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: node scripts/ci/guardian-link-mutation-harness.mjs
+
   # ---------------------------------------------------------------------------
   # Mastery pipeline gates — HARD GATE.
   #

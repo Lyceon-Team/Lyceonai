@@ -550,8 +550,16 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(rows).toHaveLength(1);
     });
 
-    it("404s a non-self caller on initiate, and writes nothing", async () => {
-      // The guardian, resolving via='guardian' on the student's id.
+    it("404s a non-self caller on initiate — via must be self", async () => {
+      // THIRD instance of the same defect, found by retro-audit. As first written this case
+      // seeded no link at all, so `guardian_view_decision` answered `not_linked`, the
+      // RESOLVER replied 404, and the route's own `via` guard never ran — while the comment
+      // claimed "resolving via='guardian'", which was exactly the mechanism it did not
+      // exercise. Mutation 0 (disable the guard) left it green, which is how it was caught.
+      const linkId = await seedActiveLink();
+      await seedEntitlement();
+      expect(await viewDecision()).toBe("allow");
+
       currentUser = {
         id: GUARDIAN_ID,
         email: GUARDIAN_EMAIL,
@@ -561,9 +569,14 @@ describe.skipIf(!PG_AVAILABLE)(
         .post(`/api/students/${STUDENT_ID}/links`)
         .send({ email: GUARDIAN_EMAIL });
 
+      // Without the guard the guardian reaches `createGuardianLink` and the active link
+      // above makes it 409 — so 404-versus-409 is what discriminates here, and the privilege
+      // the guard actually withholds is a guardian manufacturing a student-initiated link on
+      // the student's behalf.
       expect(res.status).toBe(404);
       const { rows } = await pg.query(`SELECT id FROM public.guardian_links`);
-      expect(rows).toHaveLength(0);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(linkId);
     });
 
     it("§36.2 — the initiate route actually consumes rate-limit quota", async () => {
@@ -732,6 +745,76 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(second.rows[0].revoked_at.toISOString()).toBe(
         first.rows[0].revoked_at.toISOString(),
       );
+    });
+
+    // ---------------------------------------------------------------------
+    // Fail-closed: the transition and its audit row are ONE transaction — step 4
+    // ---------------------------------------------------------------------
+
+    it("FAIL-CLOSED: a failing audit insert leaves the link UNACCEPTED", async () => {
+      // The requirement, in the owner's words: the proof must red on LINK STATE, not on the
+      // audit row or the status code. A test that only asserts a 500 proves the route errored,
+      // not that the write was prevented — and "500 with an active link and no audit row" is
+      // the outcome that is worse than either posture alone.
+      //
+      // The audit insert is broken at the DATABASE, not by mocking the writer: the whole claim
+      // is that Postgres rolls the pair back together, and a mocked writer would prove nothing
+      // about that.
+      const linkId = await seedPendingLink();
+      // NOT VALID: enforced on every new INSERT, but not validated against rows already
+      // there. `audit_logs` is append-only and earlier cases in this run have written accept
+      // rows, so a validating constraint cannot be added at all — and the point here is to
+      // break the NEXT insert, not to make a claim about history.
+      await pg.query(
+        `ALTER TABLE public.audit_logs
+           ADD CONSTRAINT tmp_reject_accept
+           CHECK (action <> 'guardian_link_accepted') NOT VALID`,
+      );
+
+      try {
+        currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+        const res = await request(app).post(
+          `/api/students/${STUDENT_ID}/links/${linkId}/accept`,
+        );
+        expect(res.status).toBe(500);
+
+        // THE ASSERTIONS THAT MATTER — the link did not move.
+        const after = await readLink(linkId);
+        expect(after?.status).toBe("pending_student_accept");
+        expect(after?.accepted_at).toBeNull();
+        expect(after?.accepted_by_profile_id).toBeNull();
+
+        const { rows } = await pg.query(
+          `SELECT id FROM public.audit_logs
+            WHERE action = 'guardian_link_accepted' AND context->>'link_id' = $1`,
+          [linkId],
+        );
+        expect(rows).toHaveLength(0);
+      } finally {
+        await pg.query(
+          `ALTER TABLE public.audit_logs DROP CONSTRAINT tmp_reject_accept`,
+        );
+      }
+    });
+
+    it("FAIL-CLOSED: with the audit insert repaired, the same accept succeeds", async () => {
+      // The positive half. Without it, a route that ALWAYS 500'd would satisfy the case above.
+      const linkId = await seedPendingLink();
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+
+      const res = await request(app).post(
+        `/api/students/${STUDENT_ID}/links/${linkId}/accept`,
+      );
+      expect(res.status).toBe(200);
+
+      const after = await readLink(linkId);
+      expect(after?.status).toBe("active");
+      const { rows } = await pg.query(
+        `SELECT id FROM public.audit_logs
+          WHERE action = 'guardian_link_accepted' AND context->>'link_id' = $1`,
+        [linkId],
+      );
+      expect(rows).toHaveLength(1);
     });
 
     it("400s a malformed link id without touching the table", async () => {

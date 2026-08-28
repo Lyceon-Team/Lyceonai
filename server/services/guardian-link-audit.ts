@@ -3,7 +3,15 @@
  *        status change for traceability"; owner ruling 2026-08-26 R7 (audit destination is
  *        `audit_logs`)] | @implemented [2026-08-26, extracted 2026-08-27]
  *
- * plain English: record a guardian-link status change in `audit_logs`. What it does: writes
+ * SCOPE NARROWED 2026-08-28 (adoption plan step 4). This writer now records DENIALS ONLY —
+ * `guardian_link_denied`. The three STATE TRANSITIONS moved into the database
+ * (migration 20260828000000), where each writes its own audit row inside the same transaction
+ * as the status change, because PostgREST gives every request its own transaction and the two
+ * writes could never be atomic from here. A denial has no state change to be atomic with, so
+ * it stays, and best-effort remains the right posture for it: refusing to answer a caller
+ * because the record of their refusal would not write helps nobody.
+ *
+ * plain English: record a guardian-link event in `audit_logs`. What it does: writes
  * one row naming who acted, who it was about, what happened, and the before/after status.
  * Expected outcome: a durable trail of every link transition, queryable by actor or target.
  * Trade-off: this is best-effort — a failed audit write is logged and does not fail the

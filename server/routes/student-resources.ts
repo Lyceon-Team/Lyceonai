@@ -484,15 +484,6 @@ router.post(
       });
     }
 
-    await auditGuardianLink({
-      action: "guardian_link_initiated",
-      actorProfileId: subject.studentId,
-      targetProfileId: guardian.id,
-      changes: { to: link.status },
-      context: { link_id: link.id },
-      requestId,
-    });
-
     logger.info(
       "STUDENT_RESOURCES",
       "link_initiate",
@@ -629,18 +620,6 @@ router.post(
         .json({ error: "Internal server error", requestId });
     }
 
-    await auditGuardianLink({
-      action: "guardian_link_accepted",
-      actorProfileId: subject.studentId,
-      targetProfileId: link.guardian_profile_id,
-      // Read from the row this handler observed BEFORE the write, not asserted: the guardian
-      // route hardcodes `from: "pending_guardian_accept"`, which is true only by virtue of
-      // which half it serves and would silently record a false prior state if that changed.
-      changes: { from: existing.status, to: link.status },
-      context: { link_id: link.id },
-      requestId,
-    });
-
     logger.info("STUDENT_RESOURCES", "link_accept", "Student accepted link", {
       studentId: subject.studentId,
       requestId,
@@ -763,17 +742,6 @@ router.delete(
         .status(500)
         .json({ error: "Internal server error", requestId });
     }
-
-    await auditGuardianLink({
-      action: "guardian_link_revoked",
-      actorProfileId: subject.studentId,
-      targetProfileId: revoked.guardian_profile_id,
-      // The reason is on the ROW, not in the audit `changes` — it is free text written by a
-      // minor, and the audit trail records the transition, not its prose.
-      changes: { from: existing.status, to: revoked.status },
-      context: { link_id: revoked.id },
-      requestId,
-    });
 
     logger.info("STUDENT_RESOURCES", "link_revoke", "Student revoked link", {
       studentId: subject.studentId,

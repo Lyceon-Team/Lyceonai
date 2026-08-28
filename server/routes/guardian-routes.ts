@@ -308,15 +308,6 @@ router.post(
         });
       }
 
-      await auditGuardianLink({
-        action: "guardian_link_initiated",
-        actorProfileId: guardianId,
-        targetProfileId: student.id,
-        changes: { from: null, to: link.status, initiated_by: "guardian" },
-        context: { link_id: link.id },
-        requestId,
-      });
-
       logger.info("GUARDIAN", "link_student", "Link request created", {
         guardianId,
         studentId: student.id,
@@ -405,15 +396,6 @@ router.post(
           .status(500)
           .json({ error: { message: "Failed to accept link" }, requestId });
       }
-
-      await auditGuardianLink({
-        action: "guardian_link_accepted",
-        actorProfileId: guardianId,
-        targetProfileId: link.student_profile_id,
-        changes: { from: "pending_guardian_accept", to: link.status },
-        context: { link_id: link.id },
-        requestId,
-      });
 
       logger.info("GUARDIAN", "accept_link", "Guardian link accepted", {
         guardianId,
@@ -516,22 +498,6 @@ router.delete(
           .status(500)
           .json({ error: "Failed to unlink student", requestId });
       }
-
-      await auditGuardianLink({
-        action: "guardian_link_revoked",
-        actorProfileId: guardianId,
-        targetProfileId: studentId,
-        changes: {
-          from: "active",
-          to: revoked.status,
-          revoked_by: "guardian",
-          // The reason is guardian-authored free text about the link, not student content,
-          // and is recorded as present/absent rather than verbatim.
-          revocation_reason_present: reason !== undefined,
-        },
-        context: { link_id: revoked.id },
-        requestId,
-      });
 
       logger.info(
         "GUARDIAN",

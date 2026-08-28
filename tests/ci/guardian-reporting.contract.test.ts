@@ -488,7 +488,64 @@ describe("Guardian reporting runtime contract", () => {
     expect(dashboardViewed).toBeUndefined();
   });
 
-  it("fails closed on unlink conflict when link is no longer active and does not emit unlink success audit", async () => {
+  /**
+   * MUTATIONS STAGED FOR THE THREE REVOKE-AUDIT ASSERTIONS, and the assertion each one reds.
+   * Run 2026-08-28; baseline 8/8 green before and after every restore.
+   *
+   *   M1. In the supabase mock below, change `if (table === "audit_logs")` to `if (false)`.
+   *       → reds `expect(...).toMatchObject(...)` in the INSTRUMENT case. 1 of 8.
+   *       Proves the capture is real, so "no revoke row" below means absence, not blindness.
+   *
+   *   M2. In `guardian-routes.ts`, add an `auditGuardianLink({action:"guardian_link_revoked"})`
+   *       call on the successful unlink path.
+   *       → reds the `expect(unlinkSuccess).toBeUndefined()` in the last case. 1 of 8.
+   *       This is the regression the case exists for: a duplicate, best-effort row beside the
+   *       transactional one.
+   *
+   *   M3. In the same handler, pass `studentId` instead of `guardianId` as the third argument
+   *       to `revokeGuardianLink`.
+   *       → reds `expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith(...)` in that
+   *       same case, one assertion ABOVE M2's. 1 of 8. Two mutations, two assertion layers,
+   *       so neither case is carrying the other.
+   */
+  /**
+   * INSTRUMENT CONTROL for the two cases below.
+   *
+   * Both of them assert that NO `guardian_link_revoked` row reaches `audit_logs` from this
+   * layer. After adoption-plan step 4 that is true because the revoke audit row is written
+   * inside `revoke_guardian_link_audited`, in the same transaction as the status change, and
+   * `guardian-routes.ts` no longer calls `auditGuardianLink` for a transition at all.
+   *
+   * An assertion that a capture array does not contain something is worthless if the capture
+   * is broken — "no row" and "no instrument" are indistinguishable. Everything else in this
+   * file that used `guardianAuditInserts` was one of those two revoke cases, so nothing else
+   * proves the capture still works. This does, directly: call the writer once and see the row.
+   * If the `audit_logs` branch of the supabase mock is ever removed, this reds first and names
+   * why the negative assertions stopped meaning anything.
+   */
+  it("INSTRUMENT: the audit_logs capture still records a row when the writer runs", async () => {
+    const { auditGuardianLink } = await import(
+      "../../server/services/guardian-link-audit"
+    );
+    await auditGuardianLink({
+      action: "guardian_link_denied",
+      actorProfileId: "guardian-1",
+      targetProfileId: "student-1",
+      changes: { reason: "instrument_control" },
+    });
+
+    expect(
+      guardianAuditInserts.find(
+        (row: any) => row.action === "guardian_link_denied",
+      ),
+      "the audit_logs capture is broken — the negative assertions below prove nothing",
+    ).toMatchObject({
+      actor_profile_id: "guardian-1",
+      target_profile_id: "student-1",
+    });
+  });
+
+  it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     const conflict = new Error("Guardian link is not active") as Error & {
       code?: string;
@@ -504,13 +561,40 @@ describe("Guardian reporting runtime contract", () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe("LINK_NOT_ACTIVE");
+    // The transition never happened, so no revoke row exists anywhere — the database wrote
+    // none because the transaction raised, and the route writes none by design.
     const unlinkSuccess = guardianAuditInserts.find(
       (row: any) => row.action === "guardian_link_revoked",
     );
     expect(unlinkSuccess).toBeUndefined();
   });
 
-  it("keeps valid unlink transition behavior and emits unlink success audit", async () => {
+  /**
+   * REWRITTEN at adoption-plan step 4, and the direction of the change is the point.
+   *
+   * This case used to assert that a `guardian_link_revoked` row appeared in `audit_logs`
+   * after a successful unlink. It asserted the OPPOSITE of what it now asserts, and both
+   * readings were correct at their own time:
+   *
+   *   BEFORE — `guardian-routes.ts` called `auditGuardianLink` after `revokeGuardianLink`
+   *   returned. Two writes, two PostgREST requests, therefore two transactions. A revoke
+   *   that succeeded and an audit row that did not write were an ordinary outcome, and the
+   *   trail silently lost rows.
+   *
+   *   AFTER — `revoke_guardian_link_audited` writes the status change and its audit row in
+   *   ONE transaction (migration 20260828000000). The route's own call is gone. If it came
+   *   back, every revoke would produce TWO rows: the transactional one and a best-effort
+   *   duplicate. That is what the negative assertion below catches, and it is a real
+   *   regression rather than a formality — re-adding the call is the most natural way for
+   *   someone to "restore" this test's old assertion.
+   *
+   * The audit row itself is proven where it is now written: `guardian-link-student-side
+   * .pg.ci.test.ts` reads it back out of a real `audit_logs` table, and its FAIL-CLOSED pair
+   * proves the row and the status change stand or fall together. A mocked account layer
+   * cannot see a write that happens inside the function it replaced, and pretending otherwise
+   * is how the assertion would go vacuous instead of moving.
+   */
+  it("keeps valid unlink transition behavior and leaves the revoke audit row to the transaction", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
     // `revoked_by_profile_id` and `revocation_reason` to be observable).
@@ -531,14 +615,26 @@ describe("Guardian reporting runtime contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(true);
     expect(response.body.students).toEqual([]);
+
+    // §36.3 — the revoker is RECORDED, not assumed. The route's remaining responsibility is
+    // to name the acting guardian as the revoker; the row that carries it is written by the
+    // transaction. Asserting the arguments is what keeps this case from proving only that a
+    // mock resolved.
+    expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith(
+      "guardian-1",
+      "student-1",
+      "guardian-1",
+      undefined,
+    );
+
+    // No second, best-effort revoke row from this layer. See the docblock.
     const unlinkSuccess = guardianAuditInserts.find(
       (row: any) => row.action === "guardian_link_revoked",
     );
-    expect(unlinkSuccess).toBeDefined();
-    expect(unlinkSuccess).toMatchObject({
-      actor_profile_id: "guardian-1",
-      target_profile_id: "student-1",
-    });
+    expect(
+      unlinkSuccess,
+      "the route wrote its own guardian_link_revoked row — the transaction already wrote one, so this revoke is now double-audited",
+    ).toBeUndefined();
   });
 
 

@@ -174,6 +174,17 @@ export function parseGuardianLinks(rows: unknown): GuardianLink[] {
  * a test double, a bundler duplicate — and the symptom is a 500 where a 409 was specified.
  * The contract is a separate thing from the implementation and is imported separately.
  */
+/**
+ * @spec [migration 20260828000000 — the audited transition functions] | @implemented [2026-08-28]
+ *
+ * plain English: the SQLSTATE each transition function raises, mapped to this module's error
+ * codes. PostgREST surfaces a raised SQLSTATE as `error.code`, so the caller matches a CODE
+ * rather than a message string — a message is prose and drifts; a SQLSTATE is a contract.
+ *
+ * ONE definition, consumed by `account.ts`. The functions and this map are edited together or
+ * the mapping silently degrades into "unknown error -> 500", which is how a specified 409
+ * becomes an opaque failure.
+ */
 export const GUARDIAN_LINK_ERROR = {
   /** An active or pending link already exists for this exact pair. */
   ALREADY_EXISTS: "GUARDIAN_LINK_ALREADY_EXISTS",
@@ -189,6 +200,24 @@ export const GUARDIAN_LINK_ERROR = {
    */
   NOT_ACTIVE: "LINK_NOT_ACTIVE",
 } as const;
+
+/**
+ * @spec [migration 20260828000000 — the audited transition functions] | @implemented [2026-08-28]
+ *
+ * plain English: the SQLSTATE each transition function raises, mapped to the codes above.
+ * PostgREST surfaces a raised SQLSTATE as `error.code`, so the caller matches a CODE rather
+ * than a message string — a message is prose and drifts; a SQLSTATE is a contract.
+ *
+ * ONE definition, consumed by `account.ts`. The migration and this map are edited together or
+ * the mapping degrades silently into "unknown error -> 500", which is how a specified 409
+ * becomes an opaque failure.
+ */
+export const GUARDIAN_LINK_SQLSTATE: Readonly<Record<string, string>> = {
+  LY001: GUARDIAN_LINK_ERROR.NOT_PENDING,
+  LY002: GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR,
+  LY003: GUARDIAN_LINK_ERROR.NOT_ACTIVE,
+  LY004: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+};
 
 export class GuardianLinkError extends Error {
   readonly code: string;
