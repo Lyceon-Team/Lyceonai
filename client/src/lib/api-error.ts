@@ -121,6 +121,7 @@ const entitlementCodes = new Set([
   "PREMIUM_REQUIRED",
   "PAYMENT_REQUIRED",
   "SUBSCRIPTION_REQUIRED",
+  "ENTITLEMENT_REQUIRED",
 ]);
 
 export function getPremiumDenialReason(
