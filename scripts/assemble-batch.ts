@@ -460,6 +460,39 @@ function validateRecord(
     v("explanation", "explanation is empty");
   }
 
+  // DOUBLED_LATEX_ESCAPE: detect \\cmd patterns that indicate the JSON source
+  // had \\\\cmd (four backslashes) instead of \\cmd (two backslashes).
+  // After JSON.parse, correct LaTeX is \frac; doubled becomes \\frac.
+  const doubledLatexRe =
+    /\\\\(?:frac|dfrac|sqrt|text|left|right|cdot|times|pi|geq|leq|ge|le|neq|sin|cos|tan|theta|log|ln|begin|end|over|div|quad|pm|mp|infty|sum|prod|int|lim|circ|to)\b/;
+  const fieldsToCheckLatex: Array<{
+    name: string;
+    value: string | null | undefined;
+  }> = [
+    { name: "stem", value: rec.stem },
+    { name: "explanation", value: rec.explanation },
+    { name: "passage", value: rec.passage },
+  ];
+  if (rec.item_type === "mcq" && Array.isArray(rec.options)) {
+    for (const opt of rec.options) {
+      if (opt && typeof opt === "object" && "text" in opt) {
+        fieldsToCheckLatex.push({
+          name: `option_${(opt as { key: string }).key}`,
+          value: (opt as { text: string }).text,
+        });
+      }
+    }
+  }
+  for (const { name, value } of fieldsToCheckLatex) {
+    if (typeof value === "string" && doubledLatexRe.test(value)) {
+      const match = value.match(doubledLatexRe);
+      v(
+        name,
+        `DOUBLED_LATEX_ESCAPE: found "${match?.[0]}" — the JSON source has \\\\\\\\cmd instead of \\\\cmd. Fix the NDJSON part-file.`,
+      );
+    }
+  }
+
   // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).
   // Options are shuffled at serve (Feature-8 option_order); letter refs are gibberish.
   // This regex is a detection aid — it flags for human/LLM review, not auto-reject,
