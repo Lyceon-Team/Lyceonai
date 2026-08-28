@@ -18,8 +18,12 @@ describe("Feedback UX hardening contract", () => {
       "client/src/components/guardian/SubscriptionPaywall.tsx",
     );
 
-    expect(chat).toContain("RecoveryNotice");
-    expect(chat).toContain("SessionNotice");
+    // chat.tsx uses code-dispatched error handling (classifyTutorError +
+    // AppNotice) instead of the generic RecoveryNotice / SessionNotice
+    // two-bin classifier. Same intent — structured, never-raw error
+    // feedback — different (more granular) mechanism.
+    expect(chat).toContain("classifyTutorError");
+    expect(chat).toContain("AppNotice");
     expect(calendar).toContain("RecoveryNotice");
     expect(calendar).toContain("SessionNotice");
     expect(fullTest).toContain("RecoveryNotice");
