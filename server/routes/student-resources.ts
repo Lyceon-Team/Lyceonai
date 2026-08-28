@@ -70,12 +70,36 @@ import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
 const router = Router({ mergeParams: true });
 
 /**
- * PER-RESOURCE ENTITLEMENT POSTURE, IN ONE TABLE.
+ * @spec [Doc-01_V8 §27.2 entitlement_features; owner ruling 2026-08-28 step 7 — "route-table
+ *        requiresEntitlement, one canAccessFeature('mastery_detail') call site, no new keys,
+ *        never the entitlement_active predicate directly"] | @implemented [2026-08-28]
  *
- * Each entry preserves EXACTLY what the route it replaces did, so this PR moves the topology
- * without also changing who can see what:
- *   - mastery/*      402 unless the subject's entitlement is active (what the retired student
- *                    mastery routes did via `ensurePremiumMasteryAccess`)
+ * PER-RESOURCE ENTITLEMENT POSTURE, IN ONE TABLE — and this time the table is the mechanism.
+ *
+ * WHAT WAS WRONG WITH THE VERSION THIS REPLACES. It was `Record<string, boolean>` and it
+ * gated nothing. Its only two `true` entries were `masteryDomains` and `masterySkills`, and
+ * neither of those routes goes through `resource()` — they are declared with their own
+ * `router.get` because they parse query params and shape their own payloads. Every path that
+ * DID go through `resource()` was `false`. So the `=== true` branch inside `resource()` never
+ * executed in any request, ever, and the two routes the table claimed to describe were gated
+ * by hand-written `subjectEntitlementActive` calls copied into each handler.
+ *
+ * That is the failure this vertical keeps finding, one layer down: a mechanism that reads as
+ * the single source of truth, is typed, is documented, and is not consulted. A table nobody
+ * queries is a comment with a type annotation.
+ *
+ * WHAT IT IS NOW. Path -> the `entitlement_features` key that gates it, or `null` for open.
+ * Every gated route reads it through `entitlementGate`, which is the ONLY place
+ * `canAccessFeature` is called on this surface.
+ *
+ * WHY A FEATURE KEY AND NOT A BOOLEAN. `canAccessFeature` consults `entitlement_features`
+ * (`required_tier`, `enabled`), so the mastery paywall becomes a row an operator can turn off
+ * rather than a boolean only a deploy can change. `mastery_detail` is seeded by genesis
+ * (`00000000000000_genesis.sql:206` — premium, enabled by column default). No key is
+ * introduced here.
+ *
+ * POSTURE PRESERVED EXACTLY, so this step moves the mechanism and not who can see what:
+ *   - mastery/*      402 unless the subject can access `mastery_detail`
  *   - kpi/*          served to everyone; `/kpi/overall` carries its own `gating.historicalTrends`
  *                    block, which is how a reader tells WITHHELD from zero
  *   - projections/*  served to everyone; the paid/unpaid split is inside the payload
@@ -87,16 +111,15 @@ const router = Router({ mergeParams: true });
  * `/kpi/overall` away from free students, which is a product decision. Changing it is one
  * edit to this table.
  */
-const REQUIRES_ACTIVE_ENTITLEMENT: Record<string, boolean> = {
-  [STUDENT_RESOURCE_PATHS.masteryDomains]: true,
-  [STUDENT_RESOURCE_PATHS.masterySkills]: true,
-  [STUDENT_RESOURCE_PATHS.kpiSections]: false,
-  [STUDENT_RESOURCE_PATHS.kpiDomains]: false,
-  [STUDENT_RESOURCE_PATHS.kpiOverall]: false,
-  [STUDENT_RESOURCE_PATHS.projectionsSections]: false,
-  [STUDENT_RESOURCE_PATHS.projectionsSnapshots]: false,
+export const requiresEntitlement: Record<string, string | null> = {
+  [STUDENT_RESOURCE_PATHS.masteryDomains]: "mastery_detail",
+  [STUDENT_RESOURCE_PATHS.masterySkills]: "mastery_detail",
+  [STUDENT_RESOURCE_PATHS.kpiSections]: null,
+  [STUDENT_RESOURCE_PATHS.kpiDomains]: null,
+  [STUDENT_RESOURCE_PATHS.kpiOverall]: null,
+  [STUDENT_RESOURCE_PATHS.projectionsSections]: null,
+  [STUDENT_RESOURCE_PATHS.projectionsSnapshots]: null,
 };
-
 /** `req.subject` is set by the resolver; reaching a handler without it is a wiring bug. */
 function requireSubject(
   req: Request,
@@ -117,21 +140,6 @@ function requireSubject(
   return req.subject;
 }
 
-/**
- * The SAME predicate `guardian_view_decision` uses (`entitlement_active(uuid)`), applied to
- * the SUBJECT, never to the caller.
- *
- * It deliberately does not go through `resolvePaidKpiAccessForStudent`, which the routes this
- * file replaces used: that function reaches `getLinkedGuardianForStudent`, which selects
- * `student_user_id`, `account_id` and `linked_at` — three columns that exist in no spec, no
- * genesis schema, and no production table. The read throws, an outer `catch` converts the
- * throw into `hasPaidAccess: false`, and the result is that EVERY student is denied 402 on
- * the retired student mastery routes in production today. See owner question 3.
- */
-async function subjectEntitlementActive(studentId: string): Promise<boolean> {
-  return EntitlementService.isEntitlementActiveForProfile(studentId);
-}
-
 function sendPaymentRequired(res: Response, requestId?: string) {
   return res.status(402).json({
     error: "Subscription required",
@@ -139,6 +147,47 @@ function sendPaymentRequired(res: Response, requestId?: string) {
     message: "An active subscription is required to see this.",
     requestId,
   });
+}
+
+/**
+ * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
+ * when it may not, the 402 is already written and the caller must return immediately.
+ *
+ * It asks `canAccessFeature`, never the canonical entitlement_active predicate directly. That
+ * predicate is reachable from exactly one file (`entitlement-service.ts`, SP25-001) and
+ * `canAccessFeature` is the feature-aware layer above it. Going straight to the predicate
+ * would gate on "is this profile paying" and lose "is this feature premium, and is it
+ * switched on" — which is the question a per-resource table is asking.
+ *
+ * (The two sentences above deliberately do NOT spell that predicate as a call expression.
+ * `entitlement.single-evaluator.contract.test.ts` enforces SP25-001 with a line scan, and a
+ * comment written in call syntax is indistinguishable from a call to it. The scan is right to
+ * be strict — loosening it to parse comments would trade a real invariant for prose comfort —
+ * so the awkward phrasing stays. Do not "fix" it back.)
+ *
+ * Applied to the SUBJECT, never to the caller: a guardian reading a student's mastery is
+ * gated on THAT STUDENT's entitlement, the same term `guardian_view_decision` uses.
+ *
+ * FAIL-CLOSED comes from `canAccessFeature` itself — unknown key, disabled feature, DB error
+ * and read error all return false. Nothing here turns a failure into access.
+ *
+ * The predicate this replaces, `isEntitlementActiveForProfile`, is still the right one for
+ * `guardian_view_decision`'s own term; it is simply not the right one for a per-FEATURE table.
+ */
+async function entitlementGate(
+  path: string,
+  studentId: string,
+  res: Response,
+  requestId?: string,
+): Promise<boolean> {
+  const featureKey = requiresEntitlement[path];
+  if (!featureKey) return true;
+
+  if (await EntitlementService.canAccessFeature(studentId, featureKey)) {
+    return true;
+  }
+  sendPaymentRequired(res, requestId);
+  return false;
 }
 
 /**
@@ -160,10 +209,10 @@ function resource<T>(
       if (!subject) return;
 
       try {
-        if (REQUIRES_ACTIVE_ENTITLEMENT[path] === true) {
-          if (!(await subjectEntitlementActive(subject.studentId))) {
-            return sendPaymentRequired(res, req.requestId);
-          }
+        if (
+          !(await entitlementGate(path, subject.studentId, res, req.requestId))
+        ) {
+          return;
         }
         const body = await read(subject);
         return res.json({ ok: true, ...body, requestId: req.requestId });
@@ -212,8 +261,15 @@ router.get(
     }
 
     try {
-      if (!(await subjectEntitlementActive(subject.studentId))) {
-        return sendPaymentRequired(res, req.requestId);
+      if (
+        !(await entitlementGate(
+          STUDENT_RESOURCE_PATHS.masteryDomains,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
       }
       const { domains } = await readDomainMasteryView({
         studentId: subject.studentId,
@@ -263,8 +319,15 @@ router.get(
     if (!subject) return;
 
     try {
-      if (!(await subjectEntitlementActive(subject.studentId))) {
-        return sendPaymentRequired(res, req.requestId);
+      if (
+        !(await entitlementGate(
+          STUDENT_RESOURCE_PATHS.masterySkills,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
       }
 
       if (subject.via === "guardian") {
