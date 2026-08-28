@@ -142,7 +142,6 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/guardian/link` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:74-135` |
 | `DELETE /api/guardian/link/:studentId` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:135` |
 | `GET /api/students/:studentId/kpi/overall` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:184-265` |
-| `GET /api/guardian/students/:studentId/calendar/month` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts` + `apps/api/src/services/calendar-month-view.ts#buildCalendarMonthView` |
 | `GET /api/students/:studentId/mastery/domains` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:435-517` |
 
 ### Admin APIs

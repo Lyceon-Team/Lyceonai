@@ -95,6 +95,34 @@ const RETIRED = [
     replacement:
       "GET /api/students/:studentId/mastery/domains — the guardian read IS the student query",
   },
+  // --- Guardian delete-and-ship (owner instruction 2026-08-28) --------------
+  // The guardian surface is four things: link, gate, resolver, view. These served none of
+  // them. Deleted rather than refactored, so what remains traces to a scope item or to a
+  // spec section and nothing else.
+  {
+    path: "/api/consent",
+    retiredIn:
+      "delete-and-ship (Doc 10 §2.4 + 07E §10.1 — under-13 is hard-delete-everywhere, not consent-grants-access)",
+    replacement:
+      "nothing, deliberately. There is no under-13 signup path to preserve, so there is nothing to collect parental consent for. The surface also could not run: it queried child_id/expires_at against a table with student_profile_id/consent_token_expires_at",
+  },
+  {
+    path: "/api/guardian/students/:studentId/exams/full-length/sessions",
+    retiredIn: "delete-and-ship (outside the four-item guardian scope)",
+    replacement:
+      "nothing — guardian exam history is not one of link / gate / resolver / view, and Doc 04C §12.4 explicitly disclaims guardian multi-session aggregation",
+  },
+  {
+    path: "/api/guardian/students/:studentId/tests/:sessionId/report",
+    retiredIn: "delete-and-ship (outside the four-item guardian scope)",
+    replacement: "nothing — see above",
+  },
+  {
+    path: "/api/guardian/students/:studentId/calendar/month",
+    retiredIn: "delete-and-ship (outside the four-item guardian scope)",
+    replacement:
+      "nothing — SCL-076 already recorded that five locked passages NAME a guardian calendar and none SPECIFIES one. Recreating from spec is cheaper than carrying drift",
+  },
   {
     path: "/api/guardian/students/:studentId/summary",
     retiredIn: "PR 2 (Doc 05B §10.3)",
@@ -105,7 +133,7 @@ const RETIRED = [
     path: "/exams/full-length/:sessionId/report",
     retiredIn: "PR 2 (renamed to match Doc 04C §895)",
     replacement:
-      "GET /api/guardian/students/:studentId/tests/:sessionId/report — same resource, the path the spec names. 04C keeps this a SEPARATE guardian route by design",
+      "nothing. This entry USED to point at GET /api/guardian/students/:studentId/tests/:sessionId/report, which was itself deleted 2026-08-28 as outside the four-item guardian scope — so a replacement that named it would send the reader to a second dead route. A retired entry whose replacement is also retired is how a deletion chain goes stale",
   },
 ];
 
@@ -124,6 +152,20 @@ const SELF_REFERENTIAL = new Set([
   // its whole purpose is describing a deletion.
   "docs/SpecAudit/guardian-rebuild-design-spec.md",
   "docs/SpecAudit/guardian-route-topology-migration-plan.md",
+  // Added 2026-08-28 with the delete-and-ship pass. Same test as above and no looser: each of
+  // these exists to RECORD a deletion, and every retired path appears in it as history.
+  //   - SPEC_CHANGES_LOG is the append-only SCL register. Editing a past entry to satisfy a
+  //     gate would falsify the record the register exists to keep.
+  //   - consent-flow-preflight-audit is the audit that established the consent flow could not
+  //     run; naming `/api/consent` is its subject.
+  //   - WS-GL_Stage1_Audit is the audit that found the surface in the first place.
+  //   - ws0-stop-the-bleed.contract records a defect in a route that has since been deleted.
+  // A live document that ADVERTISES a deleted route is a different thing and was fixed, not
+  // exempted: six of them were edited in this same change.
+  "docs/SpecAudit/SPEC_CHANGES_LOG.md",
+  "docs/SpecAudit/consent-flow-preflight-audit.md",
+  "docs/plans/WS-GL_Stage1_Audit.md",
+  "contracts/ws0-stop-the-bleed.contract.md",
 ]);
 
 /**

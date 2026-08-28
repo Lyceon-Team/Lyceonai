@@ -26,7 +26,6 @@ Canonical mount points:
 - Review unlock:
   - `GET /api/full-length/sessions/:sessionId/review`
 - Guardian visibility:
-  - `GET /api/guardian/students/:studentId/tests/:sessionId/report`
 
 ## Canonical Scoring Path
 Single authoritative computation path:
