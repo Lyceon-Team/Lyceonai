@@ -1,6 +1,6 @@
-# §4.8 Guardian-paid checkout — PLAN ONLY, no code written
+# §4.8 Guardian-paid checkout — PLAN, and (2026-08-28) the implementation record
 
-**Date:** 2026-08-27 · **Status:** awaiting owner ruling · **Author:** Claude Code
+**Date:** 2026-08-27 · **Revised:** 2026-08-28 · **Status:** implemented and wired · **Author:** Claude Code
 
 Per the work block: *"4.8 guardian-paid checkout: plan first, reported, before any code."*
 Nothing in this document has been implemented. Every claim below was checked against the
@@ -196,3 +196,61 @@ Surfaced per the ruling rather than assumed. No refund behaviour is implemented.
 4. **A link revoked mid-period.** The item is still paid for through period end. Does access follow
    the link (immediate) or the money (period end)? The guardian model says visibility needs an
    active link, which argues immediate — but the money says otherwise, and nothing states which wins.
+
+
+---
+
+## 9. IMPLEMENTATION RECORD — 2026-08-28 (closes Codex HIGH-2, HIGH-3, HIGH-7)
+
+The 2026-08-27 pass wrote `buildGuardianLineItems` and the N-row writer but **wired neither**. Codex
+found the route still returning 503 to every guardian and the builder referenced only by tests. This
+section records what is now reachable in production, with the call site named — because "implemented"
+without a call site is the defect this whole round is about.
+
+| what | production call site |
+|---|---|
+| guardian line items, one per ACTIVE link | `server/routes/billing-routes.ts` — `POST /api/billing/checkout`, guardian branch |
+| N-row entitlement write | `server/lib/stripe/webhook-handler.ts` — `writeEntitlementsForAllItems`, reached from both `checkout.session.completed` and the subscription dispatcher |
+| server-side subject authorisation | same function — `getAllGuardianStudentLinks(payerProfileId)` |
+
+**Step 0 (§2 sequencing) is resolved.** 5.1 moved ahead of 4.8; migration `20260827010000` is authored
+and remains unapplied.
+
+**Step 1 (the probe) is NOT resolved and nothing was substituted for it.** See §10.
+
+### What changed beyond the original plan
+
+- **Charter §6 authorisation was missing from the plan itself.** §7 said "no caller-supplied value
+  gates entitlement" and the plan satisfied it at *checkout* — student ids come from server-read
+  links. It did **not** satisfy it at *webhook time*: the writer entitled whatever uuid a
+  SubscriptionItem carried. A signature proves Stripe sent the bytes; it does not prove we derived
+  them. The writer now resolves the payer's active links server-side and refuses the WHOLE event if
+  any subject is unlinked — all-or-nothing, because a partial write would grant paid access off a
+  payload just established as untrustworthy.
+
+- **A guardian-paid subscription now takes the item path at ANY item count**, not only `> 1`. A
+  guardian with exactly one linked student still has a subscription whose metadata names the payer,
+  so the single-subject resolver must never run on one. The `>= 1` condition also left the writer's
+  zero-candidate guard unreachable, which is *why* the bare-metadata test could not fail (HIGH-7).
+
+- **`client_reference_id` is deliberately unset on a guardian session.** It takes one profile id, and
+  setting it to the guardian would make the payer look like the entitled student.
+
+## 10. STILL OPEN — carried, not substituted
+
+1. **The metadata-propagation probe (§3).** Whether Checkout propagates `line_items[].metadata` onto
+   the SubscriptionItem is still unverified. `STRIPE_BILLING_DIAGNOSTICS` is not reachable from the
+   agent environment — see the phase report for the root cause — so the probe cannot be run, and
+   nothing has been inferred from SDK types or mocked fixtures in its place.
+
+   The failure mode remains **safe and is now tested against the real seam**: bare items mean no
+   subject resolves, the writer refuses, and NOTHING is granted. It cannot grant the wrong student.
+
+2. **§4.1's live subscription object** remains unprinted, same cause.
+
+3. **Open question 2 (partial guardian payment)** is unchanged and unanswered: a guardian pays for
+   two of three linked students. Today `buildGuardianLineItems` covers **every** active link, so the
+   subset case cannot arise — that is a decision the code makes, and it deserves an owner ruling
+   rather than being settled by implementation convenience.
+
+4. **Open question 3 (contract change to `studentUserId`)** is unchanged and unanswered.
