@@ -33,10 +33,12 @@ import {
   acceptGuardianLink,
   createGuardianLink,
   getGuardianLinkById,
+  revokeGuardianLink,
 } from "../lib/account";
 import {
   GUARDIAN_LINK_ERROR,
   guardianLinkRequestSchema,
+  guardianLinkRevokeSchema,
 } from "../../packages/shared/src/guardian-link-schema";
 import {
   normaliseEmail,
@@ -646,6 +648,140 @@ router.post(
 
     return res.json({
       data: { link_id: link.id, status: link.status },
+      requestId,
+    });
+  },
+);
+
+/**
+ * DELETE /api/students/:studentId/links/:linkId — §36.3's student half.
+ *
+ * @spec [Doc-01_V8 §36.3 Revocation — "either party" may revoke; owner rulings 2026-08-27
+ *   Q3 (subject-scoped mount, `via === 'self'`), Q7 (404 non-party / 409 party)]
+ *   | @implemented [2026-08-27]
+ *
+ * plain English: the student ends an active link, and the guardian loses visibility on the
+ * next read — every read gate requires `status = 'active'`.
+ *
+ * WHY THIS IS NOT OPTIONAL. §36.3 says either party may revoke and the domain function has
+ * taken a `revokedByProfileId` since WS-GL Phase B, precisely so the revoker is recorded
+ * rather than assumed to be the guardian. But the only mounted route was the guardian's, so
+ * on a platform for 13-18 year olds the minor could not end an adult's access to their own
+ * learning data. That is the gap this closes, and it is the one in the lifecycle with a
+ * safeguarding argument rather than a completeness argument.
+ *
+ * Addressed by LINK ID, not by guardian id: §35 lets a student hold links to more than one
+ * guardian, and the id is what makes "which link" unambiguous. It also matches the accept
+ * route, so the student surface addresses a link the same way twice.
+ *
+ * The reason is bounded by `guardianLinkRevokeSchema` rather than truncated here, so the cap
+ * is part of the contract. It is stored verbatim on the row and is never a log field: §12.1,
+ * and a revocation reason from a minor is exactly the kind of free text that must not leak.
+ */
+router.delete(
+  `/:studentId${STUDENT_LINK_PATHS.linkRevoke}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    if (subject.via !== "self") {
+      return sendNotFound(res, requestId);
+    }
+
+    const params = linkIdParamSchema.safeParse(req.params);
+    if (!params.success) {
+      return res.status(400).json({
+        error: { message: "Invalid link id", details: params.error.flatten() },
+        requestId,
+      });
+    }
+    const { linkId } = params.data;
+
+    const body = guardianLinkRevokeSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      return res.status(400).json({
+        error: { message: "Invalid reason", details: body.error.flatten() },
+        requestId,
+      });
+    }
+
+    let existing;
+    try {
+      existing = await getGuardianLinkById(linkId);
+    } catch (readError: unknown) {
+      logger.error("STUDENT_RESOURCES", "link_revoke", "Failed to read link", {
+        requestId,
+        reason: readError instanceof Error ? readError.message : "unknown",
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+
+    if (!existing || existing.student_profile_id !== subject.studentId) {
+      return sendNotFound(res, requestId);
+    }
+
+    let revoked;
+    try {
+      revoked = await revokeGuardianLink(
+        existing.guardian_profile_id,
+        subject.studentId,
+        subject.studentId,
+        body.data.reason,
+      );
+    } catch (revokeError: unknown) {
+      const code =
+        typeof revokeError === "object" &&
+        revokeError !== null &&
+        "code" in revokeError &&
+        typeof (revokeError as { code: unknown }).code === "string"
+          ? (revokeError as { code: string }).code
+          : null;
+
+      // The caller is a party, so a non-active link is a state conflict, not an authz failure.
+      if (code === GUARDIAN_LINK_ERROR.NOT_ACTIVE) {
+        return res.status(409).json({
+          error: { message: "This link is not active", code },
+          requestId,
+        });
+      }
+
+      logger.error(
+        "STUDENT_RESOURCES",
+        "link_revoke",
+        "Failed to revoke link",
+        {
+          requestId,
+          reason:
+            revokeError instanceof Error ? revokeError.message : "unknown",
+        },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+
+    await auditGuardianLink({
+      action: "guardian_link_revoked",
+      actorProfileId: subject.studentId,
+      targetProfileId: revoked.guardian_profile_id,
+      // The reason is on the ROW, not in the audit `changes` — it is free text written by a
+      // minor, and the audit trail records the transition, not its prose.
+      changes: { from: existing.status, to: revoked.status },
+      context: { link_id: revoked.id },
+      requestId,
+    });
+
+    logger.info("STUDENT_RESOURCES", "link_revoke", "Student revoked link", {
+      studentId: subject.studentId,
+      requestId,
+    });
+
+    return res.json({
+      data: { link_id: revoked.id, status: revoked.status },
       requestId,
     });
   },

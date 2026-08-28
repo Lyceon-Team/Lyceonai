@@ -56,6 +56,31 @@
  * mutation never applying, not the code surviving it. The staging assert said STALE and the
  * case was re-staged against the real text. A mutation proof that cannot fail to apply is
  * worth as little as a test that cannot fail.
+ *
+ * MUTATIONS FOR THE REVOKE ROUTE (adoption plan step 3):
+ *   1. Unmount `DELETE /:studentId/links/:linkId` → reds at `res.status`. 5 of 21 fail.
+ *   2. Pass the guardian as `revokedByProfileId` instead of the student
+ *      → reds at `expect(rows[0].revoked_by_profile_id)` — the guardian's id where the
+ *        student's belongs. 1 of 21. This is §36.3's entire content: the revoker is
+ *        RECORDED, not assumed.
+ *   3. Answer 200 and never call `revokeGuardianLink`
+ *      → reds at the row `status` AND at `guardian_view_decision`. 3 of 21.
+ *
+ * AND ONE THAT PROVES THE `via` GUARD, ACROSS ALL THREE ROUTES:
+ *   0. Replace `if (subject.via !== "self")` with `if (false)`
+ *      → reds exactly the two "a guardian on the student's route" cases. 2 of 21.
+ *
+ * WHY MUTATION 0 MATTERS MORE THAN IT LOOKS, AND WHAT IT CAUGHT.
+ *   Both of those cases were originally written against a PENDING link with no entitlement.
+ *   In that state `guardian_view_decision` answers `not_linked`, so the RESOLVER replied 404
+ *   and the case passed — green, asserting the right number, having never executed the guard
+ *   it names. Mutation 0 would have left them green. They now seed an ACTIVE link AND an
+ *   active entitlement, assert `viewDecision() === "allow"` first to prove the guardian really
+ *   does resolve as via='guardian', and only then call the route. Without the guard the accept
+ *   case would be 409 and the revoke case would SUCCEED, so both discriminate sharply.
+ *
+ *   This is the same defect as a stale mutation, wearing the opposite mask: there, a proof
+ *   that could not fail to apply; here, an assertion that could not fail to pass.
  */
 import {
   describe,
@@ -183,6 +208,41 @@ async function seedPendingLink(): Promise<string> {
   return rows[0].id as string;
 }
 
+async function seedActiveLink(): Promise<string> {
+  const { rows } = await pg.query(
+    `INSERT INTO public.guardian_links
+       (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at, accepted_at, accepted_by_profile_id)
+     VALUES ($1, $2, 'active', 'guardian', now(), now(), $2)
+     RETURNING id`,
+    [GUARDIAN_ID, STUDENT_ID],
+  );
+  return rows[0].id as string;
+}
+
+/**
+ * An ACTIVE entitlement for the student.
+ *
+ * Required by any case that means to exercise the route's own `via !== "self"` guard: without
+ * it `guardian_view_decision` answers `student_unentitled` and the RESOLVER replies 402 before
+ * the handler runs, so the case would assert a denial the route never produced.
+ */
+async function seedEntitlement(): Promise<void> {
+  await pg.query(
+    `INSERT INTO public.entitlements (profile_id, tier, status)
+     VALUES ($1, 'premium', 'active')
+     ON CONFLICT (profile_id) DO UPDATE SET status = 'active'`,
+    [STUDENT_ID],
+  );
+}
+
+async function viewDecision(): Promise<string> {
+  const { rows } = await pg.query(
+    `SELECT public.guardian_view_decision($1, $2) AS d`,
+    [GUARDIAN_ID, STUDENT_ID],
+  );
+  return rows[0].d as string;
+}
+
 async function readLink(linkId: string) {
   const { rows } = await pg.query(
     `SELECT status, accepted_at, accepted_by_profile_id
@@ -267,6 +327,7 @@ describe.skipIf(!PG_AVAILABLE)(
     beforeEach(async () => {
       await pg.query("DELETE FROM public.guardian_links");
       await pg.query("DELETE FROM public.rate_limit_ledger");
+      await pg.query("DELETE FROM public.entitlements");
       // `audit_logs` is NOT cleared: a DB trigger makes it append-only, which is the point of
       // an audit table. Every assertion below is therefore scoped to the link under test
       // rather than to an empty table — a stronger shape anyway, since it cannot pass merely
@@ -345,16 +406,26 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("404s a guardian using the student's route — via must be self (Q3)", async () => {
-      const linkId = await seedPendingLink();
-      // Session stays the guardian, who IS a party to this link and would resolve
-      // via='guardian' on the student's id. The route is still not theirs.
+      // THE SETUP IS THE POINT. An earlier draft seeded only a PENDING link, so
+      // `guardian_view_decision` answered `not_linked`, the resolver replied 404, and the
+      // case passed without the route's own `via` guard ever running — green for a reason
+      // that had nothing to do with what it claims to test. Reaching that guard requires the
+      // guardian to resolve as via='guardian', which needs an ACTIVE link AND an active
+      // student entitlement.
+      const linkId = await seedActiveLink();
+      await seedEntitlement();
+      expect(await viewDecision()).toBe("allow");
+
+      // Session stays the guardian. Without the `via` guard this is 409 (an active link is
+      // not pending); with it, 404. The two are distinguishable, which is what makes the
+      // case mean something.
       const res = await request(app).post(
         `/api/students/${STUDENT_ID}/links/${linkId}/accept`,
       );
 
       expect(res.status).toBe(404);
       const after = await readLink(linkId);
-      expect(after?.status).toBe("pending_student_accept");
+      expect(after?.status).toBe("active");
     });
 
     it("409s the student when the link is not theirs to accept, and says so (Q7)", async () => {
@@ -536,6 +607,131 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(res.status).toBe(400);
       const { rows } = await pg.query(`SELECT id FROM public.guardian_links`);
       expect(rows).toHaveLength(0);
+    });
+
+    // ---------------------------------------------------------------------
+    // §36.3 revocation, student half — adoption plan step 3
+    // ---------------------------------------------------------------------
+
+    it("a student revokes an active link, and the row records THEM as revoker", async () => {
+      const linkId = await seedActiveLink();
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+
+      const res = await request(app)
+        .delete(`/api/students/${STUDENT_ID}/links/${linkId}`)
+        .send({ reason: "I no longer want this" });
+
+      expect(res.status).toBe(200);
+
+      const { rows } = await pg.query(
+        `SELECT status, revoked_at, revoked_by_profile_id, revocation_reason
+           FROM public.guardian_links WHERE id = $1`,
+        [linkId],
+      );
+      expect(rows[0].status).toBe("revoked");
+      expect(rows[0].revoked_at).not.toBeNull();
+      // §36.3's whole point: the revoker is RECORDED, not assumed to be the guardian.
+      expect(rows[0].revoked_by_profile_id).toBe(STUDENT_ID);
+      expect(rows[0].revocation_reason).toBe("I no longer want this");
+    });
+
+    it("revocation actually ends guardian visibility, per the live SQL decision", async () => {
+      // The assertion that matters for safeguarding. A `status` column changing is a
+      // database fact; this asks the function every guardian read gate calls, and it is the
+      // one PR 1 shipped and the advisor verified on prod.
+      const linkId = await seedActiveLink();
+
+      // Linked but unentitled — which also shows the ordering: the link is checked FIRST,
+      // so an unlinked caller never learns anything about billing state.
+      expect(await viewDecision()).toBe("student_unentitled");
+
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+      await request(app).delete(`/api/students/${STUDENT_ID}/links/${linkId}`);
+
+      expect(await viewDecision()).toBe("not_linked");
+    });
+
+    it("stores a null reason when none is given", async () => {
+      const linkId = await seedActiveLink();
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+
+      const res = await request(app).delete(
+        `/api/students/${STUDENT_ID}/links/${linkId}`,
+      );
+      expect(res.status).toBe(200);
+
+      const { rows } = await pg.query(
+        `SELECT revocation_reason FROM public.guardian_links WHERE id = $1`,
+        [linkId],
+      );
+      expect(rows[0].revocation_reason).toBeNull();
+    });
+
+    it("400s an over-long reason rather than silently truncating it", async () => {
+      const linkId = await seedActiveLink();
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+
+      const res = await request(app)
+        .delete(`/api/students/${STUDENT_ID}/links/${linkId}`)
+        .send({ reason: "x".repeat(201) });
+
+      expect(res.status).toBe(400);
+      const after = await readLink(linkId);
+      expect(after?.status).toBe("active");
+    });
+
+    it("404s a non-party revoker, leaving the link active", async () => {
+      const linkId = await seedActiveLink();
+      currentUser = {
+        id: OTHER_STUDENT_ID,
+        email: "other@example.test",
+        role: "student",
+      };
+
+      const res = await request(app).delete(
+        `/api/students/${OTHER_STUDENT_ID}/links/${linkId}`,
+      );
+      expect(res.status).toBe(404);
+      const after = await readLink(linkId);
+      expect(after?.status).toBe("active");
+    });
+
+    it("404s a guardian on the student's revoke route — via must be self", async () => {
+      const linkId = await seedActiveLink();
+      await seedEntitlement();
+      // Same correction as the accept case: without the entitlement the resolver answers 402
+      // and the route's own guard never runs.
+      expect(await viewDecision()).toBe("allow");
+
+      // Session stays the guardian, who has their own revoke route. Without the `via` guard
+      // this call SUCCEEDS and revokes the link, so the case discriminates sharply.
+      const res = await request(app).delete(
+        `/api/students/${STUDENT_ID}/links/${linkId}`,
+      );
+      expect(res.status).toBe(404);
+      const after = await readLink(linkId);
+      expect(after?.status).toBe("active");
+    });
+
+    it("409s a second revocation rather than writing one twice", async () => {
+      const linkId = await seedActiveLink();
+      currentUser = { id: STUDENT_ID, email: STUDENT_EMAIL, role: "student" };
+      const url = `/api/students/${STUDENT_ID}/links/${linkId}`;
+
+      expect((await request(app).delete(url)).status).toBe(200);
+      const first = await pg.query(
+        `SELECT revoked_at FROM public.guardian_links WHERE id = $1`,
+        [linkId],
+      );
+
+      expect((await request(app).delete(url)).status).toBe(409);
+      const second = await pg.query(
+        `SELECT revoked_at FROM public.guardian_links WHERE id = $1`,
+        [linkId],
+      );
+      expect(second.rows[0].revoked_at.toISOString()).toBe(
+        first.rows[0].revoked_at.toISOString(),
+      );
     });
 
     it("400s a malformed link id without touching the table", async () => {

@@ -70,6 +70,20 @@ export const guardianLinkRequestSchema = z
 export type GuardianLinkRequest = z.infer<typeof guardianLinkRequestSchema>;
 
 /**
+ * @spec [Doc-01_V8 §36.3 Revocation — `revocation_reason` is recorded; Coding Standards §7.1]
+ *   | @implemented [2026-08-27]
+ *
+ * plain English: the optional body of a revocation. A reason is not required — §36.3 records
+ * one when given and null otherwise — but when supplied it is bounded here rather than
+ * truncated at the call site, so the cap is part of the contract instead of a `.slice(0, 200)`
+ * each route remembers separately. `.strict()` for the same reason as the request schema.
+ */
+export const guardianLinkRevokeSchema = z
+  .object({ reason: z.string().trim().min(1).max(200).optional() })
+  .strict();
+export type GuardianLinkRevoke = z.infer<typeof guardianLinkRevokeSchema>;
+
+/**
  * A `timestamptz` as it arrives from whichever transport read it.
  *
  * PostgREST (supabase-js) hands these over as ISO strings; `node-postgres`, used by the

@@ -58,6 +58,8 @@ export const STUDENT_LINK_PATHS = {
   linkInitiate: "/links",
   /** The student half of §36.1 step 5 — accepting a link a guardian initiated. */
   linkAccept: "/links/:linkId/accept",
+  /** §36.3 — "either party" ends an active link; this is the student's half. */
+  linkRevoke: "/links/:linkId",
 } as const;
 
 export type StudentLinkPathKey = keyof typeof STUDENT_LINK_PATHS;
@@ -65,6 +67,14 @@ export type StudentLinkPathKey = keyof typeof STUDENT_LINK_PATHS;
 /** Full client-side path for initiating a link, e.g. `/api/students/<id>/links`. */
 export function studentLinkInitiateUrl(studentId: string): string {
   return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links`;
+}
+
+/** Full client-side path for revoking, e.g. `/api/students/<id>/links/<linkId>`. */
+export function studentLinkRevokeUrl(
+  studentId: string,
+  linkId: string,
+): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links/${encodeURIComponent(linkId)}`;
 }
 
 /** Full client-side path, e.g. `/api/students/<id>/links/<linkId>/accept`. */
