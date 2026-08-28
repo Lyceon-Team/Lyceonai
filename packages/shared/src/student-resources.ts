@@ -40,6 +40,51 @@ export const STUDENT_RESOURCE_PATHS = {
 
 export type StudentResourceKey = keyof typeof STUDENT_RESOURCE_PATHS;
 
+/**
+ * @spec [Doc 01 V8 §36.1 Initiation; owner ruling 2026-08-27 Q3 — link actions mount on the
+ *   subject-scoped topology behind the PR 1 resolver, requiring `via === 'self'`]
+ *
+ * LINK-LIFECYCLE ACTIONS. Mutations, not resources, so they are a separate table from
+ * `STUDENT_RESOURCE_PATHS` and carry no response schema alongside — but they share the mount,
+ * and therefore the ONE resolver, deliberately.
+ *
+ * WHY NOT `/api/me/links`. A second router with its own auth convention is how this vertical
+ * acquired the privilege divergences the resolver exists to remove, and `/api/me/*` is the
+ * convention PR 2 deleted. `via` is already the single sanctioned branch, resolved ABOVE the
+ * handler rather than tested as a role inside it (owner ruling Q3).
+ */
+export const STUDENT_LINK_PATHS = {
+  /** §36.1 step 1, student-initiated — the student invites a guardian by email. */
+  linkInitiate: "/links",
+  /** The student half of §36.1 step 5 — accepting a link a guardian initiated. */
+  linkAccept: "/links/:linkId/accept",
+  /** §36.3 — "either party" ends an active link; this is the student's half. */
+  linkRevoke: "/links/:linkId",
+} as const;
+
+export type StudentLinkPathKey = keyof typeof STUDENT_LINK_PATHS;
+
+/** Full client-side path for initiating a link, e.g. `/api/students/<id>/links`. */
+export function studentLinkInitiateUrl(studentId: string): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links`;
+}
+
+/** Full client-side path for revoking, e.g. `/api/students/<id>/links/<linkId>`. */
+export function studentLinkRevokeUrl(
+  studentId: string,
+  linkId: string,
+): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links/${encodeURIComponent(linkId)}`;
+}
+
+/** Full client-side path, e.g. `/api/students/<id>/links/<linkId>/accept`. */
+export function studentLinkAcceptUrl(
+  studentId: string,
+  linkId: string,
+): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links/${encodeURIComponent(linkId)}/accept`;
+}
+
 /** Full client-side path for a resource, e.g. `/api/students/<id>/kpi/overall`. */
 export function studentResourceUrl(
   studentId: string,
@@ -133,10 +178,14 @@ export const sectionProjectionsResponseSchema = z.object({
   sections: z.array(sectionProjectionSchema),
   requestId: z.string().optional(),
 });
-export type SectionProjectionsResponse = z.infer<typeof sectionProjectionsResponseSchema>;
+export type SectionProjectionsResponse = z.infer<
+  typeof sectionProjectionsResponseSchema
+>;
 
 export const projectionSnapshotsResponseSchema = z.object({
   snapshots: z.array(projectionSnapshotSchema),
   requestId: z.string().optional(),
 });
-export type ProjectionSnapshotsResponse = z.infer<typeof projectionSnapshotsResponseSchema>;
+export type ProjectionSnapshotsResponse = z.infer<
+  typeof projectionSnapshotsResponseSchema
+>;

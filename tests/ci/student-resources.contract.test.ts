@@ -26,6 +26,9 @@
  */
 import express from "express";
 import request from "supertest";
+// Driven FROM the route table, not from a copy of it: a path added there with no gate wired
+// up must fail these cases rather than ship open.
+import { requiresEntitlement } from "../../server/routes/student-resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RULE_4_COLUMNS,
@@ -56,6 +59,14 @@ function resetRows() {
       computed_at: "2026-08-01",
       ...POISON,
     },
+  ];
+  // Step 7: the mastery gate now asks `canAccessFeature('mastery_detail')`, which reads THIS
+  // table before it consults the entitlement predicate. Without the row the feature key is
+  // unknown, `canAccessFeature` fails closed, and every mastery case 402s — which is exactly
+  // how these six cases failed when the gate moved. The values mirror the genesis seed
+  // (`00000000000000_genesis.sql:206`): premium, and enabled.
+  rows.entitlement_features = [
+    { feature_key: "mastery_detail", required_tier: "premium", enabled: true },
   ];
   rows.canonical_skill_catalog = [
     { section: "M", domain: "Algebra", skill: "Linear Equations in One Variable" },
@@ -241,6 +252,108 @@ describe("subject-scoped resources — one route, two callers", () => {
     const res = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
     expect(res.status).toBe(402);
     expect(res.body.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  /**
+   * @spec [owner ruling 2026-08-28 step 7 — "route-table requiresEntitlement, one
+   *        canAccessFeature('mastery_detail') call site, no new keys"] | @implemented [2026-08-28]
+   *
+   * THE TABLE IS THE MECHANISM, AND THIS IS WHAT SAYS SO.
+   *
+   * Before step 7 the table `REQUIRES_ACTIVE_ENTITLEMENT` gated nothing: its only two `true`
+   * entries were the mastery routes, which do not go through `resource()`, and every path that
+   * did go through `resource()` was `false` — so the `=== true` branch never executed once, in
+   * any request. Two hand-copied `subjectEntitlementActive` calls did the real gating. Nothing
+   * failed, because nothing asked whether the table was consulted.
+   *
+   * These cases ask. They are driven FROM the exported table rather than from a hand-written
+   * list, so a path added to it with no gate wired up fails here instead of shipping open:
+   *   - every entry with a feature key must 402 when that feature is denied;
+   *   - every entry with `null` must still answer 200 in the same conditions, which is what
+   *     keeps this from passing under a middleware that simply denies everything.
+   *
+   * Denial is induced by removing the feature ROW rather than by mocking `canAccessFeature`:
+   * an unknown key is one of the fail-closed paths that function specifies, and driving it
+   * through the real function means these cases cover the wiring AND the posture. Mocking the
+   * gate would only prove the mock was called.
+   *
+   * MUTATIONS, AS OBSERVED — including two that disproved what I first declared, which is
+   * recorded here rather than quietly corrected (2026-08-28; baseline 30/30 green):
+   *   1. `entitlementGate` returns `true` before consulting the table.
+   *      → reds both gated-path cases and neither open-path case. 2 of 30. As declared.
+   *   2. Make the gated branch deny: `if (false)` around the `canAccessFeature` result.
+   *      → reds the 4 mastery ANTI-LEAK cases and the 2 SKILLS cases. 6 of 30.
+   *      I DECLARED this would red the two OPEN-path cases. It does not, and cannot: a
+   *      `null` entry returns from `if (!featureKey) return true` before ever reaching the
+   *      branch this mutates. The open half needed its own mutation, which is (3).
+   *   3. Make the OPEN branch deny: replace `if (!featureKey) return true` with a 402.
+   *      → reds 15 cases, among them all five "still serves ... under the same denial".
+   *      This is the mutation that actually proves the `null` half, and the one the old dead
+   *      table would have survived.
+   *   4. Point `masteryDomains` at `null` in the table.
+   *      → reds ONLY the membership assertion above. 1 of 30, individually proven.
+   *      It reddened ZERO cases before that assertion existed: the gated case derived itself
+   *      from the table, so removing the entry deleted the case instead of failing it. A
+   *      table-driven suite cannot police its own table.
+   */
+  describe("step 7 — every requiresEntitlement entry is actually consulted", () => {
+    const gated = Object.entries(requiresEntitlement).filter(
+      ([, key]) => key !== null,
+    );
+    const open = Object.entries(requiresEntitlement).filter(
+      ([, key]) => key === null,
+    );
+
+    /**
+     * THE MEMBERSHIP ASSERTION, AND WHY IT IS NOT PADDING.
+     *
+     * The two `it.each` blocks below derive their cases FROM the table, which makes them
+     * blind in one direction: point `masteryDomains` at `null` and its gated case does not
+     * fail, it CEASES TO EXIST, and the suite stays green while the route silently opens.
+     * Staging that mutation reddened zero cases — the table-driven design defeated its own
+     * proof, in exactly the way a `describe.each` over a shrinking list always can.
+     *
+     * So the expected posture is pinned here as a literal. Moving any path between the gated
+     * and open halves now fails THIS assertion, whether or not a case disappears with it.
+     * Changing the paywall stays a one-line edit to the table — plus one line here, which is
+     * the point: it should not be possible to do silently.
+     */
+    it("gates exactly the mastery paths, and nothing else", () => {
+      expect(gated.map(([path]) => path).sort()).toEqual(
+        [
+          STUDENT_RESOURCE_PATHS.masteryDomains,
+          STUDENT_RESOURCE_PATHS.masterySkills,
+        ].sort(),
+      );
+      expect(gated.map(([, key]) => key)).toEqual([
+        "mastery_detail",
+        "mastery_detail",
+      ]);
+      expect(open.map(([path]) => path).sort()).toEqual(
+        [
+          STUDENT_RESOURCE_PATHS.kpiSections,
+          STUDENT_RESOURCE_PATHS.kpiDomains,
+          STUDENT_RESOURCE_PATHS.kpiOverall,
+          STUDENT_RESOURCE_PATHS.projectionsSections,
+          STUDENT_RESOURCE_PATHS.projectionsSnapshots,
+        ].sort(),
+      );
+    });
+
+    it.each(gated)("402s %s when its feature is denied", async (path) => {
+      decision.mockReturnValue("allow");
+      rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(402);
+      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+    });
+
+    it.each(open)("still serves %s under the same denial", async (path) => {
+      decision.mockReturnValue("allow");
+      rows.entitlement_features = [];
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(200);
+    });
   });
 
   it("400 for a malformed studentId, before any read", async () => {

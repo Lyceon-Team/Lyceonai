@@ -66,8 +66,13 @@ declare global {
  * Denials are byte-identical for "no such student" and "student exists, you are
  * unrelated to them". Two different bodies would re-open the enumeration channel
  * that returning 404 closed.
+ *
+ * EXPORTED, not copied. The link routes on this same mount deny for a third reason
+ * — "you are not a party to this link" (owner ruling 2026-08-27 Q7) — and a second
+ * hand-written 404 body would make the three distinguishable by their bytes, which
+ * is exactly the channel this function exists to close. One definition, one shape.
  */
-function sendNotFound(res: Response, requestId?: string) {
+export function sendNotFound(res: Response, requestId?: string) {
   return res.status(404).json({
     error: "Not found",
     message: "No such student, or you do not have access to them",

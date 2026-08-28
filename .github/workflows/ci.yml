@@ -465,6 +465,37 @@ jobs:
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/guardian-link.pg.ci.test.ts
 
+      # @spec [Doc-01_V8 §36.1 student-side acceptance | owner rulings 2026-08-27 Q2/Q3/Q7]
+      # Added by hand per the NOTE above, which is the whole reason that note exists.
+      # Proves the guardian-initiated half of §36.1 can now COMPLETE: a pending_student_accept
+      # link reaches `active` through POST /api/students/:studentId/links/:linkId/accept, with
+      # `status`, `accepted_at` and `accepted_by_profile_id` read back from the real row. Before
+      # this route existed no path in the codebase could activate a guardian-initiated link,
+      # which is why `guardian_links` holds zero rows in production.
+      - name: Student-side link lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/guardian-link-student-side.pg.ci.test.ts
+
+      # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
+      # The proof above can only be trusted if its cases can FAIL. Three times in three
+      # consecutive steps a case read green while proving nothing — a mutation that never
+      # applied, a mutation that reddened an earlier assertion than the one it named, and a
+      # precondition that put a different mechanism in the path. Each was caught by hand,
+      # which is not a mechanism. This runs the declared mutations and fails the build unless
+      # each one turns EXACTLY the cases it claims. It is the LAST step in this job because it
+      # patches source files in the working tree and restores them in a finally.
+      - name: Student-side link lifecycle → mutation harness
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: node scripts/ci/guardian-link-mutation-harness.mjs
+
   # ---------------------------------------------------------------------------
   # Mastery pipeline gates — HARD GATE.
   #

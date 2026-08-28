@@ -594,3 +594,129 @@ resolved here (manual rename by Karl + reference follow-up).
 **Spec citations:** N/A (file hygiene)
 
 **Owner:** `platform` (done)
+
+---
+
+## MECHANISMS-THAT-RUN-IN-NO-JOB (P1 — platform)
+
+**Status:** OPEN. Logged 2026-08-28 on owner ruling: `scripts/ci/actor-id-write-path-guard.mjs`
+is the fifth gate found in the guardian-link vertical that **exists and gates nothing**. Recorded
+here rather than fixed inside that vertical's PR, because the class is platform-wide and fixing
+instances one at a time is what let it reach five.
+
+**The class.** A gate that runs in no job is indistinguishable from a gate that passes. So is a
+test file that matches no runner's include. Both read as coverage in a file listing, in a PR
+diff, and in a reviewer's memory. This is the same failure shape the mutation-harness work in
+`claude/guardian-link-lifecycle` was built to close at the assertion level — a mechanism whose
+absence of effect cannot be told apart from evidence of correctness — one layer up.
+
+**Measured, not recalled** (2026-08-28, at `a2fd582`; commands below so the numbers can be
+re-derived rather than trusted).
+
+### (a) Five gate scripts with ZERO references anywhere in the tree
+
+Not in `.github/workflows/`, not in `package.json`, not invoked by another script, not even
+cited in a doc:
+
+| Script | What it claims to enforce | Currently |
+|---|---|---|
+| `scripts/ci/actor-id-write-path-guard.mjs` | INV-05E-06 — every `practice_session_items` insert carries `actor_id` | **RED**: 2 findings, `server/routes/diagnostic-routes.ts:356` and `server/routes/practice-canonical.ts:1675`. Identical on `bc344a9`, so long-standing. |
+| `scripts/ci/retention-archive-drift-check.mjs` | retention/archive drift | passes locally |
+| `scripts/ci/actor-id-coverage-guard.sh` | actor_id coverage | passes locally |
+| `scripts/ci/check_raw_sql.sh` | ad-hoc SQL outside centralized utilities (Coding Standards §17) | passes locally |
+| `scripts/ci/deletion-cascade-rehearsal.sh` | deletion cascade rehearsal | passes locally |
+
+Reproduce:
+```bash
+for f in scripts/ci/*.mjs scripts/ci/*.sh; do
+  b=$(basename "$f")
+  grep -rq "$b" .github/workflows/ package.json || echo "UNWIRED: $f"
+done
+```
+
+That `actor-id-write-path-guard` is the only red one is not luck and is not reassuring: nothing
+would have reported the others turning red either. The four green ones are green **today**, by
+observation just now, not by any standing mechanism.
+
+### (b) Ten test files that execute under no trigger
+
+`vitest list --filesOnly` selects 177 of the 189 tracked `*.{test,spec}.{ts,tsx}` files. Of the
+12 it does not select:
+
+- **9 Playwright specs** — `tests/e2e/smoke.spec.ts`, `tests/rls/rls.spec.ts`, and the seven
+  under `tests/specs/`. `playwright.config.ts` exists and `@playwright/test` is a devDependency,
+  but **no workflow step and no `package.json` script invokes Playwright at all**. These have
+  never run in CI.
+- **1 stale duplicate** — `tests/auth.integration.test.ts`. `ci.yml` calls it "moved to
+  tests/integration/", but the original is still tracked and the two files **differ**, so it is
+  not a copy that can simply be deleted without reading what diverged.
+
+The remaining 2 (`tests/integration/**`) are not in this bucket: the `integration` job owns them
+and runs them, but only under `if: github.event_name == 'push' && github.ref ==
+'refs/heads/main'` — so they never gate a PR, only post-merge. That is a narrower problem and is
+stated separately rather than folded in.
+
+Reproduce:
+```bash
+comm -23 <(git ls-files | grep -E '\.(test|spec)\.(ts|tsx)$' | sort) \
+         <(pnpm exec vitest list --filesOnly | grep -E '\.(test|spec)\.(ts|tsx)$' \
+            | sed 's|^.*/Lyceonai/||' | sort)
+```
+
+**Spec citations:** Coding Standards §14 (tests required when changing anti-leak / idempotency /
+auth / redaction behaviour — a test that runs nowhere satisfies none of it); §17 (`check_raw_sql`
+enforces the ad-hoc-SQL hard stop and enforces it nowhere); Doc 05E INV-05E-06 (the red gate).
+
+**Why not fixed here.** Wiring the five gates in is a one-line-per-gate change, but
+`actor-id-write-path-guard` is red, so wiring it in without the two `actor_id` fixes turns CI
+red on an unrelated PR. Standing up Playwright in CI is its own piece of work with its own
+runtime and flake budget. Both need to be scoped and owned, not smuggled into a guardian-link PR.
+
+**Owner:** `platform`.
+
+**Proposed order:** (1) wire the four green gates in now — they cost nothing and stop the bleed;
+(2) fix the two `actor_id` inserts, then wire the fifth; (3) decide Playwright — run it in CI or
+delete the nine files, but do not leave them looking like coverage; (4) diff
+`tests/auth.integration.test.ts` against its `tests/integration/` twin and delete the loser.
+
+---
+
+## CONSENT-FLOW-SCHEMA-MISMATCH (P0 — blocks every under-13 signup)
+
+**Status:** OPEN. Found 2026-08-28 during the step-8 pre-deletion audit
+(`docs/SpecAudit/consent-flow-preflight-audit.md`). Reported, not fixed — the repair is larger than
+the step it was found inside, and a half-migrated consent flow is worse than a uniformly broken one.
+
+**Symptom.** An under-13 user cannot complete profile setup. `POST /api/profile` returns HTTP 500,
+"Failed to load guardian consent state". No consent request row is created, so no email is sent, no
+Stripe verification session exists, and `profiles.guardian_consent` can never become `true` — which
+`requireConsentCompliance` reads as a hard gate on **10 routes**.
+
+**Cause.** The consent code is written against a `guardian_consent_requests` table that does not
+exist. Shipped schema (`supabase/migrations/00000000000000_genesis.sql:240`, mirrored at
+`scripts/ci/genesis-schema.expected.sql:4210`) has `student_profile_id`, `consent_token NOT NULL
+UNIQUE`, `consent_token_expires_at NOT NULL`, and `CHECK (status IN
+('pending','consented','denied','expired'))`. The code uses `child_id`, `expires_at`, and writes
+`status = 'approved'`. `child_id` appears in no migration and no expected-schema file.
+
+Proven by executing the three statements against genesis + all migrations: `42703` on the creator's
+SELECT (`server/routes/profile-routes.ts:268`), `42703` on its INSERT (`:295`), and `23514` on the
+approval UPDATE (`server/routes/guardian-consent-routes.ts:324`) against a real pre-inserted row.
+Full transcripts in the audit document.
+
+**Why CI is green.** `tests/ci/guardian-consent.id11.contract.test.ts` passes 8/8 against a mocked
+Supabase client whose fixtures spell `child_id`. The suite agrees with the code instead of with the
+schema — the same failure the fixture-canonicality gate was built for on the mastery side.
+
+**Not caused by `claude/guardian-link-lifecycle`.** Both files are untouched by that branch
+(`git diff bc344a9..HEAD` returns nothing for either).
+
+**Spec citations:** Doc 01 V8 §36.1 step 2 (the COPPA path is *required* before any feature access);
+§37.1–§37.2 (the table shape and the consent lifecycle the code should match). The spec is correct
+here and the code is wrong, so this is a defect record and not an SCL.
+
+**Owner:** `auth-entitlements` / whoever owns WS-GL Phase D.
+
+**Repair order:** see §6 of the audit document — column renames, `'approved'` → `'consented'`,
+adopt the specified `consent_token`, then move the contract test onto the real-Postgres harness so
+it is answerable to the schema.

@@ -31,8 +31,7 @@ import {
   GUARDIAN_LINK_ERROR,
   GuardianLinkError,
   GUARDIAN_LINK_COLUMNS,
-  OCCUPYING_STATUSES,
-  PENDING_STATUS_FOR_INITIATOR,
+  GUARDIAN_LINK_SQLSTATE,
   parseGuardianLink,
   parseGuardianLinks,
   type GuardianLink,
@@ -60,6 +59,34 @@ export {
 } from "../../packages/shared/src/guardian-link-schema";
 
 /**
+ * @spec [migration 20260828000000; owner ruling 2026-08-27 Q5] | @implemented [2026-08-28]
+ *
+ * plain English: turn a PostgREST error from one of the audited transition functions into the
+ * module's own error type, or rethrow.
+ *
+ * The functions raise custom SQLSTATEs which PostgREST surfaces as `error.code`, so this maps
+ * a CODE, never a message. An unmapped code is NOT swallowed into a generic failure: it throws
+ * with the code visible, because a transition failing for a reason nobody enumerated is exactly
+ * what an operator needs to see.
+ */
+function throwGuardianLinkError(
+  error: { code?: string | null; message?: string | null },
+  context: string,
+): never {
+  const mapped = error.code ? GUARDIAN_LINK_SQLSTATE[error.code] : undefined;
+  if (mapped) {
+    throw new GuardianLinkError(mapped, error.message ?? mapped);
+  }
+  logger.error("GUARDIAN", context, "Guardian link transition failed", {
+    code: error.code ?? null,
+    reason: error.message ?? "unknown",
+  });
+  throw new Error(
+    `${context} failed: ${error.message ?? "unknown"} (${error.code ?? "no code"})`,
+  );
+}
+
+/**
  * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
  * plain English: is this guardian actively linked to this student? Returns the active row
  * or null. Expected outcome: a single row, because `unique_active_link` makes more than one
@@ -85,6 +112,94 @@ export async function getGuardianLinkForStudent(
       "Failed to read guardian link",
       { reason: error.message },
     );
+    throw new Error(`Failed to get guardian link: ${error.message}`);
+  }
+  return data ? parseGuardianLink(data) : null;
+}
+
+/**
+ * @spec [Doc-01_V8, §36.1/§36.3; owner ruling 2026-08-27 Q7 — "404 if the caller is not a party
+ *   to the link at all; keep the informative response if they are"] | @implemented [2026-08-28]
+ *
+ * plain English: read the most recent link between one guardian and one student, WHATEVER its
+ * status. Expected outcome: the row, or null when the two have never been linked at all.
+ *
+ * WHY THIS IS NOT `getGuardianLinkForStudent`, WHICH QUERIES THE SAME TABLE ON THE SAME PAIR.
+ *   That one filters `status = 'active'` and answers "may this guardian see this student right
+ *   now?" — the question every read gate asks. This one answers a different question, the only
+ *   one Q7's 404-versus-409 split turns on: "has this guardian ever been a party to a link with
+ *   this student?" A guardian holding a REVOKED link is not authorized, but is a party, and a
+ *   party already knows the link exists — so telling them "there is no active link" leaks
+ *   nothing, while telling a stranger the same thing confirms a student they have no business
+ *   confirming. Collapsing the two readers would force one of those two answers to be wrong.
+ *
+ * Edge case: a pair may hold several rows over time (linked, revoked, linked again), since
+ * `unique_active_link` constrains only the active one. Party-hood needs existence, not a
+ * particular row, so this returns the most recent by `initiated_at` and callers use it as a
+ * predicate.
+ */
+export async function getAnyGuardianLinkForPair(
+  guardianProfileId: string,
+  studentProfileId: string,
+): Promise<GuardianLink | null> {
+  const { data, error } = await supabaseServer
+    .from("guardian_links")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("guardian_profile_id", guardianProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .order("initiated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    logger.error(
+      "GUARDIAN",
+      "get_any_link_for_pair",
+      "Failed to read guardian link",
+      { reason: error.message },
+    );
+    throw new Error(`Failed to get guardian link: ${error.message}`);
+  }
+  const row = (data ?? [])[0];
+  return row ? parseGuardianLink(row) : null;
+}
+
+/**
+ * @spec [Doc-01_V8, §36.1 Initiation; owner ruling 2026-08-27 Q7 — "404 if the caller is not
+ *   a party to the link at all; keep the informative response if they are"]
+ *   | @implemented [2026-08-27]
+ *
+ * plain English: read one link by its id, whatever its status. Expected outcome: the row, or
+ * null if no such link exists.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `acceptGuardianLink`, WHICH ALSO READS THE ROW.
+ *   Q7 draws the enumeration line at PARTY-HOOD, not at authorization: a caller named on the
+ *   link already knows it exists, so telling them "awaiting the other party" leaks nothing,
+ *   while a caller who is not on it must not learn the link exists at all. `acceptGuardianLink`
+ *   raises the same `WRONG_ACCEPTOR` for both — the party who must wait, and the stranger —
+ *   so a route cannot tell those two apart from its error alone. This read is how the route
+ *   answers "are you on this link?" BEFORE the accept attempt, and it is deliberately status-
+ *   agnostic: a revoked link the caller is named on is still theirs to be told about.
+ *
+ * trade-off: the row is read twice on the success path, once here and once inside
+ * `acceptGuardianLink`. That is accepted rather than optimised away, because the alternative —
+ * widening the domain function's error contract — changes a function the guardian route also
+ * calls, and that unification is its own step (adoption plan step 6). The second read costs a
+ * primary-key lookup; the compare-and-swap inside `acceptGuardianLink` still owns correctness
+ * against a concurrent transition, so nothing here is load-bearing for the race.
+ */
+export async function getGuardianLinkById(
+  linkId: string,
+): Promise<GuardianLink | null> {
+  const { data, error } = await supabaseServer
+    .from("guardian_links")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("id", linkId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    logger.error("GUARDIAN", "get_link_by_id", "Failed to read guardian link", {
+      reason: error.message,
+    });
     throw new Error(`Failed to get guardian link: ${error.message}`);
   }
   return data ? parseGuardianLink(data) : null;
@@ -123,49 +238,24 @@ export async function createGuardianLink(
   guardianProfileId: string,
   studentProfileId: string,
   initiatedBy: GuardianLinkInitiator,
+  requestId?: string,
 ): Promise<GuardianLink> {
-  const { data: existing, error: existingError } = await supabaseServer
-    .from("guardian_links")
-    .select("id, status")
-    .eq("guardian_profile_id", guardianProfileId)
-    .eq("student_profile_id", studentProfileId)
-    .in("status", OCCUPYING_STATUSES);
+  const { data, error } = await supabaseServer.rpc(
+    "create_guardian_link_audited",
+    {
+      p_guardian_id: guardianProfileId,
+      p_student_id: studentProfileId,
+      p_initiated_by: initiatedBy,
+      p_request_id: requestId ?? null,
+    },
+  );
 
-  if (existingError) {
-    throw new Error(
-      `Failed to check existing guardian link: ${existingError.message}`,
-    );
+  if (error) {
+    throwGuardianLinkError(error, "create_link");
   }
-
-  if ((existing ?? []).length > 0) {
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
-      "A link between this guardian and student already exists",
-    );
+  if (!data) {
+    throw new Error("Failed to create guardian link: no row returned");
   }
-
-  const now = new Date().toISOString();
-  const { data, error } = await supabaseServer
-    .from("guardian_links")
-    .insert({
-      guardian_profile_id: guardianProfileId,
-      student_profile_id: studentProfileId,
-      status: PENDING_STATUS_FOR_INITIATOR[initiatedBy],
-      initiated_by: initiatedBy,
-      initiated_at: now,
-    })
-    .select(GUARDIAN_LINK_COLUMNS)
-    .single();
-
-  if (error || !data) {
-    logger.error("GUARDIAN", "create_link", "Failed to create guardian link", {
-      reason: error?.message ?? "no row returned",
-    });
-    throw new Error(
-      `Failed to create guardian link: ${error?.message ?? "no row returned"}`,
-    );
-  }
-
   return parseGuardianLink(data);
 }
 
@@ -182,71 +272,23 @@ export async function createGuardianLink(
 export async function acceptGuardianLink(
   linkId: string,
   acceptingProfileId: string,
+  requestId?: string,
 ): Promise<GuardianLink> {
-  const { data: link, error: readError } = await supabaseServer
-    .from("guardian_links")
-    .select(GUARDIAN_LINK_COLUMNS)
-    .eq("id", linkId)
-    .maybeSingle();
-
-  if (readError && readError.code !== "PGRST116") {
-    throw new Error(`Failed to read guardian link: ${readError.message}`);
-  }
-  if (!link) {
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.NOT_PENDING,
-      "Guardian link not found",
-    );
-  }
-
-  const current = parseGuardianLink(link);
-  if (
-    current.status !== "pending_student_accept" &&
-    current.status !== "pending_guardian_accept"
-  ) {
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.NOT_PENDING,
-      `Guardian link is ${current.status}, not pending acceptance`,
-    );
-  }
-
-  // §36.1: the party who did NOT initiate is the party who accepts.
-  const requiredAcceptor =
-    current.status === "pending_student_accept"
-      ? current.student_profile_id
-      : current.guardian_profile_id;
-
-  if (requiredAcceptor !== acceptingProfileId) {
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR,
-      "This link is awaiting acceptance by the other party",
-    );
-  }
-
-  const now = new Date().toISOString();
-  const { data, error } = await supabaseServer
-    .from("guardian_links")
-    .update({
-      status: "active",
-      accepted_at: now,
-      accepted_by_profile_id: acceptingProfileId,
-    })
-    .eq("id", linkId)
-    .eq("status", current.status)
-    .select(GUARDIAN_LINK_COLUMNS)
-    .maybeSingle();
+  const { data, error } = await supabaseServer.rpc(
+    "accept_guardian_link_audited",
+    {
+      p_link_id: linkId,
+      p_accepting_profile_id: acceptingProfileId,
+      p_request_id: requestId ?? null,
+    },
+  );
 
   if (error) {
-    throw new Error(`Failed to accept guardian link: ${error.message}`);
+    throwGuardianLinkError(error, "accept_link");
   }
   if (!data) {
-    // The status moved between the read and the write.
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.NOT_PENDING,
-      "Guardian link is no longer pending acceptance",
-    );
+    throw new Error("Failed to accept guardian link: no row returned");
   }
-
   return parseGuardianLink(data);
 }
 
@@ -269,35 +311,25 @@ export async function revokeGuardianLink(
   studentProfileId: string,
   revokedByProfileId: string,
   revocationReason?: string,
+  requestId?: string,
 ): Promise<GuardianLink> {
-  const { data, error } = await supabaseServer
-    .from("guardian_links")
-    .update({
-      status: "revoked",
-      revoked_at: new Date().toISOString(),
-      revoked_by_profile_id: revokedByProfileId,
-      revocation_reason: revocationReason ?? null,
-    })
-    .eq("guardian_profile_id", guardianProfileId)
-    .eq("student_profile_id", studentProfileId)
-    .eq("status", "active")
-    .select(GUARDIAN_LINK_COLUMNS)
-    .maybeSingle();
+  const { data, error } = await supabaseServer.rpc(
+    "revoke_guardian_link_audited",
+    {
+      p_guardian_id: guardianProfileId,
+      p_student_id: studentProfileId,
+      p_revoked_by: revokedByProfileId,
+      p_reason: revocationReason ?? null,
+      p_request_id: requestId ?? null,
+    },
+  );
 
   if (error) {
-    logger.error("GUARDIAN", "revoke_link", "Failed to revoke guardian link", {
-      reason: error.message,
-    });
-    throw new Error(`Failed to revoke guardian link: ${error.message}`);
+    throwGuardianLinkError(error, "revoke_link");
   }
-
   if (!data) {
-    throw new GuardianLinkError(
-      GUARDIAN_LINK_ERROR.NOT_ACTIVE,
-      "Guardian link is not active",
-    );
+    throw new Error("Failed to revoke guardian link: no row returned");
   }
-
   return parseGuardianLink(data);
 }
 

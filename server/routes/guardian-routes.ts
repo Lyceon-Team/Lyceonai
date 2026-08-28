@@ -1,9 +1,13 @@
 import { Request, Response, Router } from "express";
 import { requireSupabaseAuth } from "../middleware/supabase-auth";
 import { requireGuardianEntitlement } from "../middleware/guardian-entitlement";
+// Q7 denials reuse the resolver's 404 body verbatim. A second "not found" shape would let a
+// caller tell the two surfaces apart, which is the whole thing the shared body prevents.
+import { sendNotFound } from "../middleware/subject-resolver";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { auditGuardianLink } from "../services/guardian-link-audit";
 import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
 import { z } from "zod";
 import {
@@ -12,12 +16,17 @@ import {
   revokeGuardianLink,
   isGuardianLinkedToStudent,
   getAllGuardianStudentLinks,
+  getGuardianLinkById,
+  getAnyGuardianLinkForPair,
 } from "../lib/account";
 // The error contract comes from the contract module, NOT from `../lib/account`: a route
 // that imports its error mapping from the module it also imports its functions from loses
 // that mapping whenever the module is substituted, and reports 500 instead of the specified
 // status. See packages/shared/src/guardian-link-schema.ts.
-import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
+import {
+  GUARDIAN_LINK_ERROR,
+  guardianLinkRequestSchema,
+} from "../../packages/shared/src/guardian-link-schema";
 import {
   normaliseEmail,
   subjectDigest,
@@ -97,17 +106,6 @@ async function emitGuardianAccessEvent(args: {
   }
 }
 
-/**
- * @spec [Doc-01_V8, §36.1 Initiation step 1 — "Guardian enters student's email";
- *        lyceon-coding-standards.md §7.1 (Zod at every boundary)] | @implemented [2026-08-26]
- * plain English: the only shape `POST /api/guardian/link` accepts. `.strict()` so an extra
- * field is a 400 rather than something silently ignored; `.email()` so the per-student-email
- * rate bucket in §36.2 is keyed on something that is actually an address.
- */
-const linkRequestSchema = z
-  .object({ email: z.string().trim().min(3).max(320).email() })
-  .strict();
-
 /** Route params are strings; a link id must be a UUID before it reaches the data layer. */
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -128,62 +126,6 @@ function errorCode(err: unknown): string | null {
   if (typeof err !== "object" || err === null) return null;
   const code = (err as { code?: unknown }).code;
   return typeof code === "string" ? code : null;
-}
-
-/**
- * @spec [Doc-01_V8, §35 Guardian-student linkage — "Additional audit table … captures every
- *        status change for traceability"] | @implemented [2026-08-26]
- *
- * plain English: record a guardian-link status change in `audit_logs`. What it does: writes
- * one row naming who acted, who it was about, what happened, and the before/after status.
- * Expected outcome: a durable trail of every link transition, queryable by actor or target.
- * Trade-off: this is best-effort — a failed audit write is logged and does not fail the
- * request, because refusing a successful link because its audit row would not write is the
- * worse outcome. Edge case: `changes` carries only status values and never an email, a code,
- * or any student content (§12.1).
- *
- * REPLACES the `guardian_link_audit` writer this file used to hold. That table does not exist
- * in production (`WS-GL_Stage1_Audit.md` §0), so every one of those inserts failed silently
- * inside its own try/catch. `audit_logs` does exist, is empty, and had no writer at all —
- * owner ruling 2026-08-24 chose it over creating the missing table, since `rate_limit_ledger`
- * already covers the rate-limiting half of what `guardian_link_audit` was doing.
- */
-type GuardianLinkAuditAction =
-  | "guardian_link_initiated"
-  | "guardian_link_accepted"
-  | "guardian_link_revoked"
-  | "guardian_link_denied";
-
-async function auditGuardianLink(args: {
-  action: GuardianLinkAuditAction;
-  actorProfileId: string;
-  targetProfileId?: string | null;
-  changes?: Record<string, unknown>;
-  context?: Record<string, unknown>;
-  requestId?: string;
-}): Promise<void> {
-  try {
-    const { error } = await supabaseServer.from("audit_logs").insert({
-      actor_profile_id: args.actorProfileId,
-      target_profile_id: args.targetProfileId ?? null,
-      action: args.action,
-      changes: args.changes ?? null,
-      context: { request_id: args.requestId ?? null, ...(args.context ?? {}) },
-    });
-    if (error) {
-      logger.error("GUARDIAN", "audit_log", "Failed to write audit_logs row", {
-        requestId: args.requestId,
-        action: args.action,
-        reason: error.message,
-      });
-    }
-  } catch (err: unknown) {
-    logger.error("GUARDIAN", "audit_log", "Failed to write audit_logs row", {
-      requestId: args.requestId,
-      action: args.action,
-      reason: err instanceof Error ? err.message : "unknown",
-    });
-  }
 }
 
 router.get(
@@ -277,7 +219,7 @@ router.post(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const parsed = linkRequestSchema.safeParse(req.body);
+      const parsed = guardianLinkRequestSchema.safeParse(req.body);
 
       if (!parsed.success) {
         await auditGuardianLink({
@@ -371,15 +313,6 @@ router.post(
         });
       }
 
-      await auditGuardianLink({
-        action: "guardian_link_initiated",
-        actorProfileId: guardianId,
-        targetProfileId: student.id,
-        changes: { from: null, to: link.status, initiated_by: "guardian" },
-        context: { link_id: link.id },
-        requestId,
-      });
-
       logger.info("GUARDIAN", "link_student", "Link request created", {
         guardianId,
         studentId: student.id,
@@ -437,24 +370,53 @@ router.post(
           .json({ error: { message: "Invalid link id" }, requestId });
       }
 
+      // @spec [owner ruling 2026-08-27 Q7] | @implemented [2026-08-28]
+      //
+      // PARTY-HOOD DECIDES 404-VERSUS-409, AND ONLY A READ CAN ANSWER IT.
+      // `accept_guardian_link_audited` raises the SAME `WRONG_ACCEPTOR` (LY002) for the party
+      // who must wait and for a stranger who guessed a link id, so the error alone cannot tell
+      // them apart. This route used to answer 403 to both, which confirmed to a stranger that
+      // the link exists. Now: not named on the link → 404, indistinguishable from a link id
+      // that does not exist; named on it → the informative answer, as 409, because being asked
+      // to wait for the other party is a STATE CONFLICT and not an authorization failure.
+      //
+      // Identical to the student-side route's handling (`student-resources.ts`), deliberately
+      // and by reusing the same reader: two routes serving the two halves of one flow must not
+      // answer the same question differently, which is the divergence class this whole vertical
+      // exists to remove.
+      let existing;
+      try {
+        existing = await getGuardianLinkById(linkId);
+      } catch (readError: unknown) {
+        logger.error("GUARDIAN", "accept_link", "Failed to read link", {
+          reason: readError instanceof Error ? readError.message : "unknown",
+          requestId,
+        });
+        return res
+          .status(500)
+          .json({ error: { message: "Failed to accept link" }, requestId });
+      }
+
+      if (!existing || existing.guardian_profile_id !== guardianId) {
+        return sendNotFound(res, requestId);
+      }
+
       let link;
       try {
         link = await acceptGuardianLink(linkId, guardianId);
       } catch (acceptError: unknown) {
         const code = errorCode(acceptError);
 
-        if (code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR) {
-          return res.status(403).json({
+        // The caller is a party (checked above), so both of these are state conflicts.
+        if (
+          code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR ||
+          code === GUARDIAN_LINK_ERROR.NOT_PENDING
+        ) {
+          return res.status(409).json({
             error: {
-              message: "This link is awaiting acceptance by the other party",
+              message: "This link is not awaiting your acceptance",
               code,
             },
-            requestId,
-          });
-        }
-        if (code === GUARDIAN_LINK_ERROR.NOT_PENDING) {
-          return res.status(409).json({
-            error: { message: "This link is not awaiting acceptance", code },
             requestId,
           });
         }
@@ -468,15 +430,6 @@ router.post(
           .status(500)
           .json({ error: { message: "Failed to accept link" }, requestId });
       }
-
-      await auditGuardianLink({
-        action: "guardian_link_accepted",
-        actorProfileId: guardianId,
-        targetProfileId: link.student_profile_id,
-        changes: { from: "pending_guardian_accept", to: link.status },
-        context: { link_id: link.id },
-        requestId,
-      });
 
       logger.info("GUARDIAN", "accept_link", "Guardian link accepted", {
         guardianId,
@@ -525,19 +478,40 @@ router.delete(
       const guardianId = req.user!.id;
       const { studentId } = req.params;
 
-      // CANONICAL: verify an ACTIVE link exists before revealing anything about it.
-      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      // @spec [owner ruling 2026-08-27 Q7] | @implemented [2026-08-28]
+      //
+      // Was a flat 403 on "no ACTIVE link", which conflated two different callers: a guardian
+      // whose link to this student was already revoked, and a guardian with no connection to
+      // this student at all. The second learns from a 403 that the student exists; the first
+      // learns nothing they did not already know. Q7 splits them on PARTY-HOOD.
+      const existing = await getAnyGuardianLinkForPair(guardianId, studentId);
 
-      if (!linked) {
+      if (!existing) {
         logger.warn(
           "GUARDIAN",
           "unlink_denied",
-          "Guardian tried to unlink non-linked student",
+          "Guardian tried to unlink a student they are not a party to",
           { guardianId, studentId, requestId },
         );
-        return res
-          .status(403)
-          .json({ error: "Not authorized to unlink this student", requestId });
+        return sendNotFound(res, requestId);
+      }
+
+      if (existing.status !== "active") {
+        // A party, so the real state is safe to name — and useful, because the most likely
+        // cause is a link already revoked from the student's side or in another tab.
+        logger.warn(
+          "GUARDIAN",
+          "unlink_conflict",
+          "Guardian tried to unlink a link that is not active",
+          { guardianId, studentId, requestId },
+        );
+        return res.status(409).json({
+          error: {
+            message: "This link is not active",
+            code: GUARDIAN_LINK_ERROR.NOT_ACTIVE,
+          },
+          requestId,
+        });
       }
 
       const reason =
@@ -579,22 +553,6 @@ router.delete(
           .status(500)
           .json({ error: "Failed to unlink student", requestId });
       }
-
-      await auditGuardianLink({
-        action: "guardian_link_revoked",
-        actorProfileId: guardianId,
-        targetProfileId: studentId,
-        changes: {
-          from: "active",
-          to: revoked.status,
-          revoked_by: "guardian",
-          // The reason is guardian-authored free text about the link, not student content,
-          // and is recorded as present/absent rather than verbatim.
-          revocation_reason_present: reason !== undefined,
-        },
-        context: { link_id: revoked.id },
-        requestId,
-      });
 
       logger.info(
         "GUARDIAN",
@@ -640,33 +598,30 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId } = req.params;
 
-      if (!isAdmin) {
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "full_length_history_denied",
-            "Guardian tried to view non-linked student full-length history",
-            {
-              guardianId,
-              studentId,
-              requestId,
-            },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "full_length_history_denied",
+          "Guardian tried to view non-linked student full-length history",
+          {
             guardianId,
             studentId,
             requestId,
-            details: { surface: "full_length_history", reason: "not_linked" },
-          });
-          return res
-            .status(403)
-            .json({ error: "Not authorized to view this student", requestId });
-        }
+          },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: "full_length_history", reason: "not_linked" },
+        });
+        return res
+          .status(403)
+          .json({ error: "Not authorized to view this student", requestId });
       }
 
       const rawLimit = Number(req.query.limit ?? 20);
@@ -746,38 +701,35 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId, sessionId } = req.params;
 
-      if (!isAdmin) {
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "full_length_report_denied",
-            "Guardian tried to view non-linked student full-length report",
-            {
-              guardianId,
-              studentId,
-              sessionId,
-              requestId,
-            },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "full_length_report_denied",
+          "Guardian tried to view non-linked student full-length report",
+          {
             guardianId,
             studentId,
+            sessionId,
             requestId,
-            details: {
-              surface: "full_length_report",
-              session_id: sessionId,
-              reason: "not_linked",
-            },
-          });
-          return res
-            .status(403)
-            .json({ error: "Not authorized to view this student", requestId });
-        }
+          },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: {
+            surface: "full_length_report",
+            session_id: sessionId,
+            reason: "not_linked",
+          },
+        });
+        return res
+          .status(403)
+          .json({ error: "Not authorized to view this student", requestId });
       }
 
       const report = await fullLengthExamService.getExamReport({
@@ -844,32 +796,29 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId } = req.params;
       const start = req.query.start as string | undefined;
       const end = req.query.end as string | undefined;
 
-      if (!isAdmin) {
-        // CANONICAL: Verify link via guardian_links
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "calendar_access_denied",
-            "Student not found or not linked",
-            { guardianId, studentId, requestId },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
-            guardianId,
-            studentId,
-            requestId,
-            details: { surface: "calendar", reason: "not_linked" },
-          });
-          return res
-            .status(404)
-            .json({ error: "Student not found", requestId });
-        }
+      // CANONICAL: Verify link via guardian_links
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "calendar_access_denied",
+          "Student not found or not linked",
+          { guardianId, studentId, requestId },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: "calendar", reason: "not_linked" },
+        });
+        return res
+          .status(404)
+          .json({ error: "Student not found", requestId });
       }
 
       if (!start || !isIsoDate(start)) {

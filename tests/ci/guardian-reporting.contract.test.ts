@@ -1,14 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
+// The wire codes come from the contract module, not from string literals here: the first draft
+// of the Q7 accept case asserted "WRONG_ACCEPTOR" and got a 500, because the real constant is
+// "GUARDIAN_LINK_WRONG_ACCEPTOR". A test that spells the contract itself can disagree with it.
+import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
 
 const accountMocks = {
   createGuardianLink: vi.fn(),
+  acceptGuardianLink: vi.fn(),
   revokeGuardianLink: vi.fn(),
   isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
   ensureAccountForUser: vi.fn(),
+  // Step 6 (Q7). Both readers answer party-hood, which is what decides 404-versus-409.
+  // NOTE for whoever adds the next export to `server/lib/account.ts`: this object REPLACES the
+  // module, so a function missing from it is `undefined` at the call site and the route answers
+  // 500. That is how the two revoke cases below failed when `getAnyGuardianLinkForPair` landed —
+  // loudly, because they assert exact status codes. A case asserting only "not 200" would have
+  // gone green on the 500 and hidden the gap.
+  getGuardianLinkById: vi.fn(),
+  getAnyGuardianLinkForPair: vi.fn(),
 };
+
+/** The shape `getAnyGuardianLinkForPair` returns; only the fields these routes read. */
+function linkRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-1111-1111-1111-111111111111",
+    guardian_profile_id: "guardian-1",
+    student_profile_id: "student-1",
+    status: "active",
+    ...over,
+  };
+}
 
 const kpiMocks = {
   buildStudentKpiViewFromCanonical: vi.fn(),
@@ -285,16 +309,19 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   return { ...kpiMocks };
 });
 
-function buildApp(role: "guardian" | "student" = "guardian") {
+const APP_IDENTITIES = {
+  guardian: { id: "guardian-1", email: "guardian@example.com" },
+  student: { id: "student-9", email: "student9@example.com" },
+  // R5: an admin is now an ORDINARY caller here. Added so the removal of the three
+  // route-level `if (!isAdmin)` skips has something that can observe it.
+  admin: { id: "admin-1", email: "admin@example.com" },
+} as const;
+
+function buildApp(role: keyof typeof APP_IDENTITIES = "guardian") {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res, next) => {
-    req.user = {
-      id: role === "guardian" ? "guardian-1" : "student-9",
-      role,
-      email:
-        role === "guardian" ? "guardian@example.com" : "student9@example.com",
-    };
+    req.user = { ...APP_IDENTITIES[role], role };
     next();
   });
   return app;
@@ -488,8 +515,68 @@ describe("Guardian reporting runtime contract", () => {
     expect(dashboardViewed).toBeUndefined();
   });
 
-  it("fails closed on unlink conflict when link is no longer active and does not emit unlink success audit", async () => {
+  /**
+   * MUTATIONS STAGED FOR THE THREE REVOKE-AUDIT ASSERTIONS, and the assertion each one reds.
+   * Run 2026-08-28; baseline 8/8 green before and after every restore.
+   *
+   *   M1. In the supabase mock below, change `if (table === "audit_logs")` to `if (false)`.
+   *       → reds `expect(...).toMatchObject(...)` in the INSTRUMENT case. 1 of 8.
+   *       Proves the capture is real, so "no revoke row" below means absence, not blindness.
+   *
+   *   M2. In `guardian-routes.ts`, add an `auditGuardianLink({action:"guardian_link_revoked"})`
+   *       call on the successful unlink path.
+   *       → reds the `expect(unlinkSuccess).toBeUndefined()` in the last case. 1 of 8.
+   *       This is the regression the case exists for: a duplicate, best-effort row beside the
+   *       transactional one.
+   *
+   *   M3. In the same handler, pass `studentId` instead of `guardianId` as the third argument
+   *       to `revokeGuardianLink`.
+   *       → reds `expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith(...)` in that
+   *       same case, one assertion ABOVE M2's. 1 of 8. Two mutations, two assertion layers,
+   *       so neither case is carrying the other.
+   */
+  /**
+   * INSTRUMENT CONTROL for the two cases below.
+   *
+   * Both of them assert that NO `guardian_link_revoked` row reaches `audit_logs` from this
+   * layer. After adoption-plan step 4 that is true because the revoke audit row is written
+   * inside `revoke_guardian_link_audited`, in the same transaction as the status change, and
+   * `guardian-routes.ts` no longer calls `auditGuardianLink` for a transition at all.
+   *
+   * An assertion that a capture array does not contain something is worthless if the capture
+   * is broken — "no row" and "no instrument" are indistinguishable. Everything else in this
+   * file that used `guardianAuditInserts` was one of those two revoke cases, so nothing else
+   * proves the capture still works. This does, directly: call the writer once and see the row.
+   * If the `audit_logs` branch of the supabase mock is ever removed, this reds first and names
+   * why the negative assertions stopped meaning anything.
+   */
+  it("INSTRUMENT: the audit_logs capture still records a row when the writer runs", async () => {
+    const { auditGuardianLink } = await import(
+      "../../server/services/guardian-link-audit"
+    );
+    await auditGuardianLink({
+      action: "guardian_link_denied",
+      actorProfileId: "guardian-1",
+      targetProfileId: "student-1",
+      changes: { reason: "instrument_control" },
+    });
+
+    expect(
+      guardianAuditInserts.find(
+        (row: any) => row.action === "guardian_link_denied",
+      ),
+      "the audit_logs capture is broken — the negative assertions below prove nothing",
+    ).toMatchObject({
+      actor_profile_id: "guardian-1",
+      target_profile_id: "student-1",
+    });
+  });
+
+  it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    // A party with an ACTIVE link, so the route reaches `revokeGuardianLink` and the domain
+    // conflict below is what produces the 409 — not the route's own party check.
+    accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     const conflict = new Error("Guardian link is not active") as Error & {
       code?: string;
     };
@@ -504,14 +591,42 @@ describe("Guardian reporting runtime contract", () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe("LINK_NOT_ACTIVE");
+    // The transition never happened, so no revoke row exists anywhere — the database wrote
+    // none because the transaction raised, and the route writes none by design.
     const unlinkSuccess = guardianAuditInserts.find(
       (row: any) => row.action === "guardian_link_revoked",
     );
     expect(unlinkSuccess).toBeUndefined();
   });
 
-  it("keeps valid unlink transition behavior and emits unlink success audit", async () => {
+  /**
+   * REWRITTEN at adoption-plan step 4, and the direction of the change is the point.
+   *
+   * This case used to assert that a `guardian_link_revoked` row appeared in `audit_logs`
+   * after a successful unlink. It asserted the OPPOSITE of what it now asserts, and both
+   * readings were correct at their own time:
+   *
+   *   BEFORE — `guardian-routes.ts` called `auditGuardianLink` after `revokeGuardianLink`
+   *   returned. Two writes, two PostgREST requests, therefore two transactions. A revoke
+   *   that succeeded and an audit row that did not write were an ordinary outcome, and the
+   *   trail silently lost rows.
+   *
+   *   AFTER — `revoke_guardian_link_audited` writes the status change and its audit row in
+   *   ONE transaction (migration 20260828000000). The route's own call is gone. If it came
+   *   back, every revoke would produce TWO rows: the transactional one and a best-effort
+   *   duplicate. That is what the negative assertion below catches, and it is a real
+   *   regression rather than a formality — re-adding the call is the most natural way for
+   *   someone to "restore" this test's old assertion.
+   *
+   * The audit row itself is proven where it is now written: `guardian-link-student-side
+   * .pg.ci.test.ts` reads it back out of a real `audit_logs` table, and its FAIL-CLOSED pair
+   * proves the row and the status change stand or fall together. A mocked account layer
+   * cannot see a write that happens inside the function it replaced, and pretending otherwise
+   * is how the assertion would go vacuous instead of moving.
+   */
+  it("keeps valid unlink transition behavior and leaves the revoke audit row to the transaction", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
     // `revoked_by_profile_id` and `revocation_reason` to be observable).
     accountMocks.revokeGuardianLink.mockResolvedValueOnce({
@@ -531,18 +646,226 @@ describe("Guardian reporting runtime contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(true);
     expect(response.body.students).toEqual([]);
+
+    // §36.3 — the revoker is RECORDED, not assumed. The route's remaining responsibility is
+    // to name the acting guardian as the revoker; the row that carries it is written by the
+    // transaction. Asserting the arguments is what keeps this case from proving only that a
+    // mock resolved.
+    expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith(
+      "guardian-1",
+      "student-1",
+      "guardian-1",
+      undefined,
+    );
+
+    // No second, best-effort revoke row from this layer. See the docblock.
     const unlinkSuccess = guardianAuditInserts.find(
       (row: any) => row.action === "guardian_link_revoked",
     );
-    expect(unlinkSuccess).toBeDefined();
-    expect(unlinkSuccess).toMatchObject({
-      actor_profile_id: "guardian-1",
-      target_profile_id: "student-1",
-    });
+    expect(
+      unlinkSuccess,
+      "the route wrote its own guardian_link_revoked row — the transaction already wrote one, so this revoke is now double-audited",
+    ).toBeUndefined();
   });
 
 
 
+
+  /**
+   * @spec [owner ruling 2026-08-27 Q7 — "404 if the caller is not a party to the link at all.
+   *        Keep the informative response if they are... Use 409 rather than 403, since it's a
+   *        state conflict rather than an authorization failure."] | @implemented [2026-08-28]
+   *
+   * STEP 6 — THE TWO 403s, SPLIT ON PARTY-HOOD.
+   *
+   * Both guardian-side link routes answered 403 to two callers who deserve different answers:
+   *   - a guardian NAMED on the link, whose link is revoked or is waiting on the other side.
+   *     They already know the link exists. An informative answer leaks nothing.
+   *   - a guardian named on NOTHING, who guessed a student id or a link id. A 403 tells them
+   *     the resource is real, which is the enumeration primitive we have been removing.
+   * The first now gets 409 — a state conflict, not an authorization failure — and the second
+   * gets the resolver's 404 body verbatim.
+   *
+   * WHY THE 404 BODY IS IMPORTED RATHER THAN WRITTEN HERE: two "not found" shapes would let a
+   * caller distinguish the surfaces and undo the point. The assertion below pins the shared
+   * body, so a divergent 404 fails even though the status matches.
+   *
+   * MUTATIONS OBSERVED RED (run 2026-08-28, baseline 15/15 green; each reds exactly one case):
+   *   1. revoke: drop the `!existing` branch (treat a non-party as a party).
+   *      → reds "404s a guardian who is not a party".
+   *   2. revoke: change `existing.status !== "active"` to `false`.
+   *      → reds "409s a guardian whose link is already revoked".
+   *   3. accept: drop the `existing.guardian_profile_id !== guardianId` half of the guard.
+   *      → reds "404s a guardian who is not named on the link".
+   *   4. accept: answer 403 instead of 409 on WRONG_ACCEPTOR.
+   *      → reds "409s the guardian when the link awaits the student".
+   */
+  describe("Q7 — party-hood decides 404 versus 409 on the guardian link routes", () => {
+    const NOT_FOUND_BODY = {
+      error: "Not found",
+      message: "No such student, or you do not have access to them",
+    };
+
+    it("revoke: 404s a guardian who is not a party to any link with the student", async () => {
+      accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(null);
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).delete(
+        "/api/guardian/link/student-stranger",
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject(NOT_FOUND_BODY);
+      // The transition must not even be attempted for a non-party.
+      expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("revoke: 409s a guardian whose link with the student is already revoked", async () => {
+      accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(
+        linkRow({ status: "revoked" }),
+      );
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).delete(
+        "/api/guardian/link/student-1",
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.NOT_ACTIVE);
+      expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("accept: 404s a guardian who is not named on the link", async () => {
+      accountMocks.getGuardianLinkById.mockResolvedValue(
+        linkRow({ guardian_profile_id: "some-other-guardian" }),
+      );
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).post(
+        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject(NOT_FOUND_BODY);
+      expect(accountMocks.acceptGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("accept: 409s the guardian when the link is awaiting the STUDENT", async () => {
+      // The guardian IS named on this link, so they get the informative answer.
+      accountMocks.getGuardianLinkById.mockResolvedValue(
+        linkRow({ status: "pending_student_accept" }),
+      );
+      const wrongAcceptor = new Error("awaiting the other party") as Error & {
+        code?: string;
+      };
+      wrongAcceptor.code = GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR;
+      accountMocks.acceptGuardianLink.mockRejectedValueOnce(wrongAcceptor);
+
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).post(
+        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR);
+    });
+  });
+
+  /**
+   * @spec [guardian-rebuild-design-spec §1.5 R5; owner ruling 2026-08-28 "R5 reaches all four
+   *        bypasses"] | @implemented [2026-08-28]
+   *
+   * THE THREE ROUTE-LEVEL ADMIN SKIPS, PROVEN GONE.
+   *
+   * Each of the three entitlement-gated read routes carried `const isAdmin = req.user!.role ===
+   * "admin"` and wrapped its `isGuardianLinkedToStudent` check in `if (!isAdmin)`. So an admin
+   * read any student's exam history, any student's full-length report, and any student's
+   * calendar, with no link and no record beyond a log line. All three are deleted.
+   *
+   * WHAT THESE CASES ARE, STATED HONESTLY: defence in depth, not the primary guard. In
+   * production an admin is refused earlier, by `requireGuardianEntitlement`
+   * (`guardian-entitlement.no-admin-bypass.contract.test.ts` owns that). This file MOCKS that
+   * middleware to pass through, which is precisely why it can reach the handler and ask the
+   * question the other file cannot: given a caller who got here, does the HANDLER still let an
+   * admin skip the link check? It must not.
+   *
+   * They discriminate: `isGuardianLinkedToStudent` is mocked FALSE, so with the skip restored
+   * every one of them returns 200 instead of the denial asserted.
+   */
+  describe("R5 — no route-level admin skip on the three entitlement-gated reads", () => {
+    beforeEach(() => {
+      // The link check must be the thing that decides. False for admin-1, because admin-1 is
+      // not linked to anyone — which was exactly the state the deleted skip stepped over.
+      accountMocks.isGuardianLinkedToStudent.mockResolvedValue(false);
+    });
+
+    it("403s an admin on a non-linked student's full-length session history", async () => {
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("admin");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).get(
+        "/api/guardian/students/student-1/exams/full-length/sessions",
+      );
+
+      expect(response.status).toBe(403);
+      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
+        "admin-1",
+        "student-1",
+      );
+    });
+
+    it("403s an admin on a non-linked student's full-length report", async () => {
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("admin");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).get(
+        "/api/guardian/students/student-1/tests/session-1/report",
+      );
+
+      expect(response.status).toBe(403);
+      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
+        "admin-1",
+        "student-1",
+      );
+    });
+
+    it("404s an admin on a non-linked student's calendar", async () => {
+      // 404 rather than 403 on this route: it was already the odd one out before R5, and R5
+      // does not change denial shapes. Step 6 owns that question; asserting the CURRENT shape
+      // here means Step 6 has to come back and change it deliberately.
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("admin");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).get(
+        "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
+      );
+
+      expect(response.status).toBe(404);
+      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
+        "admin-1",
+        "student-1",
+      );
+    });
+  });
 
   it("returns guardian-safe calendar payload and emits guardian_calendar_viewed", async () => {
     const router = (await import("../../server/routes/guardian-routes"))
