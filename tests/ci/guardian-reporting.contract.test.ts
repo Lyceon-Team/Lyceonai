@@ -551,9 +551,8 @@ describe("Guardian reporting runtime contract", () => {
    * why the negative assertions stopped meaning anything.
    */
   it("INSTRUMENT: the audit_logs capture still records a row when the writer runs", async () => {
-    const { auditGuardianLink } = await import(
-      "../../server/services/guardian-link-audit"
-    );
+    const { auditGuardianLink } =
+      await import("../../server/services/guardian-link-audit");
     await auditGuardianLink({
       action: "guardian_link_denied",
       actorProfileId: "guardian-1",
@@ -668,9 +667,6 @@ describe("Guardian reporting runtime contract", () => {
     ).toBeUndefined();
   });
 
-
-
-
   /**
    * @spec [owner ruling 2026-08-27 Q7 — "404 if the caller is not a party to the link at all.
    *        Keep the informative response if they are... Use 409 rather than 403, since it's a
@@ -783,181 +779,4 @@ describe("Guardian reporting runtime contract", () => {
       expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR);
     });
   });
-
-  /**
-   * @spec [guardian-rebuild-design-spec §1.5 R5; owner ruling 2026-08-28 "R5 reaches all four
-   *        bypasses"] | @implemented [2026-08-28]
-   *
-   * THE THREE ROUTE-LEVEL ADMIN SKIPS, PROVEN GONE.
-   *
-   * Each of the three entitlement-gated read routes carried `const isAdmin = req.user!.role ===
-   * "admin"` and wrapped its `isGuardianLinkedToStudent` check in `if (!isAdmin)`. So an admin
-   * read any student's exam history, any student's full-length report, and any student's
-   * calendar, with no link and no record beyond a log line. All three are deleted.
-   *
-   * WHAT THESE CASES ARE, STATED HONESTLY: defence in depth, not the primary guard. In
-   * production an admin is refused earlier, by `requireGuardianEntitlement`
-   * (`guardian-entitlement.no-admin-bypass.contract.test.ts` owns that). This file MOCKS that
-   * middleware to pass through, which is precisely why it can reach the handler and ask the
-   * question the other file cannot: given a caller who got here, does the HANDLER still let an
-   * admin skip the link check? It must not.
-   *
-   * They discriminate: `isGuardianLinkedToStudent` is mocked FALSE, so with the skip restored
-   * every one of them returns 200 instead of the denial asserted.
-   */
-  describe("R5 — no route-level admin skip on the three entitlement-gated reads", () => {
-    beforeEach(() => {
-      // The link check must be the thing that decides. False for admin-1, because admin-1 is
-      // not linked to anyone — which was exactly the state the deleted skip stepped over.
-      accountMocks.isGuardianLinkedToStudent.mockResolvedValue(false);
-    });
-
-    it("403s an admin on a non-linked student's full-length session history", async () => {
-      const router = (await import("../../server/routes/guardian-routes"))
-        .default;
-      const app = buildApp("admin");
-      app.use("/api/guardian", router);
-
-      const response = await request(app).get(
-        "/api/guardian/students/student-1/exams/full-length/sessions",
-      );
-
-      expect(response.status).toBe(403);
-      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
-        "admin-1",
-        "student-1",
-      );
-    });
-
-    it("403s an admin on a non-linked student's full-length report", async () => {
-      const router = (await import("../../server/routes/guardian-routes"))
-        .default;
-      const app = buildApp("admin");
-      app.use("/api/guardian", router);
-
-      const response = await request(app).get(
-        "/api/guardian/students/student-1/tests/session-1/report",
-      );
-
-      expect(response.status).toBe(403);
-      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
-        "admin-1",
-        "student-1",
-      );
-    });
-
-    it("404s an admin on a non-linked student's calendar", async () => {
-      // 404 rather than 403 on this route: it was already the odd one out before R5, and R5
-      // does not change denial shapes. Step 6 owns that question; asserting the CURRENT shape
-      // here means Step 6 has to come back and change it deliberately.
-      const router = (await import("../../server/routes/guardian-routes"))
-        .default;
-      const app = buildApp("admin");
-      app.use("/api/guardian", router);
-
-      const response = await request(app).get(
-        "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
-      );
-
-      expect(response.status).toBe(404);
-      expect(accountMocks.isGuardianLinkedToStudent).toHaveBeenCalledWith(
-        "admin-1",
-        "student-1",
-      );
-    });
-  });
-
-  it("returns guardian-safe calendar payload and emits guardian_calendar_viewed", async () => {
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
-    );
-
-    expect(response.status).toBe(200);
-    expect(Array.isArray(response.body.days)).toBe(true);
-    expect(response.body.days.length).toBeGreaterThan(0);
-
-    const day = response.body.days[0];
-    expect(day).toMatchObject({
-      day_date: "2026-03-01",
-      planned_minutes: 45,
-      completed_minutes: 30,
-      status: "in_progress",
-      attempt_count: 1,
-      accuracy: 100,
-    });
-    expect(day.focus).toBeUndefined();
-    expect(day.tasks).toBeUndefined();
-    expect(day.plan_version).toBeUndefined();
-    expect(day.is_user_override).toBeUndefined();
-    expect(calendarMocks.buildCalendarMonthView).toHaveBeenCalledWith(
-      "student-1",
-      "2026-03-01",
-      "2026-03-31",
-      "America/Chicago",
-    );
-
-    const calendarViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_calendar_viewed",
-    );
-    expect(calendarViewed).toBeDefined();
-    expect(calendarViewed).toMatchObject({
-      user_id: "guardian-1",
-      details: expect.objectContaining({
-        student_id: "student-1",
-        surface: "calendar",
-      }),
-    });
-  });
-
-
-  it("fails closed when canonical student calendar source fails", async () => {
-    calendarMocks.buildCalendarMonthView.mockRejectedValueOnce(
-      new Error("calendar_source_failed"),
-    );
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
-    );
-
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Internal server error");
-    const calendarViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_calendar_viewed",
-    );
-    expect(calendarViewed).toBeUndefined();
-  });
-
-  it("fails closed when calendar timezone source query fails", async () => {
-    profileSelectError = { message: "profile_timezone_query_failed" };
-    const router = (await import("../../server/routes/guardian-routes"))
-      .default;
-    const app = buildApp("guardian");
-    app.use("/api/guardian", router);
-
-    const response = await request(app).get(
-      "/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31",
-    );
-
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBe("Failed to load calendar data");
-    const calendarViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_calendar_viewed",
-    );
-    expect(calendarViewed).toBeUndefined();
-  });
-
-
-
-
-
-
 });

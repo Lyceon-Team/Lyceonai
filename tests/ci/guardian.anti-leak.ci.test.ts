@@ -414,35 +414,6 @@ describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
   // `/api/students/:studentId/mastery/domains` and `/kpi/overall`, walked for RULE-4 keys on
   // BOTH `via` values by tests/ci/student-resources.contract.test.ts — which is the gap this
   // file never covered: it sets `isGuardian: false` and has never exercised a guardian path.
-  it("full-length history — /guardian/students/:studentId/exams/full-length/sessions", async () => {
-    const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/students/${STUDENT_ID}/exams/full-length/sessions`,
-    );
-    expect(res.status).toBe(200);
-    assertNoForbiddenKeys("exam-sessions", res.body, RULE_4_KEYS);
-    // Doc 04C §2.3 — the routed Module 2 path is never guardian-facing.
-    const keys = new Set<string>();
-    collectKeys(res.body, keys);
-    expect(keys.has("module2_path")).toBe(false);
-  }, 15000);
-
-  it("full-length report — /guardian/students/:studentId/tests/:sessionId/report", async () => {
-    const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/students/${STUDENT_ID}/tests/${SESSION_ID}/report`,
-    );
-    expect(res.status).toBe(200);
-    assertNoForbiddenKeys("exam-report", res.body, RULE_4_KEYS);
-  }, 15000);
-
-  it("calendar month — /guardian/students/:studentId/calendar/month", async () => {
-    const res = await request(await buildGuardianApp()).get(
-      `/api/guardian/students/${STUDENT_ID}/calendar/month?start=2026-08-01&end=2026-08-31`,
-    );
-    expect(res.status).toBe(200);
-    // `accuracy` is a per-day engagement figure the student's own calendar shows.
-    assertNoForbiddenKeys("calendar", res.body, RULE_4_KEYS);
-  }, 15000);
-
   it("linked students — /guardian/students", async () => {
     const res = await request(await buildGuardianApp()).get(
       "/api/guardian/students",

@@ -131,6 +131,17 @@ jobs:
       - name: Subject-resolver chokepoint gate (no handler below the resolver learns the caller's role)
         run: node scripts/ci/subject-resolver-chokepoint-gate.mjs
 
+      # The consent surface was written against columns that do not exist and CI stayed green
+      # for months, because the tests mocked Supabase and returned fixtures spelling the same
+      # imagined names. Code and mock agreed; neither was ever compared to Postgres. This
+      # forbids both halves on guardian paths — a query-layer mock with no real pg.Client
+      # behind it, and a hand-written row literal.
+      - name: Guardian schema-truth gate (no mocked query layer, no hand-written rows)
+        run: node scripts/ci/guardian-schema-truth-gate.mjs
+
+      - name: Guardian schema-truth self-test (proves each rule turns it red)
+        run: bash scripts/ci/guardian-schema-truth-gate.selftest.sh
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the
