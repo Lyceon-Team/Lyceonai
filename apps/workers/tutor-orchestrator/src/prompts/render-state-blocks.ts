@@ -64,9 +64,6 @@ export function renderStateBlocks(request: OrchestrateRequest): string | null {
   const styleBlock = renderStyleBlock(request);
   if (styleBlock) blocks.push(styleBlock);
 
-  const curriculumBlock = renderCurriculumBlock(request);
-  if (curriculumBlock) blocks.push(curriculumBlock);
-
   if (blocks.length === 0) return null;
 
   return blocks.join("\n\n");
@@ -131,17 +128,33 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
       `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
         `the student's answer was wrong.`,
     );
-    // Explanation (only present post-submit, gated upstream)
     if (qc.explanation) {
       parts.push(`Explanation: ${qc.explanation}`);
     }
   } else {
-    parts.push(
-      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
-        `or show work toward the answer. Do not produce an intermediate result the student ` +
-        `can read off as the final value. Redirect to a sub-step the student can verify ` +
-        `without seeing the answer.`,
-    );
+    // Pre-submit: explanation is present on the wire per SCL-043 (active
+    // question's explanation is PERMITTED pre-submit for model reasoning).
+    // The model uses it to understand the solution path so it can guide the
+    // student through sub-steps without revealing the answer. INV-03-04
+    // output serializer is sole defense against echo.
+    if (qc.explanation) {
+      parts.push(`[AUTHORED EXPLANATION — INTERNAL USE ONLY] ${qc.explanation}`);
+      parts.push(
+        `[DIRECTIVE] This question is pre-submit. The authored explanation above ` +
+          `is for YOUR internal reasoning only — use it to understand the solution ` +
+          `method so you can guide the student through sub-steps. Do NOT quote, ` +
+          `paraphrase, reveal, or produce any intermediate result the student can ` +
+          `read off as the final value. The pre-submit prohibition (INV-03-04) is ` +
+          `unchanged.`,
+      );
+    } else {
+      parts.push(
+        `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+          `or show work toward the answer. Do not produce an intermediate result the student ` +
+          `can read off as the final value. Redirect to a sub-step the student can verify ` +
+          `without seeing the answer.`,
+      );
+    }
   }
 
   return parts.join(" ");
@@ -420,77 +433,5 @@ function explanationStyleDescription(
       return "learns best from worked examples";
     case "visual":
       return "prefers visual representations and diagrams";
-  }
-}
-
-/**
- * Curriculum block: surfaces retrieved explanations and curriculum content
- * so LISA has the authored reasoning path.
- *
- * Directive pairing (§7.4): fact = retrieved explanations / curriculum;
- * directive = use for grounding, NEVER echo verbatim to the student.
- *
- * Anti-leak: these items may include the active question's explanation
- * pre-submit (SCL-043). The model uses them to reason internally —
- * the output serializer (INV-03-04) is sole defense against echo.
- * The directive reinforces the prohibition.
- *
- * @spec [Doc-03D_V1.2 §6.6, §6.8, §7.4, SCL-043, INV-03-04]
- */
-function renderCurriculumBlock(request: OrchestrateRequest): string | null {
-  const items = request.retrieved_curriculum;
-  if (!items || items.length === 0) return null;
-
-  const parts: string[] = [];
-
-  for (const item of items) {
-    const label = curriculumContentTypeLabel(item.content_type);
-    parts.push(`[CURRICULUM — ${label}] ${item.content}`);
-  }
-
-  // Directive: use for internal reasoning, never echo.
-  // Pre-submit: the explanation is for LISA's reasoning path only.
-  // Post-submit: the explanation supplements the canonical explanation
-  // from question_content.
-  if (request.is_post_submit) {
-    parts.push(
-      `[DIRECTIVE] Use these curriculum items to enrich your explanation. ` +
-        `You may reference the reasoning and concepts, but use your own words ` +
-        `and tailor to the student's level.`,
-    );
-  } else {
-    parts.push(
-      `[DIRECTIVE] These curriculum items provide the authored reasoning path ` +
-        `for this question. Use them ONLY for your internal reasoning — to ` +
-        `understand the solution method so you can guide the student through ` +
-        `sub-steps. Do NOT quote, paraphrase, or reveal the explanation or ` +
-        `answer to the student. Do NOT produce intermediate results the ` +
-        `student can read off as the final value. The pre-submit prohibition ` +
-        `(INV-03-04) is unchanged.`,
-    );
-  }
-
-  return parts.join(" ");
-}
-
-function curriculumContentTypeLabel(
-  contentType:
-    | "explanation"
-    | "textbook"
-    | "video_transcript"
-    | "strategy"
-    | "worked_example",
-): string {
-  switch (contentType) {
-    case "explanation":
-      return "Question Explanation";
-    case "textbook":
-      return "Textbook";
-    case "video_transcript":
-      return "Video Transcript";
-    case "strategy":
-      return "Strategy";
-    case "worked_example":
-      return "Worked Example";
   }
 }

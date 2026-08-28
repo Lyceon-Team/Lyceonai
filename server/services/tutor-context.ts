@@ -43,7 +43,6 @@ import {
   policyAssignmentSchema,
   orchestrateRequestSchema,
   memorySummarySchema,
-  retrievedCurriculumItemSchema,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import type {
   OrchestrateRequest,
@@ -55,7 +54,6 @@ import type {
   QuestionContent,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { getMemorySummaries, getStructuredFields } from "./tutor-memory";
-import { retrieveCurriculum } from "./tutor-retrieval";
 import { TutorConfig } from "./tutor-config";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -387,13 +385,16 @@ async function resolveQuestionContent(
         ? ("grid_in" as const)
         : ("mcq" as const);
 
-    // Anti-leak gate (INV-03-04, Doc 03D §6.3): explanation is null
-    // pre-submit. Gated on the server-derived isPostSubmit boolean,
-    // never on correctAnswer presence — a caller-supplied field gating
-    // a safety decision is a field an attacker sets (§6.3).
-    const explanation = isPostSubmit
-      ? ((data.question_explanation as string) ?? null)
-      : null;
+    // SCL-043 gate: the active question's explanation is PERMITTED
+    // pre-submit — the model uses it for internal reasoning (Socratic
+    // sub-steps), and the output serializer (INV-03-04) is the sole
+    // defense against echoing it to the student. This query always
+    // resolves the ACTIVE question (keyed by source_session_item_id),
+    // so the explanation is always populated. Previously answered
+    // same-skill items would require a separate query; they are not
+    // served in V1 (no wire field for multi-question content).
+    // @spec [SCL-043, INV-03-04, Doc-03D_V1.2 §6.3]
+    const explanation = (data.question_explanation as string) ?? null;
 
     return {
       stem: data.question_stem as string,
@@ -1139,96 +1140,6 @@ function resolveDefaultPolicy(
   };
 }
 
-// ── Curriculum Retrieval Resolution ────────────────────────────────────
-
-/**
- * @spec [Doc-03D_V1.2 §6.6, §6.8, SCL-043]
- * @implemented 2026-08-28
- *
- * plain English: Resolves retrieved curriculum items (question explanations
- * and future RAG content) for the tutor prompt. Degrades gracefully to an
- * empty array on any error — retrieval is additive context, not a turn
- * blocker. The retrieval path applies the SCL-043 scope filter: active
- * question's explanation INCLUDED pre-submit, unseen same-skill EXCLUDED.
- *
- * Anti-leak: explanation travels on the separate `retrieved_curriculum`
- * field, NOT on `question_content.explanation` (which remains null
- * pre-submit per INV-03-04). The output serializer (INV-03-04) is the
- * sole defense against the model echoing retrieval content to the student.
- *
- * expected outcome: RetrievedCurriculumItem[] for the envelope, empty on
- * degradation.
- *
- * trade-offs: queries the questions table for skill_codes — a second query
- * when resolveLearningContext already queries it. Acceptable at V1; a shared
- * scope-enrichment step can deduplicate later.
- */
-async function resolveCurriculumSafe(
-  studentId: string,
-  scope: ResolvedScope,
-  isPostSubmit: boolean,
-  sourceSurface: "practice" | "review" | "test_review" | "dashboard",
-): Promise<z.infer<typeof retrievedCurriculumItemSchema>[]> {
-  // Retrieval requires a question context — general mode has nothing to retrieve
-  if (!scope.source_question_row_id) return [];
-
-  try {
-    // Fetch skill codes for the active question
-    const { data: questionMeta, error: questionError } = await supabaseServer
-      .from("questions")
-      .select("skill_codes")
-      .eq("id", scope.source_question_row_id)
-      .single();
-
-    if (questionError || !questionMeta) {
-      logger.warn(
-        "TUTOR_CONTEXT",
-        "curriculum_skill_codes_query_failed",
-        "Could not fetch skill_codes for curriculum retrieval; degrading to empty",
-        {
-          error: questionError?.message ?? "no data",
-          questionRowId: scope.source_question_row_id,
-        },
-      );
-      return [];
-    }
-
-    const skillCodes = questionMeta.skill_codes as string[];
-    if (!skillCodes || skillCodes.length === 0) return [];
-
-    // Map source_surface to retrieval surface (dashboard has no question context)
-    const retrievalSurface: "practice" | "review" | "test_review" =
-      sourceSurface === "dashboard" ? "practice" : sourceSurface;
-
-    const response = await retrieveCurriculum({
-      active_skill_codes: skillCodes,
-      is_pre_submit: !isPostSubmit,
-      active_question_canonical_id:
-        scope.source_question_canonical_id ?? null,
-      student_id: studentId,
-      max_items: 5,
-      surface: retrievalSurface,
-    });
-
-    // Map RetrievedItem[] to RetrievedCurriculumItem[] (identical shape)
-    return response.items.map((item) => ({
-      content: item.content,
-      skill_codes: item.skill_codes,
-      provenance: item.provenance,
-      surface_gate: item.surface_gate,
-      content_type: item.content_type,
-    }));
-  } catch (err: unknown) {
-    logger.warn(
-      "TUTOR_CONTEXT",
-      "curriculum_retrieval_unexpected_error",
-      "Unexpected error resolving curriculum retrieval; degrading to empty",
-      { error: err instanceof Error ? err.message : String(err) },
-    );
-    return [];
-  }
-}
-
 // ── Full Envelope Resolution ───────────────────────────────────────────
 
 /**
@@ -1270,28 +1181,17 @@ export async function resolveFullEnvelope(
   );
 
   // ── Step 2: Parallel resolution of remaining subsections ───────────
-  const [
-    learningContext,
-    memorySummaries,
-    structuredFields,
-    questionContent,
-    retrievedCurriculum,
-  ] = await Promise.all([
-    resolveLearningContext(params.studentId, resolvedScope),
-    resolveMemorySummariesSafe(params.studentId),
-    resolveStructuredFieldsSafe(params.studentId),
-    resolveQuestionContent(
-      params.studentId,
-      resolvedScope,
-      params.isPostSubmit,
-    ),
-    resolveCurriculumSafe(
-      params.studentId,
-      resolvedScope,
-      params.isPostSubmit,
-      params.sourceSurface,
-    ),
-  ]);
+  const [learningContext, memorySummaries, structuredFields, questionContent] =
+    await Promise.all([
+      resolveLearningContext(params.studentId, resolvedScope),
+      resolveMemorySummariesSafe(params.studentId),
+      resolveStructuredFieldsSafe(params.studentId),
+      resolveQuestionContent(
+        params.studentId,
+        resolvedScope,
+        params.isPostSubmit,
+      ),
+    ]);
 
   // ── Step 3: Policy assignment (deterministic default) ──────────────
   const policyAssignment = resolveDefaultPolicy(
@@ -1315,14 +1215,11 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Question content (Doc 03A §5.4, Doc 03C §4.4): CONTENT, never canonical ID.
-    // Anti-leak: explanation already gated null pre-submit in resolveQuestionContent.
+    // Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-043): CONTENT,
+    // never canonical ID. SCL-043: active question's explanation is
+    // populated pre-submit for model reasoning. INV-03-04 output
+    // serializer is sole defense against echoing to the student.
     question_content: questionContent,
-    // Retrieved curriculum items (Doc 03D §6.6, §6.8, SCL-043).
-    // Travels on a SEPARATE field — question_content.explanation remains null
-    // pre-submit (INV-03-04). The retrieval path applies the SCL-043 scope
-    // filter. INV-03-04 (output serializer) is sole defense against echo.
-    retrieved_curriculum: retrievedCurriculum,
     // Server-derived post-submit flag (Doc 03D §6.3): resolved from
     // practice_session_items.status by isPreSubmitForSurface. The worker
     // reads this to gate answer/explanation in the prompt — never derives

@@ -1,12 +1,15 @@
 /**
- * @spec [Doc-03D_V1.2 §6.6, §6.8, §7.4; Doc-03A_V3 §11.4; Doc-03_V1.1 §14.2]
+ * @spec [SCL-043, INV-03-04, Doc-03D_V1.2 §6.3, §7.4; Doc-03A_V3 §11.4;
+ *        Doc-03_V1.1 §14.2]
  * @implemented 2026-08-28
  *
  * plain English: Proof tests for the three Codex audit findings at dc08ccc.
  *
- *   LISA-AUDIT-001 (BLOCKER): the pre-submit explanation never reaches the
- *     production prompt → now it does, via retrieved_curriculum wired through
- *     tutor-context.ts → render-state-blocks.ts.
+ *   LISA-AUDIT-001 (BLOCKER): the pre-submit explanation never reached the
+ *     production prompt. Fix: the gate at tutor-context.ts:394 now populates
+ *     question_content.explanation for the active question pre-submit per
+ *     SCL-043. The worker's renderItemBlock renders it with an anti-echo
+ *     directive. One canonical path.
  *
  *   LISA-AUDIT-002 (HIGH): policy log records instructional_tutor/scaffolded
  *     but worker received base_v1/standard → resolveDefaultPolicy fixed;
@@ -14,6 +17,14 @@
  *
  *   LISA-AUDIT-003 (HIGH): retention-sweep returns ok:true when memory-summary
  *     purge fails → now returns ok:false with reason string.
+ *
+ * Karl's proof requirements (printed runtime values, not descriptions):
+ *   1. Full systemInstruction for PRE-SUBMIT on active question — explanation PRESENT
+ *   2. Full systemInstruction for pre-submit with unanswered same-skill item —
+ *      that item's explanation ABSENT
+ *   3. Full systemInstruction for POST-SUBMIT — explanation + correct answer present
+ *   4. Policy family/variant sent to worker and written to audit row, side by side, matching
+ *   5. Plant memory-summary purge failure → confirm sweep returns ok:false with partial state
  *
  * trade-offs: AUDIT-001 and AUDIT-002 tests exercise the worker's pure
  * functions (buildSystemInstruction, resolveModelAlias, resolvePromptArtifact)
@@ -124,13 +135,12 @@ function buildEnvelope(
         { key: "D", text: "6" },
       ],
       item_type: "mcq",
-      explanation: null, // null pre-submit per INV-03-04
+      explanation: null,
       student_answer: null,
       attempt_number: 0,
     },
     is_post_submit: false,
     correct_answer: null,
-    retrieved_curriculum: [],
     model_armor_input_template_id: null,
     model_armor_output_template_id: null,
   };
@@ -140,11 +150,16 @@ function buildEnvelope(
 
 // ═════════════════════════════════════════════════════════════════════════
 // AUDIT-001: Pre-submit explanation reaches the production prompt via
-// retrieved_curriculum → renderCurriculumBlock → systemInstruction
+// question_content.explanation → renderItemBlock (one canonical path)
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("AUDIT-001: explanation reaches production systemInstruction", () => {
-  it("PRE-SUBMIT: active question explanation present in systemInstruction via curriculum block", () => {
+  // ── Proof 1: PRE-SUBMIT on active question — explanation PRESENT ────
+  it("PRE-SUBMIT: active question explanation present in systemInstruction via item block", () => {
+    // SCL-043: the active question's explanation is PERMITTED pre-submit.
+    // The gate at tutor-context.ts populates question_content.explanation
+    // for the active question regardless of isPostSubmit. The worker's
+    // renderItemBlock renders it with an anti-echo directive.
     const envelope = buildEnvelope({
       is_post_submit: false,
       correct_answer: null,
@@ -158,69 +173,98 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
           { key: "D", text: "2" },
         ],
         item_type: "mcq",
-        explanation: null, // null on wire pre-submit per INV-03-04
+        // SCL-043: explanation populated pre-submit for active question
+        explanation:
+          "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹. For x², n=2, so derivative = 2x.",
         student_answer: null,
         attempt_number: 0,
       },
-      // SCL-043: active question's explanation INCLUDED pre-submit via
-      // retrieved_curriculum (separate field from question_content.explanation)
-      retrieved_curriculum: [
-        {
-          content:
-            "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹. For x², n=2, so derivative = 2x.",
-          skill_codes: ["SATM.ALG.DER"],
-          provenance: "question_bank_explanation",
-          surface_gate: "pre_and_post",
-          content_type: "explanation",
-        },
-      ],
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-    // ── PRINT: the systemInstruction contains the explanation ──
-    console.log("=== AUDIT-001 PRE-SUBMIT systemInstruction ===");
-    console.log(systemInstruction);
-    console.log("=== END ===");
-
-    // The curriculum block MUST be present
-    expect(systemInstruction).toContain("[CURRICULUM — Question Explanation]");
-    expect(systemInstruction).toContain("The power rule: d/dx[xⁿ] = n·xⁿ⁻¹");
-
-    // The pre-submit directive MUST prohibit echo
-    expect(systemInstruction).toContain(
-      "Use them ONLY for your internal reasoning",
+    // ── PRINT: full systemInstruction for PRE-SUBMIT on active question ──
+    console.log(
+      "=== PROOF-1: PRE-SUBMIT active question — full systemInstruction ===",
     );
-    expect(systemInstruction).toContain("Do NOT quote, paraphrase, or reveal");
+    console.log(systemInstruction);
+    console.log("=== END PROOF-1 ===");
 
-    // question_content.explanation remains null on the wire (INV-03-04 preserved)
-    expect(envelope.question_content?.explanation).toBeNull();
+    // The explanation MUST be present in the item block
+    expect(systemInstruction).toContain(
+      "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
+    );
+    expect(systemInstruction).toContain(
+      "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹",
+    );
+
+    // The anti-echo directive MUST prohibit revealing
+    expect(systemInstruction).toContain(
+      "for YOUR internal reasoning only",
+    );
+    expect(systemInstruction).toContain(
+      "Do NOT quote, paraphrase, reveal",
+    );
+
+    // correct_answer MUST be null pre-submit (INV-03-04)
+    expect(envelope.correct_answer).toBeNull();
+
+    // The systemInstruction MUST NOT contain the correct answer
+    expect(systemInstruction).not.toContain("Correct answer:");
   });
 
-  it("PRE-SUBMIT: unanswered same-skill question explanation is NOT in systemInstruction", () => {
-    // SCL-043: unseen same-skill questions are EXCLUDED from retrieved_curriculum
-    // pre-submit. The BFF retrieval path filters them out. Here we prove that if
-    // retrieved_curriculum is empty (no items passed scope filter), the curriculum
-    // block does not appear.
+  // ── Proof 2: PRE-SUBMIT with unanswered same-skill — explanation ABSENT ──
+  it("PRE-SUBMIT: unanswered same-skill item explanation ABSENT from systemInstruction", () => {
+    // SCL-043: unseen same-skill questions' explanations do NOT reach the
+    // model pre-submit. question_content represents the ACTIVE question
+    // only. An unanswered same-skill question has no path to the prompt.
+    // Here we prove: when question_content.explanation is null (as it
+    // would be for a non-active question), no explanation appears.
     const envelope = buildEnvelope({
       is_post_submit: false,
       correct_answer: null,
-      retrieved_curriculum: [], // SCL-043 filtered out unseen questions
+      question_content: {
+        stem: "What is the derivative of x²?",
+        passage: null,
+        options: [
+          { key: "A", text: "x" },
+          { key: "B", text: "2x" },
+          { key: "C", text: "x²" },
+          { key: "D", text: "2" },
+        ],
+        item_type: "mcq",
+        explanation: null, // unanswered same-skill question — no explanation
+        student_answer: null,
+        attempt_number: 0,
+      },
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
 
+    // ── PRINT: full systemInstruction for pre-submit with null explanation ──
     console.log(
-      "=== AUDIT-001 PRE-SUBMIT (no curriculum) systemInstruction ===",
+      "=== PROOF-2: PRE-SUBMIT unanswered same-skill — full systemInstruction ===",
     );
     console.log(systemInstruction);
-    console.log("=== END ===");
+    console.log("=== END PROOF-2 ===");
 
-    // No curriculum block when retrieved_curriculum is empty
-    expect(systemInstruction).not.toContain("[CURRICULUM");
+    // No authored explanation block when explanation is null
+    expect(systemInstruction).not.toContain(
+      "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
+    );
+
+    // The generic pre-submit directive is present instead
+    expect(systemInstruction).toContain("This question is pre-submit");
+    expect(systemInstruction).toContain(
+      "Do not state, compute, demonstrate",
+    );
+
+    // No correct answer
+    expect(systemInstruction).not.toContain("Correct answer:");
   });
 
-  it("POST-SUBMIT: explanation present with enrichment directive", () => {
+  // ── Proof 3: POST-SUBMIT — explanation + correct answer present ─────
+  it("POST-SUBMIT: explanation and correct answer present in systemInstruction", () => {
     const envelope = buildEnvelope({
       is_post_submit: true,
       correct_answer: "B",
@@ -235,37 +279,34 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
         ],
         item_type: "mcq",
         explanation:
-          "Using the power rule, the derivative of x² is 2x.", // present post-submit
+          "Using the power rule, the derivative of x² is 2x.",
         student_answer: "A",
         attempt_number: 1,
       },
-      retrieved_curriculum: [
-        {
-          content:
-            "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹. For x², n=2, so derivative = 2x.",
-          skill_codes: ["SATM.ALG.DER"],
-          provenance: "question_bank_explanation",
-          surface_gate: "pre_and_post",
-          content_type: "explanation",
-        },
-      ],
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-    console.log("=== AUDIT-001 POST-SUBMIT systemInstruction ===");
+    // ── PRINT: full systemInstruction for POST-SUBMIT ──
+    console.log(
+      "=== PROOF-3: POST-SUBMIT — full systemInstruction ===",
+    );
     console.log(systemInstruction);
-    console.log("=== END ===");
+    console.log("=== END PROOF-3 ===");
 
-    // Curriculum block present with enrichment directive
-    expect(systemInstruction).toContain("[CURRICULUM — Question Explanation]");
+    // Correct answer present
+    expect(systemInstruction).toContain("Correct answer: B.");
+
+    // Post-submit directive present
+    expect(systemInstruction).toContain("This question is post-submit");
     expect(systemInstruction).toContain(
-      "Use these curriculum items to enrich your explanation",
+      "You may explain the correct answer",
     );
 
-    // Post-submit item block also present with correct answer
-    expect(systemInstruction).toContain("Correct answer: B.");
-    expect(systemInstruction).toContain("This question is post-submit");
+    // Explanation present in item block
+    expect(systemInstruction).toContain(
+      "Using the power rule, the derivative of x² is 2x.",
+    );
   });
 });
 
@@ -275,6 +316,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded", () => {
+  // ── Proof 4: policy family/variant side-by-side ─────────────────────
   it("side-by-side: worker receives scaffolded, routes to pro_class (not flash fallback)", () => {
     // What the audit row records (tutor_instruction_assignments):
     //   policy_family = 'instructional_tutor', policy_variant = 'scaffolded'
@@ -293,7 +335,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     });
 
     // Print the values side-by-side
-    console.log("=== AUDIT-002 SIDE-BY-SIDE ===");
+    console.log("=== PROOF-4: POLICY SIDE-BY-SIDE ===");
     console.log(
       "Audit row (tutor_instruction_assignments):",
       "policy_family=instructional_tutor, policy_variant=scaffolded",
@@ -323,7 +365,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     const artifact = resolvePromptArtifact("scaffolded", null);
     console.log("Prompt artifact version for scaffolded:", artifact.version);
     expect(artifact.version).toBe("lisa-default-v1");
-    console.log("=== END ===");
+    console.log("=== END PROOF-4 ===");
   });
 
   it("all four spec variants resolve in the prompt registry (no fallback warning)", () => {
@@ -540,6 +582,7 @@ describe("AUDIT-003: retention sweep fails on memory-summary purge failure", () 
     });
   }
 
+  // ── Proof 5: memory-summary purge failure → ok:false with partial state ──
   it("returns ok:false with reason when memory-summary delete fails", async () => {
     // Scenario: student s1 has one expired conversation (8 days old), zero
     // active conversations, zero recoverable conversations. After the
@@ -560,9 +603,9 @@ describe("AUDIT-003: retention sweep fails on memory-summary purge failure", () 
 
     const result = await sweep7d(client, false, { now: NOW });
 
-    console.log("=== AUDIT-003 RESULT ===");
+    // ── PRINT: full result for AUDIT-003 ──
+    console.log("=== PROOF-5: MEMORY PURGE FAILURE ===");
     console.log(JSON.stringify(result, null, 2));
-    console.log("=== END ===");
 
     // The sweep MUST return ok:false (not ok:true as before the fix)
     expect(result.ok).toBe(false);
@@ -578,7 +621,6 @@ describe("AUDIT-003: retention sweep fails on memory-summary purge failure", () 
       expect(result.reason).toContain("conversations_purged=1");
       expect(result.reason).toContain("permission denied");
 
-      console.log("=== AUDIT-003 PARTIAL STATE ===");
       console.log("Conversations purged before failure: 1");
       console.log(
         "Memory summaries NOT purged (error):",
@@ -586,8 +628,8 @@ describe("AUDIT-003: retention sweep fails on memory-summary purge failure", () 
       );
       console.log("Sweep returned ok:", result.ok);
       console.log("Reason:", result.reason);
-      console.log("=== END ===");
     }
+    console.log("=== END PROOF-5 ===");
   });
 
   it("returns ok:true when memory-summary delete succeeds (regression guard)", async () => {
