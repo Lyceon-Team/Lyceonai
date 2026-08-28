@@ -931,6 +931,24 @@ async function main(): Promise<void> {
     const lines = content.split("\n").filter((l) => l.trim().length > 0);
 
     for (let i = 0; i < lines.length; i++) {
+      // RAW_LATEX_ESCAPE: detect odd-backslash sequences before LaTeX commands
+      // in the raw NDJSON line (before JSON.parse destroys evidence).
+      // Correct: \\frac (2 backslashes in file → \frac after parse).
+      // Defective: \\\frac (3 backslashes → \<formfeed>rac or \\+invalid).
+      // Also catches single-backslash \frac which becomes \f (formfeed) + rac.
+      const rawLatexRe =
+        /(?:^|[^\\])(?:\\\\)*\\(?:frac|dfrac|sqrt|text|left|right|cdot|times|pi|geq|leq|ge|le|neq|sin|cos|tan|theta|log|ln|begin|end|over|div|quad|pm|mp|infty|sum|prod|int|lim|circ|to)(?![a-zA-Z])/;
+      if (rawLatexRe.test(lines[i])) {
+        const match = lines[i].match(rawLatexRe);
+        allViolations.push({
+          file,
+          line: i + 1,
+          record_index: records.length,
+          field: "RAW_JSON",
+          reason: `ODD_BACKSLASH_LATEX: raw NDJSON has an odd number of backslashes before a LaTeX command near "${match?.[0]?.trim()}". Every LaTeX command in JSON must have exactly 2 backslashes (\\\\cmd). Fix the source NDJSON.`,
+        });
+      }
+
       let parsed: ContentRecord;
       try {
         parsed = JSON.parse(lines[i]) as ContentRecord;
