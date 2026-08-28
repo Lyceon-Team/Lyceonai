@@ -216,6 +216,33 @@ export const questionContentSchema = z.object({
   attempt_number: z.number().int().nonnegative(),
 });
 
+// ── Retrieved curriculum item (Doc 03D §6.8) ────────────────────────
+// Mirrors packages/shared/tutor-rag-types.ts — kept in sync manually
+// because the worker tsconfig only includes src/.
+
+export const retrievedCurriculumItemSchema = z.object({
+  /** The retrieved content text (explanation, textbook excerpt, etc.) */
+  content: z.string(),
+  /** Skill codes this content is associated with */
+  skill_codes: z.array(z.string()),
+  /** Provenance tag — never echoed to student (§6.5, SCL-030) */
+  provenance: z.string(),
+  /** Surface gating classification per §6.3 */
+  surface_gate: z.enum(["pre_and_post", "post_only", "review_only"]),
+  /** Content type classification */
+  content_type: z.enum([
+    "explanation",
+    "textbook",
+    "video_transcript",
+    "strategy",
+    "worked_example",
+  ]),
+});
+
+export type RetrievedCurriculumItem = z.infer<
+  typeof retrievedCurriculumItemSchema
+>;
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -249,6 +276,15 @@ export const orchestrateRequestSchema = z.object({
   // BFF-local for the output scan (step 15) but never forwards it to the
   // worker. Post-submit: the real correct_answer for model explanation.
   correct_answer: z.string().nullable(),
+  // ── Retrieved curriculum items (Doc 03D §6.6, §6.8) ──────────────────
+  // @spec [Doc-03D_V1.2 §6.6, §6.8, SCL-043]
+  // Explanations and curriculum content retrieved by tutor-retrieval.ts.
+  // Travels on a SEPARATE field from question_content — the anti-leak null
+  // gate on question_content.explanation (INV-03-04) is preserved. The
+  // retrieval path applies its own scope filter (SCL-043: active question's
+  // explanation INCLUDED pre-submit, unseen same-skill EXCLUDED).
+  // INV-03-04 (output serializer) is sole defense against model echo.
+  retrieved_curriculum: z.array(retrievedCurriculumItemSchema).default([]),
   // ── Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless) ──
   // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
   model_armor_input_template_id: z.string().nullable(),
