@@ -275,7 +275,18 @@ vi.mock("../../server/logger", () => ({
 // ---------------------------------------------------------------------------
 const WEBHOOK_SECRET = "whsec_entitlement_period_ci";
 
-const stripeApi = vi.hoisted(() => ({ subscriptionsRetrieve: vi.fn() }));
+const stripeApi = vi.hoisted(() => ({
+  subscriptionsRetrieve: vi.fn(),
+  /**
+   * INV-03-08 gates EVERY grant since 2026-08-28 (Codex HIGH-2), so the writer
+   * reads the PAYER's Customer. Eligible here — this suite proves the write
+   * path, and the gate has its own suites.
+   */
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_period_proof",
+    address: { country: "US" },
+  })),
+}));
 
 vi.mock("../../server/lib/stripe/client", async () => {
   const StripeSdk = (await import("stripe")).default;
@@ -284,6 +295,7 @@ vi.mock("../../server/lib/stripe/client", async () => {
     getStripeClient: () => ({
       webhooks: real.webhooks, // REAL verification, not a stub
       subscriptions: { retrieve: stripeApi.subscriptionsRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
     }),
     getExpectedLivemode: () => false,
   };
@@ -346,6 +358,27 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
       const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
       await testPg.query(sql);
     }
+
+    /**
+     * 4b. Seed the Tier-1 country list in REAL PG.
+     *
+     * @spec [INV-03-08; SCL-046] | @implemented [2026-08-28 — Codex HIGH-2]
+     *
+     * The country gate now runs on every grant, and it reads
+     * `entitlement_runtime_config` through the same PG-backed adapter the
+     * writer uses. Seeding the real row rather than mocking `getTier1Countries`
+     * exercises the config reader against real PostgreSQL — which is the point
+     * of this suite — and proves the fail-closed default is a CONFIGURATION
+     * state rather than a code path: delete this seed and the grant is refused.
+     */
+    await testPg.query(
+      `INSERT INTO public.entitlement_runtime_config
+         (key, value, value_type, owner, description, environment)
+       VALUES ('tier_1_countries', $1::jsonb, 'array', 'platform',
+               'INV-03-08 Tier 1 countries (CI seed)', 'all')
+       ON CONFLICT (key) DO NOTHING`,
+      [JSON.stringify(["US", "CA", "GB", "AU", "NZ", "IE", "SG"])],
+    );
 
     // 5. Create test user (triggers handle_new_user → auto-creates profile)
     await testPg.query(
@@ -614,6 +647,7 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
     // later: periods live on the item, and there is no top-level period field.
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_period_proof",
+      customer: "cus_period_proof",
       status: "active",
       cancel_at_period_end: false,
       items: {
