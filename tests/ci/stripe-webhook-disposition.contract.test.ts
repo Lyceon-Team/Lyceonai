@@ -45,7 +45,8 @@ const accountMocks = vi.hoisted(() => ({
     tier: s === "active" ? "premium" : "free",
     status: s,
   })),
-  getEntitlementBySubscriptionId: vi.fn(),
+  getEntitlementsBySubscriptionId: vi.fn(),
+  getAllGuardianStudentLinks: vi.fn(async () => []),
 }));
 
 const stripeApi = vi.hoisted(() => ({
@@ -87,9 +88,16 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 vi.mock("../../server/lib/account", () => ({
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
-  getEntitlementBySubscriptionId: accountMocks.getEntitlementBySubscriptionId,
+  getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
+  getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
 }));
 
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  // The INV-03-08 country gate runs on checkout.session.completed. These
+  // suites are not about the gate, so the Tier-1 list is seeded eligible;
+  // denial has its own suite (tests/ci/stripe-country-gate.contract.test.ts).
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
+}));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -115,6 +123,10 @@ function dataObjectFor(eventType: string): Record<string, unknown> {
       subscription: "sub_test_disposition",
       client_reference_id: STUDENT_ID,
       metadata: { student_profile_id: STUDENT_ID },
+      // INV-03-08: a completed session carries the billing address. This suite
+      // asks whether every subscribed event reaches a DEFINITE disposition, so
+      // the country is eligible; denial is tested in its own suite.
+      customer_details: { address: { country: "US" } },
     };
   }
   if (eventType.startsWith("customer.subscription.")) {
@@ -212,10 +224,9 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
       object: "list",
       data: [{ id: "sub_test_disposition", object: "subscription" }],
     });
-    accountMocks.getEntitlementBySubscriptionId.mockResolvedValue({
-      profile_id: STUDENT_ID,
-      stripe_subscription_id: "sub_test_disposition",
-    });
+    accountMocks.getEntitlementsBySubscriptionId.mockResolvedValue([
+      { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_disposition" },
+    ]);
 
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_disposition",

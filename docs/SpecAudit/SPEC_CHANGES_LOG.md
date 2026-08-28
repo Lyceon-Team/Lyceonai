@@ -805,6 +805,55 @@ AMENDED 2026-08-27 — WHERE THE GATE LIVES, AND WHY IT IS OURS.
   with INV-03-08's set {US, CA, UK, AU, NZ, IE, SG}. Until it is seeded the gate denies entitlement
   by design, which is why this is an owner action and not a default in code.
 
+AMENDED 2026-08-28 (a) — THE ENCODING RULE. Recorded ONCE so nobody re-seeds `UK`.
+
+  Owner ruling 2026-08-28: **the spec names countries; the config stores ISO 3166-1 alpha-2; the
+  mapping between them is the standard one.** This is an ENCODING question, not an invariant question,
+  so INV-03-08's text is NOT amended and no SCL is raised against it.
+
+  The seed value for the United Kingdom is therefore **`GB`**, not the invariant's prose spelling
+  `UK`. `UK` is not an assigned ISO 3166-1 alpha-2 code (it is exceptionally reserved), Stripe sends
+  alpha-2 on the billing address, and a list containing `UK` would match no real customer — the gate
+  would deny every genuine UK purchaser while believing it admitted them.
+
+  The locked corpus already says this in its own words, which is why no spec change is needed:
+  Doc 01 V8 §4 (heading verified: "## **§4 Profile schema (target-state)**") declares
+  `country_code TEXT, -- ISO 3166-1 alpha-2, from billing address (authoritative)`. The prose in
+  INV-03-08 and the encoding in §4 are consistent; only a literal transcription of the prose into a
+  machine-readable list is wrong.
+
+  NO NORMALISATION LAYER IN CODE. `evaluateCountryEligibility` trims and uppercases and does nothing
+  else. A UK-to-GB translation would silently repair one wrong code and thereby guarantee the next
+  wrong code survives unnoticed. The config holds correct codes; that is the whole rule.
+
+  Artifact: `docs/plans/Owner_DML_tier_1_countries.sql` (seeds `GB`); the assertion is pinned in
+  `tests/ci/stripe-country-gate.contract.test.ts` ("uses `GB`, not `UK`"), which fails if the seed is
+  ever reverted to the prose spelling.
+
+AMENDED 2026-08-28 (b) — RADAR: SANCTIONED DEFENCE IN DEPTH, DEFERRED, NOT BUILT.
+
+  Stripe has **no product-availability-by-country feature**. The nearest native mechanism is a custom
+  Radar rule matching `card_country` against a country Value List (Radar Value Lists support
+  `item_type: 'country'`). It is hereby recorded as SANCTIONED defence in depth — permitted to be
+  added later, deliberately NOT built now, and explicitly not the control.
+
+  Why it cannot be the control, restated for the record: it blocks ONE PAYMENT at ONE MOMENT, whereas
+  INV-03-08 gates LISA ACCESS on every request. It therefore cannot gate a free-tier student, a
+  student entitled before any rule existed, or the SCL-043 guardian case where the payer's country is
+  not the student's. It also blocks the payment rather than the session, so the user lands on
+  Checkout's card-declined state with no explanation of the real reason.
+
+  Two further costs, stated so the deferral is a decision rather than an omission:
+    - Custom Radar rules require **Radar for Fraud Teams**, a paid add-on with a per-transaction fee.
+      The control is not free.
+    - Stripe's own documentation cautions that businesses in the EU may be affected by the
+      **Geo-blocking Regulation** when blocking by country. **Ireland is on the Tier-1 list**, so this
+      is not hypothetical for Lyceon and needs counsel input before any Radar rule is enabled.
+
+  DEFERRED UNTIL THE REAL GATE IS PROVEN. The application gate (wired 2026-08-28 at
+  `checkout.session.completed`, `server/lib/stripe/webhook-handler.ts`) is the control. Radar may be
+  added on top of a working gate; it may not substitute for one.
+
 ---
 
 SCL-045 | 2026-08-20 | Doc 01 V8 §20 — multi-student billing is one subscription item per student, not quantity | PROPOSED

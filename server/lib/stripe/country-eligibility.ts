@@ -47,6 +47,30 @@
  *
  * That is three call sites for one rule, which is exactly why the rule lives
  * here as one function rather than being written three times.
+ *
+ * WHICH OF THE THREE ARE ACTUALLY WIRED (2026-08-28). Stated plainly, because
+ * this module previously described three call sites and had NONE — Codex
+ * HIGH-1 called that "a fail-open money path", and it was right: a control
+ * that is only described is worse than an absent one, because its presence
+ * suggests the rule is enforced.
+ *
+ *   checkout.session.completed   WIRED. `server/lib/stripe/webhook-handler.ts`,
+ *                                inside the `checkout.session.completed`
+ *                                branch. THIS IS THE CONTROL. Both `ineligible`
+ *                                and `unknown` deny.
+ *   session creation             NOT WIRED. Optional defence in depth only —
+ *                                it can refuse a country we ALREADY know, which
+ *                                is nobody today (`profiles.country_code` is
+ *                                null on 0 of 115 rows). Adding it would change
+ *                                no outcome until that column is populated.
+ *   customer.updated             NOT WIRED. The egress case, and it belongs to
+ *                                SCL-047 rather than here: it needs
+ *                                `profiles.country_code` to be written first,
+ *                                which is SCL-046's own owner action.
+ *
+ * The gate is INERT UNTIL THE OWNER APPLIES `docs/plans/Owner_DML_tier_1_countries.sql`,
+ * and inert means DENY. That is the fail-closed default ruled on 2026-08-27,
+ * not an oversight.
  */
 
 /** Config key holding the Tier-1 ISO 3166-1 alpha-2 list. */

@@ -29,6 +29,7 @@
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { classifyError } from "../lib/redact";
 
 export type EntitlementActiveResult = {
   active: boolean;
@@ -60,7 +61,10 @@ export class EntitlementService {
         "ENTITLEMENT",
         "rpc_failed",
         "entitlement_active RPC failed; failing closed",
-        { profileId, error: error.message, code: error.code },
+        // Codex HIGH-6: `error.message` is vendor free text and may quote a row
+        // or a constraint containing an identifier. Log the allow-listed class.
+        // `profileId` is additionally digested at the logger boundary.
+        { profileId, ...classifyError(error) },
       );
       return false;
     }
@@ -109,7 +113,7 @@ export class EntitlementService {
           "ENTITLEMENT",
           "feature_read_failed",
           "entitlement_features read failed; failing closed",
-          { profileId, featureKey, error: featureError.message },
+          { profileId, featureKey, ...classifyError(featureError) },
         );
         return false;
       }
@@ -173,7 +177,7 @@ export class EntitlementService {
         "ENTITLEMENT",
         "live_exam_check_failed",
         "full_length_exams live-exam query failed; failing closed (INV-03-02)",
-        { studentId, error: error.message, code: error.code },
+        { studentId, ...classifyError(error) },
       );
       return true; // fail closed — block tutor access
     }

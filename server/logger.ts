@@ -5,6 +5,8 @@
  * for the SAT Learning Copilot application.
  */
 
+import { digestId } from "./lib/redact";
+
 const REDACTION_STRING = "[REDACTED]";
 const DEFAULT_ERROR_MONITOR_TIMEOUT_MS = 1500;
 
@@ -55,6 +57,184 @@ const SENSITIVE_KEY_EXACT = new Set([
 ]);
 
 /**
+ * Person-linked identifier keys. Their values are DIGESTED, not blanked.
+ *
+ * @spec [Charter §6 "no raw payer PII in logs"; Doc 01A §14] | @implemented [2026-08-28]
+ *
+ * plain English: Codex HIGH-6 found raw `profileId` / `userId` / `guardianUserId`
+ * / `studentUserId` / account ids reaching logs on the entitlement and
+ * guardian-billing paths. The previous fix digested fields ONE AT A TIME at the
+ * call site (`studentProfileRef: digestId(...)`), which is why it came back: a
+ * new call site has to REMEMBER. Enforcing it here means a new call site
+ * INHERITS it.
+ *
+ * Digest rather than `[REDACTED]` deliberately. Blanking is what caused the
+ * seven-week untraceable outage recorded above — it removed the only
+ * correlation field. A digest keeps two lines in one incident joinable while
+ * disclosing nobody.
+ */
+const IDENTIFIER_KEY_EXACT = new Set([
+  "userid",
+  "user_id",
+  "profileid",
+  "profile_id",
+  "guardianuserid",
+  "guardian_user_id",
+  "studentuserid",
+  "student_user_id",
+  "guardianprofileid",
+  "guardian_profile_id",
+  "studentprofileid",
+  "student_profile_id",
+  "payerprofileid",
+  "payer_profile_id",
+  "acceptedbyprofileid",
+  "accepted_by_profile_id",
+  "revokedbyprofileid",
+  "revoked_by_profile_id",
+  "accountid",
+  "account_id",
+  "guardianaccountid",
+  "guardian_account_id",
+  "studentaccountid",
+  "student_account_id",
+  "studentid",
+  "student_id",
+  "guardianid",
+  "guardian_id",
+  "customerid",
+  "customer_id",
+  "subscriptionid",
+  "subscription_id",
+  "subscriptionitemid",
+  "subscription_item_id",
+  "chargeid",
+  "charge_id",
+  "disputeid",
+  "dispute_id",
+  "refundid",
+  "refund_id",
+  "invoiceid",
+  "invoice_id",
+  "paymentintentid",
+  "payment_intent_id",
+]);
+
+/**
+ * A canonical UUID in ANY field is an identifier in this system — `profiles.id`
+ * is a uuid, and every person-scoped key is that id. Matching on the VALUE is
+ * what makes this structural rather than a list to maintain: renaming the key
+ * does not smuggle the id out.
+ */
+const UUID_VALUE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payer-linked Stripe object ids. These resolve to a named person through the
+ * Stripe Dashboard, which is why `server/lib/redact.ts` already treats them as
+ * payer identifiers.
+ *
+ * `evt_`, `price_` and `prod_` are deliberately NOT here and are the honest
+ * boundary of this control: an event id names a vendor delivery and a price/
+ * product names a catalog row, neither of which identifies a person on its own,
+ * and both are load-bearing for webhook-ledger and billing debugging.
+ */
+const STRIPE_PAYER_ID_VALUE =
+  /^(cus|sub|si|ch|dp|re|in|pi|cs|py|pm|card|src|txn|ba|tok|seti)_[A-Za-z0-9]{8,}$/;
+
+/**
+ * DOMAIN-ENTITY ids that are NOT person-linked and stay readable.
+ *
+ * @spec [01A_V1.0 §14] | @implemented [2026-08-28]
+ *
+ * plain English: a practice session, a question item, an exam attempt — these
+ * are things, not people. Digesting them would repeat the mistake this file
+ * already records: blanking `practiceSessionId` removed the only correlation
+ * field on every mastery emission failure and is a large part of why a
+ * 100%-failure outage ran seven weeks untraceable to a session or a student.
+ *
+ * THE BURDEN IS INVERTED ON PURPOSE. A UUID under a key nobody listed is
+ * DIGESTED (safe default, and the structural property Codex HIGH-6 asked for).
+ * A key only becomes readable by being named HERE, which is a reviewed
+ * decision in one place rather than a property each call site must remember.
+ * Adding a person-scoped key to this list is the reviewable mistake; forgetting
+ * to add one is harmless.
+ */
+const NON_PERSON_ID_KEY_EXACT = new Set([
+  "practicesessionid",
+  "practice_session_id",
+  "sessionitemid",
+  "session_item_id",
+  "reviewsessionid",
+  "review_session_id",
+  "questionid",
+  "question_id",
+  "itemid",
+  "item_id",
+  "examid",
+  "exam_id",
+  "attemptid",
+  "attempt_id",
+  "batchid",
+  "batch_id",
+  "requestid",
+  "request_id",
+  "correlationid",
+  "correlation_id",
+  "traceid",
+  "trace_id",
+  "eventid",
+  "event_id",
+  "idempotencykey",
+  "idempotency_key",
+]);
+
+function isNonPersonIdKey(key: string): boolean {
+  return NON_PERSON_ID_KEY_EXACT.has(key.toLowerCase());
+}
+
+/**
+ * Person-identifier key SUFFIXES.
+ *
+ * @implemented [2026-08-28] Found while reading the suite's own log output:
+ * `attemptedUserId` and `existingProfileId` escaped the exact-match list. In
+ * production their values are uuids, so the value-shaped rule catches them —
+ * but a person identifier that is NOT uuid-shaped under a qualified key name
+ * would have passed, and "cannot emit a raw identifier" has to mean it.
+ *
+ * Suffix rather than substring, deliberately: substring would match
+ * `requestId` on "id" and re-create the over-redaction this file already
+ * records as an outage cause. The domain-entity allow-list is checked FIRST so
+ * a named non-person key wins over a coincidental suffix.
+ */
+const IDENTIFIER_KEY_SUFFIX = [
+  "userid",
+  "profileid",
+  "accountid",
+  "studentid",
+  "guardianid",
+  "customerid",
+  "subscriptionid",
+  "chargeid",
+  "disputeid",
+  "refundid",
+  "invoiceid",
+];
+
+function isIdentifierKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (IDENTIFIER_KEY_EXACT.has(lower)) return true;
+  return IDENTIFIER_KEY_SUFFIX.some((suffix) => lower.endsWith(suffix));
+}
+
+function isIdentifierValue(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    (UUID_VALUE.test(value) || STRIPE_PAYER_ID_VALUE.test(value))
+  );
+}
+
+/**
  * Maps internal log levels to Cloud Logging severity strings.
  * @spec [01A, §10] | @implemented [2026-08-12]
  * Cloud Run auto-parses the `severity` field from structured JSON on stdout.
@@ -77,11 +257,37 @@ function shouldRedactKey(key: string) {
 
   return SENSITIVE_KEY_PATTERNS.some((pattern) => lower.includes(pattern));
 }
+/**
+ * Decide what a single key/value pair becomes in the emitted log.
+ *
+ * Order matters and is load-bearing: SECRET beats IDENTIFIER. A key that is
+ * both (say `session_token` holding a uuid) must blank, not digest — a digest
+ * of a secret still confirms the secret to anyone holding a candidate.
+ */
+function sanitiseEntry(
+  key: string,
+  value: unknown,
+  cloneValue: (v: unknown) => unknown,
+): unknown {
+  if (shouldRedactKey(key)) return REDACTION_STRING;
+  // A named domain-entity key keeps its raw string, and is checked BEFORE the
+  // identifier rules so an explicit decision beats a coincidental suffix.
+  // Returned directly rather than via cloneValue, because the walker's own
+  // value-shaped check would otherwise digest the very uuid this preserves.
+  if (isNonPersonIdKey(key)) {
+    return typeof value === "string" ? value : cloneValue(value);
+  }
+  if (isIdentifierKey(key) && typeof value === "string") return digestId(value);
+  if (isIdentifierValue(value)) return digestId(value);
+  return cloneValue(value);
+}
+
 export function redactSensitive<T>(input: T): T {
   const seen = new WeakMap<object, any>();
 
   const clone = (value: any): any => {
     if (value === null || value === undefined) return value;
+    if (isIdentifierValue(value)) return digestId(value);
     if (typeof value !== "object") return value;
     if (value instanceof Date) return value;
     if (seen.has(value)) return seen.get(value);
@@ -94,9 +300,7 @@ export function redactSensitive<T>(input: T): T {
       };
       seen.set(value, target);
       for (const key of Object.keys(value)) {
-        target[key] = shouldRedactKey(key)
-          ? REDACTION_STRING
-          : clone((value as any)[key]);
+        target[key] = sanitiseEntry(key, (value as any)[key], clone);
       }
       return target;
     }
@@ -113,8 +317,7 @@ export function redactSensitive<T>(input: T): T {
     const result: Record<string, any> = {};
     seen.set(value, result);
     for (const key of Object.keys(value)) {
-      const val = (value as any)[key];
-      result[key] = shouldRedactKey(key) ? REDACTION_STRING : clone(val);
+      result[key] = sanitiseEntry(key, (value as any)[key], clone);
     }
     return result;
   };
