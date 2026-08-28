@@ -1,6 +1,9 @@
 import { Request, Response, Router } from "express";
 import { requireSupabaseAuth } from "../middleware/supabase-auth";
 import { requireGuardianEntitlement } from "../middleware/guardian-entitlement";
+// Q7 denials reuse the resolver's 404 body verbatim. A second "not found" shape would let a
+// caller tell the two surfaces apart, which is the whole thing the shared body prevents.
+import { sendNotFound } from "../middleware/subject-resolver";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
@@ -13,6 +16,8 @@ import {
   revokeGuardianLink,
   isGuardianLinkedToStudent,
   getAllGuardianStudentLinks,
+  getGuardianLinkById,
+  getAnyGuardianLinkForPair,
 } from "../lib/account";
 // The error contract comes from the contract module, NOT from `../lib/account`: a route
 // that imports its error mapping from the module it also imports its functions from loses
@@ -365,24 +370,53 @@ router.post(
           .json({ error: { message: "Invalid link id" }, requestId });
       }
 
+      // @spec [owner ruling 2026-08-27 Q7] | @implemented [2026-08-28]
+      //
+      // PARTY-HOOD DECIDES 404-VERSUS-409, AND ONLY A READ CAN ANSWER IT.
+      // `accept_guardian_link_audited` raises the SAME `WRONG_ACCEPTOR` (LY002) for the party
+      // who must wait and for a stranger who guessed a link id, so the error alone cannot tell
+      // them apart. This route used to answer 403 to both, which confirmed to a stranger that
+      // the link exists. Now: not named on the link → 404, indistinguishable from a link id
+      // that does not exist; named on it → the informative answer, as 409, because being asked
+      // to wait for the other party is a STATE CONFLICT and not an authorization failure.
+      //
+      // Identical to the student-side route's handling (`student-resources.ts`), deliberately
+      // and by reusing the same reader: two routes serving the two halves of one flow must not
+      // answer the same question differently, which is the divergence class this whole vertical
+      // exists to remove.
+      let existing;
+      try {
+        existing = await getGuardianLinkById(linkId);
+      } catch (readError: unknown) {
+        logger.error("GUARDIAN", "accept_link", "Failed to read link", {
+          reason: readError instanceof Error ? readError.message : "unknown",
+          requestId,
+        });
+        return res
+          .status(500)
+          .json({ error: { message: "Failed to accept link" }, requestId });
+      }
+
+      if (!existing || existing.guardian_profile_id !== guardianId) {
+        return sendNotFound(res, requestId);
+      }
+
       let link;
       try {
         link = await acceptGuardianLink(linkId, guardianId);
       } catch (acceptError: unknown) {
         const code = errorCode(acceptError);
 
-        if (code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR) {
-          return res.status(403).json({
+        // The caller is a party (checked above), so both of these are state conflicts.
+        if (
+          code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR ||
+          code === GUARDIAN_LINK_ERROR.NOT_PENDING
+        ) {
+          return res.status(409).json({
             error: {
-              message: "This link is awaiting acceptance by the other party",
+              message: "This link is not awaiting your acceptance",
               code,
             },
-            requestId,
-          });
-        }
-        if (code === GUARDIAN_LINK_ERROR.NOT_PENDING) {
-          return res.status(409).json({
-            error: { message: "This link is not awaiting acceptance", code },
             requestId,
           });
         }
@@ -444,19 +478,40 @@ router.delete(
       const guardianId = req.user!.id;
       const { studentId } = req.params;
 
-      // CANONICAL: verify an ACTIVE link exists before revealing anything about it.
-      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      // @spec [owner ruling 2026-08-27 Q7] | @implemented [2026-08-28]
+      //
+      // Was a flat 403 on "no ACTIVE link", which conflated two different callers: a guardian
+      // whose link to this student was already revoked, and a guardian with no connection to
+      // this student at all. The second learns from a 403 that the student exists; the first
+      // learns nothing they did not already know. Q7 splits them on PARTY-HOOD.
+      const existing = await getAnyGuardianLinkForPair(guardianId, studentId);
 
-      if (!linked) {
+      if (!existing) {
         logger.warn(
           "GUARDIAN",
           "unlink_denied",
-          "Guardian tried to unlink non-linked student",
+          "Guardian tried to unlink a student they are not a party to",
           { guardianId, studentId, requestId },
         );
-        return res
-          .status(403)
-          .json({ error: "Not authorized to unlink this student", requestId });
+        return sendNotFound(res, requestId);
+      }
+
+      if (existing.status !== "active") {
+        // A party, so the real state is safe to name — and useful, because the most likely
+        // cause is a link already revoked from the student's side or in another tab.
+        logger.warn(
+          "GUARDIAN",
+          "unlink_conflict",
+          "Guardian tried to unlink a link that is not active",
+          { guardianId, studentId, requestId },
+        );
+        return res.status(409).json({
+          error: {
+            message: "This link is not active",
+            code: GUARDIAN_LINK_ERROR.NOT_ACTIVE,
+          },
+          requestId,
+        });
       }
 
       const reason =

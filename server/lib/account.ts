@@ -118,6 +118,52 @@ export async function getGuardianLinkForStudent(
 }
 
 /**
+ * @spec [Doc-01_V8, §36.1/§36.3; owner ruling 2026-08-27 Q7 — "404 if the caller is not a party
+ *   to the link at all; keep the informative response if they are"] | @implemented [2026-08-28]
+ *
+ * plain English: read the most recent link between one guardian and one student, WHATEVER its
+ * status. Expected outcome: the row, or null when the two have never been linked at all.
+ *
+ * WHY THIS IS NOT `getGuardianLinkForStudent`, WHICH QUERIES THE SAME TABLE ON THE SAME PAIR.
+ *   That one filters `status = 'active'` and answers "may this guardian see this student right
+ *   now?" — the question every read gate asks. This one answers a different question, the only
+ *   one Q7's 404-versus-409 split turns on: "has this guardian ever been a party to a link with
+ *   this student?" A guardian holding a REVOKED link is not authorized, but is a party, and a
+ *   party already knows the link exists — so telling them "there is no active link" leaks
+ *   nothing, while telling a stranger the same thing confirms a student they have no business
+ *   confirming. Collapsing the two readers would force one of those two answers to be wrong.
+ *
+ * Edge case: a pair may hold several rows over time (linked, revoked, linked again), since
+ * `unique_active_link` constrains only the active one. Party-hood needs existence, not a
+ * particular row, so this returns the most recent by `initiated_at` and callers use it as a
+ * predicate.
+ */
+export async function getAnyGuardianLinkForPair(
+  guardianProfileId: string,
+  studentProfileId: string,
+): Promise<GuardianLink | null> {
+  const { data, error } = await supabaseServer
+    .from("guardian_links")
+    .select(GUARDIAN_LINK_COLUMNS)
+    .eq("guardian_profile_id", guardianProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .order("initiated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    logger.error(
+      "GUARDIAN",
+      "get_any_link_for_pair",
+      "Failed to read guardian link",
+      { reason: error.message },
+    );
+    throw new Error(`Failed to get guardian link: ${error.message}`);
+  }
+  const row = (data ?? [])[0];
+  return row ? parseGuardianLink(row) : null;
+}
+
+/**
  * @spec [Doc-01_V8, §36.1 Initiation; owner ruling 2026-08-27 Q7 — "404 if the caller is not
  *   a party to the link at all; keep the informative response if they are"]
  *   | @implemented [2026-08-27]

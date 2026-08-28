@@ -1,14 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
+// The wire codes come from the contract module, not from string literals here: the first draft
+// of the Q7 accept case asserted "WRONG_ACCEPTOR" and got a 500, because the real constant is
+// "GUARDIAN_LINK_WRONG_ACCEPTOR". A test that spells the contract itself can disagree with it.
+import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
 
 const accountMocks = {
   createGuardianLink: vi.fn(),
+  acceptGuardianLink: vi.fn(),
   revokeGuardianLink: vi.fn(),
   isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
   ensureAccountForUser: vi.fn(),
+  // Step 6 (Q7). Both readers answer party-hood, which is what decides 404-versus-409.
+  // NOTE for whoever adds the next export to `server/lib/account.ts`: this object REPLACES the
+  // module, so a function missing from it is `undefined` at the call site and the route answers
+  // 500. That is how the two revoke cases below failed when `getAnyGuardianLinkForPair` landed —
+  // loudly, because they assert exact status codes. A case asserting only "not 200" would have
+  // gone green on the 500 and hidden the gap.
+  getGuardianLinkById: vi.fn(),
+  getAnyGuardianLinkForPair: vi.fn(),
 };
+
+/** The shape `getAnyGuardianLinkForPair` returns; only the fields these routes read. */
+function linkRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-1111-1111-1111-111111111111",
+    guardian_profile_id: "guardian-1",
+    student_profile_id: "student-1",
+    status: "active",
+    ...over,
+  };
+}
 
 const kpiMocks = {
   buildStudentKpiViewFromCanonical: vi.fn(),
@@ -550,6 +574,9 @@ describe("Guardian reporting runtime contract", () => {
 
   it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    // A party with an ACTIVE link, so the route reaches `revokeGuardianLink` and the domain
+    // conflict below is what produces the 409 — not the route's own party check.
+    accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     const conflict = new Error("Guardian link is not active") as Error & {
       code?: string;
     };
@@ -599,6 +626,7 @@ describe("Guardian reporting runtime contract", () => {
    */
   it("keeps valid unlink transition behavior and leaves the revoke audit row to the transaction", async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
     // `revoked_by_profile_id` and `revocation_reason` to be observable).
     accountMocks.revokeGuardianLink.mockResolvedValueOnce({
@@ -642,6 +670,119 @@ describe("Guardian reporting runtime contract", () => {
 
 
 
+
+  /**
+   * @spec [owner ruling 2026-08-27 Q7 — "404 if the caller is not a party to the link at all.
+   *        Keep the informative response if they are... Use 409 rather than 403, since it's a
+   *        state conflict rather than an authorization failure."] | @implemented [2026-08-28]
+   *
+   * STEP 6 — THE TWO 403s, SPLIT ON PARTY-HOOD.
+   *
+   * Both guardian-side link routes answered 403 to two callers who deserve different answers:
+   *   - a guardian NAMED on the link, whose link is revoked or is waiting on the other side.
+   *     They already know the link exists. An informative answer leaks nothing.
+   *   - a guardian named on NOTHING, who guessed a student id or a link id. A 403 tells them
+   *     the resource is real, which is the enumeration primitive we have been removing.
+   * The first now gets 409 — a state conflict, not an authorization failure — and the second
+   * gets the resolver's 404 body verbatim.
+   *
+   * WHY THE 404 BODY IS IMPORTED RATHER THAN WRITTEN HERE: two "not found" shapes would let a
+   * caller distinguish the surfaces and undo the point. The assertion below pins the shared
+   * body, so a divergent 404 fails even though the status matches.
+   *
+   * MUTATIONS OBSERVED RED (run 2026-08-28, baseline 15/15 green; each reds exactly one case):
+   *   1. revoke: drop the `!existing` branch (treat a non-party as a party).
+   *      → reds "404s a guardian who is not a party".
+   *   2. revoke: change `existing.status !== "active"` to `false`.
+   *      → reds "409s a guardian whose link is already revoked".
+   *   3. accept: drop the `existing.guardian_profile_id !== guardianId` half of the guard.
+   *      → reds "404s a guardian who is not named on the link".
+   *   4. accept: answer 403 instead of 409 on WRONG_ACCEPTOR.
+   *      → reds "409s the guardian when the link awaits the student".
+   */
+  describe("Q7 — party-hood decides 404 versus 409 on the guardian link routes", () => {
+    const NOT_FOUND_BODY = {
+      error: "Not found",
+      message: "No such student, or you do not have access to them",
+    };
+
+    it("revoke: 404s a guardian who is not a party to any link with the student", async () => {
+      accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(null);
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).delete(
+        "/api/guardian/link/student-stranger",
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject(NOT_FOUND_BODY);
+      // The transition must not even be attempted for a non-party.
+      expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("revoke: 409s a guardian whose link with the student is already revoked", async () => {
+      accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(
+        linkRow({ status: "revoked" }),
+      );
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).delete(
+        "/api/guardian/link/student-1",
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.NOT_ACTIVE);
+      expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("accept: 404s a guardian who is not named on the link", async () => {
+      accountMocks.getGuardianLinkById.mockResolvedValue(
+        linkRow({ guardian_profile_id: "some-other-guardian" }),
+      );
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).post(
+        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject(NOT_FOUND_BODY);
+      expect(accountMocks.acceptGuardianLink).not.toHaveBeenCalled();
+    });
+
+    it("accept: 409s the guardian when the link is awaiting the STUDENT", async () => {
+      // The guardian IS named on this link, so they get the informative answer.
+      accountMocks.getGuardianLinkById.mockResolvedValue(
+        linkRow({ status: "pending_student_accept" }),
+      );
+      const wrongAcceptor = new Error("awaiting the other party") as Error & {
+        code?: string;
+      };
+      wrongAcceptor.code = GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR;
+      accountMocks.acceptGuardianLink.mockRejectedValueOnce(wrongAcceptor);
+
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).post(
+        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR);
+    });
+  });
 
   /**
    * @spec [guardian-rebuild-design-spec §1.5 R5; owner ruling 2026-08-28 "R5 reaches all four
