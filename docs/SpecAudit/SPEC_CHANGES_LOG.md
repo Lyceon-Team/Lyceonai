@@ -103,8 +103,34 @@ Owner action: rule on this entry BEFORE any dispute code is written. Explicitly 
   later finds for the merchant; (2) whether a won dispute restores the ORIGINAL period bounds or
   issues a fresh period; (3) whether the `payment_dispute` incident should also fire on a dispute
   the merchant WINS, since the signal's value to the abuse model may not depend on the outcome.
-Artifact: none. No implementation. Per the work block, dispute handling is out of scope until
-  this SCL is ruled on.
+Artifact (updated 2026-08-27 after the owner ruled this IN SCOPE for launch):
+  RULING: revocation ships; the `payment_dispute` incident is a NAMED LAUNCH GATE, blocked, and
+  referred as a Doc 01A platform workstream.
+  BUILT — `server/lib/stripe/dispute.ts` + `webhook-handler.ts`:
+    `charge.dispute.created` revokes (tier free, status unpaid).
+    `charge.dispute.closed` restores on `won` and on `warning_closed`, leaves revoked on `lost`.
+    All EIGHT members of the SDK's `Dispute.Status` union carry an explicit disposition; an
+    unrecognised member fails the Zod parse rather than being read as "not won", because deciding
+    entitlement by omission is how a silent default becomes a policy.
+    `warning_closed` RESTORES because an inquiry that closes without becoming a dispute withdrew no
+    funds at all — the SDK documents `balance_transactions` as "zero, one, or two" entries, and an
+    inquiry has zero.
+    A dispute does NOT route through the refund path (SCL-048): a refund is money we return, a
+    chargeback is money an issuer takes back over our objection.
+  NOT BUILT — the incident record. Doc 01A §51 defines `AbuseScoreService.recordIncident` as the
+    entry point and §54 binds any severity >= 4 incident to immediate re-scoring; §52 rates
+    `payment_dispute` at 5. That re-scoring writes `abuse_scores`, which §55 classes
+    "single-writer — only AbuseScoreService writes". AbuseScoreService does not exist in
+    TypeScript (zero references repo-wide, verified 2026-08-27), so writing the incident from the
+    billing vertical would satisfy half of §54 and skip the half another document owns. Supporting
+    state is absent too: `abuse_score_runtime_config` holds 0 rows, so §53 has no base weights,
+    and there are 0 cron jobs, so §54's nightly batch does not exist — an incident written today
+    would sit inert in a table nothing reads. The interim signal is a WARN log naming the omission.
+  DURABILITY LIMIT, reported not designed around: `entitlements.status` (genesis.sql:172) admits
+    only Stripe's own subscription statuses, so nothing records that a revocation was caused by a
+    dispute. A dispute leaves the subscription ACTIVE, so the next `customer.subscription.updated`
+    re-derives from Stripe and undoes this revocation. Closing it needs DDL — a
+    `dispute_revoked_at` column or equivalent — which is Phase 4 work and is proposed there.
 
 ---
 
@@ -171,10 +197,21 @@ Artifact: none yet. Implementation is Phase 3 of the launch-scope work block.
 
 ---
 
-SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 18 events, not 7 | PROPOSED
+SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 19 events, not 7 | PROPOSED
 
-Change: §22.1 specifies seven events. The owner has finalised eighteen. This records the surface,
+Change: §22.1 specifies seven events. The owner has finalised nineteen. This records the surface,
   the delta, the reason for each addition, and two deliberate exclusions.
+
+  AMENDED 2026-08-27 (owner ruling, same day): `charge.dispute.closed` added at the Dashboard,
+  taking the surface from eighteen to NINETEEN. It is the restore path for SCL-073: a dispute does
+  not cancel the subscription, so a customer whose dispute we WIN would otherwise be left revoked
+  while having paid. The event carries the deciding fact — stripe@20.4.1 ships its description as
+  "Occurs when a dispute is closed and the dispute status changes to `lost`, `warning_closed`, or
+  `won`" — so no second call is needed to learn the outcome.
+  `charge.dispute.funds_reinstated` was deliberately NOT added alongside it: it reports the same
+  resolution as a money movement, and subscribing both would deliver every won dispute twice in two
+  shapes, recreating the duplicate-delivery problem that the `charge.refunded` exclusion below
+  avoids.
 WAS: Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") lists seven events
   covering checkout completion and the subscription lifecycle. Read and enumerated 2026-08-27; the
   seven are exactly those shown as "Already in §22.1" below.
@@ -206,6 +243,11 @@ IS: eighteen. All eighteen verified present in stripe@20.4.1's event-type union
     refund.updated                            a refund reaching status `succeeded` is the revoking
                                               transition; creation alone is not
     charge.dispute.created                    chargebacks are uncovered corpus-wide (SCL-073)
+
+  Added by the 2026-08-27 amendment (1), bringing the total to 19:
+    charge.dispute.closed                     the restore path — a WON dispute must return access
+                                              (SCL-073); carries `status`, so the outcome needs no
+                                              second call
 
   DELIBERATELY EXCLUDED — `charge.refunded` and `charge.refund.updated`.
   Both exist in the SDK's event union, so this is a choice and not an oversight. Stripe's own
@@ -706,6 +748,62 @@ Owner action: amend §22.1's action cell; add a one-line note to Doc 03 INV-03-0
   address is the payer's and the gate is the student's. No schema change.
 Artifact: not in the Phase C thin slice (unaccompanied path: payer and student are the same person, so
   the distinction does not bite — deliberately, per Charter §9).
+
+AMENDED 2026-08-27 — WHERE THE GATE LIVES, AND WHY IT IS OURS.
+  Owner ruling: exhaust the Stripe-native options before building anything, and name the surfaces
+  rejected so nobody re-litigates this. FOUR were evaluated against INV-03-08; all four fail. The
+  survey ships as a gate — `tests/ci/stripe-country-control-survey.contract.test.ts` — which PRINTS
+  the evaluation and FAILS the day Stripe ships a native billing-country allowlist, so our control is
+  deleted rather than carried forever.
+
+  1. `shipping_address_collection.allowed_countries` — REJECTED. The only `allowed_countries` in
+     Checkout create params (verified: exactly one occurrence in stripe@20.4.1
+     Checkout/SessionsResource.d.ts), and it sits inside `interface ShippingAddressCollection`,
+     documented "which countries Checkout should provide as options for shipping locations". Moot
+     regardless: owner ruling is that NO shipping address is collected.
+  2. Stripe Tax / `automatic_tax` — REJECTED. Its params are `enabled` and `liability` only. It
+     COLLECTS a billing address for calculation ("Enabling this parameter causes Checkout to collect
+     any billing address information necessary for tax calculation") and restricts nothing. Tax
+     registrations decide whether tax is CHARGED, not whether checkout proceeds — an unregistered
+     country is charged zero tax, not refused.
+  3. `payment_method_configuration` — REJECTED. A configuration id selecting which payment METHODS
+     appear. Per-country availability of methods is not a country allowlist for the customer;
+     removing a method does not stop a card from an ineligible country.
+  4. Radar rules + Value Lists — REJECTED, and this is the closest one. Radar IS a genuine native
+     country mechanism: `Radar.ValueList.item_type` includes `'country'` (verified in the SDK), and
+     a Dashboard rule can reference an API-managed list. It fails on SUBJECT and on MOMENT.
+     INV-03-08 gates LISA ACCESS on the BILLING ADDRESS, enforced on every request inside
+     `canAccessFeature` (Doc 03B). Radar decides ONE PAYMENT at ONE MOMENT. It cannot gate a
+     free-tier student, a student entitled before any rule existed, or the SCL-043 guardian case
+     where the payer's country is not the student's. WHERE THE USER LANDS also matters: a Radar rule
+     blocks the payment, so the user reaches Checkout, enters a card, and is declined — a worse
+     experience than never being offered the purchase, and it produces no server-side record of the
+     eligibility decision. Worth adding as DEFENCE IN DEPTH; it cannot be the control.
+
+  THEREFORE the control is ours, and it is a gate rather than a subsystem: one pure function,
+  `server/lib/stripe/country-eligibility.ts`, reading the Tier-1 list from
+  `entitlement_runtime_config` (key `tier_1_countries`) rather than a constant in code.
+
+  TIMING CORRECTION — the gate cannot live wholly at session creation. At that moment there is no
+  billing address to gate on: the customer types it DURING Checkout. The SDK states it —
+  `customer_details.address` is "The customer's address after a completed Checkout Session". So the
+  one rule has three call sites:
+      session creation            block only a country ALREADY known (returning payer). Unknown must
+                                  NOT block, or every first-time buyer is refused.
+      checkout.session.completed  the DERIVATION point: read the billing country, persist it to the
+                                  entitled student's `profiles.country_code`, deny entitlement if
+                                  ineligible.
+      customer.updated            EGRESS: the Portal permits customer-initiated billing-address
+                                  changes, so eligibility can lapse after purchase.
+
+  ABSENCE IS NOT INELIGIBILITY. `unknown` does not block checkout but DOES deny entitlement;
+  `profiles.country_code` is null on 0 of 115 rows, so collapsing the two would revoke everyone.
+  An unseeded Tier-1 list FAILS CLOSED — `entitlement_runtime_config` holds 0 rows in production, and
+  an empty list is a configuration not yet made, not a decision that everyone qualifies.
+
+  OWNER ACTION ADDED: seed `entitlement_runtime_config` key `tier_1_countries` (value_type `array`)
+  with INV-03-08's set {US, CA, UK, AU, NZ, IE, SG}. Until it is seeded the gate denies entitlement
+  by design, which is why this is an owner action and not a default in code.
 
 ---
 

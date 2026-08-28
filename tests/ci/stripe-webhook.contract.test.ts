@@ -35,6 +35,8 @@ const accountMocks = vi.hoisted(() => ({
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  subscriptionsUpdate: vi.fn(),
+  subscriptionsResume: vi.fn(),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -44,7 +46,11 @@ vi.mock("../../server/lib/stripe/client", async () => {
     getStripeClient: () => ({
       // REAL verification — not a stub.
       webhooks: real.webhooks,
-      subscriptions: { retrieve: stripeApi.subscriptionsRetrieve },
+      subscriptions: {
+        retrieve: stripeApi.subscriptionsRetrieve,
+        update: stripeApi.subscriptionsUpdate,
+        resume: stripeApi.subscriptionsResume,
+      },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };

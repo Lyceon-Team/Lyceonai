@@ -1,14 +1,14 @@
 /**
  * Stripe webhook DISPOSITION — Phase 3 §4.2 exit criterion.
  *
- * @spec [Doc-01_V8 §22.1 as amended by SCL-070 (18 subscribed events);
+ * @spec [Doc-01_V8 §22.1 as amended by SCL-070 (19 subscribed events);
  *        SCL-049 livemode] | @implemented [2026-08-27]
  *
  * plain English: drives the REAL webhook handler once per subscribed event
  * type and prints what the handler does with each. Expected outcome: every one
- * of the 18 events Stripe is configured to deliver has a definite, named
+ * of the events Stripe is configured to deliver has a definite, named
  * disposition — `processed` or `ignored` — and none throws or silently
- * no-ops. Trade-off: the four `processed` events are driven only far enough to
+ * no-ops. Trade-off: the `processed` events are driven only far enough to
  * establish that they dispatch; their behaviour is asserted in
  * `stripe-webhook.contract.test.ts`, not re-asserted here. Edge case: a
  * subscribed event whose name is absent from the SDK's event union cannot be
@@ -45,10 +45,15 @@ const accountMocks = vi.hoisted(() => ({
     tier: s === "active" ? "premium" : "free",
     status: s,
   })),
+  getEntitlementBySubscriptionId: vi.fn(),
 }));
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  subscriptionsUpdate: vi.fn(),
+  subscriptionsResume: vi.fn(),
+  subscriptionsList: vi.fn(),
+  chargesRetrieve: vi.fn(),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -58,7 +63,13 @@ vi.mock("../../server/lib/stripe/client", async () => {
     getStripeClient: () => ({
       // REAL verification — not a stub.
       webhooks: real.webhooks,
-      subscriptions: { retrieve: stripeApi.subscriptionsRetrieve },
+      subscriptions: {
+        retrieve: stripeApi.subscriptionsRetrieve,
+        list: stripeApi.subscriptionsList,
+        update: stripeApi.subscriptionsUpdate,
+        resume: stripeApi.subscriptionsResume,
+      },
+      charges: { retrieve: stripeApi.chargesRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -76,6 +87,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 vi.mock("../../server/lib/account", () => ({
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
+  getEntitlementBySubscriptionId: accountMocks.getEntitlementBySubscriptionId,
 }));
 
 vi.mock("../../server/logger", () => ({
@@ -83,31 +95,15 @@ vi.mock("../../server/logger", () => ({
 }));
 
 /**
- * The subscribed surface per SCL-070. This list is the Stripe Dashboard
- * endpoint configuration, not a repo constant — it is reproduced here so a
- * drift between what Stripe delivers and what the handler knows is visible in
- * CI rather than in production.
+ * The subscribed surface and its dispositions come from the SAME module the
+ * handler consumes. Reproducing the list here — as an earlier version of this
+ * file did — creates exactly the drift the gate exists to catch: the copy can
+ * agree with itself while disagreeing with the handler.
  */
-const SUBSCRIBED_EVENTS = [
-  "checkout.session.completed",
-  "checkout.session.async_payment_succeeded",
-  "checkout.session.async_payment_failed",
-  "customer.subscription.created",
-  "customer.subscription.updated",
-  "customer.subscription.deleted",
-  "customer.updated",
-  "customer.deleted",
-  "customer.discount.created",
-  "customer.discount.updated",
-  "customer.discount.deleted",
-  "promotion_code.created",
-  "promotion_code.updated",
-  "invoice.payment_succeeded",
-  "invoice.payment_failed",
-  "refund.created",
-  "refund.updated",
-  "charge.dispute.created",
-] as const;
+import {
+  SUBSCRIBED_EVENTS,
+  EVENT_DISPOSITION,
+} from "../../server/lib/stripe/event-surface";
 
 /** Data object shapes sufficient for the handler to reach its disposition. */
 function dataObjectFor(eventType: string): Record<string, unknown> {
@@ -141,6 +137,25 @@ function dataObjectFor(eventType: string): Record<string, unknown> {
           },
         ],
       },
+    };
+  }
+  if (eventType.startsWith("refund.")) {
+    return {
+      id: "re_test_disposition",
+      object: "refund",
+      status: "succeeded",
+      charge: "ch_test_disposition",
+    };
+  }
+  if (eventType.startsWith("charge.dispute.")) {
+    return {
+      id: "dp_test_disposition",
+      object: "dispute",
+      // `won` so `closed` takes its restore branch and exercises the deepest
+      // path this gate can reach — a `leave_revoked` status would return early
+      // and prove less.
+      status: "won",
+      charge: "ch_test_disposition",
     };
   }
   return { id: `obj_test_${eventType.replace(/\./g, "_")}`, object: "object" };
@@ -182,6 +197,26 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     state.expectedLivemode = false;
     dbMocks.insert.mockResolvedValue({ error: null });
     dbMocks.delete.mockResolvedValue({ error: null });
+
+    // The dispute path: charge -> customer -> subscriptions -> entitlement.
+    // `Charge.invoice` does not exist in stripe@20.4.1, so the Customer is the
+    // only available link.
+    stripeApi.chargesRetrieve.mockResolvedValue({
+      id: "ch_test_disposition",
+      object: "charge",
+      customer: "cus_test_disposition",
+      amount: 4900,
+      amount_refunded: 4900,
+    });
+    stripeApi.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [{ id: "sub_test_disposition", object: "subscription" }],
+    });
+    accountMocks.getEntitlementBySubscriptionId.mockResolvedValue({
+      profile_id: STUDENT_ID,
+      stripe_subscription_id: "sub_test_disposition",
+    });
+
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_disposition",
       object: "subscription",
@@ -228,7 +263,26 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     expect(missing).toEqual([]);
   });
 
-  it("prints the disposition of all 18 and leaves none undefined", async () => {
+  it("every ignored event states a reason — no blanket fallthrough", () => {
+    // §4.2's criterion is not merely "does not throw". It is that an ignored
+    // event carries a STATED REASON. One shrug covering fourteen events is
+    // explicit as a mechanism and silent as an explanation.
+    const unexplained = SUBSCRIBED_EVENTS.filter((name) => {
+      const d = EVENT_DISPOSITION[name];
+      return d.kind === "ignored" && d.reason.trim().length < 40;
+    });
+    expect(unexplained).toEqual([]);
+
+    // And every reason must cite what governs it, so "we ignore this because we
+    // ignore it" cannot pass. Each names a spec section, an SCL, or a §4 item.
+    const uncited = SUBSCRIBED_EVENTS.filter((name) => {
+      const d = EVENT_DISPOSITION[name];
+      return d.kind === "ignored" && !/SCL-\d{3}|§|Doc /.test(d.reason);
+    });
+    expect(uncited).toEqual([]);
+  });
+
+  it("prints the disposition of every subscribed event and leaves none undefined", async () => {
     const process_ = await handler();
     const rows: Disposition[] = [];
 
@@ -274,7 +328,7 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     // eslint-disable-next-line no-console
     console.log(lines.join("\n"));
 
-    expect(rows).toHaveLength(18);
+    expect(rows).toHaveLength(SUBSCRIBED_EVENTS.length);
     // The criterion: a definite disposition for every subscribed event.
     expect(rows.filter((r) => r.threw)).toEqual([]);
     for (const row of rows) {
