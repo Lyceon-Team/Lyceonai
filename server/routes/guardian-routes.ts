@@ -543,33 +543,30 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId } = req.params;
 
-      if (!isAdmin) {
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "full_length_history_denied",
-            "Guardian tried to view non-linked student full-length history",
-            {
-              guardianId,
-              studentId,
-              requestId,
-            },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "full_length_history_denied",
+          "Guardian tried to view non-linked student full-length history",
+          {
             guardianId,
             studentId,
             requestId,
-            details: { surface: "full_length_history", reason: "not_linked" },
-          });
-          return res
-            .status(403)
-            .json({ error: "Not authorized to view this student", requestId });
-        }
+          },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: "full_length_history", reason: "not_linked" },
+        });
+        return res
+          .status(403)
+          .json({ error: "Not authorized to view this student", requestId });
       }
 
       const rawLimit = Number(req.query.limit ?? 20);
@@ -649,38 +646,35 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId, sessionId } = req.params;
 
-      if (!isAdmin) {
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "full_length_report_denied",
-            "Guardian tried to view non-linked student full-length report",
-            {
-              guardianId,
-              studentId,
-              sessionId,
-              requestId,
-            },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "full_length_report_denied",
+          "Guardian tried to view non-linked student full-length report",
+          {
             guardianId,
             studentId,
+            sessionId,
             requestId,
-            details: {
-              surface: "full_length_report",
-              session_id: sessionId,
-              reason: "not_linked",
-            },
-          });
-          return res
-            .status(403)
-            .json({ error: "Not authorized to view this student", requestId });
-        }
+          },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: {
+            surface: "full_length_report",
+            session_id: sessionId,
+            reason: "not_linked",
+          },
+        });
+        return res
+          .status(403)
+          .json({ error: "Not authorized to view this student", requestId });
       }
 
       const report = await fullLengthExamService.getExamReport({
@@ -747,32 +741,29 @@ router.get(
     const requestId = req.requestId;
     try {
       const guardianId = req.user!.id;
-      const isAdmin = req.user!.role === "admin";
       const { studentId } = req.params;
       const start = req.query.start as string | undefined;
       const end = req.query.end as string | undefined;
 
-      if (!isAdmin) {
-        // CANONICAL: Verify link via guardian_links
-        const linked = await isGuardianLinkedToStudent(guardianId, studentId);
-        if (!linked) {
-          logger.warn(
-            "GUARDIAN",
-            "calendar_access_denied",
-            "Student not found or not linked",
-            { guardianId, studentId, requestId },
-          );
-          await emitGuardianAccessEvent({
-            eventType: "guardian_access_denied",
-            guardianId,
-            studentId,
-            requestId,
-            details: { surface: "calendar", reason: "not_linked" },
-          });
-          return res
-            .status(404)
-            .json({ error: "Student not found", requestId });
-        }
+      // CANONICAL: Verify link via guardian_links
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn(
+          "GUARDIAN",
+          "calendar_access_denied",
+          "Student not found or not linked",
+          { guardianId, studentId, requestId },
+        );
+        await emitGuardianAccessEvent({
+          eventType: "guardian_access_denied",
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: "calendar", reason: "not_linked" },
+        });
+        return res
+          .status(404)
+          .json({ error: "Student not found", requestId });
       }
 
       if (!start || !isIsoDate(start)) {

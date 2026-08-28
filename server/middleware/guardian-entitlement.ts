@@ -37,23 +37,33 @@ export async function requireGuardianEntitlement(
   const userId = req.user.id;
   const userRole = req.user.role;
 
-  // @spec [Doc 01 V6 §543 Permission Matrix (Admin ✓ linked-student read / Admin surfaces);
-  //   §1229 admin student-data access is support-purpose only; §272/§561 all admin actions audited]
-  //   | @implemented 2026-06-06
-  // Admin bypasses the guardian link + entitlement checks here (per §543 Admin ✓). This gateway
-  // does NOT itself content-scope: the aggregate-only nature of guardian surfaces and the
-  // support-purpose limit (§1229) are enforced downstream (RLS + the guardian route handlers,
-  // which already exclude question-level data). This middleware's obligation is the audit trail
-  // (§272/§561): every admin access is logged with access-metadata only — no student content (§12.1).
-  if (userRole === 'admin') {
-    logger.info('GUARDIAN', 'admin_surface_access', 'Admin accessed a guardian/student surface', {
-      studentId: req.params?.studentId ?? null,
-      path: req.path,
-      method: req.method,
-    }, { userId, requestId });
-    return next();
-  }
-
+  // @spec [guardian-rebuild-design-spec §1.5 R5 — "no admin bypass, and the non-goal that keeps
+  //   it deleted"; owner ruling 2026-08-28 "R5 reaches all four bypasses"]
+  //   | @implemented [2026-08-28]
+  //
+  // THE ADMIN BYPASS WAS HERE, AND IS DELETED. It read `if (userRole === 'admin') return next()`,
+  // skipping BOTH the link check and the entitlement check, and cited "Doc 01 V6 §543" — a
+  // document version no longer in the corpus. An operator does not read a student's mastery,
+  // KPI, projections, exam history or calendar through a guardian-gated route.
+  //
+  // RECORDED AS A NON-GOAL so it is not reinvented under pressure: if support later needs
+  // per-student visibility, it is a student-or-guardian-initiated, time-boxed, audited GRANT —
+  // a row with an expiry that the subject can revoke — never a role bypass. A bypass is
+  // unrevocable, unlimited in scope, and invisible to the family it concerns.
+  //
+  // The audit log this branch emitted (`admin_surface_access`) goes with it: there is no admin
+  // access here left to record. Admin now falls through to the `!== 'guardian'` denial below,
+  // which is the correct answer and not a special case.
+  //
+  // SCOPE. This reaches READS only. Admin WRITES to the link lifecycle (Doc 01 §16 "Guardian
+  // linking: Admin ✓", §36.1 `initiated_by='admin'`, §36.3 admin revocation via support
+  // escalation) are a separate, still-open owner question and are NOT touched here — those four
+  // routes never carried this middleware.
+  //
+  // DIVERGENCE FROM THE LOCKED SPEC, recorded rather than hidden: Doc 01 V8 §16 still grants
+  // Admin `✓` on "Linked student profile read" where Guardian gets "Aggregate only". This
+  // implementation denies it. The owner ruling is the stricter posture and wins; §16 owes an
+  // amendment. See SCL-078.
   if (userRole !== 'guardian') {
     res.status(403).json({
       error: 'Guardian role required',
