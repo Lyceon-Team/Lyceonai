@@ -127,6 +127,8 @@ function dataObjectFor(eventType: string): Record<string, unknown> {
       // asks whether every subscribed event reaches a DEFINITE disposition, so
       // the country is eligible; denial is tested in its own suite.
       customer_details: { address: { country: "US" } },
+      // SCL-071: a settled session. The unpaid case has its own suite.
+      payment_status: "paid",
     };
   }
   if (eventType.startsWith("customer.subscription.")) {
@@ -225,7 +227,10 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
       data: [{ id: "sub_test_disposition", object: "subscription" }],
     });
     accountMocks.getEntitlementsBySubscriptionId.mockResolvedValue([
-      { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_disposition" },
+      {
+        profile_id: STUDENT_ID,
+        stripe_subscription_id: "sub_test_disposition",
+      },
     ]);
 
     stripeApi.subscriptionsRetrieve.mockResolvedValue({

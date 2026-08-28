@@ -127,6 +127,8 @@ function checkoutEvent(
             country: overrides.country === undefined ? "US" : overrides.country,
           },
         },
+        // SCL-071: settled. The settlement gate has its own suite.
+        payment_status: "paid",
       },
     },
   };

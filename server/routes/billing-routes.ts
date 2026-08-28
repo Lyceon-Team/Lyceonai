@@ -56,6 +56,7 @@ import {
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
+  blocksCheckout,
 } from "../lib/stripe/country-eligibility";
 import { getTier1Countries } from "../lib/entitlement-runtime-config";
 import { billingCheckoutRequestSchema } from "../../packages/shared/src/billing-schema";
@@ -225,54 +226,30 @@ router.post(
         const selectedStudentId = subject.studentProfileId;
 
         /**
-         * INV-03-08 country gate — the SECOND production call site.
+         * BRANCH FIRST, THEN GATE. The order is the fix.
          *
-         * The add-item path never produces a `checkout.session.completed`, so
-         * the gate wired there does not see it. Without this, buying for a
-         * second child would grant premium with no country decision — the
-         * identical fail-open money path Codex found for the first child.
-         * The payer's country is the authoritative signal (SCL-046), and by
-         * this point the Customer carries the address Checkout collected.
-         */
-        const customer = await stripe.customers.retrieve(customerId);
-        const payerCountry =
-          "deleted" in customer && customer.deleted
-            ? null
-            : (customer as Stripe.Customer).address?.country;
-        const eligibility = evaluateCountryEligibility(
-          payerCountry,
-          await getTier1Countries(),
-        );
-        if (deniesEntitlement(eligibility)) {
-          logger.warn(
-            "BILLING",
-            "checkout",
-            "Guardian purchase denied by INV-03-08 country gate",
-            {
-              requestId,
-              payerProfileId,
-              verdict: eligibility.verdict,
-            },
-          );
-          return res.status(403).json({
-            error: {
-              message:
-                "This account's billing country is not eligible for premium at launch.",
-              code: "COUNTRY_NOT_ELIGIBLE",
-            },
-            requestId,
-          });
-        }
-
-        /**
-         * Does this guardian already have a subscription? Stripe is the source
-         * of truth for billing, so this is asked of Stripe rather than inferred
-         * from our entitlement rows.
+         * @revised [2026-08-28 — Codex HIGH-3]
          *
-         * More than one active subscription is a shape this product never
-         * creates (that is the whole point of the item model), so it fails
-         * closed rather than picking one and adding an item to the wrong
-         * invoice.
+         * The gate previously ran BEFORE this lookup, treating `unknown` as a
+         * denial for every guardian. A guardian's FIRST purchase creates a
+         * Customer with no address (there is nowhere to have got one yet), so
+         * the country was always `unknown` and the first purchase was refused
+         * before Stripe could collect an address. The passing test hid it by
+         * handing the freshly created Customer a US address.
+         *
+         * The two branches need DIFFERENT verdicts, which is exactly the split
+         * `country-eligibility.ts` already documents and which I applied
+         * wrongly:
+         *
+         *   first purchase  -> `blocksCheckout`: only a KNOWN ineligible
+         *                      country refuses. `unknown` proceeds, because the
+         *                      address does not exist until the customer types
+         *                      it during Checkout — and the completed-session
+         *                      gate then enforces it before any entitlement.
+         *   add-item        -> `deniesEntitlement`: `unknown` REFUSES. The
+         *                      Customer already has an address by now, so not knowing
+         *                      one is a fault, and this path grants entitlement
+         *                      without a later Checkout gate to catch it.
          */
         const existing = await stripe.subscriptions.list({
           customer: customerId,
@@ -291,6 +268,42 @@ router.post(
               message:
                 "This account has more than one active subscription. Contact support.",
               code: "AMBIGUOUS_SUBSCRIPTION",
+            },
+            requestId,
+          });
+        }
+
+        const isAddItem = existing.data.length === 1;
+
+        const customer = await stripe.customers.retrieve(customerId);
+        const payerCountry =
+          "deleted" in customer && customer.deleted
+            ? null
+            : (customer as Stripe.Customer).address?.country;
+        const eligibility = evaluateCountryEligibility(
+          payerCountry,
+          await getTier1Countries(),
+        );
+        const refuses = isAddItem
+          ? deniesEntitlement(eligibility)
+          : blocksCheckout(eligibility);
+        if (refuses) {
+          logger.warn(
+            "BILLING",
+            "checkout",
+            "Guardian purchase refused by INV-03-08 country gate",
+            {
+              requestId,
+              payerProfileId,
+              verdict: eligibility.verdict,
+              path: isAddItem ? "add_item" : "first_purchase",
+            },
+          );
+          return res.status(403).json({
+            error: {
+              message:
+                "This account's billing country is not eligible for premium at launch.",
+              code: "COUNTRY_NOT_ELIGIBLE",
             },
             requestId,
           });

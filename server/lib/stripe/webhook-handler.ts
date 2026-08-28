@@ -181,6 +181,17 @@ const checkoutSessionSchema = subjectSchema.extend({
       address: z.object({ country: z.string().nullish() }).nullish(),
     })
     .nullish(),
+  /**
+   * SCL-071 settlement. Stripe's own words (stripe@20.4.1,
+   * `types/Checkout/Sessions.d.ts`): "The payment status of the Checkout
+   * Session, one of `paid`, `unpaid`, or `no_payment_required`. You can use
+   * this value to decide when to fulfill your customer's order."
+   *
+   * NOT `.optional()`. A completed session always carries it, and defaulting a
+   * missing value would silently pick a fulfilment decision — the collapse of
+   * an error into a legitimate value this handler refuses everywhere else.
+   */
+  payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),
 });
 
 /** The Subscription fields this handler reads. */
@@ -1026,6 +1037,176 @@ async function writeEntitlementsForAllItems(
   });
 }
 
+/**
+ * FULFILMENT — the one path both settlement events share.
+ *
+ * @spec [SCL-071 entitlement is written on payment SETTLEMENT, not on Checkout
+ *        Session completion; INV-03-08; Charter §6]
+ * @implemented [2026-08-28 — Codex HIGH-1]
+ *
+ * plain English: turn a settled Checkout Session into entitlement. Expected
+ * outcome: identical derivation, identical gates and identical writer whichever
+ * event carried the settlement. Trade-off: one function reached from two
+ * dispatch arms rather than two branches that look alike — the two-branch shape
+ * is what let the async path be "not yet built" while the sync path shipped.
+ * Edge cases: a Payment Link session, an unpaid session, a non-subscription
+ * session, and a guardian session with no single subject.
+ *
+ * IT IS CALLED ONLY WITH SETTLED MONEY. The caller decides that; see
+ * `isSettled` and the two dispatch arms.
+ */
+async function fulfilCheckoutSession(
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventType: string,
+  eventId: string,
+): Promise<void> {
+  // §4.7 Payment Link defence. A Payment Link purchase carries `payment_link`
+  // and no server-set `client_reference_id`, so the only thing that could
+  // name a student is a URL query parameter — a caller-supplied value, which
+  // Charter §6 forbids from gating entitlement by name. Refusing is not the
+  // worst outcome here; granting the wrong student access is, and so is a
+  // real charge that grants nothing with no operator signal. Hence: reject,
+  // and alert.
+  if (session.payment_link) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "PAYMENT LINK PURCHASE REJECTED — a real charge has been taken and NO entitlement was granted. Refund it or complete it manually.",
+      {
+        eventId: eventId,
+        sessionRef: digestId(session.id),
+        paymentLinkRef: digestId(refToId(session.payment_link)),
+      },
+    );
+    throw new StripePayloadShapeError(
+      eventType,
+      "checkout session originated from a Payment Link; entitlement cannot be attributed to a student without a caller-supplied value (Charter §6)",
+    );
+  }
+
+  if (session.mode !== "subscription" || !session.subscription) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Non-subscription checkout ignored",
+      { eventId: eventId },
+    );
+    return;
+  }
+
+  const subscriptionId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : session.subscription.id;
+
+  /**
+   * INV-03-08 TIER-1 COUNTRY GATE — the production call site.
+   *
+   * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
+   *        2026-08-27] | @implemented [2026-08-28 — Codex HIGH-1]
+   *
+   * plain English: refuse premium when the billing country is not on the
+   * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
+   * expressed. Trade-off: the money has already moved by this point, so a
+   * denial leaves a paid customer with no access and needs an operator
+   * refund — which is why the ERROR log below names that consequence
+   * explicitly rather than failing quietly.
+   *
+   * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
+   * (Codex HIGH-1: "a fail-open money path"). It could not be called at
+   * session creation because the billing address does not exist until the
+   * customer types it during Checkout. This event is the derivation point
+   * the module's own header names.
+   *
+   * BOTH `ineligible` AND `unknown` DENY. After payment, refusing to decide
+   * is itself a decision, and the safe one is not to grant access we cannot
+   * justify. An unseeded `tier_1_countries` therefore denies — the
+   * fail-closed default the owner ruled, and the reason the gate is INERT
+   * (meaning: denying) until the owner DML is applied.
+   */
+  const eligibility = evaluateCountryEligibility(
+    session.customer_details?.address?.country,
+    await getTier1Countries(),
+  );
+  if (deniesEntitlement(eligibility)) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+      {
+        eventId: eventId,
+        sessionRef: digestId(session.id),
+        // The subject is not resolved yet — the gate runs BEFORE it, because
+        // a guardian-paid session has no single subject to resolve. Log
+        // whichever party the session names; the logger digests both.
+        studentProfileId: session.metadata?.student_profile_id ?? null,
+        payerProfileId: session.metadata?.payer_profile_id ?? null,
+        verdict: eligibility.verdict,
+        country: eligibility.verdict === "unknown" ? null : eligibility.country,
+      },
+    );
+    throw new StripePayloadShapeError(
+      eventType,
+      `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
+    );
+  }
+
+  /**
+   * §4.8: a guardian-paid session names the PAYER and funds several students,
+   * one ITEM each. `resolveStudentProfileId` would throw on it — there is no
+   * single subject — so the shape is read BEFORE the subject, exactly as the
+   * subscription dispatcher does. The item path also runs for a guardian with
+   * ONE linked student, which is why the test is "is this guardian-paid" and
+   * not "are there several items".
+   */
+  if (session.metadata?.payer_profile_id) {
+    const retrieved: RetrievedSubscription = parseOrFail(
+      retrievedSubscriptionSchema,
+      await getStripeClient().subscriptions.retrieve(subscriptionId),
+      eventType,
+    );
+    await writeEntitlementsForAllItems(retrieved, eventType, eventId);
+    return;
+  }
+
+  const studentProfileId = resolveStudentProfileId(session, eventType);
+  await writeEntitlementFromSubscription(
+    subscriptionId,
+    studentProfileId,
+    eventType,
+    eventId,
+  );
+  return;
+}
+
+/**
+ * Has the money actually arrived?
+ *
+ * Stripe's own words, shipped in stripe@20.4.1
+ * (`types/Checkout/Sessions.d.ts`): "The payment status of the Checkout
+ * Session, one of `paid`, `unpaid`, or `no_payment_required`. You can use this
+ * value to decide when to fulfill your customer's order."
+ *
+ * `unpaid` means a delayed payment method completed the SESSION before the
+ * money settled. Granting there hands premium to an unsettled payment;
+ * `checkout.session.async_payment_succeeded` is the event that later carries
+ * the settlement, and it fulfils through the same function.
+ *
+ * Exhaustive over the union rather than `!== "unpaid"`, so a new member added
+ * by a future API version is a compile error rather than an accidental grant.
+ */
+function isSettled(
+  status: z.infer<typeof checkoutSessionSchema>["payment_status"],
+): boolean {
+  switch (status) {
+    case "paid":
+    case "no_payment_required":
+      return true;
+    case "unpaid":
+      return false;
+  }
+}
+
 async function dispatch(event: Stripe.Event): Promise<void> {
   if (event.type === "refund.updated") {
     await handleRefundUpdated(event);
@@ -1042,7 +1223,10 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     return;
   }
 
-  if (event.type === "checkout.session.completed") {
+  if (
+    event.type === "checkout.session.completed" ||
+    event.type === "checkout.session.async_payment_succeeded"
+  ) {
     // Parsed, not cast: a valid signature does not imply a valid shape.
     const session = parseOrFail(
       checkoutSessionSchema,
@@ -1050,122 +1234,47 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       event.type,
     );
 
-    // §4.7 Payment Link defence. A Payment Link purchase carries `payment_link`
-    // and no server-set `client_reference_id`, so the only thing that could
-    // name a student is a URL query parameter — a caller-supplied value, which
-    // Charter §6 forbids from gating entitlement by name. Refusing is not the
-    // worst outcome here; granting the wrong student access is, and so is a
-    // real charge that grants nothing with no operator signal. Hence: reject,
-    // and alert.
-    if (session.payment_link) {
-      logger.error(
-        "STRIPE_WEBHOOK",
-        event.type,
-        "PAYMENT LINK PURCHASE REJECTED — a real charge has been taken and NO entitlement was granted. Refund it or complete it manually.",
-        {
-          eventId: event.id,
-          sessionRef: digestId(session.id),
-          paymentLinkRef: digestId(refToId(session.payment_link)),
-        },
-      );
-      throw new StripePayloadShapeError(
-        event.type,
-        "checkout session originated from a Payment Link; entitlement cannot be attributed to a student without a caller-supplied value (Charter §6)",
-      );
-    }
-
-    if (session.mode !== "subscription" || !session.subscription) {
+    /**
+     * SCL-071. The settlement gate, and the reason both arms are here.
+     *
+     * `checkout.session.completed` fires when the SESSION completes, which for
+     * a delayed payment method is BEFORE the money arrives. Fulfilling on it
+     * unconditionally grants premium against an unsettled payment.
+     * `async_payment_succeeded` is the event that carries settlement, and it
+     * was previously classified "ignored — not yet built", which is the other
+     * half of the same defect.
+     *
+     * Inert on today's configuration (card and Link settle synchronously and
+     * never emit the async pair), which is exactly why it is written now:
+     * enabling a delayed method in the Dashboard is a configuration change no
+     * code review would catch.
+     */
+    if (!isSettled(session.payment_status)) {
       logger.info(
         "STRIPE_WEBHOOK",
         event.type,
-        "Non-subscription checkout ignored",
-        { eventId: event.id },
-      );
-      return;
-    }
-
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription.id;
-
-    /**
-     * INV-03-08 TIER-1 COUNTRY GATE — the production call site.
-     *
-     * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
-     *        2026-08-27] | @implemented [2026-08-28 — Codex HIGH-1]
-     *
-     * plain English: refuse premium when the billing country is not on the
-     * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
-     * expressed. Trade-off: the money has already moved by this point, so a
-     * denial leaves a paid customer with no access and needs an operator
-     * refund — which is why the ERROR log below names that consequence
-     * explicitly rather than failing quietly.
-     *
-     * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
-     * (Codex HIGH-1: "a fail-open money path"). It could not be called at
-     * session creation because the billing address does not exist until the
-     * customer types it during Checkout. This event is the derivation point
-     * the module's own header names.
-     *
-     * BOTH `ineligible` AND `unknown` DENY. After payment, refusing to decide
-     * is itself a decision, and the safe one is not to grant access we cannot
-     * justify. An unseeded `tier_1_countries` therefore denies — the
-     * fail-closed default the owner ruled, and the reason the gate is INERT
-     * (meaning: denying) until the owner DML is applied.
-     */
-    const eligibility = evaluateCountryEligibility(
-      session.customer_details?.address?.country,
-      await getTier1Countries(),
-    );
-    if (deniesEntitlement(eligibility)) {
-      logger.error(
-        "STRIPE_WEBHOOK",
-        event.type,
-        "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+        "Session not settled; no entitlement written (SCL-071). Awaiting checkout.session.async_payment_succeeded.",
         {
           eventId: event.id,
           sessionRef: digestId(session.id),
-          // The subject is not resolved yet — the gate runs BEFORE it, because
-          // a guardian-paid session has no single subject to resolve. Log
-          // whichever party the session names; the logger digests both.
-          studentProfileId: session.metadata?.student_profile_id ?? null,
-          payerProfileId: session.metadata?.payer_profile_id ?? null,
-          verdict: eligibility.verdict,
-          country:
-            eligibility.verdict === "unknown" ? null : eligibility.country,
+          paymentStatus: session.payment_status,
         },
       );
-      throw new StripePayloadShapeError(
-        event.type,
-        `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
-      );
-    }
-
-    /**
-     * §4.8: a guardian-paid session names the PAYER and funds several students,
-     * one ITEM each. `resolveStudentProfileId` would throw on it — there is no
-     * single subject — so the shape is read BEFORE the subject, exactly as the
-     * subscription dispatcher does. The item path also runs for a guardian with
-     * ONE linked student, which is why the test is "is this guardian-paid" and
-     * not "are there several items".
-     */
-    if (session.metadata?.payer_profile_id) {
-      const retrieved: RetrievedSubscription = parseOrFail(
-        retrievedSubscriptionSchema,
-        await getStripeClient().subscriptions.retrieve(subscriptionId),
-        event.type,
-      );
-      await writeEntitlementsForAllItems(retrieved, event.type, event.id);
       return;
     }
 
-    const studentProfileId = resolveStudentProfileId(session, event.type);
-    await writeEntitlementFromSubscription(
-      subscriptionId,
-      studentProfileId,
+    await fulfilCheckoutSession(session, event.type, event.id);
+    return;
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    // SCL-071: produces NO entitlement, and is NOT a revocation of something
+    // that was never granted. Logged so a failed delayed payment is visible.
+    logger.warn(
+      "STRIPE_WEBHOOK",
       event.type,
-      event.id,
+      "Delayed payment failed; no entitlement was granted and none is revoked (SCL-071).",
+      { eventId: event.id },
     );
     return;
   }

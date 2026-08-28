@@ -74,18 +74,16 @@ export const EVENT_DISPOSITION: Record<SubscribedEvent, EventDisposition> = {
   "refund.updated": HANDLED,
 
   // ---- Ignored, with the reason ------------------------------------------
-  "checkout.session.async_payment_succeeded": ignored(
-    "SCL-071: settlement for delayed payment methods. Inert today — card and " +
-      "Link never produce it — and subscribing it now is what makes enabling a " +
-      "delayed method a configuration change rather than a code change. The " +
-      "entitlement-on-settlement path is not yet built.",
-  ),
-  "checkout.session.async_payment_failed": ignored(
-    "SCL-071: non-settlement for delayed payment methods. Produces no " +
-      "entitlement by design, so ignoring it is the specified behaviour, not a " +
-      "gap. Subscribed so the surface is complete when a delayed method is " +
-      "enabled.",
-  ),
+  // SCL-071 settlement, BUILT 2026-08-28 (Codex HIGH-1). `completed` fires when
+  // the SESSION completes, which for a delayed payment method is before the
+  // money arrives; this event carries the settlement and fulfils through the
+  // same `fulfilCheckoutSession` with the same gates and the same writer.
+  "checkout.session.async_payment_succeeded": HANDLED,
+  // SCL-071: produces NO entitlement by design, and is NOT a revocation of
+  // something never granted. Handled rather than ignored so the failure is
+  // visible to an operator.
+  "checkout.session.async_payment_failed": HANDLED,
+
   "customer.updated": ignored(
     "SCL-046 country derivation is not built. The Portal permits " +
       "customer-initiated billing-address changes, so this event is the egress " +

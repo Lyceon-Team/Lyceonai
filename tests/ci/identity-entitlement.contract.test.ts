@@ -44,12 +44,20 @@ const stripeMocks = vi.hoisted(() => ({
     currency: "USD",
     recurring: { interval: "month", interval_count: 1 },
   })),
-  customersRetrieve: vi.fn(async () => ({
-    id: "cus_test",
-    // INV-03-08: the payer's billing country, which the add-item path gates on
-    // because it never produces a checkout.session.completed.
-    address: { country: "US" },
-  })),
+  /**
+   * DEFAULT: a Customer with NO address.
+   *
+   * @revised [2026-08-28 — Codex MEDIUM] This previously returned
+   * `{address:{country:'US'}}` for every retrieve, including the freshly
+   * created `cus_test` of a FIRST purchase. That made the first-purchase test
+   * vacuous for the address-timing rule: it could not tell "unknown permitted
+   * until Checkout collects an address" from "unknown denied", and so it hid a
+   * production 403 that made a guardian's first purchase impossible.
+   *
+   * No address is the truthful default — a Customer created seconds ago has
+   * none. Tests that exercise the ADD-ITEM path override it explicitly.
+   */
+  customersRetrieve: vi.fn(async () => ({ id: "cus_test" })),
   subscriptionsList: vi.fn(async () => ({ object: "list", data: [] })),
   subscriptionItemsCreate: vi.fn(async () => ({ id: "si_added" })),
 }));
@@ -236,12 +244,20 @@ describe("Identity + Entitlement Runtime Contract", () => {
     ]);
   }
 
-  it("FIRST purchase: creates a subscription with ONE item for the SELECTED student", async () => {
+  /**
+   * The regression Codex HIGH-3 found, pinned. A brand-new guardian Customer
+   * has NO address, so `unknown` must NOT refuse here: Checkout collects the
+   * address, and `checkout.session.completed` gates before any entitlement is
+   * written. The default `customersRetrieve` mock returns no address precisely
+   * so this test exercises that case rather than a convenient US one.
+   */
+  it("FIRST purchase with an UNKNOWN country: creates a subscription with ONE item for the SELECTED student", async () => {
     asGuardian();
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [],
     });
+    stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
 
     const res = await request(await billingApp())
       .post("/api/billing/checkout")
@@ -269,6 +285,12 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
   it("SECOND student: adds an ITEM to the existing subscription — not a second subscription", async () => {
     asGuardian();
+    // The add-item path REQUIRES a known eligible country: it grants
+    // entitlement with no later Checkout gate to catch an unknown one.
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [
@@ -333,6 +355,10 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
   it("refuses to bill twice for a student the subscription already funds", async () => {
     asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [
@@ -351,6 +377,52 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("STUDENT_ALREADY_FUNDED");
+    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES a first purchase from a KNOWN ineligible country", async () => {
+    // `blocksCheckout` semantics: unknown proceeds, a positive ineligible does not.
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [],
+    });
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "FR" },
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("COUNTRY_NOT_ELIGIBLE");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES the add-item path on an UNKNOWN country — no later gate would catch it", async () => {
+    // The asymmetry that makes the two branches different verdicts, pinned.
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [
+        {
+          id: "sub_guardian_existing",
+          items: {
+            data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
+          },
+        },
+      ],
+    });
+    stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("COUNTRY_NOT_ELIGIBLE");
     expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
   });
 

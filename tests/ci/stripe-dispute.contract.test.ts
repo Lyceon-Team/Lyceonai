@@ -418,6 +418,7 @@ describe("Payment Link defence (§4.7, Charter §6)", () => {
           // Payment Link purchase. Only a URL parameter could name a student.
           client_reference_id: null,
           metadata: {},
+          payment_status: "paid",
         },
       },
     });
@@ -469,6 +470,8 @@ describe("Payment Link defence (§4.7, Charter §6)", () => {
           // Link defence, so the country is eligible here; the country gate's
           // own denial cases live in stripe-country-gate.contract.test.ts.
           customer_details: { address: { country: "US" } },
+          // SCL-071: settled. The settlement gate has its own suite.
+          payment_status: "paid",
         },
       },
     });
