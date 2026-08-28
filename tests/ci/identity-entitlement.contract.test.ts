@@ -44,6 +44,18 @@ const stripeMocks = vi.hoisted(() => ({
     currency: "USD",
     recurring: { interval: "month", interval_count: 1 },
   })),
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test",
+    // INV-03-08: the payer's billing country, which the add-item path gates on
+    // because it never produces a checkout.session.completed.
+    address: { country: "US" },
+  })),
+  subscriptionsList: vi.fn(async () => ({ object: "list", data: [] })),
+  subscriptionItemsCreate: vi.fn(async () => ({ id: "si_added" })),
+}));
+
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
 }));
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
@@ -98,7 +110,12 @@ vi.mock("../../server/lib/account", () => ({
 vi.mock("../../server/lib/stripe/client", () => ({
   BILLING_PERIODS: ["monthly", "quarterly", "yearly"],
   getStripeClient: () => ({
-    customers: { create: stripeMocks.customersCreate },
+    customers: {
+      create: stripeMocks.customersCreate,
+      retrieve: stripeMocks.customersRetrieve,
+    },
+    subscriptions: { list: stripeMocks.subscriptionsList },
+    subscriptionItems: { create: stripeMocks.subscriptionItemsCreate },
     prices: { retrieve: stripeMocks.pricesRetrieve },
     checkout: { sessions: { create: stripeMocks.checkoutCreate } },
     billingPortal: {
@@ -156,9 +173,8 @@ describe("Identity + Entitlement Runtime Contract", () => {
     const app = buildApp();
     const profileRoutes = (await import("../../server/routes/profile-routes"))
       .default;
-    const { requireSupabaseAuth } = await import(
-      "../../server/middleware/supabase-auth"
-    );
+    const { requireSupabaseAuth } =
+      await import("../../server/middleware/supabase-auth");
     app.use("/api/profile", requireSupabaseAuth as any, profileRoutes);
 
     // The authenticated user is a student; attempt to self-escalate to admin.
@@ -192,17 +208,21 @@ describe("Identity + Entitlement Runtime Contract", () => {
   });
 
   /**
-   * CHANGED 2026-08-28 (Codex HIGH-2). This previously asserted 503
-   * GUARDIAN_BILLING_UNAVAILABLE. That assertion encoded the DEFECT: §4.8 was
-   * reported implemented while `buildGuardianLineItems` had no production
-   * caller and every guardian was refused. Asserting the 503 would now be
-   * asserting that the feature stays unbuilt.
+   * OWNER RULING 2026-08-28 — guardian purchase is PER STUDENT, selected by the
+   * guardian. This replaces two earlier assertions, each of which encoded a
+   * defect: first a 503 (the feature unbuilt), then one line item per ACTIVE
+   * link (charging for children the guardian never chose).
+   *
+   * Doc 01 V8 supports per-student throughout: §20 and §31.4 say "linked
+   * student" singular, and §36.4's unlink prompt — "You are still paying for
+   * this student's subscription. Keep or cancel?" — is only answerable if the
+   * money was per-student to begin with.
    */
-  it("creates a guardian Checkout Session with one line item per ACTIVE link", async () => {
-    const GUARDIAN = "22222222-2222-4222-8222-222222222222";
-    const STUDENT_A = "33333333-3333-4333-8333-333333333333";
-    const STUDENT_B = "44444444-4444-4444-8444-444444444444";
+  const GUARDIAN = "22222222-2222-4222-8222-222222222222";
+  const STUDENT_A = "33333333-3333-4333-8333-333333333333";
+  const STUDENT_B = "44444444-4444-4444-8444-444444444444";
 
+  function asGuardian() {
     authState.currentUser = {
       id: GUARDIAN,
       role: "guardian",
@@ -210,37 +230,159 @@ describe("Identity + Entitlement Runtime Contract", () => {
       isGuardian: true,
       isAdmin: false,
     } as any;
-
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
       { student_profile_id: STUDENT_A, status: "active" },
       { student_profile_id: STUDENT_B, status: "active" },
     ]);
+  }
+
+  it("FIRST purchase: creates a subscription with ONE item for the SELECTED student", async () => {
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [],
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(200);
+    expect(res.body.kind).toBe("checkout_session");
+
+    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
+    // ONE item, for the student the guardian chose — not one per link.
+    expect(params.line_items).toHaveLength(1);
+    expect(params.line_items[0].metadata).toEqual({
+      student_profile_id: STUDENT_B,
+    });
+    // SCL-043: the subscription names the payer. It also names the single
+    // student, which is the fallback that makes this path independent of the
+    // unverified Checkout metadata propagation.
+    expect(params.subscription_data.metadata).toMatchObject({
+      payer_profile_id: GUARDIAN,
+      student_profile_id: STUDENT_B,
+      payer_relationship: "guardian",
+    });
+    expect(params.client_reference_id).toBeUndefined();
+  });
+
+  it("SECOND student: adds an ITEM to the existing subscription — not a second subscription", async () => {
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [
+        {
+          id: "sub_guardian_existing",
+          items: {
+            data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
+          },
+        },
+      ],
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      kind: "item_added",
+      subscriptionItemId: "si_added",
+    });
+
+    // The mechanic, asserted precisely: an item on the EXISTING subscription,
+    // and NO new Checkout Session.
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+    expect(stripeMocks.subscriptionItemsCreate).toHaveBeenCalledTimes(1);
+    const params = stripeMocks.subscriptionItemsCreate.mock.calls[0][0];
+    expect(params.subscription).toBe("sub_guardian_existing");
+    expect(params.quantity).toBe(1);
+    expect(params.metadata).toEqual({ student_profile_id: STUDENT_B });
+    // proration_behavior is NOT set: Stripe's documented default is
+    // `create_prorations`, which is the wanted behaviour. Setting it would be
+    // overriding a native mechanism with the same value.
+    expect(params.proration_behavior).toBeUndefined();
+  });
+
+  it("refuses a student the guardian is not linked to, and charges nothing", async () => {
+    asGuardian();
+    const STRANGER = "55555555-5555-4555-8555-555555555555";
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STRANGER });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("STUDENT_NOT_LINKED");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the guardian selects nobody — never defaults to a link", async () => {
+    asGuardian();
 
     const res = await request(await billingApp())
       .post("/api/billing/checkout")
       .send({ plan: "monthly" });
 
-    // Both halves: the response AND the state change.
-    expect(res.status).toBe(200);
-    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("STUDENT_NOT_SELECTED");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+  });
 
-    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
-    expect(params.line_items).toHaveLength(2);
-    expect(params.line_items[0].metadata).toEqual({
-      student_profile_id: STUDENT_A,
-    });
-    expect(params.line_items[1].metadata).toEqual({
-      student_profile_id: STUDENT_B,
+  it("refuses to bill twice for a student the subscription already funds", async () => {
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [
+        {
+          id: "sub_guardian_existing",
+          items: {
+            data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
+          },
+        },
+      ],
     });
 
-    // SCL-043: the SUBSCRIPTION names the payer, never a single student, and
-    // `client_reference_id` is unset because there is no single subject.
-    expect(params.subscription_data.metadata).toMatchObject({
-      payer_profile_id: GUARDIAN,
-      payer_relationship: "guardian",
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_A });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("STUDENT_ALREADY_FUNDED");
+    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+  });
+
+  it("denies the add-item path on an ineligible payer country (INV-03-08)", async () => {
+    // The add-item path never produces a checkout.session.completed, so without
+    // this gate a second child would be entitled with no country decision.
+    asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "FR" },
     });
-    expect(params.subscription_data.metadata.student_profile_id).toBeUndefined();
-    expect(params.client_reference_id).toBeUndefined();
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("COUNTRY_NOT_ELIGIBLE");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a STUDENT who tries to name another student as the subject", async () => {
+    // Rejected, not ignored: a student who believes they bought for someone
+    // else must be told they did not.
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_A });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("STUDENT_CANNOT_SELECT_SUBJECT");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
   it("refuses a guardian with no active links rather than charging for nothing", async () => {
@@ -255,7 +397,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
     const res = await request(await billingApp())
       .post("/api/billing/checkout")
-      .send({ plan: "monthly" });
+      .send({ plan: "monthly", student_profile_id: STUDENT_A });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("NO_ACTIVE_LINKED_STUDENTS");

@@ -1,109 +1,130 @@
 /**
- * Guardian-paid checkout — one subscription, one item per entitled student.
+ * Guardian-paid purchase — PER STUDENT, selected by the guardian.
  *
- * @spec [SCL-043 payer identity; SCL-045 one SubscriptionItem per student;
- *        Doc 01 V8 §31.3; Charter §6] | @implemented [2026-08-27]
+ * @spec [Doc 01 V8 §20 "Who pays" ("guardian initiates Checkout on student's
+ *        behalf"); §31.4 ("Guardian paying for linked student"); §36.4
+ *        ("You are still paying for this student's subscription");
+ *        SCL-043 payer identity; SCL-045 one SubscriptionItem per student;
+ *        Charter §6] | @implemented [2026-08-27]
+ * @revised [2026-08-28 — owner ruling: per-student, not cover-all-links]
  *
- * plain English: builds the Checkout line items for a guardian paying for their
- * linked students — one line per student, each stamped with that student's
- * profile id. Expected outcome: N items for N students, and the webhook can
- * tell which item entitles whom. Trade-off: the student list is read from
- * `guardian_links` server-side and never taken from the request, so a guardian
- * cannot name a student they are not linked to; the cost is that a guardian
- * cannot choose a SUBSET of their students in one checkout, which is called out
- * as an open question rather than silently decided. Edge case: a guardian with
- * no active links cannot check out at all, which is correct — there is nobody
- * to entitle.
+ * plain English: decides WHICH single student a guardian's purchase is for, and
+ * refuses if that student is not one the guardian is actively linked to.
+ * Expected outcome: one purchase, one student, chosen by the guardian.
+ * Trade-off: the guardian must return to buy for a second child rather than
+ * getting them all in one transaction — which is the correct trade, because the
+ * alternative charges for children the guardian never chose to pay for. Edge
+ * cases: no active links at all, a requested student the guardian is not linked
+ * to, and a link row with no student profile — all refused, none guessed at.
  *
- * CHARTER §6 — NO CALLER-SUPPLIED VALUE GATES ENTITLEMENT. The request carries
- * only a plan. Every `student_profile_id` stamped onto a line item comes from
- * an ACTIVE row in `guardian_links` read on the server. A guardian who posts a
- * student id they are not linked to changes nothing, because the request's
- * student ids are never read.
+ * WHAT THIS REPLACED, AND WHY. The 2026-08-27 implementation built one line item
+ * for EVERY active link, so a guardian with three linked students was charged
+ * for three the moment they pressed Subscribe. That behaviour was never ruled —
+ * it emerged from the shape of the builder — and the owner ruled against it on
+ * 2026-08-28. Doc 01 V8 supports per-student throughout: §20 and §31.4 both say
+ * "linked student", singular, and §36.4's unlink prompt ("You are still paying
+ * for **this student's** subscription. Keep or cancel?") is only answerable if
+ * the money was per-student to begin with.
  *
- * UNVERIFIED, AND DELIBERATELY NOT WORKED AROUND: whether Checkout propagates
- * `line_items[].metadata` onto the resulting SubscriptionItem. The pinned SDK
- * exposes the parameter (`Checkout/SessionsResource.d.ts`,
- * `line_items[].metadata?: Stripe.MetadataParam`) but type definitions cannot
- * say what the API does with it, `docs.stripe.com` is egress-blocked from this
- * environment, and `STRIPE_BILLING_DIAGNOSTICS` is absent so the probe cannot be
- * run. §3 of the 4.8 plan is that probe.
- *
- * THE FAILURE MODE IF IT DOES NOT PROPAGATE IS SAFE, WHICH IS WHY THIS SHIPS
- * AHEAD OF THE PROBE: items would arrive carrying no `student_profile_id`, and
- * `resolveEntitlementItem` returns null for a multi-item subscription with no
- * match, so `writeEntitlementsFromSubscription` fails closed and grants NOTHING.
- * It cannot grant the WRONG student — that is the outcome worth ruling out.
+ * THE MECHANIC IS NOT A SECOND SUBSCRIPTION. A guardian's second student becomes
+ * a new SubscriptionItem on the SAME subscription — one Customer, one
+ * subscription, one invoice, one payment method, one portal. That is what
+ * SCL-045's item-level entitlement key exists to support, and it is why this
+ * module answers "which student" rather than "which line items": the caller
+ * decides whether that student becomes a Checkout line item (first purchase) or
+ * an added subscription item (every purchase after).
  */
 import type { GuardianLink } from "../../../packages/shared/src/guardian-link-schema";
 
-/** One Checkout line item, stamped with the student it entitles. */
-export type GuardianLineItem = {
-  readonly price: string;
-  readonly quantity: 1;
-  readonly metadata: { readonly student_profile_id: string };
-};
+export type GuardianPurchaseSubject =
+  | { readonly ok: true; readonly studentProfileId: string }
+  | {
+      readonly ok: false;
+      readonly code: GuardianPurchaseRefusal;
+      readonly reason: string;
+    };
 
-export type GuardianCheckoutPlan =
-  | { readonly ok: true; readonly lineItems: readonly GuardianLineItem[] }
-  | { readonly ok: false; readonly reason: string };
+export type GuardianPurchaseRefusal =
+  | "NO_ACTIVE_LINKED_STUDENTS"
+  | "STUDENT_NOT_LINKED"
+  | "STUDENT_NOT_SELECTED";
 
 /**
- * Build the line items for a guardian's checkout.
+ * Resolve the one student a guardian's purchase entitles.
  *
- * Pure and deterministic: same links and price in, same items out, in the
- * reader's `created_at` order. No IO, so the link read has exactly one owner.
+ * Pure and deterministic: same links and same request in, same verdict out. No
+ * IO, so the `guardian_links` read has exactly one owner (the route).
+ *
+ * CHARTER §6. `requestedStudentProfileId` is caller-supplied and is treated as a
+ * SELECTION, never as an authorisation. It is returned only if it appears in
+ * `activeLinks`, which the caller read from the server. A guardian who names a
+ * student they are not linked to gets `STUDENT_NOT_LINKED` and nothing is
+ * purchased. There is deliberately no "if only one link, assume that one"
+ * convenience: silently choosing a subject the guardian did not name is how a
+ * cover-all default gets reintroduced.
  *
  * @param activeLinks  ACTIVE guardian links, read server-side
- * @param priceId      the price for the chosen plan
+ * @param requestedStudentProfileId  the student the guardian selected
  */
-export function buildGuardianLineItems(
+export function resolveGuardianPurchaseSubject(
   activeLinks: readonly GuardianLink[],
-  priceId: string,
-): GuardianCheckoutPlan {
-  if (activeLinks.length === 0) {
+  requestedStudentProfileId: string | undefined,
+): GuardianPurchaseSubject {
+  const linkedStudentIds = new Set(
+    activeLinks
+      .map((l) => l.student_profile_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  if (linkedStudentIds.size === 0) {
     return {
       ok: false,
+      code: "NO_ACTIVE_LINKED_STUDENTS",
       reason:
         "guardian has no active linked students, so there is nobody to entitle. " +
-        "Not an error state to paper over: a subscription with zero items is " +
-        "not a thing Stripe will create, and charging a guardian for nothing " +
-        "would be worse than refusing.",
+        "Not an error to paper over: charging a guardian for nobody would be " +
+        "worse than refusing.",
     };
   }
 
-  const seen = new Set<string>();
-  const lineItems: GuardianLineItem[] = [];
-
-  for (const link of activeLinks) {
-    const studentProfileId = link.student_profile_id;
-    if (!studentProfileId) continue;
-
-    // A duplicate would create two items entitling one student, and after
-    // migration 20260827010000 the second would collide on
-    // `entitlements_profile_id_unique` at write time — a failure discovered
-    // after the money moved. `unique_active_link` should already prevent this;
-    // the guard is here because "should" is not a constraint we control from
-    // this side of the call.
-    if (seen.has(studentProfileId)) continue;
-    seen.add(studentProfileId);
-
-    lineItems.push({
-      price: priceId,
-      quantity: 1,
-      metadata: { student_profile_id: studentProfileId },
-    });
-  }
-
-  if (lineItems.length === 0) {
+  if (!requestedStudentProfileId) {
     return {
       ok: false,
+      code: "STUDENT_NOT_SELECTED",
       reason:
-        "guardian has links but none names a student profile — a shape the " +
-        "schema should make impossible, so it fails closed rather than " +
-        "creating an empty subscription.",
+        "no student selected. A guardian purchase is per student (Doc 01 V8 " +
+        "§20, §31.4, §36.4), and defaulting to a link the guardian did not " +
+        "choose would charge them for a child they did not select.",
     };
   }
 
-  return { ok: true, lineItems };
+  if (!linkedStudentIds.has(requestedStudentProfileId)) {
+    return {
+      ok: false,
+      code: "STUDENT_NOT_LINKED",
+      reason:
+        "the selected student is not one of this guardian's ACTIVE links. The " +
+        "request names a choice; the server's own read of `guardian_links` is " +
+        "what authorises it (Charter §6).",
+    };
+  }
+
+  return { ok: true, studentProfileId: requestedStudentProfileId };
+}
+
+/**
+ * Is this student already funded by an item on the guardian's subscription?
+ *
+ * Buying twice for one student would create a second item entitling the same
+ * profile — double billing, and after migration 20260827010000 the second
+ * entitlement write would collide on `entitlements_profile_id_unique` AFTER the
+ * money moved. Checked before the purchase, not after.
+ */
+export function subscriptionAlreadyFundsStudent(
+  items: readonly {
+    readonly metadata?: { student_profile_id?: string } | null;
+  }[],
+  studentProfileId: string,
+): boolean {
+  return items.some((i) => i.metadata?.student_profile_id === studentProfileId);
 }

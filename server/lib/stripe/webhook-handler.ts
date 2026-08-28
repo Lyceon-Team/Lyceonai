@@ -238,7 +238,23 @@ const retrievedSubscriptionSchema = z.object({
    * carries.
    */
   metadata: z
-    .object({ payer_profile_id: z.string().min(1).nullish() })
+    .object({
+      payer_profile_id: z.string().min(1).nullish(),
+      /**
+       * The SINGLE-STUDENT FALLBACK (2026-08-28). On a guardian's FIRST
+       * purchase the subscription funds exactly one student, and the route
+       * stamps that student here as well as on the Checkout line item. The
+       * writer uses this only when the subscription has exactly ONE item and
+       * that item carries no student of its own — which is precisely the shape
+       * that appears if Checkout does not propagate `line_items[].metadata`.
+       *
+       * This is why the guardian path no longer DEPENDS on the unverified
+       * propagation probe: with one item and one named student there is nothing
+       * to guess. It is deliberately NOT a fallback for several items, where
+       * picking a subject would be a guess.
+       */
+      student_profile_id: z.string().min(1).nullish(),
+    })
     .passthrough()
     .nullish(),
   items: z
@@ -904,10 +920,32 @@ async function writeEntitlementsForAllItems(
     candidates.push({ itemId: item.id, studentProfileId });
   }
 
+  // THE SINGLE-STUDENT FALLBACK. Exactly one item, that item carrying no
+  // student, and the SUBSCRIPTION naming one: unambiguous, so use it. This is
+  // the shape a guardian's first purchase takes if Checkout does not propagate
+  // `line_items[].metadata`, and resolving it here is what removes this path's
+  // dependence on a probe that cannot be run in this environment.
+  //
+  // Deliberately restricted to the one-item case. With several items a
+  // subscription-level student names one of them at most, and choosing which
+  // would be the guess this whole writer exists to refuse.
+  const subscriptionLevelStudent = subscription.metadata?.student_profile_id;
+  const firstItem = items[0];
+  if (
+    candidates.length === 0 &&
+    items.length === 1 &&
+    firstItem &&
+    subscriptionLevelStudent
+  ) {
+    candidates.push({
+      itemId: firstItem.id,
+      studentProfileId: subscriptionLevelStudent,
+    });
+    skipped = 0;
+  }
+
   if (candidates.length === 0) {
-    // Every item lacked a student. Most likely cause: Checkout did not
-    // propagate `line_items[].metadata` onto the SubscriptionItem — the one
-    // mechanism §4.8's plan could not verify without a Stripe key. Fail loudly
+    // No item names a student and no unambiguous fallback exists. Fail loudly
     // rather than acknowledging an event that entitled nobody.
     throw new StripePayloadShapeError(
       eventType,
@@ -959,9 +997,11 @@ async function writeEntitlementsForAllItems(
 
   // ---- Every subject is server-authorised; write ------------------------
   let written = 0;
-  for (const item of items) {
-    const studentProfileId = item.metadata?.student_profile_id;
-    if (!studentProfileId) continue;
+  const itemById = new Map(items.map((i) => [i.id, i]));
+  for (const candidate of candidates) {
+    const item = itemById.get(candidate.itemId);
+    if (!item) continue;
+    const studentProfileId = candidate.studentProfileId;
 
     await upsertEntitlement(studentProfileId, {
       tier,

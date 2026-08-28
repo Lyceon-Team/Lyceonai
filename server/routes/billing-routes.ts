@@ -31,7 +31,6 @@
  */
 import { Request, Response, Router } from "express";
 import type Stripe from "stripe";
-import { z } from "zod";
 import {
   requireSupabaseAuth,
   sendUnauthenticated,
@@ -50,11 +49,28 @@ import {
   setProfileStripeCustomerId,
   getAllGuardianStudentLinks,
 } from "../lib/account";
-import { buildGuardianLineItems } from "../lib/stripe/guardian-checkout";
+import {
+  resolveGuardianPurchaseSubject,
+  subscriptionAlreadyFundsStudent,
+} from "../lib/stripe/guardian-checkout";
+import {
+  evaluateCountryEligibility,
+  deniesEntitlement,
+} from "../lib/stripe/country-eligibility";
+import { getTier1Countries } from "../lib/entitlement-runtime-config";
+import { billingCheckoutRequestSchema } from "../../packages/shared/src/billing-schema";
+
 import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { normalizeRuntimeRole } from "../lib/auth-role";
+
+/**
+ * How many of a guardian's subscriptions to scan when deciding whether to add
+ * an item or start one. The product creates at most ONE per payer, so this only
+ * has to be large enough to detect the anomaly it fails closed on.
+ */
+const GUARDIAN_SUBSCRIPTION_SCAN_LIMIT = 10;
 
 const router = Router();
 
@@ -76,7 +92,7 @@ function sendGuardianBlocked(res: Response, requestId?: string): Response {
  * The ONLY field a caller supplies. `.strict()` rejects unknown keys, so a
  * client cannot smuggle a profile id, a price id, or an entitlement claim.
  */
-const checkoutSchema = z.object({ plan: z.enum(BILLING_PERIODS) }).strict();
+const checkoutSchema = billingCheckoutRequestSchema;
 
 function siteBaseUrl(): string {
   return (
@@ -156,63 +172,217 @@ router.post(
         await setProfileStripeCustomerId(payerProfileId, customerId);
       }
 
-      /**
-       * §4.8 GUARDIAN-PAID CHECKOUT — the production call site.
-       *
-       * @spec [SCL-043 payer identity; SCL-044 payer email; SCL-045 one
-       *        SubscriptionItem per student; Doc 01 V8 §31.3; Charter §6]
-       * @implemented [2026-08-28 — Codex HIGH-2]
-       *
-       * plain English: a guardian pays once and every linked student gets
-       * premium. Expected outcome: N line items for N ACTIVE links, each
-       * stamped with its own student.
-       *
-       * WHAT WAS WRONG. `buildGuardianLineItems` shipped with no production
-       * caller — this route returned 503 to every guardian, so §4.8 was
-       * reported implemented while being unreachable.
-       *
-       * CHARTER §6. The student ids come from `getAllGuardianStudentLinks`
-       * read on the SERVER. The request body is `.strict()` and carries only a
-       * plan, so a guardian cannot name a student they are not linked to —
-       * the request's student ids are never read because there are none.
-       */
       let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
       let sessionMetadata: Record<string, string>;
 
+      /**
+       * §4.8 GUARDIAN-PAID PURCHASE — PER STUDENT. The production call site.
+       *
+       * @spec [Doc 01 V8 §20 "Who pays"; §31.4; §36.4; SCL-043 payer identity;
+       *        SCL-044 payer email; SCL-045 one SubscriptionItem per student;
+       *        Charter §6] | @implemented [2026-08-28 — owner ruling]
+       *
+       * plain English: the guardian picks ONE linked student and pays for that
+       * student. Expected outcome: their first purchase creates a subscription
+       * with a single item; every purchase after adds an item to that same
+       * subscription. Trade-off: two children means two transactions, which is
+       * the point — the alternative charged for children the guardian never
+       * chose. Edge cases: no links, a student they are not linked to, and a
+       * student already funded — all refused before any money moves.
+       *
+       * ONE CUSTOMER, ONE SUBSCRIPTION, ONE INVOICE. The second student is a new
+       * SubscriptionItem on the EXISTING subscription, never a second
+       * subscription. Stripe prorates that natively — `proration_behavior`
+       * defaults to `create_prorations` (stripe@20.4.1,
+       * `SubscriptionItemsResource.d.ts`: "The default value is
+       * `create_prorations`", citing
+       * https://docs.stripe.com/billing/subscriptions/prorations) — so the
+       * default is deliberately NOT overridden: the guardian is charged for the
+       * remainder of the current period and everything lands on one invoice.
+       */
       if (isGuardian) {
         const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
-        const plan_ = buildGuardianLineItems(activeLinks, priceId);
-        if (!plan_.ok) {
-          // Not a 500: a guardian with no active links is a legitimate state
-          // with nothing to buy, and charging for nothing would be worse.
-          logger.info("BILLING", "checkout", "Guardian checkout refused", {
+        const subject = resolveGuardianPurchaseSubject(
+          activeLinks,
+          parsed.data.student_profile_id,
+        );
+        if (!subject.ok) {
+          // Not a 500: every one of these is a legitimate client state with a
+          // specific remedy, and the code names which.
+          logger.info("BILLING", "checkout", "Guardian purchase refused", {
             requestId,
-            payerProfileRef: digestId(payerProfileId),
-            reason: plan_.reason,
+            payerProfileId,
+            code: subject.code,
+            reason: subject.reason,
           });
-          return res.status(409).json({
+          return res
+            .status(subject.code === "STUDENT_NOT_SELECTED" ? 400 : 409)
+            .json({
+              error: { message: subject.reason, code: subject.code },
+              requestId,
+            });
+        }
+        const selectedStudentId = subject.studentProfileId;
+
+        /**
+         * INV-03-08 country gate — the SECOND production call site.
+         *
+         * The add-item path never produces a `checkout.session.completed`, so
+         * the gate wired there does not see it. Without this, buying for a
+         * second child would grant premium with no country decision — the
+         * identical fail-open money path Codex found for the first child.
+         * The payer's country is the authoritative signal (SCL-046), and by
+         * this point the Customer carries the address Checkout collected.
+         */
+        const customer = await stripe.customers.retrieve(customerId);
+        const payerCountry =
+          "deleted" in customer && customer.deleted
+            ? null
+            : (customer as Stripe.Customer).address?.country;
+        const eligibility = evaluateCountryEligibility(
+          payerCountry,
+          await getTier1Countries(),
+        );
+        if (deniesEntitlement(eligibility)) {
+          logger.warn(
+            "BILLING",
+            "checkout",
+            "Guardian purchase denied by INV-03-08 country gate",
+            {
+              requestId,
+              payerProfileId,
+              verdict: eligibility.verdict,
+            },
+          );
+          return res.status(403).json({
             error: {
               message:
-                "No active linked students to purchase for. Link a student first.",
-              code: "NO_ACTIVE_LINKED_STUDENTS",
+                "This account's billing country is not eligible for premium at launch.",
+              code: "COUNTRY_NOT_ELIGIBLE",
             },
             requestId,
           });
         }
-        lineItems = plan_.lineItems.map((i) => ({
-          price: i.price,
-          quantity: i.quantity,
-          metadata: { ...i.metadata },
-        }));
-        // SCL-043: the SUBSCRIPTION names the PAYER. No `student_profile_id`
-        // here — there is no single student — which is exactly the signal the
-        // webhook dispatcher reads to take the item path.
+
+        /**
+         * Does this guardian already have a subscription? Stripe is the source
+         * of truth for billing, so this is asked of Stripe rather than inferred
+         * from our entitlement rows.
+         *
+         * More than one active subscription is a shape this product never
+         * creates (that is the whole point of the item model), so it fails
+         * closed rather than picking one and adding an item to the wrong
+         * invoice.
+         */
+        const existing = await stripe.subscriptions.list({
+          customer: customerId,
+          status: "active",
+          limit: GUARDIAN_SUBSCRIPTION_SCAN_LIMIT,
+        });
+        if (existing.data.length > 1) {
+          logger.error(
+            "BILLING",
+            "checkout",
+            "Guardian has several active subscriptions; refusing to guess which to extend",
+            { requestId, payerProfileId, count: existing.data.length },
+          );
+          return res.status(409).json({
+            error: {
+              message:
+                "This account has more than one active subscription. Contact support.",
+              code: "AMBIGUOUS_SUBSCRIPTION",
+            },
+            requestId,
+          });
+        }
+
+        const currentSubscription = existing.data[0];
+
+        if (currentSubscription) {
+          // ---- ADD AN ITEM TO THE EXISTING SUBSCRIPTION ----------------
+          if (
+            subscriptionAlreadyFundsStudent(
+              currentSubscription.items?.data ?? [],
+              selectedStudentId,
+            )
+          ) {
+            return res.status(409).json({
+              error: {
+                message:
+                  "This student is already covered by your subscription.",
+                code: "STUDENT_ALREADY_FUNDED",
+              },
+              requestId,
+            });
+          }
+
+          // Metadata is set DIRECTLY on the item here, so this path does not
+          // depend on Checkout propagating `line_items[].metadata` — the one
+          // mechanism §4.8's plan could never verify. Only a guardian's FIRST
+          // purchase goes through Checkout at all.
+          const item = await stripe.subscriptionItems.create({
+            subscription: currentSubscription.id,
+            price: priceId,
+            quantity: 1,
+            // proration_behavior deliberately omitted: Stripe's default
+            // `create_prorations` is exactly the wanted behaviour.
+            metadata: { student_profile_id: selectedStudentId },
+          });
+
+          logger.info(
+            "BILLING",
+            "checkout",
+            "Student added to existing subscription",
+            {
+              requestId,
+              payerProfileId,
+              studentProfileId: selectedStudentId,
+              subscriptionId: currentSubscription.id,
+              subscriptionItemId: item.id,
+              plan,
+            },
+          );
+
+          return res.json({
+            kind: "item_added",
+            subscriptionItemId: item.id,
+            requestId,
+          });
+        }
+
+        // ---- FIRST PURCHASE: CREATE THE SUBSCRIPTION VIA CHECKOUT -------
+        //
+        // The subscription metadata names BOTH the payer and the single
+        // student. The payer marks it guardian-paid; the student is the
+        // subscription-level fallback the webhook uses when a one-item
+        // subscription's item carries no metadata of its own. That fallback is
+        // what makes this path safe WITHOUT the unverified propagation probe.
+        lineItems = [
+          {
+            price: priceId,
+            quantity: 1,
+            metadata: { student_profile_id: selectedStudentId },
+          },
+        ];
         sessionMetadata = {
           payer_profile_id: payerProfileId,
+          student_profile_id: selectedStudentId,
           payer_relationship: "guardian",
           plan,
         };
       } else {
+        if (parsed.data.student_profile_id) {
+          // Rejected, not ignored: a student who thinks they bought for someone
+          // else must be told they did not.
+          return res.status(400).json({
+            error: {
+              message:
+                "A student purchase cannot name another student. Only guardians buy for a linked student.",
+              code: "STUDENT_CANNOT_SELECT_SUBJECT",
+            },
+            requestId,
+          });
+        }
         lineItems = [{ price: priceId, quantity: 1 }];
         sessionMetadata = {
           student_profile_id: studentProfileId,
@@ -245,7 +415,15 @@ router.post(
         sessionRef: digestId(session.id),
       });
 
-      return res.json({ url: session.url, sessionId: session.id, requestId });
+      // `url` stays top-level: `client/src/lib/billing-client.ts` reads it, and
+      // the billing portal route shares that helper. `kind` discriminates the
+      // two guardian outcomes without moving it.
+      return res.json({
+        kind: "checkout_session",
+        url: session.url,
+        sessionId: session.id,
+        requestId,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("BILLING", "checkout", "Failed to create checkout session", {

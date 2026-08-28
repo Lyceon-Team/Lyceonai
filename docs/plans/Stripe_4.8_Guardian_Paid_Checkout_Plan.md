@@ -1,6 +1,6 @@
 # §4.8 Guardian-paid checkout — PLAN, and (2026-08-28) the implementation record
 
-**Date:** 2026-08-27 · **Revised:** 2026-08-28 · **Status:** implemented and wired · **Author:** Claude Code
+**Date:** 2026-08-27 · **Revised:** 2026-08-28 (twice: Codex fixes, then the per-student ruling) · **Status:** implemented and wired, per-student · **Author:** Claude Code
 
 Per the work block: *"4.8 guardian-paid checkout: plan first, reported, before any code."*
 Nothing in this document has been implemented. Every claim below was checked against the
@@ -209,7 +209,7 @@ without a call site is the defect this whole round is about.
 
 | what | production call site |
 |---|---|
-| guardian line items, one per ACTIVE link | `server/routes/billing-routes.ts` — `POST /api/billing/checkout`, guardian branch |
+| guardian purchase subject, ONE selected student (**superseded by §11** — was one per ACTIVE link) | `server/routes/billing-routes.ts` — `POST /api/billing/checkout`, guardian branch |
 | N-row entitlement write | `server/lib/stripe/webhook-handler.ts` — `writeEntitlementsForAllItems`, reached from both `checkout.session.completed` and the subscription dispatcher |
 | server-side subject authorisation | same function — `getAllGuardianStudentLinks(payerProfileId)` |
 
@@ -248,9 +248,125 @@ and remains unapplied.
 
 2. **§4.1's live subscription object** remains unprinted, same cause.
 
-3. **Open question 2 (partial guardian payment)** is unchanged and unanswered: a guardian pays for
-   two of three linked students. Today `buildGuardianLineItems` covers **every** active link, so the
-   subset case cannot arise — that is a decision the code makes, and it deserves an owner ruling
-   rather than being settled by implementation convenience.
+3. **Open question 2 (partial guardian payment) is RESOLVED by the §11 ruling.** A guardian pays for
+   two of three linked students by buying for each one separately; the third simply has no item and no
+   entitlement. That is now the designed behaviour rather than an unreachable case.
 
 4. **Open question 3 (contract change to `studentUserId`)** is unchanged and unanswered.
+
+
+---
+
+## 11. OWNER RULING 2026-08-28 — GUARDIAN CHECKOUT IS PER STUDENT
+
+**Ruled:** the guardian sees their linked students, picks ONE, and pays for that student's
+entitlement. This REPLACES the cover-all-links behaviour that shipped on 2026-08-27.
+
+The cover-all behaviour was never ruled — it emerged from the shape of `buildGuardianLineItems`,
+which built one line item per active link. A guardian with three linked children was charged for
+three the moment they pressed Subscribe. It is reversed.
+
+### 11.1 Spec verification — asked before building, and nothing contradicts the ruling
+
+| section | verified heading | what it says | bearing |
+|---|---|---|---|
+| §20 "Who pays" | `## **§20 Subscription model**` | "Guardian pays for linked student: guardian initiates Checkout on **student's** behalf… entitlement attaches to the student profile" | singular throughout — supports per-student |
+| §31.4 | `### **31.4 Guardian paying for linked student**` | "Guardian pays for student… Subscription produces entitlement on **student's profile**" | singular — supports |
+| §36.4 | `### **36.4 Unlinking and billing implications**` | "You are still paying for **this student's** subscription. Keep or cancel?" | per-student granularity at unlink, which is only answerable if the purchase was per-student |
+| §31.3 | `### **31.3 Guardian with multiple linked students**` | any one active premium student grants the guardian derivation | about DERIVATION, not purchase — no bearing either way |
+
+**ONE tension, and it is already registered.** §20 also says "**Stripe Subscription per entitled
+profile**", which read literally would mean one subscription per student rather than one per payer.
+That exact sentence is already the `WAS` of **SCL-045** (PROPOSED, 2026-08-20), whose `IS` is "One
+Stripe Customer per payer. One Subscription per payer. One SubscriptionItem per entitled student."
+So the ruling does not create a new contradiction — it lands inside one the register already owns.
+SCL-045 also already cites §36.4's "this student's subscription" as the spec's own support for
+per-student granularity, which is the same evidence this ruling rests on.
+
+**Nothing else in Doc 01 V8 contradicts per-student selection.** No section specifies a bulk or
+all-children purchase; SCL-045 recorded the proof of absence ("family plan" appears once corpus-wide,
+as `(future)`).
+
+### 11.2 The mechanic — verified against Stripe
+
+**One Customer, one subscription, one invoice, one payment method, one portal.** The second student
+is a new `SubscriptionItem` on the EXISTING subscription — never a second subscription.
+
+| case | what the route does |
+|---|---|
+| guardian has no subscription | Checkout Session, ONE line item for the selected student |
+| guardian has a subscription | `subscriptionItems.create({subscription, price, quantity: 1, metadata})` — no Checkout, payment method already on file |
+
+**Verified from the pinned SDK (`stripe@20.4.1`), which ships Stripe's own generated docstrings.**
+`docs.stripe.com` is egress-blocked from this environment (HTTP 000 via curl, `EGRESS_BLOCKED` via
+the fetch tool), so the primary page could not be read directly; the SDK is generated from Stripe's
+OpenAPI spec and carries the same prose, and it cites the page:
+
+- `types/SubscriptionItemsResource.d.ts`, `SubscriptionItemCreateParams.subscription`:
+  *"The identifier of the subscription to modify."* — **required**, which is what makes this "add to
+  the existing subscription" rather than "create a new one".
+- Same file, `proration_behavior`: *"Determines how to handle
+  [prorations](https://docs.stripe.com/billing/subscriptions/prorations) when the billing cycle
+  changes… **The default value is `create_prorations`.**"*
+  → **Page cited: https://docs.stripe.com/billing/subscriptions/prorations**
+- `ProrationBehavior = 'always_invoice' | 'create_prorations' | 'none'`.
+
+**We do not set `proration_behavior`.** The default is exactly the wanted behaviour — Stripe credits
+and charges for the partial period natively, and it lands on the guardian's next invoice. Setting it
+explicitly to `create_prorations` would be re-stating a native default in our own code, which is the
+"nothing bespoke" rule applied to a one-line parameter. A test asserts it is left unset.
+
+**An unplanned benefit, worth naming.** `SubscriptionItemCreateParams.metadata` is set DIRECTLY on the
+item by this call. So the add-item path does **not** depend on Checkout propagating
+`line_items[].metadata` — the mechanism §3's probe exists to verify. Only a guardian's FIRST purchase
+touches Checkout at all, and §11.3 removes the dependency there too.
+
+### 11.3 The first purchase no longer depends on the unverified probe either
+
+A guardian's first purchase creates a one-item subscription, and the route stamps the selected student
+on BOTH the line item and `subscription_data.metadata`. The webhook writer now takes a
+**single-student fallback**: exactly ONE item, that item carrying no student, and the subscription
+naming one → use it. Unambiguous by construction, and deliberately restricted to the one-item case.
+
+The probe (§10.1) therefore stays open but is no longer **blocking**: if propagation works the item
+metadata is used; if it does not, the fallback resolves the same student. Neither path can entitle the
+wrong person.
+
+### 11.4 What the route needs from the client — the selection UI is NOT built here
+
+The selection surface is a client concern. What the route requires of it:
+
+- `POST /api/billing/checkout` with `{ plan, student_profile_id }`. Schema:
+  `packages/shared/src/billing-schema.ts` → `billingCheckoutRequestSchema` (`.strict()`).
+- `student_profile_id` must be a student the guardian is **actively linked** to. The client should
+  populate the picker from the guardian's existing linked-students surface; the server re-reads
+  `guardian_links` and refuses anything not in it, so a stale picker is safe.
+- The response is discriminated on `kind`:
+  `{kind: "checkout_session", url, sessionId}` → redirect to `url` (existing client behaviour,
+  unchanged); `{kind: "item_added", subscriptionItemId}` → **do not redirect**; the purchase is
+  already complete, so show a confirmation.
+- Refusals to render, each with its own remedy: `STUDENT_NOT_SELECTED` (400),
+  `STUDENT_NOT_LINKED` (409), `NO_ACTIVE_LINKED_STUDENTS` (409), `STUDENT_ALREADY_FUNDED` (409),
+  `AMBIGUOUS_SUBSCRIPTION` (409), `COUNTRY_NOT_ELIGIBLE` (403).
+
+### 11.5 Charter §6 — a selection is not a claim
+
+`student_profile_id` is caller-supplied, which looks like a Charter §6 violation and is not. Charter §6
+forbids a caller-supplied value from GATING entitlement; it does not forbid choosing among options the
+server already knows. The id **selects**; the server's own read of `guardian_links` **authorises**.
+Trusting the id because it is a well-formed uuid — without that read — is exactly Codex HIGH-3, and it
+is called out in both the schema and the resolver so nobody reintroduces it.
+
+### 11.6 A second country-gate call site, because the add-item path has no Checkout
+
+Adding an item produces `customer.subscription.updated`, never `checkout.session.completed`, so the
+gate wired at that event does not see it. Without a second check, buying for a second child would grant
+premium with **no country decision** — the same fail-open money path Codex found for the first. The
+route now evaluates the payer's Customer billing country before adding the item. Tested; planted.
+
+### 11.7 Consequence recorded, not resolved: §36.4 unlink under the item model
+
+§36.4 says "If canceled: subscription **canceled** via Stripe". Under SCL-045's item model, cancelling
+ONE student is `subscriptionItems.del`, not cancelling the subscription — cancelling it would remove
+premium from the guardian's OTHER children. The §36.4 prose predates the item model. Not built here
+(unlink is not this workstream), and flagged so it is not implemented literally.
