@@ -30,6 +30,7 @@ const accountMocks = vi.hoisted(() => ({
   getProfileStripeCustomerId: vi.fn(),
   setProfileStripeCustomerId: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(async () => []),
+  resolveLinkedPairPremiumAccessForGuardian: vi.fn(),
 }));
 
 const stripeMocks = vi.hoisted(() => ({
@@ -113,6 +114,8 @@ vi.mock("../../server/lib/account", () => ({
   getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
   setProfileStripeCustomerId: accountMocks.setProfileStripeCustomerId,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
+  resolveLinkedPairPremiumAccessForGuardian:
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian,
 }));
 
 vi.mock("../../server/lib/stripe/client", () => ({
@@ -200,7 +203,14 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
   // --- guardian billing is explicitly unavailable, not silently wrong ----------
 
-  it("returns an explicit unavailable response for guardian billing status", async () => {
+  /**
+   * REPLACED 2026-08-28 (Codex MEDIUM). This asserted 503
+   * GUARDIAN_BILLING_UNAVAILABLE, which was correct only while guardian billing
+   * did not exist. With guardian checkout live it pinned a self-contradictory
+   * surface: a guardian could POST /checkout and buy, then be told by /status
+   * that billing was unavailable.
+   */
+  it("reports a guardian's DERIVED entitlement, not a row of their own (§31.1)", async () => {
     authState.currentUser = {
       id: "22222222-2222-4222-8222-222222222222",
       role: "guardian",
@@ -208,11 +218,42 @@ describe("Identity + Entitlement Runtime Contract", () => {
       isGuardian: true,
       isAdmin: false,
     } as any;
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: true,
+      hasActiveLink: true,
+      studentEntitlementStatus: "active",
+    });
 
     const res = await request(await billingApp()).get("/api/billing/status");
 
-    expect(res.status).toBe(503);
-    expect(res.body.code).toBe("GUARDIAN_BILLING_UNAVAILABLE");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      plan: "premium",
+      effectiveAccess: true,
+      // Named as derived: a guardian has no entitlement row of their own, and
+      // an answer that merely happened to equal the student's would be right by
+      // coincidence rather than by derivation.
+      source: "guardian_linked_student",
+    });
+  });
+
+  it("reports free for a guardian whose linked student is not premium", async () => {
+    authState.currentUser = {
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    } as any;
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: false,
+      hasActiveLink: true,
+      studentEntitlementStatus: "canceled",
+    });
+
+    const res = await request(await billingApp()).get("/api/billing/status");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ plan: "free", effectiveAccess: false });
   });
 
   /**

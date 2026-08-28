@@ -48,6 +48,7 @@ import {
   getProfileStripeCustomerId,
   setProfileStripeCustomerId,
   getAllGuardianStudentLinks,
+  resolveLinkedPairPremiumAccessForGuardian,
 } from "../lib/account";
 import {
   resolveGuardianPurchaseSubject,
@@ -63,6 +64,7 @@ import { billingCheckoutRequestSchema } from "../../packages/shared/src/billing-
 
 import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
+import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { normalizeRuntimeRole } from "../lib/auth-role";
 
@@ -74,20 +76,6 @@ import { normalizeRuntimeRole } from "../lib/auth-role";
 const GUARDIAN_SUBSCRIPTION_SCAN_LIMIT = 10;
 
 const router = Router();
-
-/**
- * Guardian-paid billing is unbuilt, not broken-by-omission. One response, one
- * code, one place — so the reason is greppable when WS-GL lands.
- */
-const GUARDIAN_BLOCKED = {
-  error:
-    "Guardian-paid billing is not available yet. Student self-purchase is supported.",
-  code: "GUARDIAN_BILLING_UNAVAILABLE" as const,
-};
-
-function sendGuardianBlocked(res: Response, requestId?: string): Response {
-  return res.status(503).json({ ...GUARDIAN_BLOCKED, requestId });
-}
 
 /**
  * The ONLY field a caller supplies. `.strict()` rejects unknown keys, so a
@@ -470,8 +458,51 @@ router.get(
         .status(403)
         .json({ error: "Admins cannot access billing status", requestId });
     }
+    /**
+     * @spec [Doc 01 V8 §31.1 "Guardians do NOT have their own entitlement";
+     *        §31.2 derivation] | @implemented [2026-08-28 — Codex MEDIUM]
+     *
+     * REPLACES a 503 GUARDIAN_BILLING_UNAVAILABLE. That response was correct
+     * only while guardian billing did not exist; with guardian checkout live it
+     * made the surface self-contradictory — a guardian could POST /checkout and
+     * buy, then be told by /status that billing was unavailable.
+     *
+     * A guardian has no entitlement ROW of their own (§31.1), so reading
+     * `getEntitlementForProfile(guardianId)` would report `free` forever and be
+     * wrong in the other direction. Their access DERIVES from a linked
+     * student, and `resolveLinkedPairPremiumAccessForGuardian` is the existing
+     * single owner of that derivation — consumed here rather than reimplemented.
+     */
     if (role === "guardian") {
-      return sendGuardianBlocked(res, requestId);
+      try {
+        const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
+        return res.json({
+          plan: access.hasPremiumAccess ? "premium" : "free",
+          stripeStatus: access.studentEntitlementStatus,
+          currentPeriodEnd: null,
+          stripeSubscriptionId: null,
+          effectiveAccess: access.hasPremiumAccess,
+          needsPaymentUpdate:
+            access.studentEntitlementStatus === "past_due" ||
+            access.studentEntitlementStatus === "unpaid",
+          isPaid: access.hasPremiumAccess,
+          // The guardian's access is DERIVED, and saying so is the difference
+          // between a correct answer and a coincidentally equal one.
+          source: "guardian_linked_student",
+          requestId,
+        });
+      } catch (err: unknown) {
+        logger.error(
+          "BILLING",
+          "status",
+          "Failed to derive guardian entitlement",
+          { requestId, profileId: userId, ...classifyError(err) },
+        );
+        return res.status(503).json({
+          error: "Unable to read subscription status",
+          requestId,
+        });
+      }
     }
 
     try {
@@ -539,10 +570,15 @@ router.post(
         .status(403)
         .json({ error: "Admins cannot access the billing portal", requestId });
     }
-    if (role === "guardian") {
-      return sendGuardianBlocked(res, requestId);
-    }
-
+    /**
+     * The guardian guard is DELETED, not replaced. A guardian who has purchased
+     * has a Stripe Customer of their own (they are the payer, SCL-043), and the
+     * per-student ruling's whole shape is ONE Customer, ONE subscription, ONE
+     * portal. Refusing them the portal would leave a paying customer unable to
+     * update a card or cancel. A guardian who has never purchased has no
+     * Customer and falls into the existing 409 below — the same answer a
+     * student in that state gets.
+     */
     try {
       const customerId = await getProfileStripeCustomerId(userId);
       if (!customerId) {

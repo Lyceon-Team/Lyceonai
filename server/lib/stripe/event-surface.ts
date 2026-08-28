@@ -84,12 +84,11 @@ export const EVENT_DISPOSITION: Record<SubscribedEvent, EventDisposition> = {
   // visible to an operator.
   "checkout.session.async_payment_failed": HANDLED,
 
-  "customer.updated": ignored(
-    "SCL-046 country derivation is not built. The Portal permits " +
-      "customer-initiated billing-address changes, so this event is the egress " +
-      "trigger for a country the customer chose. Handling it without the " +
-      "eligibility gate would record a country nothing acts on.",
-  ),
+  // SCL-047 country egress, BUILT 2026-08-28 (Codex HIGH-2). The Portal lets a
+  // customer change their billing address, so this event is the only signal
+  // that an existing subscriber has left Tier-1. Handled per the owner ruling:
+  // `cancel_at_period_end`, access to period end, gate at renewal.
+  "customer.updated": HANDLED,
   "customer.deleted": ignored(
     "SCL-070 amendment: a deleted Customer orphans an entitlement row that Doc " +
       "05D's cascade cannot see, because that cascade operates on Lyceon rows " +

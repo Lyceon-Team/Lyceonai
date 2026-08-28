@@ -52,6 +52,12 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
+  // Customer. Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test_1",
+    address: { country: "US" },
+  })),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -67,6 +73,7 @@ vi.mock("../../server/lib/stripe/client", async () => {
         resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -139,6 +146,7 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_country_gate",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       items: {
         object: "list",

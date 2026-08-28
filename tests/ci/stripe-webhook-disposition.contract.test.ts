@@ -55,6 +55,23 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // Codex HIGH-5: refunds/disputes now resolve charge -> payment intent ->
+  // invoice payment -> invoice -> subscription. Exact provenance, not a walk of
+  // the Customer's subscriptions.
+  invoicePaymentsList: vi.fn(async () => ({
+    object: "list",
+    data: [{ invoice: "in_test_1" }],
+  })),
+  invoicesRetrieve: vi.fn(async () => ({
+    id: "in_test_1",
+    parent: { subscription_details: { subscription: "sub_test_1" } },
+  })),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
+  // Customer. Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test_1",
+    address: { country: "US" },
+  })),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -71,6 +88,9 @@ vi.mock("../../server/lib/stripe/client", async () => {
         resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
+      invoicePayments: { list: stripeApi.invoicePaymentsList },
+      invoices: { retrieve: stripeApi.invoicesRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -217,6 +237,7 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     // only available link.
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_disposition",
+      payment_intent: "pi_test_1",
       object: "charge",
       customer: "cus_test_disposition",
       amount: 4900,
@@ -236,6 +257,7 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_disposition",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       customer: "cus_test_disposition",
       metadata: { student_profile_id: STUDENT_ID },

@@ -49,6 +49,23 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // Codex HIGH-5: refunds/disputes now resolve charge -> payment intent ->
+  // invoice payment -> invoice -> subscription. Exact provenance, not a walk of
+  // the Customer's subscriptions.
+  invoicePaymentsList: vi.fn(async () => ({
+    object: "list",
+    data: [{ invoice: "in_test_1" }],
+  })),
+  invoicesRetrieve: vi.fn(async () => ({
+    id: "in_test_1",
+    parent: { subscription_details: { subscription: "sub_test_1" } },
+  })),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
+  // Customer. Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test_1",
+    address: { country: "US" },
+  })),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -64,6 +81,9 @@ vi.mock("../../server/lib/stripe/client", async () => {
         resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
+      invoicePayments: { list: stripeApi.invoicePaymentsList },
+      invoices: { retrieve: stripeApi.invoicesRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -146,6 +166,7 @@ describe("Stripe disputes (SCL-073)", () => {
 
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_1",
+      payment_intent: "pi_test_1",
       object: "charge",
       amount: 4900,
       amount_refunded: 0,
@@ -161,6 +182,7 @@ describe("Stripe disputes (SCL-073)", () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       customer: "cus_test_1",
       metadata: { student_profile_id: STUDENT_ID },
@@ -236,6 +258,7 @@ describe("Stripe disputes (SCL-073)", () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active", // <- Stripe still says active
       pause_collection: { behavior: "keep_as_draft", resumes_at: null },
       items: {
@@ -327,42 +350,76 @@ describe("Stripe disputes (SCL-073)", () => {
     );
   });
 
-  it("refuses to guess when a disputed charge maps to several SUBSCRIPTIONS", async () => {
-    stripeApi.subscriptionsList.mockResolvedValue({
+  /**
+   * REPLACED 2026-08-28 (Codex HIGH-5). The old version asserted ambiguity
+   * between several SUBSCRIPTIONS on one Customer — a shape the resolver no
+   * longer produces, because it no longer walks the Customer's subscriptions at
+   * all. Ambiguity now lives one hop earlier: a charge that somehow paid more
+   * than one invoice.
+   */
+  it("refuses to guess when a charge maps to several INVOICE PAYMENTS", async () => {
+    stripeApi.invoicePaymentsList.mockResolvedValue({
       object: "list",
-      data: [
-        { id: "sub_test_1", object: "subscription" },
-        { id: "sub_test_2", object: "subscription" },
-      ],
+      data: [{ invoice: "in_test_1" }, { invoice: "in_test_2" }],
     });
-    accountMocks.getEntitlementsBySubscriptionId
-      .mockResolvedValueOnce([
-        { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_1" },
-      ])
-      .mockResolvedValueOnce([
-        { profile_id: OTHER_STUDENT_ID, stripe_subscription_id: "sub_test_2" },
-      ]);
 
     const process_ = await handler();
     const { body, signature } = signed(
       disputeEvent("charge.dispute.created", "needs_response"),
     );
 
-    // Ambiguity fails closed and loudly — the alternative is revoking a student
-    // whose payment was never disputed.
     await expect(
       process_(body, signature, "req_dispute_ambiguous"),
-    ).rejects.toThrow(/maps to 2 SUBSCRIPTIONS/);
+    ).rejects.toThrow(/maps to 2 invoice payments/);
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 
-  it("a disputed charge with no Customer changes nothing (absence, not ambiguity)", async () => {
+  /**
+   * THE defect Codex HIGH-5 named. A one-off charge — a gift, a manual invoice,
+   * a charge for a subscription since deleted — used to resolve, through the
+   * Customer walk, to whichever subscription happened to carry entitlement
+   * rows, and could revoke it. It pays no invoice, so it now traces to nothing.
+   */
+  it("a ONE-OFF charge that paid no invoice revokes nobody", async () => {
+    stripeApi.invoicePaymentsList.mockResolvedValue({
+      object: "list",
+      data: [],
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+    const outcome = await process_(body, signature, "req_dispute_oneoff");
+
+    // A fact, not an error: acknowledged, and nothing changed.
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(stripeApi.subscriptionsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("an invoice with no subscription parent revokes nobody", async () => {
+    stripeApi.invoicesRetrieve.mockResolvedValue({
+      id: "in_test_1",
+      parent: { subscription_details: null },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+    await process_(body, signature, "req_dispute_noparent");
+
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("a disputed charge with no PaymentIntent changes nothing (absence, not ambiguity)", async () => {
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_1",
       object: "charge",
       amount: 4900,
       amount_refunded: 0,
-      customer: null,
+      payment_intent: null,
     });
 
     const process_ = await handler();
@@ -435,6 +492,7 @@ describe("Payment Link defence (§4.7, Charter §6)", () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_ok",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       items: {
         object: "list",
@@ -498,14 +556,22 @@ describe("dispute fan-out and ordering (Codex HIGH-4, M-1)", () => {
     dbMocks.delete.mockResolvedValue({ error: null });
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_1",
+      payment_intent: "pi_test_1",
       object: "charge",
       amount: 9800,
       amount_refunded: 0,
       customer: "cus_test_1",
     });
-    stripeApi.subscriptionsList.mockResolvedValue({
+    // Codex HIGH-5 provenance chain, stated explicitly rather than inherited:
+    // this charge paid ONE invoice, and that invoice was generated by
+    // `sub_test_1`. Nothing here walks the Customer's subscriptions.
+    stripeApi.invoicePaymentsList.mockResolvedValue({
       object: "list",
-      data: [{ id: "sub_test_1", object: "subscription" }],
+      data: [{ invoice: "in_test_1" }],
+    });
+    stripeApi.invoicesRetrieve.mockResolvedValue({
+      id: "in_test_1",
+      parent: { subscription_details: { subscription: "sub_test_1" } },
     });
     // ONE guardian subscription, TWO entitlement rows — the shape migration
     // 20260827010000 created and which `maybeSingle()` could not return.
