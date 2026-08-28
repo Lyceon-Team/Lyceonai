@@ -39,10 +39,17 @@ import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import {
   upsertEntitlement,
   mapStripeStatusToEntitlement,
-  getEntitlementBySubscriptionId,
+  getEntitlementsBySubscriptionId,
+  getAllGuardianStudentLinks,
 } from "../account";
+import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
 import { digestId } from "./redact";
+import { getTier1Countries } from "../entitlement-runtime-config";
+import {
+  evaluateCountryEligibility,
+  deniesEntitlement,
+} from "./country-eligibility";
 import {
   resolveEntitlementItem,
   stripeSubscriptionItemSchema,
@@ -64,6 +71,36 @@ import { refundEventSchema, decideRefundRevocation } from "./refund";
  * fails closed rather than guessing.
  */
 const SUBSCRIPTION_SCAN_LIMIT = 100;
+
+/**
+ * @spec [Coding Standards §7.1 "Parse at Every Boundary ... Third-party
+ *        payloads (Stripe, etc.)"] | @implemented [2026-08-28 — Codex M-2]
+ *
+ * plain English: the shape of a retrieved Charge, limited to the fields that
+ * drive a money or entitlement decision. Expected outcome: `amount`,
+ * `amount_refunded` and `customer` are known-good numbers/strings before
+ * `decideRefundRevocation` compares them. Trade-off: this duplicates part of
+ * `Stripe.Charge`, which is a maintenance cost paid to keep the standard's
+ * "parse at every boundary" literal — a TYPE is a claim about a response, a
+ * SCHEMA is a check on it, and only the second survives an API version drift.
+ * Edge case: `amount_refunded` is defaulted to 0 rather than made optional,
+ * because a missing value must not read as "nothing refunded yet" by accident —
+ * `decideRefundRevocation` guards the amounts independently.
+ */
+const retrievedChargeSchema = z.object({
+  id: z.string().min(1),
+  amount: z.number(),
+  amount_refunded: z.number().default(0),
+  customer: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
+});
+type RetrievedCharge = z.infer<typeof retrievedChargeSchema>;
+
+/** The subscription-list response, parsed for the one field this scan reads. */
+const subscriptionListSchema = z.object({
+  data: z.array(z.object({ id: z.string().min(1) })).default([]),
+});
 
 /**
  * Which events this handler acts on, and the stated reason for each it does
@@ -106,6 +143,20 @@ const subjectSchema = z.object({
 /** The Checkout Session fields this handler reads. */
 const checkoutSessionSchema = subjectSchema.extend({
   id: z.string().min(1),
+  /**
+   * SCL-043: on a guardian-paid session the metadata names the PAYER, and there
+   * is no single `student_profile_id` because the session funds several. Typed
+   * here so the dispatcher can tell the two shapes apart without inspecting a
+   * passthrough bag.
+   */
+  metadata: z
+    .object({
+      student_profile_id: profileIdSchema.optional(),
+      payer_profile_id: profileIdSchema.optional(),
+      payer_relationship: z.string().optional(),
+    })
+    .passthrough()
+    .nullish(),
   mode: z.string().nullish(),
   subscription: z
     .union([z.string().min(1), z.object({ id: z.string().min(1) })])
@@ -118,6 +169,17 @@ const checkoutSessionSchema = subjectSchema.extend({
    */
   payment_link: z
     .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
+  /**
+   * INV-03-08 / SCL-046. The billing country, available ONLY here: the SDK
+   * documents `customer_details.address` as "The customer's address after a
+   * completed Checkout Session", because the customer types it DURING Checkout.
+   * That timing is why the gate cannot live wholly at session creation.
+   */
+  customer_details: z
+    .object({
+      address: z.object({ country: z.string().nullish() }).nullish(),
+    })
     .nullish(),
 });
 
@@ -167,6 +229,17 @@ const retrievedSubscriptionSchema = z.object({
       behavior: z.string().nullish(),
       resumes_at: z.number().nullish(),
     })
+    .nullish(),
+  /**
+   * @implemented [2026-08-28 — Codex HIGH-3] SUBSCRIPTION-level metadata names
+   * the PAYER (SCL-043), not any one student. Read so the N-row writer can
+   * resolve that payer's ACTIVE `guardian_links` server-side and verify every
+   * item subject against them, rather than entitling whatever uuid an item
+   * carries.
+   */
+  metadata: z
+    .object({ payer_profile_id: z.string().min(1).nullish() })
+    .passthrough()
     .nullish(),
   items: z
     .object({
@@ -404,17 +477,23 @@ async function releaseEvent(eventId: string): Promise<void> {
  * Returns null when the disputed charge underwrites no entitlement we hold —
  * absence, which is a fact and not an error. Throws on ambiguity.
  */
-async function resolveEntitlementForCharge(
+async function resolveEntitlementsForCharge(
   chargeId: string,
   eventType: string,
   eventId: string,
 ): Promise<{
-  profileId: string;
+  profileIds: string[];
   subscriptionId: string;
-  charge: Stripe.Charge;
+  charge: RetrievedCharge;
 } | null> {
   const stripe = getStripeClient();
-  const charge = await stripe.charges.retrieve(chargeId);
+  // Codex M-2: parsed, not trusted. `amount` and `amount_refunded` decide
+  // whether access is revoked, so they are checked before they are compared.
+  const charge = parseOrFail(
+    retrievedChargeSchema,
+    await stripe.charges.retrieve(chargeId),
+    eventType,
+  );
 
   const customerRef = charge.customer;
   if (!customerRef) {
@@ -429,37 +508,45 @@ async function resolveEntitlementForCharge(
   const customerId =
     typeof customerRef === "string" ? customerRef : customerRef.id;
 
-  const subscriptions = await stripe.subscriptions.list({
-    customer: customerId,
-    status: "all",
-    limit: SUBSCRIPTION_SCAN_LIMIT,
-  });
+  const subscriptions = parseOrFail(
+    subscriptionListSchema,
+    await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: SUBSCRIPTION_SCAN_LIMIT,
+    }),
+    eventType,
+  );
 
-  const matches: {
-    profileId: string;
-    subscriptionId: string;
-    charge: Stripe.Charge;
-  }[] = [];
+  /**
+   * @revised [2026-08-28 — Codex HIGH-4] The two "several" cases are NOT the
+   * same and no longer share a branch.
+   *
+   *   several ROWS on ONE subscription   the normal guardian shape after
+   *                                      migration 20260827010000. The charge
+   *                                      paid one invoice covering every item,
+   *                                      so every student on it is in scope.
+   *                                      ACT ON ALL.
+   *   several SUBSCRIPTIONS matching     still ambiguous. The charge paid ONE
+   *                                      invoice for ONE subscription; picking
+   *                                      one would change a student whose
+   *                                      payment was never in question.
+   *                                      FAIL CLOSED.
+   *
+   * Collapsing these into "exactly one row or refuse" is what made a guardian
+   * chargeback revoke nobody.
+   */
+  const matches: { subscriptionId: string; profileIds: string[] }[] = [];
   for (const subscription of subscriptions.data) {
-    const entitlement = await getEntitlementBySubscriptionId(subscription.id);
-    if (entitlement) {
+    const entitlements = await getEntitlementsBySubscriptionId(subscription.id);
+    if (entitlements.length > 0) {
       matches.push({
-        profileId: entitlement.profile_id,
         subscriptionId: subscription.id,
-        charge,
+        profileIds: entitlements.map((e) => e.profile_id),
       });
     }
   }
 
-  // Absence and ambiguity are not the same failure — the same rule the
-  // subscription-item resolver follows.
-  //
-  //  - Zero matches: this Customer's charge underwrites no entitlement of ours.
-  //    A fact. Nothing to revoke, nothing to restore.
-  //  - Exactly one: unambiguous.
-  //  - Several: the dispute is against ONE charge for ONE invoice, and picking
-  //    a subscription would revoke a student whose payment was never disputed.
-  //    Fail closed.
   if (matches.length === 0) {
     logger.info("STRIPE_WEBHOOK", eventType, "Charge maps to no entitlement", {
       eventId,
@@ -470,19 +557,101 @@ async function resolveEntitlementForCharge(
   if (matches.length > 1) {
     throw new StripePayloadShapeError(
       eventType,
-      `charge maps to ${matches.length} entitlements; refusing to guess which student's access to change`,
+      `charge maps to ${matches.length} SUBSCRIPTIONS; refusing to guess which subscription's students to change`,
     );
   }
 
-  return matches[0] ?? null;
+  const only = matches[0];
+  if (!only) return null;
+  return {
+    profileIds: only.profileIds,
+    subscriptionId: only.subscriptionId,
+    charge,
+  };
 }
 
 /**
- * A dispute takes the money back, so premium access comes off.
+ * Revoke every student a charge funded.
+ *
+ * @spec [SCL-073 disputes; SCL-048/SCL-072 refunds] | @implemented [2026-08-28]
+ * plain English: applies one revocation state to all the profiles on a
+ * subscription. Expected outcome: a guardian invoice's chargeback removes access
+ * for every student it paid for, not just the first one found. Trade-off: runs
+ * sequentially, so a mid-way failure leaves a prefix revoked — acceptable
+ * because Stripe retries the whole event and `upsertEntitlement` is idempotent
+ * on `profile_id`, so a retry converges on the same state.
+ */
+async function revokeAllProfiles(
+  profileIds: readonly string[],
+  state: Pick<EntitlementUpdate, "tier" | "status">,
+): Promise<void> {
+  for (const profileId of profileIds) {
+    await upsertEntitlement(profileId, state);
+  }
+}
+
+/**
+ * Re-derive entitlements from Stripe's live subscription, whatever its shape.
+ *
+ * @implemented [2026-08-28 — Codex HIGH-4]
+ * plain English: restores access after a dispute we won. Reads the subscription
+ * fresh and picks the same branch the dispatcher does — N student-bearing items
+ * means N rows, otherwise the single-subject path. Expected outcome: a guardian
+ * subscription restores every student, not one. Trade-off: re-fetches the
+ * subscription rather than reconstructing what we revoked, because Stripe's
+ * state is the truth and rebuilding from memory would make a second writer.
+ */
+async function rederiveEntitlementsForSubscription(
+  subscriptionId: string,
+  knownProfileIds: readonly string[],
+  eventType: string,
+  eventId: string,
+): Promise<void> {
+  const retrieved: RetrievedSubscription = parseOrFail(
+    retrievedSubscriptionSchema,
+    await getStripeClient().subscriptions.retrieve(subscriptionId),
+    eventType,
+  );
+  const studentBearingItems = (retrieved.items?.data ?? []).filter(
+    (i) => i.metadata?.student_profile_id,
+  );
+
+  if (studentBearingItems.length > 1) {
+    await writeEntitlementsForAllItems(retrieved, eventType, eventId);
+    return;
+  }
+
+  // Single-subject path. The profile comes from OUR rows rather than from the
+  // subscription's metadata: on restore we already know exactly whose access we
+  // took away, and re-resolving from metadata would be a second answer to a
+  // question already settled.
+  const only = knownProfileIds[0];
+  if (!only || knownProfileIds.length !== 1) {
+    throw new StripePayloadShapeError(
+      eventType,
+      `cannot restore: subscription has ${studentBearingItems.length} student-bearing items but ${knownProfileIds.length} entitlement rows`,
+    );
+  }
+  await writeEntitlementFromSubscription(
+    subscriptionId,
+    only,
+    eventType,
+    eventId,
+  );
+}
+
+/**
+ * A dispute takes the money back, so premium access comes off — for EVERY
+ * student the disputed charge funded.
  *
  * NOT the refund path: SCL-048's full-versus-partial amount comparison governs
  * money we return deliberately and has no meaning for money an issuer claws
  * back over our objection.
+ *
+ * FAN-OUT (4.8 plan §7a, reading 1). `pause_collection` is SUBSCRIPTION-level —
+ * Stripe offers no per-item pause — so one chargeback on a guardian invoice
+ * suspends every sibling on it. That is argued in the plan and ruled by the
+ * owner as the default; it is not decided here.
  */
 async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
   const dispute = parseOrFail(
@@ -490,7 +659,7 @@ async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
     event.data.object,
     event.type,
   );
-  const target = await resolveEntitlementForCharge(
+  const target = await resolveEntitlementsForCharge(
     refToId(dispute.charge),
     event.type,
     event.id,
@@ -508,7 +677,7 @@ async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
     pause_collection: { behavior: "keep_as_draft" },
   });
 
-  await upsertEntitlement(target.profileId, {
+  await revokeAllProfiles(target.profileIds, {
     tier: "free",
     status: "unpaid",
   });
@@ -527,19 +696,16 @@ async function handleDisputeCreated(event: Stripe.Event): Promise<void> {
     "Chargeback: entitlement revoked. Doc 01A §52 payment_dispute incident NOT recorded — AbuseScoreService absent (launch gate).",
     {
       eventId: event.id,
-      studentProfileRef: digestId(target.profileId),
       subscriptionRef: digestId(target.subscriptionId),
+      studentsRevoked: target.profileIds.length,
       disputeStatus: dispute.status,
     },
   );
 }
 
 /**
- * A closed dispute either gives the money back or does not, and access follows.
- *
- * On restore the entitlement is re-derived from Stripe's live subscription
- * rather than reconstructed locally: Stripe's subscription state is the truth,
- * and rebuilding it from memory of what we revoked would be a second writer.
+ * A closed dispute either gives the money back or does not, and access follows
+ * — for every student on the subscription.
  */
 async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
   const dispute = parseOrFail(
@@ -548,7 +714,7 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
     event.type,
   );
   const decision = dispositionForClosedDispute(dispute.status);
-  const target = await resolveEntitlementForCharge(
+  const target = await resolveEntitlementsForCharge(
     refToId(dispute.charge),
     event.type,
     event.id,
@@ -562,7 +728,8 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
       "Dispute closed; entitlement stays revoked",
       {
         eventId: event.id,
-        studentProfileRef: digestId(target.profileId),
+        subscriptionRef: digestId(target.subscriptionId),
+        studentsAffected: target.profileIds.length,
         disputeStatus: dispute.status,
         reason: decision.reason,
       },
@@ -575,9 +742,9 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
   // subscription and write `free` — restoring nothing.
   await getStripeClient().subscriptions.resume(target.subscriptionId);
 
-  await writeEntitlementFromSubscription(
+  await rederiveEntitlementsForSubscription(
     target.subscriptionId,
-    target.profileId,
+    target.profileIds,
     event.type,
     event.id,
   );
@@ -587,7 +754,8 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
     "Dispute closed in our favour; collection resumed and entitlement restored from live subscription",
     {
       eventId: event.id,
-      studentProfileRef: digestId(target.profileId),
+      subscriptionRef: digestId(target.subscriptionId),
+      studentsRestored: target.profileIds.length,
       disputeStatus: dispute.status,
       reason: decision.reason,
     },
@@ -598,10 +766,35 @@ async function handleDisputeClosed(event: Stripe.Event): Promise<void> {
  * A fully refunded payment removes premium access; a partial one does not.
  *
  * SCL-048 as amended by SCL-072. NOT the dispute path — see refund.ts.
+ *
+ * DURABILITY (@revised 2026-08-28 — Codex HIGH-5). This previously wrote only
+ * local `free`/`canceled` while leaving the Stripe subscription ACTIVE. Because
+ * `entitlements` is last-writer-wins on `profile_id`, the next
+ * `customer.subscription.updated` re-derived from live Stripe state and handed
+ * premium straight back — the identical defect SCL-073 fixed for disputes, in a
+ * path the dispute fix did not generalise to.
+ *
+ * The fix is the mechanism already ruled for disputes rather than a new one:
+ * pause collection, so the revocation lives on Stripe's object where the
+ * re-derivation will read it. `writeEntitlementFromSubscription` already treats
+ * `pause_collection != null` as not-entitled, so no second predicate is
+ * introduced and no local column is added.
+ *
+ * Trade-off, stated plainly: pausing also stops FUTURE invoices. For a full
+ * refund that is the intended reading — we returned all the money — but it is a
+ * stronger action than the local write it replaces, and it is reversible
+ * (`subscriptions.resume`) where a cancellation would not be.
+ *
+ * STILL UNVERIFIED, AND NOT WORKED AROUND: whether Stripe ALREADY cancels or
+ * pauses a subscription when its invoice is fully refunded, which would make
+ * this write redundant rather than load-bearing. Answering that needs a live
+ * test-mode object printed from a real account; `STRIPE_BILLING_DIAGNOSTICS` is
+ * not reachable from this environment (see the phase report), so the question
+ * is carried open rather than settled from the type definitions.
  */
 async function handleRefundUpdated(event: Stripe.Event): Promise<void> {
   const refund = parseOrFail(refundEventSchema, event.data.object, event.type);
-  const target = await resolveEntitlementForCharge(
+  const target = await resolveEntitlementsForCharge(
     refToId(refund.charge),
     event.type,
     event.id,
@@ -617,43 +810,74 @@ async function handleRefundUpdated(event: Stripe.Event): Promise<void> {
   if (!decision.revoke) {
     logger.info("STRIPE_WEBHOOK", event.type, "Refund does not revoke", {
       eventId: event.id,
-      studentProfileRef: digestId(target.profileId),
+      subscriptionRef: digestId(target.subscriptionId),
+      studentsAffected: target.profileIds.length,
       reason: decision.reason,
     });
     return;
   }
 
-  await upsertEntitlement(target.profileId, {
+  // Codex HIGH-5: the durable marker goes on Stripe's object BEFORE the local
+  // write, for the same reason as the dispute path — if the local write then
+  // fails and Stripe retries, the pause is already there and the retry
+  // re-derives to `free` on its own.
+  await getStripeClient().subscriptions.update(target.subscriptionId, {
+    pause_collection: { behavior: "keep_as_draft" },
+  });
+
+  await revokeAllProfiles(target.profileIds, {
     tier: "free",
     status: "canceled",
   });
   logger.info(
     "STRIPE_WEBHOOK",
     event.type,
-    "Full refund: entitlement revoked",
+    "Full refund: collection paused and entitlement revoked",
     {
       eventId: event.id,
-      studentProfileRef: digestId(target.profileId),
       subscriptionRef: digestId(target.subscriptionId),
+      studentsRevoked: target.profileIds.length,
       reason: decision.reason,
     },
   );
 }
 
 /**
- * @spec [SCL-045; §4.8 guardian-paid checkout] | @implemented [2026-08-27]
- * plain English: write one entitlement row per entitled student on a
- * subscription that funds several. Expected outcome: N students, N rows, each
- * keyed to its own subscription item with its own period bounds. Trade-off:
- * runs sequentially rather than in parallel so a mid-way failure leaves a
- * prefix written and the rest untouched — Stripe retries the whole event and
- * `upsertEntitlement` is idempotent on `profile_id`, so a retry converges.
- * Edge case: an item with no `student_profile_id` is SKIPPED, not guessed at,
- * and the count of skips is logged — if metadata propagation fails, this grants
- * nothing rather than granting the wrong person.
+ * @spec [SCL-045; §4.8 guardian-paid checkout; Charter §6 "no caller-supplied
+ *        value gates entitlement"] | @implemented [2026-08-27]
+ * @revised [2026-08-28 — Codex HIGH-3]
  *
- * Only reached when MORE THAN ONE item names a student. The single-student
- * path is unchanged, because individual billing is the one-item case and not a
+ * plain English: write one entitlement row per entitled student on a
+ * subscription that funds several — after checking, server-side, that the payer
+ * is actually linked to each of them.
+ *
+ * WHAT WAS WRONG. This loop previously read `item.metadata.student_profile_id`
+ * and entitled that UUID directly. `getAllGuardianStudentLinks` existed and was
+ * never called. Metadata on a SubscriptionItem is not a server-derived fact at
+ * the moment it is read: it is a string on a Stripe object, and anyone who can
+ * cause an item to exist with that string decides who gets paid access. A valid
+ * but UNLINKED profile id was accepted as the subject. That is precisely the
+ * Charter §6 failure, and "it arrived inside a signature-verified payload" does
+ * not answer it — the signature proves Stripe sent it, not that we derived it.
+ *
+ * WHAT IT DOES NOW. Resolve the PAYER from subscription metadata, read that
+ * guardian's ACTIVE links from `guardian_links` on the server, and require every
+ * item subject to be in that set.
+ *
+ * ALL OR NOTHING, deliberately. If any subject fails to resolve, NOTHING is
+ * written — not partial credit, not skip-and-continue. Writing the students who
+ * did resolve would grant paid access off a payload we have just established we
+ * cannot trust, and would do it silently. Refusing the whole event is loud:
+ * Stripe retries, the failure is visible, and no wrong student is entitled in
+ * the meantime.
+ *
+ * Trade-off: a legitimate guardian whose link is revoked between checkout and
+ * webhook delivery gets nothing rather than something. That is the correct side
+ * to fail on, and it is the same rule the owner ruled for mid-period revocation
+ * — visibility follows the link.
+ *
+ * Only reached when MORE THAN ONE item names a student. The single-student path
+ * is unchanged, because individual billing is the one-item case and not a
  * separate shape (SCL-045).
  */
 async function writeEntitlementsForAllItems(
@@ -666,15 +890,78 @@ async function writeEntitlementsForAllItems(
   const collectionPaused = subscription.pause_collection != null;
   const tier = collectionPaused ? ("free" as const) : mapped.tier;
 
-  let written = 0;
+  // The subject candidates, in item order. An item with no student is skipped
+  // here and counted — that is the metadata-propagation failure mode, and it is
+  // an absence rather than an unauthorised claim.
+  const candidates: { itemId: string; studentProfileId: string }[] = [];
   let skipped = 0;
-
   for (const item of items) {
     const studentProfileId = item.metadata?.student_profile_id;
     if (!studentProfileId) {
       skipped += 1;
       continue;
     }
+    candidates.push({ itemId: item.id, studentProfileId });
+  }
+
+  if (candidates.length === 0) {
+    // Every item lacked a student. Most likely cause: Checkout did not
+    // propagate `line_items[].metadata` onto the SubscriptionItem — the one
+    // mechanism §4.8's plan could not verify without a Stripe key. Fail loudly
+    // rather than acknowledging an event that entitled nobody.
+    throw new StripePayloadShapeError(
+      eventType,
+      `subscription has ${items.length} items and none carries student_profile_id; ` +
+        "no entitlement written (check line_items metadata propagation)",
+    );
+  }
+
+  // ---- Charter §6 authorisation, server-side ----------------------------
+  const payerProfileId = subscription.metadata?.payer_profile_id;
+  if (!payerProfileId) {
+    throw new StripePayloadShapeError(
+      eventType,
+      "multi-student subscription carries no payer_profile_id; cannot establish " +
+        "who is paying, so cannot verify that they are linked to these students",
+    );
+  }
+
+  const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
+  const linkedStudentIds = new Set(
+    activeLinks
+      .map((l) => l.student_profile_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  const unauthorised = candidates.filter(
+    (c) => !linkedStudentIds.has(c.studentProfileId),
+  );
+  if (unauthorised.length > 0) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "REFUSED: subscription item names a student the payer is not actively linked to. NOTHING was written.",
+      {
+        eventId,
+        subscriptionRef: digestId(subscription.id),
+        payerProfileId,
+        unauthorisedCount: unauthorised.length,
+        itemCount: candidates.length,
+        activeLinkCount: linkedStudentIds.size,
+      },
+    );
+    throw new StripePayloadShapeError(
+      eventType,
+      `${unauthorised.length} of ${candidates.length} subscription items name a student the payer ` +
+        "is not actively linked to; refusing to entitle any of them (Charter §6)",
+    );
+  }
+
+  // ---- Every subject is server-authorised; write ------------------------
+  let written = 0;
+  for (const item of items) {
+    const studentProfileId = item.metadata?.student_profile_id;
+    if (!studentProfileId) continue;
 
     await upsertEntitlement(studentProfileId, {
       tier,
@@ -692,22 +979,11 @@ async function writeEntitlementsForAllItems(
   logger.info("STRIPE_WEBHOOK", eventType, "Multi-student entitlement write", {
     eventId,
     subscriptionRef: digestId(subscription.id),
+    payerProfileId,
     itemsWritten: written,
     itemsSkipped: skipped,
     tier,
   });
-
-  if (written === 0) {
-    // Every item lacked a student. Most likely cause: Checkout did not
-    // propagate `line_items[].metadata` onto the SubscriptionItem — the one
-    // mechanism §4.8's plan could not verify without a Stripe key. Fail loudly
-    // rather than acknowledging an event that entitled nobody.
-    throw new StripePayloadShapeError(
-      eventType,
-      `subscription has ${items.length} items and none carries student_profile_id; ` +
-        "no entitlement written (check line_items metadata propagation)",
-    );
-  }
 }
 
 async function dispatch(event: Stripe.Event): Promise<void> {
@@ -768,11 +1044,83 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       return;
     }
 
-    const studentProfileId = resolveStudentProfileId(session, event.type);
     const subscriptionId =
       typeof session.subscription === "string"
         ? session.subscription
         : session.subscription.id;
+
+    /**
+     * INV-03-08 TIER-1 COUNTRY GATE — the production call site.
+     *
+     * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
+     *        2026-08-27] | @implemented [2026-08-28 — Codex HIGH-1]
+     *
+     * plain English: refuse premium when the billing country is not on the
+     * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
+     * expressed. Trade-off: the money has already moved by this point, so a
+     * denial leaves a paid customer with no access and needs an operator
+     * refund — which is why the ERROR log below names that consequence
+     * explicitly rather than failing quietly.
+     *
+     * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
+     * (Codex HIGH-1: "a fail-open money path"). It could not be called at
+     * session creation because the billing address does not exist until the
+     * customer types it during Checkout. This event is the derivation point
+     * the module's own header names.
+     *
+     * BOTH `ineligible` AND `unknown` DENY. After payment, refusing to decide
+     * is itself a decision, and the safe one is not to grant access we cannot
+     * justify. An unseeded `tier_1_countries` therefore denies — the
+     * fail-closed default the owner ruled, and the reason the gate is INERT
+     * (meaning: denying) until the owner DML is applied.
+     */
+    const eligibility = evaluateCountryEligibility(
+      session.customer_details?.address?.country,
+      await getTier1Countries(),
+    );
+    if (deniesEntitlement(eligibility)) {
+      logger.error(
+        "STRIPE_WEBHOOK",
+        event.type,
+        "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+        {
+          eventId: event.id,
+          sessionRef: digestId(session.id),
+          // The subject is not resolved yet — the gate runs BEFORE it, because
+          // a guardian-paid session has no single subject to resolve. Log
+          // whichever party the session names; the logger digests both.
+          studentProfileId: session.metadata?.student_profile_id ?? null,
+          payerProfileId: session.metadata?.payer_profile_id ?? null,
+          verdict: eligibility.verdict,
+          country:
+            eligibility.verdict === "unknown" ? null : eligibility.country,
+        },
+      );
+      throw new StripePayloadShapeError(
+        event.type,
+        `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
+      );
+    }
+
+    /**
+     * §4.8: a guardian-paid session names the PAYER and funds several students,
+     * one ITEM each. `resolveStudentProfileId` would throw on it — there is no
+     * single subject — so the shape is read BEFORE the subject, exactly as the
+     * subscription dispatcher does. The item path also runs for a guardian with
+     * ONE linked student, which is why the test is "is this guardian-paid" and
+     * not "are there several items".
+     */
+    if (session.metadata?.payer_profile_id) {
+      const retrieved: RetrievedSubscription = parseOrFail(
+        retrievedSubscriptionSchema,
+        await getStripeClient().subscriptions.retrieve(subscriptionId),
+        event.type,
+      );
+      await writeEntitlementsForAllItems(retrieved, event.type, event.id);
+      return;
+    }
+
+    const studentProfileId = resolveStudentProfileId(session, event.type);
     await writeEntitlementFromSubscription(
       subscriptionId,
       studentProfileId,
@@ -805,7 +1153,23 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     (i) => i.metadata?.student_profile_id,
   );
 
-  if (studentBearingItems.length > 1) {
+  // Guardian-paid subscriptions take the item path at ANY item count: a
+  // guardian with exactly ONE linked student still has a subscription whose
+  // metadata names the payer rather than the student, so the single-subject
+  // resolver would throw on it. `> 1` alone left that case unhandled.
+  //
+  // `isGuardianPaid` alone, with NO item-count condition. A guardian-paid
+  // subscription never has a single subject — its metadata names the payer —
+  // so the single-subject resolver must never run on one, not even when it
+  // carries zero student-bearing items. Requiring `>= 1` sent exactly that
+  // case to `resolveStudentProfileId`, which threw a generic "no valid
+  // student_profile_id" and left the item writer's zero-candidate guard
+  // unreachable. That guard is the one that names METADATA PROPAGATION as the
+  // likely cause, which is the difference between an actionable failure and a
+  // confusing one — and it is why the bare-metadata test could not reach the
+  // seam it claimed to guard (Codex HIGH-7).
+  const isGuardianPaid = Boolean(retrieved.metadata?.payer_profile_id);
+  if (studentBearingItems.length > 1 || isGuardianPaid) {
     await writeEntitlementsForAllItems(retrieved, event.type, event.id);
     return;
   }

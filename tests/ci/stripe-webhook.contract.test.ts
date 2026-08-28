@@ -70,6 +70,12 @@ vi.mock("../../server/lib/account", () => ({
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
 }));
 
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  // The INV-03-08 country gate runs on checkout.session.completed. These
+  // suites are not about the gate, so the Tier-1 list is seeded eligible;
+  // denial has its own suite (tests/ci/stripe-country-gate.contract.test.ts).
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
+}));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -92,6 +98,8 @@ function checkoutEvent(
     livemode?: boolean;
     metadata?: Record<string, string>;
     clientReferenceId?: string | null;
+    /** INV-03-08 billing country; `null` exercises the unknown verdict. */
+    country?: string | null;
   } = {},
 ) {
   return {
@@ -110,6 +118,15 @@ function checkoutEvent(
             ? STUDENT_ID
             : overrides.clientReferenceId,
         metadata: overrides.metadata ?? { student_profile_id: STUDENT_ID },
+        // INV-03-08: a COMPLETED session carries the billing address the
+        // customer typed during Checkout. Eligible by default here so this
+        // suite keeps testing what it is about; the country gate's own denial
+        // cases live in tests/ci/stripe-country-gate.contract.test.ts.
+        customer_details: {
+          address: {
+            country: overrides.country === undefined ? "US" : overrides.country,
+          },
+        },
       },
     },
   };

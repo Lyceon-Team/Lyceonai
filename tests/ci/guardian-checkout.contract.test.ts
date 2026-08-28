@@ -107,7 +107,8 @@ const accountMocks = vi.hoisted(() => ({
     tier: s === "active" ? "premium" : "free",
     status: s,
   })),
-  getEntitlementBySubscriptionId: vi.fn(),
+  getEntitlementsBySubscriptionId: vi.fn(),
+  getAllGuardianStudentLinks: vi.fn(async () => []),
 }));
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
@@ -145,7 +146,15 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 vi.mock("../../server/lib/account", () => ({
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
-  getEntitlementBySubscriptionId: accountMocks.getEntitlementBySubscriptionId,
+  getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
+  getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
+}));
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  // The country gate now runs on checkout.session.completed. These suites are
+  // about disputes/refunds/guardian writes, so the Tier-1 list is seeded
+  // eligible here — the gate has its OWN suite
+  // (tests/ci/stripe-country-gate.contract.test.ts) where denial is the subject.
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
 }));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -199,6 +208,13 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     state.expectedLivemode = false;
     dbMocks.insert.mockResolvedValue({ error: null });
     dbMocks.delete.mockResolvedValue({ error: null });
+    // Charter §6 (Codex HIGH-3): the writer authorises every item subject
+    // against the payer's ACTIVE links, read server-side. Both students are
+    // linked here; the refusal case has its own test below.
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
+      link(STUDENT_A, "2026-01-01T00:00:00Z"),
+      link(STUDENT_B, "2026-02-01T00:00:00Z"),
+    ]);
   });
 
   it("writes TWO rows for two students, each keyed to its own item", async () => {
@@ -206,6 +222,9 @@ describe("a guardian subscription writes one entitlement row per student", () =>
       id: "sub_guardian_1",
       object: "subscription",
       status: "active",
+      // SCL-043 / Charter §6: the RETRIEVED subscription names the payer, and
+      // the writer resolves that payer's active links server-side.
+      metadata: { payer_profile_id: GUARDIAN },
       items: {
         object: "list",
         data: [item("si_a", STUDENT_A), item("si_b", STUDENT_B)],
@@ -234,6 +253,78 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     );
   });
 
+  /**
+   * CHARTER §6 — Codex HIGH-3. The writer previously entitled whatever uuid an
+   * item carried, without ever asking whether the payer was linked to that
+   * student. `getAllGuardianStudentLinks` existed and was not called.
+   *
+   * ALL OR NOTHING: the authorised sibling must NOT be written either. Writing
+   * the students who did resolve would grant paid access off a payload we have
+   * just established we cannot trust.
+   */
+  it("REFUSES the whole event when an item names a student the payer is not linked to", async () => {
+    const UNLINKED = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_guardian_1",
+      object: "subscription",
+      status: "active",
+      metadata: { payer_profile_id: GUARDIAN },
+      items: {
+        object: "list",
+        data: [item("si_a", STUDENT_A), item("si_x", UNLINKED)],
+      },
+    });
+    // The server-read link set does NOT contain UNLINKED.
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
+      link(STUDENT_A, "2026-01-01T00:00:00Z"),
+    ]);
+
+    const process_ = await handler();
+    const { body, signature } = signedSubscriptionEvent();
+
+    await expect(
+      process_(body, signature, "req_guardian_unlinked"),
+    ).rejects.toThrow(/not actively linked/);
+
+    // Both halves: the refusal AND the absence of a partial write.
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES when the subscription names no payer at all", async () => {
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_guardian_1",
+      object: "subscription",
+      status: "active",
+      // No payer_profile_id: nothing to resolve links against, so nothing can
+      // be authorised. Refuse rather than fall back to trusting the metadata.
+      items: {
+        object: "list",
+        data: [item("si_a", STUDENT_A), item("si_b", STUDENT_B)],
+      },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signedSubscriptionEvent();
+
+    await expect(
+      process_(body, signature, "req_guardian_nopayer"),
+    ).rejects.toThrow(/carries no payer_profile_id/);
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  /**
+   * REPLACES the hollow test Codex found (HIGH-7). The previous version
+   * supplied bare items AND payer-only subscription metadata, so it never
+   * reached the N-row branch at all — it passed through the single-subject
+   * failure path, and deleting the writer's zero-write guard left it GREEN
+   * while it was cited as the reason guardian work could ship ahead of the
+   * metadata probe.
+   *
+   * This drives the ACTUAL seam: the subscription IS guardian-paid (so the
+   * dispatcher takes the item path) and the items are bare (so the writer's own
+   * guard is what must refuse). Proven by deleting that guard and observing the
+   * failure.
+   */
   it("grants NOTHING when items carry no student metadata — the unverified-propagation case", async () => {
     // If Checkout does not propagate `line_items[].metadata` onto the
     // SubscriptionItem — the one mechanism §4.8's plan could not verify without
@@ -243,6 +334,10 @@ describe("a guardian subscription writes one entitlement row per student", () =>
       id: "sub_guardian_1",
       object: "subscription",
       status: "active",
+      // Guardian-paid, so the dispatcher takes the ITEM path even though no
+      // item names a student — which is what puts the writer's zero-candidate
+      // guard on the execution path instead of the single-subject resolver.
+      metadata: { payer_profile_id: GUARDIAN },
       items: {
         object: "list",
         data: [item("si_a", null), item("si_b", null)],
@@ -252,11 +347,11 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     const process_ = await handler();
     const { body, signature } = signedSubscriptionEvent();
 
-    // Bare items mean no student can be resolved at all, so the handler fails
-    // closed on the subject rather than writing to a guess.
+    // The writer's own guard is what refuses here — named in the assertion so
+    // this cannot silently start passing through some other failure path.
     await expect(
       process_(body, signature, "req_guardian_bare"),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/none carries student_profile_id/);
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 
@@ -264,7 +359,10 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
-      status: "active", // Stripe still says active while collection is paused
+      status: "active",
+      // SCL-043 / Charter §6: the RETRIEVED subscription names the payer, and
+      // the writer resolves that payer's active links server-side.
+      metadata: { payer_profile_id: GUARDIAN }, // Stripe still says active while collection is paused
       pause_collection: { behavior: "keep_as_draft", resumes_at: null },
       items: {
         object: "list",

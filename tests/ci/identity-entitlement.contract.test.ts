@@ -29,6 +29,7 @@ const accountMocks = vi.hoisted(() => ({
   getEntitlementForProfile: vi.fn(),
   getProfileStripeCustomerId: vi.fn(),
   setProfileStripeCustomerId: vi.fn(),
+  getAllGuardianStudentLinks: vi.fn(async () => []),
 }));
 
 const stripeMocks = vi.hoisted(() => ({
@@ -91,6 +92,7 @@ vi.mock("../../server/lib/account", () => ({
   getEntitlementForProfile: accountMocks.getEntitlementForProfile,
   getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
   setProfileStripeCustomerId: accountMocks.setProfileStripeCustomerId,
+  getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
 }));
 
 vi.mock("../../server/lib/stripe/client", () => ({
@@ -189,7 +191,59 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.body.code).toBe("GUARDIAN_BILLING_UNAVAILABLE");
   });
 
-  it("returns an explicit unavailable response for guardian checkout", async () => {
+  /**
+   * CHANGED 2026-08-28 (Codex HIGH-2). This previously asserted 503
+   * GUARDIAN_BILLING_UNAVAILABLE. That assertion encoded the DEFECT: §4.8 was
+   * reported implemented while `buildGuardianLineItems` had no production
+   * caller and every guardian was refused. Asserting the 503 would now be
+   * asserting that the feature stays unbuilt.
+   */
+  it("creates a guardian Checkout Session with one line item per ACTIVE link", async () => {
+    const GUARDIAN = "22222222-2222-4222-8222-222222222222";
+    const STUDENT_A = "33333333-3333-4333-8333-333333333333";
+    const STUDENT_B = "44444444-4444-4444-8444-444444444444";
+
+    authState.currentUser = {
+      id: GUARDIAN,
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    } as any;
+
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
+      { student_profile_id: STUDENT_A, status: "active" },
+      { student_profile_id: STUDENT_B, status: "active" },
+    ]);
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly" });
+
+    // Both halves: the response AND the state change.
+    expect(res.status).toBe(200);
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
+
+    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
+    expect(params.line_items).toHaveLength(2);
+    expect(params.line_items[0].metadata).toEqual({
+      student_profile_id: STUDENT_A,
+    });
+    expect(params.line_items[1].metadata).toEqual({
+      student_profile_id: STUDENT_B,
+    });
+
+    // SCL-043: the SUBSCRIPTION names the payer, never a single student, and
+    // `client_reference_id` is unset because there is no single subject.
+    expect(params.subscription_data.metadata).toMatchObject({
+      payer_profile_id: GUARDIAN,
+      payer_relationship: "guardian",
+    });
+    expect(params.subscription_data.metadata.student_profile_id).toBeUndefined();
+    expect(params.client_reference_id).toBeUndefined();
+  });
+
+  it("refuses a guardian with no active links rather than charging for nothing", async () => {
     authState.currentUser = {
       id: "22222222-2222-4222-8222-222222222222",
       role: "guardian",
@@ -197,13 +251,14 @@ describe("Identity + Entitlement Runtime Contract", () => {
       isGuardian: true,
       isAdmin: false,
     } as any;
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
 
     const res = await request(await billingApp())
       .post("/api/billing/checkout")
       .send({ plan: "monthly" });
 
-    expect(res.status).toBe(503);
-    expect(res.body.code).toBe("GUARDIAN_BILLING_UNAVAILABLE");
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("NO_ACTIVE_LINKED_STUDENTS");
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 

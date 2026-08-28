@@ -39,7 +39,8 @@ const accountMocks = vi.hoisted(() => ({
     tier: s === "active" ? "premium" : "free",
     status: s,
   })),
-  getEntitlementBySubscriptionId: vi.fn(),
+  getEntitlementsBySubscriptionId: vi.fn(),
+  getAllGuardianStudentLinks: vi.fn(async () => []),
 }));
 
 const stripeApi = vi.hoisted(() => ({
@@ -80,9 +81,17 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 vi.mock("../../server/lib/account", () => ({
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
-  getEntitlementBySubscriptionId: accountMocks.getEntitlementBySubscriptionId,
+  getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
+  getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
 }));
 
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  // The country gate now runs on checkout.session.completed. These suites are
+  // about disputes/refunds/guardian writes, so the Tier-1 list is seeded
+  // eligible here — the gate has its OWN suite
+  // (tests/ci/stripe-country-gate.contract.test.ts) where denial is the subject.
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
+}));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -138,16 +147,17 @@ describe("Stripe disputes (SCL-073)", () => {
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_1",
       object: "charge",
+      amount: 4900,
+      amount_refunded: 0,
       customer: "cus_test_1",
     });
     stripeApi.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [{ id: "sub_test_1", object: "subscription" }],
     });
-    accountMocks.getEntitlementBySubscriptionId.mockResolvedValue({
-      profile_id: STUDENT_ID,
-      stripe_subscription_id: "sub_test_1",
-    });
+    accountMocks.getEntitlementsBySubscriptionId.mockResolvedValue([
+      { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_1" },
+    ]);
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
       object: "subscription",
@@ -317,7 +327,7 @@ describe("Stripe disputes (SCL-073)", () => {
     );
   });
 
-  it("refuses to guess when a disputed charge maps to several entitlements", async () => {
+  it("refuses to guess when a disputed charge maps to several SUBSCRIPTIONS", async () => {
     stripeApi.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [
@@ -325,15 +335,13 @@ describe("Stripe disputes (SCL-073)", () => {
         { id: "sub_test_2", object: "subscription" },
       ],
     });
-    accountMocks.getEntitlementBySubscriptionId
-      .mockResolvedValueOnce({
-        profile_id: STUDENT_ID,
-        stripe_subscription_id: "sub_test_1",
-      })
-      .mockResolvedValueOnce({
-        profile_id: OTHER_STUDENT_ID,
-        stripe_subscription_id: "sub_test_2",
-      });
+    accountMocks.getEntitlementsBySubscriptionId
+      .mockResolvedValueOnce([
+        { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_1" },
+      ])
+      .mockResolvedValueOnce([
+        { profile_id: OTHER_STUDENT_ID, stripe_subscription_id: "sub_test_2" },
+      ]);
 
     const process_ = await handler();
     const { body, signature } = signed(
@@ -344,7 +352,7 @@ describe("Stripe disputes (SCL-073)", () => {
     // whose payment was never disputed.
     await expect(
       process_(body, signature, "req_dispute_ambiguous"),
-    ).rejects.toThrow(/maps to 2 entitlements/);
+    ).rejects.toThrow(/maps to 2 SUBSCRIPTIONS/);
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 
@@ -352,6 +360,8 @@ describe("Stripe disputes (SCL-073)", () => {
     stripeApi.chargesRetrieve.mockResolvedValue({
       id: "ch_test_1",
       object: "charge",
+      amount: 4900,
+      amount_refunded: 0,
       customer: null,
     });
 
@@ -454,6 +464,11 @@ describe("Payment Link defence (§4.7, Charter §6)", () => {
           subscription: "sub_test_ok",
           client_reference_id: STUDENT_ID,
           metadata: { student_profile_id: STUDENT_ID },
+          // INV-03-08: a completed Checkout Session carries the billing
+          // address the customer typed. This suite's subject is the Payment
+          // Link defence, so the country is eligible here; the country gate's
+          // own denial cases live in stripe-country-gate.contract.test.ts.
+          customer_details: { address: { country: "US" } },
         },
       },
     });
@@ -462,5 +477,106 @@ describe("Payment Link defence (§4.7, Charter §6)", () => {
 
     expect(outcome).toMatchObject({ ok: true, status: "processed" });
     expect(accountMocks.upsertEntitlement).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Codex HIGH-4 + M-1: the guardian fan-out, and the ordering that makes the
+ * dispute revocation durable.
+ */
+describe("dispute fan-out and ordering (Codex HIGH-4, M-1)", () => {
+  const STUDENT_B = "99999999-9999-4999-8999-999999999999";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    state.expectedLivemode = false;
+    dbMocks.insert.mockResolvedValue({ error: null });
+    dbMocks.delete.mockResolvedValue({ error: null });
+    stripeApi.chargesRetrieve.mockResolvedValue({
+      id: "ch_test_1",
+      object: "charge",
+      amount: 9800,
+      amount_refunded: 0,
+      customer: "cus_test_1",
+    });
+    stripeApi.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [{ id: "sub_test_1", object: "subscription" }],
+    });
+    // ONE guardian subscription, TWO entitlement rows — the shape migration
+    // 20260827010000 created and which `maybeSingle()` could not return.
+    accountMocks.getEntitlementsBySubscriptionId.mockResolvedValue([
+      { profile_id: STUDENT_ID, stripe_subscription_id: "sub_test_1" },
+      { profile_id: STUDENT_B, stripe_subscription_id: "sub_test_1" },
+    ]);
+  });
+
+  it("revokes EVERY student on a disputed guardian invoice, not just one", async () => {
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+
+    await process_(body, signature, "req_fanout");
+
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledTimes(2);
+    for (const student of [STUDENT_ID, STUDENT_B]) {
+      expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+        student,
+        expect.objectContaining({ tier: "free", status: "unpaid" }),
+      );
+    }
+  });
+
+  /**
+   * M-1. The pause-before-local-write ordering is load-bearing and was
+   * previously untested: the suite asserted that `pause_collection` was called
+   * but not WHEN, so reordering the local revoke ahead of the pause left it
+   * green.
+   *
+   * Why the order matters: if the local write succeeds and the pause then
+   * fails, Stripe retries an event whose subscription is still unpaused, and a
+   * later `customer.subscription.updated` re-derives premium over the
+   * revocation. Pausing first means a retry re-derives to `free` on its own.
+   */
+  it("pauses collection BEFORE the local write — invocation order, not just occurrence", async () => {
+    const order: string[] = [];
+    stripeApi.subscriptionsUpdate.mockImplementation(async () => {
+      order.push("pause");
+      return {};
+    });
+    accountMocks.upsertEntitlement.mockImplementation(async () => {
+      order.push("local_write");
+      return {};
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+    await process_(body, signature, "req_order");
+
+    expect(order[0]).toBe("pause");
+    expect(order).toContain("local_write");
+    expect(order.indexOf("pause")).toBeLessThan(order.indexOf("local_write"));
+  });
+
+  it("leaves the pause in place when the local write fails, so Stripe's retry re-derives to free", async () => {
+    // The retry-state half of the ordering claim: after a failed local write
+    // the durable marker must already exist on Stripe's object.
+    stripeApi.subscriptionsUpdate.mockResolvedValue({});
+    accountMocks.upsertEntitlement.mockRejectedValue(new Error("db down"));
+
+    const process_ = await handler();
+    const { body, signature } = signed(
+      disputeEvent("charge.dispute.created", "needs_response"),
+    );
+
+    await expect(process_(body, signature, "req_retry")).rejects.toThrow();
+    // The pause happened anyway — that is what makes the failure safe.
+    expect(stripeApi.subscriptionsUpdate).toHaveBeenCalledWith("sub_test_1", {
+      pause_collection: { behavior: "keep_as_draft" },
+    });
   });
 });

@@ -41,7 +41,7 @@
 --   -----  ------------------  -------------------------
 --   US     United States       yes
 --   CA     Canada              yes
---   UK     United Kingdom      yes  <-- SEE THE NOTE BELOW
+--   UK     United Kingdom      yes  <-- SEEDED AS `GB`; SEE THE RULING BELOW
 --   AU     Australia           yes
 --   NZ     New Zealand         yes
 --   IE     Ireland             yes
@@ -51,7 +51,7 @@
 -- none is dropped.
 --
 -- ---------------------------------------------------------------------------
--- ONE DISCREPANCY, SURFACED RATHER THAN SILENTLY CORRECTED: `UK`
+-- ONE DISCREPANCY, SURFACED AND SINCE RULED ON: `UK`
 -- ---------------------------------------------------------------------------
 -- INV-03-08 writes `UK`. The ISO 3166-1 alpha-2 code for the United Kingdom is
 -- `GB`; `UK` is only exceptionally reserved. Stripe's billing address country
@@ -59,16 +59,25 @@
 -- list containing `UK` would not match it — the gate would deny every genuine
 -- UK customer.
 --
--- This DML seeds `UK` because that is what the invariant says, and correcting a
--- locked invariant is not an agent's call. IT IS ALMOST CERTAINLY A DEFECT IN
--- THE INVARIANT'S TEXT, and it is an SCL candidate, not a code decision:
+-- OWNER RULING 2026-08-28 — SEEDED AS `GB`, AND THIS IS NOT A SPEC CHANGE.
 --
---   SCL CANDIDATE — INV-03-08 writes `UK` where Stripe sends `GB`. Either the
---   invariant should say `GB`, or the list must carry both. Until ruled, UK
---   customers are denied by a gate that believes it is admitting them.
+-- The ruling: this is an ENCODING question, not an invariant question.
+-- INV-03-08 names countries in PROSE; this config stores MACHINE CODES. Stripe
+-- uses ISO 3166-1 alpha-2 throughout, and `GB` is the alpha-2 code for the
+-- United Kingdom. `UK` is not an assigned alpha-2 code at all, so a list
+-- containing it matches no real customer.
 --
--- If the owner rules `GB` correct, change the value below and amend INV-03-08.
--- If the owner wants both accepted during the transition, seed both.
+-- Therefore no SCL is raised against the invariant, and the invariant's text is
+-- untouched. The mapping rule is recorded once in SCL-046 so that nobody
+-- re-seeds `UK` by reading the prose and copying it literally:
+--
+--     the spec names countries; the config stores ISO 3166-1 alpha-2;
+--     the mapping between them is the standard one.
+--
+-- NO UK-TO-GB MAPPING EXISTS IN CODE, deliberately. A normalisation layer that
+-- silently translates a wrong code is how the NEXT wrong code survives. The
+-- config holds correct codes; `evaluateCountryEligibility` only trims and
+-- uppercases.
 -- ============================================================================
 
 INSERT INTO public.entitlement_runtime_config
@@ -77,15 +86,16 @@ VALUES (
   'tier_1_countries',
   -- Order is the invariant's order, not sorted — so a reader can diff this
   -- against Doc 03:2156 by eye.
-  '["US","CA","UK","AU","NZ","IE","SG"]'::jsonb,
+  '["US","CA","GB","AU","NZ","IE","SG"]'::jsonb,
   'array',
   'platform',
   'INV-03-08 Tier 1 country gating: the billing-address countries permitted to '
     'hold premium at V1 launch. Read by evaluateCountryEligibility '
     '(server/lib/stripe/country-eligibility.ts). An absent or empty list FAILS '
-    'CLOSED — it denies entitlement rather than admitting everyone. NOTE: `UK` '
-    'is INV-03-08''s spelling; Stripe sends ISO 3166-1 alpha-2 `GB`. See the '
-    'SCL candidate in docs/plans/Owner_DML_tier_1_countries.sql.',
+    'CLOSED — it denies entitlement rather than admitting everyone. NOTE: '
+    'INV-03-08 spells the United Kingdom `UK` in prose; this config stores ISO '
+    '3166-1 alpha-2, in which the code is `GB`. Owner ruling 2026-08-28: an '
+    'encoding question, not a spec change. See SCL-046.',
   'all'
 )
 ON CONFLICT (key) DO NOTHING;
@@ -104,7 +114,7 @@ WHERE key = 'tier_1_countries';
 
 -- Expected:
 --   key               | tier_1_countries
---   value             | ["US", "CA", "UK", "AU", "NZ", "IE", "SG"]
+--   value             | ["US", "CA", "GB", "AU", "NZ", "IE", "SG"]
 --   value_type        | array
 --   country_count     | 7
 --   environment       | all

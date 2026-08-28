@@ -502,34 +502,47 @@ export async function getEntitlementForProfile(
 /**
  * @spec [SCL-073 disputes; genesis.sql:173 `stripe_subscription_id TEXT UNIQUE`]
  * @implemented [2026-08-27]
- * plain English: find the entitlement a Stripe subscription pays for. Expected
- * outcome: exactly one row, or null when the subscription pays for nothing we
- * hold. Trade-off: the column is UNIQUE today, so one subscription maps to one
- * student and `maybeSingle` is safe; SCL-045 moves the key to the subscription
- * ITEM so one subscription may later pay for several students, at which point
- * this returns the wrong shape and must become a list — that migration is
- * Phase 4 item 5.1 and this function is named in it. Edge case: a subscription
- * id we never recorded returns null rather than throwing, because a dispute on
- * a charge unrelated to any entitlement is a fact, not an error.
+ * plain English: find EVERY entitlement a Stripe subscription pays for.
+ * Expected outcome: a list — empty when the subscription pays for nothing we
+ * hold, one row on the individual path, N rows on a guardian subscription that
+ * funds N students.
+ *
+ * @revised [2026-08-28 — Codex HIGH-4] It previously returned ONE row via
+ * `.maybeSingle()`. That was correct only while `stripe_subscription_id` was
+ * UNIQUE. Migration `20260827010000` dropped that constraint and moved the key
+ * to `stripe_subscription_item_id`, so on a guardian subscription `maybeSingle`
+ * raises rather than returning rows — meaning a chargeback or a full refund
+ * against a guardian invoice revoked NOBODY. The migration's own header named
+ * this function as work to be done and it was not done; this is that change.
+ *
+ * Trade-off: callers must now decide what several rows mean. That decision is
+ * theirs and differs by path — several rows on ONE subscription is the normal
+ * guardian shape, whereas several SUBSCRIPTIONS matching one charge is still
+ * ambiguous and still fails closed. Collapsing both into "one row" is what hid
+ * the defect. Edge case: a subscription id we never recorded returns `[]`
+ * rather than throwing, because a dispute on a charge unrelated to any
+ * entitlement is a fact, not an error.
  */
-export async function getEntitlementBySubscriptionId(
+export async function getEntitlementsBySubscriptionId(
   stripeSubscriptionId: string,
-): Promise<Entitlement | null> {
+): Promise<Entitlement[]> {
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
       "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .eq("stripe_subscription_id", stripeSubscriptionId)
-    .maybeSingle();
+    // Deterministic order so a fan-out revokes in a stable, reproducible
+    // sequence and a partial failure is replayable.
+    .order("stripe_subscription_item_id", { ascending: true });
 
   if (error) {
     throw new Error(
-      `Failed to fetch entitlement by subscription: ${error.message}`,
+      `Failed to fetch entitlements by subscription: ${error.message}`,
     );
   }
 
-  return data as Entitlement | null;
+  return (data ?? []) as Entitlement[];
 }
 
 /**
@@ -539,9 +552,16 @@ export async function getEntitlementBySubscriptionId(
  * onConflict targets the profile_id_unique constraint (added by migration).
  * stripe_customer_id is NOT written here — it lives on profiles (genesis:149).
  */
+/**
+ * The shape a writer may hand `upsertEntitlement`. Exported so callers that
+ * build an update in one place and apply it in another (the dispute/refund
+ * fan-out) can name the type instead of widening it to a string.
+ */
+export type EntitlementUpdate = Partial<Omit<Entitlement, "profile_id">>;
+
 export async function upsertEntitlement(
   profileId: string,
-  updates: Partial<Omit<Entitlement, "profile_id">>,
+  updates: EntitlementUpdate,
 ): Promise<Entitlement> {
   const { data, error } = await supabaseServer
     .from("entitlements")

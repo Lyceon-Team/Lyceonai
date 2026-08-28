@@ -151,8 +151,19 @@ describe('structured JSON log output — redaction proof', () => {
     expect(parsed.service).toBeDefined();
     expect(parsed.environment).toBeDefined();
 
-    // Correlation ID threaded through
+    // Correlation ID threaded through, un-digested: `request_id` is a
+    // domain-entity correlation key, not a person.
     expect(parsed.request_id).toBe('req-123-abc');
-    expect(parsed.user_id).toBe('user-456');
+
+    // CHANGED 2026-08-28 (Codex HIGH-6). This previously asserted the RAW
+    // 'user-456'. A user id is a person-linked identifier and the logger
+    // boundary now digests it structurally, so asserting the raw value would
+    // be asserting the defect. Correlation is preserved — the digest is stable,
+    // so two lines about the same user still join — while the log no longer
+    // discloses WHO. Asserting a non-empty digest that differs from the input
+    // is the pair of claims that matters; asserting only "not raw" would pass
+    // for a logger that blanked the field and destroyed correlation.
+    expect(parsed.user_id).not.toBe('user-456');
+    expect(parsed.user_id).toMatch(/^[0-9a-f]{8}$/);
   });
 });

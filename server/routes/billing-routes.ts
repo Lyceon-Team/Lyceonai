@@ -30,6 +30,7 @@
  *    canonical writer (Doc 01 V8 Appendix E ownership matrix).
  */
 import { Request, Response, Router } from "express";
+import type Stripe from "stripe";
 import { z } from "zod";
 import {
   requireSupabaseAuth,
@@ -47,7 +48,9 @@ import {
   getEntitlementForProfile,
   getProfileStripeCustomerId,
   setProfileStripeCustomerId,
+  getAllGuardianStudentLinks,
 } from "../lib/account";
+import { buildGuardianLineItems } from "../lib/stripe/guardian-checkout";
 import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
@@ -106,10 +109,6 @@ router.post(
         .status(403)
         .json({ error: "Admins cannot initiate checkout", requestId });
     }
-    if (role === "guardian") {
-      return sendGuardianBlocked(res, requestId);
-    }
-
     const parsed = checkoutSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -119,50 +118,122 @@ router.post(
     }
 
     const plan: BillingPeriod = parsed.data.plan;
+    // SCL-043: the PAYER is always the authenticated caller. On the
+    // unaccompanied path the payer and the student are the same person; on the
+    // guardian path they are not, and conflating them is what SCL-043 exists to
+    // prevent. Both names below refer to `userId`, and only the SELF path may
+    // read `studentProfileId` as a subject.
+    const payerProfileId = userId;
     const studentProfileId = userId;
+    const isGuardian = role === "guardian";
 
     try {
       const priceId = getPriceId(plan);
       const stripe = getStripeClient();
 
-      let customerId = await getProfileStripeCustomerId(studentProfileId);
+      let customerId = await getProfileStripeCustomerId(payerProfileId);
       if (!customerId) {
-        // Unaccompanied case: the payer IS the student, so the Customer email is
-        // the student's own. In the guardian and third-party cases the Customer
-        // email must be the payer's (SCL-044) — one reason those paths are not
-        // served here.
+        // SCL-044: the Customer email is the PAYER's, on both paths — the
+        // guardian's own on the guardian path, the student's on the
+        // unaccompanied path where they are the same person. The Customer is
+        // never stamped with a student on the guardian path: one Customer funds
+        // several students, so naming one of them here would be wrong for the
+        // rest.
         const customer = await stripe.customers.create({
           email: req.user?.email,
-          metadata: {
-            student_profile_id: studentProfileId,
-            payer_profile_id: studentProfileId,
-            payer_relationship: "self",
-          },
+          metadata: isGuardian
+            ? {
+                payer_profile_id: payerProfileId,
+                payer_relationship: "guardian",
+              }
+            : {
+                student_profile_id: studentProfileId,
+                payer_profile_id: payerProfileId,
+                payer_relationship: "self",
+              },
         });
         customerId = customer.id;
-        await setProfileStripeCustomerId(studentProfileId, customerId);
+        await setProfileStripeCustomerId(payerProfileId, customerId);
+      }
+
+      /**
+       * §4.8 GUARDIAN-PAID CHECKOUT — the production call site.
+       *
+       * @spec [SCL-043 payer identity; SCL-044 payer email; SCL-045 one
+       *        SubscriptionItem per student; Doc 01 V8 §31.3; Charter §6]
+       * @implemented [2026-08-28 — Codex HIGH-2]
+       *
+       * plain English: a guardian pays once and every linked student gets
+       * premium. Expected outcome: N line items for N ACTIVE links, each
+       * stamped with its own student.
+       *
+       * WHAT WAS WRONG. `buildGuardianLineItems` shipped with no production
+       * caller — this route returned 503 to every guardian, so §4.8 was
+       * reported implemented while being unreachable.
+       *
+       * CHARTER §6. The student ids come from `getAllGuardianStudentLinks`
+       * read on the SERVER. The request body is `.strict()` and carries only a
+       * plan, so a guardian cannot name a student they are not linked to —
+       * the request's student ids are never read because there are none.
+       */
+      let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
+      let sessionMetadata: Record<string, string>;
+
+      if (isGuardian) {
+        const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
+        const plan_ = buildGuardianLineItems(activeLinks, priceId);
+        if (!plan_.ok) {
+          // Not a 500: a guardian with no active links is a legitimate state
+          // with nothing to buy, and charging for nothing would be worse.
+          logger.info("BILLING", "checkout", "Guardian checkout refused", {
+            requestId,
+            payerProfileRef: digestId(payerProfileId),
+            reason: plan_.reason,
+          });
+          return res.status(409).json({
+            error: {
+              message:
+                "No active linked students to purchase for. Link a student first.",
+              code: "NO_ACTIVE_LINKED_STUDENTS",
+            },
+            requestId,
+          });
+        }
+        lineItems = plan_.lineItems.map((i) => ({
+          price: i.price,
+          quantity: i.quantity,
+          metadata: { ...i.metadata },
+        }));
+        // SCL-043: the SUBSCRIPTION names the PAYER. No `student_profile_id`
+        // here — there is no single student — which is exactly the signal the
+        // webhook dispatcher reads to take the item path.
+        sessionMetadata = {
+          payer_profile_id: payerProfileId,
+          payer_relationship: "guardian",
+          plan,
+        };
+      } else {
+        lineItems = [{ price: priceId, quantity: 1 }];
+        sessionMetadata = {
+          student_profile_id: studentProfileId,
+          payer_relationship: "self",
+          plan,
+        };
       }
 
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: "subscription",
-        line_items: [{ price: priceId, quantity: 1 }],
+        line_items: lineItems,
         success_url: `${siteBaseUrl()}/dashboard?checkout=success`,
         cancel_url: `${siteBaseUrl()}/dashboard?checkout=cancel`,
-        // SCL-043: the authoritative payer-to-student mapping.
-        client_reference_id: studentProfileId,
-        metadata: {
-          student_profile_id: studentProfileId,
-          payer_relationship: "self",
-          plan,
-        },
-        subscription_data: {
-          metadata: {
-            student_profile_id: studentProfileId,
-            payer_relationship: "self",
-            plan,
-          },
-        },
+        // SCL-043: the authoritative payer-to-student mapping on the
+        // unaccompanied path. Deliberately UNSET for a guardian: it takes one
+        // profile id, and a guardian session has no single subject — setting it
+        // to the guardian would make the payer look like the entitled student.
+        ...(isGuardian ? {} : { client_reference_id: studentProfileId }),
+        metadata: sessionMetadata,
+        subscription_data: { metadata: sessionMetadata },
       });
 
       // Charter §6: on the unaccompanied path the student IS the payer, so the
@@ -223,7 +294,8 @@ router.get(
       // predicate's set (SCL-029). Mirrored here for display only; the gate
       // itself calls entitlement_active().
       const entitledStatuses = new Set(["active", "past_due", "trialing"]);
-      const effectiveAccess = tier === "premium" && entitledStatuses.has(status);
+      const effectiveAccess =
+        tier === "premium" && entitledStatuses.has(status);
 
       return res.json({
         plan: tier,
