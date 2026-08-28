@@ -678,3 +678,45 @@ runtime and flake budget. Both need to be scoped and owned, not smuggled into a 
 (2) fix the two `actor_id` inserts, then wire the fifth; (3) decide Playwright — run it in CI or
 delete the nine files, but do not leave them looking like coverage; (4) diff
 `tests/auth.integration.test.ts` against its `tests/integration/` twin and delete the loser.
+
+---
+
+## CONSENT-FLOW-SCHEMA-MISMATCH (P0 — blocks every under-13 signup)
+
+**Status:** OPEN. Found 2026-08-28 during the step-8 pre-deletion audit
+(`docs/SpecAudit/consent-flow-preflight-audit.md`). Reported, not fixed — the repair is larger than
+the step it was found inside, and a half-migrated consent flow is worse than a uniformly broken one.
+
+**Symptom.** An under-13 user cannot complete profile setup. `POST /api/profile` returns HTTP 500,
+"Failed to load guardian consent state". No consent request row is created, so no email is sent, no
+Stripe verification session exists, and `profiles.guardian_consent` can never become `true` — which
+`requireConsentCompliance` reads as a hard gate on **10 routes**.
+
+**Cause.** The consent code is written against a `guardian_consent_requests` table that does not
+exist. Shipped schema (`supabase/migrations/00000000000000_genesis.sql:240`, mirrored at
+`scripts/ci/genesis-schema.expected.sql:4210`) has `student_profile_id`, `consent_token NOT NULL
+UNIQUE`, `consent_token_expires_at NOT NULL`, and `CHECK (status IN
+('pending','consented','denied','expired'))`. The code uses `child_id`, `expires_at`, and writes
+`status = 'approved'`. `child_id` appears in no migration and no expected-schema file.
+
+Proven by executing the three statements against genesis + all migrations: `42703` on the creator's
+SELECT (`server/routes/profile-routes.ts:268`), `42703` on its INSERT (`:295`), and `23514` on the
+approval UPDATE (`server/routes/guardian-consent-routes.ts:324`) against a real pre-inserted row.
+Full transcripts in the audit document.
+
+**Why CI is green.** `tests/ci/guardian-consent.id11.contract.test.ts` passes 8/8 against a mocked
+Supabase client whose fixtures spell `child_id`. The suite agrees with the code instead of with the
+schema — the same failure the fixture-canonicality gate was built for on the mastery side.
+
+**Not caused by `claude/guardian-link-lifecycle`.** Both files are untouched by that branch
+(`git diff bc344a9..HEAD` returns nothing for either).
+
+**Spec citations:** Doc 01 V8 §36.1 step 2 (the COPPA path is *required* before any feature access);
+§37.1–§37.2 (the table shape and the consent lifecycle the code should match). The spec is correct
+here and the code is wrong, so this is a defect record and not an SCL.
+
+**Owner:** `auth-entitlements` / whoever owns WS-GL Phase D.
+
+**Repair order:** see §6 of the audit document — column renames, `'approved'` → `'consented'`,
+adopt the specified `consent_token`, then move the contract test onto the real-Postgres harness so
+it is answerable to the schema.
