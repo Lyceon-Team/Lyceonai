@@ -243,8 +243,15 @@ describe("the retrieved Stripe Customer is parsed, not asserted", () => {
      * assertion could not tell "Stripe sent a shape we do not recognise" from
      * "this customer is not in a Tier-1 country". Planted against the cast, the
      * flat-address case below PASSED on that regex: it denied for the wrong
-     * reason and the test called it a win. Recorded as
-     * SCL-DRAFT-B-shape-error-conflation.
+     * reason and the test called it a win.
+     *
+     * The underlying conflation — one error class thrown from 13 sites for a
+     * shape failure, a country denial and an ambiguity refusal alike — is a
+     * CODE DEFECT, recorded in docs/plans/Stripe_Row_Claims.md, not a spec
+     * change. Owner ruling 2026-08-31: an SCL exists when the spec says
+     * something and that something is wrong. The spec says nothing about this
+     * error class, so no SCL is owed; the defect is scheduled for B after C and
+     * D land.
      *
      * So the assertion is on the PARSE DETAIL — Zod's own field error — and on
      * the absence of the country verdict. Only a real parse failure satisfies
