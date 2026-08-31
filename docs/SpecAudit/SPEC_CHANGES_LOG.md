@@ -63,6 +63,68 @@ Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit 
 Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
 Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
 
+SCL-DRAFT-A-declared-country | 2026-08-31 | Doc 01 §4 specifies ONE authoritative `country_code`; collecting a declared country at signup proposes TWO columns with different authorities | PROPOSED
+
+Change: The owner directs that account creation collect a country from a dropdown. Doing so cannot
+  be done under §4 as written, because §4 does not merely omit a declared country — it declares the
+  single column's authority in a way a second writer would contradict. That is the spec error this
+  entry records. NOTHING IS BUILT: this is the schema ruling the work waits on.
+WAS: Doc 01 (heading verified: "## **§4 Profile schema (target-state)**", line 129) declares at
+  line 147:
+      country\_code TEXT,  \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+  Two claims in one comment: the encoding, and that the value comes FROM BILLING ADDRESS and is
+  AUTHORITATIVE. A signup dropdown writing this same column would give one field two writers with
+  different authorities — a falsifiable self-declaration and a payment-verified fact — which is the
+  parallel-paths-built-differently pattern this corpus already forbids elsewhere.
+IS (PROPOSED, not built): split the field by authority rather than overloading one column.
+      declared_country_code   -- ISO 3166-1 alpha-2, self-declared at signup. NOT authoritative.
+      billing_country_code    -- ISO 3166-1 alpha-2, from the Stripe billing address. Authoritative.
+  The INV-03-08 gate reads billing when present and declared when not, and RECORDS a
+  declared-vs-billing mismatch rather than silently resolving it. Doc 01A §52's incident taxonomy is
+  where that mismatch belongs as an abuse signal; this entry does not itself add an incident type.
+THE FAIL-OPEN RISK, stated plainly because it is the whole reason for the split: a declared country
+  used AS the gate would admit anyone willing to select a different item from a dropdown. INV-03-08
+  would then be enforced against a value the person being gated chooses. That is not a weaker
+  control, it is no control — and it would fail silently, because a falsified declaration is
+  indistinguishable from a true one at the point of reading. Billing address stays authoritative for
+  exactly this reason: it is asserted by the payment network, not by the user. A declared country is
+  a SECOND SIGNAL and never the control.
+  Corollary the implementation must honour: `declared_country_code` present and `billing_country_code`
+  absent is NOT eligibility. It is a pre-purchase courtesy signal — enough to tell someone at signup
+  that we are not available where they say they are, never enough to grant.
+What it buys, and why it is worth a schema change:
+  1. Country data before any purchase. `profiles.country_code` is null on all 115 rows today (owner-
+     verified), so free-tier students have no country at all.
+  2. An ineligible user learns at signup rather than after building a study plan.
+  3. A declared-vs-billing mismatch becomes an abuse signal against Doc 01A §52's taxonomy.
+SECOND CONSUMER, found while drafting and material to the ruling: the country column is already read
+  outside billing, at `server/routes/tutor-runtime.ts:904-908`:
+      .select("country_code")
+      getCrisisResponse((profileRow?.country_code as string | null) ?? "US")
+  That selects CRISIS-RESPONSE content for a student in distress, and because the column is null on
+  every row today, every student currently receives US crisis resources regardless of where they
+  are. This changes the shape of the decision in two ways the owner should weigh:
+  - It is an argument FOR collecting a declared country early, independent of billing: for crisis
+    routing, a self-declared country is not merely acceptable, it is the RIGHT signal, because a
+    student in distress has usually not purchased anything and nobody falsifies their country to get
+    worse crisis resources. The incentive that makes declaration untrustworthy for a paywall does not
+    exist here.
+  - It means "which column does this consumer read" must be answered for every reader, not just the
+    gate. A split done carelessly would leave this call site reading the wrong one, and its failure
+    mode is silent and safety-relevant, not financial.
+  This entry does not rule on it. It records that the split has a safety-surface consumer, so the
+  ruling cannot be made on billing grounds alone.
+Owner action, and the order it has to happen in:
+  1. Rule on the schema shape: two columns as proposed, or another shape.
+  2. Rule on which column each existing reader consumes — the INV-03-08 gate, and the crisis-response
+     path above.
+  3. Rule on where the dropdown lives in the signup flow.
+  Only then is there code to write. No DDL is queued by this entry and none should be until (1).
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` §4 line 147
+  (the contradicted declaration). Current readers: `server/lib/stripe/country-eligibility.ts`,
+  `server/routes/tutor-runtime.ts:904-908`. Writers today: none.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
 SCL-DRAFT-A-tier1-iso-literal | 2026-08-31 | Doc 01 Appendix A.4 seeds `tier_1_countries` with `UK`, which is not an assigned ISO 3166-1 alpha-2 code | PROPOSED
 
 Change: Doc 01 Appendix A.4's launch value for `tier_1_countries` contains a country code that does

@@ -75,6 +75,18 @@ rather than after both have committed:
 - **`docs/plans/Stripe_Validation_Matrix.md`** — the orchestrator only. Agents
   propose rows; they do not edit the matrix.
 
+## Defects found by agents — not spec changes
+
+**Owner ruling 2026-08-31 on SCL discipline.** An SCL exists when the spec says
+something and that something is wrong. Not when the spec is silent, not when code
+needs improving, not when a decision needs recording. Two of B's provisional drafts
+were withdrawn under that test and are recorded here instead.
+
+| Defect | Found by | Owner | Sequence |
+|---|---|---|---|
+| **Error-class conflation.** One `StripePayloadShapeError` is thrown from 13 sites in `webhook-handler.ts` for at least three distinct facts — a genuine shape failure, an INV-03-08 country denial, and an ambiguity refusal — all carrying the message `"payload failed shape validation"` (single template at `webhook-handler.ts:383`). An operator reading `…payload failed shape validation: billing country is not Tier-1 eligible` will hunt for an API drift that is not there. It also defeated B's first plant formulation, which could not tell a parse failure from a country denial. Violates "distinguish absence from ambiguity". | B | **B** | **After C and D land.** It is a cross-cutting rename over 13 sites and fixtures owned by C and D; doing it before they merge guarantees conflicts. Withdrawn as `SCL-DRAFT-B-shape-error-conflation` — the spec says nothing about this error class, so no SCL is owed. |
+| **`no-dupe-keys` is enforced by nobody.** `typescript-eslint` disables the rule expecting `tsc` to report ts(1117), and `tsc --listFilesOnly \| grep -c '/tests/ci/'` returns **0** — the tsconfig excludes tests. Two duplicate-key fixtures survived on that gap. B closed it in-layer with a test rather than touching shared config. | B | **orchestrator or D** | Systemic fix is `eslint.config.mjs` / `tsconfig.json`; both are shared config and would collide across three branches. |
+
 ## Merge order
 
 B → C → D. Codex audits each PR before its merge, scoped to that layer plus the

@@ -186,6 +186,35 @@ specified anywhere:
 
 Surfaced per the ruling rather than assumed. No refund behaviour is implemented.
 
+## 7c. Dispute resume and the billing cycle — OPEN OWNER DECISION, nothing changed
+
+Raised by Agent B, 2026-08-31. **Not an SCL**: the spec does not address the billing
+cycle on dispute resume, and owner ruling 2026-08-31 is that silence is not a spec
+error. `SCL-DRAFT-B-resume-billing-anchor` is withdrawn; the decision is recorded here.
+
+`server/lib/stripe/webhook-handler.ts:988` resumes a paused subscription after a
+dispute is won:
+
+    await getStripeClient().subscriptions.resume(target.subscriptionId);
+
+No params. Per the pinned SDK, `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`,
+`billing_cycle_anchor` defaults to **`now`**. So winning a dispute silently **resets the
+renewal date**: the customer's period restarts from the resume instant rather than
+continuing the cycle they paid for.
+
+The two options, and what each costs:
+
+- **`billing_cycle_anchor: 'now'`** (today's behaviour, by default rather than by
+  choice). The renewal date moves. A customer who wins a dispute has their billing
+  date shifted with no notice, which is a change to what they bought.
+- **`billing_cycle_anchor: 'unchanged'`**. The cycle they paid for is preserved, but
+  Stripe generates prorations for the paused interval, which shows up on the next
+  invoice.
+
+Neither is free, and the choice is billing policy rather than a defect an agent can
+rule on. **`subscriptions.resume` is left unchanged until the owner rules.** It
+becomes an SCL only if the ruling is that Doc 01 must state the behaviour.
+
 ## 8. Open questions for the owner
 
 1. **Sequencing (§2).** 5.1 before 4.8, or 4.8 after Phase 4?
