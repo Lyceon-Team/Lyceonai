@@ -245,13 +245,25 @@ describe("the retrieved Stripe Customer is parsed, not asserted", () => {
      * flat-address case below PASSED on that regex: it denied for the wrong
      * reason and the test called it a win.
      *
-     * The underlying conflation — one error class thrown from 13 sites for a
-     * shape failure, a country denial and an ambiguity refusal alike — is a
-     * CODE DEFECT, recorded in docs/plans/Stripe_Row_Claims.md, not a spec
-     * change. Owner ruling 2026-08-31: an SCL exists when the spec says
-     * something and that something is wrong. The spec says nothing about this
-     * error class, so no SCL is owed; the defect is scheduled for B after C and
-     * D land.
+     * THE UNDERLYING DEFECT, stated here in full rather than by reference.
+     * `StripePayloadShapeError` is thrown from 13 sites in `webhook-handler.ts`
+     * for at least three distinct facts — a genuine shape failure, an INV-03-08
+     * country denial, and an ambiguity refusal — and all three carry the same
+     * message prefix from the single template at `webhook-handler.ts:383`,
+     * "payload failed shape validation". An operator reading
+     * "...payload failed shape validation: billing country is not Tier-1
+     * eligible" will hunt for an API drift that is not there.
+     *
+     * It is a CODE DEFECT, not a spec change: owner ruling 2026-08-31 is that
+     * an SCL amends a document, and nobody amends a document over an error
+     * class. The fix is a cross-cutting rename over those 13 sites and fixtures
+     * owned by other layers, so it is deliberately NOT done here.
+     *
+     * Written out inline on purpose. An earlier draft of this comment pointed
+     * at a tracking file that does not exist on this branch — the same
+     * dangling-citation defect the surrounding suite exists to catch, in the
+     * comment explaining it. A claim that cannot be checked from where it is
+     * written is worse than no claim.
      *
      * So the assertion is on the PARSE DETAIL — Zod's own field error — and on
      * the absence of the country verdict. Only a real parse failure satisfies
