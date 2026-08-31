@@ -31,33 +31,6 @@ import {
   subjectDigest,
   DIGEST_LEN_LOG,
 } from "../../packages/shared/src/services/subject-digest";
-// Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
-import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
-import {
-  parseSectionFilter,
-  readDomainMasteryView,
-} from "../../apps/api/src/services/mastery-view";
-import {
-  buildStudentKpiViewFromCanonical,
-  buildStudentFullLengthReportView,
-  projectGuardianFullLengthReportView,
-  projectGuardianExamSessionList,
-} from "../services/canonical-runtime-views";
-import { buildCalendarMonthView } from "../../apps/api/src/services/calendar-month-view";
-import {
-  resolveHistoricalTrendsAccess,
-  resolvePaidKpiAccessForStudent,
-} from "../services/kpi-access";
-
-/**
- * The calendar day shape, DERIVED from the builder's own return type rather than restated.
- * `payload.days.map((day: any) => ...)` meant a renamed field in buildCalendarMonthView
- * silently became `undefined` on a parent's screen — an unchecked read wearing the face of
- * "no data". Deriving it here makes that rename a compile error instead.
- */
-type CalendarMonthDay = Awaited<
-  ReturnType<typeof buildCalendarMonthView>
->["days"][number];
 
 /** The exact column list the linked-student queries select. Not `any[]`. */
 type LinkedStudentRow = {
