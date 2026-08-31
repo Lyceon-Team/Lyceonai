@@ -15,6 +15,10 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { csrfFetch } from "@/lib/csrf";
 import {
+  useGuardianStudents,
+  type LinkedStudent,
+} from "@/hooks/useGuardianStudents";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -48,13 +52,6 @@ import FullLengthResultsView, {
   type FullLengthResultsData,
 } from "@/components/full-length-exam/FullLengthResultsView";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-
-interface LinkedStudent {
-  id: string;
-  email: string;
-  display_name: string | null;
-  created_at: string;
-}
 
 interface StudentSummary {
   student: {
@@ -154,17 +151,7 @@ export default function GuardianDashboard() {
     isLoading: studentsLoading,
     error: studentsError,
     refetch: refetchStudents,
-  } = useQuery({
-    queryKey: ["guardian-students"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/guardian/students", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch students");
-      return res.json() as Promise<{ students: LinkedStudent[] }>;
-    },
-    enabled: isGuardian && isAuthenticated,
-  });
+  } = useGuardianStudents({ enabled: isGuardian && isAuthenticated });
 
   const {
     data: summaryData,

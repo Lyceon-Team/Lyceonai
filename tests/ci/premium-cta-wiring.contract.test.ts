@@ -69,7 +69,14 @@ describe('Premium CTA wiring contract', () => {
     const guardianPaywall = read('client/src/components/guardian/SubscriptionPaywall.tsx');
 
     expect(guardianPaywall).toContain('getBillingPlans');
-    expect(guardianPaywall).toContain('startSubscriptionCheckout(plan)');
+    // Still the SHARED checkout helper, not a forked call. The literal
+    // `startSubscriptionCheckout(plan)` was relaxed on 2026-08-31 when the
+    // guardian student picker landed: the guardian path is per student
+    // (Doc 01 V8 §20, §31.4, §36.4), so the call now also carries the selected
+    // subject. The parity this test protects is "same helper", not "same
+    // arity" — asserting both keeps that meaning instead of just deleting it.
+    expect(guardianPaywall).toContain('startSubscriptionCheckout(');
+    expect(guardianPaywall).toContain('studentProfileId: selectedStudentId');
     expect(guardianPaywall).toContain("'/api/billing/portal'");
     expect(guardianPaywall).toContain('needsPaymentUpdate');
     expect(guardianPaywall).toContain('TODO(billing): Guardian selector is legacy');
