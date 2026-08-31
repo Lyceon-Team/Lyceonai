@@ -446,7 +446,7 @@ export default function UserProfile() {
                   <div className="mt-4 p-3 bg-muted rounded-lg">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                       <Users className="h-4 w-4" />
-                      <span>Guardian Link Code</span>
+                      <span>Guardian Link Requests</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <code className="text-lg font-mono font-bold tracking-wider">
@@ -459,7 +459,7 @@ export default function UserProfile() {
                           navigator.clipboard.writeText(profileUser.studentLinkCode || '');
                           toast({
                             title: "Copied!",
-                            description: "Link code copied to clipboard",
+                            description: "Legacy link code copied to clipboard",
                           });
                         }}
                       >
@@ -467,7 +467,9 @@ export default function UserProfile() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Share this code with your parent/guardian to link accounts
+                      Ask your parent or guardian to send a link request to this
+                      account email. Link codes are legacy and are not used for
+                      new guardian requests.
                     </p>
                   </div>
                 )}
