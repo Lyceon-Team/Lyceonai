@@ -126,6 +126,18 @@ Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
 
 SCL-DRAFT-A-declared-country | 2026-08-31 | Doc 01 §4 specifies ONE authoritative `country_code`; collecting a declared country at signup proposes TWO columns with different authorities | PROPOSED
 
+DEFERRED 2026-08-31 — OWNER RULING. This is NOT the Stripe vertical's work and is not
+  blocked on it. It goes to the signup team, and the entry stays drafted and unallocated for
+  whoever picks it up.
+  WHY BILLING DOES NOT WAIT FOR IT: the INV-03-08 gate derives its country from the STRIPE
+  BILLING ADDRESS at `checkout.session.completed`, which exists whatever signup collects. A
+  declared country would be a second signal and a pre-purchase courtesy — never the control —
+  so no billing path is blocked by its absence.
+  THE ONE LINE THE HANDOFF MUST CARRY: the ruling must state WHICH COLUMN EACH READER
+  CONSUMES, not only the eligibility gate. There is already a non-billing reader of this
+  column (`server/routes/tutor-runtime.ts:904-908`), and a split done for the gate alone
+  would leave it reading the wrong one.
+
 Change: The owner directs that account creation collect a country from a dropdown. Doing so cannot
   be done under §4 as written, because §4 does not merely omit a declared country — it declares the
   single column's authority in a way a second writer would contradict. That is the spec error this
