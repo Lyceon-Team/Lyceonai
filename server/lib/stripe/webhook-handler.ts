@@ -109,11 +109,38 @@ const retrievedChargeSchema = z.object({
 type RetrievedCharge = z.infer<typeof retrievedChargeSchema>;
 
 /**
- * The Customer fields the egress rule reads (SCL-047). The billing address is
- * the authoritative country signal (SCL-046, INV-03-08).
+ * The Customer fields this handler reads, wherever it reads a Customer.
+ *
+ * @spec [Coding Standards §7.1 "Third-party payloads (Stripe, etc.)";
+ *        SCL-046 / INV-03-08 country signal; SCL-047 egress]
+ * @implemented [2026-08-31 — SCL-DRAFT-B-customer-parse]
+ *
+ * plain English: one schema for the Stripe Customer, used by both places that
+ * read one — the SCL-047 egress rule on `customer.updated`, and the INV-03-08
+ * country gate that runs before every grant. Expected outcome: the billing
+ * country that decides entitlement is a CHECKED value on both paths, not a
+ * checked value on one and an asserted one on the other. Trade-off: the grant
+ * gate now fails closed on a Customer whose shape it does not recognise, where
+ * before it would have read `undefined` through a cast and denied for the wrong
+ * reason. Edge case: `customers.retrieve` returns a DeletedCustomer — `{id,
+ * object, deleted:true}`, no `address` — which parses here and is branched on
+ * explicitly rather than being silently read as "no country".
+ *
+ * WHY THIS IS ONE SCHEMA AND NOT TWO. It was two: `customer.updated` parsed,
+ * and the grant gate cast with `as Stripe.Customer`. A TYPE ASSERTION IS NOT A
+ * PARSE — it is the compiler being told to stop asking, and it survives an API
+ * version drift that a parse would catch. That the same object was checked on
+ * the path that only SCHEDULES a cancellation and unchecked on the path that
+ * GRANTS is the wrong way round.
  */
-const customerUpdatedSchema = z.object({
+const stripeCustomerSchema = z.object({
   id: z.string().min(1),
+  /**
+   * Present and `true` only on a DeletedCustomer. Read rather than probed with
+   * `"deleted" in customer`, so the case is part of the parsed shape instead of
+   * a narrowing trick applied after the fact.
+   */
+  deleted: z.boolean().nullish(),
   address: z.object({ country: z.string().nullish() }).nullish(),
 });
 
@@ -459,11 +486,22 @@ async function assertCountryEligibleForGrant(
 
   let country: string | null | undefined = null;
   if (customerId) {
-    const customer = await getStripeClient().customers.retrieve(customerId);
-    country =
-      "deleted" in customer && customer.deleted
-        ? null
-        : (customer as Stripe.Customer).address?.country;
+    // PARSED, NOT CAST (SCL-DRAFT-B-customer-parse). This value decides whether
+    // a grant happens, so it is checked at the boundary like every other Stripe
+    // response in this file. The previous `as Stripe.Customer` was a claim about
+    // the response, not a check on it: an API-version drift that moved or
+    // renamed `address` would have read `undefined` and denied every grant
+    // silently, which looks identical to a genuine ineligible verdict.
+    const customer = parseOrFail(
+      stripeCustomerSchema,
+      await getStripeClient().customers.retrieve(customerId),
+      eventType,
+    );
+    // A DeletedCustomer carries no address. That is an ABSENT country, not an
+    // ineligible one, and `evaluateCountryEligibility` turns absence into
+    // `unknown`, which denies the grant. Branched explicitly so the reason is
+    // legible rather than arriving as an undefined field read.
+    country = customer.deleted ? null : customer.address?.country;
   }
 
   const eligibility = evaluateCountryEligibility(
@@ -1425,7 +1463,7 @@ function isSettled(
  */
 async function handleCustomerUpdated(event: Stripe.Event): Promise<void> {
   const customer = parseOrFail(
-    customerUpdatedSchema,
+    stripeCustomerSchema,
     event.data.object,
     event.type,
   );
@@ -1674,6 +1712,48 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       { eventId: event.id },
     );
     return;
+  }
+
+  /**
+   * THE DISPATCHER IS EXHAUSTIVE, AND SAYS SO.
+   *
+   * @spec [Doc-01_V8 §22.1 as amended by SCL-070 (19 subscribed events)]
+   * @implemented [2026-08-31 — SCL-DRAFT-B-dispatch-exhaustive]
+   *
+   * plain English: everything that reaches this point must be one of the three
+   * subscription lifecycle events, and anything else stops here instead of being
+   * treated as one. Expected outcome: marking an event HANDLED in
+   * `event-surface.ts` without giving it a branch above fails loudly and names
+   * itself. Trade-off: one more comparison on a path that already branches ten
+   * times. Edge case: the event still reaches this line inside `dispatch`'s
+   * try/catch, so the idempotency claim is released and Stripe retries — the
+   * event is not lost, it is made visible.
+   *
+   * WHY THIS IS NOT DECORATION. Below this comment the payload is parsed as a
+   * SUBSCRIPTION and its `id` is handed to `subscriptions.retrieve`. Every
+   * subscribed Stripe object has an `id`, so `subscriptionEventSchema` parses an
+   * Invoice, a Charge and a Refund quite happily. A newly-HANDLED
+   * `invoice.payment_succeeded` would therefore have reached this fallthrough,
+   * parsed clean, and asked Stripe to retrieve a SUBSCRIPTION by an INVOICE id —
+   * a "No such subscription: in_…" from the API, three hops from the file that
+   * caused it. This is the same class as the matrix's Fix 2: an event hiding in
+   * a path that was never told which events belong to it.
+   *
+   * It routes; it does not gate. Nothing here grants, extends or revokes — the
+   * country and settlement gates live in the writers, and this adds none.
+   */
+  if (
+    event.type !== "customer.subscription.created" &&
+    event.type !== "customer.subscription.updated" &&
+    event.type !== "customer.subscription.deleted"
+  ) {
+    throw new StripePayloadShapeError(
+      event.type,
+      "is marked HANDLED in event-surface.ts but has no branch in dispatch(); " +
+        "it reached the subscription lifecycle path, which would have retrieved " +
+        "a Stripe Subscription by this object's id. Refusing to guess: give the " +
+        "event a branch, or mark it ignored with a stated reason.",
+    );
   }
 
   const subscription = parseOrFail(
