@@ -304,7 +304,7 @@ export default function GuardianDashboard() {
       // The response is deliberately identical whether or not the address matches a
       // student account (anti-enumeration), so it cannot name the student either.
       setLinkSuccess(
-        "Request sent. Your student will get an email asking them to confirm.",
+        "Request sent. Your student must accept the link from their own Lyceon account.",
       );
       setLinkEmail("");
       setLinkError(null);
@@ -468,8 +468,7 @@ export default function GuardianDashboard() {
                   Connection Required
                 </CardTitle>
                 <CardDescription>
-                  Enter a valid 8-character student link code to activate
-                  guardian reporting.
+                  Enter your student's email address to request a guardian link.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
@@ -490,8 +489,7 @@ export default function GuardianDashboard() {
                 Link a Student
               </CardTitle>
               <CardDescription>
-                Enter the 8-character code from your student's profile page to
-                connect
+                Enter your student's email address to send a link request
               </CardDescription>
             </CardHeader>
             <CardContent>

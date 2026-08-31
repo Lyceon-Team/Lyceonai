@@ -1,37 +1,65 @@
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppShell } from '@/components/layout/app-shell';
-import { PageCard } from '@/components/common/page-card';
-import { EmptyState } from '@/components/common/empty-state';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Switch } from '@/components/ui/switch';
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AppShell } from "@/components/layout/app-shell";
+import { PageCard } from "@/components/common/page-card";
+import { EmptyState } from "@/components/common/empty-state";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  User, Settings, CreditCard, Bell, Shield, LogOut,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import {
+  User,
+  Settings,
+  CreditCard,
+  Bell,
+  Shield,
+  LogOut,
   Calendar,
-  Trophy, Target, BookOpen, Clock, TrendingUp, Star,
-  AlertCircle, CheckCircle,
-  Copy, Mail, Users
-} from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { useLocation } from 'wouter';
-import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import { apiRequest } from '@/lib/queryClient';
-import { SUPPORT_EMAIL } from '@/lib/support-contact';
-import { openBillingPortal } from '@/lib/billing-client';
-import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
-import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
-import { SessionNotice } from '@/components/feedback/SessionNotice';
-import { DeleteAccountCard } from '@/components/account-deletion/DeleteAccountCard';
-import { isSessionError, toUserFacingMessage } from '@/lib/api-error';
+  Trophy,
+  Target,
+  BookOpen,
+  Clock,
+  TrendingUp,
+  Star,
+  AlertCircle,
+  CheckCircle,
+  Copy,
+  Mail,
+  Users,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { apiRequest } from "@/lib/queryClient";
+import { SUPPORT_EMAIL } from "@/lib/support-contact";
+import { openBillingPortal } from "@/lib/billing-client";
+import type {
+  NotificationDigestFrequency,
+  UserNotificationPreferences,
+} from "@shared/schema";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
+import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
+import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 
 interface UserProfile {
   id: string;
@@ -55,15 +83,19 @@ interface BillingStatusResponse {
   needsPaymentUpdate: boolean;
   requiresStudentSubscription?: boolean;
   isPaid: boolean;
-  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
+  premiumSource?: "student" | "guardian" | "both" | "none";
   hasLinkedStudent?: boolean;
   linkRequiredForPremium?: boolean;
-  billingOwnerRole?: 'student' | 'guardian';
-  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
+  billingOwnerRole?: "student" | "guardian";
+  lockedReason?:
+    | "link_required"
+    | "student_subscription_required"
+    | "student_subscription_expired"
+    | "student_payment_past_due"
+    | null;
 }
 
-
-type RoleSwitchTarget = 'student' | 'guardian' | 'teacher';
+type RoleSwitchTarget = "student" | "guardian" | "teacher";
 
 function buildRoleSwitchTemplate(args: {
   currentRole: string;
@@ -72,20 +104,20 @@ function buildRoleSwitchTemplate(args: {
   displayName?: string;
 }) {
   return [
-    'Hello Lyceon Support Team,',
-    '',
-    'I am requesting a role update for my account.',
+    "Hello Lyceon Support Team,",
+    "",
+    "I am requesting a role update for my account.",
     `Current role: ${args.currentRole}`,
     `Requested role: ${args.requestedRole}`,
     `Account email: ${args.accountEmail}`,
-    `Account name: ${args.displayName || 'Not provided'}`,
-    '',
-    'Reason for request:',
-    '- Please review and update my account role as appropriate.',
-    '',
-    'Thank you,',
+    `Account name: ${args.displayName || "Not provided"}`,
+    "",
+    "Reason for request:",
+    "- Please review and update my account role as appropriate.",
+    "",
+    "Thank you,",
     args.displayName || args.accountEmail,
-  ].join('\n');
+  ].join("\n");
 }
 
 interface NotificationPreferencesFormState {
@@ -100,31 +132,34 @@ interface NotificationPreferencesFormState {
   quietHoursEnd: string;
 }
 
-const DEFAULT_NOTIFICATION_PREFERENCES_FORM: NotificationPreferencesFormState = {
-  emailEnabled: false,
-  studyRemindersEnabled: true,
-  streakEnabled: true,
-  planUpdatesEnabled: true,
-  guardianUpdatesEnabled: true,
-  marketingEnabled: false,
-  digestFrequency: 'daily',
-  quietHoursStart: '',
-  quietHoursEnd: '',
-};
+const DEFAULT_NOTIFICATION_PREFERENCES_FORM: NotificationPreferencesFormState =
+  {
+    emailEnabled: false,
+    studyRemindersEnabled: true,
+    streakEnabled: true,
+    planUpdatesEnabled: true,
+    guardianUpdatesEnabled: true,
+    marketingEnabled: false,
+    digestFrequency: "daily",
+    quietHoursStart: "",
+    quietHoursEnd: "",
+  };
 
-function readQuietHoursPreference(value: UserNotificationPreferences['quietHours']): {
+function readQuietHoursPreference(
+  value: UserNotificationPreferences["quietHours"],
+): {
   start: string;
   end: string;
 } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { start: '', end: '' };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { start: "", end: "" };
   }
 
   const record = value as Record<string, unknown>;
 
   return {
-    start: typeof record.start === 'string' ? record.start : '',
-    end: typeof record.end === 'string' ? record.end : '',
+    start: typeof record.start === "string" ? record.start : "",
+    end: typeof record.end === "string" ? record.end : "",
   };
 }
 
@@ -150,7 +185,9 @@ function notificationPreferencesToForm(
   };
 }
 
-function formStateToPreferencesPayload(formState: NotificationPreferencesFormState) {
+function formStateToPreferencesPayload(
+  formState: NotificationPreferencesFormState,
+) {
   const quietHoursStart = formState.quietHoursStart.trim();
   const quietHoursEnd = formState.quietHoursEnd.trim();
 
@@ -188,15 +225,17 @@ export function formatMemberSince(createdAt?: string): string {
 // These features are temporarily disabled and shown as placeholders
 
 export default function UserProfile() {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState("profile");
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user, signOut } = useSupabaseAuth();
-  const [roleSwitchTarget, setRoleSwitchTarget] = useState<RoleSwitchTarget>('student');
-  const [roleSwitchMessage, setRoleSwitchMessage] = useState('');
-  const [notificationPreferencesForm, setNotificationPreferencesForm] = useState<NotificationPreferencesFormState>(
-    DEFAULT_NOTIFICATION_PREFERENCES_FORM,
-  );
+  const [roleSwitchTarget, setRoleSwitchTarget] =
+    useState<RoleSwitchTarget>("student");
+  const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
+  const [notificationPreferencesForm, setNotificationPreferencesForm] =
+    useState<NotificationPreferencesFormState>(
+      DEFAULT_NOTIFICATION_PREFERENCES_FORM,
+    );
 
   // Get user profile from canonical endpoint
   const {
@@ -206,7 +245,7 @@ export default function UserProfile() {
     error: profileErrorObj,
     refetch: refetchProfile,
   } = useQuery<{ user: UserProfile; authenticated: boolean }>({
-    queryKey: ['/api/profile'],
+    queryKey: ["/api/profile"],
     enabled: !!user,
   });
 
@@ -217,7 +256,7 @@ export default function UserProfile() {
     error: notificationPreferencesErrorObj,
     refetch: refetchNotificationPreferences,
   } = useQuery<{ preferences: UserNotificationPreferences }>({
-    queryKey: ['/api/notifications/preferences'],
+    queryKey: ["/api/notifications/preferences"],
     enabled: !!user,
   });
 
@@ -228,7 +267,7 @@ export default function UserProfile() {
     error: billingStatusErrorObj,
     refetch: refetchBillingStatus,
   } = useQuery<BillingStatusResponse>({
-    queryKey: ['/api/billing/status'],
+    queryKey: ["/api/billing/status"],
     enabled: !!user,
   });
 
@@ -237,7 +276,7 @@ export default function UserProfile() {
     try {
       await signOut();
       queryClient.clear();
-      navigate('/login');
+      navigate("/login");
       toast({
         title: "Logged Out",
         description: "You have been successfully logged out.",
@@ -252,20 +291,26 @@ export default function UserProfile() {
   };
 
   const profileUser = userProfile?.user;
-  const notificationPreferences = notificationPreferencesResponse?.preferences ?? null;
+  const notificationPreferences =
+    notificationPreferencesResponse?.preferences ?? null;
 
-  const currentRole = user?.role || 'student';
-  const accountEmail = user?.email || profileUser?.email || '';
-  const accountName = profileUser?.name || user?.display_name || '';
+  const currentRole = user?.role || "student";
+  const accountEmail = user?.email || profileUser?.email || "";
+  const accountName = profileUser?.name || user?.display_name || "";
   const memberSinceLabel = formatMemberSince(profileUser?.createdAt);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return;
     }
 
-    const tab = new URLSearchParams(window.location.search).get('tab');
-    if (tab === 'profile' || tab === 'progress' || tab === 'settings' || tab === 'billing') {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (
+      tab === "profile" ||
+      tab === "progress" ||
+      tab === "settings" ||
+      tab === "billing"
+    ) {
       setActiveTab(tab);
     }
   }, [location]);
@@ -286,10 +331,14 @@ export default function UserProfile() {
   }, [accountEmail, accountName, currentRole, roleSwitchTarget]);
 
   useEffect(() => {
-    setNotificationPreferencesForm(notificationPreferencesToForm(notificationPreferences));
+    setNotificationPreferencesForm(
+      notificationPreferencesToForm(notificationPreferences),
+    );
   }, [notificationPreferences]);
 
-  const notificationPreferencesBaseline = notificationPreferencesToForm(notificationPreferences);
+  const notificationPreferencesBaseline = notificationPreferencesToForm(
+    notificationPreferences,
+  );
   const notificationPreferencesDirty = !areNotificationPreferencesEqual(
     notificationPreferencesForm,
     notificationPreferencesBaseline,
@@ -297,19 +346,26 @@ export default function UserProfile() {
 
   const updateNotificationPreferencesMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify(formStateToPreferencesPayload(notificationPreferencesForm)),
+      const response = await apiRequest("/api/notifications/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(
+          formStateToPreferencesPayload(notificationPreferencesForm),
+        ),
       });
 
-      return response.json() as Promise<{ preferences: UserNotificationPreferences }>;
+      return response.json() as Promise<{
+        preferences: UserNotificationPreferences;
+      }>;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(['/api/notifications/preferences'], data);
-      setNotificationPreferencesForm(notificationPreferencesToForm(data.preferences));
+      queryClient.setQueryData(["/api/notifications/preferences"], data);
+      setNotificationPreferencesForm(
+        notificationPreferencesToForm(data.preferences),
+      );
       toast({
-        title: 'Notification preferences saved',
-        description: 'Your reminder and delivery preferences are now persisted.',
+        title: "Notification preferences saved",
+        description:
+          "Your reminder and delivery preferences are now persisted.",
       });
     },
     onError: (error) => {
@@ -334,15 +390,20 @@ export default function UserProfile() {
 
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
-  const roleSwitchPreview = [`To: ${SUPPORT_EMAIL}`, `Subject: ${roleSwitchSubject}`, '', roleSwitchMessage].join('\n');
-  const hasManageableSubscription = !!billingStatus && (
-    billingStatus.effectiveAccess ||
-    billingStatus.needsPaymentUpdate ||
-    !!billingStatus.stripeSubscriptionId ||
-    billingStatus.stripeStatus === 'active' ||
-    billingStatus.stripeStatus === 'trialing' ||
-    billingStatus.stripeStatus === 'past_due'
-  );
+  const roleSwitchPreview = [
+    `To: ${SUPPORT_EMAIL}`,
+    `Subject: ${roleSwitchSubject}`,
+    "",
+    roleSwitchMessage,
+  ].join("\n");
+  const hasManageableSubscription =
+    !!billingStatus &&
+    (billingStatus.effectiveAccess ||
+      billingStatus.needsPaymentUpdate ||
+      !!billingStatus.stripeSubscriptionId ||
+      billingStatus.stripeStatus === "active" ||
+      billingStatus.stripeStatus === "trialing" ||
+      billingStatus.stripeStatus === "past_due");
 
   if (profileLoading) {
     return (
@@ -350,7 +411,9 @@ export default function UserProfile() {
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Loading your profile...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading your profile...
+            </p>
           </div>
         </div>
       </AppShell>
@@ -358,7 +421,9 @@ export default function UserProfile() {
   }
 
   if (profileError) {
-    const profileMessage = (profileErrorObj as Error)?.message ?? toUserFacingMessage(profileErrorObj).message;
+    const profileMessage =
+      (profileErrorObj as Error)?.message ??
+      toUserFacingMessage(profileErrorObj).message;
     return (
       <AppShell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
@@ -390,7 +455,7 @@ export default function UserProfile() {
             description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
             action={{
               label: "Refresh",
-              onClick: () => refetchProfile()
+              onClick: () => refetchProfile(),
             }}
           />
         </div>
@@ -403,12 +468,18 @@ export default function UserProfile() {
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 max-w-6xl">
         {/* Page Header */}
         <div className="mb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Account Center</p>
-          <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            Account Center
+          </p>
+          <h1
+            className="text-3xl font-bold text-foreground mb-2"
+            data-testid="page-title"
+          >
             Profile & Settings
           </h1>
           <p className="text-muted-foreground">
-            Manage your account identity, guardian linking, and current runtime-backed settings.
+            Manage your account identity, guardian linking, and current
+            runtime-backed settings.
           </p>
         </div>
         {/* Profile Header */}
@@ -417,17 +488,28 @@ export default function UserProfile() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
               <div className="relative">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={profileUser.avatarUrl} alt={profileUser.name || user?.email} />
+                  <AvatarImage
+                    src={profileUser.avatarUrl}
+                    alt={profileUser.name || user?.email}
+                  />
                   <AvatarFallback className="text-lg">
-                    {profileUser.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                    {profileUser.name?.charAt(0) ||
+                      user?.email?.charAt(0) ||
+                      "U"}
                   </AvatarFallback>
                 </Avatar>
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold mb-1" data-testid="text-profile-name">
+                <h2
+                  className="text-2xl font-bold mb-1"
+                  data-testid="text-profile-name"
+                >
                   {profileUser.name || user?.email}
                 </h2>
-                <p className="text-muted-foreground mb-3" data-testid="text-profile-email">
+                <p
+                  className="text-muted-foreground mb-3"
+                  data-testid="text-profile-email"
+                >
                   {user?.email}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -442,32 +524,16 @@ export default function UserProfile() {
                     Member since {memberSinceLabel}
                   </Badge>
                 </div>
-                {user?.role === 'student' && profileUser?.studentLinkCode && (
+                {user?.role === "student" && (
                   <div className="mt-4 p-3 bg-muted rounded-lg">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                       <Users className="h-4 w-4" />
-                      <span>Guardian Link Code</span>
+                      <span>Guardian Link</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-lg font-mono font-bold tracking-wider">
-                        {profileUser.studentLinkCode}
-                      </code>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          navigator.clipboard.writeText(profileUser.studentLinkCode || '');
-                          toast({
-                            title: "Copied!",
-                            description: "Link code copied to clipboard",
-                          });
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Share this code with your parent/guardian to link accounts
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Your parent or guardian can link their account to yours
+                      from their guardian dashboard using your email address.
+                      Once they send a request, you can accept it here.
                     </p>
                   </div>
                 )}
@@ -487,7 +553,11 @@ export default function UserProfile() {
         )}
 
         {/* Profile Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
@@ -522,7 +592,7 @@ export default function UserProfile() {
                     <Label htmlFor="name">Full Name</Label>
                     <Input
                       id="name"
-                      value={profileUser?.name || ''}
+                      value={profileUser?.name || ""}
                       disabled
                       data-testid="input-name"
                     />
@@ -531,7 +601,7 @@ export default function UserProfile() {
                     <Label htmlFor="username">Username</Label>
                     <Input
                       id="username"
-                      value={profileUser?.username || ''}
+                      value={profileUser?.username || ""}
                       disabled
                       data-testid="input-username"
                     />
@@ -541,7 +611,7 @@ export default function UserProfile() {
                     <Input
                       id="email"
                       type="email"
-                      value={user?.email || ''}
+                      value={user?.email || ""}
                       disabled
                       data-testid="input-email"
                     />
@@ -577,8 +647,9 @@ export default function UserProfile() {
                 <Alert>
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
-                    This account is protected by runtime authentication controls.
-                    Use the password reset/update flow for credential changes when using email sign-in.
+                    This account is protected by runtime authentication
+                    controls. Use the password reset/update flow for credential
+                    changes when using email sign-in.
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -588,14 +659,16 @@ export default function UserProfile() {
               <CardHeader>
                 <CardTitle>Request Role Change</CardTitle>
                 <CardDescription>
-                  Role changes are support-mediated and are not applied directly in-app.
+                  Role changes are support-mediated and are not applied directly
+                  in-app.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    No in-product role switch is available. Use this request form to draft an email to {SUPPORT_EMAIL}.
+                    No in-product role switch is available. Use this request
+                    form to draft an email to {SUPPORT_EMAIL}.
                   </AlertDescription>
                 </Alert>
 
@@ -603,9 +676,14 @@ export default function UserProfile() {
                   <Label htmlFor="role-switch-target">Requested Role</Label>
                   <Select
                     value={roleSwitchTarget}
-                    onValueChange={(value) => setRoleSwitchTarget(value as RoleSwitchTarget)}
+                    onValueChange={(value) =>
+                      setRoleSwitchTarget(value as RoleSwitchTarget)
+                    }
                   >
-                    <SelectTrigger id="role-switch-target" data-testid="select-role-switch-target">
+                    <SelectTrigger
+                      id="role-switch-target"
+                      data-testid="select-role-switch-target"
+                    >
                       <SelectValue placeholder="Select target role" />
                     </SelectTrigger>
                     <SelectContent>
@@ -621,7 +699,9 @@ export default function UserProfile() {
                   <Textarea
                     id="role-switch-message"
                     value={roleSwitchMessage}
-                    onChange={(event) => setRoleSwitchMessage(event.target.value)}
+                    onChange={(event) =>
+                      setRoleSwitchMessage(event.target.value)
+                    }
                     className="min-h-[220px]"
                     data-testid="textarea-role-switch-message"
                   />
@@ -671,8 +751,9 @@ export default function UserProfile() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Detailed progress tracking on this page is intentionally disabled until the rebuild is complete.
-                Visit the Dashboard for the current live KPI truth.
+                Detailed progress tracking on this page is intentionally
+                disabled until the rebuild is complete. Visit the Dashboard for
+                the current live KPI truth.
               </AlertDescription>
             </Alert>
 
@@ -685,10 +766,15 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-overall-score">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-overall-score"
+                  >
                     —
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">
+                    Check Dashboard
+                  </p>
                 </CardContent>
               </Card>
 
@@ -700,7 +786,10 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-questions-total">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-questions-total"
+                  >
                     —
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -717,10 +806,15 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-study-time">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-study-time"
+                  >
                     —
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">
+                    Check Dashboard
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -750,21 +844,25 @@ export default function UserProfile() {
                   Notification Preferences
                 </CardTitle>
                 <CardDescription>
-                  Load and save persisted notification preferences for this account.
+                  Load and save persisted notification preferences for this
+                  account.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {notificationPreferencesLoading ? (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>Loading saved notification preferences...</AlertDescription>
+                    <AlertDescription>
+                      Loading saved notification preferences...
+                    </AlertDescription>
                   </Alert>
                 ) : notificationPreferencesError ? (
                   isSessionError(notificationPreferencesErrorObj) ? (
                     <SessionNotice
                       message={
                         (notificationPreferencesErrorObj as Error)?.message ??
-                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                        toUserFacingMessage(notificationPreferencesErrorObj)
+                          .message
                       }
                       onRefreshSession={() => window.location.reload()}
                     />
@@ -772,7 +870,8 @@ export default function UserProfile() {
                     <RecoveryNotice
                       message={
                         (notificationPreferencesErrorObj as Error)?.message ??
-                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                        toUserFacingMessage(notificationPreferencesErrorObj)
+                          .message
                       }
                       onRetry={() => void refetchNotificationPreferences()}
                     />
@@ -782,15 +881,21 @@ export default function UserProfile() {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
                         <div className="space-y-1">
-                          <Label className="text-base">Email notifications</Label>
+                          <Label className="text-base">
+                            Email notifications
+                          </Label>
                           <p className="text-sm text-muted-foreground">
-                            Allow notification delivery by email when the writer emits email-origin updates.
+                            Allow notification delivery by email when the writer
+                            emits email-origin updates.
                           </p>
                         </div>
                         <Switch
                           checked={notificationPreferencesForm.emailEnabled}
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, emailEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              emailEnabled: checked,
+                            }))
                           }
                           data-testid="switch-email-notifications"
                         />
@@ -800,13 +905,19 @@ export default function UserProfile() {
                         <div className="space-y-1">
                           <Label className="text-base">Study reminders</Label>
                           <p className="text-sm text-muted-foreground">
-                            Keep study-plan nudges and reminders on for active planning windows.
+                            Keep study-plan nudges and reminders on for active
+                            planning windows.
                           </p>
                         </div>
                         <Switch
-                          checked={notificationPreferencesForm.studyRemindersEnabled}
+                          checked={
+                            notificationPreferencesForm.studyRemindersEnabled
+                          }
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, studyRemindersEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              studyRemindersEnabled: checked,
+                            }))
                           }
                           data-testid="switch-study-reminders"
                         />
@@ -822,7 +933,10 @@ export default function UserProfile() {
                         <Switch
                           checked={notificationPreferencesForm.streakEnabled}
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, streakEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              streakEnabled: checked,
+                            }))
                           }
                           data-testid="switch-streak-notifications"
                         />
@@ -836,9 +950,14 @@ export default function UserProfile() {
                           </p>
                         </div>
                         <Switch
-                          checked={notificationPreferencesForm.planUpdatesEnabled}
+                          checked={
+                            notificationPreferencesForm.planUpdatesEnabled
+                          }
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, planUpdatesEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              planUpdatesEnabled: checked,
+                            }))
                           }
                           data-testid="switch-plan-updates"
                         />
@@ -848,13 +967,19 @@ export default function UserProfile() {
                         <div className="space-y-1">
                           <Label className="text-base">Guardian updates</Label>
                           <p className="text-sm text-muted-foreground">
-                            Share guardian-specific updates when they are emitted.
+                            Share guardian-specific updates when they are
+                            emitted.
                           </p>
                         </div>
                         <Switch
-                          checked={notificationPreferencesForm.guardianUpdatesEnabled}
+                          checked={
+                            notificationPreferencesForm.guardianUpdatesEnabled
+                          }
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, guardianUpdatesEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              guardianUpdatesEnabled: checked,
+                            }))
                           }
                           data-testid="switch-guardian-updates"
                         />
@@ -870,7 +995,10 @@ export default function UserProfile() {
                         <Switch
                           checked={notificationPreferencesForm.marketingEnabled}
                           onCheckedChange={(checked) =>
-                            setNotificationPreferencesForm((current) => ({ ...current, marketingEnabled: checked }))
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              marketingEnabled: checked,
+                            }))
                           }
                           data-testid="switch-marketing-notifications"
                         />
@@ -879,17 +1007,23 @@ export default function UserProfile() {
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="digest-frequency">Digest frequency</Label>
+                        <Label htmlFor="digest-frequency">
+                          Digest frequency
+                        </Label>
                         <Select
                           value={notificationPreferencesForm.digestFrequency}
                           onValueChange={(value) =>
                             setNotificationPreferencesForm((current) => ({
                               ...current,
-                              digestFrequency: value as NotificationDigestFrequency,
+                              digestFrequency:
+                                value as NotificationDigestFrequency,
                             }))
                           }
                         >
-                          <SelectTrigger id="digest-frequency" data-testid="select-digest-frequency">
+                          <SelectTrigger
+                            id="digest-frequency"
+                            data-testid="select-digest-frequency"
+                          >
                             <SelectValue placeholder="Select digest frequency" />
                           </SelectTrigger>
                           <SelectContent>
@@ -904,13 +1038,18 @@ export default function UserProfile() {
                         <Label>Quiet hours</Label>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-2">
-                            <Label htmlFor="quiet-hours-start" className="text-xs uppercase tracking-wide text-muted-foreground">
+                            <Label
+                              htmlFor="quiet-hours-start"
+                              className="text-xs uppercase tracking-wide text-muted-foreground"
+                            >
                               Start
                             </Label>
                             <Input
                               id="quiet-hours-start"
                               type="time"
-                              value={notificationPreferencesForm.quietHoursStart}
+                              value={
+                                notificationPreferencesForm.quietHoursStart
+                              }
                               onChange={(event) =>
                                 setNotificationPreferencesForm((current) => ({
                                   ...current,
@@ -921,7 +1060,10 @@ export default function UserProfile() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="quiet-hours-end" className="text-xs uppercase tracking-wide text-muted-foreground">
+                            <Label
+                              htmlFor="quiet-hours-end"
+                              className="text-xs uppercase tracking-wide text-muted-foreground"
+                            >
                               End
                             </Label>
                             <Input
@@ -946,16 +1088,30 @@ export default function UserProfile() {
 
                     <div className="flex flex-wrap items-center gap-3">
                       <Button
-                        onClick={() => updateNotificationPreferencesMutation.mutate()}
-                        disabled={!notificationPreferencesDirty || updateNotificationPreferencesMutation.isPending}
+                        onClick={() =>
+                          updateNotificationPreferencesMutation.mutate()
+                        }
+                        disabled={
+                          !notificationPreferencesDirty ||
+                          updateNotificationPreferencesMutation.isPending
+                        }
                         data-testid="button-save-notification-preferences"
                       >
-                        {updateNotificationPreferencesMutation.isPending ? 'Saving...' : 'Save preferences'}
+                        {updateNotificationPreferencesMutation.isPending
+                          ? "Saving..."
+                          : "Save preferences"}
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => setNotificationPreferencesForm(notificationPreferencesBaseline)}
-                        disabled={!notificationPreferencesDirty || updateNotificationPreferencesMutation.isPending}
+                        onClick={() =>
+                          setNotificationPreferencesForm(
+                            notificationPreferencesBaseline,
+                          )
+                        }
+                        disabled={
+                          !notificationPreferencesDirty ||
+                          updateNotificationPreferencesMutation.isPending
+                        }
                         data-testid="button-reset-notification-preferences"
                       >
                         Reset
@@ -963,7 +1119,9 @@ export default function UserProfile() {
                     </div>
 
                     <p className="text-xs text-muted-foreground">
-                      Changes persist to the canonical `user_notification_preferences` table and drive the central writer.
+                      Changes persist to the canonical
+                      `user_notification_preferences` table and drive the
+                      central writer.
                     </p>
                   </div>
                 )}
@@ -999,17 +1157,25 @@ export default function UserProfile() {
                 {billingStatusLoading ? (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>Loading live billing status...</AlertDescription>
+                    <AlertDescription>
+                      Loading live billing status...
+                    </AlertDescription>
                   </Alert>
                 ) : billingStatusError ? (
                   isSessionError(billingStatusErrorObj) ? (
                     <SessionNotice
-                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      message={
+                        (billingStatusErrorObj as Error)?.message ??
+                        toUserFacingMessage(billingStatusErrorObj).message
+                      }
                       onRefreshSession={() => window.location.reload()}
                     />
                   ) : (
                     <RecoveryNotice
-                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      message={
+                        (billingStatusErrorObj as Error)?.message ??
+                        toUserFacingMessage(billingStatusErrorObj).message
+                      }
                       onRetry={() => void refetchBillingStatus()}
                     />
                   )
@@ -1018,18 +1184,24 @@ export default function UserProfile() {
                     <Alert>
                       <Star className="h-4 w-4" />
                       <AlertDescription>
-                        Subscription access is server-authoritative and sourced from the canonical entitlement state.
+                        Subscription access is server-authoritative and sourced
+                        from the canonical entitlement state.
                       </AlertDescription>
                     </Alert>
 
                     <div className="rounded-lg border p-4 space-y-2">
-                      <p className="text-sm text-muted-foreground">Current status</p>
+                      <p className="text-sm text-muted-foreground">
+                        Current status
+                      </p>
                       <p className="font-medium">
-                        {billingStatus?.stripeStatus ? billingStatus.stripeStatus.replace('_', ' ') : 'unknown'}
+                        {billingStatus?.stripeStatus
+                          ? billingStatus.stripeStatus.replace("_", " ")
+                          : "unknown"}
                       </p>
                       {billingStatus?.linkRequiredForPremium && (
                         <p className="text-sm text-muted-foreground">
-                          Link a student account first to unlock guardian premium billing.
+                          Link a student account first to unlock guardian
+                          premium billing.
                         </p>
                       )}
                     </div>
@@ -1040,11 +1212,13 @@ export default function UserProfile() {
                         disabled={openPortalMutation.isPending}
                         data-testid="button-manage-subscription"
                       >
-                        {openPortalMutation.isPending ? 'Opening portal...' : 'Manage Subscription'}
+                        {openPortalMutation.isPending
+                          ? "Opening portal..."
+                          : "Manage Subscription"}
                       </Button>
                     ) : (
                       <Button
-                        onClick={() => navigate('/upgrade')}
+                        onClick={() => navigate("/upgrade")}
                         disabled={!!billingStatus?.linkRequiredForPremium}
                         data-testid="button-upgrade-subscription"
                       >
@@ -1061,4 +1235,3 @@ export default function UserProfile() {
     </AppShell>
   );
 }
-
