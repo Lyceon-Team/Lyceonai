@@ -208,13 +208,17 @@ export default function GuardianDashboard() {
         );
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // §36.1: the link is created PENDING. The student has to accept before the
       // guardian sees anything, so the message must not claim the link is live.
       // The response is deliberately identical whether or not the address matches a
       // student account (anti-enumeration), so it cannot name the student either.
+      const linkId =
+        typeof data?.data?.link_id === "string" ? data.data.link_id : null;
       setLinkSuccess(
-        "Request sent. Your student will get an email asking them to confirm.",
+        linkId
+          ? `Request created. Ask your student to sign in and accept the pending guardian link from their account. Request ID: ${linkId}.`
+          : "Request created. Ask your student to sign in and accept the pending guardian link from their account.",
       );
       setLinkEmail("");
       setLinkError(null);
@@ -395,8 +399,8 @@ export default function GuardianDashboard() {
                   Connection Required
                 </CardTitle>
                 <CardDescription>
-                  Enter a valid 8-character student link code to activate
-                  guardian reporting.
+                  Send a guardian link request to your student's account email.
+                  Reporting starts after the student accepts from their account.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
@@ -417,8 +421,8 @@ export default function GuardianDashboard() {
                 Link a Student
               </CardTitle>
               <CardDescription>
-                Enter the 8-character code from your student's profile page to
-                connect
+                Enter your student's account email. They must accept the pending
+                guardian link from their own account before reporting unlocks.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -535,8 +539,8 @@ export default function GuardianDashboard() {
                     No students linked yet
                   </h3>
                   <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Ask your student for their 8-character link code from their
-                    Profile page, then enter it above.
+                    Enter your student's account email above, then ask them to
+                    sign in and accept the pending guardian link.
                   </p>
                 </div>
               ) : (
