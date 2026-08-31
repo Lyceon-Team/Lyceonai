@@ -72,10 +72,37 @@ entries:
     expires: 2026-11-01
     command: pnpm run lint
     count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
-    findings_ceiling: 2101
+    findings_ceiling: 1906
     tolerance: 0
     ceiling_source: >
-      CI run 32430352110 (job 96620527299, head 556e096) reported "2101 problems
+      CI run 33430471984 (job 99614305867, head a460300) reported "1906 problems
+      (1905 errors, 1 warning)" — the CI runner's own output, which is the authority
+      here; the local reading on the same tree was also 1906, so there is still no
+      environment spread and the tolerance stays 0.
+      .
+      THE CEILING WAS STALE BY 195 BEFORE THIS CHANGE TOUCHED IT. It sat at 2101 while
+      the tree had already fallen to 1919: PR D, #672 and #675 each deleted code without
+      ratcheting the ceiling down behind them. That is 195 findings of free headroom —
+      195 new violations that could have landed without the gate moving — and it is the
+      decay this field's own earlier entry warned about at a tenth the size. Two thirds
+      of this drop is therefore not this PR's work, it is arrears.
+      .
+      This PR's own contribution is 13: the dead-code deletions from the Copilot triage
+      of #631 (nine unused imports and a dead type alias in server/routes/guardian-routes.ts
+      left behind when #675 deleted the guardian read routes, an unused `beforeEach` in
+      tests/ci/full-length-exam.ci.test.ts, MASTERY_SURFACE_EXTRA_KEYS in
+      tests/ci/guardian.anti-leak.ci.test.ts, and the orphaned ACCOUNT path constant in
+      scripts/ci/guardian-link-mutation-harness.mjs). 1919 -> 1906.
+      .
+      THE NUMBER WAS WRITTEN LOCALLY FIRST, THEN CONFIRMED. Every prior value in this
+      field came from the CI runner's output, which is the stated authority; when this
+      ceiling was first committed CI had not yet run, so the field said 1906 PENDING
+      CI CONFIRMATION rather than claiming an authority it did not have. CI then
+      reported 1906 verbatim and the pending note was replaced by the citation above.
+      Recorded because the honest version of this ratchet is that the local number is a
+      proposal until the runner agrees with it.
+      .
+      Before that: CI run 32430352110 (job 96620527299, head 556e096) reported "2101 problems
       (2100 errors, 1 warning)" — the CI runner's own output, which is the authority
       here; the local reading on the same tree was also 2101, so there is still no
       environment spread and the tolerance stays 0. The ceiling dropped from 2111 to
@@ -91,10 +118,13 @@ entries:
       the local reading on that same tree, which is what established that there is
       no environment spread here.
     reason: >
-      2,101 problems. The per-rule and per-area breakdown below was measured at 2,112 and
-      has not been re-derived since; the eleven findings removed between then and now came
-      out of apps/api and tests/ (the weakness-route parse, then PR C's deletions), so the
-      shape is unchanged but the numbers below are the 2,112 reading, not the current one.
+      1,906 problems. The per-rule and per-area breakdown below was measured at 2,112 and
+      has not been re-derived since. The 206 findings removed between then and now came out
+      of apps/api, server/, tests/ and scripts/ (the weakness-route parse, PR C's deletions,
+      then the guardian deletions of PR D, #672 and #675, then this PR's Copilot-triage
+      deletions), so the shape is broadly unchanged but EVERY number below is the 2,112
+      reading, not the current one. Treat the breakdown as indicative only until it is
+      re-derived; the only current figure in this entry is findings_ceiling.
       Three rules are 95% of them — 938 @typescript-eslint/no-explicit-any,
       789 no-console, 287 no-undef. The first two are direct Coding Standards §3.2 and §16
       violations across the legacy tree and are a genuine backlog. By area: tests/ 877,

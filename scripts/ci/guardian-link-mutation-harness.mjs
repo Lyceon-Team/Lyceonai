@@ -55,7 +55,6 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SUITE = "tests/ci/guardian-link-student-side.pg.ci.test.ts";
 const ROUTES = "server/routes/student-resources.ts";
-const ACCOUNT = "server/lib/account.ts";
 
 /**
  * The mutation manifest.

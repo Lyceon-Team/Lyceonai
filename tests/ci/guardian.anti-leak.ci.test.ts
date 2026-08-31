@@ -33,8 +33,16 @@
  *   owner's Q1 ruling (2026-08-23) is that a 7-day accuracy the student sees on their own
  *   dashboard is not "raw" internal machinery, it is the same derived aggregate read
  *   through a gate. Copying the mastery list wholesale would fail the build on a value the
- *   owner explicitly sanctioned. So the set is split: RULE-4 machinery is forbidden
- *   everywhere; the mastery-display extras are forbidden on the mastery surface only.
+ *   owner explicitly sanctioned.
+ *
+ *   The set used to be SPLIT for that reason: RULE-4 machinery everywhere, plus a second
+ *   `MASTERY_SURFACE_EXTRA_KEYS` list applied to the guardian mastery surface only. That
+ *   second list is gone, because its subject is: PR #675 deleted the guardian read routes,
+ *   so there is no guardian mastery surface left to hold to a stricter set. It is deleted
+ *   rather than kept for a surface that may return, because a forbidden-key list no
+ *   assertion passes is not protection — it is a list that looks like protection. If a
+ *   guardian mastery surface is ever rebuilt, its stricter set gets written against the
+ *   route that exists then, not inherited from one that did not.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
@@ -76,19 +84,6 @@ const RULE_4_KEYS = [
   "fl2_score",
   "blend_denominator",
   "projection_constants_hash",
-] as const;
-
-/**
- * Mastery-surface extras. A domain-mastery response carries a LEVEL and the NAME of that
- * level; an accuracy or percentage there is the probability framing RULE 4 forbids. NOT
- * applied to the KPI surface — see the header note on the Q1 ruling.
- */
-const MASTERY_SURFACE_EXTRA_KEYS = [
-  "accuracy",
-  "accuracyPercent",
-  "avgMastery",
-  "overallAccuracy",
-  "tier",
 ] as const;
 
 /** Every RULE-4 column, exactly as the real tables carry them. Never serialised. */
