@@ -75,6 +75,25 @@ rather than after both have committed:
 - **`docs/plans/Stripe_Validation_Matrix.md`** — the orchestrator only. Agents
   propose rows; they do not edit the matrix.
 
+## SCOPE — owner ruling 2026-08-31
+
+**The only definition of done:** a student pays and gets access; a guardian pays for a
+student and that student gets access. Both verified end to end against production, not
+against tests. Everything in flight serves that or it is noise.
+
+**Findings outside billing, entitlement and Stripe get ONE LINE in a plan file and no
+further work.** No write-ups, no evidence gathering, no verification.
+
+**The bar for raising anything to the owner:** does it stop a student or guardian paying
+and receiving entitlement access? If not, it is a line in a file.
+
+Closed under this rule, one line each, no further work:
+
+- Crisis-response content is US-scoped by owner ruling. `FINDING_crisis_resources_default_to_US.md` is CLOSED.
+- `@spec` annotation truthfulness sweep — a line in a file, not work. Removed from D's scope.
+- `no-dupe-keys` enforced by nobody (typescript-eslint disables it; tsc excludes `tests/`) — a line in a file, not work.
+- Error-class conflation across 13 throw sites — a line in a file. Does not stop anyone paying.
+
 ## Defects found by agents — not spec changes
 
 **Owner ruling 2026-08-31 on SCL discipline.** An SCL exists when the spec says

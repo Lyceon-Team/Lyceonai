@@ -1,6 +1,10 @@
 # URGENT, UNROUTED — every student in crisis is given a US-only phone number
 
-**Status: REPORTED, NO CODE CHANGED. Needs an owner and a product/safety ruling.**
+**CLOSED — OWNER RULING 2026-08-31: crisis is US-scoped. No further investigation, no owner needed, no launch gate. Do not reopen.**
+
+*(Everything below is the record as found, retained for provenance. No action follows from it.)*
+
+**Status: CLOSED. No code changed.**
 **Surface: child-facing (students 13–18), crisis response. Not a billing defect.**
 
 Found 2026-08-31 while drafting `SCL-DRAFT-A-declared-country`. It surfaced from the
