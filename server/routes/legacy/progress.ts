@@ -16,8 +16,12 @@ import {
   resolveEstimateStatus,
   BASELINE_PENDING_HEADLINE,
 } from "../../../packages/shared/src/diagnostic-state";
-import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
+import {
+  resolvePaidKpiAccessForUser,
+  resolveHistoricalTrendsAccess,
+} from "../../services/kpi-access";
 import { EntitlementService } from "../../services/entitlement-service";
+import { confidenceBandFromScore } from "../../../packages/shared/src/projection-confidence";
 
 function estimateExplanation(
   label: string,
@@ -238,7 +242,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           math: baseline.math,
           rw: baseline.rw,
           range: baseline.range,
-          confidence: baseline.confidence,
+          confidenceBand: confidenceBandFromScore(baseline.confidence),
           capturedAt: baseline.capturedAt,
         },
         estimateStatus: statusWithoutLiveEstimate,
@@ -306,7 +310,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
             math: liveEstimate.math,
             rw: liveEstimate.rw,
             range: liveEstimate.range,
-            confidence: liveEstimate.confidence,
+            confidenceBand: confidenceBandFromScore(liveEstimate.confidence),
           }
         : null,
       baseline: {
@@ -314,7 +318,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         math: baseline.math,
         rw: baseline.rw,
         range: baseline.range,
-        confidence: baseline.confidence,
+        confidenceBand: confidenceBandFromScore(baseline.confidence),
         capturedAt: baseline.capturedAt,
       },
       estimateStatus: resolveEstimateStatus({
@@ -386,24 +390,13 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
 
-    // FAIL-CLOSED (Doc-05C §7.4): if canAccessFeature throws (entitlement-read
-    // failure), degrade to includeHistoricalTrends=false — hide the premium
-    // surface rather than 500-ing the entire endpoint. Same pattern as
-    // getScoreEstimate's canSeeLiveProgression guard.
-    let includeHistoricalTrends: boolean;
-    if (user.role === "admin") {
-      includeHistoricalTrends = true;
-    } else {
-      try {
-        includeHistoricalTrends = await EntitlementService.canAccessFeature(
-          user.id,
-          "historical_trends",
-        );
-      } catch {
-        // Entitlement-read failure → hide historical trends, never 500.
-        includeHistoricalTrends = false;
-      }
-    }
+    // FAIL-CLOSED (Doc-05C §7.4) — now via the SHARED resolver in services/kpi-access.
+    // The guardian route calls the same function with the linked student's id; the subject
+    // is the student on both paths. It used to be inline here and hardcoded `true` there.
+    const includeHistoricalTrends =
+      user.role === "admin"
+        ? true
+        : await resolveHistoricalTrendsAccess(user.id);
 
     const view = await buildStudentKpiViewFromCanonical(
       user.id,

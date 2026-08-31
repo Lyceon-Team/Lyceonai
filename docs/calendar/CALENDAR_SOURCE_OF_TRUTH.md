@@ -4,7 +4,9 @@
 - Student planner runtime: `apps/api/src/routes/calendar.ts`.
 - Deterministic planner engine: `apps/api/src/services/calendar-planner.ts`.
 - Canonical month payload builder shared by student and guardian: `apps/api/src/services/calendar-month-view.ts#buildCalendarMonthView`.
-- Student month route (`GET /api/calendar/month`) and guardian month route (`GET /api/guardian/students/:studentId/calendar/month`) both consume `buildCalendarMonthView(...)`.
+- Student month route (`GET /api/calendar/month`) consumes `buildCalendarMonthView(...)`. The
+  guardian month route was deleted 2026-08-28 — outside the four-item guardian scope, and no
+  locked document ever specified it (SCL-076).
 
 ## Canonical Planner State
 - `student_study_profile`:

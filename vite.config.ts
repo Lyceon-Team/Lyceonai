@@ -21,6 +21,12 @@ export default defineConfig(({ mode }) => {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
+      // The client had NO module path to packages/shared, so every client-side DTO was
+      // hand-written with a "kept in step by review" note — and eleven of those hand-written
+      // guardian types produced the GuardianWeaknessResponse crash, a type that matched no
+      // server response. One alias makes "derive from the server contract" achievable
+      // instead of aspirational.
+      "@lyceon/shared": path.resolve(import.meta.dirname, "packages", "shared", "src"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },

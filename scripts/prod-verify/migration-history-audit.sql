@@ -53,11 +53,20 @@ WITH history AS (
       WHERE c.table_schema = 'supabase_migrations'
         AND c.table_name   = 'schema_migrations')                      AS history_columns
 ),
+-- SEVEN versions as of 2026-08-17. This file answers ONE question per version —
+-- "is it recorded, and do its objects exist" — which is what the runner branches
+-- on. It is deliberately COARSER than migration-schema-parity.sql: presence here,
+-- exact definitions and grants there. Passing this file is not permission to
+-- record anything; parity is.
 expected(version, description) AS (
   VALUES
     ('20260816000000', 'psi occurred_at backfill + seal + backfill log'),
     ('20260816010000', 'canonical (section, domain) CHECK constraints'),
-    ('20260816020000', 'mastery derivation gap detection')
+    ('20260816020000', 'mastery derivation gap detection'),
+    ('20260817000000', 'one completed diagnostic per student (partial unique index)'),
+    ('20260817010000', 'student_diagnostic_state view + accessor'),
+    ('20260817020000', 'practice_sessions.abandoned_at + seal'),
+    ('20260817030000', 'student_baseline_pending')
 ),
 objects AS (
   SELECT
@@ -83,6 +92,33 @@ objects AS (
       to_regclass('public.mastery_derivation_gaps') IS NOT NULL
       AND to_regclass('public.mastery_derivation_gap_ledger') IS NOT NULL
     )
+  UNION ALL
+  SELECT
+    '20260817000000',
+    EXISTS (SELECT 1 FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND indexname = 'practice_sessions_one_completed_diagnostic_uq')
+  UNION ALL
+  SELECT
+    '20260817010000',
+    (
+      to_regclass('public.student_diagnostic_states') IS NOT NULL
+      AND to_regprocedure('public.student_diagnostic_state(uuid)') IS NOT NULL
+    )
+  UNION ALL
+  SELECT
+    '20260817020000',
+    (
+      EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'practice_sessions'
+                 AND column_name = 'abandoned_at')
+      AND EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'practice_sessions_abandoned_not_completed')
+    )
+  UNION ALL
+  SELECT
+    '20260817030000',
+    to_regclass('public.student_baseline_pending') IS NOT NULL
 ),
 recorded AS (
   -- Reading the history table by name would fail at PARSE time when it does not

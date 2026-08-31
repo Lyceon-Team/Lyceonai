@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/students/{{studentId}}/mastery/domains/M/Algebra/skills"
+method: GET
+order: 1000

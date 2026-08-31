@@ -281,6 +281,9 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
  * Build a `supabaseServer`-shaped object over a live pg Client.
  * `.from()` returns a fresh builder; `.rpc()` calls the real Postgres function.
  */
+/** Per-function `proretset`, so the SETOF question is asked once rather than per call. */
+const setReturningCache = new Map<string, boolean>();
+
 export function makePgSupabase(pg: Client): {
   from: (table: string) => PgQueryBuilder;
   rpc: (
@@ -305,6 +308,25 @@ export function makePgSupabase(pg: Client): {
         if (r.rows.length === 1 && r.fields.length === 1) {
           const only = r.fields[0]!.name;
           return { data: r.rows[0]![only] as unknown, error: null };
+        }
+        // A function returning ONE composite row surfaces as an OBJECT, not a one-element
+        // array — that is what PostgREST does, and a harness that returns the array instead
+        // makes callers written against production fail here for a reason production does not
+        // have. The discriminator is `proretset`, which is the same thing PostgREST asks:
+        // SETOF -> array, single composite -> object. Cached per function name; the answer
+        // cannot change inside a run.
+        if (!setReturningCache.has(fn)) {
+          const meta = await pg.query(
+            `SELECT p.proretset FROM pg_proc p
+               JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = $1
+              LIMIT 1`,
+            [fn],
+          );
+          setReturningCache.set(fn, meta.rows[0]?.proretset === true);
+        }
+        if (!setReturningCache.get(fn) && r.rows.length === 1) {
+          return { data: r.rows[0] as unknown, error: null };
         }
         return { data: r.rows, error: null };
       } catch (err: unknown) {

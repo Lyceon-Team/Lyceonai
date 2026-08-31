@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { setupSecurityMocks } from "../utils/securityTestUtils";
@@ -62,11 +70,13 @@ describe("CI parser limit guardrails", () => {
   });
 
   it("oversize JSON request to a representative JSON route returns parser rejection", async () => {
-    const res = await request(app).post("/api/rag/v2").send({
-      userId: "ignored",
-      message: "x".repeat(1_050_000),
-      mode: "concept",
-    });
+    const res = await request(app)
+      .post("/api/rag/v2")
+      .send({
+        userId: "ignored",
+        message: "x".repeat(1_050_000),
+        mode: "concept",
+      });
 
     expect(res.status).toBe(413);
   });
@@ -83,11 +93,13 @@ describe("CI parser limit guardrails", () => {
   });
 
   it("oversize JSON to /api/rag/v2 is rejected before route logic executes", async () => {
-    const res = await request(app).post("/api/rag/v2").send({
-      userId: "ignored",
-      message: "y".repeat(1_050_000),
-      mode: "concept",
-    });
+    const res = await request(app)
+      .post("/api/rag/v2")
+      .send({
+        userId: "ignored",
+        message: "y".repeat(1_050_000),
+        mode: "concept",
+      });
 
     expect(res.status).toBe(413);
     expect(handleRagQueryMock).not.toHaveBeenCalled();

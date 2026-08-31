@@ -72,18 +72,30 @@ entries:
     expires: 2026-11-01
     command: pnpm run lint
     count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
-    findings_ceiling: 2112
+    findings_ceiling: 2101
     tolerance: 0
     ceiling_source: >
-      Local Node 22.22.2 / ESLint 10.4.1: "2112 problems (2111 errors, 1 warning)".
-      To be confirmed against the CI runner on this head — CI is the authoritative
-      measurement and the gate now writes each runner's reading to
-      $GITHUB_STEP_SUMMARY. The previous ceiling of 2399 was verified verbatim from
+      CI run 32430352110 (job 96620527299, head 556e096) reported "2101 problems
+      (2100 errors, 1 warning)" — the CI runner's own output, which is the authority
+      here; the local reading on the same tree was also 2101, so there is still no
+      environment spread and the tolerance stays 0. The ceiling dropped from 2111 to
+      2101 when PR C deleted SAT_TAXONOMY, the /skills and /add-to-plan handlers and
+      buildMasterySkillTreeFromRows, and replaced the last `(req as any)` in
+      tests/ci/mastery.anti-leak.ci.test.ts with a typed request. Lowered rather than
+      left slack: ten findings of headroom is ten new violations that could land
+      without the ratchet moving, and that is how a ratchet starts decaying.
+      Before that: local Node 22.22.2 / ESLint 10.4.1 read "2111 problems", and CI run
+      32235193788 confirmed the prior 2112 verbatim on the same tree. The 2399 figure
+      before THAT was verified verbatim from
       CI run 32232947651 ("2399 problems (2398 errors, 1 warning)"), identical to
       the local reading on that same tree, which is what established that there is
       no environment spread here.
     reason: >
-      2,112 problems. Three rules are 95% of them — 938 @typescript-eslint/no-explicit-any,
+      2,101 problems. The per-rule and per-area breakdown below was measured at 2,112 and
+      has not been re-derived since; the eleven findings removed between then and now came
+      out of apps/api and tests/ (the weakness-route parse, then PR C's deletions), so the
+      shape is unchanged but the numbers below are the 2,112 reading, not the current one.
+      Three rules are 95% of them — 938 @typescript-eslint/no-explicit-any,
       789 no-console, 287 no-undef. The first two are direct Coding Standards §3.2 and §16
       violations across the legacy tree and are a genuine backlog. By area: tests/ 877,
       server/ 380, scripts/ 337, apps/ 229, client/ 129, root 160.

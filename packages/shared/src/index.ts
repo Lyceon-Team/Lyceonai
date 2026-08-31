@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./validate.js";
-export * from "./mastery.js";
+export * from "./mastery-levels.js";
+export * from "./projection-confidence.js";
 export * from "./mastery-emission.js";
 export * from "./session-mode.js";
 export * from "./diagnostic-eligibility.js";
@@ -8,3 +9,6 @@ export * from "./diagnostic-state.js";
 export * from "./id.js";
 export * from "./rng.js";
 export * from "./env.js";
+export * from "./guardian-subject.js";
+export * from "./rule4-columns.js";
+export * from "./student-resources.js";
