@@ -186,34 +186,18 @@ specified anywhere:
 
 Surfaced per the ruling rather than assumed. No refund behaviour is implemented.
 
-## 7c. Dispute resume and the billing cycle — OPEN OWNER DECISION, nothing changed
+## 7c. Dispute resume and the billing cycle — MOVED TO THE REGISTER
 
-Raised by Agent B, 2026-08-31. **Not an SCL**: the spec does not address the billing
-cycle on dispute resume, and owner ruling 2026-08-31 is that silence is not a spec
-error. `SCL-DRAFT-B-resume-billing-anchor` is withdrawn; the decision is recorded here.
+Raised by Agent B, 2026-08-31. Briefly recorded here as a plan entry under the framing
+"the spec is silent, so it is not an SCL". **That framing was superseded the same day.**
+Whether a won dispute preserves the billing cycle is a permanent rule about what we owe
+a payer, so it belongs in Doc 01, not in this plan.
 
-`server/lib/stripe/webhook-handler.ts:988` resumes a paused subscription after a
-dispute is won:
+Reinstated as `SCL-DRAFT-B-resume-billing-anchor` in
+`docs/SpecAudit/SPEC_CHANGES_LOG.md`, with both options and their costs. Read it there;
+this section is a pointer so the two do not drift.
 
-    await getStripeClient().subscriptions.resume(target.subscriptionId);
-
-No params. Per the pinned SDK, `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`,
-`billing_cycle_anchor` defaults to **`now`**. So winning a dispute silently **resets the
-renewal date**: the customer's period restarts from the resume instant rather than
-continuing the cycle they paid for.
-
-The two options, and what each costs:
-
-- **`billing_cycle_anchor: 'now'`** (today's behaviour, by default rather than by
-  choice). The renewal date moves. A customer who wins a dispute has their billing
-  date shifted with no notice, which is a change to what they bought.
-- **`billing_cycle_anchor: 'unchanged'`**. The cycle they paid for is preserved, but
-  Stripe generates prorations for the paused interval, which shows up on the next
-  invoice.
-
-Neither is free, and the choice is billing policy rather than a defect an agent can
-rule on. **`subscriptions.resume` is left unchanged until the owner rules.** It
-becomes an SCL only if the ruling is that Doc 01 must state the behaviour.
+`server/lib/stripe/webhook-handler.ts:988` is UNCHANGED pending the owner's ruling.
 
 ## 8. Open questions for the owner
 

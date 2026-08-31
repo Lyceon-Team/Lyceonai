@@ -1,5 +1,36 @@
 # Lyceon Spec-Changes Log
 
+## WHAT IS AN SCL — HARD TEST
+
+Owner ruling 2026-08-31. Apply this BEFORE writing an entry.
+
+**An SCL amends the spec.** It records what a document must say and does not —
+whether the spec is WRONG or SILENT. Silence is a legitimate SCL when the gap
+must become spec text.
+
+**An SCL is NOT** a decision governing only this build, a defect record, a
+test-quality note, or direction for an agent or a prompt.
+
+The test is the OUTCOME:
+
+  - Outcome is "the owner amends a document"  -> SCL
+  - Outcome is "we do X in this repo"         -> plan entry
+
+Worked examples, from the 2026-08-31 audit:
+
+  - SCL-070 (spec states seven events, the surface is nineteen) -> SCL. Wrong.
+  - SCL-072 (what "full refund" is measured against) -> SCL. The spec is silent,
+    but the comparison basis is a permanent rule that belongs in the document.
+  - SCL-073 (what a chargeback does to entitlement) -> SCL. Silent, and the
+    consequence must become spec text.
+  - An error class thrown from thirteen sites with one message -> NOT an SCL.
+    Nobody amends a document over it. Plan entry.
+  - "The citation column must be verified by the test" -> NOT an SCL. A
+    test-quality defect. Plan entry.
+
+A prior framing — "spec-silent means plan entry" — was wrong and is superseded.
+Entries written under it were re-audited on 2026-08-31.
+
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
 
 Never take an SCL number from a prompt, plan, brief, or any instruction —
@@ -63,6 +94,36 @@ Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit 
 Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
 Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
 
+SCL-DRAFT-B-resume-billing-anchor | 2026-08-31 | Doc 01 does not state whether a won dispute preserves the subscription's billing cycle; it must | PROPOSED
+
+Change: REINSTATED as an SCL 2026-08-31. This entry was briefly withdrawn to a plan entry
+  under the framing "the spec is silent, so it is not an SCL". That framing was wrong.
+  Whether a customer who WINS a dispute keeps the billing cycle they paid for is a permanent
+  rule about what we owe a payer, not a decision local to this build, so it belongs in Doc 01.
+WAS: Doc 01 says nothing about the billing cycle on dispute resume. Because the spec is silent,
+  the behaviour is currently decided by an SDK default nobody chose.
+  `server/lib/stripe/webhook-handler.ts:988` resumes a paused subscription after a dispute is
+  won with no params:
+      await getStripeClient().subscriptions.resume(target.subscriptionId);
+  Per the pinned SDK, `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`,
+  `billing_cycle_anchor` defaults to `now`. So winning a dispute silently RESETS the renewal
+  date: the period restarts from the resume instant rather than continuing the cycle the
+  customer paid for. Nobody decided that; it is what happens when the argument is omitted.
+IS (PROPOSED): Doc 01 states the rule explicitly, and the code passes the argument explicitly
+  rather than relying on a vendor default. The two candidates, with what each costs:
+    - `billing_cycle_anchor: 'now'` — today's behaviour, by default rather than by choice. The
+      renewal date moves. A customer who won a dispute has their billing date shifted with no
+      notice, which is a change to what they bought.
+    - `billing_cycle_anchor: 'unchanged'` — the cycle they paid for is preserved, but Stripe
+      generates prorations for the paused interval, which appears on the next invoice.
+  Neither is free. This entry does not pick one — that is the owner's ruling — but it does
+  rule out the third option, which is leaving it implicit.
+Owner action: decide the rule, amend Doc 01 to state it, and only then change the call site.
+  `subscriptions.resume` is UNCHANGED until that ruling.
+Artifact: `server/lib/stripe/webhook-handler.ts:988`. SDK evidence:
+  `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
 SCL-DRAFT-A-declared-country | 2026-08-31 | Doc 01 §4 specifies ONE authoritative `country_code`; collecting a declared country at signup proposes TWO columns with different authorities | PROPOSED
 
 Change: The owner directs that account creation collect a country from a dropdown. Doing so cannot
@@ -112,8 +173,24 @@ SECOND CONSUMER, found while drafting and material to the ruling: the country co
   - It means "which column does this consumer read" must be answered for every reader, not just the
     gate. A split done carelessly would leave this call site reading the wrong one, and its failure
     mode is silent and safety-relevant, not financial.
-  This entry does not rule on it. It records that the split has a safety-surface consumer, so the
-  ruling cannot be made on billing grounds alone.
+  AUDITED FURTHER, 2026-08-31, and it is worse than "reads the wrong column": the caller's
+  `?? "US"` is only half of it. `getCrisisResponse` falls back to `DEFAULT_CRISIS_RESPONSE`
+  (`server/services/tutor-crisis.ts:85`), which is BYTE-IDENTICAL to the `US` entry (`:75`) —
+  verified by string comparison. So there is no generic unknown-country response in the system
+  at all, and deleting the `?? "US"` would change nothing. Every student outside the eight
+  listed codes receives a US-only number by the same fallback, even once countries ARE being
+  collected. Written up in full, unrouted and urgent, at
+  `docs/plans/FINDING_crisis_resources_default_to_US.md`. That finding is NOT this SCL's to
+  fix and is not a billing defect.
+  Two consequences for THIS ruling, and they are binding on it:
+  1. The ruling must state WHICH COLUMN EACH READER CONSUMES — not only the eligibility gate.
+     This reader fails silently and it is a safety surface, not a financial one, so "the gate
+     reads billing, everything else figures itself out" is not an answer.
+  2. The incentive argument is asymmetric and should be recorded as such: NOBODY FALSIFIES
+     THEIR COUNTRY TO RECEIVE WORSE CRISIS RESOURCES. The property that makes a declared
+     country untrustworthy for a paywall simply does not exist on the crisis path, so a
+     self-declared country is not merely tolerable there — it is the RIGHT signal. A schema
+     that treats "declared" as second-class everywhere would get this reader wrong.
 Owner action, and the order it has to happen in:
   1. Rule on the schema shape: two columns as proposed, or another shape.
   2. Rule on which column each existing reader consumes — the INV-03-08 gate, and the crisis-response
@@ -186,6 +263,10 @@ Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
 
 SCL-073 | 2026-08-27 | Doc 01A §52 knows a chargeback as an ABUSE SIGNAL; no section gives it an entitlement consequence | PROPOSED
 
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. What a chargeback does to entitlement is a PERMANENT RULE. Doc 01A §52 already models the
+  incident; the entitlement consequence must become spec text.
+
 Change: A dispute does NOT cancel a Stripe subscription. Current behaviour is therefore: access
   retained, dispute fee paid, no entitlement change. This entry proposes the handling and names the
   seam it must not bypass.
@@ -256,6 +337,11 @@ Artifact (updated 2026-08-27 after the owner ruled this IN SCOPE for launch):
 ---
 
 SCL-072 | 2026-08-27 | Doc 01 V8 §24 / SCL-048 — refund full-vs-partial compares the CHARGED amount, never list price | PROPOSED
+
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. The comparison basis for a full refund is a PERMANENT RULE that belongs in the
+  document, not a decision local to this build. Silence is a legitimate SCL when the gap must
+  become spec text.
 
 Change: Coupons and promotion codes mean the amount actually charged can differ from the price's
   list amount. SCL-048 rules "full refund revokes, partial does not". If that comparison is made
