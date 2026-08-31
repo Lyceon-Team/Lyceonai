@@ -157,6 +157,38 @@ describe('billing-client', () => {
     expect(assignMock).toHaveBeenCalledWith('https://stripe.example/portal');
   });
 
+  /**
+   * Mirror of the checkout contract-mismatch test. The portal previously
+   * narrowed with a cast, so a body with no usable `url` reached
+   * `window.location.assign` as `undefined`.
+   */
+  it('refuses a portal response with no url, and does NOT redirect', async () => {
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ requestId: 'req-9' }, 200));
+
+    await expect(openBillingPortal()).rejects.toThrow(
+      'Billing response did not include a redirect URL',
+    );
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a portal url that is not a URL at all', async () => {
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 'not-a-url' }, 200));
+
+    await expect(openBillingPortal()).rejects.toThrow(
+      'Billing response did not include a redirect URL',
+    );
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a portal url of the wrong type rather than assigning it', async () => {
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 12345 }, 200));
+
+    await expect(openBillingPortal()).rejects.toThrow(
+      'Billing response did not include a redirect URL',
+    );
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
   it('loads canonical billing plan metadata', async () => {
     csrfFetchMock.mockResolvedValueOnce(jsonResponse({
       plans: [

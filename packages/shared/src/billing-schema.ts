@@ -102,3 +102,32 @@ export const billingCheckoutOutcomeSchema = z.discriminatedUnion("kind", [
 export type BillingCheckoutOutcome = z.infer<
   typeof billingCheckoutOutcomeSchema
 >;
+
+/**
+ * What POST /api/billing/portal returns.
+ *
+ * @spec [Doc 01 V8 §20; Subscription and Auto-Renewal Notice §6.4 "click to
+ *        cancel" via the customer portal; Coding Standards §7.1, §7.2]
+ * @implemented [2026-08-31]
+ *
+ * plain English: the Stripe Billing Portal redirect. Expected outcome: the
+ * caller gets a usable URL or a refusal, never a cast that hopes for one.
+ * Trade-off: this is a single shape rather than a discriminated union, because
+ * unlike checkout the portal has exactly ONE outcome — there is no server-side
+ * completion path. Edge case: `requestId` rides along on the wire and is
+ * stripped, exactly as on the checkout outcome.
+ *
+ * WHY IT EXISTS. `openBillingPortal` previously narrowed with
+ * `(payload as { url?: unknown } | null)?.url` — the same validate-by-cast that
+ * caused the checkout add-item defect, left behind in the same module after the
+ * checkout half was fixed. A cast asserts a shape; it does not check one.
+ *
+ * `url` is `.url()`-validated rather than merely non-empty, so a body carrying
+ * something that is not a URL is refused here instead of at
+ * `window.location.assign`.
+ */
+export const billingPortalOutcomeSchema = z.object({
+  url: z.string().url(),
+});
+
+export type BillingPortalOutcome = z.infer<typeof billingPortalOutcomeSchema>;

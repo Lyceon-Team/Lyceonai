@@ -3,12 +3,20 @@
  *        §36.4 per-student billing granularity; Coding Standards §7.2, §11.1,
  *        §17] | @implemented [2026-08-31]
  *
- * plain English: the client entry point for billing. Expected outcome: it speaks
- * exactly the contract `packages/shared/src/billing-schema.ts` defines, and both
- * checkout outcomes are handled rather than one being assumed. Trade-offs: the
- * checkout helper now returns the parsed outcome instead of a bare URL string,
- * because "the URL" is not a fact on the add-item branch. Edge cases: a response
- * that does not match the contract is refused rather than half-read.
+ * plain English: the client entry point for billing. Expected outcome: the two
+ * MUTATING routes — POST /checkout and POST /portal — parse their responses
+ * against `packages/shared/src/billing-schema.ts`, so both checkout outcomes are
+ * handled rather than one being assumed. Trade-offs: the checkout helper returns
+ * the parsed outcome instead of a bare URL string, because "the URL" is not a
+ * fact on the add-item branch. Edge cases: a response that does not match the
+ * contract is refused rather than half-read.
+ *
+ * NOT YET SCHEMA-BACKED: `getBillingPlans`. `BillingPlanMetadata` below is a
+ * local shape that has drifted from the route, which returns `amountCents` and
+ * `currency` as nullable and is typed here as non-null. That divergence is
+ * reported and held for the owner, not fixed here — unifying it changes render
+ * paths in `upgrade.tsx` and `SubscriptionPaywall.tsx`. Stated so this header
+ * does not read as a guarantee it cannot make.
  *
  * WHY THIS FILE CHANGED. It previously declared its own
  * `BillingPlan = 'monthly' | 'quarterly' | 'yearly'`, duplicating
@@ -25,6 +33,7 @@ import { csrfFetch } from '@/lib/csrf';
 import { parseApiErrorFromResponse } from '@/lib/api-error';
 import {
   billingCheckoutOutcomeSchema,
+  billingPortalOutcomeSchema,
   type BillingCheckoutOutcome,
   type BillingPeriodChoice,
 } from '../../../packages/shared/src/billing-schema';
@@ -133,15 +142,17 @@ export async function startSubscriptionCheckout(
 
 export async function openBillingPortal(): Promise<string> {
   const payload = await postBilling('/api/billing/portal');
-  const url = (payload as { url?: unknown } | null)?.url;
 
-  if (typeof url !== 'string' || url.length === 0) {
+  const parsed = billingPortalOutcomeSchema.safeParse(payload);
+  if (!parsed.success) {
+    // Mirrors the checkout path's fail-closed throw. Previously this narrowed
+    // with a cast, which asserts a shape rather than checking one.
     throw new Error('Billing response did not include a redirect URL');
   }
 
   if (typeof window !== 'undefined') {
-    window.location.assign(url);
+    window.location.assign(parsed.data.url);
   }
 
-  return url;
+  return parsed.data.url;
 }

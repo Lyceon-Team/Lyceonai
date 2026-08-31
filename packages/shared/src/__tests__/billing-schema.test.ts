@@ -15,6 +15,7 @@ import {
   billingCheckoutOutcomeSchema,
   billingCheckoutRequestSchema,
   billingPeriodSchema,
+  billingPortalOutcomeSchema,
 } from "../billing-schema";
 
 const STUDENT = "22222222-2222-4222-8222-222222222222";
@@ -136,5 +137,46 @@ describe("billingCheckoutRequestSchema — selection, not authorisation", () => 
       "quarterly",
       "yearly",
     ]);
+  });
+});
+
+describe("billingPortalOutcomeSchema — one outcome, still checked", () => {
+  it("accepts the portal redirect", () => {
+    const parsed = billingPortalOutcomeSchema.safeParse({
+      url: "https://billing.stripe.com/p/session/test_1",
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.url).toBe("https://billing.stripe.com/p/session/test_1");
+  });
+
+  it("strips requestId, exactly as the checkout outcome does", () => {
+    const parsed = billingPortalOutcomeSchema.safeParse({
+      url: "https://billing.stripe.com/p/session/test_1",
+      requestId: "req-abc",
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).toEqual({
+      url: "https://billing.stripe.com/p/session/test_1",
+    });
+  });
+
+  /**
+   * The cast this schema replaced accepted any non-empty string, so a body
+   * carrying a non-URL reached `window.location.assign` unchecked.
+   */
+  it("REFUSES a non-empty string that is not a URL", () => {
+    expect(billingPortalOutcomeSchema.safeParse({ url: "not-a-url" }).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses a missing url and a url of the wrong type", () => {
+    expect(billingPortalOutcomeSchema.safeParse({}).success).toBe(false);
+    expect(billingPortalOutcomeSchema.safeParse({ url: 12345 }).success).toBe(false);
+    expect(billingPortalOutcomeSchema.safeParse({ url: null }).success).toBe(false);
   });
 });
