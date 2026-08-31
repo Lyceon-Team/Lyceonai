@@ -132,11 +132,11 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
       parts.push(`Explanation: ${qc.explanation}`);
     }
   } else {
-    // Pre-submit: explanation is present on the wire per SCL-043 (active
-    // question's explanation is PERMITTED pre-submit for model reasoning).
+    // Pre-submit: explanation is present on the wire per SCL-060 (active
+    // question's explanation is internal context for model reasoning).
     // The model uses it to understand the solution path so it can guide the
-    // student through sub-steps without revealing the answer. INV-03-04
-    // output serializer is sole defense against echo.
+    // student through sub-steps without revealing the answer. Anti-echo
+    // directive (prompt layer) + INV-03-04 (output layer) are the defenses.
     if (qc.explanation) {
       parts.push(`[AUTHORED EXPLANATION — INTERNAL USE ONLY] ${qc.explanation}`);
       parts.push(

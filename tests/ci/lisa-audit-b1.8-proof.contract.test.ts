@@ -1,5 +1,5 @@
 /**
- * @spec [SCL-043, INV-03-04, Doc-03D_V1.2 §6.3, §7.4; Doc-03A_V3 §11.4;
+ * @spec [SCL-060, INV-03-04, Doc-03D_V1.2 §6.2, §6.3, §7.4; Doc-03A_V3 §11.4;
  *        Doc-03_V1.1 §14.2]
  * @implemented 2026-08-28
  *
@@ -8,7 +8,7 @@
  *   LISA-AUDIT-001 (BLOCKER): the pre-submit explanation never reached the
  *     production prompt. Fix: the gate at tutor-context.ts:394 now populates
  *     question_content.explanation for the active question pre-submit per
- *     SCL-043. The worker's renderItemBlock renders it with an anti-echo
+ *     SCL-060. The worker's renderItemBlock renders it with an anti-echo
  *     directive. One canonical path.
  *
  *   LISA-AUDIT-002 (HIGH): policy log records instructional_tutor/scaffolded
@@ -156,10 +156,10 @@ function buildEnvelope(
 describe("AUDIT-001: explanation reaches production systemInstruction", () => {
   // ── Proof 1: PRE-SUBMIT on active question — explanation PRESENT ────
   it("PRE-SUBMIT: active question explanation present in systemInstruction via item block", () => {
-    // SCL-043: the active question's explanation is PERMITTED pre-submit.
-    // The gate at tutor-context.ts populates question_content.explanation
-    // for the active question regardless of isPostSubmit. The worker's
-    // renderItemBlock renders it with an anti-echo directive.
+    // SCL-060: the active question's explanation is internal context,
+    // populated for all surfaces. The worker's renderItemBlock renders
+    // it with an anti-echo directive (prompt layer); INV-03-04 enforces
+    // at the output layer.
     const envelope = buildEnvelope({
       is_post_submit: false,
       correct_answer: null,
@@ -173,7 +173,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
           { key: "D", text: "2" },
         ],
         item_type: "mcq",
-        // SCL-043: explanation populated pre-submit for active question
+        // SCL-060: explanation is internal context, populated for all surfaces
         explanation:
           "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹. For x², n=2, so derivative = 2x.",
         student_answer: null,
@@ -215,11 +215,11 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
   // ── Proof 2: PRE-SUBMIT with unanswered same-skill — explanation ABSENT ──
   it("PRE-SUBMIT: unanswered same-skill item explanation ABSENT from systemInstruction", () => {
-    // SCL-043: unseen same-skill questions' explanations do NOT reach the
-    // model pre-submit. question_content represents the ACTIVE question
-    // only. An unanswered same-skill question has no path to the prompt.
-    // Here we prove: when question_content.explanation is null (as it
-    // would be for a non-active question), no explanation appears.
+    // SCL-060: question_content represents the ACTIVE question only —
+    // no multi-question delivery exists. When question_content.explanation
+    // is null (as it would be for a non-active question), no explanation
+    // appears. The "previously seen same-skill" provision was dropped
+    // (SCL-060 rewrite, 2026-08-28).
     const envelope = buildEnvelope({
       is_post_submit: false,
       correct_answer: null,

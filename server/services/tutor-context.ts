@@ -317,10 +317,10 @@ export async function resolveScope(
  * guaranteed by the user_id predicate (tutor-context.ts already queries
  * this table with ownership predicates — we do not weaken them).
  *
- * Anti-leak: explanation is set to null when isPostSubmit is false
- * (pre-submit). Gating keys on the server-derived boolean, never on
- * correctAnswer presence (Doc 03D §6.3). The correct_answer column is
- * NEVER included in the select — it does not appear on the wire.
+ * SCL-060: explanation is populated for all surfaces, pre-submit included —
+ * it is internal context for model reasoning, not an anti-leak surface.
+ * The correct_answer column is NEVER included in the select — it does not
+ * appear on the wire. Anti-echo directive + INV-03-04 are the defenses.
  *
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
@@ -385,15 +385,13 @@ async function resolveQuestionContent(
         ? ("grid_in" as const)
         : ("mcq" as const);
 
-    // SCL-043 gate: the active question's explanation is PERMITTED
-    // pre-submit — the model uses it for internal reasoning (Socratic
-    // sub-steps), and the output serializer (INV-03-04) is the sole
-    // defense against echoing it to the student. This query always
-    // resolves the ACTIVE question (keyed by source_session_item_id),
-    // so the explanation is always populated. Previously answered
-    // same-skill items would require a separate query; they are not
-    // served in V1 (no wire field for multi-question content).
-    // @spec [SCL-043, INV-03-04, Doc-03D_V1.2 §6.3]
+    // SCL-060: the active question's explanation is internal context —
+    // direction on how LISA should explain the question. Populated for
+    // all surfaces, pre-submit included. The anti-echo directive in
+    // renderItemBlock enforces at the prompt layer; INV-03-04 enforces
+    // at the output layer. This query resolves the ACTIVE question only
+    // (keyed by source_session_item_id). No multi-question delivery.
+    // @spec [SCL-060, INV-03-04, Doc-03D_V1.2 §6.2]
     const explanation = (data.question_explanation as string) ?? null;
 
     return {
@@ -1215,10 +1213,10 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-043): CONTENT,
-    // never canonical ID. SCL-043: active question's explanation is
-    // populated pre-submit for model reasoning. INV-03-04 output
-    // serializer is sole defense against echoing to the student.
+    // Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060): CONTENT,
+    // never canonical ID. SCL-060: explanation is internal context for
+    // all surfaces. Anti-echo directive (prompt) + INV-03-04 (output)
+    // are the defense layers.
     question_content: questionContent,
     // Server-derived post-submit flag (Doc 03D §6.3): resolved from
     // practice_session_items.status by isPreSubmitForSurface. The worker
