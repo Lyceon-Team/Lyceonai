@@ -12,8 +12,11 @@
  * WHY THIS EXISTS. `GET /api/guardian/students` was already being read by
  * `client/src/pages/guardian-dashboard.tsx`, which also declared its own local
  * `LinkedStudent` interface. Adding a second reader on the checkout surface
- * would have forked both the request and the shape for one endpoint. The type
- * and the query now live here and both pages consume them.
+ * would have forked both the request and the shape for one endpoint. The query
+ * lives here and both pages consume it; the SHAPE lives in
+ * `packages/shared/src/guardian-student-schema.ts`, which this hook parses the
+ * response against — so the contract is shared with the server side rather than
+ * being a client-only opinion.
  *
  * SERVER-AUTHORITATIVE, AND THIS HOOK IS NOT A GATE. The endpoint reads ACTIVE
  * `guardian_links` server-side (`server/routes/guardian-routes.ts:174`). This
@@ -25,13 +28,13 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { csrfFetch } from '@/lib/csrf';
+import {
+  guardianStudentsResponseSchema,
+  type GuardianStudentsResponse,
+  type LinkedStudent,
+} from '../../../packages/shared/src/guardian-student-schema';
 
-export type LinkedStudent = {
-  id: string;
-  email: string;
-  display_name: string | null;
-  created_at: string;
-};
+export type { LinkedStudent };
 
 /** Shared cache key, so the two consumers hit one request rather than two. */
 export const GUARDIAN_STUDENTS_QUERY_KEY = ['guardian-students'] as const;
@@ -45,12 +48,20 @@ export function studentLabel(student: LinkedStudent): string {
 export function useGuardianStudents(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: GUARDIAN_STUDENTS_QUERY_KEY,
-    queryFn: async (): Promise<{ students: LinkedStudent[] }> => {
+    queryFn: async (): Promise<GuardianStudentsResponse> => {
       const res = await csrfFetch('/api/guardian/students', {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch students');
-      return res.json() as Promise<{ students: LinkedStudent[] }>;
+
+      // Parsed, not asserted. `as Promise<...>` told the compiler what to
+      // believe and checked nothing at runtime; a renamed column would have
+      // reached the dropdown as `undefined`.
+      const parsed = guardianStudentsResponseSchema.safeParse(await res.json());
+      if (!parsed.success) {
+        throw new Error('Linked students response did not match the contract');
+      }
+      return parsed.data;
     },
     enabled: options?.enabled ?? true,
   });

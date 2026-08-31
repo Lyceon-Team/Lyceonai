@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { csrfFetch } from "@/lib/csrf";
 import {
+  GUARDIAN_STUDENTS_QUERY_KEY,
   useGuardianStudents,
   type LinkedStudent,
 } from "@/hooks/useGuardianStudents";
@@ -297,7 +298,7 @@ export default function GuardianDashboard() {
       setLinkError(null);
       setIsRateLimited(false);
       setLastUpdated(new Date());
-      queryClient.invalidateQueries({ queryKey: ["guardian-students"] });
+      queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
     },
     onError: (err: Error) => {
       if (
@@ -331,7 +332,7 @@ export default function GuardianDashboard() {
       if (selectedStudentId === unlinkStudentId) {
         setSelectedStudentId(null);
       }
-      queryClient.invalidateQueries({ queryKey: ["guardian-students"] });
+      queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
     },
     onError: (err: Error) => {
       setLinkError(err.message);

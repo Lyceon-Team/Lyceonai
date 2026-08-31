@@ -56,6 +56,11 @@ export type BillingCheckoutRequest = z.infer<
 /**
  * What the route returns, discriminated on what actually happened.
  *
+ * @spec [Doc 01 V8 §20 "Who pays"; §31.4 guardian paying for linked student;
+ *        §36.4 per-student billing granularity; SCL-045 one SubscriptionItem
+ *        per student; Coding Standards §7.2, §17]
+ * @implemented [2026-08-31]
+ *
  * ZOD FIRST, TYPE INFERRED (Coding Standards §7.2, §17). This was previously a
  * hand-written TypeScript union with no schema behind it — the exact shape §17
  * names as a hard stop. Because it was only a type, nothing could parse against
