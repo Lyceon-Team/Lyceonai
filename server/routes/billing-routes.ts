@@ -2,28 +2,38 @@
  * @spec [Doc-01_V8 §20 (verified heading "## **§20 Subscription model**"), §22;
  *        SCL-043 payer identity; SCL-052 one entitlement tier] @implemented 2026-08-20
  *
- * plain English: the billing surface, rebuilt in Phase C for the
- * unaccompanied-student path. The previous module was not adapted.
+ * plain English: the billing surface. Five routes: POST /checkout, GET /status,
+ * POST /portal, GET /plans, GET /publishable-key.
  *
- * What this serves and what it does not:
- *  - Unaccompanied student pays for self. The payer IS the student, so the
- *    Stripe Customer and the entitled profile coincide (SCL-043's simplest case).
- *  - Guardian-paid and third-party-paid checkout are NOT served here. They are
- *    blocked on the guardian-link data-layer defect
- *    (docs/plans/WS-GL_Guardian_Link_Data_Layer.md) and on SCL-045's item-level
- *    entitlement key, which needs DDL that the WS-M freeze forbids
- *    (docs/plans/STRIPE_DDL_QUEUE.md D-1). Guardians receive an explicit
- *    unavailable response naming the blocker rather than a crash or a
- *    misleading free-tier answer.
+ * What this serves:
+ *  - Self-pay. An unaccompanied student pays for themselves, so the Stripe
+ *    Customer and the entitled profile coincide (SCL-043's simplest case).
+ *  - Guardian-paid, per student. The guardian names ONE actively linked student.
+ *    Their first purchase creates the subscription through Checkout; every
+ *    purchase after adds a SubscriptionItem to that same subscription. The
+ *    selected id is authorised against this server's own read of `guardian_links`
+ *    (Charter §6) — it selects, it never grants.
+ *
+ * What this does NOT serve:
+ *  - Third-party-paid checkout. The payer is always the authenticated caller.
  *  - Consent capture (`consent_collection` / `custom_text`) is deliberately NOT
  *    built. Owner ruling: consent is Phase C.2, gated on the billing terms page,
  *    carried as a launch gate on SCL-044. The Dashboard Terms-of-Service URL is
  *    NOT to be set as a workaround.
  *
- * expected outcome: a student can start Checkout, and every entitlement fact the
- * status endpoint reports is read from the database, never from the caller.
+ * ORDER ON THE GUARDIAN PATH: BRANCH FIRST, THEN GATE. Whether a purchase is a
+ * first purchase or an add-item is decided BEFORE the country gate runs, because
+ * the two need different verdicts: a first purchase has no billing address yet
+ * and must reach Checkout to collect one. See the note at the `isGuardian`
+ * branch, which records the defect that ordering fixed.
+ *
+ * expected outcome: a student or a guardian can start Checkout, and every
+ * entitlement fact the status endpoint reports is read from the database, never
+ * from the caller.
  *
  * trade-offs / edge cases:
+ *  - No gate is DEFINED here. Country eligibility is evaluated by
+ *    `server/lib/stripe/country-eligibility.ts`; this file only calls it.
  *  - `/status` reports entitlement from `entitlements` only. It does not compute
  *    access; the canonical gate is `EntitlementService.isEntitlementActiveForProfile`.
  *  - Entitlement rows are never created here. The Stripe webhook handler is the

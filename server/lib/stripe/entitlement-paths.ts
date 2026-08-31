@@ -461,7 +461,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     idempotency:
       "already-funded guard refuses a second item for the same student",
     gateTest: "tests/ci/identity-entitlement.contract.test.ts",
-    callSite: `${BR}:276`,
+    callSite: `${BR}:286`,
     callSiteExpect: "deniesEntitlement(eligibility)",
   }),
 ];
