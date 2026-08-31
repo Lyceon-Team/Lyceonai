@@ -73,12 +73,19 @@ Governing documents, all verified to exist at these paths:
 
 Cite them; do not restate them back at the orchestrator.
 
-**A warning about one citation.** Existing `@spec` annotations across the Stripe code
-name "Stripe Integration End-to-End Flow §0/§4.5/§9". **No such file exists on any
-branch, and `docs/Spec/` contains no Stripe document at all.** Do not go looking, do
-not invent a replacement, and do not silently retarget an annotation. If a task
-appears to need that document, say so and stop on that item — the orchestrator is
-carrying it to the owner.
+**A note on one citation, ruled by the owner 2026-08-31.** `@spec` annotations across
+the Stripe code name "Stripe Integration End-to-End Flow §…". That document now exists,
+at `docs/plans/Stripe_End_To_End_Flow.md` on `stripe`, so the annotations resolve. Two
+things follow, and both are binding:
+
+- It is a **plan, not spec.** `docs/Spec/` is owner-only and this document has not been
+  through the draft-review-publish cycle. Do not move it there, and do not treat its
+  section numbers as spec authority. Doc 01 is the billing spec — it owns the rules;
+  the flow document describes paths.
+- **Do not retarget any annotation.** Whether those `@spec` lines should cite Doc 01
+  sections and reference the flow document as a plan is a truthfulness sweep across the
+  whole surface, owned by Agent D and currently held. If you notice a mis-citation,
+  report it; changing one is out of your scope.
 
 - **Printed runtime artifacts, never descriptions.** Command plus output, or it did
   not happen.
