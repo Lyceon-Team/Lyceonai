@@ -44,9 +44,6 @@ import {
   SubscriptionPaywall,
   ManageSubscriptionButton,
 } from "@/components/guardian/SubscriptionPaywall";
-import FullLengthResultsView, {
-  type FullLengthResultsData,
-} from "@/components/full-length-exam/FullLengthResultsView";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
@@ -81,29 +78,6 @@ interface StudentSummary {
   }>;
 }
 
-interface GuardianFullLengthReportResponse {
-  studentId: string;
-  sessionId: string;
-  report: FullLengthResultsData;
-}
-
-interface GuardianFullLengthHistorySession {
-  sessionId: string;
-  status: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-  reportAvailable: boolean;
-  // `reviewAvailable` is gone. There is no guardian review endpoint, so the server was
-  // asserting `false` for something it could not establish. A type that declares a field
-  // the server does not send is how the crashed weakness card happened.
-}
-
-interface GuardianFullLengthHistoryResponse {
-  studentId: string;
-  sessions: GuardianFullLengthHistorySession[];
-}
-
 interface GuardianBillingStatus {
   isPaid: boolean;
   effectiveAccess: boolean;
@@ -129,10 +103,6 @@ export default function GuardianDashboard() {
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
-  const [reportSessionInput, setReportSessionInput] = useState("");
-  const [requestedReportSessionId, setRequestedReportSessionId] = useState<
-    string | null
-  >(null);
 
   const {
     data: studentsData,
@@ -210,69 +180,6 @@ export default function GuardianDashboard() {
   const weaknessDomains = Array.isArray(weaknessData?.domains)
     ? weaknessData.domains
     : null;
-
-  const {
-    data: guardianExamHistoryData,
-    isLoading: guardianExamHistoryLoading,
-    error: guardianExamHistoryError,
-  } = useQuery<GuardianFullLengthHistoryResponse>({
-    queryKey: ["guardian-full-length-history", selectedStudentId],
-    queryFn: async () => {
-      if (!selectedStudentId) {
-        throw new Error("Select student first");
-      }
-
-      const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/exams/full-length/sessions?limit=12&include_incomplete=true`,
-        { credentials: "include" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          `${res.status}: ${data.error || "Failed to load full-length history"}`,
-        );
-      }
-      return data as GuardianFullLengthHistoryResponse;
-    },
-    enabled: !!selectedStudentId,
-    retry: false,
-  });
-
-  const {
-    data: guardianExamReportData,
-    isLoading: guardianExamReportLoading,
-    error: guardianExamReportError,
-  } = useQuery<GuardianFullLengthReportResponse>({
-    queryKey: [
-      "guardian-full-length-report",
-      selectedStudentId,
-      requestedReportSessionId,
-    ],
-    queryFn: async () => {
-      if (!selectedStudentId || !requestedReportSessionId) {
-        throw new Error("Select student and session ID first");
-      }
-
-      const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/tests/${encodeURIComponent(requestedReportSessionId)}/report`,
-        { credentials: "include" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          `${res.status}: ${data.error || "Failed to load full-length report"}`,
-        );
-      }
-      return data as GuardianFullLengthReportResponse;
-    },
-    enabled: !!selectedStudentId && !!requestedReportSessionId,
-    retry: false,
-  });
-
-  useEffect(() => {
-    setRequestedReportSessionId(null);
-    setReportSessionInput("");
-  }, [selectedStudentId]);
 
   const { data: billingStatus } = useQuery({
     queryKey: ["guardian-billing-status"],
@@ -377,16 +284,6 @@ export default function GuardianDashboard() {
     }
   };
 
-  const handleLoadGuardianExamReport = (event: React.FormEvent) => {
-    event.preventDefault();
-    const normalized = reportSessionInput.trim();
-    if (!normalized) {
-      setRequestedReportSessionId(null);
-      return;
-    }
-    setRequestedReportSessionId(normalized);
-  };
-
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center">
@@ -435,16 +332,6 @@ export default function GuardianDashboard() {
     !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
     !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
-  const guardianExamReportErrorMessage =
-    guardianExamReportError instanceof Error
-      ? guardianExamReportError.message
-      : "";
-  const guardianReportNotFound = guardianExamReportErrorMessage.includes("404");
-  const guardianReportLocked = guardianExamReportErrorMessage.includes("423");
-  const guardianExamHistoryErrorMessage =
-    guardianExamHistoryError instanceof Error
-      ? guardianExamHistoryError.message
-      : "";
 
   return (
     <SubscriptionPaywall>
@@ -678,19 +565,6 @@ export default function GuardianDashboard() {
                             {student.email}
                           </div>
                         </button>
-                        <Link
-                          href={`/guardian/students/${student.id}/calendar`}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => e.stopPropagation()}
-                            className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
-                            title="View Calendar"
-                          >
-                            <Calendar className="h-4 w-4" />
-                          </Button>
-                        </Link>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -886,160 +760,6 @@ export default function GuardianDashboard() {
                         </div>
                       ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="bg-card border-border/60">
-                <CardHeader>
-                  <CardTitle className="text-[#0F2E48]">
-                    Full-Length Exam Report
-                  </CardTitle>
-                  <CardDescription>
-                    Load guardian read-only report view using a real exam
-                    session ID.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {guardianExamHistoryLoading && (
-                    <p className="text-sm text-[#0F2E48]/70">
-                      Loading full-length session history...
-                    </p>
-                  )}
-                  {guardianExamHistoryError && (
-                    <RecoveryNotice
-                      title="We couldn't load full-length session history."
-                      message={
-                        guardianExamHistoryErrorMessage ||
-                        "Try again. If this keeps happening, refresh the page."
-                      }
-                    />
-                  )}
-                  {guardianExamHistoryData &&
-                    guardianExamHistoryData.sessions.length > 0 && (
-                      <div className="rounded-lg border border-border/60 bg-secondary/35 p-3">
-                        <p className="text-xs uppercase tracking-[0.16em] text-[#0F2E48]/60 mb-3">
-                          Linked student session history
-                        </p>
-                        <div className="space-y-2">
-                          {guardianExamHistoryData.sessions.map((session) => (
-                            <div
-                              key={session.sessionId}
-                              className="rounded-md border border-border/50 bg-card/80 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                              <div>
-                                <p className="text-sm font-medium text-[#0F2E48] break-all">
-                                  {session.sessionId}
-                                </p>
-                                <p className="text-xs text-[#0F2E48]/65">
-                                  Status: {session.status}{" "}
-                                  {session.completedAt
-                                    ? `• Completed ${new Date(session.completedAt).toLocaleString()}`
-                                    : ""}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setReportSessionInput(session.sessionId);
-                                  setRequestedReportSessionId(
-                                    session.sessionId,
-                                  );
-                                }}
-                                disabled={!session.reportAvailable}
-                              >
-                                {session.reportAvailable
-                                  ? "Open Report"
-                                  : "Report Locked"}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-[#0F2E48]/60 mt-3">
-                          Guardian review is not mounted for full-length exams
-                          yet; history remains report-only.
-                        </p>
-                      </div>
-                    )}
-                  {guardianExamHistoryData &&
-                    guardianExamHistoryData.sessions.length === 0 && (
-                      <p className="text-sm text-[#0F2E48]/70">
-                        No full-length sessions are available yet for this
-                        linked student.
-                      </p>
-                    )}
-
-                  <form
-                    onSubmit={handleLoadGuardianExamReport}
-                    className="flex flex-col sm:flex-row gap-3"
-                  >
-                    <Input
-                      value={reportSessionInput}
-                      onChange={(event) =>
-                        setReportSessionInput(event.target.value.trim())
-                      }
-                      placeholder="Enter student full-length session ID"
-                      aria-label="Guardian exam report session ID"
-                    />
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      disabled={
-                        !reportSessionInput || guardianExamReportLoading
-                      }
-                    >
-                      {guardianExamReportLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Loading...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4 mr-2" />
-                          Load Report
-                        </>
-                      )}
-                    </Button>
-                  </form>
-
-                  {guardianReportLocked && (
-                    <Alert className="border-amber-200 bg-amber-50">
-                      <AlertDescription className="text-amber-800">
-                        This exam session is not completed yet, so the guardian
-                        report view is still locked.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {guardianReportNotFound && !guardianReportLocked && (
-                    <Alert>
-                      <AlertDescription>
-                        No full-length report was found for that session ID
-                        under the linked student.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {guardianExamReportError &&
-                    !guardianReportNotFound &&
-                    !guardianReportLocked && (
-                      <RecoveryNotice
-                        title="We couldn't load this full-length report."
-                        message={
-                          guardianExamReportErrorMessage ||
-                          "Try again. If this keeps happening, refresh the page."
-                        }
-                      />
-                    )}
-
-                  {guardianExamReportData?.report && (
-                    <FullLengthResultsView
-                      data={guardianExamReportData.report}
-                      title="Guardian Report View"
-                      description="Read-only student-truth view from `/api/guardian/students/:studentId/tests/:sessionId/report`."
-                    />
                   )}
                 </CardContent>
               </Card>

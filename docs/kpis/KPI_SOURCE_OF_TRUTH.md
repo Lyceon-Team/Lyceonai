@@ -12,7 +12,6 @@
   - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts` (returns `estimate` payload key).
   - `GET /api/students/:studentId/kpi/overall` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.
-  - `GET /api/guardian/students/:studentId/tests/:sessionId/report` -> `server/routes/guardian-routes.ts`.
 
 ## Segmentation Rules
 - Student view:
@@ -90,7 +89,7 @@ This audit is based on mounted routes in `server/index.ts` and is required befor
 - Canonical (student KPI surfaces):
 `/api/progress/kpis`, `/api/progress/projection`, `/api/full-length/sessions/:sessionId/report`
 - Canonical (guardian KPI surfaces):
-`/api/students/:studentId/kpi/overall`, `/api/guardian/students/:studentId/tests/:sessionId/report`
+`/api/students/:studentId/kpi/overall`
 - Compatibility-only:
 None for KPI product truth.
 - Dead/disabled:

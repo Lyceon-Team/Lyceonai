@@ -81,7 +81,6 @@ import {
   getPracticeTopics,
   getPracticeQuestions,
 } from "./routes/practice-topics-routes";
-import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
@@ -121,10 +120,16 @@ app.post(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const rawSignature = req.headers["stripe-signature"];
-    const signature = Array.isArray(rawSignature) ? rawSignature[0] : rawSignature;
+    const signature = Array.isArray(rawSignature)
+      ? rawSignature[0]
+      : rawSignature;
 
     try {
-      const outcome = await processStripeWebhook(req.body, signature, requestId);
+      const outcome = await processStripeWebhook(
+        req.body,
+        signature,
+        requestId,
+      );
 
       if (!outcome.ok) {
         // Signature failure and livemode mismatch are both 400: Stripe should not
@@ -145,13 +150,13 @@ app.post(
     } catch (err: unknown) {
       // Handler failure. The idempotency gate has been released, so Stripe's
       // retry can reprocess. 500 asks Stripe to retry; 400 would not.
-      logger.error(
-        "STRIPE_WEBHOOK",
-        "unhandled",
-        "Webhook processing threw",
-        { requestId, message: err instanceof Error ? err.message : "unknown" },
-      );
-      return res.status(500).json({ error: "Webhook processing failed", requestId });
+      logger.error("STRIPE_WEBHOOK", "unhandled", "Webhook processing threw", {
+        requestId,
+        message: err instanceof Error ? err.message : "unknown",
+      });
+      return res
+        .status(500)
+        .json({ error: "Webhook processing failed", requestId });
     }
   },
 );
@@ -397,7 +402,6 @@ app.use("/api/internal", internalMemoryRoutes);
 app.use("/api/internal", internalRetentionRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
-app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route

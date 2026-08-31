@@ -15,8 +15,6 @@ Every guardian reporting surface is guarded in this order:
 ## Canonical Guardian Reporting Endpoints
 - `GET /api/guardian/students`
 - `GET /api/students/:studentId/kpi/overall`
-- `GET /api/guardian/students/:studentId/tests/:sessionId/report`
-- `GET /api/guardian/students/:studentId/calendar/month`
 - `GET /api/students/:studentId/mastery/domains`
 
 ## Allowed Guardian Payload Categories

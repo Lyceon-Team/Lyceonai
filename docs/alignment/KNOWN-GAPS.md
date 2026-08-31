@@ -720,3 +720,66 @@ here and the code is wrong, so this is a defect record and not an SCL.
 **Repair order:** see §6 of the audit document — column renames, `'approved'` → `'consented'`,
 adopt the specified `consent_token`, then move the contract test onto the real-Postgres harness so
 it is answerable to the schema.
+
+---
+
+## SCHEMA-TRUTH-GATE-OUT-OF-SCOPE (P2 — per workstream)
+
+**Status:** OPEN. Logged 2026-08-28 alongside `scripts/ci/guardian-schema-truth-gate.mjs`, which
+enforces two rules on **guardian paths only** per owner ruling: no mocked Supabase query layer
+without a real `pg.Client` behind it (Rule A), and no hand-written row fixtures (Rule B).
+
+**Why the gate is scoped and not repo-wide.** A gate that reds another team's build on arrival
+gets disabled, and then it protects nothing. The rest of the repo is inventoried here instead,
+with an owner and an expiry, so the scope is a decision on record rather than an oversight.
+
+**The class.** `guardian_consent_requests` holds 0 rows and its whole surface was written against
+columns that do not exist — `child_id`, `expires_at`, `status='approved'` where the shipped table
+has `student_profile_id`, `consent_token_expires_at`, and a CHECK permitting none of those. CI was
+green throughout: the tests mocked Supabase and returned fixtures spelling the *same imagined
+names*, so the code and its mock agreed with each other and neither was ever compared to Postgres.
+Nothing raised `42703` because nothing reached a database. A mock is a second, unverified copy of
+the schema; a hand-written row fixture is a private guess. Two wrong copies agreeing is what green
+looked like.
+
+**Measured 2026-08-28** at `a51af1b`, before the guardian deletions:
+
+| Rule | Files repo-wide | Guardian (now gated) | Other workstreams (inventoried) |
+|---|---|---|---|
+| A — mocked query layer, no real `pg.Client` | 45 | 6 | ~39 |
+| B — hand-written row fixtures | 58 files / 249 literals | 7 | ~51 |
+
+Only 5 suites repo-wide already use the required pattern (`makePgSupabase` over a live
+`pg.Client` against genesis + migrations): the two guardian-link PG suites,
+`diagnostic.handler-pg`, `entitlement-write-path`, and `mastery-emission.transport`.
+
+By workstream, Rule A: practice 6, full-length 6, tutor 3, review 3, calendar 3, diagnostic 2,
+plus 16 singletons. Rule B's heaviest files: `fullLengthExam.test.ts` (24 literals),
+`review-session.lifecycle` (21), `retention-sweep.negative-control` and
+`tutor-retrieval.negative-control` (14 each).
+
+Reproduce:
+```bash
+# Rule A candidates minus the ones already PG-backed
+comm -23 <(grep -rln 'vi\.mock(.*supabase' tests/ server/__tests__/ client/src | sort) \
+         <(grep -rln "makePgSupabase\|new Client(" tests/ server/__tests__/ | sort)
+```
+
+**Guardian files still accepted, inside the gate's own scope.** Four, each with owner `guardian`
+and expiry `2026-11-01`, listed in the gate's `ACCEPTED` map with a per-file reason. Three predate
+the PG harness and converting them is real work (`guardian-reporting.contract.test.ts` is ~900
+lines). The fourth, `subject-resolver.contract.test.ts`, is a different case and is the more
+interesting one: it deliberately INJECTS decisions a real database cannot produce — an RPC error,
+a CASE arm no build recognises, a failed audit write — to prove the resolver fails closed on each.
+Its four *real* decisions could run against Postgres and its one row literal asserts a row the
+resolver writes. The right end state is a split file, not a converted one.
+
+**What the gate buys today:** the class cannot grow. A new guardian test that mocks the query layer
+or spells a row by hand reds on arrival, and adding an accept-list entry is a reviewable edit
+rather than an accident. It does not retroactively fix the four accepted files.
+
+**Spec citations:** Coding Standards §14 (tests required for anti-leak / idempotency / auth /
+redaction changes — a test that agrees with the code instead of the schema satisfies none of it);
+§7.1 (parse at every boundary).
+
+**Owner:** each workstream for its own files; `platform` for the decision to widen the gate's scope.
