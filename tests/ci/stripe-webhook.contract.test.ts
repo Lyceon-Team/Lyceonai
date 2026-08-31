@@ -35,6 +35,12 @@ const accountMocks = vi.hoisted(() => ({
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer's Customer.
+  // Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test_1",
+    address: { country: "US" },
+  })),
   subscriptionsUpdate: vi.fn(),
   subscriptionsResume: vi.fn(),
 }));
@@ -46,6 +52,7 @@ vi.mock("../../server/lib/stripe/client", async () => {
     getStripeClient: () => ({
       // REAL verification — not a stub.
       webhooks: real.webhooks,
+      customers: { retrieve: stripeApi.customersRetrieve },
       subscriptions: {
         retrieve: stripeApi.subscriptionsRetrieve,
         update: stripeApi.subscriptionsUpdate,
@@ -127,6 +134,8 @@ function checkoutEvent(
             country: overrides.country === undefined ? "US" : overrides.country,
           },
         },
+        // SCL-071: settled. The settlement gate has its own suite.
+        payment_status: "paid",
       },
     },
   };
@@ -151,6 +160,7 @@ describe("Stripe webhook handler contract", () => {
     // that version — it encoded a shape Stripe no longer sends.
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
       items: {
@@ -223,6 +233,7 @@ describe("Stripe webhook handler contract", () => {
   it("persists Stripe's re-fetched status, not the status in the delivered payload", async () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "canceled",
       cancel_at_period_end: true,
       items: { data: [] },
@@ -249,6 +260,7 @@ describe("Stripe webhook handler contract", () => {
 
     const retrieved = {
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
       items: {
@@ -287,6 +299,7 @@ describe("Stripe webhook handler contract", () => {
   it("fails closed rather than guessing when several items name no matching student", async () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
       items: {
@@ -411,6 +424,7 @@ describe("Stripe webhook handler contract", () => {
   it("rejects a re-fetched subscription that lacks a status rather than writing a partial row", async () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       // no `status` at all
       items: { data: [] },
     });
@@ -431,6 +445,7 @@ describe("Stripe webhook handler contract", () => {
     // 2026-08-26 defect to NULL bounds instead of a malformed row.
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
       items: { data: [{ id: "si_test_1", price: { id: "price_monthly" } }] },

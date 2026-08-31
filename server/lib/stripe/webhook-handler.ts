@@ -41,6 +41,9 @@ import {
   mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId,
   getAllGuardianStudentLinks,
+  getEntitlementForProfile,
+  getProfileIdByStripeCustomerId,
+  getProfileStripeCustomerId,
 } from "../account";
 import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
@@ -91,11 +94,71 @@ const retrievedChargeSchema = z.object({
   id: z.string().min(1),
   amount: z.number(),
   amount_refunded: z.number().default(0),
+  /**
+   * The first hop of the provenance chain (Codex HIGH-5). `Charge.invoice` does
+   * not exist in this API version, so the PaymentIntent is the only forward
+   * path from a charge to the invoice it paid.
+   */
+  payment_intent: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
   customer: z
     .union([z.string().min(1), z.object({ id: z.string().min(1) })])
     .nullish(),
 });
 type RetrievedCharge = z.infer<typeof retrievedChargeSchema>;
+
+/**
+ * The Customer fields the egress rule reads (SCL-047). The billing address is
+ * the authoritative country signal (SCL-046, INV-03-08).
+ */
+const customerUpdatedSchema = z.object({
+  id: z.string().min(1),
+  address: z.object({ country: z.string().nullish() }).nullish(),
+});
+
+/**
+ * @spec [Coding Standards §7.1] | @implemented [2026-08-31 — owner ruling]
+ * A deleted Customer arrives as a bare id. Everything else about it is already
+ * gone from Stripe, which is exactly why our own row has to carry the link.
+ */
+const customerDeletedSchema = z.object({
+  id: z.string().min(1),
+});
+
+/**
+ * @spec [Coding Standards §7.1] | @implemented [2026-08-28 — Codex HIGH-5]
+ * The two hops of the provenance chain, parsed at the boundary like every other
+ * Stripe response.
+ */
+const invoicePaymentListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        invoice: z.union([
+          z.string().min(1),
+          z.object({ id: z.string().min(1) }),
+        ]),
+      }),
+    )
+    .default([]),
+});
+
+const retrievedInvoiceSchema = z.object({
+  id: z.string().min(1),
+  parent: z
+    .object({
+      subscription_details: z
+        .object({
+          subscription: z.union([
+            z.string().min(1),
+            z.object({ id: z.string().min(1) }),
+          ]),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
 
 /** The subscription-list response, parsed for the one field this scan reads. */
 const subscriptionListSchema = z.object({
@@ -181,6 +244,17 @@ const checkoutSessionSchema = subjectSchema.extend({
       address: z.object({ country: z.string().nullish() }).nullish(),
     })
     .nullish(),
+  /**
+   * SCL-071 settlement. Stripe's own words (stripe@20.4.1,
+   * `types/Checkout/Sessions.d.ts`): "The payment status of the Checkout
+   * Session, one of `paid`, `unpaid`, or `no_payment_required`. You can use
+   * this value to decide when to fulfill your customer's order."
+   *
+   * NOT `.optional()`. A completed session always carries it, and defaulting a
+   * missing value would silently pick a fulfilment decision — the collapse of
+   * an error into a legitimate value this handler refuses everywhere else.
+   */
+  payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),
 });
 
 /** The Subscription fields this handler reads. */
@@ -237,6 +311,10 @@ const retrievedSubscriptionSchema = z.object({
    * item subject against them, rather than entitling whatever uuid an item
    * carries.
    */
+  /** The payer. INV-03-08's authoritative country signal lives on this object. */
+  customer: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
   metadata: z
     .object({
       payer_profile_id: z.string().min(1).nullish(),
@@ -349,6 +427,67 @@ function epochToIso(seconds: unknown): string | null {
  * Persist Stripe's authoritative subscription state onto the student's
  * entitlement row. Re-fetches rather than trusting the delivered object.
  */
+/**
+ * INV-03-08 AT EVERY GRANT — the fix for the class, not the instance.
+ *
+ * @spec [INV-03-08; SCL-046] | @implemented [2026-08-28 — Codex HIGH-2]
+ *
+ * plain English: refuse to write premium when the payer's billing country is
+ * not Tier-1. Expected outcome: the country rule holds on EVERY path that
+ * grants, extends or restores — not only on the one event it was first wired
+ * to. Trade-off: one extra Customer read per granting subscription event; this
+ * is a webhook, so the cost is Stripe's retry budget rather than a page load.
+ *
+ * WHY IT LIVES IN THE WRITER. Codex found six granting paths with no country
+ * gate — `customer.subscription.created`, `.updated`, won-dispute restore,
+ * `warning_closed` restore, and both add-item consequences — because the gate
+ * was wired at ONE event. Putting it at the call sites is what produced that;
+ * putting it in the writer means a new granting path inherits it.
+ *
+ * ONLY GRANTS ARE GATED. A write that moves a student to `free` must never be
+ * blocked by a country check: refusing to revoke because we cannot establish a
+ * country would leave premium in place, which is the failure this exists to
+ * prevent. So the gate is asked only when `tier === "premium"`.
+ */
+async function assertCountryEligibleForGrant(
+  customerRef: string | { id: string } | null | undefined,
+  eventType: string,
+  eventId: string,
+): Promise<void> {
+  const customerId =
+    typeof customerRef === "string" ? customerRef : customerRef?.id;
+
+  let country: string | null | undefined = null;
+  if (customerId) {
+    const customer = await getStripeClient().customers.retrieve(customerId);
+    country =
+      "deleted" in customer && customer.deleted
+        ? null
+        : (customer as Stripe.Customer).address?.country;
+  }
+
+  const eligibility = evaluateCountryEligibility(
+    country,
+    await getTier1Countries(),
+  );
+  if (!deniesEntitlement(eligibility)) return;
+
+  logger.error(
+    "STRIPE_WEBHOOK",
+    eventType,
+    "GRANT REFUSED by INV-03-08 country gate. No entitlement written.",
+    {
+      eventId,
+      customerId,
+      verdict: eligibility.verdict,
+    },
+  );
+  throw new StripePayloadShapeError(
+    eventType,
+    `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); grant denied per INV-03-08`,
+  );
+}
+
 async function writeEntitlementFromSubscription(
   subscriptionId: string,
   studentProfileId: string,
@@ -373,6 +512,15 @@ async function writeEntitlementFromSubscription(
   const { tier, status } = collectionPaused
     ? { tier: "free" as const, status: mapped.status }
     : mapped;
+
+  // INV-03-08: gate BEFORE the write, and only when this write would GRANT.
+  if (tier === "premium") {
+    await assertCountryEligibleForGrant(
+      subscription.customer,
+      eventType,
+      eventId,
+    );
+  }
 
   // SCL-045: entitlement is keyed on the subscription ITEM. Price and period
   // both come from that one object, so they cannot describe different students.
@@ -511,77 +659,120 @@ async function resolveEntitlementsForCharge(
     eventType,
   );
 
-  const customerRef = charge.customer;
-  if (!customerRef) {
-    // Absence of the only key. A charge with no Customer cannot be a
-    // subscription charge, so there is nothing of ours to revoke.
-    logger.info("STRIPE_WEBHOOK", eventType, "Charge has no Customer", {
-      eventId,
-      chargeRef: digestId(chargeId),
-    });
+  /**
+   * EXACT PROVENANCE: charge -> payment intent -> invoice payment -> invoice ->
+   * subscription.
+   *
+   * @revised [2026-08-28 — Codex HIGH-5]
+   *
+   * WHAT WAS WRONG. This previously took the charge's CUSTOMER, listed every
+   * subscription that customer had, and treated the single one carrying local
+   * entitlement rows as "the subscription this charge funded". That is an
+   * inference, not a fact. An unrelated ONE-OFF charge on the same Customer —
+   * a gift, a manual invoice, a charge for a subscription since deleted —
+   * resolved to the customer's only current subscription and could revoke it.
+   * The `matches.length > 1` branch caught ambiguity between SUBSCRIPTIONS; it
+   * could never establish that the selected one produced this charge.
+   *
+   * The chain below is exact, and every hop exists in the pinned SDK
+   * (stripe@20.4.1):
+   *   `Charge.payment_intent`                    Charges.d.ts:148
+   *   `invoicePayments.list({payment:{payment_intent, type}})`
+   *                                              InvoicePaymentsResource.d.ts
+   *   `InvoicePayment.invoice`                   InvoicePayments.d.ts:49
+   *   `Invoice.parent.subscription_details.subscription`
+   *                                              Invoices.d.ts (Parent)
+   *
+   * `Charge.invoice` does NOT exist in this API version — verified, zero
+   * occurrences — which is why the walk goes through the PaymentIntent.
+   *
+   * IF PROVENANCE CANNOT BE ESTABLISHED, NOTHING CHANGES. Each null below is a
+   * fact ("this charge did not pay a subscription invoice"), not an error, and
+   * the correct response to a fact we do not have is to change no entitlement
+   * and leave the event visible to an operator.
+   */
+  if (!charge.payment_intent) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Charge has no PaymentIntent; it cannot be traced to a subscription invoice. No entitlement changed.",
+      { eventId, chargeRef: digestId(chargeId) },
+    );
     return null;
   }
-  const customerId =
-    typeof customerRef === "string" ? customerRef : customerRef.id;
+  const paymentIntentId =
+    typeof charge.payment_intent === "string"
+      ? charge.payment_intent
+      : charge.payment_intent.id;
 
-  const subscriptions = parseOrFail(
-    subscriptionListSchema,
-    await stripe.subscriptions.list({
-      customer: customerId,
-      status: "all",
+  const invoicePayments = parseOrFail(
+    invoicePaymentListSchema,
+    await stripe.invoicePayments.list({
+      payment: { payment_intent: paymentIntentId, type: "payment_intent" },
       limit: SUBSCRIPTION_SCAN_LIMIT,
     }),
     eventType,
   );
 
-  /**
-   * @revised [2026-08-28 — Codex HIGH-4] The two "several" cases are NOT the
-   * same and no longer share a branch.
-   *
-   *   several ROWS on ONE subscription   the normal guardian shape after
-   *                                      migration 20260827010000. The charge
-   *                                      paid one invoice covering every item,
-   *                                      so every student on it is in scope.
-   *                                      ACT ON ALL.
-   *   several SUBSCRIPTIONS matching     still ambiguous. The charge paid ONE
-   *                                      invoice for ONE subscription; picking
-   *                                      one would change a student whose
-   *                                      payment was never in question.
-   *                                      FAIL CLOSED.
-   *
-   * Collapsing these into "exactly one row or refuse" is what made a guardian
-   * chargeback revoke nobody.
-   */
-  const matches: { subscriptionId: string; profileIds: string[] }[] = [];
-  for (const subscription of subscriptions.data) {
-    const entitlements = await getEntitlementsBySubscriptionId(subscription.id);
-    if (entitlements.length > 0) {
-      matches.push({
-        subscriptionId: subscription.id,
-        profileIds: entitlements.map((e) => e.profile_id),
-      });
-    }
-  }
-
-  if (matches.length === 0) {
-    logger.info("STRIPE_WEBHOOK", eventType, "Charge maps to no entitlement", {
-      eventId,
-      chargeRef: digestId(chargeId),
-    });
+  if (invoicePayments.data.length === 0) {
+    // THE case Codex named: a one-off charge that paid no invoice. Previously
+    // this reached the customer walk and could revoke an unrelated subscription.
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Charge paid no invoice (one-off charge). No entitlement changed.",
+      { eventId, chargeRef: digestId(chargeId) },
+    );
     return null;
   }
-  if (matches.length > 1) {
+  if (invoicePayments.data.length > 1) {
     throw new StripePayloadShapeError(
       eventType,
-      `charge maps to ${matches.length} SUBSCRIPTIONS; refusing to guess which subscription's students to change`,
+      `charge maps to ${invoicePayments.data.length} invoice payments; refusing to guess which invoice it funded`,
     );
   }
 
-  const only = matches[0];
+  const only = invoicePayments.data[0];
   if (!only) return null;
+  const invoiceId =
+    typeof only.invoice === "string" ? only.invoice : only.invoice.id;
+
+  const invoice = parseOrFail(
+    retrievedInvoiceSchema,
+    await stripe.invoices.retrieve(invoiceId),
+    eventType,
+  );
+
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+  if (!subscriptionRef) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Charge paid an invoice with no subscription parent. No entitlement changed.",
+      { eventId, chargeRef: digestId(chargeId), invoiceId },
+    );
+    return null;
+  }
+  const subscriptionId =
+    typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef.id;
+
+  // The subscription is now EXACT. Several entitlement rows on it is the normal
+  // guardian shape (migration 20260827010000); zero means this subscription
+  // funds nothing we hold, which is a fact and not an error.
+  const entitlements = await getEntitlementsBySubscriptionId(subscriptionId);
+  if (entitlements.length === 0) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Charge traced to a subscription that underwrites no entitlement of ours.",
+      { eventId, chargeRef: digestId(chargeId), subscriptionId },
+    );
+    return null;
+  }
+
   return {
-    profileIds: only.profileIds,
-    subscriptionId: only.subscriptionId,
+    profileIds: entitlements.map((e) => e.profile_id),
+    subscriptionId,
     charge,
   };
 }
@@ -954,6 +1145,16 @@ async function writeEntitlementsForAllItems(
     );
   }
 
+  // INV-03-08: gate BEFORE any of the N writes, and only when granting. All or
+  // nothing — a country refusal must not entitle a prefix of the students.
+  if (tier === "premium") {
+    await assertCountryEligibleForGrant(
+      subscription.customer,
+      eventType,
+      eventId,
+    );
+  }
+
   // ---- Charter §6 authorisation, server-side ----------------------------
   const payerProfileId = subscription.metadata?.payer_profile_id;
   if (!payerProfileId) {
@@ -1026,7 +1227,384 @@ async function writeEntitlementsForAllItems(
   });
 }
 
+/**
+ * FULFILMENT — the one path both settlement events share.
+ *
+ * @spec [SCL-071 entitlement is written on payment SETTLEMENT, not on Checkout
+ *        Session completion; INV-03-08; Charter §6]
+ * @implemented [2026-08-28 — Codex HIGH-1]
+ *
+ * plain English: turn a settled Checkout Session into entitlement. Expected
+ * outcome: identical derivation, identical gates and identical writer whichever
+ * event carried the settlement. Trade-off: one function reached from two
+ * dispatch arms rather than two branches that look alike — the two-branch shape
+ * is what let the async path be "not yet built" while the sync path shipped.
+ * Edge cases: a Payment Link session, an unpaid session, a non-subscription
+ * session, and a guardian session with no single subject.
+ *
+ * IT IS CALLED ONLY WITH SETTLED MONEY. The caller decides that; see
+ * `isSettled` and the two dispatch arms.
+ */
+async function fulfilCheckoutSession(
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventType: string,
+  eventId: string,
+): Promise<void> {
+  // §4.7 Payment Link defence. A Payment Link purchase carries `payment_link`
+  // and no server-set `client_reference_id`, so the only thing that could
+  // name a student is a URL query parameter — a caller-supplied value, which
+  // Charter §6 forbids from gating entitlement by name. Refusing is not the
+  // worst outcome here; granting the wrong student access is, and so is a
+  // real charge that grants nothing with no operator signal. Hence: reject,
+  // and alert.
+  if (session.payment_link) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "PAYMENT LINK PURCHASE REJECTED — a real charge has been taken and NO entitlement was granted. Refund it or complete it manually.",
+      {
+        eventId: eventId,
+        sessionRef: digestId(session.id),
+        paymentLinkRef: digestId(refToId(session.payment_link)),
+      },
+    );
+    throw new StripePayloadShapeError(
+      eventType,
+      "checkout session originated from a Payment Link; entitlement cannot be attributed to a student without a caller-supplied value (Charter §6)",
+    );
+  }
+
+  if (session.mode !== "subscription" || !session.subscription) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Non-subscription checkout ignored",
+      { eventId: eventId },
+    );
+    return;
+  }
+
+  const subscriptionId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : session.subscription.id;
+
+  /**
+   * INV-03-08 TIER-1 COUNTRY GATE — the production call site.
+   *
+   * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
+   *        2026-08-27] | @implemented [2026-08-28 — Codex HIGH-1]
+   *
+   * plain English: refuse premium when the billing country is not on the
+   * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
+   * expressed. Trade-off: the money has already moved by this point, so a
+   * denial leaves a paid customer with no access and needs an operator
+   * refund — which is why the ERROR log below names that consequence
+   * explicitly rather than failing quietly.
+   *
+   * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
+   * (Codex HIGH-1: "a fail-open money path"). It could not be called at
+   * session creation because the billing address does not exist until the
+   * customer types it during Checkout. This event is the derivation point
+   * the module's own header names.
+   *
+   * BOTH `ineligible` AND `unknown` DENY. After payment, refusing to decide
+   * is itself a decision, and the safe one is not to grant access we cannot
+   * justify. An unseeded `tier_1_countries` therefore denies — the
+   * fail-closed default the owner ruled, and the reason the gate is INERT
+   * (meaning: denying) until the owner DML is applied.
+   */
+  const eligibility = evaluateCountryEligibility(
+    session.customer_details?.address?.country,
+    await getTier1Countries(),
+  );
+  if (deniesEntitlement(eligibility)) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+      {
+        eventId: eventId,
+        sessionRef: digestId(session.id),
+        // The subject is not resolved yet — the gate runs BEFORE it, because
+        // a guardian-paid session has no single subject to resolve. Log
+        // whichever party the session names; the logger digests both.
+        studentProfileId: session.metadata?.student_profile_id ?? null,
+        payerProfileId: session.metadata?.payer_profile_id ?? null,
+        verdict: eligibility.verdict,
+        country: eligibility.verdict === "unknown" ? null : eligibility.country,
+      },
+    );
+    throw new StripePayloadShapeError(
+      eventType,
+      `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
+    );
+  }
+
+  /**
+   * §4.8: a guardian-paid session names the PAYER and funds several students,
+   * one ITEM each. `resolveStudentProfileId` would throw on it — there is no
+   * single subject — so the shape is read BEFORE the subject, exactly as the
+   * subscription dispatcher does. The item path also runs for a guardian with
+   * ONE linked student, which is why the test is "is this guardian-paid" and
+   * not "are there several items".
+   */
+  if (session.metadata?.payer_profile_id) {
+    const retrieved: RetrievedSubscription = parseOrFail(
+      retrievedSubscriptionSchema,
+      await getStripeClient().subscriptions.retrieve(subscriptionId),
+      eventType,
+    );
+    await writeEntitlementsForAllItems(retrieved, eventType, eventId);
+    return;
+  }
+
+  const studentProfileId = resolveStudentProfileId(session, eventType);
+  await writeEntitlementFromSubscription(
+    subscriptionId,
+    studentProfileId,
+    eventType,
+    eventId,
+  );
+  return;
+}
+
+/**
+ * Has the money actually arrived?
+ *
+ * Stripe's own words, shipped in stripe@20.4.1
+ * (`types/Checkout/Sessions.d.ts`): "The payment status of the Checkout
+ * Session, one of `paid`, `unpaid`, or `no_payment_required`. You can use this
+ * value to decide when to fulfill your customer's order."
+ *
+ * `unpaid` means a delayed payment method completed the SESSION before the
+ * money settled. Granting there hands premium to an unsettled payment;
+ * `checkout.session.async_payment_succeeded` is the event that later carries
+ * the settlement, and it fulfils through the same function.
+ *
+ * Exhaustive over the union rather than `!== "unpaid"`, so a new member added
+ * by a future API version is a compile error rather than an accidental grant.
+ */
+function isSettled(
+  status: z.infer<typeof checkoutSessionSchema>["payment_status"],
+): boolean {
+  switch (status) {
+    case "paid":
+    case "no_payment_required":
+      return true;
+    case "unpaid":
+      return false;
+  }
+}
+
+/**
+ * COUNTRY EGRESS — the payer moved out of Tier-1.
+ *
+ * @spec [SCL-047 (owner ruling: option (b)); INV-03-08; SCL-046]
+ * @implemented [2026-08-28 — Codex HIGH-2]
+ *
+ * plain English: when a customer changes their billing address in the Portal to
+ * a country that is not Tier-1, set `cancel_at_period_end` on their
+ * subscriptions. Expected outcome, exactly as ruled: the student keeps access
+ * through `current_period_end`, no renewal occurs, and entitlement transitions
+ * to free at period end.
+ *
+ * NO IMMEDIATE CUT, NO REFUND, NO PRORATION — the owner rejected option (a)
+ * because Stripe does not automatically refund negative prorations, so
+ * cancelling mid-period would generate a credit rather than money back.
+ *
+ * Trade-off: the entitlement row is NOT written here. `cancel_at_period_end` is
+ * the durable marker on Stripe's object, and the transition to free arrives on
+ * the subscription lifecycle event at period end — one writer, as everywhere
+ * else. Writing free now would cut access immediately, which is precisely the
+ * option that was rejected.
+ *
+ * Edge case: a customer moving INTO Tier-1 is not un-cancelled here. Reversing
+ * a scheduled cancellation is a separate decision with its own money
+ * consequences, and inventing it would be an unruled behaviour.
+ */
+async function handleCustomerUpdated(event: Stripe.Event): Promise<void> {
+  const customer = parseOrFail(
+    customerUpdatedSchema,
+    event.data.object,
+    event.type,
+  );
+
+  const eligibility = evaluateCountryEligibility(
+    customer.address?.country,
+    await getTier1Countries(),
+  );
+
+  // Only a POSITIVE ineligible triggers egress. `unknown` must not: a customer
+  // who has never supplied an address has not moved anywhere, and cancelling
+  // their subscription on an absence would revoke for a fact we do not have.
+  if (eligibility.verdict !== "ineligible") return;
+
+  const stripe = getStripeClient();
+  const subscriptions = parseOrFail(
+    subscriptionListSchema,
+    await stripe.subscriptions.list({
+      customer: customer.id,
+      status: "active",
+      limit: SUBSCRIPTION_SCAN_LIMIT,
+    }),
+    event.type,
+  );
+
+  for (const subscription of subscriptions.data) {
+    await stripe.subscriptions.update(subscription.id, {
+      cancel_at_period_end: true,
+    });
+  }
+
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Billing country left Tier-1: subscriptions set to cancel at period end (SCL-047). Access continues to period end; no refund, no proration.",
+    {
+      eventId: event.id,
+      customerId: customer.id,
+      country: eligibility.country,
+      subscriptionsScheduled: subscriptions.data.length,
+    },
+  );
+}
+
+/**
+ * The billing relationship is gone, so the entitlement it funded goes with it.
+ *
+ * @spec [SCL-070 amendment; Doc-01_V8 §20–§24 | OWNER RULING 2026-08-31]
+ * @implemented [2026-08-31]
+ *
+ * plain English: deleting a Stripe Customer ends the billing relationship
+ * outright — no subscription, no payment method, no way to bill and no way to
+ * cancel. Leaving entitlement active after that grants free premium with no
+ * recourse, so `customer.deleted` REVOKES. This event was previously subscribed
+ * and ignored, with a comment that already recorded revoking as the intent; the
+ * owner ruled on 2026-08-31 and this is that ruling implemented.
+ *
+ * expected outcome: every entitlement this Customer funded drops to
+ * `tier=free, status=canceled`.
+ *
+ * WHY THE SUBJECTS ARE RESOLVED FROM OUR ROWS AND NOT FROM STRIPE. By the time
+ * this event arrives the Customer no longer exists, so `subscriptions.list`
+ * cannot be asked who it funded. `profiles.stripe_customer_id` (UNIQUE,
+ * genesis:149) is the only surviving link, and the entitlement rows carry the
+ * subscription ids. That is why this handler is all database and no SDK.
+ *
+ * trade-offs / edge cases:
+ *  - NOT country-gated. It is a REVOKE, and gating a revocation on a country we
+ *    may not know would leave premium in place — the exact failure the gate
+ *    exists to prevent.
+ *  - Guardian-paid: the guardian holds the Customer but owns no entitlement row
+ *    of their own, so the funded students are reached through their ACTIVE
+ *    guardian links. A linked student who holds their OWN
+ *    `stripe_customer_id` is skipped: `stripe_customer_id` is UNIQUE, so such a
+ *    student is a payer in their own right and this Customer does not fund them.
+ *    Revoking them would cancel access somebody else is still paying for.
+ *  - Absence is a fact, not an error. No profile holding this Customer, or no
+ *    entitlement rows behind it, means nothing of ours was funded by it: log and
+ *    change nothing.
+ *  - Idempotent. The write is `upsertEntitlement` to free, so a replay — or the
+ *    `customer.subscription.deleted` events Stripe may also emit when a Customer
+ *    is removed — converges on the same row rather than fighting it. Belt and
+ *    braces is deliberate: this handler does not depend on those events firing,
+ *    because that behaviour cannot be verified here without credentials.
+ *  - LOW VOLUME. Customers are normally deleted by an operator, so the
+ *    per-student sequential reads below are not a hot path.
+ */
+async function handleCustomerDeleted(event: Stripe.Event): Promise<void> {
+  const customer = parseOrFail(
+    customerDeletedSchema,
+    event.data.object,
+    event.type,
+  );
+
+  const payerProfileId = await getProfileIdByStripeCustomerId(customer.id);
+  if (!payerProfileId) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "Deleted Customer matches no profile; it funded no entitlement of ours. Nothing changed.",
+      { eventId: event.id, customerRef: digestId(customer.id) },
+    );
+    return;
+  }
+
+  // Which subscriptions did this Customer fund? Answered from our rows only.
+  const subscriptionIds = new Set<string>();
+
+  const payerEntitlement = await getEntitlementForProfile(payerProfileId);
+  if (payerEntitlement?.stripe_subscription_id) {
+    subscriptionIds.add(payerEntitlement.stripe_subscription_id);
+  }
+
+  const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
+  for (const link of activeLinks) {
+    const studentProfileId = link.student_profile_id;
+    if (!studentProfileId) continue;
+
+    // A student holding their own Customer pays for themselves; this Customer
+    // is not theirs, and revoking them would cut off access someone else funds.
+    const ownCustomerId = await getProfileStripeCustomerId(studentProfileId);
+    if (ownCustomerId) continue;
+
+    const studentEntitlement = await getEntitlementForProfile(studentProfileId);
+    if (studentEntitlement?.stripe_subscription_id) {
+      subscriptionIds.add(studentEntitlement.stripe_subscription_id);
+    }
+  }
+
+  // SCL-045: one item per student, so one subscription can fund many rows. Fan
+  // out through the subscription id so siblings are not left entitled.
+  const profileIds = new Set<string>();
+  if (payerEntitlement) profileIds.add(payerProfileId);
+  for (const subscriptionId of subscriptionIds) {
+    for (const row of await getEntitlementsBySubscriptionId(subscriptionId)) {
+      profileIds.add(row.profile_id);
+    }
+  }
+
+  if (profileIds.size === 0) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "Deleted Customer resolved to a profile but no entitlement rows reference it. Nothing changed.",
+      { eventId: event.id, payerProfileId },
+    );
+    return;
+  }
+
+  await revokeAllProfiles([...profileIds], {
+    tier: "free",
+    status: "canceled",
+  });
+
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Stripe Customer deleted: the billing relationship is gone, so every entitlement it funded is revoked (owner ruling 2026-08-31).",
+    {
+      eventId: event.id,
+      customerRef: digestId(customer.id),
+      payerProfileId,
+      subscriptionsResolved: subscriptionIds.size,
+      profilesRevoked: profileIds.size,
+    },
+  );
+}
+
 async function dispatch(event: Stripe.Event): Promise<void> {
+  if (event.type === "customer.deleted") {
+    await handleCustomerDeleted(event);
+    return;
+  }
+
+  if (event.type === "customer.updated") {
+    await handleCustomerUpdated(event);
+    return;
+  }
+
   if (event.type === "refund.updated") {
     await handleRefundUpdated(event);
     return;
@@ -1042,7 +1620,10 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     return;
   }
 
-  if (event.type === "checkout.session.completed") {
+  if (
+    event.type === "checkout.session.completed" ||
+    event.type === "checkout.session.async_payment_succeeded"
+  ) {
     // Parsed, not cast: a valid signature does not imply a valid shape.
     const session = parseOrFail(
       checkoutSessionSchema,
@@ -1050,122 +1631,47 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       event.type,
     );
 
-    // §4.7 Payment Link defence. A Payment Link purchase carries `payment_link`
-    // and no server-set `client_reference_id`, so the only thing that could
-    // name a student is a URL query parameter — a caller-supplied value, which
-    // Charter §6 forbids from gating entitlement by name. Refusing is not the
-    // worst outcome here; granting the wrong student access is, and so is a
-    // real charge that grants nothing with no operator signal. Hence: reject,
-    // and alert.
-    if (session.payment_link) {
-      logger.error(
-        "STRIPE_WEBHOOK",
-        event.type,
-        "PAYMENT LINK PURCHASE REJECTED — a real charge has been taken and NO entitlement was granted. Refund it or complete it manually.",
-        {
-          eventId: event.id,
-          sessionRef: digestId(session.id),
-          paymentLinkRef: digestId(refToId(session.payment_link)),
-        },
-      );
-      throw new StripePayloadShapeError(
-        event.type,
-        "checkout session originated from a Payment Link; entitlement cannot be attributed to a student without a caller-supplied value (Charter §6)",
-      );
-    }
-
-    if (session.mode !== "subscription" || !session.subscription) {
+    /**
+     * SCL-071. The settlement gate, and the reason both arms are here.
+     *
+     * `checkout.session.completed` fires when the SESSION completes, which for
+     * a delayed payment method is BEFORE the money arrives. Fulfilling on it
+     * unconditionally grants premium against an unsettled payment.
+     * `async_payment_succeeded` is the event that carries settlement, and it
+     * was previously classified "ignored — not yet built", which is the other
+     * half of the same defect.
+     *
+     * Inert on today's configuration (card and Link settle synchronously and
+     * never emit the async pair), which is exactly why it is written now:
+     * enabling a delayed method in the Dashboard is a configuration change no
+     * code review would catch.
+     */
+    if (!isSettled(session.payment_status)) {
       logger.info(
         "STRIPE_WEBHOOK",
         event.type,
-        "Non-subscription checkout ignored",
-        { eventId: event.id },
-      );
-      return;
-    }
-
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription.id;
-
-    /**
-     * INV-03-08 TIER-1 COUNTRY GATE — the production call site.
-     *
-     * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
-     *        2026-08-27] | @implemented [2026-08-28 — Codex HIGH-1]
-     *
-     * plain English: refuse premium when the billing country is not on the
-     * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
-     * expressed. Trade-off: the money has already moved by this point, so a
-     * denial leaves a paid customer with no access and needs an operator
-     * refund — which is why the ERROR log below names that consequence
-     * explicitly rather than failing quietly.
-     *
-     * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
-     * (Codex HIGH-1: "a fail-open money path"). It could not be called at
-     * session creation because the billing address does not exist until the
-     * customer types it during Checkout. This event is the derivation point
-     * the module's own header names.
-     *
-     * BOTH `ineligible` AND `unknown` DENY. After payment, refusing to decide
-     * is itself a decision, and the safe one is not to grant access we cannot
-     * justify. An unseeded `tier_1_countries` therefore denies — the
-     * fail-closed default the owner ruled, and the reason the gate is INERT
-     * (meaning: denying) until the owner DML is applied.
-     */
-    const eligibility = evaluateCountryEligibility(
-      session.customer_details?.address?.country,
-      await getTier1Countries(),
-    );
-    if (deniesEntitlement(eligibility)) {
-      logger.error(
-        "STRIPE_WEBHOOK",
-        event.type,
-        "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+        "Session not settled; no entitlement written (SCL-071). Awaiting checkout.session.async_payment_succeeded.",
         {
           eventId: event.id,
           sessionRef: digestId(session.id),
-          // The subject is not resolved yet — the gate runs BEFORE it, because
-          // a guardian-paid session has no single subject to resolve. Log
-          // whichever party the session names; the logger digests both.
-          studentProfileId: session.metadata?.student_profile_id ?? null,
-          payerProfileId: session.metadata?.payer_profile_id ?? null,
-          verdict: eligibility.verdict,
-          country:
-            eligibility.verdict === "unknown" ? null : eligibility.country,
+          paymentStatus: session.payment_status,
         },
       );
-      throw new StripePayloadShapeError(
-        event.type,
-        `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
-      );
-    }
-
-    /**
-     * §4.8: a guardian-paid session names the PAYER and funds several students,
-     * one ITEM each. `resolveStudentProfileId` would throw on it — there is no
-     * single subject — so the shape is read BEFORE the subject, exactly as the
-     * subscription dispatcher does. The item path also runs for a guardian with
-     * ONE linked student, which is why the test is "is this guardian-paid" and
-     * not "are there several items".
-     */
-    if (session.metadata?.payer_profile_id) {
-      const retrieved: RetrievedSubscription = parseOrFail(
-        retrievedSubscriptionSchema,
-        await getStripeClient().subscriptions.retrieve(subscriptionId),
-        event.type,
-      );
-      await writeEntitlementsForAllItems(retrieved, event.type, event.id);
       return;
     }
 
-    const studentProfileId = resolveStudentProfileId(session, event.type);
-    await writeEntitlementFromSubscription(
-      subscriptionId,
-      studentProfileId,
+    await fulfilCheckoutSession(session, event.type, event.id);
+    return;
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    // SCL-071: produces NO entitlement, and is NOT a revocation of something
+    // that was never granted. Logged so a failed delayed payment is visible.
+    logger.warn(
+      "STRIPE_WEBHOOK",
       event.type,
-      event.id,
+      "Delayed payment failed; no entitlement was granted and none is revoked (SCL-071).",
+      { eventId: event.id },
     );
     return;
   }

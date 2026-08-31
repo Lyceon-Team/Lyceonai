@@ -1,5 +1,5 @@
 /**
- * INV-03-08 Tier-1 country gate — enforced at its production call site.
+ * SCL-071 settlement — entitlement is written when money SETTLES.
  *
  * @spec [INV-03-08 (Doc 03 §2156, heading verified); SCL-046 as amended
  *        2026-08-27] | @implemented [2026-08-28 — closes Codex HIGH-1]
@@ -24,7 +24,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Stripe from "stripe";
 
-const WEBHOOK_SECRET = "whsec_test_secret_for_country_gate";
+const WEBHOOK_SECRET = "whsec_test_secret_for_settlement";
 const STUDENT_ID = "88888888-8888-4888-8888-888888888888";
 
 const state = vi.hoisted(() => ({ expectedLivemode: false }));
@@ -99,25 +99,28 @@ vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-function signedCheckout(country: string | null | undefined) {
+function signedSession(
+  type:
+    | "checkout.session.completed"
+    | "checkout.session.async_payment_succeeded"
+    | "checkout.session.async_payment_failed",
+  paymentStatus: "paid" | "unpaid" | "no_payment_required",
+) {
   const event = {
-    id: "evt_country_gate",
+    id: `evt_settle_${type}_${paymentStatus}`,
     object: "event",
-    type: "checkout.session.completed",
+    type,
     livemode: false,
     data: {
       object: {
-        id: "cs_country_gate",
+        id: "cs_settle",
         object: "checkout.session",
         mode: "subscription",
-        subscription: "sub_country_gate",
+        subscription: "sub_settle",
         client_reference_id: STUDENT_ID,
         metadata: { student_profile_id: STUDENT_ID },
-        customer_details:
-          country === undefined ? null : { address: { country } },
-        // SCL-071: settled. The settlement gate has its own suite; this one is
-        // about the country decision and must not be gated out before it.
-        payment_status: "paid",
+        customer_details: { address: { country: "US" } },
+        payment_status: paymentStatus,
       },
     },
   };
@@ -136,15 +139,29 @@ async function handler() {
     .processStripeWebhook;
 }
 
-describe("INV-03-08 country gate at checkout.session.completed", () => {
+/**
+ * @spec [SCL-071] | @implemented [2026-08-28 — closes Codex HIGH-1]
+ *
+ * plain English: a delayed payment method completes the SESSION before the
+ * money arrives. Fulfilling on `checkout.session.completed` unconditionally
+ * grants premium against an unsettled payment; `async_payment_succeeded` is the
+ * event that carries settlement and was previously classified "ignored — not
+ * yet built", which is the other half of the same defect.
+ *
+ * Inert on today's configuration — card and Link settle synchronously and never
+ * emit the async pair — which is exactly why it is tested now: enabling a
+ * delayed method is a Dashboard change no code review would catch.
+ */
+describe("SCL-071 settlement gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
     state.expectedLivemode = false;
     dbMocks.insert.mockResolvedValue({ error: null });
     dbMocks.delete.mockResolvedValue({ error: null });
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
-      id: "sub_country_gate",
+      id: "sub_settle",
       object: "subscription",
       customer: "cus_test_1",
       status: "active",
@@ -152,7 +169,7 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
         object: "list",
         data: [
           {
-            id: "si_country_gate",
+            id: "si_settle",
             object: "subscription_item",
             current_period_start: 1_756_000_000,
             current_period_end: 1_758_600_000,
@@ -164,12 +181,13 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     });
   });
 
-  it("GRANTS when the billing country is on the Tier-1 list", async () => {
-    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+  it("GRANTS on completed when payment_status is `paid`", async () => {
     const process_ = await handler();
-    const { body, signature } = signedCheckout("US");
-
-    const outcome = await process_(body, signature, "req_eligible");
+    const { body, signature } = signedSession(
+      "checkout.session.completed",
+      "paid",
+    );
+    const outcome = await process_(body, signature, "req_paid");
 
     expect(outcome).toMatchObject({ ok: true, status: "processed" });
     expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
@@ -178,74 +196,91 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     );
   });
 
-  it("DENIES an ineligible country, and writes nothing", async () => {
-    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+  it("GRANTS on completed when payment_status is `no_payment_required`", async () => {
     const process_ = await handler();
-    const { body, signature } = signedCheckout("FR");
-
-    await expect(process_(body, signature, "req_ineligible")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=ineligible\)/,
+    const { body, signature } = signedSession(
+      "checkout.session.completed",
+      "no_payment_required",
     );
-    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
-  });
-
-  it("DENIES when the completed session carries no country — unknown denies after payment", async () => {
-    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
-    const process_ = await handler();
-    const { body, signature } = signedCheckout(undefined);
-
-    await expect(process_(body, signature, "req_nocountry")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=unknown\)/,
-    );
-    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
-  });
-
-  it("DENIES while the Tier-1 list is unseeded — the fail-closed default, and why the gate is INERT until the owner DML is applied", async () => {
-    // Owner ruling 2026-08-27: keep the fail-closed default; no
-    // empty-config-means-allow path. This is the state of production TODAY,
-    // because Owner_DML_tier_1_countries.sql has not been applied.
-    configMocks.getTier1Countries.mockResolvedValue(null);
-    const process_ = await handler();
-    const { body, signature } = signedCheckout("US");
-
-    await expect(process_(body, signature, "req_unseeded")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=unknown\)/,
-    );
-    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
-  });
-
-  it("uses `GB`, not `UK` — the encoding the owner ruled on", async () => {
-    // INV-03-08's prose says "UK"; Stripe sends ISO 3166-1 alpha-2, in which
-    // the code is `GB`. A list seeded with the prose spelling would deny every
-    // genuine UK customer while believing it admitted them. This test fails if
-    // anyone re-seeds `UK` by copying the invariant literally.
-    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
-    const process_ = await handler();
-    const { body, signature } = signedCheckout("GB");
-
-    const outcome = await process_(body, signature, "req_gb");
-    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    await process_(body, signature, "req_nopay");
     expect(accountMocks.upsertEntitlement).toHaveBeenCalled();
   });
 
-  it("normalises case and whitespace but performs NO UK-to-GB translation", async () => {
-    // The config holds correct codes; a normalisation layer that silently
-    // translated a wrong code is how the next wrong code would survive.
-    configMocks.getTier1Countries.mockResolvedValue(["us"]);
+  it("GRANTS NOTHING on completed when payment_status is `unpaid` — the money has not arrived", async () => {
+    // THE case. A delayed payment method completes the session first; granting
+    // here hands premium to an unsettled payment.
     const process_ = await handler();
-
-    const ok = await process_(
-      ...Object.values(signedCheckout(" us ")),
-      "req_case",
+    const { body, signature } = signedSession(
+      "checkout.session.completed",
+      "unpaid",
     );
-    expect(ok).toMatchObject({ ok: true, status: "processed" });
+    const outcome = await process_(body, signature, "req_unpaid");
 
-    vi.clearAllMocks();
-    configMocks.getTier1Countries.mockResolvedValue(["UK"]);
-    const { body, signature } = signedCheckout("GB");
-    await expect(process_(body, signature, "req_uk_seed")).rejects.toThrow(
-      /verdict=ineligible/,
+    // Acknowledged, not failed — there is nothing wrong, the money is simply
+    // not here yet. But nothing is written.
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  /**
+   * SECOND FORMULATION — Charter §5. The first version of this test asserted
+   * only "processed + premium written", and it PASSED when the
+   * `async_payment_succeeded` dispatch arm was deleted: the event then fell
+   * through to the generic subscription branch, whose schema happens to accept
+   * a session object, and that branch granted anyway. A plant that fails to
+   * fail is a finding, not evidence.
+   *
+   * What distinguishes the two paths is WHICH id is retrieved. The fulfilment
+   * path reads `session.subscription` (`sub_settle`); the fallthrough reads the
+   * event object's own `id` (`cs_settle`). Asserting the retrieved id makes the
+   * test able to tell them apart — and it fails when the arm is removed.
+   */
+  it("GRANTS on async_payment_succeeded — via the FULFILMENT path, not a fallthrough", async () => {
+    const process_ = await handler();
+    const { body, signature } = signedSession(
+      "checkout.session.async_payment_succeeded",
+      "paid",
     );
+    const outcome = await process_(body, signature, "req_async_ok");
+
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_ID,
+      expect.objectContaining({ tier: "premium" }),
+    );
+    // The discriminator: the SESSION's subscription id, never the session id.
+    expect(stripeApi.subscriptionsRetrieve).toHaveBeenCalledWith("sub_settle");
+    expect(stripeApi.subscriptionsRetrieve).not.toHaveBeenCalledWith(
+      "cs_settle",
+    );
+  });
+
+  it("applies the SAME country gate on async_payment_succeeded", async () => {
+    // The gates must not differ by which event carried the settlement — that
+    // asymmetry is how a second ungated path appears.
+    configMocks.getTier1Countries.mockResolvedValue(["CA"]);
+    const process_ = await handler();
+    const { body, signature } = signedSession(
+      "checkout.session.async_payment_succeeded",
+      "paid",
+    );
+
+    await expect(
+      process_(body, signature, "req_async_country"),
+    ).rejects.toThrow(/not Tier-1 eligible/);
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("GRANTS NOTHING on async_payment_failed, and revokes nothing", async () => {
+    const process_ = await handler();
+    const { body, signature } = signedSession(
+      "checkout.session.async_payment_failed",
+      "unpaid",
+    );
+    const outcome = await process_(body, signature, "req_async_fail");
+
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    // Neither a grant NOR a revocation: nothing was ever granted to revoke.
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 });

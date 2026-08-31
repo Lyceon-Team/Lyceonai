@@ -48,6 +48,7 @@ import {
   getProfileStripeCustomerId,
   setProfileStripeCustomerId,
   getAllGuardianStudentLinks,
+  resolveLinkedPairPremiumAccessForGuardian,
 } from "../lib/account";
 import {
   resolveGuardianPurchaseSubject,
@@ -56,12 +57,14 @@ import {
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
+  blocksCheckout,
 } from "../lib/stripe/country-eligibility";
 import { getTier1Countries } from "../lib/entitlement-runtime-config";
 import { billingCheckoutRequestSchema } from "../../packages/shared/src/billing-schema";
 
 import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
+import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { normalizeRuntimeRole } from "../lib/auth-role";
 
@@ -73,20 +76,6 @@ import { normalizeRuntimeRole } from "../lib/auth-role";
 const GUARDIAN_SUBSCRIPTION_SCAN_LIMIT = 10;
 
 const router = Router();
-
-/**
- * Guardian-paid billing is unbuilt, not broken-by-omission. One response, one
- * code, one place — so the reason is greppable when WS-GL lands.
- */
-const GUARDIAN_BLOCKED = {
-  error:
-    "Guardian-paid billing is not available yet. Student self-purchase is supported.",
-  code: "GUARDIAN_BILLING_UNAVAILABLE" as const,
-};
-
-function sendGuardianBlocked(res: Response, requestId?: string): Response {
-  return res.status(503).json({ ...GUARDIAN_BLOCKED, requestId });
-}
 
 /**
  * The ONLY field a caller supplies. `.strict()` rejects unknown keys, so a
@@ -225,54 +214,30 @@ router.post(
         const selectedStudentId = subject.studentProfileId;
 
         /**
-         * INV-03-08 country gate — the SECOND production call site.
+         * BRANCH FIRST, THEN GATE. The order is the fix.
          *
-         * The add-item path never produces a `checkout.session.completed`, so
-         * the gate wired there does not see it. Without this, buying for a
-         * second child would grant premium with no country decision — the
-         * identical fail-open money path Codex found for the first child.
-         * The payer's country is the authoritative signal (SCL-046), and by
-         * this point the Customer carries the address Checkout collected.
-         */
-        const customer = await stripe.customers.retrieve(customerId);
-        const payerCountry =
-          "deleted" in customer && customer.deleted
-            ? null
-            : (customer as Stripe.Customer).address?.country;
-        const eligibility = evaluateCountryEligibility(
-          payerCountry,
-          await getTier1Countries(),
-        );
-        if (deniesEntitlement(eligibility)) {
-          logger.warn(
-            "BILLING",
-            "checkout",
-            "Guardian purchase denied by INV-03-08 country gate",
-            {
-              requestId,
-              payerProfileId,
-              verdict: eligibility.verdict,
-            },
-          );
-          return res.status(403).json({
-            error: {
-              message:
-                "This account's billing country is not eligible for premium at launch.",
-              code: "COUNTRY_NOT_ELIGIBLE",
-            },
-            requestId,
-          });
-        }
-
-        /**
-         * Does this guardian already have a subscription? Stripe is the source
-         * of truth for billing, so this is asked of Stripe rather than inferred
-         * from our entitlement rows.
+         * @revised [2026-08-28 — Codex HIGH-3]
          *
-         * More than one active subscription is a shape this product never
-         * creates (that is the whole point of the item model), so it fails
-         * closed rather than picking one and adding an item to the wrong
-         * invoice.
+         * The gate previously ran BEFORE this lookup, treating `unknown` as a
+         * denial for every guardian. A guardian's FIRST purchase creates a
+         * Customer with no address (there is nowhere to have got one yet), so
+         * the country was always `unknown` and the first purchase was refused
+         * before Stripe could collect an address. The passing test hid it by
+         * handing the freshly created Customer a US address.
+         *
+         * The two branches need DIFFERENT verdicts, which is exactly the split
+         * `country-eligibility.ts` already documents and which I applied
+         * wrongly:
+         *
+         *   first purchase  -> `blocksCheckout`: only a KNOWN ineligible
+         *                      country refuses. `unknown` proceeds, because the
+         *                      address does not exist until the customer types
+         *                      it during Checkout — and the completed-session
+         *                      gate then enforces it before any entitlement.
+         *   add-item        -> `deniesEntitlement`: `unknown` REFUSES. The
+         *                      Customer already has an address by now, so not knowing
+         *                      one is a fault, and this path grants entitlement
+         *                      without a later Checkout gate to catch it.
          */
         const existing = await stripe.subscriptions.list({
           customer: customerId,
@@ -291,6 +256,42 @@ router.post(
               message:
                 "This account has more than one active subscription. Contact support.",
               code: "AMBIGUOUS_SUBSCRIPTION",
+            },
+            requestId,
+          });
+        }
+
+        const isAddItem = existing.data.length === 1;
+
+        const customer = await stripe.customers.retrieve(customerId);
+        const payerCountry =
+          "deleted" in customer && customer.deleted
+            ? null
+            : (customer as Stripe.Customer).address?.country;
+        const eligibility = evaluateCountryEligibility(
+          payerCountry,
+          await getTier1Countries(),
+        );
+        const refuses = isAddItem
+          ? deniesEntitlement(eligibility)
+          : blocksCheckout(eligibility);
+        if (refuses) {
+          logger.warn(
+            "BILLING",
+            "checkout",
+            "Guardian purchase refused by INV-03-08 country gate",
+            {
+              requestId,
+              payerProfileId,
+              verdict: eligibility.verdict,
+              path: isAddItem ? "add_item" : "first_purchase",
+            },
+          );
+          return res.status(403).json({
+            error: {
+              message:
+                "This account's billing country is not eligible for premium at launch.",
+              code: "COUNTRY_NOT_ELIGIBLE",
             },
             requestId,
           });
@@ -457,8 +458,51 @@ router.get(
         .status(403)
         .json({ error: "Admins cannot access billing status", requestId });
     }
+    /**
+     * @spec [Doc 01 V8 §31.1 "Guardians do NOT have their own entitlement";
+     *        §31.2 derivation] | @implemented [2026-08-28 — Codex MEDIUM]
+     *
+     * REPLACES a 503 GUARDIAN_BILLING_UNAVAILABLE. That response was correct
+     * only while guardian billing did not exist; with guardian checkout live it
+     * made the surface self-contradictory — a guardian could POST /checkout and
+     * buy, then be told by /status that billing was unavailable.
+     *
+     * A guardian has no entitlement ROW of their own (§31.1), so reading
+     * `getEntitlementForProfile(guardianId)` would report `free` forever and be
+     * wrong in the other direction. Their access DERIVES from a linked
+     * student, and `resolveLinkedPairPremiumAccessForGuardian` is the existing
+     * single owner of that derivation — consumed here rather than reimplemented.
+     */
     if (role === "guardian") {
-      return sendGuardianBlocked(res, requestId);
+      try {
+        const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
+        return res.json({
+          plan: access.hasPremiumAccess ? "premium" : "free",
+          stripeStatus: access.studentEntitlementStatus,
+          currentPeriodEnd: null,
+          stripeSubscriptionId: null,
+          effectiveAccess: access.hasPremiumAccess,
+          needsPaymentUpdate:
+            access.studentEntitlementStatus === "past_due" ||
+            access.studentEntitlementStatus === "unpaid",
+          isPaid: access.hasPremiumAccess,
+          // The guardian's access is DERIVED, and saying so is the difference
+          // between a correct answer and a coincidentally equal one.
+          source: "guardian_linked_student",
+          requestId,
+        });
+      } catch (err: unknown) {
+        logger.error(
+          "BILLING",
+          "status",
+          "Failed to derive guardian entitlement",
+          { requestId, profileId: userId, ...classifyError(err) },
+        );
+        return res.status(503).json({
+          error: "Unable to read subscription status",
+          requestId,
+        });
+      }
     }
 
     try {
@@ -526,10 +570,15 @@ router.post(
         .status(403)
         .json({ error: "Admins cannot access the billing portal", requestId });
     }
-    if (role === "guardian") {
-      return sendGuardianBlocked(res, requestId);
-    }
-
+    /**
+     * The guardian guard is DELETED, not replaced. A guardian who has purchased
+     * has a Stripe Customer of their own (they are the payer, SCL-043), and the
+     * per-student ruling's whole shape is ONE Customer, ONE subscription, ONE
+     * portal. Refusing them the portal would leave a paying customer unable to
+     * update a card or cancel. A guardian who has never purchased has no
+     * Customer and falls into the existing 409 below — the same answer a
+     * student in that state gets.
+     */
     try {
       const customerId = await getProfileStripeCustomerId(userId);
       if (!customerId) {

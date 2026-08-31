@@ -149,6 +149,9 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
+  // Customer. Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({ id: "cus_test_1", address: { country: "US" } })),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -164,6 +167,7 @@ vi.mock("../../server/lib/stripe/client", async () => {
         resume: stripeApi.subscriptionsResume,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -254,6 +258,7 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       // SCL-043 / Charter §6: the RETRIEVED subscription names the payer, and
       // the writer resolves that payer's active links server-side.
@@ -300,6 +305,7 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       metadata: { payer_profile_id: GUARDIAN },
       items: {
@@ -327,6 +333,7 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       // No payer_profile_id: nothing to resolve links against, so nothing can
       // be authorised. Refuse rather than fall back to trusting the metadata.
@@ -366,6 +373,7 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       // Guardian-paid, so the dispatcher takes the ITEM path even though no
       // item names a student — which is what puts the writer's zero-candidate
@@ -392,6 +400,7 @@ describe("a guardian subscription writes one entitlement row per student", () =>
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_guardian_1",
       object: "subscription",
+      customer: "cus_test_1",
       status: "active",
       // SCL-043 / Charter §6: the RETRIEVED subscription names the payer, and
       // the writer resolves that payer's active links server-side.

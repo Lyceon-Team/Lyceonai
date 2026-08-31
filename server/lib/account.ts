@@ -602,6 +602,45 @@ export async function getProfileStripeCustomerId(
 }
 
 /**
+ * @spec [Doc-01_V8 §4; genesis.sql:149,160; SCL-070 amendment | owner ruling 2026-08-31]
+ * @implemented [2026-08-31]
+ *
+ * plain English: the REVERSE of `getProfileStripeCustomerId` — given a Stripe
+ * Customer id, find the Lyceon profile that holds it. Needed because
+ * `customer.deleted` arrives carrying only the Customer id, and by then the
+ * Customer is gone from Stripe, so the payer cannot be re-read from the API.
+ * Our own row is the only remaining link.
+ *
+ * expected outcome: the payer's `profiles.id`, or null when no profile holds
+ * this Customer.
+ *
+ * trade-offs / edge cases:
+ *  - `profiles.stripe_customer_id` is UNIQUE (genesis:149) and indexed
+ *    (genesis:160), so at most one row can match; `maybeSingle` is exact here,
+ *    not a convenience.
+ *  - NULL is a FACT, not an error: a Customer we never recorded funds nothing
+ *    of ours, so the caller changes nothing. Absence and ambiguity are
+ *    different failures and must not share a branch.
+ */
+export async function getProfileIdByStripeCustomerId(
+  stripeCustomerId: string,
+): Promise<string | null> {
+  const { data, error } = await supabaseServer
+    .from("profiles")
+    .select("id")
+    .eq("stripe_customer_id", stripeCustomerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Failed to read profile by stripe_customer_id: ${error.message}`,
+    );
+  }
+
+  return data?.id ?? null;
+}
+
+/**
  * @spec [Doc-01_V8 §4; genesis.sql:149] @implemented 2026-08-09
  * plain English: write stripe_customer_id to the profiles table (genesis:149).
  * Called once during first checkout to persist the Stripe customer for a profile.

@@ -74,31 +74,26 @@ export const EVENT_DISPOSITION: Record<SubscribedEvent, EventDisposition> = {
   "refund.updated": HANDLED,
 
   // ---- Ignored, with the reason ------------------------------------------
-  "checkout.session.async_payment_succeeded": ignored(
-    "SCL-071: settlement for delayed payment methods. Inert today — card and " +
-      "Link never produce it — and subscribing it now is what makes enabling a " +
-      "delayed method a configuration change rather than a code change. The " +
-      "entitlement-on-settlement path is not yet built.",
-  ),
-  "checkout.session.async_payment_failed": ignored(
-    "SCL-071: non-settlement for delayed payment methods. Produces no " +
-      "entitlement by design, so ignoring it is the specified behaviour, not a " +
-      "gap. Subscribed so the surface is complete when a delayed method is " +
-      "enabled.",
-  ),
-  "customer.updated": ignored(
-    "SCL-046 country derivation is not built. The Portal permits " +
-      "customer-initiated billing-address changes, so this event is the egress " +
-      "trigger for a country the customer chose. Handling it without the " +
-      "eligibility gate would record a country nothing acts on.",
-  ),
-  "customer.deleted": ignored(
-    "SCL-070 amendment: a deleted Customer orphans an entitlement row that Doc " +
-      "05D's cascade cannot see, because that cascade operates on Lyceon rows " +
-      "and knows nothing about Stripe object lifetimes. Intended behaviour is " +
-      "to revoke the entitlements keyed to that Customer; the seam is flagged " +
-      "and the ruling is open.",
-  ),
+  // SCL-071 settlement, BUILT 2026-08-28 (Codex HIGH-1). `completed` fires when
+  // the SESSION completes, which for a delayed payment method is before the
+  // money arrives; this event carries the settlement and fulfils through the
+  // same `fulfilCheckoutSession` with the same gates and the same writer.
+  "checkout.session.async_payment_succeeded": HANDLED,
+  // SCL-071: produces NO entitlement by design, and is NOT a revocation of
+  // something never granted. Handled rather than ignored so the failure is
+  // visible to an operator.
+  "checkout.session.async_payment_failed": HANDLED,
+
+  // SCL-047 country egress, BUILT 2026-08-28 (Codex HIGH-2). The Portal lets a
+  // customer change their billing address, so this event is the only signal
+  // that an existing subscriber has left Tier-1. Handled per the owner ruling:
+  // `cancel_at_period_end`, access to period end, gate at renewal.
+  "customer.updated": HANDLED,
+  // OWNER RULING 2026-08-31, closing the SCL-070 amendment's open seam: the
+  // Customer IS the billing relationship. Without it there is no subscription,
+  // no payment method, and no way to bill or cancel, so leaving entitlement
+  // active grants free access with no recourse. Revokes.
+  "customer.deleted": HANDLED,
   "customer.discount.created": ignored(
     "SCL-072: a discount changes the CHARGED amount, which is the comparison " +
       "basis for the refund rule. Subscribed so the amount is observable; no " +

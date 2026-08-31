@@ -5,7 +5,7 @@
  * for the SAT Learning Copilot application.
  */
 
-import { digestId } from "./lib/redact";
+import { digestId, classifyError } from "./lib/redact";
 
 const REDACTION_STRING = "[REDACTED]";
 const DEFAULT_ERROR_MONITOR_TIMEOUT_MS = 1500;
@@ -189,6 +189,13 @@ const NON_PERSON_ID_KEY_EXACT = new Set([
   "idempotency_key",
 ]);
 
+/**
+ * Error prose fields. Dropped from a serialised Error, and `stack` is dropped
+ * ANYWHERE — a stack trace is never a thing a log field should carry, and its
+ * first line repeats the message this boundary exists to suppress.
+ */
+const ERROR_PROSE_KEYS = new Set(["message", "stack", "details", "hint"]);
+
 function isNonPersonIdKey(key: string): boolean {
   return NON_PERSON_ID_KEY_EXACT.has(key.toLowerCase());
 }
@@ -269,6 +276,7 @@ function sanitiseEntry(
   value: unknown,
   cloneValue: (v: unknown) => unknown,
 ): unknown {
+  if (key.toLowerCase() === "stack") return REDACTION_STRING;
   if (shouldRedactKey(key)) return REDACTION_STRING;
   // A named domain-entity key keeps its raw string, and is checked BEFORE the
   // identifier rules so an explicit decision beats a coincidental suffix.
@@ -293,14 +301,52 @@ export function redactSensitive<T>(input: T): T {
     if (seen.has(value)) return seen.get(value);
 
     if (value instanceof Error) {
-      const target: any = {
+      /**
+       * VENDOR PROSE NEVER LEAVES THIS BOUNDARY.
+       *
+       * @spec [Charter §6; Doc 01A §14] | @implemented [2026-08-28 — Codex HIGH-4]
+       *
+       * This branch previously copied `message` and `stack` verbatim, so every
+       * logger call inherited the LEAK rather than the safety. Two real
+       * examples, both printed from a run rather than imagined:
+       *
+       *   "Auth session missing!" + a full node_modules stack (Supabase)
+       *   'duplicate key value violates unique constraint
+       *    "entitlements_profile_id_unique" DETAIL: Key (profile_id)=(<uuid>)
+       *    already exists.'  (PostgreSQL)
+       *
+       * The second is why the identifier sanitiser was not enough: the uuid is
+       * INSIDE the prose, so no key rule and no value rule can reach it. Free
+       * text written by a third party cannot be made safe by inspection — it
+       * can only be replaced by a closed vocabulary.
+       *
+       * KEPT: `name` (a constructor identifier, chosen by the library author,
+       * not content) and the allow-listed class/code. That pair is what an
+       * operator actually needs — which error, of what kind — and neither can
+       * carry a row, a constraint body, or a path.
+       *
+       * THE HONEST LIMIT: this suppresses Error OBJECTS. A call site that
+       * pulls `err.message` out into a plain string field defeats it, because
+       * a boundary cannot tell vendor prose from an intended string. That is
+       * what `classifyError` in `server/lib/redact.ts` is for, and the
+       * entitlement and guardian paths already use it.
+       */
+      const { errorClass, errorCode } = classifyError(value);
+      const target: Record<string, unknown> = {
         name: value.name,
-        message: value.message,
-        stack: value.stack,
+        errorClass,
+        errorCode,
       };
       seen.set(value, target);
       for (const key of Object.keys(value)) {
-        target[key] = sanitiseEntry(key, (value as any)[key], clone);
+        // `details` and `hint` are PostgREST/Postgres prose fields carrying row
+        // and constraint content; `message`/`stack` are handled above.
+        if (ERROR_PROSE_KEYS.has(key.toLowerCase())) continue;
+        target[key] = sanitiseEntry(
+          key,
+          (value as unknown as Record<string, unknown>)[key],
+          clone,
+        );
       }
       return target;
     }
