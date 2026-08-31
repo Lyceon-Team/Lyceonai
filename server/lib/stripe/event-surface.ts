@@ -89,13 +89,11 @@ export const EVENT_DISPOSITION: Record<SubscribedEvent, EventDisposition> = {
   // that an existing subscriber has left Tier-1. Handled per the owner ruling:
   // `cancel_at_period_end`, access to period end, gate at renewal.
   "customer.updated": HANDLED,
-  "customer.deleted": ignored(
-    "SCL-070 amendment: a deleted Customer orphans an entitlement row that Doc " +
-      "05D's cascade cannot see, because that cascade operates on Lyceon rows " +
-      "and knows nothing about Stripe object lifetimes. Intended behaviour is " +
-      "to revoke the entitlements keyed to that Customer; the seam is flagged " +
-      "and the ruling is open.",
-  ),
+  // OWNER RULING 2026-08-31, closing the SCL-070 amendment's open seam: the
+  // Customer IS the billing relationship. Without it there is no subscription,
+  // no payment method, and no way to bill or cancel, so leaving entitlement
+  // active grants free access with no recourse. Revokes.
+  "customer.deleted": HANDLED,
   "customer.discount.created": ignored(
     "SCL-072: a discount changes the CHARGED amount, which is the comparison " +
       "basis for the refund rule. Subscribed so the amount is observable; no " +

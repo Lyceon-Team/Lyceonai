@@ -41,6 +41,9 @@ import {
   mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId,
   getAllGuardianStudentLinks,
+  getEntitlementForProfile,
+  getProfileIdByStripeCustomerId,
+  getProfileStripeCustomerId,
 } from "../account";
 import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
@@ -112,6 +115,15 @@ type RetrievedCharge = z.infer<typeof retrievedChargeSchema>;
 const customerUpdatedSchema = z.object({
   id: z.string().min(1),
   address: z.object({ country: z.string().nullish() }).nullish(),
+});
+
+/**
+ * @spec [Coding Standards §7.1] | @implemented [2026-08-31 — owner ruling]
+ * A deleted Customer arrives as a bare id. Everything else about it is already
+ * gone from Stripe, which is exactly why our own row has to carry the link.
+ */
+const customerDeletedSchema = z.object({
+  id: z.string().min(1),
 });
 
 /**
@@ -1458,7 +1470,136 @@ async function handleCustomerUpdated(event: Stripe.Event): Promise<void> {
   );
 }
 
+/**
+ * The billing relationship is gone, so the entitlement it funded goes with it.
+ *
+ * @spec [SCL-070 amendment; Doc-01_V8 §20–§24 | OWNER RULING 2026-08-31]
+ * @implemented [2026-08-31]
+ *
+ * plain English: deleting a Stripe Customer ends the billing relationship
+ * outright — no subscription, no payment method, no way to bill and no way to
+ * cancel. Leaving entitlement active after that grants free premium with no
+ * recourse, so `customer.deleted` REVOKES. This event was previously subscribed
+ * and ignored, with a comment that already recorded revoking as the intent; the
+ * owner ruled on 2026-08-31 and this is that ruling implemented.
+ *
+ * expected outcome: every entitlement this Customer funded drops to
+ * `tier=free, status=canceled`.
+ *
+ * WHY THE SUBJECTS ARE RESOLVED FROM OUR ROWS AND NOT FROM STRIPE. By the time
+ * this event arrives the Customer no longer exists, so `subscriptions.list`
+ * cannot be asked who it funded. `profiles.stripe_customer_id` (UNIQUE,
+ * genesis:149) is the only surviving link, and the entitlement rows carry the
+ * subscription ids. That is why this handler is all database and no SDK.
+ *
+ * trade-offs / edge cases:
+ *  - NOT country-gated. It is a REVOKE, and gating a revocation on a country we
+ *    may not know would leave premium in place — the exact failure the gate
+ *    exists to prevent.
+ *  - Guardian-paid: the guardian holds the Customer but owns no entitlement row
+ *    of their own, so the funded students are reached through their ACTIVE
+ *    guardian links. A linked student who holds their OWN
+ *    `stripe_customer_id` is skipped: `stripe_customer_id` is UNIQUE, so such a
+ *    student is a payer in their own right and this Customer does not fund them.
+ *    Revoking them would cancel access somebody else is still paying for.
+ *  - Absence is a fact, not an error. No profile holding this Customer, or no
+ *    entitlement rows behind it, means nothing of ours was funded by it: log and
+ *    change nothing.
+ *  - Idempotent. The write is `upsertEntitlement` to free, so a replay — or the
+ *    `customer.subscription.deleted` events Stripe may also emit when a Customer
+ *    is removed — converges on the same row rather than fighting it. Belt and
+ *    braces is deliberate: this handler does not depend on those events firing,
+ *    because that behaviour cannot be verified here without credentials.
+ *  - LOW VOLUME. Customers are normally deleted by an operator, so the
+ *    per-student sequential reads below are not a hot path.
+ */
+async function handleCustomerDeleted(event: Stripe.Event): Promise<void> {
+  const customer = parseOrFail(
+    customerDeletedSchema,
+    event.data.object,
+    event.type,
+  );
+
+  const payerProfileId = await getProfileIdByStripeCustomerId(customer.id);
+  if (!payerProfileId) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "Deleted Customer matches no profile; it funded no entitlement of ours. Nothing changed.",
+      { eventId: event.id, customerRef: digestId(customer.id) },
+    );
+    return;
+  }
+
+  // Which subscriptions did this Customer fund? Answered from our rows only.
+  const subscriptionIds = new Set<string>();
+
+  const payerEntitlement = await getEntitlementForProfile(payerProfileId);
+  if (payerEntitlement?.stripe_subscription_id) {
+    subscriptionIds.add(payerEntitlement.stripe_subscription_id);
+  }
+
+  const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
+  for (const link of activeLinks) {
+    const studentProfileId = link.student_profile_id;
+    if (!studentProfileId) continue;
+
+    // A student holding their own Customer pays for themselves; this Customer
+    // is not theirs, and revoking them would cut off access someone else funds.
+    const ownCustomerId = await getProfileStripeCustomerId(studentProfileId);
+    if (ownCustomerId) continue;
+
+    const studentEntitlement = await getEntitlementForProfile(studentProfileId);
+    if (studentEntitlement?.stripe_subscription_id) {
+      subscriptionIds.add(studentEntitlement.stripe_subscription_id);
+    }
+  }
+
+  // SCL-045: one item per student, so one subscription can fund many rows. Fan
+  // out through the subscription id so siblings are not left entitled.
+  const profileIds = new Set<string>();
+  if (payerEntitlement) profileIds.add(payerProfileId);
+  for (const subscriptionId of subscriptionIds) {
+    for (const row of await getEntitlementsBySubscriptionId(subscriptionId)) {
+      profileIds.add(row.profile_id);
+    }
+  }
+
+  if (profileIds.size === 0) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "Deleted Customer resolved to a profile but no entitlement rows reference it. Nothing changed.",
+      { eventId: event.id, payerProfileId },
+    );
+    return;
+  }
+
+  await revokeAllProfiles([...profileIds], {
+    tier: "free",
+    status: "canceled",
+  });
+
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    event.type,
+    "Stripe Customer deleted: the billing relationship is gone, so every entitlement it funded is revoked (owner ruling 2026-08-31).",
+    {
+      eventId: event.id,
+      customerRef: digestId(customer.id),
+      payerProfileId,
+      subscriptionsResolved: subscriptionIds.size,
+      profilesRevoked: profileIds.size,
+    },
+  );
+}
+
 async function dispatch(event: Stripe.Event): Promise<void> {
+  if (event.type === "customer.deleted") {
+    await handleCustomerDeleted(event);
+    return;
+  }
+
   if (event.type === "customer.updated") {
     await handleCustomerUpdated(event);
     return;

@@ -47,6 +47,16 @@ const accountMocks = vi.hoisted(() => ({
   })),
   getEntitlementsBySubscriptionId: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(async () => []),
+  // `customer.deleted` (owner ruling 2026-08-31) resolves its subjects from our
+  // own rows, because the Customer is gone from Stripe by the time the event
+  // arrives. The defaults here are the ABSENCE shape: a Customer we do not
+  // hold, which is a fact and not an error, so the handler reaches a definite
+  // disposition without writing. Its revocation behaviour is asserted in
+  // tests/ci/stripe-customer-deleted.contract.test.ts, not here — this suite
+  // asks only whether every subscribed event reaches a definite disposition.
+  getProfileIdByStripeCustomerId: vi.fn(async () => null),
+  getEntitlementForProfile: vi.fn(async () => null),
+  getProfileStripeCustomerId: vi.fn(async () => null),
 }));
 
 const stripeApi = vi.hoisted(() => ({
@@ -110,6 +120,9 @@ vi.mock("../../server/lib/account", () => ({
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
+  getProfileIdByStripeCustomerId: accountMocks.getProfileIdByStripeCustomerId,
+  getEntitlementForProfile: accountMocks.getEntitlementForProfile,
+  getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
 }));
 
 vi.mock("../../server/lib/entitlement-runtime-config", () => ({

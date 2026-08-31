@@ -2,31 +2,48 @@
  * THE MATRIX IS ENFORCED, NOT DOCUMENTED.
  *
  * @spec [Stripe Integration End-to-End Flow §0, §9] | @implemented [2026-08-28]
+ * @revised [2026-08-31 — owner fixes 1–3]
  *
- * plain English: proves every entitlement-changing path is enumerated, every
- * cell is filled, every GRANT carries the country gate, and every named call
- * site and gate test actually exists on disk.
+ * plain English: proves every subscribed event has a row, every cell is filled,
+ * every GRANT carries the country gate, every cited call site REALLY CONTAINS
+ * the call it claims, and the effect column agrees with the dispatcher by
+ * construction. Expected outcome: drift is a failing test, not a stale document.
  *
  * WHY. Three consecutive audits each found the NEXT ungated path — the country
  * evaluator with no caller, then six ungated granting paths, then settlement.
- * The rule was never missing; the enumeration was. A matrix that is only a
- * document drifts silently, so this test is what converts "an empty cell is a
- * defect" from a sentence into a failure.
+ * The rule was never missing; the enumeration was.
  *
- * It prints the matrix so a reviewer reads the real state rather than a claim.
+ * WHAT THE 2026-08-31 REVISION FIXED — three defects in this test itself:
+ *
+ *  1. THE CALL SITE WAS DECORATIVE. The old test asserted only `file:digits`
+ *     shape and that the FILE existed, so seven citations pointing at closing
+ *     parens passed, and `:999999` would have passed too. It now READS the
+ *     cited line and asserts it contains `callSiteExpect`. A citation nobody
+ *     checks is worse than no citation: it tells the next reader a claim was
+ *     verified when nothing verified it.
+ *
+ *  2. COMPLETENESS WALKED ONLY HANDLED EVENTS. An event that SHOULD change
+ *     entitlement but is ignored could therefore never be missing — which is
+ *     exactly how `customer.deleted` stayed invisible. It now walks all 19.
+ *
+ *  3. THE EFFECT WAS TYPED, so it could contradict `EVENT_DISPOSITION`
+ *     (`invoice.payment_succeeded` claimed `extend` while being ignored). It is
+ *     now derived, and this test asserts the derivation and its refusal.
  */
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  ALL_SUBSCRIBED_EVENTS,
+  CHECKOUT_ROUTE_TRIGGER,
   ENTITLEMENT_PATHS,
   GATES,
+  PRE_DISPATCH_GATES,
+  deriveEffect,
+  readCitedLine,
   type EntitlementPath,
 } from "../../server/lib/stripe/entitlement-paths";
-import {
-  SUBSCRIBED_EVENTS,
-  EVENT_DISPOSITION,
-} from "../../server/lib/stripe/event-surface";
+import { EVENT_DISPOSITION } from "../../server/lib/stripe/event-surface";
 
 const ROOT = resolve(__dirname, "../..");
 
@@ -36,6 +53,12 @@ const GRANTING: ReadonlyArray<EntitlementPath["effect"]> = [
   "extend",
   "restore",
 ];
+
+/** True for a row whose trigger is a webhook event the dispatcher ignores. */
+function isIgnoredEventRow(p: EntitlementPath): boolean {
+  if (p.trigger === CHECKOUT_ROUTE_TRIGGER) return false;
+  return EVENT_DISPOSITION[p.trigger].kind === "ignored";
+}
 
 describe("entitlement path matrix (§9)", () => {
   it("prints the matrix", () => {
@@ -62,8 +85,147 @@ describe("entitlement path matrix (§9)", () => {
       expect(p.idempotency, `${p.path}: idempotency`).toBeTruthy();
       expect(p.gateTest, `${p.path}: gateTest`).toBeTruthy();
       expect(p.callSite, `${p.path}: callSite`).toMatch(/^[\w./-]+:\d+$/);
+      expect(p.callSiteExpect, `${p.path}: callSiteExpect`).toBeTruthy();
     }
   });
+
+  // ---- FIX 1: the citation is read, not trusted --------------------------
+
+  /**
+   * The column that was decorative. Every row names a line AND the text that
+   * line must contain; this reads the file and checks it. Off-by-one, a moved
+   * function, a deleted call, or an invented line number all fail here.
+   *
+   * It prints what it actually read, so the reviewer sees the evidence rather
+   * than a green tick.
+   */
+  it("every cited call site line really contains the call it claims", () => {
+    const read = ENTITLEMENT_PATHS.map((p) => {
+      const cited = readCitedLine(ROOT, p.callSite);
+      return {
+        trigger: p.trigger,
+        callSite: p.callSite,
+        expected: p.callSiteExpect,
+        found: cited.text === null ? "<past end of file>" : cited.text.trim(),
+        ok: cited.text !== null && cited.text.includes(p.callSiteExpect),
+      };
+    });
+    // eslint-disable-next-line no-console
+    console.table(read);
+
+    const wrong = read
+      .filter((r) => !r.ok)
+      .map(
+        (r) =>
+          `${r.trigger}: ${r.callSite} does not contain ${JSON.stringify(
+            r.expected,
+          )} — line reads: ${JSON.stringify(r.found)}`,
+      );
+    expect(wrong, "citations that do not match the line they name").toEqual([]);
+  });
+
+  it("every gate test named by a row exists on disk", () => {
+    for (const p of ENTITLEMENT_PATHS) {
+      expect(
+        existsSync(resolve(ROOT, p.gateTest)),
+        `missing gate test: ${p.gateTest}`,
+      ).toBe(true);
+    }
+  });
+
+  // ---- FIX 2: completeness walks ALL subscribed events -------------------
+
+  /**
+   * The hiding place, closed structurally. Previously only HANDLED events
+   * needed a row, so an event that ought to change entitlement and did not
+   * could never be flagged — `customer.deleted` sat there for three audits.
+   * Enumerating all 19 means adding a subscription forces a row, and the row
+   * forces the author to state what the event does, including "nothing".
+   */
+  it("every subscribed event has exactly one matrix row — handled or ignored", () => {
+    const counts = new Map<string, number>();
+    for (const p of ENTITLEMENT_PATHS) {
+      counts.set(p.trigger, (counts.get(p.trigger) ?? 0) + 1);
+    }
+
+    const missing = ALL_SUBSCRIBED_EVENTS.filter((e) => !counts.has(e));
+    expect(missing, "subscribed events with no matrix row").toEqual([]);
+
+    const duplicated = ALL_SUBSCRIBED_EVENTS.filter(
+      (e) => (counts.get(e) ?? 0) > 1,
+    );
+    expect(duplicated, "subscribed events with more than one row").toEqual([]);
+
+    // Guards the guard: if the surface ever shrinks to nothing this test would
+    // pass vacuously.
+    expect(ALL_SUBSCRIBED_EVENTS.length).toBeGreaterThan(0);
+    expect(ENTITLEMENT_PATHS.length).toBe(ALL_SUBSCRIBED_EVENTS.length + 1);
+  });
+
+  it("every matrix trigger is a subscribed event or the named route", () => {
+    const subscribed = new Set<string>(ALL_SUBSCRIBED_EVENTS);
+    for (const p of ENTITLEMENT_PATHS) {
+      if (p.trigger === CHECKOUT_ROUTE_TRIGGER) continue;
+      expect(
+        subscribed.has(p.trigger),
+        `unsubscribed trigger: ${p.trigger}`,
+      ).toBe(true);
+    }
+  });
+
+  // ---- FIX 3: the effect is derived, and cannot contradict the dispatcher --
+
+  it("every row's effect equals the derivation from EVENT_DISPOSITION", () => {
+    for (const p of ENTITLEMENT_PATHS) {
+      expect(p.effect, `${p.path}: effect disagrees with its derivation`).toBe(
+        deriveEffect(p.trigger, p.direction),
+      );
+    }
+  });
+
+  /**
+   * An ignored event reaches no handler, so it cannot change entitlement and
+   * cannot have cleared any gate past the dispatcher. Both halves asserted:
+   * effect is `none`, and the gate list is EXACTLY the pre-dispatch three —
+   * which is what catches a row claiming gates that never execute.
+   */
+  it("ignored events derive effect none and claim only the pre-dispatch gates", () => {
+    const ignored = ENTITLEMENT_PATHS.filter(isIgnoredEventRow);
+    expect(ignored.length, "no ignored events in the matrix?").toBeGreaterThan(
+      0,
+    );
+    for (const p of ignored) {
+      expect(p.direction, `${p.path}: ignored row declares a direction`).toBe(
+        null,
+      );
+      expect(p.effect, `${p.path}: ignored row has a non-none effect`).toBe(
+        "none",
+      );
+      expect(
+        [...p.gates],
+        `${p.path}: ignored row claims gates it never reaches`,
+      ).toEqual([...PRE_DISPATCH_GATES]);
+    }
+  });
+
+  /**
+   * The refusal itself. Without this, `deriveEffect` could be quietly softened
+   * to coerce a contradiction to `none` and every other test here would still
+   * pass — the contradiction has to be loud, because it means the matrix and
+   * the dispatcher disagree about what the code does.
+   */
+  it("deriveEffect refuses a direction declared for an ignored event", () => {
+    const anIgnoredEvent = ALL_SUBSCRIBED_EVENTS.find(
+      (e) => EVENT_DISPOSITION[e].kind === "ignored",
+    );
+    expect(anIgnoredEvent, "expected at least one ignored event").toBeDefined();
+    expect(() => deriveEffect(anIgnoredEvent!, "grant")).toThrow(
+      /contradicts EVENT_DISPOSITION/,
+    );
+    expect(deriveEffect(anIgnoredEvent!, null)).toBe("none");
+  });
+
+  // ---- The gate asymmetry -------------------------------------------------
 
   /**
    * THE ONE THAT MATTERS. Codex found six granting paths with no country gate.
@@ -93,44 +255,5 @@ describe("entitlement path matrix (§9)", () => {
       gated.map((p) => p.path),
       "revoke paths wrongly country-gated",
     ).toEqual([]);
-  });
-
-  it("every named call site and gate test exists on disk", () => {
-    for (const p of ENTITLEMENT_PATHS) {
-      const file = p.callSite.split(":")[0]!;
-      expect(
-        existsSync(resolve(ROOT, file)),
-        `missing call site file: ${file}`,
-      ).toBe(true);
-      expect(
-        existsSync(resolve(ROOT, p.gateTest)),
-        `missing gate test: ${p.gateTest}`,
-      ).toBe(true);
-    }
-  });
-
-  /**
-   * The completeness claim, tied to the event surface rather than to my memory:
-   * every HANDLED webhook event must appear as a trigger. A newly handled event
-   * that changes entitlement cannot be added without a matrix row.
-   */
-  it("every HANDLED webhook event appears in the matrix", () => {
-    const triggers = new Set(ENTITLEMENT_PATHS.map((p) => p.trigger));
-    const handled = SUBSCRIBED_EVENTS.filter(
-      (e) => EVENT_DISPOSITION[e].kind === "handled",
-    );
-    const missing = handled.filter((e) => !triggers.has(e));
-    expect(missing, "handled events with no matrix row").toEqual([]);
-  });
-
-  it("every matrix trigger is a subscribed event or a named route", () => {
-    const subscribed = new Set<string>(SUBSCRIBED_EVENTS);
-    for (const p of ENTITLEMENT_PATHS) {
-      if (p.trigger.startsWith("POST ")) continue;
-      expect(
-        subscribed.has(p.trigger),
-        `unsubscribed trigger: ${p.trigger}`,
-      ).toBe(true);
-    }
   });
 });
