@@ -270,8 +270,15 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_disposition",
       object: "subscription",
-      customer: "cus_test_1",
       status: "active",
+      // ONE `customer`, and it is the one this suite actually used. There were
+      // two: a `customer: "cus_test_1"` above `status` that JavaScript silently
+      // discarded in favour of `"cus_test_disposition"` below it. The fixture
+      // therefore did not say what it appeared to say — a reader checking which
+      // Customer the country gate reads would have found the dead one first.
+      // Removing the dead key changes NO behaviour: the effective value was and
+      // is `cus_test_disposition`, which is what `chargesRetrieve` and
+      // `sub_test_disposition` are keyed to.
       customer: "cus_test_disposition",
       metadata: { student_profile_id: STUDENT_ID },
       items: {

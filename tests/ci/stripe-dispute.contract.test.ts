@@ -182,8 +182,12 @@ describe("Stripe disputes (SCL-073)", () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
       object: "subscription",
-      customer: "cus_test_1",
       status: "active",
+      // ONE `customer`. This fixture carried the key twice with the SAME value,
+      // so nothing was overwritten and nothing behaved differently — which is
+      // precisely why it survived: a duplicate that happens to agree with
+      // itself is invisible until the day it does not. Same defect class as
+      // tests/ci/stripe-webhook-disposition.contract.test.ts.
       customer: "cus_test_1",
       metadata: { student_profile_id: STUDENT_ID },
       items: {
