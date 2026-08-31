@@ -56,22 +56,49 @@ export type BillingCheckoutRequest = z.infer<
 /**
  * What the route returns, discriminated on what actually happened.
  *
+ * ZOD FIRST, TYPE INFERRED (Coding Standards §7.2, §17). This was previously a
+ * hand-written TypeScript union with no schema behind it — the exact shape §17
+ * names as a hard stop. Because it was only a type, nothing could parse against
+ * it, and nothing did: `BillingCheckoutOutcome` was exported and imported by no
+ * module on any branch. A contract nobody can enforce is a comment, and this one
+ * was already contradicted by its own consumer — see the note on
+ * `billingCheckoutOutcomeSchema` below.
+ *
  * The two outcomes are genuinely different events and must not be flattened
  * into one optional-url shape: a FIRST purchase needs the payer to complete
  * Stripe Checkout, whereas ADDING a student to an existing subscription takes
  * the payment method already on file and completes server-side with no
  * redirect. A client that received `{url: null}` and redirected anyway would
  * send the guardian to a blank page after a successful purchase.
+ *
+ * WHAT THE MISSING SCHEMA COST. `client/src/lib/billing-client.ts` read
+ * `payload.url` unconditionally and threw "Billing response did not include a
+ * redirect URL" whenever it was absent. On the `item_added` branch it is always
+ * absent — so a guardian who successfully added their second child was told the
+ * purchase had FAILED, after the card was charged, and a retry then hit
+ * `STUDENT_ALREADY_FUNDED`. Parsing the response against this schema is what
+ * makes that branch unignorable at the call site.
+ *
+ * Unknown keys are stripped rather than rejected: the route also sends
+ * `requestId`, which is diagnostic and deliberately not part of the outcome.
  */
-export type BillingCheckoutOutcome =
-  | {
-      readonly kind: "checkout_session";
-      /**
-       * Kept at the TOP LEVEL, not nested, because `client/src/lib/billing-client.ts`
-       * reads `payload.url` and the billing PORTAL route shares that same helper.
-       * Nesting it would break the portal for no gain.
-       */
-      readonly url: string;
-      readonly sessionId: string;
-    }
-  | { readonly kind: "item_added"; readonly subscriptionItemId: string };
+export const billingCheckoutOutcomeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("checkout_session"),
+    /**
+     * Kept at the TOP LEVEL, not nested, because `client/src/lib/billing-client.ts`
+     * reads `payload.url` and the billing PORTAL route shares that same helper.
+     * Nesting it would break the portal for no gain.
+     */
+    url: z.string().url(),
+    sessionId: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("item_added"),
+    subscriptionItemId: z.string().min(1),
+  }),
+]);
+
+export type BillingCheckoutOutcome = z.infer<
+  typeof billingCheckoutOutcomeSchema
+>;
