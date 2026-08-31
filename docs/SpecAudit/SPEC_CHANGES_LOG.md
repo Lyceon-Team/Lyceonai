@@ -63,6 +63,65 @@ Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit 
 Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
 Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
 
+SCL-DRAFT-A-tier1-iso-literal | 2026-08-31 | Doc 01 Appendix A.4 seeds `tier_1_countries` with `UK`, which is not an assigned ISO 3166-1 alpha-2 code | PROPOSED
+
+Change: Doc 01 Appendix A.4's launch value for `tier_1_countries` contains a country code that does
+  not exist in the standard the same document mandates. The gate that reads this config went live in
+  production today, so the literal is no longer a documentation defect.
+WAS (spec, current): Doc 01 Appendix A.4 (heading verified: "## **A.4 `entitlement_runtime_config`**")
+  seeds
+      | `tier_1_countries` | `["US","CA","UK","AU","NZ","IE","SG"]` | — | — | Product | Countries where LISA/premium is available |
+IS (proposed): `["US","CA","GB","AU","NZ","IE","SG"]` — one element changes, `UK` to `GB`.
+Why: `UK` is not an assigned ISO 3166-1 alpha-2 code. `GB` is the alpha-2 code for the United Kingdom.
+  Three independent confirmations, each read rather than asserted:
+  1. THE SPEC CONTRADICTS ITSELF, and A.4 is the side in error. The same document, at
+     "## **§4 Profile schema (target-state)**" (heading verified, line 129), declares at line 147:
+         country\_code TEXT, \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+     A.4's own list is the comparison basis for that column, so a value outside the declared encoding
+     cannot ever match it. §4 states the rule; A.4 supplies a literal that violates it. The rule wins.
+  2. THE PINNED SDK ENUMERATES ALPHA-2, AND `UK` IS NOT IN IT. `stripe@20.4.1`,
+     `node_modules/stripe/types/Checkout/Sessions.d.ts`, the
+     `Checkout.Sessions.ShippingAddressCollection.AllowedCountry` union declared at line 2367:
+         2440:            | 'GB'
+     Six of our seven codes appear verbatim in that union (US, CA, GB, AU, NZ, IE, SG). `'UK'` appears
+     ZERO times in the file.
+     NOTE ON THE REQUESTED CITATION: the brief asked this entry to cite the SDK's `card_country`
+     declaration. That identifier does not exist anywhere in the pinned SDK — `grep -rn "card_country"
+     node_modules/stripe/` returns nothing. Citing it would have reproduced exactly the defect
+     SCL-DRAFT-A-citation-verification was written to stop, in the entry written to settle it. The
+     `AllowedCountry` union above is the substituted citation and is strictly stronger: it is an
+     enumeration, so it settles `GB` versus `UK` by presence and absence rather than by prose.
+  3. THE FIELD THE GATE ACTUALLY READS is `Customer.address.country`, at
+     `server/routes/billing-routes.ts:270`:
+         : (customer as Stripe.Customer).address?.country;
+     Stripe populates that field with alpha-2, per the same declaration.
+Consequence, and why this is not cosmetic: the country gate is LIVE in production as of 2026-08-31.
+  Applying A.4's literal would refuse every British payer while the config reported itself correctly
+  configured — seven codes present, no parse error, no alert. A silent market shutdown with no error
+  signal is the worst shape a defect of this kind can take, because nothing in the system distinguishes
+  it from a working gate that no British customer happened to hit.
+Owner action: amend the literal in Doc 01 Appendix A.4 to `["US","CA","GB","AU","NZ","IE","SG"]`.
+  That is the whole change. Specifically NOT proposed:
+  - No code change. The gate is correct; it compares what Stripe returns against what config holds.
+  - No normalisation or translation layer. A `UK` -> `GB` mapping in code would let this wrong value
+    keep working, which is precisely how the NEXT wrong code survives undetected. The config holds
+    correct codes or the gate fails loudly; there is no third option worth building.
+Production state: unchanged and correct. Verified seeded as `["US","CA","GB","AU","NZ","IE","SG"]`,
+  seven codes, 2026-08-31 06:41Z. Production is the side that was already right.
+ENCODING RULE, recorded once so this does not recur a fourth time:
+  - The spec names countries in PROSE ("the United Kingdom").
+  - The config stores ISO 3166-1 ALPHA-2 (`GB`).
+  - The mapping between them is the standard itself, not a project convention, and not a table we own.
+  A prose name and a code are different things; writing the prose abbreviation into a code field is the
+  error, and it is the same error every time it appears.
+History: this is the THIRD surfacing. It was raised, worked around, and lost twice before being written
+  down. That is the reason for this entry: the recurrence is the defect, not the literal.
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` Appendix A.4
+  (the literal) and §4 line 147 (the contradicted rule).
+  Reader: `server/lib/entitlement-runtime-config.ts:43`. Gate: `server/lib/stripe/country-eligibility.ts`.
+  Consumer: `server/routes/billing-routes.ts:270-277`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
 SCL-073 | 2026-08-27 | Doc 01A §52 knows a chargeback as an ABUSE SIGNAL; no section gives it an entitlement consequence | PROPOSED
 
 Change: A dispute does NOT cancel a Stripe subscription. Current behaviour is therefore: access

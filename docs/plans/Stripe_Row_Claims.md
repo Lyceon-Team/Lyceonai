@@ -4,7 +4,18 @@
 this file. Companion to `docs/plans/Stripe_Validation_Matrix.md`, which defines the
 rows. Base for all three branches: `origin/stripe` @ `4335fb3`.
 
-**Status: PROPOSED — awaiting the owner's ruling. Nothing dispatched.**
+**Status: RULED 2026-08-31. B and C dispatched. D HELD.**
+
+**Why D is held.** D's deletion manifest and the `@spec` re-annotation sweep are the
+same surface, so dispatching D before the annotation ruling lands guarantees rework.
+Owner ruling: merged code carries `@spec [Stripe Integration End-to-End Flow §…]`
+pointing at a **plan** document, now committed to `docs/plans/` on `stripe`. The
+annotations should instead cite Doc 01 sections — Doc 01 owns identity, access and
+billing, i.e. the rules — and reference the flow document as a plan, which describes
+paths. That truthfulness sweep is D's scope. **No annotation is retargeted now.**
+
+The plan documents stay in `docs/plans/`. `docs/Spec/` is owner-only and neither
+document has been through the draft-review-publish cycle; they are plans, not spec.
 
 ## The one rule this file exists to enforce
 
@@ -45,7 +56,8 @@ single rule is what prevents four evaluators.
 | Fixture faithfulness (subscription without `customer`; equal charged/list amounts) | **D** |
 | PG-seeded config over a mocked reader; PGHOST wiring in the same commit | **D** |
 | Duplicate `customer` key, `stripe-webhook-disposition.contract.test.ts:273-275` | **B** (it is B's fixture, in B's suite) |
-| `entitlement_runtime_config` keys — re-derive, report readers, DML only for read keys | **B** (first in merge order) |
+| `entitlement_runtime_config` keys — re-derive, report readers, DML only for read keys | **B** — reassigned from D by owner ruling; it is D's one item that does not overlap the held surface. Doc 01 Appendix A.4 (**not** Doc 01A). Six unread keys is how this vertical started: do not seed dead config. |
+| `@spec` annotation truthfulness sweep across the Stripe surface | **D — HELD**, see status above |
 
 ## Contested surfaces, arbitrated in advance
 
