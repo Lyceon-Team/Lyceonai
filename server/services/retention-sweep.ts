@@ -199,12 +199,17 @@ export async function sweep7d(
         .eq("student_id", sid);
 
       if (memError) {
-        logger.warn(
+        logger.error(
           "RETENTION_SWEEP",
           "memory_summary_delete_failed",
           "Failed to delete memory summaries for student with no remaining conversations",
           { studentId: sid, dbError: memError.message },
         );
+        return {
+          ok: false,
+          reason: `memory_summary_delete_failed: student=${sid}, conversations_purged=${deletedCount}, error=${memError.message}`,
+          tier,
+        };
       }
     }
   }

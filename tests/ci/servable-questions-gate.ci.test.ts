@@ -44,8 +44,6 @@ const ALLOWLIST: Record<string, string> = {
   "apps/api/src/routes/healthz.ts": "INFRA: health check",
   "apps/api/src/db/client.ts": "INFRA: connectivity probe",
   "apps/api/src/lib/supabase-server.ts": "INFRA: server setup",
-  "apps/api/src/lib/rag-service.ts":
-    "HISTORICAL: loadQuestionByCanonicalId only — student's current-session item (retrieval uses servable_questions)",
   "apps/api/src/services/fullLengthExam.ts":
     "HISTORICAL: form canonical ID resolution, deferred materialization snapshots",
   "server/services/tutor-context.ts":
