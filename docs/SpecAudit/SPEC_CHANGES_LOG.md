@@ -1,5 +1,36 @@
 # Lyceon Spec-Changes Log
 
+## WHAT IS AN SCL — HARD TEST
+
+Owner ruling 2026-08-31. Apply this BEFORE writing an entry.
+
+**An SCL amends the spec.** It records what a document must say and does not —
+whether the spec is WRONG or SILENT. Silence is a legitimate SCL when the gap
+must become spec text.
+
+**An SCL is NOT** a decision governing only this build, a defect record, a
+test-quality note, or direction for an agent or a prompt.
+
+The test is the OUTCOME:
+
+  - Outcome is "the owner amends a document"  -> SCL
+  - Outcome is "we do X in this repo"         -> plan entry
+
+Worked examples, from the 2026-08-31 audit:
+
+  - SCL-070 (spec states seven events, the surface is nineteen) -> SCL. Wrong.
+  - SCL-072 (what "full refund" is measured against) -> SCL. The spec is silent,
+    but the comparison basis is a permanent rule that belongs in the document.
+  - SCL-073 (what a chargeback does to entitlement) -> SCL. Silent, and the
+    consequence must become spec text.
+  - An error class thrown from thirteen sites with one message -> NOT an SCL.
+    Nobody amends a document over it. Plan entry.
+  - "The citation column must be verified by the test" -> NOT an SCL. A
+    test-quality defect. Plan entry.
+
+A prior framing — "spec-silent means plan entry" — was wrong and is superseded.
+Entries written under it were re-audited on 2026-08-31.
+
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
 
 Never take an SCL number from a prompt, plan, brief, or any instruction —
@@ -63,7 +94,190 @@ Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit 
 Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
 Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
 
+SCL-DRAFT-B-resume-billing-anchor | 2026-08-31 | Doc 01 does not state whether a won dispute preserves the subscription's billing cycle; it must | PROPOSED
+
+Change: REINSTATED as an SCL 2026-08-31. This entry was briefly withdrawn to a plan entry
+  under the framing "the spec is silent, so it is not an SCL". That framing was wrong.
+  Whether a customer who WINS a dispute keeps the billing cycle they paid for is a permanent
+  rule about what we owe a payer, not a decision local to this build, so it belongs in Doc 01.
+WAS: Doc 01 says nothing about the billing cycle on dispute resume. Because the spec is silent,
+  the behaviour is currently decided by an SDK default nobody chose.
+  `server/lib/stripe/webhook-handler.ts:988` resumes a paused subscription after a dispute is
+  won with no params:
+      await getStripeClient().subscriptions.resume(target.subscriptionId);
+  Per the pinned SDK, `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`,
+  `billing_cycle_anchor` defaults to `now`. So winning a dispute silently RESETS the renewal
+  date: the period restarts from the resume instant rather than continuing the cycle the
+  customer paid for. Nobody decided that; it is what happens when the argument is omitted.
+IS (PROPOSED): Doc 01 states the rule explicitly, and the code passes the argument explicitly
+  rather than relying on a vendor default. The two candidates, with what each costs:
+    - `billing_cycle_anchor: 'now'` — today's behaviour, by default rather than by choice. The
+      renewal date moves. A customer who won a dispute has their billing date shifted with no
+      notice, which is a change to what they bought.
+    - `billing_cycle_anchor: 'unchanged'` — the cycle they paid for is preserved, but Stripe
+      generates prorations for the paused interval, which appears on the next invoice.
+  Neither is free. This entry does not pick one — that is the owner's ruling — but it does
+  rule out the third option, which is leaving it implicit.
+Owner action: decide the rule, amend Doc 01 to state it, and only then change the call site.
+  `subscriptions.resume` is UNCHANGED until that ruling.
+Artifact: `server/lib/stripe/webhook-handler.ts:988`. SDK evidence:
+  `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
+SCL-DRAFT-A-declared-country | 2026-08-31 | Doc 01 §4 specifies ONE authoritative `country_code`; collecting a declared country at signup proposes TWO columns with different authorities | PROPOSED
+
+DEFERRED 2026-08-31 — OWNER RULING. This is NOT the Stripe vertical's work and is not
+  blocked on it. It goes to the signup team, and the entry stays drafted and unallocated for
+  whoever picks it up.
+  WHY BILLING DOES NOT WAIT FOR IT: the INV-03-08 gate derives its country from the STRIPE
+  BILLING ADDRESS at `checkout.session.completed`, which exists whatever signup collects. A
+  declared country would be a second signal and a pre-purchase courtesy — never the control —
+  so no billing path is blocked by its absence.
+  THE ONE LINE THE HANDOFF MUST CARRY: the ruling must state WHICH COLUMN EACH READER
+  CONSUMES, not only the eligibility gate. There is already a non-billing reader of this
+  column (`server/routes/tutor-runtime.ts:904-908`), and a split done for the gate alone
+  would leave it reading the wrong one.
+
+Change: The owner directs that account creation collect a country from a dropdown. Doing so cannot
+  be done under §4 as written, because §4 does not merely omit a declared country — it declares the
+  single column's authority in a way a second writer would contradict. That is the spec error this
+  entry records. NOTHING IS BUILT: this is the schema ruling the work waits on.
+WAS: Doc 01 (heading verified: "## **§4 Profile schema (target-state)**", line 129) declares at
+  line 147:
+      country\_code TEXT,  \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+  Two claims in one comment: the encoding, and that the value comes FROM BILLING ADDRESS and is
+  AUTHORITATIVE. A signup dropdown writing this same column would give one field two writers with
+  different authorities — a falsifiable self-declaration and a payment-verified fact — which is the
+  parallel-paths-built-differently pattern this corpus already forbids elsewhere.
+IS (PROPOSED, not built): split the field by authority rather than overloading one column.
+      declared_country_code   -- ISO 3166-1 alpha-2, self-declared at signup. NOT authoritative.
+      billing_country_code    -- ISO 3166-1 alpha-2, from the Stripe billing address. Authoritative.
+  The INV-03-08 gate reads billing when present and declared when not, and RECORDS a
+  declared-vs-billing mismatch rather than silently resolving it. Doc 01A §52's incident taxonomy is
+  where that mismatch belongs as an abuse signal; this entry does not itself add an incident type.
+THE FAIL-OPEN RISK, stated plainly because it is the whole reason for the split: a declared country
+  used AS the gate would admit anyone willing to select a different item from a dropdown. INV-03-08
+  would then be enforced against a value the person being gated chooses. That is not a weaker
+  control, it is no control — and it would fail silently, because a falsified declaration is
+  indistinguishable from a true one at the point of reading. Billing address stays authoritative for
+  exactly this reason: it is asserted by the payment network, not by the user. A declared country is
+  a SECOND SIGNAL and never the control.
+  Corollary the implementation must honour: `declared_country_code` present and `billing_country_code`
+  absent is NOT eligibility. It is a pre-purchase courtesy signal — enough to tell someone at signup
+  that we are not available where they say they are, never enough to grant.
+What it buys, and why it is worth a schema change:
+  1. Country data before any purchase. `profiles.country_code` is null on all 115 rows today (owner-
+     verified), so free-tier students have no country at all.
+  2. An ineligible user learns at signup rather than after building a study plan.
+  3. A declared-vs-billing mismatch becomes an abuse signal against Doc 01A §52's taxonomy.
+SECOND CONSUMER, found while drafting and material to the ruling: the country column is already read
+  outside billing, at `server/routes/tutor-runtime.ts:904-908`:
+      .select("country_code")
+      getCrisisResponse((profileRow?.country_code as string | null) ?? "US")
+  That selects CRISIS-RESPONSE content for a student in distress, and because the column is null on
+  every row today, every student currently receives US crisis resources regardless of where they
+  are. This changes the shape of the decision in two ways the owner should weigh:
+  - It is an argument FOR collecting a declared country early, independent of billing: for crisis
+    routing, a self-declared country is not merely acceptable, it is the RIGHT signal, because a
+    student in distress has usually not purchased anything and nobody falsifies their country to get
+    worse crisis resources. The incentive that makes declaration untrustworthy for a paywall does not
+    exist here.
+  - It means "which column does this consumer read" must be answered for every reader, not just the
+    gate. A split done carelessly would leave this call site reading the wrong one, and its failure
+    mode is silent and safety-relevant, not financial.
+  AUDITED FURTHER, 2026-08-31, and it is worse than "reads the wrong column": the caller's
+  `?? "US"` is only half of it. `getCrisisResponse` falls back to `DEFAULT_CRISIS_RESPONSE`
+  (`server/services/tutor-crisis.ts:85`), which is BYTE-IDENTICAL to the `US` entry (`:75`) —
+  verified by string comparison. So there is no generic unknown-country response in the system
+  at all, and deleting the `?? "US"` would change nothing. Every student outside the eight
+  listed codes receives a US-only number by the same fallback, even once countries ARE being
+  collected. Written up in full, unrouted and urgent, at
+  `docs/plans/FINDING_crisis_resources_default_to_US.md`. That finding is NOT this SCL's to
+  fix and is not a billing defect.
+  Two consequences for THIS ruling, and they are binding on it:
+  1. The ruling must state WHICH COLUMN EACH READER CONSUMES — not only the eligibility gate.
+     This reader fails silently and it is a safety surface, not a financial one, so "the gate
+     reads billing, everything else figures itself out" is not an answer.
+  2. The incentive argument is asymmetric and should be recorded as such: NOBODY FALSIFIES
+     THEIR COUNTRY TO RECEIVE WORSE CRISIS RESOURCES. The property that makes a declared
+     country untrustworthy for a paywall simply does not exist on the crisis path, so a
+     self-declared country is not merely tolerable there — it is the RIGHT signal. A schema
+     that treats "declared" as second-class everywhere would get this reader wrong.
+Owner action, and the order it has to happen in:
+  1. Rule on the schema shape: two columns as proposed, or another shape.
+  2. Rule on which column each existing reader consumes — the INV-03-08 gate, and the crisis-response
+     path above.
+  3. Rule on where the dropdown lives in the signup flow.
+  Only then is there code to write. No DDL is queued by this entry and none should be until (1).
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` §4 line 147
+  (the contradicted declaration). Current readers: `server/lib/stripe/country-eligibility.ts`,
+  `server/routes/tutor-runtime.ts:904-908`. Writers today: none.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
+SCL-DRAFT-A-tier1-iso-literal | 2026-08-31 | Doc 01 Appendix A.4 seeds `tier_1_countries` with `UK`, which is not an assigned ISO 3166-1 alpha-2 code | PROPOSED
+
+Change: Doc 01 Appendix A.4's launch value for `tier_1_countries` contains a country code that does
+  not exist in the standard the same document mandates. The gate that reads this config went live in
+  production today, so the literal is no longer a documentation defect.
+WAS (spec, current): Doc 01 Appendix A.4 (heading verified: "## **A.4 `entitlement_runtime_config`**")
+  seeds
+      | `tier_1_countries` | `["US","CA","UK","AU","NZ","IE","SG"]` | — | — | Product | Countries where LISA/premium is available |
+IS (proposed): `["US","CA","GB","AU","NZ","IE","SG"]` — one element changes, `UK` to `GB`.
+Why: `UK` is not an assigned ISO 3166-1 alpha-2 code. `GB` is the alpha-2 code for the United Kingdom.
+  Three independent confirmations, each read rather than asserted:
+  1. THE SPEC CONTRADICTS ITSELF, and A.4 is the side in error. The same document, at
+     "## **§4 Profile schema (target-state)**" (heading verified, line 129), declares at line 147:
+         country\_code TEXT, \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+     A.4's own list is the comparison basis for that column, so a value outside the declared encoding
+     cannot ever match it. §4 states the rule; A.4 supplies a literal that violates it. The rule wins.
+  2. THE PINNED SDK ENUMERATES ALPHA-2, AND `UK` IS NOT IN IT. `stripe@20.4.1`,
+     `node_modules/stripe/types/Checkout/Sessions.d.ts`, the
+     `Checkout.Sessions.ShippingAddressCollection.AllowedCountry` union declared at line 2367:
+         2440:            | 'GB'
+     Six of our seven codes appear verbatim in that union (US, CA, GB, AU, NZ, IE, SG). `'UK'` appears
+     ZERO times in the file.
+     NOTE ON THE REQUESTED CITATION: the brief asked this entry to cite the SDK's `card_country`
+     declaration. That identifier does not exist anywhere in the pinned SDK — `grep -rn "card_country"
+     node_modules/stripe/` returns nothing. Citing it would have reproduced exactly the defect
+     SCL-DRAFT-A-citation-verification was written to stop, in the entry written to settle it. The
+     `AllowedCountry` union above is the substituted citation and is strictly stronger: it is an
+     enumeration, so it settles `GB` versus `UK` by presence and absence rather than by prose.
+  3. THE FIELD THE GATE ACTUALLY READS is `Customer.address.country`, at
+     `server/routes/billing-routes.ts:270`:
+         : (customer as Stripe.Customer).address?.country;
+     Stripe populates that field with alpha-2, per the same declaration.
+Consequence, and why this is not cosmetic: the country gate is LIVE in production as of 2026-08-31.
+  Applying A.4's literal would refuse every British payer while the config reported itself correctly
+  configured — seven codes present, no parse error, no alert. A silent market shutdown with no error
+  signal is the worst shape a defect of this kind can take, because nothing in the system distinguishes
+  it from a working gate that no British customer happened to hit.
+Owner action: amend the literal in Doc 01 Appendix A.4 to `["US","CA","GB","AU","NZ","IE","SG"]`.
+  That is the whole change. Specifically NOT proposed:
+  - No code change. The gate is correct; it compares what Stripe returns against what config holds.
+  - No normalisation or translation layer. A `UK` -> `GB` mapping in code would let this wrong value
+    keep working, which is precisely how the NEXT wrong code survives undetected. The config holds
+    correct codes or the gate fails loudly; there is no third option worth building.
+Production state: unchanged and correct. Verified seeded as `["US","CA","GB","AU","NZ","IE","SG"]`,
+  seven codes, 2026-08-31 06:41Z. Production is the side that was already right.
+ENCODING RULE, recorded once so this does not recur a fourth time:
+  - The spec names countries in PROSE ("the United Kingdom").
+  - The config stores ISO 3166-1 ALPHA-2 (`GB`).
+  - The mapping between them is the standard itself, not a project convention, and not a table we own.
+  A prose name and a code are different things; writing the prose abbreviation into a code field is the
+  error, and it is the same error every time it appears.
+History: this is the THIRD surfacing. It was raised, worked around, and lost twice before being written
+  down. That is the reason for this entry: the recurrence is the defect, not the literal.
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` Appendix A.4
+  (the literal) and §4 line 147 (the contradicted rule).
+  Reader: `server/lib/entitlement-runtime-config.ts:43`. Gate: `server/lib/stripe/country-eligibility.ts`.
+  Consumer: `server/routes/billing-routes.ts:270-277`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
 SCL-073 | 2026-08-27 | Doc 01A §52 knows a chargeback as an ABUSE SIGNAL; no section gives it an entitlement consequence | PROPOSED
+
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. What a chargeback does to entitlement is a PERMANENT RULE. Doc 01A §52 already models the
+  incident; the entitlement consequence must become spec text.
 
 Change: A dispute does NOT cancel a Stripe subscription. Current behaviour is therefore: access
   retained, dispute fee paid, no entitlement change. This entry proposes the handling and names the
@@ -135,6 +349,11 @@ Artifact (updated 2026-08-27 after the owner ruled this IN SCOPE for launch):
 ---
 
 SCL-072 | 2026-08-27 | Doc 01 V8 §24 / SCL-048 — refund full-vs-partial compares the CHARGED amount, never list price | PROPOSED
+
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. The comparison basis for a full refund is a PERMANENT RULE that belongs in the
+  document, not a decision local to this build. Silence is a legitimate SCL when the gap must
+  become spec text.
 
 Change: Coupons and promotion codes mean the amount actually charged can differ from the price's
   list amount. SCL-048 rules "full refund revokes, partial does not". If that comparison is made

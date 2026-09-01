@@ -186,6 +186,19 @@ specified anywhere:
 
 Surfaced per the ruling rather than assumed. No refund behaviour is implemented.
 
+## 7c. Dispute resume and the billing cycle — MOVED TO THE REGISTER
+
+Raised by Agent B, 2026-08-31. Briefly recorded here as a plan entry under the framing
+"the spec is silent, so it is not an SCL". **That framing was superseded the same day.**
+Whether a won dispute preserves the billing cycle is a permanent rule about what we owe
+a payer, so it belongs in Doc 01, not in this plan.
+
+Reinstated as `SCL-DRAFT-B-resume-billing-anchor` in
+`docs/SpecAudit/SPEC_CHANGES_LOG.md`, with both options and their costs. Read it there;
+this section is a pointer so the two do not drift.
+
+`server/lib/stripe/webhook-handler.ts:988` is UNCHANGED pending the owner's ruling.
+
 ## 8. Open questions for the owner
 
 1. **Sequencing (§2).** 5.1 before 4.8, or 4.8 after Phase 4?

@@ -257,8 +257,22 @@ event cannot change entitlement. Either handle the event or declare no direction
 ```
 
 *Provisional SCL ids, for the owner to number at merge:*
-`SCL-DRAFT-A-citation-verification`, `SCL-DRAFT-A-matrix-completeness`,
-`SCL-DRAFT-A-effect-derivation`, `SCL-DRAFT-A-customer-deleted-revoke`.
+**WITHDRAWN as SCL drafts, 2026-08-31 audit.** They were provisionally labelled
+`SCL-DRAFT-A-citation-verification`, `-matrix-completeness`, `-effect-derivation` and
+`-customer-deleted-revoke`. None survives the owner's hard test (`SPEC_CHANGES_LOG.md`
+header): an SCL amends the spec, and the outcome of each of these is "we do X in this
+repo", not "the owner amends a document".
+
+- The first three are **test-quality defects**, fixed in this workstream: the citation
+  column is now read rather than asserted, completeness walks all 19 events, and the
+  effect is derived from `EVENT_DISPOSITION`. They are recorded by the fixes and their
+  plants, above — not by a register entry.
+- `customer.deleted` revoking is a **build decision** the owner ruled on 2026-08-31 and
+  which is implemented. Row 8 records it. Should it need to become spec text — Doc 01
+  stating what a deleted Customer does to entitlement — that is a NEW entry written
+  against the hard test, not a relabelling of this one.
+
+No SCL number is owed for any of the four.
 
 ### What verified clean
 
