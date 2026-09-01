@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
+import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
 import { PageCard } from '@/components/common/page-card';
 import { EmptyState } from '@/components/common/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -743,6 +744,11 @@ export default function UserProfile() {
 
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-6">
+            {/* SCL-080: the student's own code. Guardians have no code of their own — they
+                enter one — so this is student-only. */}
+            {currentRole === 'student' && user?.id && (
+              <StudentLinkCodePanel studentId={user.id} />
+            )}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
