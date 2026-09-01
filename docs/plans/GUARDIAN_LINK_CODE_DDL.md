@@ -21,6 +21,15 @@ does not work in production — the routes are live but the objects they need do
 
 Opened 2026-09-01 for SCL-080.
 
+**The SQL also exists as a runnable file**, `infra/supabase/pending-ddl/scl-080-guardian-link-code.sql`,
+carrying D-6..D-8 verbatim. Two reasons: the PG-backed contract tests APPLY it to their
+throwaway database, so the routes and the DDL are proved together rather than the routes being
+untestable until an owner action; and if the freeze is lifted it becomes a migration with
+`git mv` and nothing else changes. It is still outside `supabase/migrations/`, so nothing
+applies it automatically. Verified 2026-09-01: applies cleanly on top of the full pipeline,
+leaving `create_active_guardian_link_audited` present, both two-step functions dropped,
+`unique_active_guardian_link` created and `student_link_code_issued_at` added.
+
 | # | Need | Blocking? |
 |---|---|---|
 | D-6 | Replace the link-creation function so it produces `status='active'`; drop the acceptance function | **Yes** — no path to an active link without it |
