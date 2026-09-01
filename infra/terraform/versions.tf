@@ -9,7 +9,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = ">= 6.43.0" # Minimum for google_model_armor_template (GA)
+      version = "~> 8.0"    # Pinned to 8.x — installed version; avoids major drift
     }
   }
 }

@@ -103,10 +103,8 @@ resource "google_model_armor_template" "output" {
     # character-break signals. Basic SDP config provides defense-in-
     # depth on top of the deterministic PII guard (Doc 03C V3 §30.7).
     sdp_settings {
-      sdp_configuration {
-        basic_config {
-          filter_enforcement = "ENABLED"
-        }
+      basic_config {
+        filter_enforcement = "ENABLED"
       }
     }
   }
