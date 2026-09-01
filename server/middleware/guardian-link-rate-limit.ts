@@ -179,3 +179,83 @@ export async function guardianLinkRateLimit(
     });
   }
 }
+
+/**
+ * SCL-080 buckets. Two distinct quantities, so two buckets rather than one shared number:
+ * ENTRY is the guessing surface (a guardian trying codes), REGENERATION is the churn surface
+ * (a student cycling their own code). Both are seeded by D-9 in
+ * `docs/plans/GUARDIAN_LINK_CODE_DDL.md`.
+ */
+export const GUARDIAN_LINK_CODE_ENTRY_BUCKET = "guardian_link_code_entry";
+export const STUDENT_LINK_CODE_REGENERATION_BUCKET =
+  "student_link_code_regeneration";
+
+/**
+ * One bucket, keyed on the authenticated caller.
+ *
+ * @spec [Doc-01A_V1.0 §39–§47; SCL-080] | @implemented [2026-09-01]
+ *
+ * plain English: the single-control shape the two code surfaces need, built from the same
+ * `checkAndIncrement` primitive as `guardianLinkRateLimit` above. Expected outcome: adding a
+ * bucket is a config row and one line here, never a second limiter — which is what
+ * `CLAUDE.md`'s "one implementation per operation" and Doc 01A's ledger ownership require.
+ *
+ * Fails CLOSED on an unreadable ledger, exactly as the two-control limiter does: a rate
+ * limiter that opens when its own storage is down is not one.
+ */
+function singleBucketRateLimit(
+  bucketKey: string,
+  component: string,
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const requestId = req.requestId;
+    const profileId = req.user?.id;
+
+    // No authenticated profile means no bucket to key on. Auth rejects this next.
+    if (!profileId) {
+      next();
+      return;
+    }
+
+    const client = supabaseServer as unknown as LedgerClient;
+
+    try {
+      const result = await checkAndIncrement(client, { profileId, bucketKey });
+      applyHeaders(res, result);
+      if (!result.allowed) {
+        deny(res, bucketKey, result, requestId);
+        return;
+      }
+      next();
+    } catch (err: unknown) {
+      const unavailable = err instanceof RateLimitUnavailableError;
+      logger.error(
+        "RATE_LIMIT",
+        component,
+        "Rate limit check failed — blocking request",
+        {
+          requestId,
+          bucket: bucketKey,
+          reason: err instanceof Error ? err.message : "unknown",
+        },
+      );
+      res.status(unavailable ? 503 : 500).json({
+        error:
+          "Rate limit check failed. Please contact support if this persists.",
+        requestId,
+      });
+    }
+  };
+}
+
+/** A guardian submitting a code. The guessing surface. */
+export const guardianLinkCodeEntryRateLimit = singleBucketRateLimit(
+  GUARDIAN_LINK_CODE_ENTRY_BUCKET,
+  "guardian_link_code_entry",
+);
+
+/** A student cycling their own code. The churn surface. */
+export const studentLinkCodeRegenerationRateLimit = singleBucketRateLimit(
+  STUDENT_LINK_CODE_REGENERATION_BUCKET,
+  "student_link_code_regeneration",
+);

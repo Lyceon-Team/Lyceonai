@@ -27,27 +27,20 @@ import { z } from "zod";
 import {
   STUDENT_LINK_PATHS,
   STUDENT_RESOURCE_PATHS,
+  isLinkCodeLive,
   type MasterySection,
 } from "../../packages/shared/src/index";
+import { getGuardianLinkById, revokeGuardianLink } from "../lib/account";
 import {
-  acceptGuardianLink,
-  createGuardianLink,
-  getGuardianLinkById,
-  revokeGuardianLink,
-} from "../lib/account";
+  issueStudentLinkCode,
+  readStudentLinkCode,
+} from "../lib/student-link-code";
+import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
+import { studentLinkCodeRegenerationRateLimit } from "../middleware/guardian-link-rate-limit";
 import {
   GUARDIAN_LINK_ERROR,
-  guardianLinkRequestSchema,
   guardianLinkRevokeSchema,
 } from "../../packages/shared/src/guardian-link-schema";
-import {
-  normaliseEmail,
-  subjectDigest,
-  DIGEST_LEN_LOG,
-} from "../../packages/shared/src/services/subject-digest";
-import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
-import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { auditGuardianLink } from "../services/guardian-link-audit";
 import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
 import {
   readDomainMasteryView,
@@ -398,298 +391,146 @@ resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
 const linkIdParamSchema = z.object({ linkId: z.string().uuid() });
 
 /**
- * POST /api/students/:studentId/links — §36.1 step 1, student-initiated.
+ * GET /api/students/:studentId/link-code — the student's own code, for sharing.
  *
- * @spec [Doc-01_V8 §36.1 Initiation (student-initiated → `pending_guardian_accept`);
- *   §36.2 rate limiting; owner rulings 2026-08-27 Q2 (both directions ship in V1),
- *   Q3 (subject-scoped mount, `via === 'self'`)] | @implemented [2026-08-27]
+ * @spec [SCL-080 — the code replaces §36.1's two email-addressed initiation paths;
+ *        owner rulings 2026-08-27 Q3 (mount on the subject-scoped topology, require
+ *        `via === 'self'`)] | @implemented [2026-09-01]
  *
- * plain English: a student invites a guardian by email. The link lands PENDING on the
- * guardian, who confirms it through the route that already exists. This is the direction a
- * student who finds Lyceon themselves needs — they cannot pay, so somebody has to be asked.
+ * plain English: returns the student's current code and when it expires, issuing one on first
+ * read. Expected outcome: a student opening settings always has something to share.
  *
- * WHAT WAS MISSING. `PENDING_STATUS_FOR_INITIATOR.student` and the whole domain path existed;
- * the only caller passing `"student"` was the consent flow, which R1 removes. So the sole
- * producer of a `pending_guardian_accept` link was a flow that is not in V1.
+ * WHY A READ ISSUES. A student who has never had a code would otherwise see an empty panel
+ * with a button, and the panel's whole job is to hand them six characters. Issuing on read is
+ * idempotent in the way that matters — a live code is returned unchanged, and only an absent
+ * or expired one is replaced — so refreshing the page does not invalidate a code the student
+ * has already read out.
  *
- * ANTI-ENUMERATION, THE SAME SHAPE THE GUARDIAN ROUTE USES. An address with no guardian
- * account gets the SAME 202 as one that has. §36.1 step 3 reaches the invitee by email
- * either way, so the student learns nothing here they are entitled to learn. The address is
- * never written to a retained row — only its digest (§12.1).
- *
- * RATE LIMITING REUSES `guardianLinkRateLimit` UNCHANGED, and that is a reading worth stating:
- * §36.2's two controls are written for the guardian direction ("10 per guardian per day, 3 per
- * student-email per day"), but the middleware keys on the AUTHENTICATED INITIATOR's profile
- * and on the TARGETED address, neither of which is direction-specific. One account's daily
- * invitations and one address's daily invitations are the quantities §36.2 is protecting, so
- * the same buckets are the right buckets. Forking a second pair would double-count nothing and
- * halve the protection. See owner question — whether §36.2's limits are per-direction or
- * shared is not something the spec says.
- *
- * It runs AFTER `resolveSubject`, so a caller who is not the subject still consumes their OWN
- * quota before the 404. That is deliberate: probing this route is exactly what a daily cap
- * should cost something.
+ * WHY `via === 'self'` AND NOT A ROLE CHECK. `resolveSubject` has already turned the
+ * principal into a subject, so `via` is a resolved fact rather than the caller's role
+ * re-tested here — the shape `scripts/ci/subject-resolver-chokepoint-gate.mjs` enforces. A
+ * guardian is not denied information; they are on the wrong route, and 404 keeps "not your
+ * route" and "no such student" indistinguishable.
  */
-router.post(
-  `/:studentId${STUDENT_LINK_PATHS.linkInitiate}`,
+router.get(
+  `/:studentId${STUDENT_LINK_PATHS.linkCode}`,
   resolveSubject,
-  guardianLinkRateLimit,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const subject = requireSubject(req, res);
     if (!subject) return;
+    if (subject.via !== "self") return sendNotFound(res, requestId);
 
-    if (subject.via !== "self") {
-      return sendNotFound(res, requestId);
-    }
-
-    const parsed = guardianLinkRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      await auditGuardianLink({
-        action: "guardian_link_denied",
-        actorProfileId: subject.studentId,
-        changes: { reason: "invalid_input" },
-        requestId,
-      });
-      return res.status(400).json({
-        error: { message: "A guardian email address is required" },
-        requestId,
-      });
-    }
-
-    const email = normaliseEmail(parsed.data.email);
-
-    const { data: guardian, error: lookupError } = await supabaseServer
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .eq("role", "guardian")
-      .maybeSingle();
-
-    if (lookupError && lookupError.code !== "PGRST116") {
-      logger.error(
-        "STUDENT_RESOURCES",
-        "link_initiate",
-        "Guardian lookup failed",
-        {
-          requestId,
-          reason: lookupError.message,
-        },
-      );
-      return res.status(500).json({
-        error: { message: "Failed to create link request" },
-        requestId,
-      });
-    }
-
-    if (!guardian) {
-      await auditGuardianLink({
-        action: "guardian_link_denied",
-        actorProfileId: subject.studentId,
-        changes: {
-          reason: "no_matching_guardian",
-          email_digest: subjectDigest(email, DIGEST_LEN_LOG),
+    const ttlSeconds = await getStudentLinkCodeTtlSeconds();
+    if (ttlSeconds === null) {
+      // Fail closed: without a TTL nothing can say whether a code is live, and serving one
+      // that cannot be judged is worse than serving none.
+      return res.status(503).json({
+        error: {
+          message: "Link codes are not configured.",
+          code: "LINK_CODE_UNCONFIGURED",
         },
         requestId,
       });
-      return res.status(202).json({
-        data: { status: "pending_guardian_accept" },
-        requestId,
-      });
     }
 
-    let link;
-    try {
-      link = await createGuardianLink(
-        guardian.id,
-        subject.studentId,
-        "student",
-      );
-    } catch (createError: unknown) {
-      const code =
-        typeof createError === "object" &&
-        createError !== null &&
-        "code" in createError &&
-        typeof (createError as { code: unknown }).code === "string"
-          ? (createError as { code: string }).code
-          : null;
-
-      if (code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS) {
-        await auditGuardianLink({
-          action: "guardian_link_denied",
-          actorProfileId: subject.studentId,
-          targetProfileId: guardian.id,
-          changes: { reason: "link_already_exists" },
-          requestId,
-        });
-        return res.status(409).json({
-          error: {
-            message: "A link with this guardian already exists",
-            code,
-          },
-          requestId,
-        });
-      }
-
-      logger.error(
-        "STUDENT_RESOURCES",
-        "link_initiate",
-        "Failed to create link",
-        {
-          requestId,
-          reason:
-            createError instanceof Error ? createError.message : "unknown",
+    const current = await readStudentLinkCode(subject.studentId);
+    if (current === null) {
+      return res.status(503).json({
+        error: {
+          message: "Could not read your link code.",
+          code: "LINK_CODE_UNAVAILABLE",
         },
-      );
-      return res.status(500).json({
-        error: { message: "Failed to create link request" },
         requestId,
       });
     }
 
-    logger.info(
-      "STUDENT_RESOURCES",
-      "link_initiate",
-      "Student initiated link",
-      {
-        studentId: subject.studentId,
+    if (isLinkCodeLive(current.issuedAt, new Date(), ttlSeconds)) {
+      return res.json({
+        data: {
+          code: current.code,
+          expiresAt: new Date(
+            current.issuedAt!.getTime() + ttlSeconds * 1000,
+          ).toISOString(),
+        },
         requestId,
+      });
+    }
+
+    const issued = await issueStudentLinkCode(subject.studentId);
+    if (!issued) {
+      return res.status(503).json({
+        error: {
+          message: "Could not issue a link code.",
+          code: "LINK_CODE_UNAVAILABLE",
+        },
+        requestId,
+      });
+    }
+    return res.json({
+      data: {
+        code: issued.code,
+        expiresAt: new Date(
+          new Date(issued.issuedAt).getTime() + ttlSeconds * 1000,
+        ).toISOString(),
       },
-    );
-
-    return res.status(202).json({
-      data: { link_id: link.id, status: link.status },
       requestId,
     });
   },
 );
 
 /**
- * POST /api/students/:studentId/links/:linkId/accept — §36.1's student-side acceptance.
+ * POST /api/students/:studentId/link-code/regenerate — invalidate and reissue.
  *
- * @spec [Doc-01_V8 §36.1 Initiation (guardian-initiated, the student confirms →
- *   `status = 'active'`); owner rulings 2026-08-27 Q2 (both directions ship in V1),
- *   Q3 (mount on the subject-scoped topology, require `via === 'self'`),
- *   Q7 (404 to a non-party, 409 to a party in the wrong state)] | @implemented [2026-08-27]
+ * @spec [SCL-080] | @implemented [2026-09-01]
  *
- * plain English: the student confirms a link their guardian started, and it goes live. This
- * is the half §36.1 always specified and no route ever served.
+ * plain English: the student showed the code to the wrong person, or simply wants a new one.
+ * The old code stops working the instant this returns. Expected outcome: a guardian mid-entry
+ * with the old code gets the standard not-redeemable response (edge case 5), which is the
+ * same response an invalid code gets — the rotation is invisible to them, deliberately.
  *
- * WHAT WAS ACTUALLY BROKEN. `POST /api/guardian/link` writes `pending_student_accept`, and
- * the only acceptance route in the codebase sits behind `requireGuardianAccess` and can only
- * settle `pending_guardian_accept`. So a guardian could invite a student and the link could
- * never become active by any path — which is why `guardian_links` holds zero rows in
- * production while the link surface is live. The domain function was already party-agnostic
- * (`acceptGuardianLink`); only this mount was missing.
- *
- * WHY `via === 'self'` IS THE GATE, AND WHY IT IS NOT A ROLE CHECK.
- *   `resolveSubject` has already turned the principal into a subject above this handler, so
- *   `via` is a RESOLVED FACT, not the caller's role re-tested inside the handler — the branch
- *   RB-05B-V1-05 permits, in the one place it permits it. A guardian reaching this path is
- *   not denied information; they are on the wrong route, and their own acceptance route
- *   already exists. It answers 404 rather than 403 so the two denials this surface can give
- *   — "not your link" and "not your route" — are indistinguishable from outside.
- *
- * STATUS CODES (owner ruling Q7, a reasoned deviation from R3's uniform 404 — recorded here
- * so it is not "corrected" back):
- *   400 — `linkId` is not a uuid. Names no row, so no enumeration surface.
- *   404 — no such link, OR the caller is not a party to it. R3's purpose is stopping a
- *         stranger from learning that a link or a student exists; both answers are the same
- *         bytes for exactly that reason.
- *   409 — the caller IS a party, and the link is not theirs to accept right now (already
- *         active, revoked, or waiting on the guardian). They already know the link exists —
- *         they are named on it — so the informative answer discloses nothing, and it is a
- *         STATE CONFLICT rather than an authorization failure, which is why 409 and not 403.
+ * Rate-limited on its own bucket (`student_link_code_regeneration`): regeneration is the churn
+ * surface, and it is a different quantity from code ENTRY, which is the guessing surface.
  */
 router.post(
-  `/:studentId${STUDENT_LINK_PATHS.linkAccept}`,
+  `/:studentId${STUDENT_LINK_PATHS.linkCodeRegenerate}`,
   resolveSubject,
+  studentLinkCodeRegenerationRateLimit,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const subject = requireSubject(req, res);
     if (!subject) return;
+    if (subject.via !== "self") return sendNotFound(res, requestId);
 
-    // Link actions are the subject's own (owner ruling Q3). A guardian has their own route.
-    if (subject.via !== "self") {
-      return sendNotFound(res, requestId);
-    }
-
-    const parsed = linkIdParamSchema.safeParse(req.params);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: { message: "Invalid link id", details: parsed.error.flatten() },
-        requestId,
-      });
-    }
-    const { linkId } = parsed.data;
-
-    // Party-hood decides 404-versus-409, and only a read can answer it: `acceptGuardianLink`
-    // raises the same WRONG_ACCEPTOR for the party who must wait and for a stranger.
-    let existing;
-    try {
-      existing = await getGuardianLinkById(linkId);
-    } catch (readError: unknown) {
-      logger.error("STUDENT_RESOURCES", "link_accept", "Failed to read link", {
-        requestId,
-        reason: readError instanceof Error ? readError.message : "unknown",
-      });
-      return res
-        .status(500)
-        .json({ error: "Internal server error", requestId });
-    }
-
-    if (!existing || existing.student_profile_id !== subject.studentId) {
-      return sendNotFound(res, requestId);
-    }
-
-    let link;
-    try {
-      link = await acceptGuardianLink(linkId, subject.studentId);
-    } catch (acceptError: unknown) {
-      const code =
-        typeof acceptError === "object" &&
-        acceptError !== null &&
-        "code" in acceptError &&
-        typeof (acceptError as { code: unknown }).code === "string"
-          ? (acceptError as { code: string }).code
-          : null;
-
-      // The caller is a party (checked above), so both of these are state conflicts.
-      if (
-        code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR ||
-        code === GUARDIAN_LINK_ERROR.NOT_PENDING
-      ) {
-        return res.status(409).json({
-          error: {
-            message: "This link is not awaiting your acceptance",
-            code,
-          },
-          requestId,
-        });
-      }
-
-      logger.error(
-        "STUDENT_RESOURCES",
-        "link_accept",
-        "Failed to accept link",
-        {
-          requestId,
-          reason:
-            acceptError instanceof Error ? acceptError.message : "unknown",
+    const ttlSeconds = await getStudentLinkCodeTtlSeconds();
+    if (ttlSeconds === null) {
+      return res.status(503).json({
+        error: {
+          message: "Link codes are not configured.",
+          code: "LINK_CODE_UNCONFIGURED",
         },
-      );
-      return res
-        .status(500)
-        .json({ error: "Internal server error", requestId });
+        requestId,
+      });
     }
 
-    logger.info("STUDENT_RESOURCES", "link_accept", "Student accepted link", {
-      studentId: subject.studentId,
-      requestId,
-    });
+    const issued = await issueStudentLinkCode(subject.studentId);
+    if (!issued) {
+      return res.status(503).json({
+        error: {
+          message: "Could not issue a link code.",
+          code: "LINK_CODE_UNAVAILABLE",
+        },
+        requestId,
+      });
+    }
 
     return res.json({
-      data: { link_id: link.id, status: link.status },
+      data: {
+        code: issued.code,
+        expiresAt: new Date(
+          new Date(issued.issuedAt).getTime() + ttlSeconds * 1000,
+        ).toISOString(),
+      },
       requestId,
     });
   },
