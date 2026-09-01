@@ -483,6 +483,32 @@ jobs:
       # a vacuous pass is exactly the defect class this job exists to stop — the same shape as
       # "zero scanned files is not zero violations" in the gates. If PGHOST ever stops
       # reaching the runner, this step must go RED rather than quietly stop proving anything.
+      # @spec [SCL-080] | @implemented [2026-09-01]
+      #
+      # Added by hand per the NOTE above. Proves the code flow against a real database:
+      # single-use consumption, the identical response for used/expired/never-real, and the
+      # two-guardian race — the last of which no mocked query layer can establish, because
+      # the thing under test is that POSTGRES settles it.
+      #
+      # This suite applies infra/supabase/pending-ddl/scl-080-guardian-link-code.sql to its
+      # own throwaway database. That file is not a migration (the freeze reserves those to
+      # the owner), so without it neither create_active_guardian_link_audited nor
+      # profiles.student_link_code_issued_at exists and nothing here can run.
+      - name: Guardian link code → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          out=$(pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q "skipped"; then
+            echo "FAIL: the SCL-080 PG suite SKIPPED rather than running."
+            exit 1
+          fi
+
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost

@@ -94,3 +94,35 @@ ALTER TABLE public.profiles
 COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS
   'SCL-080: when the current student_link_code was issued. NULL means no code has been '
   'issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+-- ===========================================================================
+-- D-9 — DML. Seeds the bucket map (absent in production, which is why every
+-- guardian route 503s today) and the code TTL. Included here so the PG-backed
+-- tests get a database the routes can actually run against.
+-- ===========================================================================
+
+INSERT INTO public.rate_limit_runtime_config (key, value, value_type, owner, description, environment)
+VALUES (
+  'bucket_definitions',
+  '{
+     "guardian_link_attempts_daily":    {"limit": 10, "window_seconds": 86400},
+     "guardian_link_email_attempts":    {"limit": 3,  "window_seconds": 86400},
+     "guardian_link_code_entry":        {"limit": 10, "window_seconds": 86400},
+     "student_link_code_regeneration":  {"limit": 10, "window_seconds": 86400}
+   }'::jsonb,
+  'object',
+  'guardian',
+  'Doc 01A Appendix A.3 bucket map. Doc 01 V8 §36.2 supplies the first two limits verbatim; SCL-080 supplies the code buckets.',
+  'all'
+);
+
+INSERT INTO public.auth_runtime_config (key, value, value_type, owner, description, environment)
+VALUES (
+  'student_link_code_ttl_seconds',
+  '86400'::jsonb,
+  'integer',
+  'guardian',
+  'SCL-080: how long a student link code stays valid before rotation. 24h per the owner ruling.',
+  'all'
+);
