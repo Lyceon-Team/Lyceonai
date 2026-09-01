@@ -2,9 +2,25 @@
  * What we DO about a country denial — as opposed to what the country rule
  * DECIDES, which is `country-eligibility.ts` and is not touched here.
  *
- * @spec [INV-03-08 (Doc 03 §2156); SCL-046; SCL-048 as amended by SCL-072
- *        (full-vs-partial refund on the CHARGED amount); Doc-01_V8 §22 Stripe
- *        webhook handling] | @implemented [2026-09-01 — SCL-DRAFT-B-denial-is-a-decision]
+ * @spec [OWNER RULING 2026-09-01 — the policy itself: on an ineligible-country
+ *        verdict at `checkout.session.completed`, cancel the subscription
+ *        FIRST (so no further invoice is generated), refund the charge in
+ *        full, write no entitlement, return 200, and alert loudly;
+ *        INV-03-08 (Doc 03 §2156) and SCL-046 — WHO is refused;
+ *        SCL-048 as amended by SCL-072 — the full-vs-partial comparison basis
+ *        this module reuses, noting that 048/072 govern the REVERSE causality
+ *        (a refund observed -> revoke) and do NOT by themselves establish that
+ *        we should issue one; Doc-01_V8 §22 — webhook handling]
+ * @implemented [2026-09-01 — SCL-DRAFT-B-denial-is-a-decision]
+ *
+ * WHERE THE POLICY COMES FROM, stated because it cannot be inferred from the
+ * rules above. INV-03-08 says a non-Tier-1 payer is not entitled; it is SILENT
+ * on what happens to their money, and that silence is what let a `throw` stand
+ * in for a decision. Cancel-and-refund is an OWNER RULING of 2026-09-01, not a
+ * deduction from SCL-048/072 — reading it out of those would be inventing
+ * policy from a rule pointing the other way. `SCL-DRAFT-B-denial-is-a-decision`
+ * is the provisional register id that will carry the ruling into spec text;
+ * the number is assigned at merge and is not taken from any instruction.
  *
  * plain English: when the Tier-1 gate refuses a payer who has already been
  * charged, cancel the subscription, refund the charge in full, write no
@@ -158,6 +174,70 @@ export function planForDenial(
   };
 }
 
+/**
+ * WHAT THE REMEDIATION ACTUALLY DID — six outcomes, six values.
+ *
+ * @revised [2026-09-01 — audit HIGH-2]
+ *
+ * These are returned all the way out through `WebhookOutcome.status` and into
+ * the 200 body (`server/index.ts:140-145` puts `outcome.status` straight into
+ * the response). That response is the ONLY layer an operator sees without
+ * correlating against the application log — it is what Stripe's dashboard and
+ * our access log show.
+ *
+ * WHAT WAS WRONG. Every one of these branches returned the single string
+ * `"remediated"`, while the docstring on the status type claimed it let an
+ * operator "tell them apart in one line of the access log". A refund that
+ * FAILED and a refund that SUCCEEDED were indistinguishable in the only place
+ * that claim was about. That is this workstream's recurring defect — a claim
+ * that reads as checked and is not — reappearing in the fix for it.
+ *
+ * Every value keeps the `remediated_` prefix, so a `grep remediated` still
+ * finds the whole class, and the suffix says which one.
+ *
+ *   remediated_refunded            money returned in full. Nothing owed.
+ *   remediated_already_refunded    replay; a previous pass returned it.
+ *   remediated_nothing_charged     the charge was zero, so nothing moved in
+ *                                  either direction. Degenerate, and labelled
+ *                                  rather than folded into "already refunded",
+ *                                  which would report a refund that never was.
+ *   remediated_refund_failed       MONEY IS STILL OWED. Operator must act.
+ *   remediated_refund_partial      money PARTLY returned. Operator must act.
+ *   remediated_refund_unverified   refund created, amount unconfirmed.
+ *   remediated_refund_untraceable  no charge could be tied to the session, so
+ *                                  none was refunded. Operator must act.
+ */
+export const REMEDIATION_STATUSES = [
+  "remediated_refunded",
+  "remediated_already_refunded",
+  "remediated_nothing_charged",
+  "remediated_refund_failed",
+  "remediated_refund_partial",
+  "remediated_refund_unverified",
+  "remediated_refund_untraceable",
+] as const;
+
+export type RemediationStatus = (typeof REMEDIATION_STATUSES)[number];
+
+/**
+ * The outcomes that leave a human owing the customer something.
+ *
+ * Named as a set rather than left to each caller to re-derive, because the
+ * question "does this one need an operator?" is exactly the question the single
+ * `"remediated"` string could not answer, and re-deriving it per call site is
+ * how two answers to it appear.
+ */
+const OPERATOR_ACTION_STATUSES: readonly RemediationStatus[] = [
+  "remediated_refund_failed",
+  "remediated_refund_partial",
+  "remediated_refund_unverified",
+  "remediated_refund_untraceable",
+];
+
+export function remediationNeedsOperator(status: RemediationStatus): boolean {
+  return OPERATOR_ACTION_STATUSES.includes(status);
+}
+
 /** Statuses in which a subscription is already terminal and must not be cancelled again. */
 export const TERMINAL_SUBSCRIPTION_STATUSES = [
   "canceled",
@@ -171,13 +251,26 @@ export type CancellationStep =
 /**
  * Should the subscription be cancelled, given the status Stripe reports NOW?
  *
- * THIS IS THE DURABLE IDEMPOTENCY GUARD FOR THE CANCEL, and it carries the
- * whole weight — unlike the refund, the cancel gets no help from a Stripe
- * idempotency key. `subscriptions.cancel` is routed as an HTTP DELETE
+ * WHAT THIS IS, AND WHAT IT IS NOT. It is the only guard the cancel has —
+ * unlike the refund, the cancel gets no help from a Stripe idempotency key.
+ * `subscriptions.cancel` is routed as an HTTP DELETE
  * (`node_modules/stripe/esm/resources/Subscriptions.js:19-22`), and Stripe
  * honours idempotency keys on POST; a key passed here would be decoration that
- * READS like protection, which is worse than none. Re-reading the status is the
- * protection.
+ * READS like protection, which is worse than none.
+ *
+ * IT IS A READ, NOT A LOCK, and must not be described as one. Two deliveries
+ * processed concurrently can both observe `active` and both call cancel —
+ * check-then-act, with a window between. That is accepted rather than closed:
+ * the loser gets an API error on an already-cancelled subscription, the
+ * webhook that saw it is retried by Stripe, and the retry re-reads a `canceled`
+ * status and does nothing. It CONVERGES; it does not EXCLUDE. Closing the
+ * window properly would need a lock this path has no reason to own, and the
+ * cost of the race is one retried webhook rather than a second cancellation —
+ * cancelling is idempotent in effect even when it is not in protocol.
+ *
+ * What it does reliably prevent is the SEQUENTIAL replay, which is the case
+ * that actually occurs: `completed` and `async_payment_succeeded` arriving one
+ * after the other for one purchase.
  *
  * Cancelling twice is not merely wasteful: `SubscriptionsResource.d.ts:2263`
  * — "After it's canceled, you can no longer update the subscription or its
@@ -207,9 +300,20 @@ export function decideCancellation(
   };
 }
 
+/**
+ * `code` exists so the caller can report WHICH skip happened without asking
+ * the amounts a second time. "Already refunded" and "nothing was ever charged"
+ * have the same action (none) and completely different meanings, and the
+ * status the operator sees has to say which — re-deriving that at the call site
+ * would put the SCL-048/072 comparison in two places.
+ */
 export type RefundStep =
   | { readonly refund: true; readonly reason: string }
-  | { readonly refund: false; readonly reason: string };
+  | {
+      readonly refund: false;
+      readonly code: "nothing_charged" | "already_refunded";
+      readonly reason: string;
+    };
 
 /**
  * Should the charge be refunded, given what has ALREADY been refunded on it?
@@ -231,6 +335,7 @@ export function decideRemedialRefund(
   if (chargeAmount <= 0) {
     return {
       refund: false,
+      code: "nothing_charged",
       reason:
         `charge amount is ${chargeAmount}; there is nothing to return. Not ` +
         "treated as 'already refunded' — no money moved in either direction",
@@ -239,6 +344,7 @@ export function decideRemedialRefund(
   if (chargeAmountRefunded >= chargeAmount) {
     return {
       refund: false,
+      code: "already_refunded",
       reason:
         `already fully refunded: ${chargeAmountRefunded} of ${chargeAmount} ` +
         "charged. This is the replay path; refunding again would raise a " +
@@ -289,6 +395,24 @@ export function refundReadsAsFull(
  * both run the same gate. Keyed on the subscription, the second call returns
  * Stripe's first refund instead of creating a second.
  *
+ * THE REQUEST BODY MUST BE BYTE-IDENTICAL ACROSS THE RETRY, and that is a
+ * constraint on the CALLER, not on this function. The pinned SDK
+ * (`node_modules/stripe/types/Errors.d.ts:252-253`) is explicit:
+ *
+ *   "Idempotency errors occur when an `Idempotency-Key` is re-used on a
+ *    request that does not match the first request's API endpoint and
+ *    parameters."
+ *
+ * So a per-event value in the refund body — an event id, a timestamp, anything
+ * that differs between `completed` and `async_payment_succeeded` — turns the
+ * dedupe this key exists for into a `StripeIdempotencyError`. That error is
+ * indistinguishable at the call site from a refund that genuinely failed, so
+ * it would be reported as "MANUAL REFUND REQUIRED" for a refund that had in
+ * fact SUCCEEDED, and an operator acting on that alert would issue a real
+ * second refund by hand. Preventing an automatic double refund by inviting a
+ * manual one is not a fix. Nothing event-scoped goes in that body; the event
+ * id lives in the log line, where it is free.
+ *
  * The key is the first line only. Stripe expires idempotency keys after a
  * bounded window, so `decideRemedialRefund`'s `amount_refunded` pre-check is
  * the durable guard behind it. Two mechanisms, because they fail differently:
@@ -300,15 +424,20 @@ export function refundIdempotencyKey(subscriptionId: string): string {
 
 /**
  * The subscription fields the remediation reads. Narrow on purpose: this path
- * writes no entitlement, so it needs the state to decide on and the invoice to
- * walk to the payment — nothing else.
+ * writes no entitlement, so all it needs is the state to decide the cancel on.
+ *
+ * `latest_invoice` IS DELIBERATELY ABSENT (@revised 2026-09-01). The refund
+ * walk used to start there, which was an ASSUMPTION about which charge funded
+ * this purchase rather than a fact: on a delayed or redelivered event for a
+ * subscription that has since renewed, "the latest invoice" is a LATER
+ * period's invoice, and refunding it would return the wrong charge. The walk
+ * now starts at `session.invoice` — Stripe's own statement of which invoice
+ * THIS Checkout Session produced — so the correlation is exact and the
+ * assumption is removed rather than patched.
  */
 export const remediationSubscriptionSchema = z.object({
   id: z.string().min(1),
   status: z.string().nullish(),
-  latest_invoice: z
-    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
-    .nullish(),
 });
 
 /**

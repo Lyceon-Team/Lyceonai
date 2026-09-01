@@ -140,6 +140,10 @@ function checkoutEvent(
         metadata: { student_profile_id: STUDENT_ID },
         customer_details: { address: { country } },
         payment_status: "paid",
+        // audit MEDIUM-1: the refund walk is rooted HERE, not at the
+        // subscription's latest_invoice, so this is what ties the refunded
+        // charge to THIS purchase.
+        invoice: INVOICE_ID,
       },
     },
   };
@@ -175,7 +179,10 @@ function liveSubscription(): Record<string, unknown> {
     object: "subscription",
     customer: "cus_denial",
     status: "active",
-    latest_invoice: INVOICE_ID,
+    // Deliberately a DIFFERENT invoice from the session's. If the walk ever
+    // regresses to rooting at the subscription, the refund resolves against
+    // this one and `refuses to refund a LATER period's charge` fails.
+    latest_invoice: "in_later_period",
     items: {
       object: "list",
       data: [
@@ -253,7 +260,7 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
     const outcome = await process_(body, signature, "req_settle");
 
     // The response half. `ok: true` is what the route turns into 200.
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refunded" });
     // The state half. A settled event that ENTITLED the payer would be worse
     // than the loop it replaced.
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
@@ -361,7 +368,10 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
       "req_replay_2",
     );
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_already_refunded",
+    });
     // NO second refund and NO second cancel.
     expect(stripeApi.refundsCreate).toHaveBeenCalledTimes(1);
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalledTimes(1);
@@ -430,7 +440,10 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
       denial.signature,
       "req_e2e_1",
     );
-    expect(denialOutcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(denialOutcome).toMatchObject({
+      ok: true,
+      status: "remediated_refunded",
+    });
     expect(stripeApi.refundsCreate).toHaveBeenCalledTimes(1);
 
     // Stripe now tells us about the refund we just made. The charge is fully
@@ -470,7 +483,10 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
 
     const outcome = await process_(body, signature, "req_refund_fail");
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_failed",
+    });
     // The cancel happened first, which is why a failed refund is survivable:
     // the customer is not billed again while an operator fixes it.
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalledWith(SUB_ID, {});
@@ -510,7 +526,10 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
 
     const outcome = await process_(body, signature, "req_partial");
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_partial",
+    });
     const codes = loggerMock.error.mock.calls.map((c) => c[1]);
     expect(codes).toContain("COUNTRY_DENIAL_REFUND_PARTIAL");
   });
@@ -553,7 +572,10 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
 
     const outcome = await process_(body, signature, "req_untraceable");
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_untraceable",
+    });
     expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
     // Cancelled anyway: stopping the billing does not depend on finding the
     // charge, and leaving it live would keep invoicing an ineligible payer.
@@ -614,5 +636,290 @@ describe("INV-03-08 country denial is remediated, not retried", () => {
     );
     expect(stripeApi.subscriptionsCancel).not.toHaveBeenCalled();
     expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The five audit findings of 2026-09-01, each with a test that fails if the fix
+ * is reverted. Kept in their own block because they are regressions of a
+ * shipped fix rather than the original contract.
+ */
+describe("country denial remediation — audit fixes 2026-09-01", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    state.expectedLivemode = false;
+    dbMocks.insert.mockResolvedValue({ error: null });
+    dbMocks.delete.mockResolvedValue({ error: null });
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+    stripeApi.subscriptionsRetrieve.mockResolvedValue(liveSubscription());
+    stripeApi.subscriptionsCancel.mockResolvedValue({
+      id: SUB_ID,
+      status: "canceled",
+    });
+    stripeApi.customersRetrieve.mockResolvedValue({
+      id: "cus_denial",
+      address: { country: "FR" },
+    });
+    stripeApi.invoicePaymentsList.mockResolvedValue({
+      data: [
+        {
+          id: "inpay_denial",
+          invoice: INVOICE_ID,
+          payment: { type: "payment_intent", payment_intent: PI_ID },
+        },
+      ],
+    });
+    stripeApi.invoicesRetrieve.mockResolvedValue({
+      id: INVOICE_ID,
+      parent: { subscription_details: { subscription: SUB_ID } },
+    });
+    stripeApi.paymentIntentsRetrieve.mockResolvedValue({
+      id: PI_ID,
+      latest_charge: CHARGE_ID,
+    });
+    stripeApi.chargesRetrieve.mockResolvedValue({
+      id: CHARGE_ID,
+      amount: CHARGE_AMOUNT,
+      amount_refunded: 0,
+      payment_intent: PI_ID,
+      customer: "cus_denial",
+    });
+    stripeApi.refundsCreate.mockResolvedValue({
+      id: "re_denial",
+      amount: CHARGE_AMOUNT,
+    });
+  });
+
+  // ---- HIGH-1 -----------------------------------------------------------
+
+  /**
+   * An idempotency key only dedupes a request whose PARAMETERS also match.
+   * `node_modules/stripe/types/Errors.d.ts:252-253`: "Idempotency errors occur
+   * when an `Idempotency-Key` is re-used on a request that does not match the
+   * first request's API endpoint and parameters."
+   *
+   * The body used to carry `lyceon_event_id`. `completed` and
+   * `async_payment_succeeded` carry DIFFERENT event ids — exactly the pair the
+   * subscription-scoped key exists to dedupe — so the second call was a key
+   * re-use with mismatched params, raising `StripeIdempotencyError`. That is
+   * indistinguishable at the call site from a refund that failed, so it was
+   * reported as "MANUAL REFUND REQUIRED" for a refund that had SUCCEEDED, and
+   * an operator acting on it would refund the customer twice by hand.
+   */
+  it("sends a BYTE-IDENTICAL refund body across the two events for one purchase", async () => {
+    const process_ = await handler();
+
+    const a = signed(checkoutEvent("FR", "evt_body_a"));
+    await process_(a.body, a.signature, "req_body_1");
+
+    // Second event, same purchase, charge not yet showing the refund.
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      ...liveSubscription(),
+      status: "canceled",
+    });
+    const b = signed(
+      checkoutEvent(
+        "FR",
+        "evt_body_b",
+        "checkout.session.async_payment_succeeded",
+      ),
+    );
+    await process_(b.body, b.signature, "req_body_2");
+
+    expect(stripeApi.refundsCreate).toHaveBeenCalledTimes(2);
+    const [bodyA, optsA] = stripeApi.refundsCreate.mock.calls[0]!;
+    const [bodyB, optsB] = stripeApi.refundsCreate.mock.calls[1]!;
+
+    // Same key AND same parameters — the pair Stripe requires.
+    expect(optsA.idempotencyKey).toBe(optsB.idempotencyKey);
+    expect(bodyA).toEqual(bodyB);
+  });
+
+  it("puts NO event-scoped value in the refund body — the event id lives in the log", async () => {
+    // Asserted on the serialised body rather than on one named field, so a
+    // future `lyceon_request_id` or timestamp fails here too.
+    const process_ = await handler();
+    const { body, signature } = signed(checkoutEvent("FR", "evt_scoped_x"));
+    await process_(body, signature, "req_scoped");
+
+    const [refundBody] = stripeApi.refundsCreate.mock.calls[0]!;
+    expect(JSON.stringify(refundBody)).not.toContain("evt_scoped_x");
+    expect(JSON.stringify(refundBody)).not.toContain("evt_");
+
+    // ...and it IS recoverable, from the log, which is the whole trade.
+    const logged = loggerMock.warn.mock.calls.some(
+      (c) =>
+        c[1] === "COUNTRY_DENIAL_REFUNDED" && c[3]?.eventId === "evt_scoped_x",
+    );
+    expect(logged).toBe(true);
+  });
+
+  // ---- HIGH-2 -----------------------------------------------------------
+
+  /**
+   * `server/index.ts:140-145` copies `outcome.status` into the 200 body. That
+   * is the only account of the money path an operator sees without opening the
+   * application log, so a FAILED refund and a SUCCESSFUL one must not read the
+   * same there. They previously both returned `"remediated"`.
+   */
+  it("returns a DIFFERENT status for a failed refund than for a successful one", async () => {
+    const process_ = await handler();
+
+    const ok = await process_(
+      ...Object.values(signed(checkoutEvent("FR", "evt_ok"))),
+      "req_ok",
+    );
+
+    vi.clearAllMocks();
+    stripeApi.subscriptionsRetrieve.mockResolvedValue(liveSubscription());
+    stripeApi.subscriptionsCancel.mockResolvedValue({ id: SUB_ID });
+    stripeApi.customersRetrieve.mockResolvedValue({
+      id: "cus_denial",
+      address: { country: "FR" },
+    });
+    stripeApi.invoicePaymentsList.mockResolvedValue({
+      data: [
+        {
+          id: "inpay_denial",
+          invoice: INVOICE_ID,
+          payment: { type: "payment_intent", payment_intent: PI_ID },
+        },
+      ],
+    });
+    stripeApi.paymentIntentsRetrieve.mockResolvedValue({
+      id: PI_ID,
+      latest_charge: CHARGE_ID,
+    });
+    stripeApi.chargesRetrieve.mockResolvedValue({
+      id: CHARGE_ID,
+      amount: CHARGE_AMOUNT,
+      amount_refunded: 0,
+    });
+    stripeApi.refundsCreate.mockRejectedValue(new Error("card_declined"));
+    dbMocks.insert.mockResolvedValue({ error: null });
+
+    const bad = await process_(
+      ...Object.values(signed(checkoutEvent("FR", "evt_bad"))),
+      "req_bad",
+    );
+
+    expect(ok).toMatchObject({ status: "remediated_refunded" });
+    expect(bad).toMatchObject({ status: "remediated_refund_failed" });
+    // The actual property under test: they differ in the returned value.
+    expect((ok as { status: string }).status).not.toBe(
+      (bad as { status: string }).status,
+    );
+  });
+
+  it("flags operatorActionRequired only when a human still owes the customer", async () => {
+    const process_ = await handler();
+    await process_(
+      ...Object.values(signed(checkoutEvent("FR", "evt_a1"))),
+      "r1",
+    );
+
+    const summary = loggerMock.warn.mock.calls.find(
+      (c) => c[1] === "COUNTRY_DENIAL_OUTCOME",
+    );
+    expect(summary?.[3]).toMatchObject({
+      status: "remediated_refunded",
+      operatorActionRequired: false,
+    });
+
+    vi.clearAllMocks();
+    dbMocks.insert.mockResolvedValue({ error: null });
+    stripeApi.subscriptionsRetrieve.mockResolvedValue(liveSubscription());
+    stripeApi.subscriptionsCancel.mockResolvedValue({ id: SUB_ID });
+    stripeApi.customersRetrieve.mockResolvedValue({
+      id: "cus_denial",
+      address: { country: "FR" },
+    });
+    stripeApi.invoicePaymentsList.mockResolvedValue({ data: [] });
+
+    await process_(
+      ...Object.values(signed(checkoutEvent("FR", "evt_a2"))),
+      "r2",
+    );
+    const summary2 = loggerMock.warn.mock.calls.find(
+      (c) => c[1] === "COUNTRY_DENIAL_OUTCOME",
+    );
+    expect(summary2?.[3]).toMatchObject({
+      status: "remediated_refund_untraceable",
+      operatorActionRequired: true,
+    });
+  });
+
+  // ---- MEDIUM-1 ---------------------------------------------------------
+
+  /**
+   * THE WRONG-CHARGE BUG. The walk used to start at the subscription's CURRENT
+   * `latest_invoice`. On a delayed or redelivered event for a subscription that
+   * has since renewed, that is a LATER period's invoice — so the remediation
+   * would refund a fresh renewal the customer legitimately owes and leave the
+   * charge it meant to return untouched.
+   *
+   * `liveSubscription()` deliberately reports `latest_invoice: "in_later_period"`
+   * while the session names `INVOICE_ID`. The walk must use the session's.
+   */
+  it("refunds the charge THIS session produced, not the subscription's latest invoice", async () => {
+    const process_ = await handler();
+    const { body, signature } = signed(checkoutEvent("FR"));
+
+    const outcome = await process_(body, signature, "req_correlated");
+
+    expect(outcome).toMatchObject({ status: "remediated_refunded" });
+    expect(stripeApi.invoicePaymentsList).toHaveBeenCalledWith(
+      expect.objectContaining({ invoice: INVOICE_ID }),
+    );
+    const invoicesWalked = stripeApi.invoicePaymentsList.mock.calls.map(
+      (c) => c[0].invoice,
+    );
+    expect(invoicesWalked).not.toContain("in_later_period");
+  });
+
+  it("refuses to refund at all when the session names no invoice", async () => {
+    // Fails CLOSED rather than falling back to the subscription. Not refunding
+    // is recoverable by an operator; refunding the wrong period's charge is a
+    // second wrong money movement on top of the first.
+    const process_ = await handler();
+    const ev = checkoutEvent("FR");
+    const obj = (ev.data as { object: Record<string, unknown> }).object;
+    delete obj.invoice;
+    const { body, signature } = signed(ev);
+
+    const outcome = await process_(body, signature, "req_noinvoice");
+
+    expect(outcome).toMatchObject({ status: "remediated_refund_untraceable" });
+    expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
+    // Still cancelled: stopping the billing never depended on finding the charge.
+    expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
+  });
+
+  // ---- MEDIUM-2 ---------------------------------------------------------
+
+  /**
+   * The policy is an OWNER RULING, not a deduction. INV-03-08 says who is
+   * refused and is silent on their money; SCL-048/072 govern the reverse
+   * causality (a refund observed -> revoke). Reading "issue a refund" out of
+   * those would be inventing policy from a rule pointing the other way, so the
+   * ruling is cited by date and this test keeps the citation from being lost.
+   */
+  it("cites the owner ruling by date at both the module and the entry point", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const root = resolve(__dirname, "../..");
+    const moduleSrc = readFileSync(
+      resolve(root, "server/lib/stripe/country-denial-remediation.ts"),
+      "utf8",
+    );
+    const handlerSrc = readFileSync(
+      resolve(root, "server/lib/stripe/webhook-handler.ts"),
+      "utf8",
+    );
+    expect(moduleSrc).toContain("OWNER RULING 2026-09-01");
+    expect(handlerSrc).toContain("OWNER RULING 2026-09-01");
+    // And it must not claim SCL-048/072 as the source of the policy.
+    expect(moduleSrc).toContain("REVERSE causality");
   });
 });

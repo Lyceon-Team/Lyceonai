@@ -211,7 +211,7 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
 
     const outcome = await process_(body, signature, "req_ineligible");
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalledWith(
       "sub_country_gate",
@@ -306,7 +306,7 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     // a retry loop. Still the wrong outcome for that customer, which is why
     // this test exists; it is now a wrong outcome that at least terminates.
     const outcome = await process_(body, signature, "req_uk_seed");
-    expect(outcome).toMatchObject({ ok: true, status: "remediated" });
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
