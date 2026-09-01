@@ -20,11 +20,21 @@
  * THE POISON SEED IS THE POINT. Before the clean answer is submitted, the test
  * seeds a legacy answered row with NULL occurred_at for the SAME student in a
  * DIFFERENT SECTION. That is the exact shape production was in. It matters because
- * refresh_domain_mastery §4.9 fans out to refresh_overall_kpi, which validates
- * EVERY answered item for the student with no section or domain filter and raises
- * KPI_HISTORICAL_DATA_INVALID. One bad row anywhere in a student's history disables
- * that student's entire mastery pipeline. A test seeded with a clean student passes
- * while production stays broken — which is precisely what happened.
+ * refresh_domain_mastery §4.9 fans out to refresh_overall_kpi, which scans EVERY
+ * answered item for the student with no section or domain filter. A test seeded with
+ * a clean student passes while production stays broken — which is precisely what
+ * happened, and the seed is what stops that recurring.
+ *
+ * POSTURE CHANGE 2026-09-01 (migration 20260901000000, SCL-054). Until that migration
+ * the two widening KPI refreshers raised KPI_HISTORICAL_DATA_INVALID on such a row, so
+ * one bad row anywhere in a student's history rolled back every mastery write for that
+ * student, in every domain, permanently. The KPI surface now QUARANTINES instead:
+ * the malformed row enters no aggregate and is counted on the KPI row as
+ * excluded_event_count. The seed's job is unchanged — it is still the only reason this
+ * suite can see the outage's data shape — but what it must now prove is the inverse:
+ * that the mastery write COMMITS, and that the excluded row is both counted and
+ * genuinely excluded from the numbers. Mastery stays fail-closed; only the display
+ * surface changed posture, so this file asserts a commit rather than a rollback.
  *
  * The seed must be status='answered'. Skipped rows are excluded from every KPI scan
  * by the `status = 'answered'` predicate, so a skipped poison row would prove nothing.
@@ -181,6 +191,17 @@ describeIf("mastery emission — real PostgREST transport", () => {
       `DELETE FROM public.student_skill_mastery WHERE student_id = $1`,
       [STUDENT_ID],
     );
+    // The KPI rows carry no FK to profiles, so nothing below cascades them away.
+    // They are read directly by the quarantine assertions, so a row left by the
+    // previous test would be indistinguishable from one this test produced.
+    await pg.query(
+      `DELETE FROM public.student_overall_kpi WHERE student_id = $1`,
+      [STUDENT_ID],
+    );
+    await pg.query(
+      `DELETE FROM public.student_section_kpi WHERE student_id = $1`,
+      [STUDENT_ID],
+    );
     await pg.query(
       `DELETE FROM public.practice_session_items WHERE user_id = $1`,
       [STUDENT_ID],
@@ -262,18 +283,22 @@ describeIf("mastery emission — real PostgREST transport", () => {
     );
   }
 
-  /** Inserts a clean answered item in section M and returns its id. */
-  async function seedCleanAnsweredItem(): Promise<string> {
+  /**
+   * Inserts a clean answered item in section M and returns its id. The ordinal is a
+   * parameter because the repair case needs a SECOND clean event to drive the §4.9
+   * chain again through the real transport, and (session_id, ordinal) is unique.
+   */
+  async function seedCleanAnsweredItem(ordinal = 1): Promise<string> {
     const { rows } = await pg.query(
       `INSERT INTO public.practice_session_items
          (session_id, user_id, ordinal, question_id, question_stem, question_options,
           question_correct_answer, question_explanation, question_domain, question_skill,
           question_difficulty, question_section, status, selected_answer, is_correct,
           outcome, answered_at, occurred_at, actor_id)
-       VALUES ($1,$2,1,$3,'Stem','[{"key":"A","text":"a"}]'::jsonb,'A','E',
+       VALUES ($1,$2,$5,$3,'Stem','[{"key":"A","text":"a"}]'::jsonb,'A','E',
                'Algebra','ALG.01',2,'M','answered','A',true,'correct', now(), now(), $4)
        RETURNING id`,
-      [CLEAN_SESSION_ID, STUDENT_ID, M_QUESTION, actorId],
+      [CLEAN_SESSION_ID, STUDENT_ID, M_QUESTION, actorId, ordinal],
     );
     return rows[0].id as string;
   }
@@ -310,6 +335,30 @@ describeIf("mastery emission — real PostgREST transport", () => {
     };
   }
 
+  /**
+   * The KPI row refresh_overall_kpi wrote. `excluded` is the quarantine tally;
+   * `eventsTotal` and `sectionsActive` are read alongside it because a count that is
+   * kept while the row still feeds the aggregates would be a tally, not a quarantine.
+   * Returns null when no row exists — which is itself the pre-migration signature.
+   */
+  async function overallKpi(): Promise<{
+    excluded: number;
+    eventsTotal: number;
+    sectionsActive: number;
+  } | null> {
+    const { rows } = await pg.query(
+      `SELECT excluded_event_count, events_total, sections_active
+         FROM public.student_overall_kpi WHERE student_id = $1`,
+      [STUDENT_ID],
+    );
+    if (rows.length === 0) return null;
+    return {
+      excluded: Number(rows[0].excluded_event_count),
+      eventsTotal: Number(rows[0].events_total),
+      sectionsActive: Number(rows[0].sections_active),
+    };
+  }
+
   // -------------------------------------------------------------------------
   it("writes audit, domain mastery and projection refresh state through real PostgREST", async () => {
     const eventId = await seedCleanAnsweredItem();
@@ -335,31 +384,45 @@ describeIf("mastery emission — real PostgREST transport", () => {
   });
 
   // -------------------------------------------------------------------------
-  it("RED-FIRST: a legacy NULL occurred_at row in another section blocks the whole student", async () => {
+  it("QUARANTINE: a legacy NULL occurred_at row in another section no longer blocks the student", async () => {
     // Reproduces production exactly. The poison row is in RW; the event is in M.
-    // A domain-scoped reading of the defect predicts success here. It fails,
-    // because refresh_overall_kpi validates the student's entire history.
+    // Before migration 20260901000000 this raised KPI_HISTORICAL_DATA_INVALID and rolled
+    // the whole transaction back — the "nothing anywhere" signature of the outage. The
+    // KPI surface now quarantines the row instead, so the mastery write must survive it.
     await seedPoisonRow();
     const eventId = await seedCleanAnsweredItem();
 
     const result = await emit(eventId);
 
-    expect(result.ok).toBe(false);
-    expect(result.error ?? "").toMatch(/KPI_HISTORICAL_DATA_INVALID/);
+    expect(result.error ?? null).toBeNull();
+    expect(result.ok).toBe(true);
 
-    // Whole transaction rolled back — this is the "nothing anywhere" signature.
+    // The truth anchor is intact end to end. student_projection_refresh_state is the
+    // load-bearing one: bump_projection_refresh_counter is apply_mastery_event's final
+    // statement, and this table had 0 rows for the entire outage.
     const c = await counts();
-    expect(c.audit).toBe(0);
-    expect(c.domain).toBe(0);
-    expect(c.refresh).toBe(0);
+    expect(c.audit).toBe(1);
+    expect(c.domain).toBe(1);
+    expect(c.refresh).toBe(1);
+
+    const kpi = await overallKpi();
+    expect(kpi).not.toBeNull();
+    // COUNTED — the exclusion is visible per student, which is what separates this
+    // from the silent NULL filter RB-05B-V1-02 rejected.
+    expect(kpi?.excluded).toBe(1);
+    // EXCLUDED — and it is genuinely out of the numbers, not merely tallied. Only the
+    // M event is aggregated; the RW poison row contributes to no section.
+    expect(kpi?.eventsTotal).toBe(1);
+    expect(kpi?.sectionsActive).toBe(1);
   });
 
   // -------------------------------------------------------------------------
-  it("GREEN-AFTER: repairing occurred_at unblocks the same event", async () => {
+  it("REPAIR: fixing occurred_at returns the quarantined row to the aggregates", async () => {
     await seedPoisonRow();
-    const eventId = await seedCleanAnsweredItem();
+    const firstEventId = await seedCleanAnsweredItem(1);
 
-    expect((await emit(eventId)).ok).toBe(false);
+    expect((await emit(firstEventId)).ok).toBe(true);
+    expect((await overallKpi())?.excluded).toBe(1);
 
     // Exactly what migration 20260816000000 statement (1) does.
     await pg.query(
@@ -370,12 +433,23 @@ describeIf("mastery emission — real PostgREST transport", () => {
           AND answered_at IS NOT NULL`,
     );
 
-    const result = await emit(eventId);
+    // Drive the §4.9 chain again through the real transport rather than calling the
+    // refresher directly — the repair has to be observable on the path production uses.
+    // A replay of firstEventId would not do: apply_mastery_event is idempotent on
+    // event_id, so it would exercise the dedupe path and never reach the refreshers.
+    const secondEventId = await seedCleanAnsweredItem(2);
+    const result = await emit(secondEventId);
     expect(result.error ?? null).toBeNull();
     expect(result.ok).toBe(true);
 
+    const kpi = await overallKpi();
+    expect(kpi?.excluded).toBe(0);
+    // The repaired RW row is now counted, in its own section: two M events plus it.
+    expect(kpi?.eventsTotal).toBe(3);
+    expect(kpi?.sectionsActive).toBe(2);
+
     const c = await counts();
-    expect(c.audit).toBe(1);
+    expect(c.audit).toBe(2);
     expect(c.refresh).toBe(1);
   });
 
@@ -450,15 +524,21 @@ describeIf("mastery emission — real PostgREST transport", () => {
     expect(body.code).toBe("PGRST202");
   });
 
-  it("MUTATION (iii): without the poison seed the RED case would pass — proving the seed is load-bearing", async () => {
-    // If this passes AND the RED-FIRST test above also passed, the suite would be
-    // testing nothing: it would go green on a clean student while production
-    // stayed broken. That is exactly how four existing suites earned green for
-    // seven weeks. Keeping this assertion adjacent to the RED case is what makes
-    // the poison seed provably load-bearing rather than decorative.
+  it("MUTATION (iii): without the poison seed there is nothing to exclude — proving the seed is load-bearing", async () => {
+    // Under the old fail-closed posture this case proved the seed was load-bearing by
+    // showing the RED case went green without it. The commit assertion can no longer
+    // carry that weight — the event commits either way now — so the count does: with a
+    // clean student excluded_event_count is 0, and the quarantine case's `= 1` is
+    // therefore an assertion about the seed and not a constant. Delete the seed from
+    // that test and it reds here-equivalent, on the value 1.
     const eventId = await seedCleanAnsweredItem();
     const result = await emit(eventId);
     expect(result.ok).toBe(true);
     expect((await counts()).audit).toBe(1);
+
+    const kpi = await overallKpi();
+    expect(kpi?.excluded).toBe(0);
+    expect(kpi?.eventsTotal).toBe(1);
+    expect(kpi?.sectionsActive).toBe(1);
   });
 });
