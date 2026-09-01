@@ -101,8 +101,19 @@ jobs:
       - name: Shared package — lint (blocking)
         run: pnpm run lint:shared
 
-      - name: Build
-        run: pnpm run build
+      # build:vercel is a superset of build: it runs `build` and then emits
+      # dist/vercel-api.cjs, the CJS bundle Vercel actually loads. CI used to
+      # build only dist/index.js, so the artifact production runs was never
+      # compiled here — which is part of why a bundle that could not start was
+      # able to pass CI on 2026-08-27.
+      - name: Build (including the Vercel production bundle)
+        run: pnpm run build:vercel
+
+      - name: Boot probe (production bundle must complete module load)
+        run: pnpm run probe:boot
+
+      - name: Boot probe self-test (proves each failure mode turns it red)
+        run: bash scripts/ci/boot-probe.selftest.sh
 
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
@@ -112,6 +123,44 @@ jobs:
 
       - name: Tutor never writes mastery (C-7 / INV-03-01)
         run: node scripts/ci/tutor-never-writes-mastery.mjs
+
+      # SAT_TAXONOMY shipped slugs ('math', 'advanced_math', 'linear_equations')
+      # against a database holding 'M', 'Advanced Math', 'Linear Equations in One
+      # Variable'. Nothing joined and the mastery page said "No Mastery Data Yet" to
+      # every student who had data. It survived because the TESTS seeded the same
+      # slugs: the suite agreed with the broken code instead of with the schema.
+      - name: Test fixture canonicality gate (section/domain must match the DB CHECKs)
+        run: node scripts/ci/test-fixture-canonicality-gate.mjs
+
+      - name: Fixture canonicality self-test (proves each mutation turns it red)
+        run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
+
+      # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
+      # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
+      # cannot see it — only a text search over the committed tree can.
+      - name: Retired endpoints gate (no caller of a deleted route may remain)
+        run: node scripts/ci/retired-endpoints-gate.mjs
+
+      - name: Retired endpoints self-test (proves each mutation turns it red)
+        run: bash scripts/ci/retired-endpoints-gate.selftest.sh
+
+      # "Every subject-scoped handler is role-blind" is an ALL-ROUTES property, and any
+      # all-routes property is a chokepoint: enforced once, never per route. Three privilege
+      # divergences in this vertical were each found by collapsing two independently-written
+      # paths; while two paths serve one resource a fourth instance is a schedule, not a risk.
+      - name: Subject-resolver chokepoint gate (no handler below the resolver learns the caller's role)
+        run: node scripts/ci/subject-resolver-chokepoint-gate.mjs
+
+      # The consent surface was written against columns that do not exist and CI stayed green
+      # for months, because the tests mocked Supabase and returned fixtures spelling the same
+      # imagined names. Code and mock agreed; neither was ever compared to Postgres. This
+      # forbids both halves on guardian paths — a query-layer mock with no real pg.Client
+      # behind it, and a hand-written row literal.
+      - name: Guardian schema-truth gate (no mocked query layer, no hand-written rows)
+        run: node scripts/ci/guardian-schema-truth-gate.mjs
+
+      - name: Guardian schema-truth self-test (proves each rule turns it red)
+        run: bash scripts/ci/guardian-schema-truth-gate.selftest.sh
 
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
@@ -330,6 +379,20 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/genesis-fresh-apply.sh
 
+      # The guardian gate has never executed in production: guardian_links holds zero rows,
+      # and the TypeScript that would have written one addressed columns that exist in no
+      # spec, no schema, and no prod table. Every guardian test to date mocked the link layer
+      # away, which is how that survived ten weeks. This gate inserts REAL rows.
+      - name: guardian_view_decision gate (ONE derivation, on real guardian_links rows)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-view-decision-gate.sh
+
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
   # questions into ephemeral Postgres, exercises select_practice_pool_random,
@@ -432,6 +495,37 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/guardian-link.pg.ci.test.ts
+
+      # @spec [Doc-01_V8 §36.1 student-side acceptance | owner rulings 2026-08-27 Q2/Q3/Q7]
+      # Added by hand per the NOTE above, which is the whole reason that note exists.
+      # Proves the guardian-initiated half of §36.1 can now COMPLETE: a pending_student_accept
+      # link reaches `active` through POST /api/students/:studentId/links/:linkId/accept, with
+      # `status`, `accepted_at` and `accepted_by_profile_id` read back from the real row. Before
+      # this route existed no path in the codebase could activate a guardian-initiated link,
+      # which is why `guardian_links` holds zero rows in production.
+      - name: Student-side link lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/guardian-link-student-side.pg.ci.test.ts
+
+      # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
+      # The proof above can only be trusted if its cases can FAIL. Three times in three
+      # consecutive steps a case read green while proving nothing — a mutation that never
+      # applied, a mutation that reddened an earlier assertion than the one it named, and a
+      # precondition that put a different mechanism in the path. Each was caught by hand,
+      # which is not a mechanism. This runs the declared mutations and fails the build unless
+      # each one turns EXACTLY the cases it claims. It is the LAST step in this job because it
+      # patches source files in the working tree and restores them in a finally.
+      - name: Student-side link lifecycle → mutation harness
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: node scripts/ci/guardian-link-mutation-harness.mjs
 
   # ---------------------------------------------------------------------------
   # Mastery pipeline gates — HARD GATE.
@@ -548,6 +642,11 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-history-gate.sh
 
+      - name: Migration inventory gate (applied vs pending discrimination)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-inventory-gate.sh
+
       # Session lifecycle, steps 2/1/8/9. Seven fixture students; the two that
       # earn their place are E (two ALL-NULL diagnostic_baseline rows — what the
       # evidence gate actually writes, so counting snapshot rows calls them
@@ -564,6 +663,14 @@ jobs:
           source scripts/ci/lib/deletion-rehearsal-db.sh
           setup_genesis_db mastery_gap_ci
           psql -v ON_ERROR_STOP=1 -d mastery_gap_ci -q -f scripts/ci/mastery-gap-detection-gates.sql
+        shell: bash
+
+      # Six level names + the drill-down catalog. The catalog replaces SAT_TAXONOMY,
+      # whose invented slugs (math/advanced_math/linear_equations) never matched the
+      # canonical DB values (M/Advanced Math/Linear Equations in One Variable), so the
+      # skill tree resolved every node to NULL for every student.
+      - name: Mastery levels + skill catalog gates (RULE 1/2/3/5)
+        run: bash scripts/ci/mastery-levels-gate.sh
         shell: bash
 
       # The gate that would have caught this outage on day one.

@@ -19,7 +19,9 @@
     "typeRoots": ["./types", "./node_modules/@types"],
     "paths": {
       "@/*": ["./client/src/*"],
-      "@shared/*": ["./shared/*"]
+      "@shared/*": ["./shared/*"],
+      "@lyceon/shared": ["./packages/shared/src/index.ts"],
+      "@lyceon/shared/*": ["./packages/shared/src/*"]
     }
   },
   "include": [

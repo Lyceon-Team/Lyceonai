@@ -17,6 +17,12 @@ const accountMocks = vi.hoisted(() => ({
   revokeGuardianLink: vi.fn(),
   isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
+  // Step 6 (Q7): the revoke route reads party-hood before delegating, so a missing mock here
+  // is `undefined` at the call site and the route 500s BEFORE `revokeGuardianLink` — which is
+  // how this case failed when the reader landed. The comment in the case below says it
+  // "tolerates 500", and that tolerance is exactly why the delegation assertion is the only
+  // thing keeping it honest.
+  getAnyGuardianLinkForPair: vi.fn(),
 }));
 
 const authMocks = vi.hoisted(() => ({
@@ -48,9 +54,12 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
 
 vi.mock("../../server/lib/account", () => ({
   createGuardianLink: vi.fn(),
+  acceptGuardianLink: vi.fn(),
   revokeGuardianLink: accountMocks.revokeGuardianLink,
   isGuardianLinkedToStudent: accountMocks.isGuardianLinkedToStudent,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
+  getGuardianLinkById: vi.fn(),
+  getAnyGuardianLinkForPair: accountMocks.getAnyGuardianLinkForPair,
   ensureAccountForUser: vi.fn(),
   getAccountIdForUser: vi.fn(),
 }));
@@ -210,6 +219,12 @@ describe("Mutation Ownership Contract", () => {
 
     it("Guardian: revoke link delegates to account service", async () => {
       accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+      accountMocks.getAnyGuardianLinkForPair.mockResolvedValue({
+        id: "11111111-1111-1111-1111-111111111111",
+        guardian_profile_id: "guardian-1",
+        student_profile_id: "student-1",
+        status: "active",
+      });
       accountMocks.revokeGuardianLink.mockResolvedValue({
         id: "11111111-1111-1111-1111-111111111111",
         guardian_profile_id: "guardian-1",

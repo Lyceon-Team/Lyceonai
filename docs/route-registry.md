@@ -47,16 +47,14 @@ This document is the single authoritative registry of:
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
-| `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
+| `/mastery` | student, admin | free | MasteryPage | `/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
 | `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
-| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
-| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
-| `/guardian/verify-consent` | guardian, admin | entitled | GuardianVerifyConsent | `/api/guardian/verify-consent` | ACTIVE |
+| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
 **admin-only** = admin role bypasses all entitlement checks (full access)
@@ -116,7 +114,6 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/auth/signin` | POST | No | public | Email/password signin |
 | `/api/auth/signout` | POST | No (CSRF required) | any | Sign out current user (clears cookies) |
 | `/api/auth/google/start` | GET | No | public | Google OAuth flow |
-| `/api/auth/consent` | POST | Yes | any | Submit guardian consent for under-13 users (CSRF protected) |
 | `/api/auth/refresh` | POST | No | public | Refresh auth token |
 | `/api/auth/admin-provision` | POST | No (CSRF + passcode required) | guarded | Provision admin account through explicit passcode gate (`ADMN_PASSCODE`) |
 | `/api/profile` | GET | Yes | any | Get user profile (canonical) |
@@ -152,8 +149,9 @@ Removed auth endpoints (must return 404):
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
 | `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
 | `/api/review-errors/attempt` | POST | Yes | student/admin | free | Submit session-based review answer (owner: `submitReviewSessionAnswer`) |
-| `/api/me/mastery/skills` | GET | Yes | student/admin | free | Mastery statistics |
-| `/api/me/weakness/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
+| `/api/students/{{studentId}}/mastery/domains` | GET | Yes | student/admin | premium | Domain grid: level + level name per canonical domain |
+| `/api/students/:studentId/mastery/skills` | GET | Yes | student/admin | premium | Skill panel for one domain; unmeasured skills present and labelled |
+| `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
 
 ### Full-Length Exam Endpoints (Bluebook SAT)
@@ -173,9 +171,8 @@ Removed auth endpoints (must return 404):
 | `/api/guardian/students` | GET | Yes | guardian/admin | free | List linked students |
 | `/api/guardian/link` | POST | Yes | guardian/admin | free | Link student account |
 | `/api/guardian/link/:studentId` | DELETE | Yes | guardian/admin | free | Unlink student |
-| `/api/guardian/students/:studentId/summary` | GET | Yes | guardian/admin | entitled | Student progress summary |
-| `/api/guardian/students/:studentId/calendar/month` | GET | Yes | guardian/admin | entitled | Student calendar data (projection of canonical student month payload via `buildCalendarMonthView`) |
-| `/api/guardian/weaknesses/:studentId` | GET | Yes | guardian/admin | entitled | Student weaknesses |
+| `/api/students/:studentId/kpi/overall` | GET | Yes | guardian/admin | entitled | Student progress summary |
+| `/api/students/:studentId/mastery/domains` | GET | Yes | guardian/admin | entitled | Student weaknesses |
 
 ### Admin Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |
@@ -217,7 +214,6 @@ Removed auth endpoints (must return 404):
 - **requireStudentOrAdmin** - Enforces student or admin role
 - **requireGuardianRole** - Enforces guardian or admin role
 - **requireSupabaseAdmin** - Enforces admin-only access
-- **requireGuardianEntitlement** - Enforces paid entitlement for guardian features
 - **checkPracticeLimit** - Enforces practice usage limits (free tier: 10/day)
 - **checkAiChatLimit** - Enforces tutor chat usage limits (free tier: 5/day)
 

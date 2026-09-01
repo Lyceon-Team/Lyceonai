@@ -47,10 +47,6 @@ const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
-const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
-const GuardianConsentVerify = lazy(
-  () => import("@/pages/guardian-consent-verify"),
-);
 
 function PageLoader() {
   return (
@@ -226,22 +222,10 @@ function Router() {
 
         {/* Guardian routes - require guardian or admin role */}
         <Route
-          path="/guardian/verify-consent"
-          component={GuardianConsentVerify}
-        />
-        <Route
           path="/guardian"
           component={() => (
             <RequireRole allow={["guardian", "admin"]}>
               <GuardianDashboard />
-            </RequireRole>
-          )}
-        />
-        <Route
-          path="/guardian/students/:studentId/calendar"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianCalendar />
             </RequireRole>
           )}
         />

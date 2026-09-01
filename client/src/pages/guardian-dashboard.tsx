@@ -49,10 +49,10 @@ import {
   SubscriptionPaywall,
   ManageSubscriptionButton,
 } from "@/components/guardian/SubscriptionPaywall";
-import FullLengthResultsView, {
-  type FullLengthResultsData,
-} from "@/components/full-length-exam/FullLengthResultsView";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { fetchMasteryDomains } from "@/lib/masteryApi";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import { LevelPill } from "@/components/mastery/LevelPill";
 
 interface StudentSummary {
   student: {
@@ -74,41 +74,6 @@ interface StudentSummary {
       whatThisMeans?: string;
     };
   }>;
-}
-
-interface GuardianWeaknessResponse {
-  ok: true;
-  count: number;
-  skills: Array<{
-    section: string;
-    domain: string | null;
-    skill: string;
-    attempts: number;
-    correct: number;
-    accuracyPercent: number;
-    status: "not_started" | "weak" | "improving" | "proficient";
-  }>;
-}
-
-interface GuardianFullLengthReportResponse {
-  studentId: string;
-  sessionId: string;
-  report: FullLengthResultsData;
-}
-
-interface GuardianFullLengthHistorySession {
-  sessionId: string;
-  status: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-  reportAvailable: boolean;
-  reviewAvailable: boolean;
-}
-
-interface GuardianFullLengthHistoryResponse {
-  studentId: string;
-  sessions: GuardianFullLengthHistorySession[];
 }
 
 interface GuardianBillingStatus {
@@ -136,16 +101,6 @@ export default function GuardianDashboard() {
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
-  const [reportSessionInput, setReportSessionInput] = useState("");
-  const [requestedReportSessionId, setRequestedReportSessionId] = useState<
-    string | null
-  >(null);
-
-  const formatStatus = (
-    status: GuardianWeaknessResponse["skills"][number]["status"],
-  ) => {
-    return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  };
 
   const {
     data: studentsData,
@@ -162,8 +117,12 @@ export default function GuardianDashboard() {
   } = useQuery({
     queryKey: ["guardian-student-summary", selectedStudentId],
     queryFn: async () => {
+      // ONE route per resource (Doc 05B §10.3). This is the SAME endpoint the student
+      // dashboard calls; the only difference is whose id is in the path. The guardian-only
+      // `/api/guardian/students/:id/summary` it replaced was the second path that produced
+      // privilege divergences #1 and #3.
       const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/summary`,
+        studentResourceUrl(selectedStudentId ?? "", "kpiOverall"),
         { credentials: "include" },
       );
       if (!res.ok) {
@@ -175,89 +134,40 @@ export default function GuardianDashboard() {
     enabled: !!selectedStudentId,
   });
 
+  /**
+   * @spec [owner standing rule 2026-08-21 — one derivation, one DTO, one shape; the
+   *   guardian surface is the student read plus a gate] | @implemented [2026-08-21]
+   *
+   * The response type is `MasteryDomainsResponse` — the SAME type the student mastery grid
+   * consumes — and the fetcher lives in `@/lib/masteryApi` beside the student one, because
+   * the server produces both bodies from one function. The hand-written
+   * `GuardianWeaknessResponse` that used to sit here declared `skills` with
+   * attempts/correct/accuracyPercent against a route that returns `domains`; it read `.map`
+   * off `undefined` and crashed the dashboard for every guardian whose student had rows.
+   */
   const {
     data: weaknessData,
     isLoading: weaknessLoading,
     error: weaknessError,
     refetch: refetchWeakness,
   } = useQuery({
-    queryKey: ["guardian-weaknesses", selectedStudentId],
-    queryFn: async () => {
-      const res = await csrfFetch(
-        `/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`,
-        { credentials: "include" },
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to load weaknesses");
-      }
-      return res.json() as Promise<GuardianWeaknessResponse>;
-    },
+    queryKey: [studentResourceUrl(selectedStudentId ?? "", "masteryDomains")],
+    queryFn: () => fetchMasteryDomains(selectedStudentId ?? ""),
     enabled: !!selectedStudentId,
   });
 
-  const {
-    data: guardianExamHistoryData,
-    isLoading: guardianExamHistoryLoading,
-    error: guardianExamHistoryError,
-  } = useQuery<GuardianFullLengthHistoryResponse>({
-    queryKey: ["guardian-full-length-history", selectedStudentId],
-    queryFn: async () => {
-      if (!selectedStudentId) {
-        throw new Error("Select student first");
-      }
-
-      const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/exams/full-length/sessions?limit=12&include_incomplete=true`,
-        { credentials: "include" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          `${res.status}: ${data.error || "Failed to load full-length history"}`,
-        );
-      }
-      return data as GuardianFullLengthHistoryResponse;
-    },
-    enabled: !!selectedStudentId,
-    retry: false,
-  });
-
-  const {
-    data: guardianExamReportData,
-    isLoading: guardianExamReportLoading,
-    error: guardianExamReportError,
-  } = useQuery<GuardianFullLengthReportResponse>({
-    queryKey: [
-      "guardian-full-length-report",
-      selectedStudentId,
-      requestedReportSessionId,
-    ],
-    queryFn: async () => {
-      if (!selectedStudentId || !requestedReportSessionId) {
-        throw new Error("Select student and session ID first");
-      }
-
-      const res = await csrfFetch(
-        `/api/guardian/students/${selectedStudentId}/exams/full-length/${encodeURIComponent(requestedReportSessionId)}/report`,
-        { credentials: "include" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          `${res.status}: ${data.error || "Failed to load full-length report"}`,
-        );
-      }
-      return data as GuardianFullLengthReportResponse;
-    },
-    enabled: !!selectedStudentId && !!requestedReportSessionId,
-    retry: false,
-  });
-
-  useEffect(() => {
-    setRequestedReportSessionId(null);
-    setReportSessionInput("");
-  }, [selectedStudentId]);
+  /**
+   * A SUCCESSFUL response whose `domains` is not an array is a contract violation, not an
+   * empty result — so it renders as a recoverable error rather than as "this student has
+   * no mastery yet". This is the same distinction the server makes (a failed read throws
+   * and answers 500; a genuinely empty catalog answers 200 with an explicit flag), carried
+   * through to the last surface that could blur it. The previous code read
+   * `weaknessData.skills.map(...)` off a key the route never sends, which threw and took
+   * the whole dashboard down.
+   */
+  const weaknessDomains = Array.isArray(weaknessData?.domains)
+    ? weaknessData.domains
+    : null;
 
   const { data: billingStatus } = useQuery({
     queryKey: ["guardian-billing-status"],
@@ -286,13 +196,17 @@ export default function GuardianDashboard() {
         );
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // §36.1: the link is created PENDING. The student has to accept before the
       // guardian sees anything, so the message must not claim the link is live.
       // The response is deliberately identical whether or not the address matches a
       // student account (anti-enumeration), so it cannot name the student either.
+      const linkId =
+        typeof data?.data?.link_id === "string" ? data.data.link_id : null;
       setLinkSuccess(
-        "Request sent. Your student will get an email asking them to confirm.",
+        linkId
+          ? `Request created. Ask your student to sign in and accept the pending guardian link from their account. Request ID: ${linkId}.`
+          : "Request created. Ask your student to sign in and accept the pending guardian link from their account.",
       );
       setLinkEmail("");
       setLinkError(null);
@@ -362,16 +276,6 @@ export default function GuardianDashboard() {
     }
   };
 
-  const handleLoadGuardianExamReport = (event: React.FormEvent) => {
-    event.preventDefault();
-    const normalized = reportSessionInput.trim();
-    if (!normalized) {
-      setRequestedReportSessionId(null);
-      return;
-    }
-    setRequestedReportSessionId(normalized);
-  };
-
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center">
@@ -388,21 +292,38 @@ export default function GuardianDashboard() {
     return <Redirect to="/dashboard" />;
   }
 
-  const students = studentsData?.students || [];
+  /**
+   * A SUCCESSFUL response whose `students` is not an array is a contract violation, not an
+   * empty roster. `|| []` rendered it as "Connection Required" — which reads to a parent as
+   * a fact about their account ("you have no linked student") when the truth is that we
+   * could not establish the roster at all. Same distinction as `weaknessDomains` above, and
+   * the same class as the `?? 0` that told a parent their child had answered nothing.
+   */
+  const students = Array.isArray(studentsData?.students)
+    ? studentsData.students
+    : null;
+  const studentsMalformed = studentsData !== undefined && students === null;
+
+  const selectedStudent =
+    students?.find((student) => student.id === selectedStudentId) ?? null;
+
+  /**
+   * The guardian summary IS the student KPI envelope with the metric list narrowed — there
+   * is no `progress` object any more, because `progress.questionsAttempted` and
+   * `metrics[id=week_questions].value` were the same number twice. Derived in the render
+   * body: a pure function of fetched data never belongs in a useEffect (§11.4).
+   */
+  const summaryMetricValue = (id: string): number | null => {
+    const metric = summaryData?.metrics?.find(
+      (candidate: { id: string; value: number | null }) => candidate.id === id,
+    );
+    const value = metric?.value;
+    return value === null || value === undefined ? null : Number(value);
+  };
   const showPaidUnlinkedCta =
     !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
     !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
-  const guardianExamReportErrorMessage =
-    guardianExamReportError instanceof Error
-      ? guardianExamReportError.message
-      : "";
-  const guardianReportNotFound = guardianExamReportErrorMessage.includes("404");
-  const guardianReportLocked = guardianExamReportErrorMessage.includes("423");
-  const guardianExamHistoryErrorMessage =
-    guardianExamHistoryError instanceof Error
-      ? guardianExamHistoryError.message
-      : "";
 
   return (
     <SubscriptionPaywall>
@@ -449,15 +370,25 @@ export default function GuardianDashboard() {
             </Alert>
           )}
 
-          {students.length === 0 && (
+          {studentsMalformed && (
+            <div className="py-2">
+              <RecoveryNotice
+                title="We couldn't load your linked students."
+                message="Try again. If this keeps happening, refresh the page."
+                onRetry={() => void refetchStudents()}
+              />
+            </div>
+          )}
+
+          {students?.length === 0 && (
             <Card className="bg-card border-border/60">
               <CardHeader>
                 <CardTitle className="text-[#0F2E48]">
                   Connection Required
                 </CardTitle>
                 <CardDescription>
-                  Enter a valid 8-character student link code to activate
-                  guardian reporting.
+                  Send a guardian link request to your student's account email.
+                  Reporting starts after the student accepts from their account.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
@@ -478,8 +409,8 @@ export default function GuardianDashboard() {
                 Link a Student
               </CardTitle>
               <CardDescription>
-                Enter the 8-character code from your student's profile page to
-                connect
+                Enter your student's account email. They must accept the pending
+                guardian link from their own account before reporting unlocks.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -564,9 +495,11 @@ export default function GuardianDashboard() {
                 </div>
               </div>
               <CardDescription>
-                {students.length === 0
-                  ? "No students linked yet. Use the form above to link a student."
-                  : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
+                {students === null
+                  ? "Linked students unavailable."
+                  : students.length === 0
+                    ? "No students linked yet. Use the form above to link a student."
+                    : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -574,7 +507,12 @@ export default function GuardianDashboard() {
                 <div className="text-center py-8 text-[#0F2E48]/60">
                   Loading students...
                 </div>
-              ) : studentsError ? (
+              ) : studentsError || students === null ? (
+                /* `students === null` is a SUCCESSFUL response whose `students` was not an
+                   array. It renders here, beside the failed fetch, because both mean the
+                   same thing to a parent: we could not establish the roster. What it must
+                   NOT do is fall through to "No students linked yet" — that is a claim
+                   about their account, made from a value we never read. */
                 <div className="py-6">
                   <RecoveryNotice
                     title="We couldn't load students."
@@ -589,8 +527,8 @@ export default function GuardianDashboard() {
                     No students linked yet
                   </h3>
                   <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Ask your student for their 8-character link code from their
-                    Profile page, then enter it above.
+                    Enter your student's account email above, then ask them to
+                    sign in and accept the pending guardian link.
                   </p>
                 </div>
               ) : (
@@ -619,19 +557,6 @@ export default function GuardianDashboard() {
                             {student.email}
                           </div>
                         </button>
-                        <Link
-                          href={`/guardian/students/${student.id}/calendar`}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => e.stopPropagation()}
-                            className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
-                            title="View Calendar"
-                          >
-                            <Calendar className="h-4 w-4" />
-                          </Button>
-                        </Link>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -660,8 +585,10 @@ export default function GuardianDashboard() {
                     Student Progress
                   </CardTitle>
                   <CardDescription>
-                    {summaryData?.student?.displayName || "Student"}'s activity
-                    in the last 7 days
+                    {selectedStudent?.display_name ||
+                      selectedStudent?.email?.split("@")[0] ||
+                      "Student"}
+                    's activity in the last 7 days
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -683,7 +610,7 @@ export default function GuardianDashboard() {
                         <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
                           <Clock className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.currentStreakDays}
+                            {summaryMetricValue("current_streak") ?? "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
                             Day Streak
@@ -692,7 +619,7 @@ export default function GuardianDashboard() {
                         <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
                           <Target className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.questionsAttempted}
+                            {summaryMetricValue("week_questions") ?? "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
                             Questions Attempted (7d)
@@ -703,8 +630,8 @@ export default function GuardianDashboard() {
                             %
                           </div>
                           <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryData.progress.accuracy !== null
-                              ? `${summaryData.progress.accuracy}%`
+                            {summaryMetricValue("week_accuracy") !== null
+                              ? `${summaryMetricValue("week_accuracy")}%`
                               : "--"}
                           </div>
                           <div className="text-xs text-[#0F2E48]/60">
@@ -731,7 +658,7 @@ export default function GuardianDashboard() {
                             ))}
                           </div>
                         )}
-                      {summaryData.progress.questionsAttempted === 0 && (
+                      {summaryMetricValue("week_questions") === 0 && (
                         <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
                           <p className="text-amber-800 text-sm">
                             No practice activity in the last 7 days. Encourage
@@ -761,11 +688,11 @@ export default function GuardianDashboard() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <CardTitle className="text-[#0F2E48]">
-                        Weakest Skills (Live)
+                        Domain Mastery
                       </CardTitle>
                       <CardDescription>
-                        Runtime-backed weaknesses from
-                        `/api/guardian/weaknesses/:studentId`.
+                        Where this student&apos;s answers place them in each
+                        domain. Guardian surfaces are domain-level only.
                       </CardDescription>
                     </div>
                     <Button
@@ -780,9 +707,9 @@ export default function GuardianDashboard() {
                 <CardContent>
                   {weaknessLoading ? (
                     <div className="text-center py-8 text-[#0F2E48]/60">
-                      Loading weaknesses...
+                      Loading domain mastery...
                     </div>
-                  ) : weaknessError ? (
+                  ) : weaknessError || (weaknessData && !weaknessDomains) ? (
                     <div className="py-6">
                       <RecoveryNotice
                         title="We couldn't load weakness data."
@@ -790,192 +717,41 @@ export default function GuardianDashboard() {
                         onRetry={() => void refetchWeakness()}
                       />
                     </div>
-                  ) : !weaknessData || weaknessData.count === 0 ? (
+                  ) : !weaknessDomains || weaknessDomains.length === 0 ? (
                     <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
-                      No weakness rows are currently available for this student.
+                      No domain mastery is available for this student yet.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {weaknessData.skills.map((skill) => (
+                    /*
+                     * Owner ruling 2026-08-21 Q7: these cards are NOT clickable — not
+                     * disabled, not clickable-and-denied. A card that looks interactive and
+                     * then refuses is worse than one that never invites the click, so this
+                     * is a plain <div> list with no button, no link, no cursor affordance
+                     * and no drill-down target. There is no guardian skill endpoint to open
+                     * (RULE 7), so an affordance here could only ever lead to a refusal.
+                     */
+                    <div
+                      className="space-y-3"
+                      data-testid="guardian-domain-list"
+                    >
+                      {weaknessDomains.map((node) => (
                         <div
-                          key={`${skill.section}-${skill.skill}`}
+                          key={`${node.section}-${node.domain}`}
                           className="rounded-lg border border-border/60 bg-secondary/35 p-3"
+                          data-testid="guardian-domain-row"
                         >
-                          <div className="flex items-center justify-between gap-3 mb-1">
+                          <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-medium text-[#0F2E48]">
-                              {skill.skill}
+                              {node.domain}
                             </p>
-                            <p className="text-sm font-semibold text-[#0F2E48]">
-                              {formatStatus(skill.status)}
-                            </p>
-                          </div>
-                          <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
-                            <span>
-                              {skill.section} ·{" "}
-                              {skill.domain || "Unspecified domain"}
-                            </span>
-                            <span>
-                              {skill.correct}/{skill.attempts} correct •{" "}
-                              {skill.accuracyPercent}% accuracy
-                            </span>
+                            <LevelPill
+                              levelKey={node.levelKey}
+                              displayName={node.displayName}
+                            />
                           </div>
                         </div>
                       ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="bg-card border-border/60">
-                <CardHeader>
-                  <CardTitle className="text-[#0F2E48]">
-                    Full-Length Exam Report
-                  </CardTitle>
-                  <CardDescription>
-                    Load guardian read-only report view using a real exam
-                    session ID.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {guardianExamHistoryLoading && (
-                    <p className="text-sm text-[#0F2E48]/70">
-                      Loading full-length session history...
-                    </p>
-                  )}
-                  {guardianExamHistoryError && (
-                    <RecoveryNotice
-                      title="We couldn't load full-length session history."
-                      message={
-                        guardianExamHistoryErrorMessage ||
-                        "Try again. If this keeps happening, refresh the page."
-                      }
-                    />
-                  )}
-                  {guardianExamHistoryData &&
-                    guardianExamHistoryData.sessions.length > 0 && (
-                      <div className="rounded-lg border border-border/60 bg-secondary/35 p-3">
-                        <p className="text-xs uppercase tracking-[0.16em] text-[#0F2E48]/60 mb-3">
-                          Linked student session history
-                        </p>
-                        <div className="space-y-2">
-                          {guardianExamHistoryData.sessions.map((session) => (
-                            <div
-                              key={session.sessionId}
-                              className="rounded-md border border-border/50 bg-card/80 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                              <div>
-                                <p className="text-sm font-medium text-[#0F2E48] break-all">
-                                  {session.sessionId}
-                                </p>
-                                <p className="text-xs text-[#0F2E48]/65">
-                                  Status: {session.status}{" "}
-                                  {session.completedAt
-                                    ? `• Completed ${new Date(session.completedAt).toLocaleString()}`
-                                    : ""}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setReportSessionInput(session.sessionId);
-                                  setRequestedReportSessionId(
-                                    session.sessionId,
-                                  );
-                                }}
-                                disabled={!session.reportAvailable}
-                              >
-                                {session.reportAvailable
-                                  ? "Open Report"
-                                  : "Report Locked"}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-[#0F2E48]/60 mt-3">
-                          Guardian review is not mounted for full-length exams
-                          yet; history remains report-only.
-                        </p>
-                      </div>
-                    )}
-                  {guardianExamHistoryData &&
-                    guardianExamHistoryData.sessions.length === 0 && (
-                      <p className="text-sm text-[#0F2E48]/70">
-                        No full-length sessions are available yet for this
-                        linked student.
-                      </p>
-                    )}
-
-                  <form
-                    onSubmit={handleLoadGuardianExamReport}
-                    className="flex flex-col sm:flex-row gap-3"
-                  >
-                    <Input
-                      value={reportSessionInput}
-                      onChange={(event) =>
-                        setReportSessionInput(event.target.value.trim())
-                      }
-                      placeholder="Enter student full-length session ID"
-                      aria-label="Guardian exam report session ID"
-                    />
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      disabled={
-                        !reportSessionInput || guardianExamReportLoading
-                      }
-                    >
-                      {guardianExamReportLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Loading...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4 mr-2" />
-                          Load Report
-                        </>
-                      )}
-                    </Button>
-                  </form>
-
-                  {guardianReportLocked && (
-                    <Alert className="border-amber-200 bg-amber-50">
-                      <AlertDescription className="text-amber-800">
-                        This exam session is not completed yet, so the guardian
-                        report view is still locked.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {guardianReportNotFound && !guardianReportLocked && (
-                    <Alert>
-                      <AlertDescription>
-                        No full-length report was found for that session ID
-                        under the linked student.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {guardianExamReportError &&
-                    !guardianReportNotFound &&
-                    !guardianReportLocked && (
-                      <RecoveryNotice
-                        title="We couldn't load this full-length report."
-                        message={
-                          guardianExamReportErrorMessage ||
-                          "Try again. If this keeps happening, refresh the page."
-                        }
-                      />
-                    )}
-
-                  {guardianExamReportData?.report && (
-                    <FullLengthResultsView
-                      data={guardianExamReportData.report}
-                      title="Guardian Report View"
-                      description="Read-only student-truth view from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
-                    />
                   )}
                 </CardContent>
               </Card>

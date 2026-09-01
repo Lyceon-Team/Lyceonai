@@ -33,7 +33,8 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
   getExamReviewAfterCompletion: vi.fn(),
 }));
 
-const { default: fullLengthExamRouter } = await import("../../server/routes/full-length-exam-routes");
+const { default: fullLengthExamRouter } =
+  await import("../../server/routes/full-length-exam-routes");
 
 function buildApp() {
   const app = express();
@@ -49,7 +50,9 @@ function buildApp() {
 describe("Full-Length Current Session CSRF", () => {
   it("blocks mutating GET current session without origin", async () => {
     const app = buildApp();
-    const res = await request(app).get("/api/full-length/sessions/current").query({ sessionId: "sess-1" });
+    const res = await request(app)
+      .get("/api/full-length/sessions/current")
+      .query({ sessionId: "sess-1" });
     expect(res.status).toBe(403);
     expect(res.body).toHaveProperty("error.code", "csrf_blocked");
   });
@@ -62,7 +65,10 @@ describe("Full-Length Current Session CSRF", () => {
       .set("Origin", "http://localhost:5000");
 
     expect(res.status).toBe(200);
-    expect(examMocks.getCurrentSession).toHaveBeenCalledWith("sess-1", "student-1", undefined);
+    expect(examMocks.getCurrentSession).toHaveBeenCalledWith(
+      "sess-1",
+      "student-1",
+      undefined,
+    );
   });
 });
-

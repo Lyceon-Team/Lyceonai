@@ -51,6 +51,39 @@ export const guardianLinkInitiatorSchema = z.enum(["guardian", "student"]);
 export type GuardianLinkInitiator = z.infer<typeof guardianLinkInitiatorSchema>;
 
 /**
+ * @spec [Doc-01_V8 §36.1 Initiation step 1 — the initiating party enters the OTHER party's
+ *        email; lyceon-coding-standards.md §7.1 (Zod at every boundary)]
+ *        | @implemented [2026-08-26, moved to shared 2026-08-27]
+ *
+ * plain English: the only shape a link-initiation request accepts, in EITHER direction.
+ * `.strict()` so an extra field is a 400 rather than something silently ignored; `.email()`
+ * so the per-address rate bucket in §36.2 is keyed on something that is actually an address.
+ *
+ * It lived in `guardian-routes.ts` while only the guardian could initiate. The student-side
+ * route takes the identical shape — the guardian's address rather than the student's — so it
+ * moved here rather than being written a second time (Coding Standards §7.2). One definition,
+ * so the two directions cannot drift on what they accept.
+ */
+export const guardianLinkRequestSchema = z
+  .object({ email: z.string().trim().min(3).max(320).email() })
+  .strict();
+export type GuardianLinkRequest = z.infer<typeof guardianLinkRequestSchema>;
+
+/**
+ * @spec [Doc-01_V8 §36.3 Revocation — `revocation_reason` is recorded; Coding Standards §7.1]
+ *   | @implemented [2026-08-27]
+ *
+ * plain English: the optional body of a revocation. A reason is not required — §36.3 records
+ * one when given and null otherwise — but when supplied it is bounded here rather than
+ * truncated at the call site, so the cap is part of the contract instead of a `.slice(0, 200)`
+ * each route remembers separately. `.strict()` for the same reason as the request schema.
+ */
+export const guardianLinkRevokeSchema = z
+  .object({ reason: z.string().trim().min(1).max(200).optional() })
+  .strict();
+export type GuardianLinkRevoke = z.infer<typeof guardianLinkRevokeSchema>;
+
+/**
  * A `timestamptz` as it arrives from whichever transport read it.
  *
  * PostgREST (supabase-js) hands these over as ISO strings; `node-postgres`, used by the
@@ -141,6 +174,17 @@ export function parseGuardianLinks(rows: unknown): GuardianLink[] {
  * a test double, a bundler duplicate — and the symptom is a 500 where a 409 was specified.
  * The contract is a separate thing from the implementation and is imported separately.
  */
+/**
+ * @spec [migration 20260828000000 — the audited transition functions] | @implemented [2026-08-28]
+ *
+ * plain English: the SQLSTATE each transition function raises, mapped to this module's error
+ * codes. PostgREST surfaces a raised SQLSTATE as `error.code`, so the caller matches a CODE
+ * rather than a message string — a message is prose and drifts; a SQLSTATE is a contract.
+ *
+ * ONE definition, consumed by `account.ts`. The functions and this map are edited together or
+ * the mapping silently degrades into "unknown error -> 500", which is how a specified 409
+ * becomes an opaque failure.
+ */
 export const GUARDIAN_LINK_ERROR = {
   /** An active or pending link already exists for this exact pair. */
   ALREADY_EXISTS: "GUARDIAN_LINK_ALREADY_EXISTS",
@@ -156,6 +200,24 @@ export const GUARDIAN_LINK_ERROR = {
    */
   NOT_ACTIVE: "LINK_NOT_ACTIVE",
 } as const;
+
+/**
+ * @spec [migration 20260828000000 — the audited transition functions] | @implemented [2026-08-28]
+ *
+ * plain English: the SQLSTATE each transition function raises, mapped to the codes above.
+ * PostgREST surfaces a raised SQLSTATE as `error.code`, so the caller matches a CODE rather
+ * than a message string — a message is prose and drifts; a SQLSTATE is a contract.
+ *
+ * ONE definition, consumed by `account.ts`. The migration and this map are edited together or
+ * the mapping degrades silently into "unknown error -> 500", which is how a specified 409
+ * becomes an opaque failure.
+ */
+export const GUARDIAN_LINK_SQLSTATE: Readonly<Record<string, string>> = {
+  LY001: GUARDIAN_LINK_ERROR.NOT_PENDING,
+  LY002: GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR,
+  LY003: GUARDIAN_LINK_ERROR.NOT_ACTIVE,
+  LY004: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+};
 
 export class GuardianLinkError extends Error {
   readonly code: string;

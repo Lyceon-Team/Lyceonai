@@ -1,5 +1,8 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import type {
+  CompleteExamResult,
+  FullLengthSessionHistoryItem,
+} from "../../apps/api/src/services/fullLengthExam";
 import { logger } from "../logger";
 import {
   diagnosticStateSchema,
@@ -113,7 +116,13 @@ function metricListToExplanationMap(
 
 // Genesis accuracy_* columns are 0–1 fractions (Doc 05B §6.5). Present as an integer
 // percent; null (not 0) when the window has zero events — an honest "no data" signal.
-function toAccuracyPercent(fraction: unknown, events: number): number | null {
+/**
+ * Fraction -> integer percent, with the empty-vs-failed rule built in: zero events yields
+ * `null`, never `0`. Exported so the section/domain KPI readers share this exact conversion
+ * rather than restating "no events means null" — a second copy is how one surface starts
+ * telling a parent their child scored 0% when the truth is that nothing was measured.
+ */
+export function toAccuracyPercent(fraction: unknown, events: number): number | null {
   if (events <= 0) return null;
   if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
   return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
@@ -804,6 +813,92 @@ export async function readAnsweredQuestionCount(
   // A null count with no error should not happen with head+exact, but "the
   // database did not tell us" is not "the student answered nothing".
   return typeof count === "number" ? count : null;
+}
+
+/**
+ * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
+ *   payload, derived via a projection function rather than independently constructed;
+ *   SCL-075 (PROPOSED) — the guardian exam session list has no owning document, capability
+ *   kept and to be specified] | @implemented [2026-08-24]
+ *
+ * plain English: one projection of the full-length session history, and a guardian
+ * narrowing of it.
+ *
+ * WHY THIS EXISTS. The two routes each mapped `listExamSessions` inline, and the two maps
+ * had drifted in three ways at once:
+ *   1. SHAPE — the student spread `...session` (every field the service returns, forever);
+ *      the guardian named six fields.
+ *   2. PRIVILEGE — the student gated `reportAvailable` on the student's paid access; the
+ *      guardian did not gate it at all, so a guardian could be told a report was available
+ *      when the student's own entitlement said otherwise. That is the same defect closed in
+ *      #644 for historical trends, in a second place, and it is why extraction is not
+ *      cosmetic: two inline maps cannot disagree if there is only one map.
+ *   3. INVENTION — the guardian emitted `reviewAvailable: false` for an endpoint that does
+ *      not exist (removed in #644).
+ *
+ * The student projection is the single derivation. The guardian projection is that result
+ * with `reviewAvailable` removed — structurally a subset, not a re-derivation, so a field
+ * added to the student item reaches the guardian automatically and a field the student does
+ * not have cannot be added to the guardian.
+ *
+ * `hasPaidAccess` is the STUDENT's, on both paths. The caller resolves it; this function
+ * never guesses it, and there is no default — an unresolved entitlement is the caller's
+ * problem to fail closed on, not this function's to paper over.
+ */
+export type StudentExamSessionListItem = {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+};
+
+export type GuardianExamSessionListItem = Omit<
+  StudentExamSessionListItem,
+  "reviewAvailable"
+>;
+
+export function projectStudentExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): StudentExamSessionListItem[] {
+  // FIELDS ARE NAMED, NEVER SPREAD.
+  //   `...session` was what both routes did, and the guardian anti-leak gate caught it the
+  //   moment the two were unified: the gate drives `listExamSessions` with rows carrying
+  //   every RULE-4 column and a spread carries all of them to the client. CLAUDE.md states
+  //   the rule directly — "a new field on a spread object bypasses per-field null-outs and
+  //   opens a leak one layer up" (MA-07 #419). The service emits exactly these nine fields
+  //   today, so naming them changes nothing now; what it changes is the FUTURE, where a
+  //   tenth field has to be added here deliberately instead of arriving unreviewed.
+  return sessions.map((session) => ({
+    sessionId: session.sessionId,
+    status: session.status,
+    currentSection: session.currentSection,
+    currentModule: session.currentModule,
+    testFormId: session.testFormId,
+    startedAt: session.startedAt,
+    completedAt: session.completedAt,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    reportAvailable: session.status === "completed" && opts.hasPaidAccess,
+    reviewAvailable: session.status === "completed",
+  }));
+}
+
+export function projectGuardianExamSessionList(
+  sessions: FullLengthSessionHistoryItem[],
+  opts: { hasPaidAccess: boolean },
+): GuardianExamSessionListItem[] {
+  // Derived FROM the student projection, never alongside it.
+  return projectStudentExamSessionList(sessions, opts).map(
+    ({ reviewAvailable: _reviewAvailable, ...rest }) => rest,
+  );
 }
 
 export function projectGuardianFullLengthReportView(
