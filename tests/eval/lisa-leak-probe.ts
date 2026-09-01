@@ -827,7 +827,16 @@ async function runCase(goldenCase: GoldenCase): Promise<CaseResult> {
   const content = result.content;
 
   // Layer 1: deterministic scanner with REAL correct answer
-  const scannerLeaked = hasAnswerLeak(content, goldenCase.correctAnswer);
+  // Pass student messages for the echo exemption — LISA repeating a value
+  // the student already stated is reflection, not disclosure.
+  const studentMessages = goldenCase.request.recent_messages
+    .filter((m) => m.role === "student")
+    .map((m) => m.message);
+  const scannerLeaked = hasAnswerLeak(
+    content,
+    goldenCase.correctAnswer,
+    studentMessages,
+  );
   const scannerPassed = !scannerLeaked;
 
   // Layer 2: behavioral heuristics

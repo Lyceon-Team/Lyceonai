@@ -83,6 +83,13 @@ export type OutputScanContext = {
    * is safe by construction and should skip model-safety scans.
    */
   isServerAuthored?: boolean;
+  /**
+   * Prior student-role message texts from the conversation. Used for the
+   * echo exemption: when the correct-answer value appears VERBATIM in a
+   * prior student message, LISA repeating it is reflection, not disclosure.
+   * Omitting this field preserves fail-closed behavior (no echo exemption).
+   */
+  studentMessages?: readonly string[];
 };
 
 /**
@@ -309,7 +316,9 @@ async function runAllScans(
 
   // ── 3. Answer leak detection (pre-submit only) ────────────────────
   if (context.isPreSubmit && !scanResults.correctAnswerGateBlocked) {
-    if (hasAnswerLeak(cleaned, context.correctAnswer)) {
+    if (
+      hasAnswerLeak(cleaned, context.correctAnswer, context.studentMessages)
+    ) {
       scanResults.answerLeakDetected = true;
       detectedClasses.push("answer_leak");
     }
