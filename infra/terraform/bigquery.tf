@@ -22,7 +22,7 @@ resource "google_bigquery_dataset" "archive" {
   # BigQuery location is immutable — a mismatch here would propose destroy+recreate.
   location = "us-central1"
 
-  description = "LISA analytics archive — retention pipeline destination"
+  description = "LISA retention archive per Doc 03 §14.2"
 
   # Doc 07B §5.1, line 173: "Partition-expiration: NOT set on event
   # tables (retention is 'forever' for the pseudonymized 13+ class)."
