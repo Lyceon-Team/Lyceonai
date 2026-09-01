@@ -52,6 +52,15 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // SCL-DRAFT-B-denial-is-a-decision: an ineligible country now CANCELS and
+  // REFUNDS rather than throwing, so the denial path reaches these four.
+  subscriptionsCancel: vi.fn(async () => ({ id: "sub_x", status: "canceled" })),
+  invoicePaymentsList: vi.fn(async () => ({ data: [] })),
+  paymentIntentsRetrieve: vi.fn(async () => ({
+    id: "pi_x",
+    latest_charge: null,
+  })),
+  refundsCreate: vi.fn(async () => ({ id: "re_x", amount: 0 })),
   // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
   // Customer. Eligible by default here; denial has its own suites.
   customersRetrieve: vi.fn(async () => ({
@@ -71,8 +80,12 @@ vi.mock("../../server/lib/stripe/client", async () => {
         list: stripeApi.subscriptionsList,
         update: stripeApi.subscriptionsUpdate,
         resume: stripeApi.subscriptionsResume,
+        cancel: stripeApi.subscriptionsCancel,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      invoicePayments: { list: stripeApi.invoicePaymentsList },
+      paymentIntents: { retrieve: stripeApi.paymentIntentsRetrieve },
+      refunds: { create: stripeApi.refundsCreate },
       customers: { retrieve: stripeApi.customersRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
@@ -178,40 +191,77 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     );
   });
 
-  it("DENIES an ineligible country, and writes nothing", async () => {
+  /**
+   * @revised [2026-09-01 — SCL-DRAFT-B-denial-is-a-decision]
+   *
+   * These three used to assert `rejects.toThrow`. They now assert that the
+   * event SETTLES, because throwing was the defect: a 500 made Stripe retry a
+   * decision no redelivery could change, so the money was captured, the
+   * entitlement was refused, and the webhook failed permanently.
+   *
+   * The DENIAL half of every assertion is unchanged and still first —
+   * `upsertEntitlement` is not called. What settling changed is the response,
+   * not the decision, and both halves are asserted here so a future change that
+   * settled the event by GRANTING would fail rather than pass.
+   */
+  it("DENIES an ineligible country, writes nothing, and SETTLES — cancelled and refunded", async () => {
     configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
     const process_ = await handler();
     const { body, signature } = signedCheckout("FR");
 
-    await expect(process_(body, signature, "req_ineligible")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=ineligible\)/,
-    );
+    const outcome = await process_(body, signature, "req_ineligible");
+
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(stripeApi.subscriptionsCancel).toHaveBeenCalledWith(
+      "sub_country_gate",
+      {},
+    );
   });
 
-  it("DENIES when the completed session carries no country — unknown denies after payment", async () => {
+  /**
+   * THE ASYMMETRY THAT KEEPS THIS SAFE, and the reason `unknown` is not simply
+   * folded into `ineligible` one layer down.
+   *
+   * `ineligible` is a fact about the PAYER — cancel and refund. `unknown` is a
+   * fact about OUR RECORDS or OUR CONFIGURATION, and an unseeded
+   * `tier_1_countries` makes EVERY session `unknown`. Auto-refunding on it
+   * would cancel and refund every paying customer at once while believing it
+   * was enforcing a policy. So `unknown` holds: still no entitlement (fail
+   * closed, unchanged), but no money moves without a human.
+   *
+   * Both halves, and both directions: no entitlement AND no cancel AND no
+   * refund. Deleting the hold branch would make this fail.
+   */
+  it("HOLDS when the completed session carries no country — denies entitlement, moves NO money", async () => {
     configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
     const process_ = await handler();
     const { body, signature } = signedCheckout(undefined);
 
-    await expect(process_(body, signature, "req_nocountry")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=unknown\)/,
-    );
+    const outcome = await process_(body, signature, "req_nocountry");
+
+    expect(outcome).toMatchObject({ ok: true, status: "held" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(stripeApi.subscriptionsCancel).not.toHaveBeenCalled();
+    expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
   });
 
-  it("DENIES while the Tier-1 list is unseeded — the fail-closed default, and why the gate is INERT until the owner DML is applied", async () => {
-    // Owner ruling 2026-08-27: keep the fail-closed default; no
-    // empty-config-means-allow path. This is the state of production TODAY,
-    // because Owner_DML_tier_1_countries.sql has not been applied.
+  it("HOLDS while the Tier-1 list is unseeded — an unseeded config must not refund every paying customer", async () => {
+    // Owner ruling 2026-08-27 keeps the fail-closed default: no
+    // empty-config-means-allow path. This test adds the other half — an
+    // unseeded config must not become an empty-config-means-REFUND path
+    // either. It is the production state today, so getting it wrong would fire
+    // on the first real purchase after deploy.
     configMocks.getTier1Countries.mockResolvedValue(null);
     const process_ = await handler();
     const { body, signature } = signedCheckout("US");
 
-    await expect(process_(body, signature, "req_unseeded")).rejects.toThrow(
-      /not Tier-1 eligible \(verdict=unknown\)/,
-    );
+    const outcome = await process_(body, signature, "req_unseeded");
+
+    expect(outcome).toMatchObject({ ok: true, status: "held" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(stripeApi.subscriptionsCancel).not.toHaveBeenCalled();
+    expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
   });
 
   it("uses `GB`, not `UK` — the encoding the owner ruled on", async () => {
@@ -241,11 +291,23 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     expect(ok).toMatchObject({ ok: true, status: "processed" });
 
     vi.clearAllMocks();
+    dbMocks.insert.mockResolvedValue({ error: null });
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_country_gate",
+      object: "subscription",
+      status: "active",
+      latest_invoice: null,
+    });
     configMocks.getTier1Countries.mockResolvedValue(["UK"]);
     const { body, signature } = signedCheckout("GB");
-    await expect(process_(body, signature, "req_uk_seed")).rejects.toThrow(
-      /verdict=ineligible/,
-    );
+
+    // A list seeded with the prose spelling makes a genuine UK customer
+    // INELIGIBLE — so they are now cancelled and refunded rather than left in
+    // a retry loop. Still the wrong outcome for that customer, which is why
+    // this test exists; it is now a wrong outcome that at least terminates.
+    const outcome = await process_(body, signature, "req_uk_seed");
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
+    expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 });

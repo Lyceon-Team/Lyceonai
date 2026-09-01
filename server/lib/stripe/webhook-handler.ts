@@ -64,6 +64,20 @@ import {
   refToId,
 } from "./dispute";
 import { refundEventSchema, decideRefundRevocation } from "./refund";
+import type { RemediationStatus } from "./country-denial-remediation";
+import {
+  CountryDenialError,
+  planForDenial,
+  decideCancellation,
+  decideRemedialRefund,
+  refundReadsAsFull,
+  refundIdempotencyKey,
+  remediationRefundSchema,
+  remediationSubscriptionSchema,
+  remediationInvoicePaymentListSchema,
+  remediationNeedsOperator,
+  remediationPaymentIntentSchema,
+} from "./country-denial-remediation";
 
 /**
  * How many of a Customer's subscriptions to scan when mapping a dispute back to
@@ -202,7 +216,32 @@ export type WebhookOutcome =
   | {
       ok: true;
       eventId: string;
-      status: "processed" | "already_processed" | "ignored";
+      /**
+       * Every value here is `ok: true` and 200. `held` and the seven
+       * `remediated_*` values are TERMINAL — a country denial used to leave
+       * the event permanently un-settled, and now reports which terminal state
+       * it reached (SCL-DRAFT-B-denial-is-a-decision):
+       *
+       *   held           the country could not be established. No entitlement
+       *                  (fail closed) and deliberately NO money moved — an
+       *                  unseeded `tier_1_countries` must not auto-refund
+       *                  every paying customer. An operator decides.
+       *   remediated_*   ineligible country: cancelled, no entitlement
+       *                  written, and the suffix says what became of the
+       *                  money. Enumerated in `RemediationStatus`.
+       *
+       * @revised [2026-09-01 — audit HIGH-2] this was a single `"remediated"`
+       * covering seven outcomes, which made a FAILED refund and a SUCCESSFUL
+       * one identical in the 200 body — the only layer an operator sees
+       * without opening the application log (`server/index.ts:140-145` copies
+       * this field straight into the response).
+       */
+      status:
+        | "processed"
+        | "already_processed"
+        | "ignored"
+        | "held"
+        | RemediationStatus;
     }
   | {
       ok: false;
@@ -282,6 +321,20 @@ const checkoutSessionSchema = subjectSchema.extend({
    * an error into a legitimate value this handler refuses everywhere else.
    */
   payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),
+  /**
+   * The invoice THIS session produced — the exact correlation the country
+   * denial remediation refunds against (@implemented 2026-09-01, audit
+   * MEDIUM-1). `node_modules/stripe/types/Checkout/Sessions.d.ts:171-173`:
+   * "ID of the invoice created by the Checkout Session, if it exists."
+   *
+   * `.nullish()` because Stripe types it `| null` and a non-subscription
+   * session has none. Absence is handled as untraceable and fails closed —
+   * NOT as licence to fall back to the subscription's latest invoice, which is
+   * a later period's charge on a subscription that has since renewed.
+   */
+  invoice: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
 });
 
 /** The Subscription fields this handler reads. */
@@ -520,9 +573,21 @@ async function assertCountryEligibleForGrant(
       verdict: eligibility.verdict,
     },
   );
-  throw new StripePayloadShapeError(
+  // A DENIAL IS A DECISION, NOT A SHAPE FAILURE (SCL-DRAFT-B-denial-is-a-decision).
+  // The payload is well formed; a French billing address is a perfectly valid
+  // one. `CountryDenialError` is a distinct class so the checkout path can catch
+  // exactly this and remediate, while a genuine parse failure keeps failing.
+  //
+  // ON THE SUBSCRIPTION-LIFECYCLE PATHS this still propagates and Stripe still
+  // retries. That is left UNCHANGED and is reported, not quietly widened: a
+  // renewal on a customer who has moved out of Tier-1 is the SCL-047 egress
+  // case, whose money semantics (refund which invoice? the whole history?) are
+  // an owner decision and not this fix's.
+  throw new CountryDenialError(
     eventType,
-    `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); grant denied per INV-03-08`,
+    eligibility.verdict === "ineligible" ? "ineligible" : "unknown",
+    eligibility.verdict === "unknown" ? null : eligibility.country,
+    "grant denied per INV-03-08",
   );
 }
 
@@ -1335,10 +1400,16 @@ async function fulfilCheckoutSession(
    *
    * plain English: refuse premium when the billing country is not on the
    * Tier-1 list. Expected outcome: INV-03-08 is ENFORCED rather than merely
-   * expressed. Trade-off: the money has already moved by this point, so a
-   * denial leaves a paid customer with no access and needs an operator
-   * refund — which is why the ERROR log below names that consequence
-   * explicitly rather than failing quietly.
+   * expressed.
+   *
+   * WHAT HAPPENS TO THE MONEY (@revised 2026-09-01,
+   * SCL-DRAFT-B-denial-is-a-decision). The money has already moved by this
+   * point. This used to throw, which meant a 500, which meant Stripe retried
+   * the event forever: money captured, no entitlement, no terminal state. A
+   * denial is a DECISION and decisions settle. The throw below is now caught
+   * by the dispatcher, which cancels the subscription, refunds the charge in
+   * full and returns 200 — see `remediateCountryDenial`. The gate itself is
+   * unchanged; only what we DO about its verdict is.
    *
    * WHY HERE. `evaluateCountryEligibility` shipped with NO caller at all
    * (Codex HIGH-1: "a fail-open money path"). It could not be called at
@@ -1360,7 +1431,7 @@ async function fulfilCheckoutSession(
     logger.error(
       "STRIPE_WEBHOOK",
       eventType,
-      "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Refund it or seed tier_1_countries.",
+      "COUNTRY GATE DENIED — a real charge has been taken and NO entitlement was granted (INV-03-08). Remediation follows; see the COUNTRY_DENIAL_ lines for this event id.",
       {
         eventId: eventId,
         sessionRef: digestId(session.id),
@@ -1373,9 +1444,11 @@ async function fulfilCheckoutSession(
         country: eligibility.verdict === "unknown" ? null : eligibility.country,
       },
     );
-    throw new StripePayloadShapeError(
+    throw new CountryDenialError(
       eventType,
-      `billing country is not Tier-1 eligible (verdict=${eligibility.verdict}); entitlement denied per INV-03-08`,
+      eligibility.verdict === "ineligible" ? "ineligible" : "unknown",
+      eligibility.verdict === "unknown" ? null : eligibility.country,
+      "entitlement denied per INV-03-08",
     );
   }
 
@@ -1632,30 +1705,468 @@ async function handleCustomerDeleted(event: Stripe.Event): Promise<void> {
   );
 }
 
-async function dispatch(event: Stripe.Event): Promise<void> {
+/**
+ * What `dispatch` did, in the value the route actually returns.
+ *
+ * @revised [2026-09-01 — audit HIGH-2]
+ *
+ * `server/index.ts:140-145` copies this straight into the 200 body, so it is
+ * the only account of the money path an operator sees without opening the
+ * application log. It therefore has to distinguish the outcomes that leave a
+ * customer owed money from the ones that do not — see `RemediationStatus`,
+ * which enumerates all six rather than flattening them to one string.
+ *
+ * Every value here is `ok: true` and 200. `held` and every `remediated_*` are
+ * TERMINAL: the event settled and Stripe must not redeliver it. That is the
+ * whole point of the change this file exists for — a denial is a decision, and
+ * decisions settle.
+ */
+type DispatchStatus = "processed" | "held" | RemediationStatus;
+
+/**
+ * Cancel, refund, and let the event SETTLE — the terminal state for a payer we
+ * will not entitle.
+ *
+ * @spec [OWNER RULING 2026-09-01 — cancel first, refund in full, write no
+ *        entitlement, return 200, alert loudly. That ruling is the source of
+ *        this policy; INV-03-08 / SCL-046 say only WHO is refused, and
+ *        SCL-048/SCL-072 govern the REVERSE causality (refund observed ->
+ *        revoke), so neither establishes that we should ISSUE one. Cited by
+ *        date so the behaviour traces to the decision rather than to
+ *        inference.]
+ * @implemented [2026-09-01 — SCL-DRAFT-B-denial-is-a-decision]
+ *
+ * plain English: the money comes back and Stripe stops retrying. Expected
+ * outcome: subscription cancelled, charge refunded in full, no entitlement row,
+ * HTTP 200. Trade-off: the customer is charged and then refunded, which is a
+ * poor experience even when handled correctly — the prevention options are
+ * evaluated in the phase report and are an owner decision, not this function's.
+ * Edge cases: every step below can find that its precondition is already
+ * satisfied (a replay) or cannot be established at all (no provenance), and in
+ * both cases it does nothing and says which of the two it was.
+ *
+ * WHICH FAILURES SETTLE AND WHICH STILL RETRY — the line, drawn explicitly,
+ * because "make it always return 200" would be as wrong as the throw it
+ * replaces. The defect is a PERMANENT condition rendered as a retryable error,
+ * not retrying as such:
+ *
+ *   the VERDICT itself           settles. No number of redeliveries makes a
+ *                                French billing address Tier-1. This is the
+ *                                defect, and it is what the catch above fixes.
+ *   `refunds.create` failing     settles. The money question is now an operator
+ *                                problem, and the subscription is ALREADY
+ *                                cancelled by then so nothing bills again while
+ *                                a human fixes it. Caught explicitly below.
+ *   a decision we cannot make    settles as `held`. An unestablished country or
+ *                                an untraceable charge will read the same on the
+ *                                next delivery.
+ *   `subscriptions.retrieve`,    STILL THROWS, and Stripe SHOULD retry. These
+ *   `subscriptions.cancel`,      are transient-by-nature calls that have moved
+ *   the provenance reads         no money yet, and a redelivery genuinely fixes
+ *                                a Stripe blip. Swallowing them would leave a
+ *                                live, ineligible subscription with a 200 next
+ *                                to it — the failure hidden instead of fixed.
+ *                                The one PERMANENT failure among them, cancelling
+ *                                an already-cancelled subscription, is removed by
+ *                                `decideCancellation`'s status pre-check rather
+ *                                than by a catch.
+ *
+ * So this function has exactly ONE `catch`, it names one call, and every branch
+ * that returns without acting alerts. That is why the swallow is not silent.
+ */
+async function remediateCountryDenial(
+  session: z.infer<typeof checkoutSessionSchema>,
+  denial: CountryDenialError,
+  eventType: string,
+  eventId: string,
+): Promise<DispatchStatus> {
+  const status = await runCountryDenialRemediation(
+    session,
+    denial,
+    eventType,
+    eventId,
+  );
+
+  // ONE SUMMARY LINE PER REMEDIATION, whichever branch produced it
+  // (@revised 2026-09-01 — audit HIGH-2). The branch logs above each say what
+  // happened; this says what it AMOUNTS TO, and carries the single field an
+  // operator actually triages on. Without it, "does anyone still owe this
+  // customer money?" is answered by knowing which of six log codes to grep —
+  // which is the same "you can tell them apart" claim that did not hold.
+  if (status !== "processed" && status !== "held") {
+    logger.warn(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_OUTCOME",
+      remediationNeedsOperator(status)
+        ? "COUNTRY DENIAL settled, but a human still owes this customer something."
+        : "COUNTRY DENIAL settled and nothing further is owed.",
+      {
+        eventId,
+        eventType,
+        sessionRef: digestId(session.id),
+        status,
+        operatorActionRequired: remediationNeedsOperator(status),
+      },
+    );
+  }
+  return status;
+}
+
+async function runCountryDenialRemediation(
+  session: z.infer<typeof checkoutSessionSchema>,
+  denial: CountryDenialError,
+  eventType: string,
+  eventId: string,
+): Promise<DispatchStatus> {
+  const plan = planForDenial(denial.verdict);
+
+  if (plan.action === "hold_for_operator") {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_HELD",
+      "COUNTRY DENIAL HELD FOR AN OPERATOR — a real charge was taken, NO entitlement was written, and NO money has been moved automatically. The subscription is still live. Decide: seed `tier_1_countries`, or cancel and refund by hand.",
+      {
+        eventId,
+        eventType,
+        sessionRef: digestId(session.id),
+        verdict: denial.verdict,
+        reason: plan.reason,
+      },
+    );
+    // Settled, not retried. The charge is unresolved, but a redelivery would
+    // not resolve it either — only a human can.
+    return "held";
+  }
+
+  const subscriptionRef = session.subscription;
+  if (!subscriptionRef) {
+    // Unreachable by construction: the gate runs after the mode/subscription
+    // guard in `fulfilCheckoutSession`, so a denial implies a subscription.
+    // Handled anyway, because "unreachable" is a claim about today's control
+    // flow and this branch is what keeps it from becoming a silent throw.
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_NO_SUBSCRIPTION",
+      "COUNTRY DENIAL could not be remediated: the session names no subscription, so there is nothing to cancel and no invoice to trace to a charge. MANUAL REFUND REQUIRED.",
+      { eventId, eventType, sessionRef: digestId(session.id) },
+    );
+    return "held";
+  }
+  const subscriptionId = refToId(subscriptionRef);
+
+  const stripe = getStripeClient();
+
+  // ---- 1. CANCEL FIRST -----------------------------------------------------
+  // Before the refund, always. Cancelling stops the next invoice; if the refund
+  // then fails, the customer is at least not billed again. The reverse ordering
+  // would refund a live subscription that goes on charging.
+  const subscription = parseOrFail(
+    remediationSubscriptionSchema,
+    await stripe.subscriptions.retrieve(subscriptionId),
+    eventType,
+  );
+
+  const cancellation = decideCancellation(subscription.status);
+  if (cancellation.cancel) {
+    // Empty params: NO cancellation date. `SubscriptionCancelParams`
+    // (SubscriptionsResource.d.ts:2054-2074) offers no date field at all —
+    // scheduling one is `subscriptions.update({ cancel_at })`, a different
+    // call. Immediate is what stops the next invoice, which is why we cancel.
+    await stripe.subscriptions.cancel(subscriptionId, {});
+  }
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    "COUNTRY_DENIAL_CANCEL",
+    cancellation.cancel
+      ? "COUNTRY DENIAL: subscription cancelled immediately (INV-03-08). Refund follows."
+      : "COUNTRY DENIAL: subscription NOT cancelled — already terminal or unreadable.",
+    {
+      eventId,
+      eventType,
+      subscriptionRef: digestId(subscriptionId),
+      country: denial.country,
+      cancelled: cancellation.cancel,
+      reason: cancellation.reason,
+    },
+  );
+
+  // ---- 2. THEN REFUND ------------------------------------------------------
+  // Provenance, forwards: SESSION -> session.invoice -> invoice payment ->
+  // PaymentIntent -> charge. Same hops as the reverse walk in
+  // `resolveEntitlementsForCharge`; see `country-denial-remediation.ts`. The
+  // root is the SESSION, not the subscription — see the note below.
+  //
+  // WHERE PROVENANCE CANNOT BE ESTABLISHED, CHANGE NOTHING AND SURFACE IT. Each
+  // of the four bails below is a FACT ("this session produced no invoice"),
+  // never a guess, and none of them refunds something it merely thinks
+  // is the right charge.
+  //
+  // THE WALK IS ROOTED AT THE SESSION, NOT AT THE SUBSCRIPTION
+  // (@revised 2026-09-01 — audit MEDIUM-1). It used to start at the
+  // subscription's CURRENT `latest_invoice`, which is not a fact about THIS
+  // purchase: a delayed or redelivered event on a subscription that has since
+  // renewed resolves "latest" to a LATER period's invoice, and the refund would
+  // return the wrong charge — a fresh renewal the customer legitimately owes,
+  // while the charge we actually meant to return stayed put.
+  //
+  // `Checkout.Session.invoice` is Stripe's own statement of the link
+  // (`node_modules/stripe/types/Checkout/Sessions.d.ts:171-173`): "ID of the
+  // invoice created by the Checkout Session, if it exists." That is an exact
+  // correlation to the session being remediated, so the assumption is REMOVED
+  // rather than sanity-checked.
+  //
+  // No amount-based fallback is offered. Comparing `charge.amount` to
+  // `session.amount_total` would not distinguish period 1 from period 2 of the
+  // same plan — the very case this fixes — and a trial makes `amount_total`
+  // zero against a non-zero charge, so it would also fail closed on correct
+  // outcomes. A heuristic that cannot separate the confusable case is not a
+  // second correlation; it is noise wearing one.
+  if (!session.invoice) {
+    return refundNotAttempted(
+      "the Checkout Session names no invoice, so no charge can be tied to " +
+        "THIS purchase. Refusing to fall back to the subscription's latest " +
+        "invoice: on a renewed subscription that is a later period's charge",
+      eventId,
+      eventType,
+      subscriptionId,
+    );
+  }
+  const invoiceId = refToId(session.invoice);
+
+  const invoicePayments = parseOrFail(
+    remediationInvoicePaymentListSchema,
+    await stripe.invoicePayments.list({
+      invoice: invoiceId,
+      limit: SUBSCRIPTION_SCAN_LIMIT,
+    }),
+    eventType,
+  );
+  const intentPayments = invoicePayments.data.filter(
+    (p) => p.payment.type === "payment_intent" && p.payment.payment_intent,
+  );
+  if (intentPayments.length !== 1) {
+    return refundNotAttempted(
+      `the invoice maps to ${intentPayments.length} PaymentIntent payments; ` +
+        "refusing to guess which one funded it",
+      eventId,
+      eventType,
+      subscriptionId,
+    );
+  }
+  const paymentIntentRef = intentPayments[0]?.payment.payment_intent;
+  if (!paymentIntentRef) {
+    return refundNotAttempted(
+      "the invoice payment names no PaymentIntent",
+      eventId,
+      eventType,
+      subscriptionId,
+    );
+  }
+  const paymentIntentId = refToId(paymentIntentRef);
+
+  const paymentIntent = parseOrFail(
+    remediationPaymentIntentSchema,
+    await stripe.paymentIntents.retrieve(paymentIntentId),
+    eventType,
+  );
+  if (!paymentIntent.latest_charge) {
+    return refundNotAttempted(
+      "the PaymentIntent has no `latest_charge`, so no money was captured to return",
+      eventId,
+      eventType,
+      subscriptionId,
+    );
+  }
+
+  const charge = parseOrFail(
+    retrievedChargeSchema,
+    await stripe.charges.retrieve(refToId(paymentIntent.latest_charge)),
+    eventType,
+  );
+
+  // The replay guard, and the durable half of the idempotency story. A second
+  // delivery describing this same purchase reads the charge, finds it already
+  // fully refunded, and stops here.
+  const step = decideRemedialRefund(charge.amount, charge.amount_refunded);
+  if (!step.refund) {
+    logger.warn(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_REFUND_SKIPPED",
+      "COUNTRY DENIAL: no refund issued.",
+      {
+        eventId,
+        eventType,
+        subscriptionRef: digestId(subscriptionId),
+        chargeRef: digestId(charge.id),
+        reason: step.reason,
+      },
+    );
+    // Both skips mean "nothing further is owed", and they mean it for
+    // different reasons. `step.code` carries which, so the comparison that
+    // decided it is not made twice.
+    return step.code === "already_refunded"
+      ? "remediated_already_refunded"
+      : "remediated_nothing_charged";
+  }
+
+  // NO `amount`. `RefundsResource.d.ts:125` makes the partial refund the
+  // OPTIONAL case ("You can optionally refund only part of a charge"), so
+  // omitting it is the full one. The projection below CHECKS that rather than
+  // resting on it.
+  let refundResponse: unknown;
+  try {
+    refundResponse = await stripe.refunds.create(
+      {
+        payment_intent: paymentIntentId,
+        // BYTE-IDENTICAL ACROSS THE RETRY (@revised 2026-09-01 — audit HIGH-1).
+        // `lyceon_event_id` used to be here. `completed` and
+        // `async_payment_succeeded` for one purchase carry DIFFERENT event ids
+        // — exactly the pair the subscription-scoped key exists to dedupe — so
+        // including it made the second call a key re-use with mismatched
+        // parameters, which Errors.d.ts:252-253 defines as a
+        // `StripeIdempotencyError`. That surfaced as "MANUAL REFUND REQUIRED"
+        // for a refund that had already SUCCEEDED, and an operator acting on it
+        // would refund the customer twice by hand. Every field here is now
+        // constant for a given subscription; the event id is in the log line
+        // below, where it costs nothing.
+        metadata: { lyceon_reason: "inv_03_08_country_ineligible" },
+      },
+      { idempotencyKey: refundIdempotencyKey(subscriptionId) },
+    );
+  } catch (err: unknown) {
+    // A FAILED REFUND MUST NOT LOOP EITHER. It is an operator problem, not a
+    // reason for Stripe to redeliver forever — and the subscription is already
+    // cancelled above, so the customer is not billed again while it is fixed.
+    // Distinct log code so this is one grep away from the success path.
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_REFUND_FAILED",
+      "COUNTRY DENIAL: THE REFUND FAILED. The subscription IS cancelled, so no further billing occurs, but the customer's money HAS NOT been returned. MANUAL REFUND REQUIRED.",
+      {
+        eventId,
+        eventType,
+        subscriptionRef: digestId(subscriptionId),
+        chargeRef: digestId(charge.id),
+        paymentIntentRef: digestId(paymentIntentId),
+        chargeAmount: charge.amount,
+        message: err instanceof Error ? err.message : "unknown",
+      },
+    );
+    return "remediated_refund_failed";
+  }
+
+  // The refund EXISTS from here on — the money has moved. Everything below
+  // reports on it and never re-raises.
+  const parsedRefund = remediationRefundSchema.safeParse(refundResponse);
+  if (!parsedRefund.success) {
+    // Distinct from both failure and partial: the refund was CREATED and we
+    // could not read the response back, so fullness is unconfirmed rather than
+    // known-bad. Saying "partial" here would report a fact we do not have.
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_REFUND_UNVERIFIED",
+      "COUNTRY DENIAL: the refund WAS created but its response did not parse, so it could not be confirmed FULL. Subscription is cancelled. VERIFY THE REFUND AMOUNT BY HAND.",
+      {
+        eventId,
+        eventType,
+        subscriptionRef: digestId(subscriptionId),
+        chargeRef: digestId(charge.id),
+        paymentIntentRef: digestId(paymentIntentId),
+        chargeAmount: charge.amount,
+        details: JSON.stringify(parsedRefund.error.flatten().fieldErrors),
+      },
+    );
+    return "remediated_refund_unverified";
+  }
+  const refund = parsedRefund.data;
+
+  // PARTIAL-REFUND GUARD. Full by construction, checked anyway, and checked
+  // with SCL-048/SCL-072's own predicate rather than a second one. A refund
+  // that read as partial would leave the customer out of pocket AND, under
+  // SCL-048, would not have revoked anything either.
+  const projected = charge.amount_refunded + refund.amount;
+  const readsFull = refundReadsAsFull(charge.amount, projected);
+  if (!readsFull) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "COUNTRY_DENIAL_REFUND_PARTIAL",
+      "COUNTRY DENIAL: the refund read as PARTIAL against the charged amount (SCL-048/SCL-072 basis). The customer is still out of pocket. MANUAL TOP-UP REQUIRED.",
+      {
+        eventId,
+        eventType,
+        subscriptionRef: digestId(subscriptionId),
+        chargeRef: digestId(charge.id),
+        chargeAmount: charge.amount,
+        refundedAfter: projected,
+      },
+    );
+    return "remediated_refund_partial";
+  }
+
+  logger.warn(
+    "STRIPE_WEBHOOK",
+    "COUNTRY_DENIAL_REFUNDED",
+    "COUNTRY DENIAL REMEDIATED: subscription cancelled and the charge refunded in FULL. No entitlement was written (INV-03-08). THE CUSTOMER HAS NOT BEEN TOLD WHY — see the phase report: the customer-facing notice is blocked and is not silently skipped.",
+    {
+      eventId,
+      eventType,
+      subscriptionRef: digestId(subscriptionId),
+      chargeRef: digestId(charge.id),
+      refundRef: digestId(refund.id),
+      country: denial.country,
+      chargeAmount: charge.amount,
+      refundedAfter: projected,
+      reason: step.reason,
+    },
+  );
+  return "remediated_refunded";
+}
+
+/** One shape for "the charge could not be traced, so nothing was refunded". */
+function refundNotAttempted(
+  reason: string,
+  eventId: string,
+  eventType: string,
+  subscriptionId: string,
+): DispatchStatus {
+  logger.error(
+    "STRIPE_WEBHOOK",
+    "COUNTRY_DENIAL_REFUND_UNTRACEABLE",
+    "COUNTRY DENIAL: the subscription is cancelled but the charge could NOT be traced, so NO refund was issued. Refusing to refund a charge we cannot prove funded this purchase. MANUAL REVIEW REQUIRED.",
+    {
+      eventId,
+      eventType,
+      subscriptionRef: digestId(subscriptionId),
+      reason,
+    },
+  );
+  return "remediated_refund_untraceable";
+}
+
+async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
   if (event.type === "customer.deleted") {
     await handleCustomerDeleted(event);
-    return;
+    return "processed";
   }
 
   if (event.type === "customer.updated") {
     await handleCustomerUpdated(event);
-    return;
+    return "processed";
   }
 
   if (event.type === "refund.updated") {
     await handleRefundUpdated(event);
-    return;
+    return "processed";
   }
 
   if (event.type === "charge.dispute.created") {
     await handleDisputeCreated(event);
-    return;
+    return "processed";
   }
 
   if (event.type === "charge.dispute.closed") {
     await handleDisputeClosed(event);
-    return;
+    return "processed";
   }
 
   if (
@@ -1695,11 +2206,31 @@ async function dispatch(event: Stripe.Event): Promise<void> {
           paymentStatus: session.payment_status,
         },
       );
-      return;
+      return "processed";
     }
 
-    await fulfilCheckoutSession(session, event.type, event.id);
-    return;
+    /**
+     * A DENIAL IS A DECISION (SCL-DRAFT-B-denial-is-a-decision).
+     *
+     * The country gate refuses a payer whose money we have already taken.
+     * Refusing to entitle them is right; throwing that refusal was not — it
+     * became a 500, which Stripe retried forever, leaving money captured, no
+     * entitlement, and no terminal state. Caught here so the event SETTLES.
+     *
+     * `CountryDenialError` ONLY. A `StripePayloadShapeError`, a Stripe API
+     * error or a database failure all still propagate and are still retried,
+     * because those are genuine failures and a retry can genuinely fix them.
+     * Catching a broader type would turn a parse failure into an automatic
+     * refund, which is the same collapse of an error into a legitimate value
+     * in the opposite direction.
+     */
+    try {
+      await fulfilCheckoutSession(session, event.type, event.id);
+    } catch (err: unknown) {
+      if (!(err instanceof CountryDenialError)) throw err;
+      return await remediateCountryDenial(session, err, event.type, event.id);
+    }
+    return "processed";
   }
 
   if (event.type === "checkout.session.async_payment_failed") {
@@ -1711,7 +2242,7 @@ async function dispatch(event: Stripe.Event): Promise<void> {
       "Delayed payment failed; no entitlement was granted and none is revoked (SCL-071).",
       { eventId: event.id },
     );
-    return;
+    return "processed";
   }
 
   /**
@@ -1797,7 +2328,7 @@ async function dispatch(event: Stripe.Event): Promise<void> {
   const isGuardianPaid = Boolean(retrieved.metadata?.payer_profile_id);
   if (studentBearingItems.length > 1 || isGuardianPaid) {
     await writeEntitlementsForAllItems(retrieved, event.type, event.id);
-    return;
+    return "processed";
   }
 
   const studentProfileId = resolveStudentProfileId(subscription, event.type);
@@ -1807,6 +2338,7 @@ async function dispatch(event: Stripe.Event): Promise<void> {
     event.type,
     event.id,
   );
+  return "processed";
 }
 
 /**
@@ -1940,8 +2472,9 @@ export async function processStripeWebhook(
   }
 
   // 5. Dispatch.
+  let dispatchStatus: DispatchStatus;
   try {
-    await dispatch(event);
+    dispatchStatus = await dispatch(event);
   } catch (err: unknown) {
     await releaseEvent(event.id);
     logger.error("STRIPE_WEBHOOK", "handler_failed", "Event handler failed", {
@@ -1953,5 +2486,8 @@ export async function processStripeWebhook(
     throw err;
   }
 
-  return { ok: true, eventId: event.id, status: "processed" };
+  // The dispatcher's own answer, not a fixed literal. `remediated` and `held`
+  // are terminal states an operator has to be able to see in the access log
+  // without correlating it against the application log first.
+  return { ok: true, eventId: event.id, status: dispatchStatus };
 }

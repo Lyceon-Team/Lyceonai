@@ -52,6 +52,15 @@ const stripeApi = vi.hoisted(() => ({
   subscriptionsResume: vi.fn(),
   subscriptionsList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  // SCL-DRAFT-B-denial-is-a-decision: an ineligible country now CANCELS and
+  // REFUNDS rather than throwing, so the denial path reaches these four.
+  subscriptionsCancel: vi.fn(async () => ({ id: "sub_x", status: "canceled" })),
+  invoicePaymentsList: vi.fn(async () => ({ data: [] })),
+  paymentIntentsRetrieve: vi.fn(async () => ({
+    id: "pi_x",
+    latest_charge: null,
+  })),
+  refundsCreate: vi.fn(async () => ({ id: "re_x", amount: 0 })),
   // INV-03-08 now gates EVERY grant, so the writer reads the payer\'s
   // Customer. Eligible by default here; denial has its own suites.
   customersRetrieve: vi.fn(async () => ({
@@ -71,8 +80,12 @@ vi.mock("../../server/lib/stripe/client", async () => {
         list: stripeApi.subscriptionsList,
         update: stripeApi.subscriptionsUpdate,
         resume: stripeApi.subscriptionsResume,
+        cancel: stripeApi.subscriptionsCancel,
       },
       charges: { retrieve: stripeApi.chargesRetrieve },
+      invoicePayments: { list: stripeApi.invoicePaymentsList },
+      paymentIntents: { retrieve: stripeApi.paymentIntentsRetrieve },
+      refunds: { create: stripeApi.refundsCreate },
       customers: { retrieve: stripeApi.customersRetrieve },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
@@ -265,9 +278,13 @@ describe("SCL-071 settlement gate", () => {
       "paid",
     );
 
-    await expect(
-      process_(body, signature, "req_async_country"),
-    ).rejects.toThrow(/not Tier-1 eligible/);
+    // SCL-DRAFT-B-denial-is-a-decision: the denial no longer THROWS. It
+    // settles — cancel, refund, 200 — and the assertion moves with it. What is
+    // being asserted here is unchanged and is the point of the test: the
+    // ineligible country is refused on BOTH settlement events, not one.
+    const outcome = await process_(body, signature, "req_async_country");
+    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
+    expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 
