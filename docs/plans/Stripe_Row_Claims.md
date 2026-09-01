@@ -106,6 +106,23 @@ were withdrawn under that test and are recorded here instead.
 | **Error-class conflation.** One `StripePayloadShapeError` is thrown from 13 sites in `webhook-handler.ts` for at least three distinct facts — a genuine shape failure, an INV-03-08 country denial, and an ambiguity refusal — all carrying the message `"payload failed shape validation"` (single template at `webhook-handler.ts:383`). An operator reading `…payload failed shape validation: billing country is not Tier-1 eligible` will hunt for an API drift that is not there. It also defeated B's first plant formulation, which could not tell a parse failure from a country denial. Violates "distinguish absence from ambiguity". | B | **B** | **After C and D land.** It is a cross-cutting rename over 13 sites and fixtures owned by C and D; doing it before they merge guarantees conflicts. Withdrawn as `SCL-DRAFT-B-shape-error-conflation` — the spec says nothing about this error class, so no SCL is owed. |
 | **`no-dupe-keys` is enforced by nobody.** `typescript-eslint` disables the rule expecting `tsc` to report ts(1117), and `tsc --listFilesOnly \| grep -c '/tests/ci/'` returns **0** — the tsconfig excludes tests. Two duplicate-key fixtures survived on that gap. B closed it in-layer with a test rather than touching shared config. | B | **orchestrator or D** | Systemic fix is `eslint.config.mjs` / `tsconfig.json`; both are shared config and would collide across three branches. |
 
+## Open, verified NON-BLOCKING — listed, not worked
+
+Owner ruling: the bar is *does it stop someone paying and getting access?* None of these do.
+One line each, no further work, no write-ups.
+
+| item | why it does not block |
+|---|---|
+| SCL-047 lifecycle denial still throws and retries | Ruled: becomes `cancel_at_period_end`, access to period end, gate at renewal, no refund of history — general rule, a gate denying a grant returns 200. New work for B; affects renewals, not first purchase. |
+| Customer-facing refund notification | `notification_outbox.event_type` CHECK enum has no refund member and `recipient_profile_id` is `NOT NULL FK → profiles`. DDL authored, not applied. The operator alert fires and says the customer has not been told. |
+| Six of Doc 01 A.4's seven `entitlement_runtime_config` keys unseeded | Verified 2026-09-01: only `tier_1_countries` exists, and it is the only one with a reader. Seeding the rest would seed dead config. |
+| Pre-5.1 `entitlements` row: `stripe_subscription_item_id` and both period bounds NULL | Not backfilled. `entitlement_active()` reads `status` only, so access is unaffected. |
+| `entitlement-paths.ts` citations anchored on line numbers | Any edit above the dispatcher moves all eleven; renumbered three times in one change. The gate catches every drift, so nothing is wrong — re-anchoring on the enclosing function name is A's, after the merges. |
+| `BillingPlanMetadata` forked (client `number`, server `number \| null`) | A display-type divergence; does not touch the pay-to-access path. |
+| Pre-selection "already funded" state not built | No endpoint exposes per-student funding. The server refuses `STUDENT_ALREADY_FUNDED` with a 409 **before money moves** — costs a wasted click, not a charge. |
+| Error-class conflation across 13 throw sites | Operator legibility. Scheduled for B after the merges. |
+| `no-dupe-keys` enforced by nobody | typescript-eslint disables it expecting tsc; tsc excludes `tests/`. Closed in-layer with a test. |
+
 ## Merge order
 
 B → C → D. Codex audits each PR before its merge, scoped to that layer plus the
