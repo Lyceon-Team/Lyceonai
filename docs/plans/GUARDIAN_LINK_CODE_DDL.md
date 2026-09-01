@@ -1,7 +1,16 @@
 # Guardian linking by student code — DDL/DML queue (SCL-080)
 
-**Nothing here is applied, and nothing here is a migration file.** WS-M's freeze
-(`docs/plans/WS-M_Migration_Integrity.md` §4) and Charter §7 reserve migrations to the owner.
+**Nothing here is applied, and nothing here is a migration file.**
+`docs/plans/Stripe_Vertical_Session_Charter.md:79-81` reserves migrations to the owner and
+directs every DDL need to a queue file with its reason: "The owner performs every one:
+migrations, merges, secret rotation… Every DDL need goes to a queue file with its reason…
+do not author the migration."
+
+NOTE, reported not resolved: that passage also says "The migration freeze (WS-M) is in force",
+but `docs/plans/WS-M_Migration_Integrity.md` was DELETED from `stripe` on 2026-09-01
+(`aa4fd40`). The Charter's instruction stands on its own and is what this file follows; the
+dangling reference to a deleted document is an owner question, not something to resolve by
+guessing which way it was meant.
 These are authored, runnable, and verified against a throwaway PostgreSQL 16 with the full
 migration pipeline applied — but they are deliberately NOT in `supabase/migrations/`, because a
 file there is applied automatically by `scripts/ci/genesis-fresh-apply.sh` and by the next person
