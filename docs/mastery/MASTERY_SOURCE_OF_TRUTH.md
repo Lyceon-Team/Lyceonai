@@ -55,9 +55,10 @@ Fail-closed behavior:
 This audit is based on mounted routes in `server/index.ts` and is required before declaring canonical status.
 
 - Canonical (student mastery surfaces):
-`/api/me/mastery/summary`, `/api/me/mastery/skills`, `/api/me/mastery/weakest`, `/api/me/weakness/skills`, `/api/me/weakness/clusters`
+`/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills`, `/api/students/{{studentId}}/mastery/skills`, `/api/students/{{studentId}}/mastery/skills`, `/api/me/weakness/clusters`
+(The former `/summary` and `/skills` routes are retired — see `scripts/ci/retired-endpoints-gate.mjs` for what replaced each. `/skills` joined against a hardcoded taxonomy whose slugs matched nothing in the database and could never return data; `/summary` returned the same domain grain as `/domains` in a second shape, which is the divergence that made the slug mismatch invisible.)
 - Canonical (guardian mastery-derived surfaces):
-`/api/guardian/weaknesses/:studentId` (guardian-safe projection of student truth)
+`/api/students/:studentId/mastery/domains` (guardian-safe projection of student truth)
 - Compatibility-only:
 None for mastery product truth.
 - Diagnostic (Vertical B, Slice 1):

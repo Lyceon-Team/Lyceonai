@@ -130,6 +130,124 @@ export function oidcAuthMiddleware(
   };
 }
 
+// ── Config-guarded factory (request-time validation) ─────────────────
+
+/** §8.2-shaped body for a route whose OIDC config is absent. */
+const OIDC_NOT_CONFIGURED_RESPONSE = {
+  error: {
+    code: "internal_auth_not_configured",
+    message: "Internal route is not configured for OIDC authentication",
+  },
+} as const;
+
+/**
+ * Reads the OIDC configuration for a route. Called once per request so a
+ * route never captures a config value at import time.
+ */
+export type OidcConfigReader = () => {
+  expectedAudience: string | undefined;
+  expectedServiceAccount: string | undefined;
+};
+
+/**
+ * @spec [Doc-03C_V3 §9.3; Doc-01A §3 (fail-fast, bootstrap order)]
+ * @implemented 2026-09-01
+ *
+ * plain English: `oidcAuthMiddleware` with its configuration validated at
+ * REQUEST time instead of import time. If the audience or service account is
+ * missing, this route — and only this route — refuses with 500. Every other
+ * route in the process keeps serving.
+ *
+ * expected outcome: configured route behaves exactly as `oidcAuthMiddleware`;
+ * unconfigured route returns 500 and never calls `next()`, so a handler can
+ * never run behind an unverified token.
+ *
+ * trade-offs:
+ *  - The config check and the auth check are the SAME middleware, not two
+ *    chained ones. A caller cannot mount the auth without the check, or
+ *    reorder them, because there is one call site for both. Splitting them
+ *    would reintroduce the bypass this guard exists to prevent.
+ *  - Doc 01A §3's fail-fast intent — never run with auth silently disabled —
+ *    is preserved: an empty audience refuses the request rather than reaching
+ *    `verifyOidcToken`. §3 places its fail-fast in `loadAllConfig()` at step 1
+ *    of a bootstrap order whose step 4 is "start HTTP listener", so the
+ *    doctrine is about a startup PHASE, not about module evaluation. A
+ *    module-scope throw in a route file is not what §3 asks for: in a shared
+ *    bundle it takes down every unrelated route, auth included.
+ *  - The inner middleware is built on first configured request and reused, so
+ *    the google-auth-library key cache is shared across requests exactly as
+ *    before.
+ *
+ * edge cases:
+ *  - Config appears after boot (env injected late): picked up on the next
+ *    request, because the reader runs per request.
+ *  - Config disappears: the next request refuses; no stale cached middleware
+ *    is used, because the cache is only consulted after the check passes.
+ *  - Missing variable NAMES are logged; values never are.
+ *
+ * @param readConfig  Per-request reader for audience + service account
+ * @returns Express middleware
+ */
+export function oidcAuthMiddlewareWithConfigGuard(
+  readConfig: OidcConfigReader,
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  let configured: {
+    audience: string;
+    serviceAccount: string;
+    middleware: (
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ) => Promise<void>;
+  } | null = null;
+
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    const { expectedAudience, expectedServiceAccount } = readConfig();
+
+    const missing: string[] = [];
+    if (!expectedAudience) missing.push("CLOUD_TASKS_OIDC_AUDIENCE");
+    if (!expectedServiceAccount) missing.push("CLOUD_TASKS_SERVICE_ACCOUNT");
+
+    if (!expectedAudience || !expectedServiceAccount) {
+      logger.error(
+        "OIDC_AUTH",
+        "oidc_config_missing",
+        "Internal OIDC route is not configured; refusing the request",
+        undefined,
+        {
+          missing,
+          path: req.path,
+          method: req.method,
+        },
+      );
+
+      res.status(500).json(OIDC_NOT_CONFIGURED_RESPONSE);
+      return;
+    }
+
+    if (
+      configured === null ||
+      configured.audience !== expectedAudience ||
+      configured.serviceAccount !== expectedServiceAccount
+    ) {
+      configured = {
+        audience: expectedAudience,
+        serviceAccount: expectedServiceAccount,
+        middleware: oidcAuthMiddleware({
+          expectedAudience,
+          expectedServiceAccount,
+        }),
+      };
+    }
+
+    await configured.middleware(req, res, next);
+  };
+}
+
 // ── Core verification function ──────────────────────────────────────
 
 /**

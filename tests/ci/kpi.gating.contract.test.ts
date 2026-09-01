@@ -18,9 +18,15 @@ const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
 const canAccessFeature = vi.fn();
 
-vi.mock("../../server/services/kpi-access", () => ({
-  resolvePaidKpiAccessForUser,
-}));
+// `resolveHistoricalTrendsAccess` is spread in from the REAL module, not stubbed. It is
+// the shared fail-closed derivation both the student and guardian KPI paths now call, and
+// stubbing it here would mock away the very behaviour these cases assert.
+vi.mock("../../server/services/kpi-access", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/services/kpi-access")
+  >("../../server/services/kpi-access");
+  return { ...actual, resolvePaidKpiAccessForUser };
+});
 
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
@@ -270,6 +276,12 @@ describe("KPI Gating Contract", () => {
     // Baseline is also served for comparison.
     expect(payload.baseline).toMatchObject({ composite: 1000 });
     expect(payload.projection).toBeUndefined();
+    // RULE 9 (owner ruling 2026-08-20): the 0-1 confidence float is banded SERVER-side
+    // and never crosses the wire. The service mocks above still return 0.7 / 0.6 —
+    // that is the point: the route must convert, not forward.
+    expect(payload.estimate.confidenceBand).toBe("Medium");
+    expect(payload.baseline.confidenceBand).toBe("Low");
+    expect(JSON.stringify(payload)).not.toContain('"confidence"');
   }, 15_000);
 
   // FAIL-CLOSED NEGATIVE TEST (Doc-05C §7.4): if canAccessFeature throws
@@ -421,28 +433,9 @@ describe("KPI Gating Contract", () => {
     expect(getExamReport).not.toHaveBeenCalled();
   });
 
-  it("denies free-tier mastery skills route (mastery hexagon)", async () => {
-    const { masteryRouter } = await import("../../apps/api/src/routes/mastery");
-
-    const app = express();
-    app.use((req: any, _res, next) => {
-      req.user = {
-        id: "student-1",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      };
-      req.requestId ??= "req-mastery-skills";
-      next();
-    });
-    app.use("/api/me/mastery", masteryRouter);
-
-    const res = await request(app).get("/api/me/mastery/skills");
-
-    expect(res.status).toBe(402);
-    expect(res.body.code).toBe("PREMIUM_REQUIRED");
-    expect(res.body.feature).toBe("mastery_hexagon");
-  });
+  // The free-tier denial for the mastery drill-down moved with the routes. It is asserted
+  // against the new topology in tests/ci/student-resources.contract.test.ts, where the gate
+  // is the SUBJECT's entitlement rather than the caller's role — see PR 2.
 
   it("denies free-tier full-length session creation surface", async () => {
     const router = (await import("../../server/routes/full-length-exam-routes"))

@@ -58,11 +58,10 @@ import {
   doubleCsrfProtection,
   generateToken,
 } from "./middleware/csrf-double-submit";
-import { weaknessRouter } from "./routes/legacy/weakness";
-import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
+import studentResourceRoutes from "./routes/student-resources";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
@@ -79,7 +78,6 @@ import {
   getPracticeTopics,
   getPracticeQuestions,
 } from "./routes/practice-topics-routes";
-import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
@@ -119,10 +117,16 @@ app.post(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const rawSignature = req.headers["stripe-signature"];
-    const signature = Array.isArray(rawSignature) ? rawSignature[0] : rawSignature;
+    const signature = Array.isArray(rawSignature)
+      ? rawSignature[0]
+      : rawSignature;
 
     try {
-      const outcome = await processStripeWebhook(req.body, signature, requestId);
+      const outcome = await processStripeWebhook(
+        req.body,
+        signature,
+        requestId,
+      );
 
       if (!outcome.ok) {
         // Signature failure and livemode mismatch are both 400: Stripe should not
@@ -143,13 +147,13 @@ app.post(
     } catch (err: unknown) {
       // Handler failure. The idempotency gate has been released, so Stripe's
       // retry can reprocess. 500 asks Stripe to retry; 400 would not.
-      logger.error(
-        "STRIPE_WEBHOOK",
-        "unhandled",
-        "Webhook processing threw",
-        { requestId, message: err instanceof Error ? err.message : "unknown" },
-      );
-      return res.status(500).json({ error: "Webhook processing failed", requestId });
+      logger.error("STRIPE_WEBHOOK", "unhandled", "Webhook processing threw", {
+        requestId,
+        message: err instanceof Error ? err.message : "unknown",
+      });
+      return res
+        .status(500)
+        .json({ error: "Webhook processing failed", requestId });
     }
   },
 );
@@ -385,7 +389,6 @@ app.use("/api/internal", internalMemoryRoutes);
 app.use("/api/internal", internalRetentionRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
-app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
@@ -405,20 +408,17 @@ app.use(
   notificationRoutes,
 );
 
-// Weakness & Mastery Routes (student weakness tracking)
+// Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
+// to the student and to a linked guardian by the same handler; `resolveSubject` inside the
+// router turns the principal into the subject and is the only role-aware branch in the
+// stack. Deliberately NOT behind `requireStudentOrAdmin`: a guardian is a legitimate caller
+// here, and the resolver — not a role gate — decides whether this caller may see this
+// student.
 app.use(
-  "/api/me/weakness",
+  "/api/students",
   requireSupabaseAuth,
-  requireStudentOrAdmin,
   doubleCsrfProtection,
-  weaknessRouter,
-);
-app.use(
-  "/api/me/mastery",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  masteryRouter,
+  studentResourceRoutes,
 );
 app.use(
   "/api/calendar",
@@ -727,7 +727,25 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
 // SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
 // Keeps sitemap legal slugs indexable with canonical title/description metadata.
 app.get("/legal/:slug", (req, res, next) => {
-  const slug = String(req.params.slug || "");
+  // @spec [CodeQL js/reflected-xss alert #36; Coding Standards §7.1, §12.2]
+  //   | @implemented [2026-08-27]
+  //
+  // plain English: the slug echoed into the page is the TABLE'S OWN KEY, never the
+  // request's string. `slug` below is an element of `Object.keys(LEGAL_META)` — a server
+  // constant — and the request only chooses WHICH element. Same characters, different
+  // provenance, so no user-controlled value reaches the HTML at `/legal/${slug}` below.
+  // Fixed at the source rather than escaped at the sink: `injectBodyContent` interpolates
+  // raw, so an escape here would be one call away from being forgotten by the next caller.
+  //
+  // This also closes a hole the previous `LEGAL_META[slug]` truthiness check left open.
+  // LEGAL_META is a plain object literal, so a bare index resolves INHERITED members too:
+  // `/legal/constructor` returned `Object`, passed `if (!meta)`, and reflected
+  // "constructor" back into the page. `Object.keys` enumerates own keys only, so the
+  // guard is now an allowlist rather than a truthiness test.
+  const requestedSlug = String(req.params.slug || "");
+  const slug = Object.keys(LEGAL_META).find((key) => key === requestedSlug);
+  if (slug === undefined) return next();
+
   const meta = LEGAL_META[slug];
   if (!meta) return next();
 

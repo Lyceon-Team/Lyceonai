@@ -1,30 +1,30 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
-import request from 'supertest';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
 
-vi.mock('../../server/middleware/supabase-auth', async () => {
-  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
-    '../../server/middleware/supabase-auth'
-  );
+vi.mock("../../server/middleware/supabase-auth", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/middleware/supabase-auth")
+  >("../../server/middleware/supabase-auth");
 
   return {
     ...actual,
     requireSupabaseAuth: (req: any, _res: any, next: any) => {
       req.user = {
-        id: 'student-1',
-        role: 'student',
+        id: "student-1",
+        role: "student",
         isGuardian: false,
         isAdmin: false,
       };
-      req.requestId ??= 'req-full-length-review-lock';
+      req.requestId ??= "req-full-length-review-lock";
       next();
     },
   };
 });
 
-vi.mock('../../server/middleware/csrf-double-submit', () => ({
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
-  generateToken: () => 'test-csrf-token',
+  generateToken: () => "test-csrf-token",
 }));
 
 const serviceMocks = {
@@ -39,25 +39,32 @@ const serviceMocks = {
   getExamReviewAfterCompletion: vi.fn(),
 };
 
-vi.mock('../../apps/api/src/services/fullLengthExam', () => serviceMocks);
+vi.mock("../../apps/api/src/services/fullLengthExam", () => serviceMocks);
 
-describe('Full-Length Review Lock Route Contract', () => {
+describe("Full-Length Review Lock Route Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns 423 when review is requested before completion', async () => {
-    serviceMocks.getExamReviewAfterCompletion.mockRejectedValue(new Error('Review locked until completion'));
+  it("returns 423 when review is requested before completion", async () => {
+    serviceMocks.getExamReviewAfterCompletion.mockRejectedValue(
+      new Error("Review locked until completion"),
+    );
 
-    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+    const router = (await import("../../server/routes/full-length-exam-routes"))
+      .default;
     const app = express();
     app.use(express.json());
-    app.use('/api/full-length', router);
+    app.use("/api/full-length", router);
 
-    const res = await request(app).get('/api/full-length/sessions/session-locked/review');
+    const res = await request(app).get(
+      "/api/full-length/sessions/session-locked/review",
+    );
 
     expect(res.status).toBe(423);
-    expect(res.body).toMatchObject({ error: 'Review locked until completion', requestId: 'req-full-length-review-lock' });
+    expect(res.body).toMatchObject({
+      error: "Review locked until completion",
+      requestId: "req-full-length-review-lock",
+    });
   });
 });
-

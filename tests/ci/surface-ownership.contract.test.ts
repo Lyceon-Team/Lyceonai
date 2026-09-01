@@ -9,7 +9,6 @@
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
  *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
- *   - Weakness view                 → buildWeaknessSkillsView → getWeakestSkills
  *   - Calendar month view           → buildCalendarMonthView (getMonthPayload alias in calendar route)
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
@@ -18,12 +17,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
+
 const masteryMocks2 = vi.hoisted(() => ({
-  getWeakestSkills: vi.fn(),
 }));
 
-vi.mock("../../apps/api/src/services/studentMastery", () => ({
-  getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+
+// buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
+// view reaches for a real Supabase client and the case hangs rather than failing.
+vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
+  loadMasteryLevels: vi.fn(async () => masteryLevelLabelsFixture()),
+  resetMasteryLevelsCache: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -61,10 +65,16 @@ describe("Full-length report: single canonical builder", () => {
     persistModuleCalculatorState: vi.fn(),
   }));
 
-  vi.mock("../../server/services/kpi-access", () => ({
-    resolvePaidKpiAccessForUser: (...args: any[]) =>
-      kpiMocks.resolvePaidKpiAccessForUser(...args),
-  }));
+  vi.mock("../../server/services/kpi-access", async () => {
+    const actual = await vi.importActual<
+      typeof import("../../server/services/kpi-access")
+    >("../../server/services/kpi-access");
+    return {
+      ...actual,
+      resolvePaidKpiAccessForUser: (...args: any[]) =>
+        kpiMocks.resolvePaidKpiAccessForUser(...args),
+    };
+  });
 
   vi.mock("../../server/middleware/csrf-double-submit", () => ({
     doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
@@ -160,59 +170,21 @@ describe("Full-length report: single canonical builder", () => {
     expect(res.body).toHaveProperty("error");
   }, 15000);
 
-  it("report is premium-gated: returns 402 when entitlement resolves to free", async () => {
-    kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-      hasPaidAccess: false,
-      reason: "no active plan",
-      plan: "free",
-      status: "inactive",
-      currentPeriodEnd: null,
-    });
-
-    const { default: fullLengthRouter } =
-      await import("../../server/routes/full-length-exam-routes");
-    const app = buildReportApp();
-    app.use("/api/full-length", fullLengthRouter);
-
-    const res = await request(app).get(
-      "/api/full-length/sessions/sess-gate/report",
-    );
-
-    expect(res.status).toBe(402);
-    // Builder must NOT be called if gating fails
-    expect(kpiMocks.buildStudentFullLengthReportView).not.toHaveBeenCalled();
-    expect(examMocks.getExamReport).not.toHaveBeenCalled();
-  });
+  // The weakness skills route is GONE (owner ruling 2026-08-27, OQ4). Nothing specified it,
+  // and it ordered by `mastery_score` — a column Parent AC#20 confines to admin/internal.
+  // Ordering by a forbidden column is a projection of it: the ranking carries the column's
+  // information content even though the value never appeared in the body.
 });
 
 // ---------------------------------------------------------------------------
-// Surface 3: Weakness — /skills route through canonical builder only.
-//            buildWeaknessSkillsView owns the skills shape. No inline fork.
-//            Clusters deprecated (post-launch revisit); table retained, code removed.
+// Surface 3: Weakness — DELETED 2026-08-27 (owner ruling, OQ4).
+//   The weakness-skills route and the weakest-skills route were the same capability at two
+//   paths, neither named by any document. Both ranked by `mastery_score`, which Parent AC#20
+//   confines to admin/internal/audit — and ordering by a forbidden column is a projection of
+//   it, because the ranking carries the column's information content even when the value
+//   never appears in the body. A recursive key-walk cannot see that; only reading the query
+//   can. The route, its view, its service and its tests are gone.
 // ---------------------------------------------------------------------------
-describe("Weakness view: single canonical builder per sub-surface", () => {
-  it("skills route calls buildWeaknessSkillsView with failOnError=true", async () => {
-    masteryMocks2.getWeakestSkills.mockResolvedValue([]);
-
-    const { weaknessRouter } =
-      await import("../../apps/api/src/routes/weakness");
-
-    const app = express();
-    app.use(express.json());
-    app.use((req: any, _res, next) => {
-      req.user = { id: "student-2", role: "student" };
-      next();
-    });
-    app.use("/api/me/weakness", weaknessRouter);
-
-    await request(app).get("/api/me/weakness/skills");
-
-    // buildWeaknessSkillsView internally calls getWeakestSkills with failOnError=true
-    expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
-      expect.objectContaining({ failOnError: true, userId: "student-2" }),
-    );
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Surface 4: Calendar month view — getMonthPayload MUST be the buildCalendarMonthView
@@ -277,8 +249,14 @@ describe("KPI summary: canonical builder path", () => {
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 
+    // These two cases assert what getRecencyKpis CALLS, not how the historical-trends flag
+    // is derived. The real resolver reaches a live entitlement client and hangs the case at
+    // the 5s timeout, so it is stubbed here — stubbing it mocks away nothing these cases
+    // claim. The derivation itself is proved in kpi.gating.contract.test.ts, which runs the
+    // real function over a mocked EntitlementService.
     vi.doMock("../../server/services/kpi-access", () => ({
       resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+      resolveHistoricalTrendsAccess: vi.fn(async () => false),
     }));
 
     // Q1 consolidation: getRecencyKpis now uses canAccessFeature('historical_trends').
@@ -336,8 +314,14 @@ describe("KPI summary: canonical builder path", () => {
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 
+    // These two cases assert what getRecencyKpis CALLS, not how the historical-trends flag
+    // is derived. The real resolver reaches a live entitlement client and hangs the case at
+    // the 5s timeout, so it is stubbed here — stubbing it mocks away nothing these cases
+    // claim. The derivation itself is proved in kpi.gating.contract.test.ts, which runs the
+    // real function over a mocked EntitlementService.
     vi.doMock("../../server/services/kpi-access", () => ({
       resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+      resolveHistoricalTrendsAccess: vi.fn(async () => false),
     }));
 
     vi.doMock("../../server/services/entitlement-service", () => ({

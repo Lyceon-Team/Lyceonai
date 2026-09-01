@@ -43,7 +43,6 @@ Guardian exam report visibility requires BOTH:
 2. Active student entitlement (paid + active/trialing + not period-expired)
 
 Enforcement path:
-- `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report`
 - `requireGuardianEntitlement` resolves linked-pair access via `resolveLinkedPairPremiumAccessForGuardian(...)`
 - Route performs explicit linked-student authorization check and hard-denies unauthorized access (`403`)
 

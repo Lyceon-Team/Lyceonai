@@ -3,6 +3,44 @@ import {
   resolveLinkedPairPremiumAccessForStudent,
   type EntitlementStatus,
 } from "../lib/account";
+import { EntitlementService } from "./entitlement-service";
+
+/**
+ * @spec [Doc 05 Parent §15.2 + AC#19 — guardians read the student's aggregates through a
+ *   gate; Doc 04C invariant #7 — "Guardians MUST NOT see fields the student does not see";
+ *   owner ruling 2026-08-23 — "the guardian sees exactly what the student sees, no more and
+ *   no less"] | @implemented [2026-08-24]
+ *
+ * plain English: does THIS STUDENT have historical-trend KPIs? The subject is always the
+ * student, whoever is asking.
+ *
+ * WHY THIS IS SHARED AND NOT INLINE.
+ *   The student KPI route derived this from the student's own entitlement, fail-closed. The
+ *   guardian route passed a hardcoded `true`. So a guardian could see a premium surface the
+ *   student's own entitlement denied them — the payer's view was more permissive than the
+ *   learner's, which inverts the trust model and violates 04C invariant #7 outright.
+ *
+ *   The defect was possible because the derivation existed in one place and the guardian
+ *   route simply did not call it. One exported function, two call sites, same subject: a
+ *   future guardian surface cannot re-answer this question differently, because there is
+ *   only one place the question is answered.
+ *
+ * FAIL-CLOSED. An entitlement read that throws returns false — hide the premium surface
+ * rather than 500 the endpoint, and never let a failed read widen access. An error is not
+ * an entitlement.
+ */
+export async function resolveHistoricalTrendsAccess(
+  studentProfileId: string,
+): Promise<boolean> {
+  try {
+    return await EntitlementService.canAccessFeature(
+      studentProfileId,
+      "historical_trends",
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface KpiEntitlementAccess {
   hasPaidAccess: boolean;

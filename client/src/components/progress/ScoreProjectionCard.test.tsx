@@ -45,7 +45,9 @@ const BASELINE = {
   math: 530,
   rw: 520,
   range: { low: 980, high: 1120 },
-  confidence: 0.65,
+  // RULE 9 (owner ruling 2026-08-20): the server bands the confidence float before
+  // serialization, so the response the component consumes carries a WORD, not a number.
+  confidenceBand: "Low",
   capturedAt: "2026-07-15T12:00:00Z",
 };
 
@@ -112,7 +114,7 @@ describe("ScoreProjectionCard — tiered estimate surface (Vertical-B Slice 2)",
           math: 600,
           rw: 580,
           range: { low: 1100, high: 1260 },
-          confidence: 0.5,
+          confidenceBand: "Medium",
         },
         baseline: BASELINE,
         totalQuestionsAttempted: 60,
@@ -129,6 +131,9 @@ describe("ScoreProjectionCard — tiered estimate surface (Vertical-B Slice 2)",
     expect(screen.getByText("1050")).toBeTruthy();
     // Shows delta.
     expect(screen.getByText("+130")).toBeTruthy();
+    // RULE 9: the band the server sent is rendered verbatim. There is no client-side
+    // threshold function left to disagree with the server's own banding.
+    expect(screen.getByText("Medium Estimate Confidence")).toBeTruthy();
   });
 
   it("renders honest uncomputed (null estimate on computed status) — no crash, no fabricated number", () => {
