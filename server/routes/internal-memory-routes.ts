@@ -32,8 +32,11 @@
  *  - Expected failures: return 200 with `{ ok: false, reason }` so Cloud
  *    Tasks does not retry. Only unexpected errors return 500 (triggers retry).
  *  - Missing OIDC env vars (CLOUD_TASKS_OIDC_AUDIENCE, CLOUD_TASKS_SERVICE_ACCOUNT):
- *    startup crashes with a descriptive error (fail-fast per Doc 01A §3).
- *    In test mode the check is skipped — tests mock the middleware.
+ *    THESE routes return 500 and never verify a token; the rest of the process
+ *    keeps serving. Checked per request, not at import — an import-time throw
+ *    here killed every route in the Vercel bundle, auth included, from
+ *    2026-08-27 to 2026-09-01. No NODE_ENV guard is needed, because the check
+ *    no longer runs at import.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -41,14 +44,17 @@ import { logger } from "../logger";
 import { executeCompaction } from "../services/tutor-compaction";
 import { executeMemoryRefresh } from "../services/tutor-memory-refresh";
 import { executePendingReconciliation } from "../services/tutor-pending-reconciliation";
-import { oidcAuthMiddleware } from "../../packages/shared/internal-auth/verify-oidc-middleware";
+import {
+  oidcAuthMiddlewareWithConfigGuard,
+  type OidcConfigReader,
+} from "../../packages/shared/internal-auth/verify-oidc-middleware";
 
 const router = Router();
 
 // ── OIDC config ──────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03C_V3 §9.3, Doc-01A §3 fail-fast]
+ * @spec [Doc-03C_V3 §9.3, Doc-01A §3]
  *
  * OIDC audience: the handler URL that Cloud Tasks targets. The token's
  * audience claim must match this value. Configured per deployment.
@@ -56,31 +62,17 @@ const router = Router();
  * OIDC service account: the SA that Cloud Tasks uses to mint tokens.
  * Must match `lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com`.
  *
- * Fail-fast (Doc 01A §3): missing env vars crash the process at startup
- * instead of running with empty strings that silently disable auth.
- * Guarded by NODE_ENV — test mode skips (tests mock the middleware).
+ * Read per REQUEST, not at import. These routes live in the same bundle as
+ * every user-facing route, so a module-scope throw here takes down auth,
+ * billing and practice along with them — which is what happened on
+ * 2026-08-27. Doc 01A §3's fail-fast intent (never serve with auth silently
+ * disabled) is preserved by the guard below: an unset var refuses THIS route
+ * with 500 and never reaches token verification.
  */
-const IS_TEST = process.env.NODE_ENV === "test" || !!process.env.VITEST;
-
-const OIDC_AUDIENCE = process.env.CLOUD_TASKS_OIDC_AUDIENCE ?? "";
-const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
-
-if (!IS_TEST) {
-  if (!OIDC_AUDIENCE) {
-    throw new Error(
-      "CLOUD_TASKS_OIDC_AUDIENCE is not set. " +
-        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
-        "Set it to the Cloud Run handler URL.",
-    );
-  }
-  if (!OIDC_SERVICE_ACCOUNT) {
-    throw new Error(
-      "CLOUD_TASKS_SERVICE_ACCOUNT is not set. " +
-        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
-        "Set it to lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com.",
-    );
-  }
-}
+const readOidcConfig: OidcConfigReader = () => ({
+  expectedAudience: process.env.CLOUD_TASKS_OIDC_AUDIENCE,
+  expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+});
 
 // ── Request schema ────────────────────────────────────────────────────
 
@@ -98,10 +90,7 @@ const compactionTaskSchema = z.object({
 
 router.post(
   "/memory/compact-writeback",
-  oidcAuthMiddleware({
-    expectedAudience: OIDC_AUDIENCE,
-    expectedServiceAccount: OIDC_SERVICE_ACCOUNT,
-  }),
+  oidcAuthMiddlewareWithConfigGuard(readOidcConfig),
   async (req: Request, res: Response): Promise<void> => {
     const parsed = compactionTaskSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -196,10 +185,7 @@ const memoryRefreshTaskSchema = z.object({
  */
 router.post(
   "/async/memory-refresh",
-  oidcAuthMiddleware({
-    expectedAudience: OIDC_AUDIENCE,
-    expectedServiceAccount: OIDC_SERVICE_ACCOUNT,
-  }),
+  oidcAuthMiddlewareWithConfigGuard(readOidcConfig),
   async (req: Request, res: Response): Promise<void> => {
     const parsed = memoryRefreshTaskSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -300,10 +286,7 @@ const pendingReconciliationTaskSchema = z.object({
  */
 router.post(
   "/async/pending-reconciliation",
-  oidcAuthMiddleware({
-    expectedAudience: OIDC_AUDIENCE,
-    expectedServiceAccount: OIDC_SERVICE_ACCOUNT,
-  }),
+  oidcAuthMiddlewareWithConfigGuard(readOidcConfig),
   async (req: Request, res: Response): Promise<void> => {
     const parsed = pendingReconciliationTaskSchema.safeParse(req.body);
     if (!parsed.success) {

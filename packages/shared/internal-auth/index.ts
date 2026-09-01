@@ -31,5 +31,7 @@ export {
 } from "./verify-middleware";
 export {
   oidcAuthMiddleware,
+  oidcAuthMiddlewareWithConfigGuard,
+  type OidcConfigReader,
   type OidcMiddlewareOptions,
 } from "./verify-oidc-middleware";
