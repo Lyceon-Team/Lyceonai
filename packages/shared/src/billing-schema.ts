@@ -49,9 +49,6 @@ export const billingCheckoutRequestSchema = z
   })
   .strict();
 
-export type BillingCheckoutRequest = z.infer<
-  typeof billingCheckoutRequestSchema
->;
 
 /**
  * What the route returns, discriminated on what actually happened.
@@ -135,4 +132,3 @@ export const billingPortalOutcomeSchema = z.object({
   url: z.string().url(),
 });
 
-export type BillingPortalOutcome = z.infer<typeof billingPortalOutcomeSchema>;

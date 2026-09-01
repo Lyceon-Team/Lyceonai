@@ -37,9 +37,14 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 
+/**
+ * SCL-080 removed "guardian_link_accepted": it was written only by
+ * accept_guardian_link_audited, which migration 20260901000000 drops. A one-step link
+ * records its consent as "guardian_link_initiated" at creation, so nothing produces the
+ * accepted action, and an action no writer emits is a value the reader can only mishandle.
+ */
 export type GuardianLinkAuditAction =
   | "guardian_link_initiated"
-  | "guardian_link_accepted"
   | "guardian_link_revoked"
   | "guardian_link_denied";
 

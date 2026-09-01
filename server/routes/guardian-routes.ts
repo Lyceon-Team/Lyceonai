@@ -17,7 +17,6 @@ const GUARDIAN_LINK_CODE_REFUSED = "GUARDIAN_LINK_CODE_REFUSED";
 import {
   createActiveGuardianLink,
   revokeGuardianLink,
-  isGuardianLinkedToStudent,
   getAllGuardianStudentLinks,
   getAnyGuardianLinkForPair,
 } from "../lib/account";
@@ -32,14 +31,6 @@ import {
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
-
-/** The exact column list the linked-student queries select. Not `any[]`. */
-type LinkedStudentRow = {
-  id: string;
-  email: string;
-  display_name: string | null;
-  created_at: string;
-};
 
 const router = Router();
 
@@ -78,10 +69,6 @@ async function emitGuardianAccessEvent(args: {
     // Best effort only.
   }
 }
-
-/** Route params are strings; a link id must be a UUID before it reaches the data layer. */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * @spec [lyceon-coding-standards.md §3.2 (unknown at boundaries), §13 (expected failures)]
@@ -438,8 +425,4 @@ router.delete(
     }
   },
 );
-
-function isIsoDate(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
 export default router;

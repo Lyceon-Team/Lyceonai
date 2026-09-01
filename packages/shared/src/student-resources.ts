@@ -66,7 +66,6 @@ export const STUDENT_LINK_PATHS = {
   linkRevoke: "/links/:linkId",
 } as const;
 
-export type StudentLinkPathKey = keyof typeof STUDENT_LINK_PATHS;
 
 /** Full client-side path for the student's own code, e.g. `/api/students/<id>/link-code`. */
 export function studentLinkCodeUrl(studentId: string): string {

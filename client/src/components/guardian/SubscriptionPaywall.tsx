@@ -21,16 +21,18 @@ import {
   studentLabel,
 } from '@/hooks/useGuardianStudents';
 
+/**
+ * ONLY the fields this component reads. Seven more were declared here and never
+ * read — accountId, plan, currentPeriodEnd, stripeSubscriptionId, isPaid,
+ * premiumSource and billingOwnerRole. The last two were the same defect as the
+ * four named below: no server route ever wrote them, so they could only ever be
+ * `undefined`. Declaring a field the server does not send is how the escape hatch
+ * came to be dead in the first place; the type now states what actually arrives.
+ */
 interface BillingStatus {
-  accountId: string | null;
-  plan: string;
   stripeStatus: string;
-  currentPeriodEnd: string | null;
-  stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  isPaid: boolean;
-  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
   /**
    * Written by the guardian branch of `/api/billing/status` from §31.3's fold. Replaces
    * `linkRequiredForPremium`, `hasLinkedStudent`, `requiresStudentSubscription` and
@@ -40,7 +42,6 @@ interface BillingStatus {
    * guardian-with-no-link test, and `undefined` leaves the student paths untouched.
    */
   hasActiveLink?: boolean;
-  billingOwnerRole?: 'student' | 'guardian';
 }
 
 interface SubscriptionPaywallProps {
@@ -365,7 +366,6 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             </div>
           </div>
 
-          {/* TODO(billing): Guardian selector is legacy and should be removed only after /upgrade parity tests pass. */}
           {pricesLoading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />

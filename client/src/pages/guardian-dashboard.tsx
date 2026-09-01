@@ -41,8 +41,6 @@ import {
   AlertTriangle,
   Calendar,
   CreditCard,
-  Search,
-  Loader2,
 } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -86,11 +84,11 @@ interface GuardianBillingStatus {
 export default function GuardianDashboard() {
   const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
   const queryClient = useQueryClient();
-  // @spec [Doc-01_V8, §36.1 Initiation step 1] | @implemented [2026-08-26]
-  // plain English: the guardian identifies the student by EMAIL, not by an 8-character code.
-  // The code mechanism appears nowhere in the locked spec corpus; §36.1 step 1 reads
-  // "Guardian enters student's email on their dashboard". Consequence edit forced by the
-  // route's contract — see docs/plans/WS-GL_PhaseB_Report.md §4.1.
+  // @spec [SCL-080; supersedes Doc-01_V8 §36.1 Initiation step 1] | @implemented [2026-09-01]
+  // plain English: the guardian identifies the student by a 6-character CODE the student
+  // displays and shares, not by email. The comment that stood here said the opposite and
+  // said the code mechanism "appears nowhere in the locked spec corpus" — true when it was
+  // written, and superseded by SCL-080, which is why the state below is already `linkCode`.
   const [linkCode, setLinkCode] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
@@ -380,27 +378,6 @@ export default function GuardianDashboard() {
             </div>
           )}
 
-          {students?.length === 0 && (
-            <Card className="bg-card border-border/60">
-              <CardHeader>
-                <CardTitle className="text-[#0F2E48]">
-                  Connection Required
-                </CardTitle>
-                <CardDescription>
-                  Send a guardian link request to your student's account email.
-                  Reporting starts after the student accepts from their account.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
-                <div className="rounded-lg bg-secondary/50 p-3">
-                  Progress summaries appear after a student is linked.
-                </div>
-                <div className="rounded-lg bg-secondary/50 p-3">
-                  Calendar access is read-only and respects student ownership.
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           <Card className="bg-card border-border/60">
             <CardHeader>

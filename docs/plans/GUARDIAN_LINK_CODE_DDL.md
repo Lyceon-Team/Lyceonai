@@ -227,3 +227,42 @@ than requests. WS-GL hit the same wall on the per-email bucket. Recorded, not de
 Ruled out of scope by the owner and deliberately untouched by this change: the under-13 consent
 path (Doc 01 V8 §37), guardian↔student cardinality (N guardians per student stands as ruled), and
 a repo-wide `@spec` annotation sweep. No code, test, or doc in this workstream addresses them.
+
+## Dead-code sweep — the guardian-link and guardian-billing surface
+
+Run 2026-09-01 after the migration landed. Every symbol was grepped repo-wide before it was
+touched; nothing here was deleted on a reading of the code alone. Two findings were CI
+failures rather than dead code, and both were reproduced before being changed.
+
+### Deleted — within the surface
+
+| Where | What | Why it was dead |
+|---|---|---|
+| `packages/shared/src/guardian-link-schema.ts` | `guardianLinkRequestSchema`, `GuardianLinkRequest`, `GuardianLinkRevoke`, `guardianLinkInitiatorSchema`, `GuardianLinkInitiator`, `PENDING_STATUS_FOR_INITIATOR`, `OCCUPYING_STATUSES` | The email-initiation request shape and the two-step status machine. Zero consumers. |
+| `packages/shared/src/guardian-link-schema.ts` | `pending_student_accept` / `pending_guardian_accept` enum members | The schema was WIDER than its column. genesis now declares `('active','revoked')`, so those members made a parse that can never fail where the write already would have. |
+| `packages/shared/src/guardian-link-schema.ts` | `NOT_PENDING`, `WRONG_ACCEPTOR`, and the `LY001`/`LY002` map entries | Both SQLSTATEs are raised only by `accept_guardian_link_audited`, which the migration drops. LY003/LY004 stay — their functions survive. |
+| `server/lib/account.ts` | `isGuardianLinkedToStudent`, `getPrimaryGuardianLink`, the `GuardianLinkInitiator` re-export; module docblock rewritten | Zero callers each. `guardian_view_decision` is the visibility gate; the §31.3 fold replaced the oldest-link lookup. The docblock still described "create, read, **accept** and revoke". |
+| `server/routes/guardian-routes.ts` | dead `isGuardianLinkedToStudent` import, `LinkedStudentRow`, `UUID_RE`, `isIsoDate` | Declared, never referenced. `UUID_RE`'s only consumer was the deleted accept-by-id path. |
+| `server/middleware/guardian-link-rate-limit.ts` | `guardianLinkRateLimit`, `GUARDIAN_LINK_BUCKET`, `GUARDIAN_LINK_EMAIL_BUCKET_FAMILY`, the `rollback` import | The two-control limiter for `POST /api/guardian/link` with an email body. Zero importers; `guardianLinkCodeEntryRateLimit` replaced it. `applyHeaders` and `deny` are shared with the surviving limiter and were KEPT. |
+| `packages/shared/src/services/subject-digest.ts` | `guardianLinkEmailBucketKey` | Its only importer was the limiter above. Transitively dead. |
+| `server/services/guardian-link-audit.ts` | the `"guardian_link_accepted"` action | No producer remains. `auditGuardianLink` itself is KEPT — see below. |
+| `client/src/pages/UserProfile.tsx` | the "Guardian Link Requests" block | **The worst of these, because it was user-visible and wrong.** It rendered `profileUser.studentLinkCode` — the LIVE SCL-080 credential, which `profile-routes.ts:153` populates — under copy telling the student to "ask your parent or guardian to send a link request to this account email" and labelling the code legacy. A working code, presented as dead, next to the flow it belongs to. |
+| `client/src/pages/guardian-dashboard.tsx` | the "Connection Required" card, the `§36.1 email` comment, unused `Search`/`Loader2` imports | The card rendered for `students.length === 0` alongside the correct SCL-080 empty state — two empty states, one describing the deleted flow. The comment asserted the guardian identifies by EMAIL and that "the code mechanism appears nowhere in the locked spec corpus", directly above `const [linkCode, setLinkCode]`. |
+| `client/src/components/guardian/SubscriptionPaywall.tsx`, `client/src/pages/UserProfile.tsx` | `accountId`, `plan`, `currentPeriodEnd`, `stripeSubscriptionId`, `isPaid`, `premiumSource`, `billingOwnerRole` (declaration-only) and one contradictory TODO | `premiumSource` and `billingOwnerRole` are the SAME defect as the four phantoms the paywall's own header describes: **no server route writes either**, so both could only ever be `undefined`. The rest were declared and never read. The TODO called the guardian student picker "legacy" when it is the current SCL-080 design. |
+| shared types with zero consumers | `StudentLinkCode`, `RedeemLinkCodeRequest`, `StudentLinkPathKey`, `BillingCheckoutRequest`, `BillingPortalOutcome` | Inferred types nothing imports. Their schemas are live and stay. |
+
+### Not dead — reached only through a string, do not delete
+
+- `getGuardianLinkById` — **RETAINED, as ruled.** One production caller: `student-resources.ts:33` imports it, `:595` calls it inside `DELETE /api/students/:studentId/links/:linkId` to establish party-hood before the revoke write. The other two hits are inert `vi.mock` factory keys.
+- `auditGuardianLink` — zero static importers, reached by a dynamic `await import(...)` in `guardian-reporting.contract.test.ts:552`. It is a deliberate INSTRUMENT CONTROL: it proves the `audit_logs` capture array works, so the two negative assertions downstream mean something. Deleting it would make them vacuously green.
+- `create_active_guardian_link_audited` / `revoke_guardian_link_audited` — reached only as SQL name strings in `supabaseServer.rpc(...)`.
+- `DELETE /api/students/:studentId/links/:linkId` — zero CLIENT callers, but a live mounted route implementing §36.3's student half and the sole consumer of `getGuardianLinkById` and `guardianLinkRevokeSchema`. Missing UI, not dead code.
+- `isGuardianLinkedToStudent` in `scripts/ci/subject-resolver-chokepoint-gate.mjs:76` — a FORBIDDEN-PATTERN regex, not a usage. It must stay now that the function is gone, since it bans re-introducing the pattern.
+
+### Reported, not touched — outside the surface
+
+- `client/src/pages/guardian-dashboard.tsx` `StudentSummary.progress` — an unread type member on the guardian REPORTING surface.
+- `packages/shared/src/billing-schema.ts` `billingPortalOutcomeSchema` — referenced only by its own unit test. General billing portal, not guardian-specific.
+- The D-9 seed still writes `guardian_link_attempts_daily` and `guardian_link_email_attempts`. Both are named by Doc 01 V8 §36.2, and both are now UNCONSUMED, since the code path that read them is deleted above. Left in place: removing spec-named configuration is a spec decision, not a sweep decision.
+- `.claude/worktrees/` holds four scratch checkouts that vitest globs into, producing ~770 spurious test files and hundreds of failures locally. They are gitignored and absent in CI. Not fixed here; `--exclude '.claude/**'` gives the true repo result.
+- Stale references to the deleted symbols remain in `docs/**` and `audit-out/**`. Documentation history, not code.

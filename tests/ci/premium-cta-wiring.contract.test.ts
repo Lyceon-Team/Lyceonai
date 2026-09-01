@@ -99,8 +99,22 @@ describe("Premium CTA wiring contract", () => {
     );
     expect(guardianPaywall).toContain("'/api/billing/portal'");
     expect(guardianPaywall).toContain("needsPaymentUpdate");
-    expect(guardianPaywall).toContain(
-      "TODO(billing): Guardian selector is legacy",
-    );
+    /**
+     * The selector is RENDERED, and is not marked legacy.
+     *
+     * This assertion used to pin the presence of a comment reading
+     * "TODO(billing): Guardian selector is legacy ... should be removed". SCL-080
+     * made that comment false — the per-student selector IS the current design,
+     * because a guardian buys one subscription item per student — so the test was
+     * holding a contradiction in place: it would have failed the moment anyone
+     * corrected the comment, and passed forever while the comment lied.
+     *
+     * Pinning prose is not pinning behaviour. What the surrounding test name
+     * actually claims is that the selector stays wired, so that is what is
+     * asserted: the picker renders, and nothing re-labels it legacy.
+     */
+    expect(guardianPaywall).toContain('data-testid="student-picker"');
+    expect(guardianPaywall).toContain('data-testid="student-select"');
+    expect(guardianPaywall).not.toMatch(/Guardian selector is legacy/);
   });
 });

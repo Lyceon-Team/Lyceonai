@@ -43,22 +43,15 @@ interface UserProfile {
   isAdmin?: boolean;
   createdAt?: string;
   lastLoginAt?: string;
-  studentLinkCode?: string | null;
 }
 
 interface BillingStatusResponse {
-  accountId: string | null;
-  plan: string;
   stripeStatus: string;
-  currentPeriodEnd: string | null;
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  isPaid: boolean;
-  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
   /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
   hasActiveLink?: boolean;
-  billingOwnerRole?: 'student' | 'guardian';
 }
 
 
@@ -441,37 +434,6 @@ export default function UserProfile() {
                     Member since {memberSinceLabel}
                   </Badge>
                 </div>
-                {user?.role === 'student' && profileUser?.studentLinkCode && (
-                  <div className="mt-4 p-3 bg-muted rounded-lg">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Users className="h-4 w-4" />
-                      <span>Guardian Link Requests</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-lg font-mono font-bold tracking-wider">
-                        {profileUser.studentLinkCode}
-                      </code>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          navigator.clipboard.writeText(profileUser.studentLinkCode || '');
-                          toast({
-                            title: "Copied!",
-                            description: "Legacy link code copied to clipboard",
-                          });
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Ask your parent or guardian to send a link request to this
-                      account email. Link codes are legacy and are not used for
-                      new guardian requests.
-                    </p>
-                  </div>
-                )}
               </div>
               <div className="self-start">
                 <Button

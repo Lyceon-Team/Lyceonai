@@ -32,26 +32,12 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
   checkAndIncrement,
-  rollback,
   rateLimitDenialBody,
   rateLimitDenialHeaders,
   RateLimitUnavailableError,
   type LedgerClient,
   type RateLimitResult,
 } from "../../packages/shared/src/services/rate-limit-ledger";
-import { guardianLinkEmailBucketKey } from "../../packages/shared/src/services/subject-digest";
-
-/** §46's literal bucket name for the per-guardian control. */
-export const GUARDIAN_LINK_BUCKET = "guardian_link_attempts_daily";
-
-/**
- * Family name for the per-email control. The runtime key appends the address's digest —
- * see `guardianLinkEmailBucketKey`. §36.2 names the limit (3/day) but no bucket key, and
- * neither Doc 01A §46's consumer table nor Appendix A.3's launch seed contains one; this
- * name is therefore introduced by WS-GL and surfaced as an SCL candidate, not asserted as
- * canonical.
- */
-export const GUARDIAN_LINK_EMAIL_BUCKET_FAMILY = "guardian_link_email_attempts";
 
 function applyHeaders(res: Response, result: RateLimitResult): void {
   res.setHeader("X-RateLimit-Limit", String(result.limit));
@@ -84,102 +70,6 @@ function deny(
   });
 }
 
-export async function guardianLinkRateLimit(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  const requestId = req.requestId;
-  const profileId = req.user?.id;
-
-  // No authenticated profile means no bucket to key on. Auth rejects this next.
-  if (!profileId) {
-    next();
-    return;
-  }
-
-  const body: unknown = req.body;
-  const rawEmail =
-    body &&
-    typeof body === "object" &&
-    typeof (body as { email?: unknown }).email === "string"
-      ? (body as { email: string }).email
-      : null;
-
-  const client = supabaseServer as unknown as LedgerClient;
-
-  try {
-    // Control 1 — §36.2 per-guardian: max 10 link attempts per day.
-    const guardianResult = await checkAndIncrement(client, {
-      profileId,
-      bucketKey: GUARDIAN_LINK_BUCKET,
-    });
-    applyHeaders(res, guardianResult);
-
-    if (!guardianResult.allowed) {
-      deny(res, GUARDIAN_LINK_BUCKET, guardianResult, requestId);
-      return;
-    }
-
-    // Control 2 — §36.2 per-student-email: max 3 link attempts per day.
-    // Keyed on the GUARDIAN's profile with the address's digest inside `bucket_key`,
-    // because §41's `profile_id` is `NOT NULL REFERENCES profiles(id)` and the address
-    // this control protects is precisely one that may have no profile. See
-    // `guardianLinkEmailBucketKey` for the residual per-guardian-scope gap.
-    if (rawEmail !== null) {
-      const emailBucket = guardianLinkEmailBucketKey(rawEmail);
-      const emailResult = await checkAndIncrement(client, {
-        profileId,
-        bucketKey: emailBucket,
-      });
-
-      if (!emailResult.allowed) {
-        // §47 rollback: the guardian bucket already counted this attempt, but the
-        // request is being refused, so that increment is returned rather than spent.
-        const undo = await rollback(client, {
-          profileId,
-          bucketKey: GUARDIAN_LINK_BUCKET,
-        });
-        if (!undo.ok) {
-          logger.warn(
-            "RATE_LIMIT",
-            "guardian_link",
-            "Rollback of the guardian bucket failed after an email-bucket denial",
-            { requestId, reason: undo.error ?? "unknown" },
-          );
-        }
-        applyHeaders(res, emailResult);
-        deny(res, emailBucket, emailResult, requestId);
-        return;
-      }
-
-      // The tighter of the two controls is the one worth reporting to the caller.
-      if (emailResult.remaining < guardianResult.remaining) {
-        applyHeaders(res, emailResult);
-      }
-    }
-
-    next();
-  } catch (err: unknown) {
-    const unavailable = err instanceof RateLimitUnavailableError;
-    logger.error(
-      "RATE_LIMIT",
-      "guardian_link",
-      "Rate limit check failed — blocking request",
-      {
-        requestId,
-        bucket: GUARDIAN_LINK_BUCKET,
-        reason: err instanceof Error ? err.message : "unknown",
-      },
-    );
-    res.status(unavailable ? 503 : 500).json({
-      error:
-        "Rate limit check failed. Please contact support if this persists.",
-      requestId,
-    });
-  }
-}
-
 /**
  * SCL-080 buckets. Two distinct quantities, so two buckets rather than one shared number:
  * ENTRY is the guessing surface (a guardian trying codes), REGENERATION is the churn surface
@@ -195,8 +85,8 @@ export const STUDENT_LINK_CODE_REGENERATION_BUCKET =
  *
  * @spec [Doc-01A_V1.0 §39–§47; SCL-080] | @implemented [2026-09-01]
  *
- * plain English: the single-control shape the two code surfaces need, built from the same
- * `checkAndIncrement` primitive as `guardianLinkRateLimit` above. Expected outcome: adding a
+ * plain English: the single-control shape the two code surfaces need, built directly on the
+ * `checkAndIncrement` primitive. Expected outcome: adding a
  * bucket is a config row and one line here, never a second limiter — which is what
  * `CLAUDE.md`'s "one implementation per operation" and Doc 01A's ledger ownership require.
  *

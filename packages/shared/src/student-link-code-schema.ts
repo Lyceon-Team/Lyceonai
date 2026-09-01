@@ -49,7 +49,6 @@ export const studentLinkCodeSchema = z
     ),
     "code must use the unambiguous alphabet (no 0, O, 1, I or L)",
   );
-export type StudentLinkCode = z.infer<typeof studentLinkCodeSchema>;
 
 /**
  * What a guardian typed, before it is a code.
@@ -68,7 +67,6 @@ export const studentLinkCodeEntrySchema = z
 export const redeemLinkCodeRequestSchema = z.object({
   code: studentLinkCodeEntrySchema,
 });
-export type RedeemLinkCodeRequest = z.infer<typeof redeemLinkCodeRequestSchema>;
 
 /**
  * What the student's own code panel is told.
