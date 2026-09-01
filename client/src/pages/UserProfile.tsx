@@ -53,13 +53,11 @@ interface BillingStatusResponse {
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  requiresStudentSubscription?: boolean;
   isPaid: boolean;
   premiumSource?: 'student' | 'guardian' | 'both' | 'none';
-  hasLinkedStudent?: boolean;
-  linkRequiredForPremium?: boolean;
+  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  hasActiveLink?: boolean;
   billingOwnerRole?: 'student' | 'guardian';
-  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
 
@@ -1029,7 +1027,7 @@ export default function UserProfile() {
                       <p className="font-medium">
                         {billingStatus?.stripeStatus ? billingStatus.stripeStatus.replace('_', ' ') : 'unknown'}
                       </p>
-                      {billingStatus?.linkRequiredForPremium && (
+                      {billingStatus?.hasActiveLink === false && (
                         <p className="text-sm text-muted-foreground">
                           Link a student account first to unlock guardian premium billing.
                         </p>
@@ -1047,7 +1045,7 @@ export default function UserProfile() {
                     ) : (
                       <Button
                         onClick={() => navigate('/upgrade')}
-                        disabled={!!billingStatus?.linkRequiredForPremium}
+                        disabled={billingStatus?.hasActiveLink === false}
                         data-testid="button-upgrade-subscription"
                       >
                         View Plans

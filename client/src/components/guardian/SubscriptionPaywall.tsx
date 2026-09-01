@@ -29,13 +29,18 @@ interface BillingStatus {
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  requiresStudentSubscription?: boolean;
   isPaid: boolean;
   premiumSource?: 'student' | 'guardian' | 'both' | 'none';
-  hasLinkedStudent?: boolean;
-  linkRequiredForPremium?: boolean;
+  /**
+   * Written by the guardian branch of `/api/billing/status` from §31.3's fold. Replaces
+   * `linkRequiredForPremium`, `hasLinkedStudent`, `requiresStudentSubscription` and
+   * `lockedReason`, none of which any server route ever wrote — so every branch keyed on
+   * them was dead, and the escape hatch below never fired. Absent for a student, whose
+   * branch of that route does not compute it; `=== false` is therefore the
+   * guardian-with-no-link test, and `undefined` leaves the student paths untouched.
+   */
+  hasActiveLink?: boolean;
   billingOwnerRole?: 'student' | 'guardian';
-  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
 interface SubscriptionPaywallProps {
@@ -97,7 +102,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
 
   const isPollingTimeout = pollingStartTime && (Date.now() - pollingStartTime) > POLLING_TIMEOUT_MS;
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && !isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && billingStatus?.hasActiveLink && !isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
         <div className="flex flex-col items-center gap-4">
@@ -109,7 +114,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && billingStatus?.hasActiveLink && isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
         <Card className="w-full max-w-md">
@@ -231,7 +236,10 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  if (billingStatus?.linkRequiredForPremium) {
+  // A guardian with no linked student has nothing to buy yet, and the surface for linking
+  // one lives INSIDE the dashboard this component wraps. Paywalling them here is what
+  // stranded them on a pricing page hiding the very surface they needed.
+  if (billingStatus?.hasActiveLink === false) {
     return <>{children}</>;
   }
 
@@ -290,7 +298,6 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   }
 
   const prices = Array.isArray(pricesData) ? pricesData : [];
-  const requiresStudentSubscription = !!billingStatus?.requiresStudentSubscription;
 
   if (pricesError) {
     const pricesErrorMessage = pricesError instanceof Error
@@ -319,24 +326,25 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             <Shield className="h-8 w-8 text-[#0F2E48]" />
           </div>
           <CardTitle className="text-2xl text-[#0F2E48]">
-            {requiresStudentSubscription ? 'Student Subscription Required' : 'Parent Access Subscription'}
+            Student Subscription Required
           </CardTitle>
           <CardDescription className="text-base">
-            {requiresStudentSubscription
-              ? "Guardian reporting unlocks only when your linked student's subscription is active."
-              : "Subscribe to monitor your child's SAT preparation progress"}
+            Guardian reporting unlocks only when your linked student's subscription is active.
           </CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6">
-          {requiresStudentSubscription && (
-            <Alert className="border-amber-200 bg-amber-50">
+          {/* Always shown: a guardian purchase is per student (SCL-080, §31.4, §36.4), so
+              billing is ALWAYS tied to a linked student. This hung off
+              `requiresStudentSubscription`, which nothing wrote — so the alternative copy,
+              "Parent Access Subscription", was the only copy anyone saw, and it sells the
+              guardian a subscription for themselves. That is not the product. */}
+          <Alert className="border-amber-200 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
                 Billing is tied to the linked student account. Start or renew the student subscription to unlock guardian visibility.
               </AlertDescription>
             </Alert>
-          )}
 
           <div className="space-y-3">
             <div className="flex items-start gap-3">
@@ -533,7 +541,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                {requiresStudentSubscription ? 'Start Student Subscription' : 'Subscribe Now'}
+                Start Student Subscription
                 <ArrowRight className="ml-2 h-4 w-4" />
               </>
             )}

@@ -79,8 +79,8 @@ interface StudentSummary {
 interface GuardianBillingStatus {
   isPaid: boolean;
   effectiveAccess: boolean;
-  hasLinkedStudent?: boolean;
-  linkRequiredForPremium?: boolean;
+  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  hasActiveLink?: boolean;
 }
 
 export default function GuardianDashboard() {
@@ -321,9 +321,9 @@ export default function GuardianDashboard() {
     return value === null || value === undefined ? null : Number(value);
   };
   const showPaidUnlinkedCta =
-    !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
+    billingStatus?.hasActiveLink === false && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
-    !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
+    billingStatus?.hasActiveLink === false && !billingStatus?.isPaid;
 
   return (
     <SubscriptionPaywall>
