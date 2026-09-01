@@ -664,6 +664,18 @@ jobs:
         run: bash scripts/ci/mastery-levels-gate.sh
         shell: bash
 
+      # The 2026-06-26 outage, reproduced as a permanent test: a corrupt row in one
+      # section must not abort a valid mastery write in another. SCL-054 / INV-05B-16.
+      - name: KPI quarantine gate (blast radius; excluded_event_count)
+        run: bash scripts/ci/05b-kpi-quarantine-gate.sh
+        shell: bash
+
+      # Proves the gate above can fail, and fails on the assertion each mutation names.
+      # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
+      - name: KPI quarantine gate — mutation proof
+        run: bash scripts/ci/05b-kpi-quarantine-gate.mutations.sh
+        shell: bash
+
       # The gate that would have caught this outage on day one.
       - name: Install PostgREST (real transport)
         run: |
