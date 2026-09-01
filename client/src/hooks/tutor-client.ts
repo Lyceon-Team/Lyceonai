@@ -241,6 +241,9 @@ export function useSendMessage(): UseMutationResult<
       queryClient.invalidateQueries({
         queryKey: tutorConversationQueryKey(variables.conversation_id),
       });
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationsQueryKey,
+      });
     },
   });
 }
@@ -273,5 +276,37 @@ export function useConversations(): UseQueryResult<
   return useQuery({
     queryKey: tutorConversationsQueryKey,
     queryFn: () => tutorRequest<TutorConversationsList>("/conversations"),
+  });
+}
+
+/**
+ * Closes an active conversation. On success, invalidates the conversation
+ * detail query and the conversations list so the UI reflects the new state.
+ */
+export function useCloseConversation(): UseMutationResult<
+  { conversation_id: string; status: string; closed_at: string },
+  HttpApiError,
+  string
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      tutorRequest<{
+        conversation_id: string;
+        status: string;
+        closed_at: string;
+      }>(`/conversations/${encodeURIComponent(conversationId)}/close`, {
+        method: "POST",
+        body: {},
+      }),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationQueryKey(conversationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationsQueryKey,
+      });
+    },
   });
 }

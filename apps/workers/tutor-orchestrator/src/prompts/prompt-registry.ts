@@ -30,9 +30,16 @@ const ARTIFACTS_BY_VERSION: ReadonlyMap<string, PromptArtifact> = new Map([
   [LISA_DEFAULT_V1.version, LISA_DEFAULT_V1],
 ]);
 
-/** Latest artifact version per policy variant. */
+/** Latest artifact version per policy variant (Doc 03A §11.4). */
 const LATEST_BY_VARIANT: ReadonlyMap<string, PromptArtifact> = new Map([
   ["default", LISA_DEFAULT_V1],
+  // V1 starter set per Doc 03A §11.4 — all four variants resolve to the
+  // same artifact at V1. When variant-specific artifacts are authored,
+  // each entry points to its own artifact.
+  ["scaffolded", LISA_DEFAULT_V1],
+  ["socratic", LISA_DEFAULT_V1],
+  ["concise", LISA_DEFAULT_V1],
+  ["strategy_first", LISA_DEFAULT_V1],
 ]);
 
 /** The absolute fallback artifact — used when both variant and version miss. */

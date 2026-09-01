@@ -238,10 +238,17 @@ export async function orchestrateTurn(
     return result;
   }
 
+  // Extract student-role messages for the echo exemption — LISA repeating
+  // a value the student already stated is reflection, not disclosure.
+  const studentMessages = request.recent_messages
+    .filter((m) => m.role === "student")
+    .map((m) => m.message);
+
   const { content } = scanAndSubstitute(
     result.value.response.content,
     correctAnswer,
     isPreSubmit,
+    studentMessages,
   );
 
   const scannedResponse: OrchestrateResponse = {

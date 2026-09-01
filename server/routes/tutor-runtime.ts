@@ -195,6 +195,36 @@ async function denyIfNotEntitled(
   return false;
 }
 
+/**
+ * Extracts student-role message texts from a conversation for the echo
+ * exemption. When the student already stated the correct-answer value,
+ * LISA repeating it is reflection, not disclosure.
+ *
+ * Fail-closed: on DB error returns [] — the scanner treats missing
+ * studentMessages as no echo exemption (pre-exemption behavior).
+ */
+async function loadStudentMessagesForConversation(
+  conversationId: string,
+): Promise<readonly string[]> {
+  const { data, error } = await supabaseServer
+    .from("tutor_messages")
+    .select("message")
+    .eq("conversation_id", conversationId)
+    .eq("role", "student")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    logger.warn(
+      "TUTOR_RUNTIME",
+      "student_messages_load_failed",
+      "failed to load student messages for echo exemption; failing closed (no exemption)",
+      { conversationId, error: error.message },
+    );
+    return [];
+  }
+  return (data ?? []).map((r) => r.message as string);
+}
+
 type ReplayMessageRow = {
   id: string;
   role: "student" | "tutor" | "system";
@@ -699,6 +729,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         const replayCorrectAnswer = replayPreSubmit
           ? await getCorrectAnswerForScope(conversation.source_question_row_id)
           : ({ value: null, failed: false } as CorrectAnswerResult);
+        const replayStudentMessages = await loadStudentMessagesForConversation(
+          conversation.id,
+        );
         const replayScanContext: OutputScanContext = {
           conversationId: conversation.id,
           studentId,
@@ -706,6 +739,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           correctAnswer: replayCorrectAnswer.value,
           correctAnswerResolutionFailed: replayCorrectAnswer.failed,
           questionCanonicalId: conversation.source_question_canonical_id,
+          studentMessages: replayStudentMessages,
         };
         const replaySerialized = await serializeTutorOutput(
           existingTutorMsg.message,
@@ -1197,6 +1231,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       correctAnswer: correctAnswerResult.value,
       correctAnswerResolutionFailed: correctAnswerResult.failed,
       questionCanonicalId: effectiveScope.source_question_canonical_id,
+      studentMessages: envelope.recent_messages
+        .filter((m) => m.role === "student")
+        .map((m) => m.message),
     };
     const serialized = await serializeTutorOutput(
       tutorResponse,
@@ -1451,9 +1488,15 @@ router.get(
       // messages only; student turns pass through.
       let replayCorrectAnswerResult: CorrectAnswerResult | null = null;
       const safeMessages = [];
+      // Collect student messages as we iterate for the echo exemption.
+      // Each tutor row sees only student messages that precede it.
+      const priorStudentMessages: string[] = [];
 
       for (const row of ordered) {
         if (row.role !== "tutor") {
+          if (row.role === "student") {
+            priorStudentMessages.push(row.message);
+          }
           safeMessages.push({
             message_id: row.id,
             role: row.role,
@@ -1481,6 +1524,7 @@ router.get(
           correctAnswer: replayCorrectAnswerResult.value,
           correctAnswerResolutionFailed: replayCorrectAnswerResult.failed,
           questionCanonicalId: conversation.source_question_canonical_id,
+          studentMessages: priorStudentMessages,
         };
         const rowSerialized = await serializeTutorOutput(
           row.message,

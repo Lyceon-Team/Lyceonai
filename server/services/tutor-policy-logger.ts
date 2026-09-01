@@ -35,18 +35,6 @@ import { logger } from "../logger";
 // Types — exported for route-handler / orchestrator consumers
 // ---------------------------------------------------------------------------
 
-export type PolicyDecisionLog = {
-  conversationId: string;
-  turnOrdinal: number;
-  policyFamily: string;
-  policyVariant: string;
-  policyVersion: string;
-  promptVersion: string | null;
-  assignmentMode: "deterministic" | "explore" | "manual_override";
-  assignmentKey: string;
-  reasonSnapshot: Record<string, unknown>;
-};
-
 export type ContextResolutionLog = {
   conversationId: string;
   turnOrdinal: number;
@@ -100,61 +88,6 @@ export type TurnMetricsLog = {
 // ---------------------------------------------------------------------------
 // Audit log functions — fire-and-forget, never throw
 // ---------------------------------------------------------------------------
-
-/**
- * Records which policy was selected for a tutor turn and why.
- *
- * @spec [Doc-03A_V1 §11.2]
- * @implemented 2026-08-09
- * plain English: writes one row to tutor_policy_decisions capturing the policy
- * family, variant, version, prompt version, assignment mode, and a JSON snapshot
- * of the reasoning inputs. On DB error, logs a warning and returns — never throws.
- */
-export async function logPolicyDecision(
-  params: PolicyDecisionLog,
-): Promise<void> {
-  try {
-    const { error } = await supabaseServer
-      .from("tutor_policy_decisions")
-      .insert({
-        conversation_id: params.conversationId,
-        turn_ordinal: params.turnOrdinal,
-        policy_family: params.policyFamily,
-        policy_variant: params.policyVariant,
-        policy_version: params.policyVersion,
-        prompt_version: params.promptVersion,
-        assignment_mode: params.assignmentMode,
-        assignment_key: params.assignmentKey,
-        reason_snapshot: params.reasonSnapshot,
-        evaluated_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      logger.warn(
-        "TUTOR_POLICY",
-        "policy_decision_log_failed",
-        "Failed to write policy decision audit row; turn proceeds",
-        {
-          conversationId: params.conversationId,
-          turnOrdinal: params.turnOrdinal,
-          dbError: error.message,
-          code: error.code,
-        },
-      );
-    }
-  } catch (err: unknown) {
-    logger.warn(
-      "TUTOR_POLICY",
-      "policy_decision_log_error",
-      "Unexpected error writing policy decision audit row; turn proceeds",
-      {
-        conversationId: params.conversationId,
-        turnOrdinal: params.turnOrdinal,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
-  }
-}
 
 /**
  * Records what context was assembled for a tutor turn.

@@ -114,15 +114,84 @@ export function hasGridInValueInText(text: string, value: string): boolean {
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
+ * Checks whether `text` contains the correct-answer value using the same
+ * matching logic (MCQ patterns / grid-in word-boundary + fraction-decimal
+ * equivalence) as hasAnswerLeak. Reused for both the main leak scan and
+ * the echo-exemption pre-check.
+ *
+ * Returns true if the answer value appears in the text.
+ */
+export function answerValueAppearsIn(
+  text: string,
+  correctAnswer: string,
+): boolean {
+  const trimmed = correctAnswer.trim();
+  if (trimmed.length === 0) return false;
+
+  // MCQ: single letter A-D — check for the value at a word boundary.
+  // Uses a simpler check than buildMcqPatterns (which checks disclosure
+  // phrases): we only need "did the student SAY this letter."
+  if (/^[A-Da-d]$/.test(trimmed)) {
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, "i");
+    return pattern.test(text);
+  }
+
+  // Grid-in: numeric value — literal match
+  if (hasGridInValueInText(text, trimmed)) {
+    return true;
+  }
+
+  // Grid-in: fraction/decimal equivalence
+  const asDecimal = fractionToDecimal(trimmed);
+  if (asDecimal !== null) {
+    const decimalStr = String(asDecimal);
+    if (hasGridInValueInText(text, decimalStr)) {
+      return true;
+    }
+  } else {
+    const numericValue = Number(trimmed);
+    if (!isNaN(numericValue)) {
+      const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
+      let frMatch: RegExpExecArray | null;
+      while ((frMatch = fractionPattern.exec(text)) !== null) {
+        const num = Number(frMatch[1]);
+        const den = Number(frMatch[2]);
+        if (den !== 0 && num / den === numericValue) {
+          const before = text.slice(
+            Math.max(0, frMatch.index - 20),
+            frMatch.index,
+          );
+          if (!STRUCTURAL_PREFIXES.test(before.trim())) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Answer-aware leak detector. Pure function — no IO, no side effects.
  * This is the single canonical implementation; BFF and worker both
  * consume it (worker via generated copy).
+ *
+ * Echo exemption (optional): when `studentMessages` is provided and the
+ * correct-answer value appears VERBATIM in a prior student-role message,
+ * LISA repeating that value is reflection, not disclosure. The exemption
+ * uses the scanner's own matching function (`answerValueAppearsIn`), so
+ * the student must have stated the value in a form the scanner would
+ * itself flag. Callers that omit the parameter get fail-closed behavior
+ * (no exemption — identical to pre-exemption behavior).
  *
  * @spec [Doc-03_V3 §17, INV-03-04, INV-03-12]
  */
 export function hasAnswerLeak(
   text: string,
   correctAnswer: string | null,
+  studentMessages?: readonly string[],
 ): boolean {
   if (!text) {
     return false;
@@ -135,57 +204,89 @@ export function hasAnswerLeak(
     // MCQ: single letter A-D
     if (/^[A-Da-d]$/.test(trimmed)) {
       const patterns = buildMcqPatterns(trimmed);
+      let mcqLeaked = false;
       for (const pattern of patterns) {
         if (pattern.test(text)) {
-          return true;
+          mcqLeaked = true;
+          break;
         }
       }
-      return false;
+      if (!mcqLeaked) return false;
+
+      // Echo exemption: if the student already stated this letter,
+      // LISA referencing it is reflection, not disclosure.
+      if (studentMessages && studentMessages.length > 0) {
+        for (const msg of studentMessages) {
+          if (answerValueAppearsIn(msg, trimmed)) {
+            return false; // echo — not a leak
+          }
+        }
+      }
+      return true; // no student echo — real leak
     }
 
     // Grid-in: numeric value (integer, decimal, fraction)
     // Check the literal value
+    let gridInLeaked = false;
+
     if (hasGridInValueInText(text, trimmed)) {
-      return true;
+      gridInLeaked = true;
     }
 
     // Fraction/decimal equivalence
-    const asDecimal = fractionToDecimal(trimmed);
-    if (asDecimal !== null) {
-      // Answer is a fraction — also check for its decimal form
-      const decimalStr = String(asDecimal);
-      if (hasGridInValueInText(text, decimalStr)) {
-        return true;
-      }
-    } else {
-      // Answer might be a decimal — check if any fraction equivalent appears
-      const numericValue = Number(trimmed);
-      if (!isNaN(numericValue)) {
-        // Check common fraction representations: scan text for fractions
-        // that evaluate to the same value
-        const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
-        let frMatch: RegExpExecArray | null;
-        while ((frMatch = fractionPattern.exec(text)) !== null) {
-          const num = Number(frMatch[1]);
-          const den = Number(frMatch[2]);
-          if (den !== 0 && num / den === numericValue) {
-            // Check it's not preceded by a structural prefix
-            const before = text.slice(
-              Math.max(0, frMatch.index - 20),
-              frMatch.index,
-            );
-            if (!STRUCTURAL_PREFIXES.test(before.trim())) {
-              return true;
+    if (!gridInLeaked) {
+      const asDecimal = fractionToDecimal(trimmed);
+      if (asDecimal !== null) {
+        // Answer is a fraction — also check for its decimal form
+        const decimalStr = String(asDecimal);
+        if (hasGridInValueInText(text, decimalStr)) {
+          gridInLeaked = true;
+        }
+      } else {
+        // Answer might be a decimal — check if any fraction equivalent appears
+        const numericValue = Number(trimmed);
+        if (!isNaN(numericValue)) {
+          // Check common fraction representations: scan text for fractions
+          // that evaluate to the same value
+          const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
+          let frMatch: RegExpExecArray | null;
+          while ((frMatch = fractionPattern.exec(text)) !== null) {
+            const num = Number(frMatch[1]);
+            const den = Number(frMatch[2]);
+            if (den !== 0 && num / den === numericValue) {
+              // Check it's not preceded by a structural prefix
+              const before = text.slice(
+                Math.max(0, frMatch.index - 20),
+                frMatch.index,
+              );
+              if (!STRUCTURAL_PREFIXES.test(before.trim())) {
+                gridInLeaked = true;
+                break;
+              }
             }
           }
         }
       }
     }
 
-    return false;
+    if (!gridInLeaked) return false;
+
+    // Echo exemption: if the student already stated this value,
+    // LISA referencing it is reflection, not disclosure.
+    if (studentMessages && studentMessages.length > 0) {
+      for (const msg of studentMessages) {
+        if (answerValueAppearsIn(msg, trimmed)) {
+          return false; // echo — not a leak
+        }
+      }
+    }
+    return true; // no student echo — real leak
   }
 
   // ── correctAnswer is null: generic phrase detection ───────────────
+  // No echo exemption for generic patterns — these are structural
+  // disclosure phrases ("the correct answer is X") that should never
+  // appear in LISA output regardless of context.
   for (const pattern of GENERIC_LEAK_PATTERNS) {
     if (pattern.test(text)) {
       return true;

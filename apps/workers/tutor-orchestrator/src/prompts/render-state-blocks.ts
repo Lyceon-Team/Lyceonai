@@ -128,17 +128,33 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
       `[DIRECTIVE] This question is post-submit. You may explain the correct answer and why ` +
         `the student's answer was wrong.`,
     );
-    // Explanation (only present post-submit, gated upstream)
     if (qc.explanation) {
       parts.push(`Explanation: ${qc.explanation}`);
     }
   } else {
-    parts.push(
-      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
-        `or show work toward the answer. Do not produce an intermediate result the student ` +
-        `can read off as the final value. Redirect to a sub-step the student can verify ` +
-        `without seeing the answer.`,
-    );
+    // Pre-submit: explanation is present on the wire per SCL-060 (active
+    // question's explanation is internal context for model reasoning).
+    // The model uses it to understand the solution path so it can guide the
+    // student through sub-steps without revealing the answer. Anti-echo
+    // directive (prompt layer) + INV-03-04 (output layer) are the defenses.
+    if (qc.explanation) {
+      parts.push(`[AUTHORED EXPLANATION — INTERNAL USE ONLY] ${qc.explanation}`);
+      parts.push(
+        `[DIRECTIVE] This question is pre-submit. The authored explanation above ` +
+          `is for YOUR internal reasoning only — use it to understand the solution ` +
+          `method so you can guide the student through sub-steps. Do NOT quote, ` +
+          `paraphrase, reveal, or produce any intermediate result the student can ` +
+          `read off as the final value. The pre-submit prohibition (INV-03-04) is ` +
+          `unchanged.`,
+      );
+    } else {
+      parts.push(
+        `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+          `or show work toward the answer. Do not produce an intermediate result the student ` +
+          `can read off as the final value. Redirect to a sub-step the student can verify ` +
+          `without seeing the answer.`,
+      );
+    }
   }
 
   return parts.join(" ");

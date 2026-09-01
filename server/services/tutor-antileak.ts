@@ -116,12 +116,13 @@ export function scanAndSubstitute(
   text: string,
   correctAnswer: string | null,
   isPreSubmit: boolean,
+  studentMessages?: readonly string[],
 ): { content: string; leaked: boolean } {
   if (!isPreSubmit) {
     return { content: text, leaked: false };
   }
 
-  const leaked = hasAnswerLeak(text, correctAnswer);
+  const leaked = hasAnswerLeak(text, correctAnswer, studentMessages);
   if (leaked) {
     logger.warn(
       "TUTOR_ANTILEAK",
