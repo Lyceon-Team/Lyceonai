@@ -1,19 +1,49 @@
--- SCL-080 — guardian linking by student code. AUTHORED, NOT APPLIED.
+-- ---------------------------------------------------------------------------
+-- SCL-080 — guardian linking by student code.
+-- LYCEON-MIGRATION-REVIEWED
 --
--- This file is deliberately NOT in supabase/migrations/. A file there is applied
--- automatically by scripts/ci/genesis-fresh-apply.sh and by the next person to run the
--- pipeline; keeping it here makes "author, never apply" literally true, per
--- docs/plans/Stripe_Vertical_Session_Charter.md:79-81.
+-- @spec [Doc-01_V8 §35 (guardian_links is the single guardian-derivation mechanism),
+--        §36.1 Initiation, §36.2 rate limiting; SCL-080 (docs/SpecAudit/SPEC_CHANGES_LOG.md)]
+-- @implemented 2026-09-01
 --
--- It exists as SQL rather than only as fenced blocks in
--- docs/plans/GUARDIAN_LINK_CODE_DDL.md so that the PG-backed contract tests can APPLY it
--- to their throwaway database and prove the routes and the DDL together. Without that,
--- no part of this feature can be proved against real Postgres at all.
+-- plain English: the two-step guardian link (initiate, then accept) is replaced by a
+-- single act. A student displays a 6-character code; a guardian enters it; the link is
+-- LIVE immediately, because the student's decision to share the code IS the consent.
+-- There is no second party left to wait for, so there is no pending state to pass
+-- through and no status a code path can legitimately produce other than active/revoked.
 --
--- Owner: apply D-6..D-8 here and the D-9 DML from the queue doc. If the migration freeze
--- is lifted, this becomes a migration with `git mv` and nothing else changes.
+-- ONE MIGRATION, NOT FOUR FILES. D-6..D-8 (DDL) and D-9 (config DML) land together
+-- because the feature does not function with any subset: the functions without the
+-- narrowed CHECK still admit dead statuses, and the schema without D-9's bucket map
+-- makes every guardian route 503 on a fail-closed rate-limit read.
 --
--- Rationale for every statement is in docs/plans/GUARDIAN_LINK_CODE_DDL.md.
+-- ORDERING NOTE. genesis.sql declares guardian_links.status already narrowed to
+-- ('active','revoked') — genesis is the schema REFERENCE, so it carries the end state.
+-- Migration 20260828000000, which replays earlier history, still creates
+-- create_guardian_link_audited whose body writes 'pending_student_accept'. That is not a
+-- conflict: a plpgsql body is not checked against a CHECK constraint at CREATE time, and
+-- this migration drops the function before anything can call it. Verified by
+-- scripts/ci/genesis-fresh-apply.sh, not assumed.
+--
+-- SAFE TODAY. Narrowing the status CHECK cannot fail on existing data because production
+-- holds 0 guardian_links rows (verified 2026-09-01, read-only SELECT). On any database
+-- that does hold a pending row, the ALTER below fails and must be preceded by resolving
+-- those rows — see scripts/prod-verify/SCL-080-APPLY.sql.
+--
+-- IDEMPOTENT. Every statement is safe to re-run: CREATE OR REPLACE for functions,
+-- DROP ... IF EXISTS before ADD for the constraint, IF NOT EXISTS for the index and
+-- column, ON CONFLICT DO NOTHING for the config seeds.
+--
+-- NOT APPLIED BY THIS SESSION — the owner applies all SQL.
+--
+-- rollback:
+--   DROP FUNCTION IF EXISTS public.create_active_guardian_link_audited(uuid, uuid, text);
+--   DROP INDEX IF EXISTS public.unique_active_guardian_link;
+--   ALTER TABLE public.guardian_links DROP CONSTRAINT IF EXISTS guardian_links_status_check;
+--   ALTER TABLE public.profiles DROP COLUMN IF EXISTS student_link_code_issued_at;
+--   (create_guardian_link_audited / accept_guardian_link_audited are restored by
+--    re-running 20260828000000_guardian_link_audited_transitions.sql.)
+-- ---------------------------------------------------------------------------
 
 -- Redeeming a code creates a LIVE link. The student's act of sharing is the consent
 -- (SCL-080), so there is no second party to wait for and no pending status to pass through.
@@ -82,7 +112,7 @@ ALTER TABLE public.guardian_links DROP CONSTRAINT IF EXISTS unique_active_link;
 -- Says exactly what the invariant is: one active link per pair, any number of historical
 -- revoked rows. NULLS NOT DISTINCT is dropped with the constraint — neither keyed column is
 -- nullable, so it was never doing anything.
-CREATE UNIQUE INDEX unique_active_guardian_link
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_guardian_link
   ON public.guardian_links (guardian_profile_id, student_profile_id)
   WHERE status = 'active';
 
@@ -115,7 +145,8 @@ VALUES (
   'guardian',
   'Doc 01A Appendix A.3 bucket map. Doc 01 V8 §36.2 supplies the first two limits verbatim; SCL-080 supplies the code buckets.',
   'all'
-);
+)
+ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO public.auth_runtime_config (key, value, value_type, owner, description, environment)
 VALUES (
@@ -125,4 +156,5 @@ VALUES (
   'guardian',
   'SCL-080: how long a student link code stays valid before rotation. 24h per the owner ruling.',
   'all'
-);
+)
+ON CONFLICT (key) DO NOTHING;

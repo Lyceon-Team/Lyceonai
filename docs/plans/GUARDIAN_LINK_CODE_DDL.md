@@ -1,34 +1,23 @@
-# Guardian linking by student code — DDL/DML queue (SCL-080)
+# Guardian linking by student code — DDL/DML rationale (SCL-080)
 
-**Nothing here is applied, and nothing here is a migration file.**
-`docs/plans/Stripe_Vertical_Session_Charter.md:79-81` reserves migrations to the owner and
-directs every DDL need to a queue file with its reason: "The owner performs every one:
-migrations, merges, secret rotation… Every DDL need goes to a queue file with its reason…
-do not author the migration."
+**These are now migrations. This file is the RATIONALE, not the queue.**
 
-NOTE, reported not resolved: that passage also says "The migration freeze (WS-M) is in force",
-but `docs/plans/WS-M_Migration_Integrity.md` was DELETED from `stripe` on 2026-09-01
-(`aa4fd40`). The Charter's instruction stands on its own and is what this file follows; the
-dangling reference to a deleted document is an owner question, not something to resolve by
-guessing which way it was meant.
-These are authored, runnable, and verified against a throwaway PostgreSQL 16 with the full
-migration pipeline applied — but they are deliberately NOT in `supabase/migrations/`, because a
-file there is applied automatically by `scripts/ci/genesis-fresh-apply.sh` and by the next person
-to run the pipeline. Authoring them here keeps "author, never apply" literally true.
+Superseded 2026-09-01 by owner ruling: the migration freeze is gone permanently, and every
+DDL change lands in three places — a migration file, production, and `genesis.sql`
+(`docs/plans/Stripe_Vertical_Session_Charter.md` §7). D-6..D-9 accordingly live in
+`supabase/migrations/20260901000000_scl_080_guardian_link_code.sql`, and the same end state is
+folded into `supabase/migrations/00000000000000_genesis.sql`. The `infra/supabase/pending-ddl/`
+directory is gone; the file moved by `git mv` and nothing in the SQL changed except adding
+`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` so a re-run is safe.
 
-**Owner action:** apply D-6..D-9 in order. Until every one is applied, guardian linking by code
-does not work in production — the routes are live but the objects they need do not exist.
+The earlier NOTE here — that the Charter asserted a freeze while citing a document deleted in
+`aa4fd40` — is RESOLVED: the owner deleted the freeze language rather than the citation.
+
+**Owner action:** apply the seven ordered steps in `scripts/prod-verify/SCL-080-APPLY.sql`.
+Until every one is applied, guardian linking by code does not work in production — the routes
+are live but the objects they need do not exist.
 
 Opened 2026-09-01 for SCL-080.
-
-**The SQL also exists as a runnable file**, `infra/supabase/pending-ddl/scl-080-guardian-link-code.sql`,
-carrying D-6..D-8 verbatim. Two reasons: the PG-backed contract tests APPLY it to their
-throwaway database, so the routes and the DDL are proved together rather than the routes being
-untestable until an owner action; and if the freeze is lifted it becomes a migration with
-`git mv` and nothing else changes. It is still outside `supabase/migrations/`, so nothing
-applies it automatically. Verified 2026-09-01: applies cleanly on top of the full pipeline,
-leaving `create_active_guardian_link_audited` present, both two-step functions dropped,
-`unique_active_guardian_link` created and `student_link_code_issued_at` added.
 
 | # | Need | Blocking? |
 |---|---|---|
@@ -221,8 +210,10 @@ written from the reader alone would have got wrong:
   (`packages/shared/src/services/rate-limit-ledger.ts:117-131`) does NOT filter on it — it is
   `.eq("key", …).maybeSingle()` — so a second row sharing a key would make the read ERROR rather
   than pick one. One row per key, `environment='all'`.
-- `key` is the PRIMARY KEY of both tables, so these are inserts-once. Re-running them raises
-  23505; use `ON CONFLICT (key) DO UPDATE` to revise a value later.
+- `key` is the PRIMARY KEY of both tables, so these are inserts-once. Both seeds therefore carry
+  `ON CONFLICT (key) DO NOTHING`, which is what makes the migration re-runnable; a bare INSERT
+  raises 23505 on the second apply. To REVISE a seeded value later, use `DO UPDATE` in a new
+  migration — `DO NOTHING` deliberately will not overwrite a value an operator has since tuned.
 
 ## Known residual — not solved, recorded
 
@@ -230,3 +221,9 @@ Doc 01A's ledger is keyed on `profile_id` (`rate_limit_check_and_increment(p_pro
 so a per-IP or global limit on code entry is not expressible. An unauthenticated attacker has no
 bucket. Code entry requires an authenticated guardian, which bounds exposure to accounts rather
 than requests. WS-GL hit the same wall on the per-email bucket. Recorded, not designed around.
+
+## Out of scope for SCL-080 — named, not worked
+
+Ruled out of scope by the owner and deliberately untouched by this change: the under-13 consent
+path (Doc 01 V8 §37), guardian↔student cardinality (N guardians per student stands as ruled), and
+a repo-wide `@spec` annotation sweep. No code, test, or doc in this workstream addresses them.

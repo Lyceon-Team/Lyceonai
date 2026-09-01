@@ -10,13 +10,11 @@
  * your own code, and — the one no mock can establish — that two guardians racing one code
  * produce exactly one link, because the DATABASE settles it.
  *
- * WHY IT APPLIES ITS OWN DDL. `infra/supabase/pending-ddl/scl-080-guardian-link-code.sql`
- * is not in `supabase/migrations/` — the migration freeze
- * (`docs/plans/Stripe_Vertical_Session_Charter.md:79-81`) reserves migrations to the owner.
- * Without applying it here, `create_active_guardian_link_audited` and
- * `student_link_code_issued_at` would not exist and NOTHING about this feature could be
- * proved against Postgres. Applying it to a throwaway database is not applying it to
- * production. When the file becomes a migration this block is the only thing that is deleted.
+ * NO PRIVATE DDL. Every object this suite touches comes from `supabase/migrations/`, applied
+ * by `bootstrapPgDatabase` in the same sorted order the genesis fresh-apply gate uses. That
+ * is the point: the schema under test is the schema the pipeline produces, not one this file
+ * arranged for itself. A test that applies its own DDL can only ever prove that its own DDL
+ * is self-consistent.
  *
  * MOCK BOUNDARY. Substituted: the DATABASE TRANSPORT (`supabaseServer` → real SQL via
  * tests/helpers/pg-supabase) and the AUTH BOUNDARY (a session fixture). NOT substituted:
@@ -36,8 +34,6 @@ import {
 import { Client } from "pg";
 import express from "express";
 import request from "supertest";
-import fs from "node:fs";
-import path from "node:path";
 import {
   makePgSupabase,
   bootstrapPgDatabase,
@@ -132,16 +128,6 @@ async function activeLinks(): Promise<number> {
 describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () => {
   beforeAll(async () => {
     pg = await bootstrapPgDatabase(DB_NAME);
-
-    // The DDL SCL-080 needs, applied to THIS throwaway database only.
-    const ddl = fs.readFileSync(
-      path.resolve(
-        path.dirname(new URL(import.meta.url).pathname),
-        "../../infra/supabase/pending-ddl/scl-080-guardian-link-code.sql",
-      ),
-      "utf8",
-    );
-    await pg.query(ddl);
 
     await pg.query(
       `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4),($5,$6)`,

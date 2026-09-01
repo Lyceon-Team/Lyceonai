@@ -490,10 +490,10 @@ jobs:
       # two-guardian race — the last of which no mocked query layer can establish, because
       # the thing under test is that POSTGRES settles it.
       #
-      # This suite applies infra/supabase/pending-ddl/scl-080-guardian-link-code.sql to its
-      # own throwaway database. That file is not a migration (the freeze reserves those to
-      # the owner), so without it neither create_active_guardian_link_audited nor
-      # profiles.student_link_code_issued_at exists and nothing here can run.
+      # The suite applies NO private DDL. Everything it needs comes from
+      # supabase/migrations/ (20260901000000_scl_080_guardian_link_code.sql), applied in the
+      # same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema under test is
+      # the schema the pipeline produces rather than one the test arranged for itself.
       - name: Guardian link code → real PG proof
         env:
           PGHOST: localhost
