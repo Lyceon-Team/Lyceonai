@@ -22,6 +22,8 @@ import { MessageSquarePlus, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { toUserFacingMessage } from "@/lib/api-error";
+import { classifyTutorError } from "@/lib/tutor-error-classifier";
 import {
   useConversations,
   useCreateConversation,
@@ -56,13 +58,14 @@ export default function TutorPage() {
       });
       goToConversation(conversation.conversation_id);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to start a new conversation.";
+      // LISA-FE-RAW-SERVER-TEXT fix: never surface raw err.message.
+      // Route through the tutor classifier first (code-specific copy),
+      // then toUserFacingMessage (premium / session / generic fallback).
+      const classified = classifyTutorError(err);
+      const fallback = toUserFacingMessage(err);
       toast({
-        title: "Couldn't start conversation",
-        description: message,
+        title: classified?.title ?? fallback.title,
+        description: classified?.message ?? fallback.message,
         variant: "destructive",
       });
     }
