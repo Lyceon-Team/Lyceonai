@@ -83,7 +83,14 @@ function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/trust/evidence" component={TrustEvidence} />
-        <Route path="/tutor" component={TutorPage} />
+        <Route
+          path="/tutor"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <TutorPage />
+            </RequireRole>
+          )}
+        />
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 

@@ -25,6 +25,43 @@
 
 ## Entries
 
+SCL-079 | 2026-09-01 | Doc 03B §3.4 / INV-03-02 — live exam gate fails OPEN on query error | PROPOSED
+Change: `isLiveExamInProgress` (entitlement-service.ts) failed closed on any DB error, returning
+  `true` (exam in progress → block tutor access). The queried table (`full_length_exams`) does not
+  exist — the correct table is `full_length_exam_sessions`, and neither is in the production
+  genesis schema (the exam vertical is unbuilt). The query errored on every call, the error path
+  returned `true`, and LISA returned `403 tutor_unavailable_during_live_exam` on every
+  POST /messages for every student. Total LISA outage, no exam to finish, block can never clear.
+WAS: query error → `return true` (fail closed). No distinction between "active exam found" and
+  "query failed." Table name `full_length_exams` (no migration, does not exist). Column name
+  `student_id` (correct column is `user_id`).
+IS: query error → `return false` (fail OPEN), log warning. Table name corrected to
+  `full_length_exam_sessions`. Column corrected to `user_id`. When the query succeeds: active
+  exam row → `true` (block, INV-03-02 enforced); no row → `false` (allow).
+Rationale (Karl ruling 2026-09-01): SCL-032's threat model governs. A student in another tab has
+  Gemini, ChatGPT, and search, all of which give more than an anti-leak tutor. The exam block is
+  low-value integrity protection — its absence during infrastructure failure costs little.
+  Blocking ALL tutoring — which is what a fail-closed gate on a missing table does — costs a lot.
+  This is a narrow, stated exception: every other fail-closed gate on the LISA surface
+  (entitlement, anti-leak, crisis) stays closed. The exception is justified only because (a) the
+  threat model is weak (SCL-032), (b) the failure mode is total (100% of traffic, not one
+  student), and (c) the block can never clear (no exam exists to finish). None of these three
+  conditions hold for entitlement or anti-leak gates.
+Scope: this fail-open applies ONLY to `isLiveExamInProgress`. It does NOT generalize. Do not
+  copy this pattern without an owner ruling. SCL-032 narrowed WHERE INV-03-02 applies (POST
+  /messages only); this SCL narrows HOW the gate behaves when it cannot run.
+Bugs fixed in the same change:
+  - Table name: `full_length_exams` → `full_length_exam_sessions` (matches all 22 query sites in
+    `fullLengthExam.ts` and the pre-baseline migration `20260213_full_length_exam_hardening.sql`).
+  - Column name: `student_id` → `user_id` (matches the actual schema).
+Version: no spec amendment — INV-03-02 is unchanged, and the fail-open is a runtime posture
+  decision, not an invariant change. The invariant ("LISA is unavailable during live full-length
+  exam") remains true when the exam vertical exists. This SCL governs what happens when the
+  vertical does not exist or is unreachable.
+Owner action: confirm PROPOSED → OPEN. No spec edit needed unless the exam vertical's absence
+  should be noted in Doc 03B §3.4.
+Artifact: `server/services/entitlement-service.ts` `isLiveExamInProgress`. PR against `main`.
+
 SCL-078 | 2026-08-28 | Doc 01 V8 §16 grants Admin `✓` on linked-student read; R5 denies it | PROPOSED
 Change: the admin bypass on guardian-gated reads is deleted (owner ruling 2026-08-28, "R5 reaches all four bypasses"; `guardian-rebuild-design-spec` §1.5). Doc 01 V8 §16's permission matrix still grants it. The implementation is now stricter than the locked spec, deliberately, and that gap is recorded here rather than left for a reader to find as a defect.
 WAS, verbatim (Doc 01 V8 §16 permission matrix, `Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md:776`):
@@ -93,16 +130,79 @@ Consequence recorded, not yet built: the guardian summary currently emits a guar
 Owner action: confirm this reading, then fold it into AC#19's wording so the next reader does not have to rediscover the distinction.
 Build artifact: the privilege-divergence fix and the guardian anti-leak gate in this PR; the G2 collapse is steps 3-5.
 
-SCL-060 | 2026-08-26 | Doc 03D §6.6 retrieval scope — active question explanation INCLUDED pre-submit; unseen same-skill EXCLUDED | PROPOSED
+SCL-060 | 2026-08-28 | Doc 03D §6.2, §6.3, §6.6 — active question explanation is internal context, not an anti-leak surface | RULING
 
-Change: Karl ruling inverts the retrieval scope for the deterministic path (§6.6 Path 1). The active question's authored explanation is INCLUDED in pre-submit retrieval because LISA needs the authored reasoning path to ground its tutoring (server-to-Vertex only, never reaches student via INV-03-04 output serializer). Explanations for same-skill questions the student has NOT answered are EXCLUDED — serving unseen explanations risks leaking answer content for questions the student may encounter next.
-WAS: `tutor-retrieval.ts` excluded the active question's explanation pre-submit via `.neq("canonical_id", request.active_question_canonical_id)` and included all same-skill explanations regardless of whether the student had seen them.
-IS: Pre-submit retrieval queries `practice_session_items` for the student's answered question IDs (`status='answered'`), unions them with the active question's canonical ID, and restricts the `servable_questions` query to that allowlist via `.in("canonical_id", allowedIds)`. Post-submit: no filter change (all same-skill explanations permitted — student has already committed an answer).
-Rationale: explanations contain the answer value. Including them in the LISA retrieval context is safe only because INV-03-04 (the output serializer) is the chokepoint that prevents answer leakage to the student. The consequence of this ruling is that the entire leak defense for explanation content shifts from "don't retrieve it" to "retrieve it but never serialize it outward." If INV-03-04 fails, the explanation (and with it the answer) reaches the student. This is an honest narrowing of the defense perimeter — previously, even a broken serializer couldn't leak what was never retrieved. The ruling accepts this tradeoff because LISA's tutoring quality requires the authored reasoning path.
-"Previously seen" means `practice_session_items.status='answered'` — submitted, not merely served. A served-but-unanswered item is still an open question whose explanation must not be retrievable (it may contain the answer to a question the student is about to see).
-Version: Doc 03D V1.2 §6.6 Path 1 retrieval scope is superseded for pre-submit filtering. §6.3 surface gate and §6.8 contract are unchanged. INV-03-04 is now load-bearing for explanation leak prevention in the retrieval path (was defense-in-depth; is now sole defense).
-Owner action: amend Doc 03D §6.6 to specify the allowlist filter and the "answered + active" inclusion rule. Annotate §6.3 to note that INV-03-04 is sole defense against explanation leakage in the retrieval path. Confirm whether the consequence (single-layer defense) is acceptable or whether a second layer should be added.
-Artifact: `server/services/tutor-retrieval.ts` lines 101–214 (retrieveDeterministic). Tests: `tests/ci/tutor-retrieval.negative-control.contract.test.ts`.
+Change: owner ruling (Karl, 2026-08-28) reframes the active question's explanation. It is
+  internal context — direction on how LISA should explain the question — not an anti-leak
+  surface. What reaches the model is a separate question from what reaches the student.
+  The leak boundary is INV-03-04: LISA writing the answer to a student. This supersedes
+  the original SCL-060 framing (2026-08-26) which treated the explanation as a dangerous
+  payload whose retrieval was the leak risk.
+
+Rule: the active question's explanation is delivered on `question_content.explanation` for
+  all surfaces, pre-submit included. Delivery is via one path: `resolveQuestionContent` in
+  `tutor-context.ts` resolves the active question from `practice_session_items` and always
+  populates `explanation`. The gate is which question (the active one), not which surface.
+
+Doc 03D §6.2 still governs behavior: the explanation is ground truth LISA reasons against,
+  never content it recites. Verbatim restatement to a pre-submit student is an answer
+  disclosure regardless of framing — the anti-echo directive in `renderItemBlock`
+  (`render-state-blocks.ts` lines 140–149) enforces this at the prompt layer, INV-03-04
+  at the output layer. Both layers remain load-bearing.
+
+MCQ single-letter risk — verified absent 2026-08-28: 4,570 MCQ questions in production.
+  Zero matches for "answer is <letter>", "choice <letter>", or "option <letter>". Eleven
+  regex hits are trigonometric angle labels in LaTeX — `\cos(B)`, `\sin(A)`, `\tan(D)` —
+  not option letters. This removes the MCQ single-letter risk that drove the original
+  caution. A future authoring change could reintroduce it; the verification method and date
+  are recorded here for re-run.
+
+Dropped: the "previously seen same-skill questions" provision from the original SCL-060.
+  It was unwireable — `question_content` is single-item and multi-item delivery would
+  require a parallel wire path that does not exist. More importantly it is not needed: the
+  intent is the active question's explanation, nothing else. Removing it makes the shipped
+  implementation complete. If same-skill history proves necessary later, that is a new SCL
+  with a real use case.
+
+Grid-in residual risk: grid-in explanations carry the answer value directly (e.g. "the
+  answer is 7/4"). The anti-echo directive and INV-03-04 output serializer are the
+  defenses. The leak probe (`tests/eval/lisa-leak-probe.ts`) covers grid-in golden-set
+  cases (CASE-07, CASE-08) for this reason.
+
+WAS (original SCL-060, 2026-08-26): framed the explanation as a "dangerous payload" whose
+  retrieval pre-submit was an accepted narrowing of the defense perimeter. Required an
+  "answered + active" allowlist filter on `tutor-retrieval.ts`. Included a provision for
+  previously-seen same-skill questions.
+IS: the active question's explanation is internal context populated unconditionally on
+  `question_content.explanation`. No retrieval-scope filtering applies to it (it is not
+  retrieved via `tutor-retrieval.ts` — it travels on the `question_content` wire field
+  populated by `resolveQuestionContent`). The defense is behavioral: anti-echo directive
+  (prompt layer) + INV-03-04 (output layer).
+
+Version: Doc 03D V1.2 §6.3 surface gating table is superseded — the "NEVER" cell for
+  active question explanation on practice pre-submit no longer applies. §6.2 (explanation
+  as ground truth, not script) and §6.6 (deterministic retrieval for same-skill context)
+  are unchanged in intent but §6.3's table must be amended to match.
+Owner action: amend Doc 03D per the following (see "Doc 03D amendments owed" below).
+Artifact: `server/services/tutor-context.ts` lines 328–417 (resolveQuestionContent);
+  `apps/workers/tutor-orchestrator/src/prompts/render-state-blocks.ts` lines 88–161
+  (renderItemBlock, anti-echo directive). Tests: `tests/ci/lisa-audit-b1.8-proof.contract.test.ts`;
+  `tests/eval/lisa-leak-probe.ts` (golden-set grid-in and MCQ cases).
+
+Doc 03D amendments owed:
+  1. §6.3 surface gating table: change active question explanation for "Practice, pre-submit"
+     from "NEVER" to "Permitted (internal context)". Add footnote: "The explanation is
+     internal context for model reasoning (SCL-060). The anti-echo directive in the prompt
+     layer and INV-03-04 at the output layer prevent disclosure to the student."
+  2. §6.3 paragraph "Explanations are answer-adjacent by construction": soften to
+     acknowledge the ruling — the explanation travels to the model but the leak boundary
+     is the output serializer, not the retrieval scope.
+  3. §6.6 Path 1: note that the active question's explanation travels on
+     `question_content.explanation` (populated by BFF `resolveQuestionContent`), not via
+     the `tutor-retrieval.ts` deterministic query. The retrieval query serves same-skill
+     prior-question explanations only.
+  4. §6.2: no amendment needed — its framing ("the explanation is not a script; LISA never
+     recites it") already matches the ruling.
 
 SCL-042 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
 > **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
@@ -1935,4 +2035,4 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03D §3.2, §5.1 coverage taxonomy — SCL-036 (add disengagement signal replacing frustration model; reclassify self-deprecation category)
 - Doc 03D §0, §5.1 authoring brief — SCL-037 (INV-03-04 justification narrowed to product decision; redirect-over-refuse posture grounded)
 - Doc 03D §9 — SCL-038 (record expected effect-size range and power consequences; coordinate marketing substantiation)
-- Doc 03D §6.6 — SCL-043 (retrieval scope inversion: active question explanation included pre-submit; unseen same-skill excluded; INV-03-04 sole defense annotation)
+- Doc 03D §6.2, §6.3, §6.6 — SCL-060 (active question explanation is internal context, not an anti-leak surface; anti-echo directive + INV-03-04 are the defense layers)

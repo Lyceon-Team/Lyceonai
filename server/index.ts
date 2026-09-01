@@ -1,10 +1,9 @@
 /**
- * Production Server - Express server for Supabase auth + RAG + Practice
+ * Production Server - Express server for Supabase auth + Practice + Tutor
  *
  * Replaces the legacy monolithic server (now in server/legacy-server.ts)
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
- *   - POST /api/rag/v2 (structured retrieval)
  *   - /api/tutor/* (tutor runtime)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
@@ -19,9 +18,7 @@ import { LEGAL_META, PUBLIC_META } from "../shared/seo/public-meta";
 import rateLimit from "express-rate-limit";
 // Canonical mounted owner: server/routes/tutor-* is the production owner.
 // Any duplicate tutor route under apps/api/** must remain unmounted.
-// Canonical RAG route owner is apps/api/src/routes/rag-v2.ts.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
-import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorRuntimeRouter from "./routes/tutor-runtime";
 import { legalRouter } from "./routes/legal-routes.js";
 import fullLengthExamRouter from "./routes/full-length-exam-routes";
@@ -340,10 +337,10 @@ app.all("/terms", (_req, res) => res.redirect(301, "/legal/student-terms"));
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" })); // Legacy alias
 
-const ragLimiter = rateLimit({
+const tutorLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
-  message: { error: "Too many RAG requests" },
+  message: { error: "Too many tutor requests" },
 });
 
 const googleOAuthCallbackLimiter = rateLimit({
@@ -354,16 +351,6 @@ const googleOAuthCallbackLimiter = rateLimit({
   message: { error: "Too many OAuth callback requests" },
 });
 
-// RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
-app.use(
-  "/api/rag/v2",
-  ragLimiter,
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  ragV2Router,
-);
-
 // Canonical tutor runtime endpoints:
 // POST /api/tutor/conversations
 // POST /api/tutor/messages
@@ -373,7 +360,7 @@ app.use(
 // @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1] student-only gate for LISA.
 app.use(
   "/api/tutor",
-  ragLimiter,
+  tutorLimiter,
   requireSupabaseAuth,
   requireStudentOnly,
   doubleCsrfProtection,
@@ -679,7 +666,7 @@ app.get("/api/_whoami", (_req, res) => {
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
     version: "1.0.0",
-    routes: ["rag/v2", "tutor/conversations", "tutor/messages"],
+    routes: ["tutor/conversations", "tutor/messages"],
     timestamp: new Date().toISOString(),
   });
 });
@@ -973,7 +960,6 @@ if (isMainModule) {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/conversations (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/messages (requires Supabase auth)`);
     console.log(

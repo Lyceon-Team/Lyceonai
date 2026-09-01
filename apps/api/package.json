@@ -8,8 +8,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "next:dev": "next dev --port 3001",
     "next:build": "next build",
-    "next:start": "next start --port 3001",
-    "seed:dev-question": "pnpm -s exec tsx scripts/seed-dev-question.ts"
+    "next:start": "next start --port 3001"
   },
   "dependencies": {
     "zod": "^3.24.2"

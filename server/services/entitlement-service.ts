@@ -142,40 +142,66 @@ export class EntitlementService {
   }
 
   /**
-   * @spec [Doc-03B_V4.1 §3.4, INV-03-02]
+   * @spec [Doc-03B_V4.1 §3.4, INV-03-02, SCL-032, SCL-079]
    * @implemented 2026-08-09
+   * @amended 2026-09-01 — fail-open on query error (SCL-079, owner ruling)
    *
    * plain English: Checks whether the student has an active full-length exam
    * session (status = 'in_progress'). Returns true if a live exam is in
-   * progress, false otherwise. Fails CLOSED (returns true) on DB error — a
-   * failing live-exam check must never allow tutor access during an exam.
+   * progress, false otherwise.
+   *
+   * DELIBERATE FAIL-OPEN on query error (SCL-079, Karl ruling 2026-09-01):
+   * When the query fails — missing table, connection error, any DB error —
+   * this returns false (allow) and logs a warning. This is a narrow, stated
+   * exception to the general fail-closed rule. Justification from SCL-032's
+   * threat model: a student in another tab has Gemini, ChatGPT, and search,
+   * all of which give more than an anti-leak tutor. The exam block is
+   * low-value integrity protection; its absence during infrastructure failure
+   * costs little. Blocking ALL tutoring costs a lot — verified in production
+   * 2026-09-01 where the missing table blocked 100% of LISA traffic.
+   *
+   * This exception does NOT generalize. Every other fail-closed gate on the
+   * LISA surface (entitlement, anti-leak, crisis) stays closed. Do not copy
+   * this pattern without an owner ruling.
+   *
+   * When the query succeeds: an active exam row → true (block, INV-03-02
+   * enforced); no active exam row → false (allow). The invariant works
+   * correctly when the exam vertical exists.
    *
    * trade-offs: caching (30s soft TTL per spec) is not implemented in this
    * pass — every call is a live query. The caching layer (01A Part III key
    * `live_exam:{student_id}`, invalidated via `exam_status_changed` NOTIFY)
    * is a separate concern to be added once the NOTIFY channel is wired.
+   *
+   * bugs fixed 2026-09-01: table name was `full_length_exams` (no migration,
+   * does not exist); correct table is `full_length_exam_sessions`. Column was
+   * `student_id`; correct column is `user_id`.
    */
   static async isLiveExamInProgress(studentId: string): Promise<boolean> {
     if (!studentId) {
-      return true; // fail closed
+      return true; // fail closed — missing identity is a programming error
     }
 
     const { data, error } = await supabaseServer
-      .from("full_length_exams")
+      .from("full_length_exam_sessions")
       .select("id")
-      .eq("student_id", studentId)
+      .eq("user_id", studentId)
       .eq("status", "in_progress")
       .limit(1)
       .maybeSingle();
 
     if (error) {
-      logger.error(
+      // DELIBERATE FAIL-OPEN — see SCL-079. Log at warn, not error, because
+      // this is an expected condition when the exam vertical is not yet built.
+      // The gate allows the turn through; it does not silently swallow.
+      logger.warn(
         "ENTITLEMENT",
-        "live_exam_check_failed",
-        "full_length_exams live-exam query failed; failing closed (INV-03-02)",
+        "live_exam_check_failed_open",
+        "full_length_exam_sessions query failed; failing OPEN per SCL-079 " +
+          "(exam gate allows turn, logs warning)",
         { studentId, error: error.message, code: error.code },
       );
-      return true; // fail closed — block tutor access
+      return false; // fail OPEN — allow tutor access (SCL-079)
     }
 
     return data !== null;

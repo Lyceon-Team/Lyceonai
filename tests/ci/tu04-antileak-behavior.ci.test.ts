@@ -165,3 +165,91 @@ describe("TU-04: anti-leak pipeline behavior", () => {
     expect(postSubmitResult.content).toBe(persistedMessage);
   });
 });
+
+// ---------------------------------------------------------------------------
+// TU-04: Echo exemption — student-stated values are reflection, not disclosure
+// ---------------------------------------------------------------------------
+
+describe("TU-04: echo exemption", () => {
+  // Case 1: Student said "17", LISA references 17 → PASSES (echo)
+  it("grid-in: student said the correct value; LISA repeating it is NOT a leak", () => {
+    const leaked = hasAnswerLeak(
+      "Right, you mentioned 17 — let's verify that.",
+      "17",
+      ["I think the answer is 17"],
+    );
+    expect(leaked).toBe(false);
+  });
+
+  // Case 2: Student said "14" (wrong), LISA references 17 → FIRES
+  it("grid-in: student said a DIFFERENT value; LISA stating the answer IS a leak", () => {
+    const leaked = hasAnswerLeak("Actually, the value works out to 17.", "17", [
+      "I think the answer is 14",
+    ]);
+    expect(leaked).toBe(true);
+  });
+
+  // Case 3: No student turn contains 17, LISA references 17 → FIRES
+  it("grid-in: no student message contains the answer; LISA stating it IS a leak", () => {
+    const leaked = hasAnswerLeak("The result is 17.", "17", [
+      "Can you help me with this problem?",
+    ]);
+    expect(leaked).toBe(true);
+  });
+
+  // Case 4: Student said "17" in a tutor-role message → FIRES (role check)
+  // The studentMessages parameter should only contain student-role messages.
+  // If a tutor message is passed (caller error), the scanner would exempt,
+  // but the contract is that callers extract student-role only. This test
+  // verifies that an empty studentMessages array (no student said it) fires.
+  it("grid-in: answer only in tutor turn (not student); still a leak", () => {
+    const leaked = hasAnswerLeak(
+      "The result is 17.",
+      "17",
+      [], // no student messages — the "17" was in a tutor-role message
+    );
+    expect(leaked).toBe(true);
+  });
+
+  // Case 5: MCQ — student said "B", LISA references B → passes; student
+  // said "C", LISA references B → FIRES
+  it("MCQ: student said the correct letter → echo; student said wrong letter → leak", () => {
+    const echoResult = hasAnswerLeak(
+      "You mentioned B — let's look at why that's right.",
+      "B",
+      ["I think it's B"],
+    );
+    expect(echoResult).toBe(false);
+
+    const leakResult = hasAnswerLeak("Actually, the answer is B.", "B", [
+      "I think it's C",
+    ]);
+    expect(leakResult).toBe(true);
+  });
+
+  // Supplementary: no studentMessages provided → fail-closed (pre-exemption behavior)
+  it("no studentMessages parameter → fail-closed (scanner fires as before)", () => {
+    const leaked = hasAnswerLeak("The result is 17.", "17");
+    expect(leaked).toBe(true);
+  });
+
+  // Supplementary: generic phrase detection has NO echo exemption
+  it("generic phrase detection ignores echo exemption (null correctAnswer)", () => {
+    const leaked = hasAnswerLeak("The correct answer is B", null, [
+      "I think it's B",
+    ]);
+    expect(leaked).toBe(true);
+  });
+
+  // Supplementary: echo exemption through scanAndSubstitute pipeline
+  it("scanAndSubstitute passes echo through when student stated the value", () => {
+    const result = scanAndSubstitute(
+      "Right, 17 is what you got — let's check.",
+      "17",
+      true,
+      ["I got 17"],
+    );
+    expect(result.leaked).toBe(false);
+    expect(result.content).toBe("Right, 17 is what you got — let's check.");
+  });
+});

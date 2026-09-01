@@ -302,9 +302,19 @@ export function buildOrchestrateResponse(
   // gating a safety decision is a field an attacker sets (Doc 03D §6.3).
   // The primary pre-submit chokepoint is BFF-side scanAndSubstitute (INV-03-04).
   // @spec [Doc-03D_V1.2 §6.3, INV-03-04, Doc-03B_V4.1 §6.5 step 15]
+  // Extract student-role messages for the echo exemption — LISA repeating
+  // a value the student already stated is reflection, not disclosure.
+  const studentMessages = request.recent_messages
+    .filter((m) => m.role === "student")
+    .map((m) => m.message);
+
   let content = vertexResponse.text;
   if (!request.is_post_submit && request.correct_answer !== null) {
-    const leaked = hasAnswerLeak(content, request.correct_answer);
+    const leaked = hasAnswerLeak(
+      content,
+      request.correct_answer,
+      studentMessages,
+    );
     if (leaked) {
       logEvent(
         "warn",

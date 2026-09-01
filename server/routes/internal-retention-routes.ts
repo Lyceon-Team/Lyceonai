@@ -45,7 +45,10 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { oidcAuthMiddleware } from "../../packages/shared/internal-auth/verify-oidc-middleware";
+import {
+  oidcAuthMiddlewareWithConfigGuard,
+  type OidcConfigReader,
+} from "../../packages/shared/internal-auth/verify-oidc-middleware";
 import { TIER_HANDLERS } from "../services/retention-sweep";
 import {
   createBigQueryArchiveClient,
@@ -64,38 +67,25 @@ const router = Router();
  * Uses a distinct env var for audience so each handler can enforce
  * its own audience claim independently.
  */
-const OIDC_AUDIENCE =
-  process.env.RETENTION_SWEEP_OIDC_AUDIENCE ??
-  process.env.CLOUD_TASKS_OIDC_AUDIENCE ??
-  "";
-const OIDC_SERVICE_ACCOUNT = process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
-
 /**
- * @spec [Doc-03C_V3 §9.3, Doc-01A §3 fail-fast]
+ * @spec [Doc-03C_V3 §9.3, Doc-01A §3]
  *
- * Fail-fast (Doc 01A §3): missing OIDC env vars crash the process at startup
- * instead of running with empty strings that silently disable auth.
- * Mirrors internal-memory-routes.ts pattern exactly (LISA-OIDC-001).
- * Guarded by NODE_ENV — test mode skips (tests mock the middleware).
+ * Read per REQUEST, not at import. Mirrors internal-memory-routes.ts —
+ * including the reason: LISA-OIDC-001 asked this file to "mirror the
+ * memory-route guard exactly", and the guard being mirrored was a
+ * module-scope throw. In the shared Vercel bundle that is a process-wide
+ * crash, so it took down auth and every other route.
+ *
+ * Doc 01A §3's fail-fast intent is preserved by the guard: an unset var
+ * refuses THIS route with 500 rather than reaching token verification with
+ * an empty audience.
  */
-const IS_TEST = process.env.NODE_ENV === "test" || !!process.env.VITEST;
-
-if (!IS_TEST) {
-  if (!OIDC_AUDIENCE) {
-    throw new Error(
-      "CLOUD_TASKS_OIDC_AUDIENCE (or RETENTION_SWEEP_OIDC_AUDIENCE) is not set. " +
-        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
-        "Set it to the Cloud Run handler URL.",
-    );
-  }
-  if (!OIDC_SERVICE_ACCOUNT) {
-    throw new Error(
-      "CLOUD_TASKS_SERVICE_ACCOUNT is not set. " +
-        "Internal OIDC routes require this env var per Doc 03C §9.3. " +
-        "Set it to lisa-cloud-tasks@PROJECT.iam.gserviceaccount.com.",
-    );
-  }
-}
+const readOidcConfig: OidcConfigReader = () => ({
+  expectedAudience:
+    process.env.RETENTION_SWEEP_OIDC_AUDIENCE ??
+    process.env.CLOUD_TASKS_OIDC_AUDIENCE,
+  expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+});
 
 // ── Request schema ────────────────────────────────────────────────────
 
@@ -162,10 +152,7 @@ function getArchiveClient(): ArchiveClient | undefined {
 
 router.post(
   "/retention/sweep",
-  oidcAuthMiddleware({
-    expectedAudience: OIDC_AUDIENCE,
-    expectedServiceAccount: OIDC_SERVICE_ACCOUNT,
-  }),
+  oidcAuthMiddlewareWithConfigGuard(readOidcConfig),
   async (req: Request, res: Response): Promise<void> => {
     const parsed = retentionSweepSchema.safeParse(req.body);
     if (!parsed.success) {
