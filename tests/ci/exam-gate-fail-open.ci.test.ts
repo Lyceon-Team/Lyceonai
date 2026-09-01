@@ -22,7 +22,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
   mockMaybeSingle,
-  mockLimit,
   mockEqStatus,
   mockEqUserId,
   mockSelect,
