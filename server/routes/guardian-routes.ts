@@ -6,16 +6,19 @@ import { sendNotFound } from "../middleware/subject-resolver";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { auditGuardianLink } from "../services/guardian-link-audit";
-import { guardianLinkRateLimit } from "../middleware/guardian-link-rate-limit";
-import { z } from "zod";
+import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
+
+/**
+ * ONE code for every refusal a redemption can give: malformed, expired, already used, never
+ * real, or the caller's own. Four distinct codes would let a caller binary-search the
+ * keyspace; one tells them the only actionable thing, which is to ask for a current code.
+ */
+const GUARDIAN_LINK_CODE_REFUSED = "GUARDIAN_LINK_CODE_REFUSED";
 import {
-  createGuardianLink,
-  acceptGuardianLink,
+  createActiveGuardianLink,
   revokeGuardianLink,
   isGuardianLinkedToStudent,
   getAllGuardianStudentLinks,
-  getGuardianLinkById,
   getAnyGuardianLinkForPair,
 } from "../lib/account";
 // The error contract comes from the contract module, NOT from `../lib/account`: a route
@@ -24,13 +27,11 @@ import {
 // status. See packages/shared/src/guardian-link-schema.ts.
 import {
   GUARDIAN_LINK_ERROR,
-  guardianLinkRequestSchema,
+  GuardianLinkError,
 } from "../../packages/shared/src/guardian-link-schema";
-import {
-  normaliseEmail,
-  subjectDigest,
-  DIGEST_LEN_LOG,
-} from "../../packages/shared/src/services/subject-digest";
+import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
+import { redeemStudentLinkCode } from "../lib/student-link-code";
+import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
 
 /** The exact column list the linked-student queries select. Not `any[]`. */
 type LinkedStudentRow = {
@@ -155,272 +156,156 @@ router.get(
 );
 
 /**
- * POST /api/guardian/link — §36.1's guardian-initiated path, step 1 and 2.
+ * POST /api/guardian/link/redeem — a guardian enters a student's code.
  *
- * @spec [Doc-01_V8, §36.1 Initiation (guardian-initiated, steps 1–2); §36.2 Rate limiting
- *        and abuse controls] | @implemented [2026-08-26]
+ * @spec [SCL-080 — the code replaces §36.1's two email-addressed initiation paths and its
+ *        acceptance step; Doc 01 V8 §35 Guardian-student linkage; §36.2 abuse controls]
+ *       | @implemented [2026-09-01]
  *
- * plain English: a guardian enters a student's email; the server creates a link request in
- * `pending_student_accept` and tells the guardian it is awaiting the student. Expected
- * outcome: 202 with the link id and status — NOT an active link, because §36.1 makes the
- * student's acceptance the only route to `active`. Trade-off: the response is deliberately
- * uninformative about whether the address belongs to a Lyceon student. §36.1 step 3 emails
- * the student, so the guardian never needs to be told; telling them would turn this endpoint
- * into an account-enumeration oracle. Edge case: a pair that already has an active or pending
- * link returns 409 rather than creating a second row.
+ * plain English: the guardian types six characters and the link is live. Expected outcome:
+ * one `active` row, one audit record, one outbox notification to the student, and the code
+ * spent so it cannot be used again.
  *
- * WHAT CHANGED, AND WHY IT IS NOT A NARROWING. This route used to take an 8-character
- * `student_link_code`. §36.1 step 1 reads "Guardian enters student's email on their
- * dashboard", and `student_link_code` appears NOWHERE in the locked spec corpus
- * (verified: `grep -rn "student_link_code\|link code\|link_code" docs/Spec/` → no matches).
- * The code mechanism was a pre-spec invention. The owner has ruled spec canonical without
- * exception, so the input is the email §36.1 names. This also gives §36.2's per-student-email
- * control a subject: with a code, the address is not known until after the lookup.
+ * REACHABLE WITHOUT AN ENTITLEMENT, deliberately. A guardian has no entitlement of their own
+ * (§31.1) and derives access from a linked student (§31.3) — so requiring one here would
+ * demand the very thing linking is a precondition for. `requireGuardianAccess` gates the
+ * ROLE; nothing gates payment.
  *
- * §36.1 step 3 — "Student receives email with acceptance link" — is NOT sent here. The
- * `notification_outbox` emission contract governs that surface and no dispatcher exists yet;
- * emitting into it is a separate, declared piece of work. Reported in the phase report rather
- * than half-built.
+ * ONE RESPONSE FOR USED, EXPIRED AND NEVER-REAL (edge case 1). `redeemStudentLinkCode`
+ * cannot distinguish them by construction — its conditional UPDATE matches nothing in all
+ * three cases — and the handler must not reintroduce the distinction. Telling a caller that
+ * a code "has already been used" confirms it was real, which is an oracle for guessing.
+ *
+ * THE RACE IS THE DATABASE'S (edge case 4). Two guardians submitting the same code both
+ * reach one conditional UPDATE against one row; the first spends it, the second matches
+ * nothing and gets the standard refusal.
+ *
+ * A STUDENT CANNOT REACH THIS ROUTE (edge case 3): `requireGuardianAccess` answers first, so
+ * `guardian_not_self` is never the thing that refuses. The explicit identity check below is
+ * defence in depth for an account holding both roles, and it runs BEFORE the write.
  */
 router.post(
-  "/link",
+  "/link/redeem",
   requireSupabaseAuth,
   requireGuardianAccess,
-  guardianLinkRateLimit,
+  guardianLinkCodeEntryRateLimit,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    try {
-      const guardianId = req.user!.id;
-      const parsed = guardianLinkRequestSchema.safeParse(req.body);
+    const guardianId = req.user!.id;
 
-      if (!parsed.success) {
-        await auditGuardianLink({
-          action: "guardian_link_denied",
-          actorProfileId: guardianId,
-          changes: { reason: "invalid_input" },
-          requestId,
-        });
-        return res.status(400).json({
-          error: { message: "A student email address is required" },
-          requestId,
-        });
-      }
-
-      const email = normaliseEmail(parsed.data.email);
-
-      const { data: student, error: lookupError } = await supabaseServer
-        .from("profiles")
-        .select("id, display_name")
-        .eq("email", email)
-        .eq("role", "student")
-        .maybeSingle();
-
-      if (lookupError && lookupError.code !== "PGRST116") {
-        logger.error("GUARDIAN", "link_student", "Student lookup failed", {
-          reason: lookupError.message,
-          requestId,
-        });
-        return res.status(500).json({
-          error: { message: "Failed to create link request" },
-          requestId,
-        });
-      }
-
-      // Anti-enumeration: an address with no student account gets the SAME 202 shape as one
-      // that has. §36.1 step 3 reaches the student by email either way, so the guardian
-      // learns nothing from this response that they are entitled to learn from it.
-      if (!student) {
-        await auditGuardianLink({
-          action: "guardian_link_denied",
-          actorProfileId: guardianId,
-          // The address itself is never written to a retained row — only its digest.
-          changes: {
-            reason: "no_matching_student",
-            email_digest: subjectDigest(email, DIGEST_LEN_LOG),
-          },
-          requestId,
-        });
-        logger.warn(
-          "GUARDIAN",
-          "link_attempt_no_match",
-          "Link requested against an address with no student account",
-          { guardianId, requestId },
-        );
-        return res.status(202).json({
-          data: { status: "pending_student_accept" },
-          requestId,
-        });
-      }
-
-      let link;
-      try {
-        link = await createGuardianLink(guardianId, student.id, "guardian");
-      } catch (linkError: unknown) {
-        const code = errorCode(linkError);
-
-        if (code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS) {
-          await auditGuardianLink({
-            action: "guardian_link_denied",
-            actorProfileId: guardianId,
-            targetProfileId: student.id,
-            changes: { reason: "link_already_exists" },
-            requestId,
-          });
-          return res.status(409).json({
-            error: {
-              message: "A link with this student already exists",
-              code: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
-            },
-            requestId,
-          });
-        }
-
-        logger.error("GUARDIAN", "link_student", "Failed to create link", {
-          reason: linkError instanceof Error ? linkError.message : "unknown",
-          requestId,
-        });
-        return res.status(500).json({
-          error: { message: "Failed to create link request" },
-          requestId,
-        });
-      }
-
-      logger.info("GUARDIAN", "link_student", "Link request created", {
-        guardianId,
-        studentId: student.id,
-        status: link.status,
-        requestId,
-      });
-
-      res.status(202).json({
-        data: {
-          link_id: link.id,
-          status: link.status,
-          student: { id: student.id, display_name: student.display_name },
+    const parsed = redeemLinkCodeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      // A malformed code is not distinguishable from a wrong one, for the same reason a used
+      // one is not: both answers would tell the caller something about the keyspace.
+      return res.status(400).json({
+        error: {
+          message: "That code is not valid. Ask your student for a current one.",
+          code: GUARDIAN_LINK_CODE_REFUSED,
         },
         requestId,
       });
-    } catch (err) {
-      logger.error("GUARDIAN", "link_student", "Error", { err, requestId });
-      res
-        .status(500)
-        .json({ error: { message: "Internal server error" }, requestId });
     }
-  },
-);
 
-/**
- * POST /api/guardian/link/:linkId/accept — §36.1's acceptance step.
- *
- * @spec [Doc-01_V8, §36.1 Initiation (student-initiated, step 5: "Guardian confirms →
- *        `status = 'active'`")] | @implemented [2026-08-26]
- *
- * plain English: the guardian confirms a link a student started, and it goes live. Expected
- * outcome: `status='active'`, `accepted_at` and `accepted_by_profile_id` set, and an
- * `audit_logs` row recording the transition. Trade-off: the server checks that THIS guardian
- * is the party the pending status is waiting on — a guardian cannot self-accept a link they
- * initiated, which is the entire content of the two-step flow. Edge case: accepting an
- * already-active or revoked link returns 409, not a second acceptance.
- *
- * The student-side counterpart (a student accepting a guardian-initiated link) belongs on the
- * student profile surface, not the guardian router. `acceptGuardianLink` is party-agnostic
- * and serves both; only this half is mounted here. Reported, not silently omitted.
- */
-router.post(
-  "/link/:linkId/accept",
-  requireSupabaseAuth,
-  requireGuardianAccess,
-  async (req: Request, res: Response) => {
-    const requestId = req.requestId;
+    const ttlSeconds = await getStudentLinkCodeTtlSeconds();
+    if (ttlSeconds === null) {
+      return res.status(503).json({
+        error: {
+          message: "Link codes are not configured.",
+          code: "LINK_CODE_UNCONFIGURED",
+        },
+        requestId,
+      });
+    }
+
+    const outcome = await redeemStudentLinkCode(parsed.data.code, ttlSeconds);
+
+    if (!outcome.ok && outcome.reason === "unavailable") {
+      return res.status(503).json({
+        error: { message: "Could not redeem that code. Please try again." },
+        requestId,
+      });
+    }
+
+    if (!outcome.ok) {
+      return res.status(400).json({
+        error: {
+          message: "That code is not valid. Ask your student for a current one.",
+          code: GUARDIAN_LINK_CODE_REFUSED,
+        },
+        requestId,
+      });
+    }
+
+    const studentProfileId = outcome.studentProfileId;
+
+    // Edge case 3, before any write. The code has already been spent at this point — which
+    // is harmless, it was this account's own code rotating — but no link is created.
+    if (studentProfileId === guardianId) {
+      return res.status(400).json({
+        error: {
+          message: "That is your own code. Ask your guardian for theirs.",
+          code: GUARDIAN_LINK_CODE_REFUSED,
+        },
+        requestId,
+      });
+    }
+
     try {
-      const guardianId = req.user!.id;
-      const { linkId } = req.params;
-
-      if (!UUID_RE.test(linkId ?? "")) {
-        return res
-          .status(400)
-          .json({ error: { message: "Invalid link id" }, requestId });
-      }
-
-      // @spec [owner ruling 2026-08-27 Q7] | @implemented [2026-08-28]
-      //
-      // PARTY-HOOD DECIDES 404-VERSUS-409, AND ONLY A READ CAN ANSWER IT.
-      // `accept_guardian_link_audited` raises the SAME `WRONG_ACCEPTOR` (LY002) for the party
-      // who must wait and for a stranger who guessed a link id, so the error alone cannot tell
-      // them apart. This route used to answer 403 to both, which confirmed to a stranger that
-      // the link exists. Now: not named on the link → 404, indistinguishable from a link id
-      // that does not exist; named on it → the informative answer, as 409, because being asked
-      // to wait for the other party is a STATE CONFLICT and not an authorization failure.
-      //
-      // Identical to the student-side route's handling (`student-resources.ts`), deliberately
-      // and by reusing the same reader: two routes serving the two halves of one flow must not
-      // answer the same question differently, which is the divergence class this whole vertical
-      // exists to remove.
-      let existing;
-      try {
-        existing = await getGuardianLinkById(linkId);
-      } catch (readError: unknown) {
-        logger.error("GUARDIAN", "accept_link", "Failed to read link", {
-          reason: readError instanceof Error ? readError.message : "unknown",
-          requestId,
-        });
-        return res
-          .status(500)
-          .json({ error: { message: "Failed to accept link" }, requestId });
-      }
-
-      if (!existing || existing.guardian_profile_id !== guardianId) {
-        return sendNotFound(res, requestId);
-      }
-
-      let link;
-      try {
-        link = await acceptGuardianLink(linkId, guardianId);
-      } catch (acceptError: unknown) {
-        const code = errorCode(acceptError);
-
-        // The caller is a party (checked above), so both of these are state conflicts.
-        if (
-          code === GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR ||
-          code === GUARDIAN_LINK_ERROR.NOT_PENDING
-        ) {
-          return res.status(409).json({
-            error: {
-              message: "This link is not awaiting your acceptance",
-              code,
-            },
-            requestId,
-          });
-        }
-
-        logger.error("GUARDIAN", "accept_link", "Failed to accept link", {
-          reason:
-            acceptError instanceof Error ? acceptError.message : "unknown",
-          requestId,
-        });
-        return res
-          .status(500)
-          .json({ error: { message: "Failed to accept link" }, requestId });
-      }
-
-      logger.info("GUARDIAN", "accept_link", "Guardian link accepted", {
+      const link = await createActiveGuardianLink(
         guardianId,
-        studentId: link.student_profile_id,
+        studentProfileId,
         requestId,
-      });
+      );
 
-      res.json({
-        data: { link_id: link.id, status: link.status },
+      // §36.1 step 6 in the shape SCL-080 leaves: the student is told, because they are the
+      // party whose data just became visible. Emission only — there is no dispatcher, so
+      // this is a row, not a message (CLAUDE.md, notification-outbox contract).
+      const { error: outboxError } = await supabaseServer
+        .from("notification_outbox")
+        .insert({
+          // Deterministic and insert-once: one notification per link, so a retry of this
+          // request cannot produce a second.
+          event_id: link.id,
+          event_type: "guardian_linked",
+          recipient_kind: "student",
+          recipient_profile_id: studentProfileId,
+          payload: { link_id: link.id, via: "student_link_code" },
+        });
+      if (outboxError && outboxError.code !== "23505") {
+        // Never swallowed, never fatal: the link is real and the student's access is
+        // unaffected by a missing notification row.
+        logger.warn(
+          "GUARDIAN",
+          "link_notify",
+          "Guardian link created but the outbox emission failed",
+          { requestId, reason: outboxError.message },
+        );
+      }
+
+      return res.status(201).json({
+        data: { link_id: link.id, student_profile_id: studentProfileId },
         requestId,
       });
-    } catch (err) {
-      logger.error("GUARDIAN", "accept_link", "Error", { err, requestId });
-      res
-        .status(500)
-        .json({ error: { message: "Internal server error" }, requestId });
+    } catch (err: unknown) {
+      // LY004 — the pair is already linked. The guardian is a party to that link, so telling
+      // them it exists discloses nothing they do not already know (edge case 2).
+      if (
+        err instanceof GuardianLinkError &&
+        err.code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS
+      ) {
+        return res.status(409).json({
+          error: {
+            message: "You are already linked to that student.",
+            code: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+          },
+          requestId,
+        });
+      }
+      throw err;
     }
   },
 );
+
 
 /**
  * DELETE /api/guardian/link/:studentId — §36.3 revocation, guardian side.

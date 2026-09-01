@@ -471,31 +471,6 @@ jobs:
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/entitlement-write-path.ci.test.ts
 
-      # @spec [Doc-01_V8 §35, §36.1, §36.2, §36.3 | WS-GL Phase B] Guardian link → real PG proof.
-      # Proves the four Phase B exit criteria against the REAL genesis schema: POST
-      # /api/guardian/link reaches its handler (it returned 500 on every call for the life of
-      # the surface — `guardian_link_audit` does not exist); ONE guardian holds TWO active
-      # links (§35's "one or more students", which the retired 1:1 rule refused); both §36.2
-      # rate-limit buckets write real `rate_limit_ledger` rows with a denial observed at the
-      # limit; and §36.3 revocation writes `revoked_by_profile_id` / `revocation_reason`.
-      # Would FAIL against the pre-Phase-B code — every column it selects had a different
-      # name, or none at all.
-      #
-      # NOTE for whoever adds the next PG-requiring test: every step in this job names its
-      # file individually, so a new test under tests/ci/ runs in NO job until someone
-      # remembers to add it here. That is how `tests/ci/guardian-link.pg.ci.test.ts` sat
-      # unexecuted while this job reported green, and it is the same defect class as G-42's
-      # five orphaned billing tests. A referral to run the PG-requiring suite as a DIRECTORY
-      # is recorded in docs/plans/WS-GL_PhaseB_Referrals.md §2 — until that lands, add the
-      # file here by hand.
-      - name: Guardian link surface → real PG proof
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: pnpm exec vitest run tests/ci/guardian-link.pg.ci.test.ts
-
       # @spec [owner instruction 2026-08-28 Task 1 Gates A and B] | @implemented [2026-09-01]
       #
       # The three files converted off mocked query layers and hand-written row fixtures on

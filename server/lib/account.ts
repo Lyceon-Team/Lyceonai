@@ -171,21 +171,24 @@ export async function getAnyGuardianLinkForPair(
  * plain English: read one link by its id, whatever its status. Expected outcome: the row, or
  * null if no such link exists.
  *
- * WHY THIS EXISTS SEPARATELY FROM `acceptGuardianLink`, WHICH ALSO READS THE ROW.
+ * WHY THIS EXISTS SEPARATELY FROM THE WRITE THAT FOLLOWS IT.
  *   Q7 draws the enumeration line at PARTY-HOOD, not at authorization: a caller named on the
- *   link already knows it exists, so telling them "awaiting the other party" leaks nothing,
- *   while a caller who is not on it must not learn the link exists at all. `acceptGuardianLink`
- *   raises the same `WRONG_ACCEPTOR` for both — the party who must wait, and the stranger —
- *   so a route cannot tell those two apart from its error alone. This read is how the route
- *   answers "are you on this link?" BEFORE the accept attempt, and it is deliberately status-
- *   agnostic: a revoked link the caller is named on is still theirs to be told about.
+ *   link already knows it exists, so telling them "that link is not active" leaks nothing,
+ *   while a caller who is not on it must not learn the link exists at all. The audited write
+ *   raises the same error for both — the party in the wrong state, and the stranger — so a
+ *   route cannot tell those two apart from its error alone. This read is how the route
+ *   answers "are you on this link?" BEFORE attempting the write, and it is deliberately
+ *   status-agnostic: a revoked link the caller is named on is still theirs to be told about.
  *
- * trade-off: the row is read twice on the success path, once here and once inside
- * `acceptGuardianLink`. That is accepted rather than optimised away, because the alternative —
- * widening the domain function's error contract — changes a function the guardian route also
- * calls, and that unification is its own step (adoption plan step 6). The second read costs a
- * primary-key lookup; the compare-and-swap inside `acceptGuardianLink` still owns correctness
- * against a concurrent transition, so nothing here is load-bearing for the race.
+ * @revised [2026-09-01 — SCL-080] This docblock used to justify the read against
+ * `acceptGuardianLink`, which was deleted with the acceptance step. The remaining caller is
+ * the STUDENT's revoke route (`server/routes/student-resources.ts`), and the reasoning is
+ * unchanged — party-hood before the write — so the read stays and only the name goes.
+ *
+ * trade-off: the row is read twice on the success path, once here and once inside the audited
+ * write. Accepted rather than optimised away: the second read costs a primary-key lookup, and
+ * the compare-and-swap inside the write still owns correctness against a concurrent
+ * transition, so nothing here is load-bearing for the race.
  */
 export async function getGuardianLinkById(
   linkId: string,
@@ -222,75 +225,7 @@ export async function isGuardianLinkedToStudent(
   return link !== null;
 }
 
-/**
- * @spec [Doc-01_V8, §36.1 Initiation] | @implemented [2026-08-26]
- * plain English: start a link. What it does: writes one `guardian_links` row in the pending
- * state §36.1 assigns to the initiating party, with `initiated_by` and `initiated_at` set.
- * Expected outcome: `pending_student_accept` for a guardian-initiated link,
- * `pending_guardian_accept` for a student-initiated one — never `active`, because §36.1
- * makes acceptance by the counterparty the only route to `active`.
- * Trade-off: §35 permits a guardian to hold links to more than one student, so this refuses
- * only a duplicate of the SAME pair, not a second student. Edge case: a pair that already
- * has an active or pending row raises ALREADY_EXISTS rather than writing a second row, which
- * `unique_active_link` would reject anyway — this turns a 23505 into a typed error.
- */
-export async function createGuardianLink(
-  guardianProfileId: string,
-  studentProfileId: string,
-  initiatedBy: GuardianLinkInitiator,
-  requestId?: string,
-): Promise<GuardianLink> {
-  const { data, error } = await supabaseServer.rpc(
-    "create_guardian_link_audited",
-    {
-      p_guardian_id: guardianProfileId,
-      p_student_id: studentProfileId,
-      p_initiated_by: initiatedBy,
-      p_request_id: requestId ?? null,
-    },
-  );
 
-  if (error) {
-    throwGuardianLinkError(error, "create_link");
-  }
-  if (!data) {
-    throw new Error("Failed to create guardian link: no row returned");
-  }
-  return parseGuardianLink(data);
-}
-
-/**
- * @spec [Doc-01_V8, §36.1 Initiation steps 5] | @implemented [2026-08-26]
- * plain English: the counterparty confirms, and the link goes live. What it does: sets
- * `status='active'`, `accepted_at` and `accepted_by_profile_id` on a pending row.
- * Expected outcome: the three columns §36.1 leaves unwritten until this moment are all
- * populated in one statement. Trade-off: the acceptor is checked against the pending status
- * server-side — a guardian cannot accept a link that is waiting on the student, which is the
- * whole content of the two-step flow. Edge case: a link already active, or already revoked,
- * raises NOT_PENDING rather than silently re-accepting.
- */
-export async function acceptGuardianLink(
-  linkId: string,
-  acceptingProfileId: string,
-  requestId?: string,
-): Promise<GuardianLink> {
-  const { data, error } = await supabaseServer.rpc(
-    "accept_guardian_link_audited",
-    {
-      p_link_id: linkId,
-      p_accepting_profile_id: acceptingProfileId,
-      p_request_id: requestId ?? null,
-    },
-  );
-
-  if (error) {
-    throwGuardianLinkError(error, "accept_link");
-  }
-  if (!data) {
-    throw new Error("Failed to accept guardian link: no row returned");
-  }
-  return parseGuardianLink(data);
-}
 
 /**
  * @spec [Doc-01_V8, §36.3 Revocation] | @implemented [2026-08-26]
@@ -306,6 +241,46 @@ export async function acceptGuardianLink(
  * emitting it would be a write nothing reads; both are recorded as deferred in
  * `WS-GL_Stage2_Closure_Plan.md` §4.
  */
+/**
+ * Create a LIVE guardian link, audited. The single owner of that write.
+ *
+ * @spec [SCL-080; Doc-01_V8 §35] | @implemented [2026-09-01]
+ *
+ * plain English: a guardian redeemed a student's code, so the link exists immediately —
+ * there is no acceptance step to wait for. Expected outcome: one `active` row and one audit
+ * record, both written inside the function so neither can happen without the other.
+ *
+ * Delegates to `create_active_guardian_link_audited`, which supersedes
+ * `create_guardian_link_audited` — that one hardcoded a pending status and had no path to
+ * `active`. Writing the INSERT here instead would fork link creation into two
+ * implementations and bypass the audit trail, which CLAUDE.md forbids by name.
+ *
+ * Errors are surfaced through `throwGuardianLinkError` so `LY004` (already linked) reaches
+ * the route as the 409 it is, rather than a 500.
+ */
+export async function createActiveGuardianLink(
+  guardianProfileId: string,
+  studentProfileId: string,
+  requestId?: string,
+): Promise<GuardianLink> {
+  const { data, error } = await supabaseServer.rpc(
+    "create_active_guardian_link_audited",
+    {
+      p_guardian_id: guardianProfileId,
+      p_student_id: studentProfileId,
+      p_request_id: requestId ?? null,
+    },
+  );
+
+  if (error) {
+    throwGuardianLinkError(error, "create_active_link");
+  }
+  if (!data) {
+    throw new Error("Failed to create guardian link: no row returned");
+  }
+  return parseGuardianLink(data);
+}
+
 export async function revokeGuardianLink(
   guardianProfileId: string,
   studentProfileId: string,

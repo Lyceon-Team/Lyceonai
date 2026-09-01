@@ -7,8 +7,6 @@ import request from "supertest";
 import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
 
 const accountMocks = {
-  createGuardianLink: vi.fn(),
-  acceptGuardianLink: vi.fn(),
   revokeGuardianLink: vi.fn(),
   isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
@@ -719,6 +717,10 @@ describe("Guardian reporting runtime contract", () => {
       expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
     });
 
+    // SCL-080 deleted the guardian-side acceptance route: there is no acceptance step, so
+    // there is no acceptor to be wrong about. The two REVOKE cases above still hold — §36.3
+    // survives — and Q7's 404-versus-409 rule is still proved by them.
+
     it("revoke: 409s a guardian whose link with the student is already revoked", async () => {
       accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(
         linkRow({ status: "revoked" }),
@@ -737,46 +739,6 @@ describe("Guardian reporting runtime contract", () => {
       expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
     });
 
-    it("accept: 404s a guardian who is not named on the link", async () => {
-      accountMocks.getGuardianLinkById.mockResolvedValue(
-        linkRow({ guardian_profile_id: "some-other-guardian" }),
-      );
-      const router = (await import("../../server/routes/guardian-routes"))
-        .default;
-      const app = buildApp("guardian");
-      app.use("/api/guardian", router);
 
-      const response = await request(app).post(
-        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
-      );
-
-      expect(response.status).toBe(404);
-      expect(response.body).toMatchObject(NOT_FOUND_BODY);
-      expect(accountMocks.acceptGuardianLink).not.toHaveBeenCalled();
-    });
-
-    it("accept: 409s the guardian when the link is awaiting the STUDENT", async () => {
-      // The guardian IS named on this link, so they get the informative answer.
-      accountMocks.getGuardianLinkById.mockResolvedValue(
-        linkRow({ status: "pending_student_accept" }),
-      );
-      const wrongAcceptor = new Error("awaiting the other party") as Error & {
-        code?: string;
-      };
-      wrongAcceptor.code = GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR;
-      accountMocks.acceptGuardianLink.mockRejectedValueOnce(wrongAcceptor);
-
-      const router = (await import("../../server/routes/guardian-routes"))
-        .default;
-      const app = buildApp("guardian");
-      app.use("/api/guardian", router);
-
-      const response = await request(app).post(
-        "/api/guardian/link/11111111-1111-1111-1111-111111111111/accept",
-      );
-
-      expect(response.status).toBe(409);
-      expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR);
-    });
   });
 });
