@@ -1891,13 +1891,14 @@ async function runCountryDenialRemediation(
   );
 
   // ---- 2. THEN REFUND ------------------------------------------------------
-  // Provenance, forwards: subscription -> latest_invoice -> invoice payment ->
+  // Provenance, forwards: SESSION -> session.invoice -> invoice payment ->
   // PaymentIntent -> charge. Same hops as the reverse walk in
-  // `resolveEntitlementsForCharge`; see `country-denial-remediation.ts`.
+  // `resolveEntitlementsForCharge`; see `country-denial-remediation.ts`. The
+  // root is the SESSION, not the subscription — see the note below.
   //
   // WHERE PROVENANCE CANNOT BE ESTABLISHED, CHANGE NOTHING AND SURFACE IT. Each
-  // of the four bails below is a FACT ("this subscription has no paid invoice
-  // yet"), never a guess, and none of them refunds something it merely thinks
+  // of the four bails below is a FACT ("this session produced no invoice"),
+  // never a guess, and none of them refunds something it merely thinks
   // is the right charge.
   //
   // THE WALK IS ROOTED AT THE SESSION, NOT AT THE SUBSCRIPTION
