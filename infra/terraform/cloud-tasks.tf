@@ -22,7 +22,8 @@ resource "google_cloud_tasks_queue" "crisis_notification" {
   # to 5 attempts / 600s — permanently-bad Slack payloads should not retry for days.
 
   rate_limits {
-    max_burst_size            = 100
+    # max_burst_size is computed by GCP from max_dispatches_per_second — not settable.
+    # `gcloud tasks queues describe` shows it because GCP calculated it, not because it was set.
     max_dispatches_per_second = 500
     max_concurrent_dispatches = 1000
   }
