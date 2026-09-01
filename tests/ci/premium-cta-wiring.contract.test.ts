@@ -69,7 +69,28 @@ describe('Premium CTA wiring contract', () => {
     const guardianPaywall = read('client/src/components/guardian/SubscriptionPaywall.tsx');
 
     expect(guardianPaywall).toContain('getBillingPlans');
-    expect(guardianPaywall).toContain('startSubscriptionCheckout(plan)');
+    /**
+     * Still the SHARED checkout helper, and the selected subject must travel
+     * IN THAT CALL. The literal `startSubscriptionCheckout(plan)` was relaxed
+     * on 2026-08-31 when the guardian student picker landed — the guardian path
+     * is per student (Doc 01 V8 §20, §31.4, §36.4), so the real call is now
+     * multi-line and no single literal can match it.
+     *
+     * WHY A REGEX AND NOT TWO `toContain`s. Two independent substring checks
+     * over the whole file prove both fragments exist SOMEWHERE, not that they
+     * belong to the same call: they pass just as happily with the helper called
+     * bare in one place and `studentProfileId: selectedStudentId` sitting in a
+     * comment or a dead variable elsewhere. That reads as a co-location check
+     * and is not one.
+     *
+     * `[^;]*` cannot cross a statement boundary, so both fragments must occur
+     * within the same statement — the call itself. Whitespace-tolerant, so
+     * reformatting the argument list does not break it, and arity is not
+     * pinned: extra arguments are free to appear.
+     */
+    expect(guardianPaywall).toMatch(
+      /startSubscriptionCheckout\([^;]*studentProfileId:\s*selectedStudentId/,
+    );
     expect(guardianPaywall).toContain("'/api/billing/portal'");
     expect(guardianPaywall).toContain('needsPaymentUpdate');
     expect(guardianPaywall).toContain('TODO(billing): Guardian selector is legacy');

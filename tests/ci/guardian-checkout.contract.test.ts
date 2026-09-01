@@ -292,6 +292,99 @@ describe("a guardian subscription writes one entitlement row per student", () =>
   });
 
   /**
+   * THE SEPARATION THE GUARDIAN PATH EXISTS FOR, PROVED SEQUENTIALLY.
+   *
+   * @spec [Doc 01 V8 §20 "Who pays"; §31.1 "Guardians do NOT have their own
+   *        entitlement"; §31.4; §36.4; SCL-043 payer identity;
+   *        SCL-045 one SubscriptionItem per student]
+   *
+   * The Stripe Customer is the GUARDIAN; the entitlement is the STUDENT's. The
+   * existing sibling test writes both students in ONE event, which cannot
+   * distinguish "each item wrote its own row" from "the last write won". This
+   * one buys for A, then later adds B, and asserts A is still premium on A's own
+   * item afterwards.
+   *
+   * Two distinct failures are in scope and both are caught here: keying the row
+   * to the PAYER (the guardian would hold the entitlement and neither child
+   * would), and letting the second purchase overwrite or drop the first.
+   */
+  it("keys entitlement to the STUDENT, not the paying guardian, and A survives B being added", async () => {
+    const process_ = await handler();
+
+    // ---- FIRST PURCHASE: only student A is funded ----------------------
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_guardian_1",
+      object: "subscription",
+      // The Customer is the GUARDIAN's. Nothing about that makes the guardian
+      // the entitled party.
+      customer: "cus_test_1",
+      status: "active",
+      metadata: { payer_profile_id: GUARDIAN },
+      items: { object: "list", data: [item("si_a", STUDENT_A)] },
+    });
+
+    const first = signedSubscriptionEvent();
+    const firstOutcome = await process_(first.body, first.signature, "req_a");
+
+    expect(firstOutcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledTimes(1);
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_A,
+      expect.objectContaining({
+        tier: "premium",
+        stripe_subscription_item_id: "si_a",
+      }),
+    );
+    // The payer holds NO entitlement row of their own (§31.1).
+    const payerWrites = accountMocks.upsertEntitlement.mock.calls.filter(
+      (c: unknown[]) => c[0] === GUARDIAN,
+    );
+    expect(payerWrites).toEqual([]);
+
+    // ---- LATER: the guardian adds student B to the SAME subscription ----
+    accountMocks.upsertEntitlement.mockClear();
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_guardian_1",
+      object: "subscription",
+      customer: "cus_test_1",
+      status: "active",
+      metadata: { payer_profile_id: GUARDIAN },
+      items: {
+        object: "list",
+        data: [item("si_a", STUDENT_A), item("si_b", STUDENT_B)],
+      },
+    });
+
+    const second = signedSubscriptionEvent();
+    const secondOutcome = await process_(second.body, second.signature, "req_b");
+
+    expect(secondOutcome).toMatchObject({ ok: true, status: "processed" });
+
+    // A SURVIVES: still premium, still keyed to A's own item — not dropped, and
+    // not re-pointed at B's item.
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_A,
+      expect.objectContaining({
+        tier: "premium",
+        stripe_subscription_item_id: "si_a",
+      }),
+    );
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_B,
+      expect.objectContaining({
+        tier: "premium",
+        stripe_subscription_item_id: "si_b",
+      }),
+    );
+    // Still nothing on the payer after a second purchase.
+    expect(
+      accountMocks.upsertEntitlement.mock.calls.filter(
+        (c: unknown[]) => c[0] === GUARDIAN,
+      ),
+    ).toEqual([]);
+  });
+
+  /**
    * CHARTER §6 — Codex HIGH-3. The writer previously entitled whatever uuid an
    * item carried, without ever asking whether the payer was linked to that
    * student. `getAllGuardianStudentLinks` existed and was not called.
