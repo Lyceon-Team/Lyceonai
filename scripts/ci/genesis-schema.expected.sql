@@ -105,86 +105,6 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: guardian_links; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.guardian_links (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    guardian_profile_id uuid NOT NULL,
-    student_profile_id uuid NOT NULL,
-    status text NOT NULL,
-    initiated_by text NOT NULL,
-    initiated_at timestamp with time zone DEFAULT now() NOT NULL,
-    accepted_at timestamp with time zone,
-    accepted_by_profile_id uuid,
-    revoked_at timestamp with time zone,
-    revoked_by_profile_id uuid,
-    revocation_reason text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT guardian_links_initiated_by_check CHECK ((initiated_by = ANY (ARRAY['guardian'::text, 'student'::text, 'admin'::text]))),
-    CONSTRAINT guardian_links_status_check CHECK ((status = ANY (ARRAY['active'::text, 'pending_student_accept'::text, 'pending_guardian_accept'::text, 'revoked'::text]))),
-    CONSTRAINT guardian_not_self CHECK ((guardian_profile_id <> student_profile_id))
-);
-
-
---
--- Name: accept_guardian_link_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-DECLARE
-  v_before   public.guardian_links;
-  v_after    public.guardian_links;
-  v_required uuid;
-  v_target   uuid;
-BEGIN
-  -- FOR UPDATE, so a concurrent acceptance waits rather than races. The application version
-  -- used a compare-and-swap for the same reason; a row lock is the stronger form and costs
-  -- nothing now the whole transition is one transaction.
-  SELECT * INTO v_before FROM public.guardian_links WHERE id = p_link_id FOR UPDATE;
-
-  IF NOT FOUND OR v_before.status NOT IN ('pending_student_accept','pending_guardian_accept') THEN
-    RAISE EXCEPTION 'link is not awaiting acceptance' USING ERRCODE = 'LY001';
-  END IF;
-
-  v_required := CASE v_before.status
-                  WHEN 'pending_student_accept' THEN v_before.student_profile_id
-                  ELSE v_before.guardian_profile_id
-                END;
-
-  IF v_required <> p_accepting_profile_id THEN
-    RAISE EXCEPTION 'awaiting acceptance by the other party' USING ERRCODE = 'LY002';
-  END IF;
-
-  UPDATE public.guardian_links
-     SET status = 'active',
-         accepted_at = now(),
-         accepted_by_profile_id = p_accepting_profile_id
-   WHERE id = p_link_id
-  RETURNING * INTO v_after;
-
-  v_target := CASE WHEN p_accepting_profile_id = v_after.student_profile_id
-                   THEN v_after.guardian_profile_id
-                   ELSE v_after.student_profile_id
-              END;
-
-  -- `from` is READ from the row, never asserted. The route that hardcoded
-  -- 'pending_guardian_accept' was correct only by virtue of which half it served.
-  PERFORM public.guardian_link_audit(
-    'guardian_link_accepted', p_accepting_profile_id, v_target,
-    jsonb_build_object('from', v_before.status, 'to', v_after.status),
-    v_after.id, p_request_id
-  );
-
-  RETURN v_after;
-END;
-$$;
-
-
---
 -- Name: student_skill_mastery; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1616,51 +1536,66 @@ $$;
 
 
 --
--- Name: create_guardian_link_audited(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: guardian_links; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
+CREATE TABLE public.guardian_links (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    guardian_profile_id uuid NOT NULL,
+    student_profile_id uuid NOT NULL,
+    status text NOT NULL,
+    initiated_by text NOT NULL,
+    initiated_at timestamp with time zone DEFAULT now() NOT NULL,
+    accepted_at timestamp with time zone,
+    accepted_by_profile_id uuid,
+    revoked_at timestamp with time zone,
+    revoked_by_profile_id uuid,
+    revocation_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT guardian_links_initiated_by_check CHECK ((initiated_by = ANY (ARRAY['guardian'::text, 'student'::text, 'admin'::text]))),
+    CONSTRAINT guardian_links_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text]))),
+    CONSTRAINT guardian_not_self CHECK ((guardian_profile_id <> student_profile_id))
+);
+
+
+--
+-- Name: create_active_guardian_link_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_status text;
-  v_row    public.guardian_links;
-  v_actor  uuid;
-  v_target uuid;
+  v_row public.guardian_links;
 BEGIN
-  IF p_initiated_by NOT IN ('guardian', 'student') THEN
-    RAISE EXCEPTION 'initiated_by must be guardian or student' USING ERRCODE = '22023';
+  IF p_guardian_id = p_student_id THEN
+    RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
   END IF;
 
-  v_status := CASE p_initiated_by
-                WHEN 'guardian' THEN 'pending_student_accept'
-                ELSE 'pending_guardian_accept'
-              END;
-
+  -- Edge case 2: already linked is a 409, not a duplicate row. Only 'active' is
+  -- checked because SCL-080 leaves no reachable pending status.
   IF EXISTS (
     SELECT 1 FROM public.guardian_links
      WHERE guardian_profile_id = p_guardian_id
        AND student_profile_id  = p_student_id
-       AND status IN ('active', 'pending_student_accept', 'pending_guardian_accept')
+       AND status = 'active'
   ) THEN
     RAISE EXCEPTION 'link already exists' USING ERRCODE = 'LY004';
   END IF;
 
   INSERT INTO public.guardian_links
-    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at)
-  VALUES (p_guardian_id, p_student_id, v_status, p_initiated_by, now())
+    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at,
+     accepted_at, accepted_by_profile_id)
+  VALUES (p_guardian_id, p_student_id, 'active', 'student', now(), now(), p_student_id)
   RETURNING * INTO v_row;
 
-  IF p_initiated_by = 'guardian' THEN
-    v_actor := p_guardian_id; v_target := p_student_id;
-  ELSE
-    v_actor := p_student_id;  v_target := p_guardian_id;
-  END IF;
-
+  -- initiated_by='student' and accepted_by=the student: the student issued and shared the
+  -- code, so the student is both the initiator and the consenting party. Recording the
+  -- guardian as initiator would misattribute the consent.
   PERFORM public.guardian_link_audit(
-    'guardian_link_initiated', v_actor, v_target,
-    jsonb_build_object('from', NULL, 'to', v_row.status, 'initiated_by', p_initiated_by),
+    'guardian_link_initiated', p_student_id, p_guardian_id,
+    jsonb_build_object('from', NULL, 'to', 'active', 'via', 'student_link_code'),
     v_row.id, p_request_id
   );
 
@@ -4823,15 +4758,23 @@ CREATE TABLE public.profiles (
     guardian_consent boolean DEFAULT false,
     consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
+    student_link_code text,
+    student_link_code_issued_at timestamp with time zone,
     last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    student_link_code text,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL
 );
+
+
+--
+-- Name: COLUMN profiles.student_link_code_issued_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
 
 
 --
@@ -6409,14 +6352,6 @@ ALTER TABLE ONLY public.tutor_question_links
 
 
 --
--- Name: guardian_links unique_active_link; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.guardian_links
-    ADD CONSTRAINT unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status) DEFERRABLE INITIALLY DEFERRED;
-
-
---
 -- Name: review_schedule uq_review_schedule_profile_question; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7046,6 +6981,13 @@ COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner 
 --
 
 CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btree (student_link_code) WHERE (student_link_code IS NOT NULL);
+
+
+--
+-- Name: unique_active_guardian_link; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_active_guardian_link ON public.guardian_links USING btree (guardian_profile_id, student_profile_id) WHERE (status = 'active'::text);
 
 
 --
@@ -9181,21 +9123,6 @@ GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid,
 
 
 --
--- Name: TABLE guardian_links; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role;
-
-
---
--- Name: FUNCTION accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text) TO service_role;
-
-
---
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -9459,11 +9386,10 @@ GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO servic
 
 
 --
--- Name: FUNCTION create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text); Type: ACL; Schema: public; Owner: -
+-- Name: TABLE guardian_links; Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text) TO service_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role;
 
 
 --

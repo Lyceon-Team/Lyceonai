@@ -83,6 +83,41 @@ This rule overrides any instruction to the contrary.
 
 ## Entries
 
+SCL-080 | 2026-09-01 | Doc 01 V8 §36.1's two email-addressed initiation paths and §36.2's email-scoped abuse controls are replaced by a student-issued link code with no acceptance step | PROPOSED
+Change: linking stops being an invitation that a second party accepts and becomes a credential the student holds and shares. The student's account carries a short code; a guardian enters it; the link is `active` on that request. There is no pending state, no acceptance screen, and no email in the mechanism. §36.1 specifies the opposite in both of its paths, and §36.2's two abuse controls are written against an email address that this flow never collects, so both sections change.
+WAS, verbatim (Doc 01 V8 §36.1, `Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md:1680-1697`):
+  "Two initiation paths:
+   **Guardian-initiated:**
+   1. Guardian enters student's email on their dashboard
+   2. Guardian linking request created with `status = 'pending_student_accept'`
+   3. Student receives email with acceptance link
+   4. Student clicks → lands on acceptance page after authenticating
+   5. Student confirms → `status = 'active'`, `accepted_at` set
+   6. Both parties notified
+   **Student-initiated:**
+   1. Student enters guardian's email on their profile
+   2. If student is under-13, this path is the **required** path before any feature access (COPPA flow §37)
+   3. Linking request created with `status = 'pending_guardian_accept'`
+   4. Guardian receives email; creates guardian account if new, or logs in
+   5. Guardian confirms → `status = 'active'`"
+  And (Doc 01 V8 §36.2, same file, `:1701-1704`):
+  "Guardian linking is rate-limited via Doc 01A `RateLimitLedger`:
+   * Per-guardian: max 10 link attempts per day (bucket `guardian_link_attempts:{guardian_id}:{day}`)
+   * Per-student-email: max 3 link attempts per day (prevents spam linking to an email)"
+  Every step of both paths is addressed to an email and settled by the other party. The second §36.2 bullet protects "an email" — the target address — which under a code flow is never supplied, so the control has no subject.
+IS: one path, one party, no pending state.
+  - The student's `profiles.student_link_code` holds a 6-character uppercase code from a CSPRNG alphabet excluding `0 O 1 I L`. It is visible in student settings, rotates on a TTL read from `auth_runtime_config`, and is CONSUMED on a successful link with a replacement issued in the same statement.
+  - A guardian submits the code. The server resolves it to a student, writes `guardian_links` at `status = 'active'` directly, and audits the transition. No `accepted_at` handshake, because there is no second party to wait for.
+  - `pending_student_accept` and `pending_guardian_accept` become unreachable: no code path produces them.
+  - §36.2's controls are re-keyed off the email that no longer exists and onto the code: a per-guardian bucket on code ENTRY (the guessing surface) and a per-student bucket on code REGENERATION (the churn surface).
+Rationale: the two-step flow has produced ZERO links in production against 14 guardians and 99 students. Two independent causes, both verified: no client surface exists for either acceptance step, on any branch (`git grep` for a caller of `student-resources.ts:568` or `guardian-routes.ts:330` under `client/src` returns nothing on `stripe`, on `main`, or on the pre-merge `stripe` head); and `POST /api/guardian/link` returns 503 regardless, because `rate_limit_runtime_config.bucket_definitions` has never been seeded and `packages/shared/src/services/rate-limit-ledger.ts:190-196` treats an unseeded bucket as a denial by design. The spec's mechanism requires both parties to sign in separately and act; the code requires the student to read six characters aloud. Consent is preserved and relocated: sharing the code IS the consent, and it is a positive act by the student, not a click on a link sent to them.
+REINSTATEMENT — recorded so this is not read as drift. This mechanism previously existed and was deliberately REMOVED on 2026-08-26. `server/routes/guardian-routes.ts:172-178` records it verbatim: the route "used to take an 8-character `student_link_code`", and it was replaced by the email input because "§36.1 step 1 reads 'Guardian enters student's email on their dashboard', and `student_link_code` appears NOWHERE in the locked spec corpus... The code mechanism was a pre-spec invention. The owner has ruled spec canonical without exception." That removal was correct under the rule as it stood: the spec said email, so the code went. This entry changes the spec instead, which is the step that was missing the first time. The column and its partial unique index survived the removal (`profiles.student_link_code`, `profiles_student_link_code_key`, zero rows, no writer) and are reused rather than recreated.
+Rejected alternative, and its cost: build the two missing acceptance screens against the routes that already exist. That works with NO spec change and NO DDL — both server routes are live and tested, and the gap is purely client-side. It was rejected because it preserves the friction that produced zero links: the guardian invites, then the student must separately receive a message, sign in, find the acceptance surface, and confirm, before anything exists. The code collapses that to one party acting once. The cost of the rejection is this entry, four owner-applied DDL/DML items, and the deletion of a working server-side state machine.
+Known consequence — UNDER-13, stated and not resolved here. §36.1's student-initiated path carries step 2: "If student is under-13, this path is the **required** path before any feature access (COPPA flow §37)". Deleting that path deletes the sentence that makes it mandatory. Production holds 2 profiles with `is_under_13 = true` and 0 rows in `guardian_consent_requests`, so the requirement is already unmet independently of this change. §37's token flow is a separate mechanism and is NOT replaced by this entry. Owner ruled under-13 handling out of scope for the build; recording the interaction because an SCL that deletes the path §36.1 makes mandatory, without saying so, is incomplete.
+Known residual: Doc 01A's ledger is keyed on `profile_id` (`rate_limit_check_and_increment(p_profile_id uuid, ...)`), so a per-IP or global limit on code entry is not expressible. An unauthenticated attacker has no bucket. Code entry requires an authenticated guardian, which bounds the exposure to accounts rather than requests, but the residual is real and is recorded rather than designed around.
+Owner action: amend §36.1 to specify the single code path and delete both email paths, or mark this REJECTED, in which case the two acceptance screens are the work and this entry's deletions revert. Amend §36.2's two bullets to name the code buckets rather than the guardian/email pair. If §36.1's under-13 sentence is to survive the deletion of its path, it needs a new home in §37.
+Build artifact: `claude/guardian-link-code`. Proof: PG-backed contract tests per the guardian schema-truth gate, covering single-use consumption under a concurrent race, the identical response for used/expired/invalid, and revoke → re-link → revoke.
+
 SCL-079 | 2026-09-01 | Doc 03B §3.4 / INV-03-02 — live exam gate fails OPEN on query error | PROPOSED
 Change: `isLiveExamInProgress` (entitlement-service.ts) failed closed on any DB error, returning
   `true` (exam in progress → block tutor access). The queried table (`full_length_exams`) does not
