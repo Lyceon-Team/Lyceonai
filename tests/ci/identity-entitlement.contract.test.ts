@@ -324,6 +324,42 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(params.client_reference_id).toBeUndefined();
   });
 
+  /**
+   * ONE FACT, ONE SOURCE — the money path this closes.
+   *
+   * @spec [INV-03-08; Charter §7] | @implemented [2026-09-02]
+   *
+   * Stripe collects the billing address per PAYMENT METHOD and does not write
+   * it back to the Customer unless asked, so `Customer.address` was `null` on
+   * every customer this account has. `assertCountryEligibleForGrant` reads
+   * exactly that field, so from 2026-08-28 — when the Customer-level gate
+   * landed — every grant denied with verdict `unknown` and held for an
+   * operator. Guardian `c6d3fc60` paid $0.99 on 2026-09-02 and got nothing: the
+   * session gate passed them on `customer_details.address.country = "US"` and
+   * the grant gate refused them on `Customer.address = null`, seconds apart.
+   *
+   * `customer_update.address = "auto"` is what makes the two agree, and it can
+   * only be pinned here — the effect itself happens inside Stripe.
+   */
+  it("tells Stripe to save the billing address onto the Customer, so the grant gate has something to read", async () => {
+    asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [],
+    });
+    stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(200);
+    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
+    expect(params.customer_update).toEqual({ address: "auto" });
+    // The parameter is only accepted alongside an existing `customer`.
+    expect(params.customer).toBeTruthy();
+  });
+
   it("SECOND student: adds an ITEM to the existing subscription — not a second subscription", async () => {
     asGuardian();
     // The add-item path REQUIRES a known eligible country: it grants
