@@ -28,7 +28,8 @@
     "SUPABASE_ANON_KEY": "boot-probe-not-a-real-key",
     "GEMINI_API_KEY": "boot-probe-not-a-real-key",
     "CSRF_SECRET": "boot-probe-not-a-real-secret",
-    "PUBLIC_SITE_URL": "https://lyceon.ai"
+    "PUBLIC_SITE_URL": "https://lyceon.ai",
+    "GCP_SERVICE_ACCOUNT_JSON": "{\"type\":\"service_account\",\"project_id\":\"boot-probe\",\"private_key_id\":\"fake\",\"private_key\":\"-----BEGIN BOOT PROBE FAKE-----\\nnotreal\\n-----END BOOT PROBE FAKE-----\\n\",\"client_email\":\"probe@boot-probe.iam.gserviceaccount.com\",\"client_id\":\"000000000000000000000\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\"}"
   },
   "harness": {
     "NODE_ENV": "production",

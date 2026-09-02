@@ -46,6 +46,7 @@
  *    service account
  *  - Env var: BIGQUERY_ARCHIVE_DATASET set on the Cloud Run service
  */
+import { getGcpCredentials } from "../lib/gcp-credentials";
 import { logger } from "../logger";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -203,7 +204,10 @@ export function createBigQueryArchiveClient(): ArchiveClient {
   //
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { BigQuery } = require("@google-cloud/bigquery") as {
-    BigQuery: new () => {
+    BigQuery: new (options?: {
+      projectId?: string;
+      credentials?: Record<string, unknown>;
+    }) => {
       dataset(id: string): {
         table(id: string): {
           insert(
@@ -215,7 +219,13 @@ export function createBigQueryArchiveClient(): ArchiveClient {
     };
   };
 
-  const bq = new BigQuery();
+  // Explicit credential injection — ADC is removed from the BFF path.
+  // The credential and the project come from the same service-account key.
+  const creds = getGcpCredentials();
+  const bq = new BigQuery({
+    projectId: creds.project_id,
+    credentials: creds,
+  });
 
   return {
     async insertRows(
