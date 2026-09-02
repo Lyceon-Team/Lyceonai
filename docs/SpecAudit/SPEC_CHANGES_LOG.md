@@ -1,5 +1,63 @@
 # Lyceon Spec-Changes Log
 
+## WHAT IS AN SCL — HARD TEST
+
+Owner ruling 2026-08-31. Apply this BEFORE writing an entry.
+
+**An SCL amends the spec.** It records what a document must say and does not —
+whether the spec is WRONG or SILENT. Silence is a legitimate SCL when the gap
+must become spec text.
+
+**An SCL is NOT** a decision governing only this build, a defect record, a
+test-quality note, or direction for an agent or a prompt.
+
+The test is the OUTCOME:
+
+  - Outcome is "the owner amends a document"  -> SCL
+  - Outcome is "we do X in this repo"         -> plan entry
+
+Worked examples, from the 2026-08-31 audit:
+
+  - SCL-070 (spec states seven events, the surface is nineteen) -> SCL. Wrong.
+  - SCL-072 (what "full refund" is measured against) -> SCL. The spec is silent,
+    but the comparison basis is a permanent rule that belongs in the document.
+  - SCL-073 (what a chargeback does to entitlement) -> SCL. Silent, and the
+    consequence must become spec text.
+  - An error class thrown from thirteen sites with one message -> NOT an SCL.
+    Nobody amends a document over it. Plan entry.
+  - "The citation column must be verified by the test" -> NOT an SCL. A
+    test-quality defect. Plan entry.
+
+A prior framing — "spec-silent means plan entry" — was wrong and is superseded.
+Entries written under it were re-audited on 2026-08-31.
+
+## SCL NUMBER ALLOCATION — HARD OVERRIDE
+
+Never take an SCL number from a prompt, plan, brief, or any instruction —
+including one that states a specific number. Instructions are stale by
+construction; the register is not.
+
+Before allocating, determine the true maximum across ALL remote branches,
+not the current one:
+
+  git fetch --all --prune
+  git branch -r --format='%(refname:short)' | while read b; do
+    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
+  done | sort -u | tail -1
+
+Then check every OPEN PR for entries not yet on any branch. A number claimed
+in an unmerged PR is claimed.
+
+Allocate max + 1. Drafting several in one session allocates sequentially and
+states each.
+
+On collision, the LATER allocation renumbers, measured by the entry's own
+date. Never renumber another workstream's branch — report it to the owner.
+
+This rule overrides any instruction to the contrary.
+
+---
+
 **Type:** Controlled-write change log. This is the **single document in the corpus that agents MAY write into** — the deliberate exception to the otherwise-strict "agents never write the spec" rule.
 
 **Why this exception exists:** the spec corpus was built over time, and implementation keeps surfacing real, necessary deltas (a platform constraint that invalidates a step, a missed table, an architecture reframe). Those discoveries must be captured *as we build*, at the moment they are found, rather than lost until the owner next revises a doc. This log is where they land.
@@ -24,6 +82,41 @@
 ---
 
 ## Entries
+
+SCL-080 | 2026-09-01 | Doc 01 V8 §36.1's two email-addressed initiation paths and §36.2's email-scoped abuse controls are replaced by a student-issued link code with no acceptance step | PROPOSED
+Change: linking stops being an invitation that a second party accepts and becomes a credential the student holds and shares. The student's account carries a short code; a guardian enters it; the link is `active` on that request. There is no pending state, no acceptance screen, and no email in the mechanism. §36.1 specifies the opposite in both of its paths, and §36.2's two abuse controls are written against an email address that this flow never collects, so both sections change.
+WAS, verbatim (Doc 01 V8 §36.1, `Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md:1680-1697`):
+  "Two initiation paths:
+   **Guardian-initiated:**
+   1. Guardian enters student's email on their dashboard
+   2. Guardian linking request created with `status = 'pending_student_accept'`
+   3. Student receives email with acceptance link
+   4. Student clicks → lands on acceptance page after authenticating
+   5. Student confirms → `status = 'active'`, `accepted_at` set
+   6. Both parties notified
+   **Student-initiated:**
+   1. Student enters guardian's email on their profile
+   2. If student is under-13, this path is the **required** path before any feature access (COPPA flow §37)
+   3. Linking request created with `status = 'pending_guardian_accept'`
+   4. Guardian receives email; creates guardian account if new, or logs in
+   5. Guardian confirms → `status = 'active'`"
+  And (Doc 01 V8 §36.2, same file, `:1701-1704`):
+  "Guardian linking is rate-limited via Doc 01A `RateLimitLedger`:
+   * Per-guardian: max 10 link attempts per day (bucket `guardian_link_attempts:{guardian_id}:{day}`)
+   * Per-student-email: max 3 link attempts per day (prevents spam linking to an email)"
+  Every step of both paths is addressed to an email and settled by the other party. The second §36.2 bullet protects "an email" — the target address — which under a code flow is never supplied, so the control has no subject.
+IS: one path, one party, no pending state.
+  - The student's `profiles.student_link_code` holds a 6-character uppercase code from a CSPRNG alphabet excluding `0 O 1 I L`. It is visible in student settings, rotates on a TTL read from `auth_runtime_config`, and is CONSUMED on a successful link with a replacement issued in the same statement.
+  - A guardian submits the code. The server resolves it to a student, writes `guardian_links` at `status = 'active'` directly, and audits the transition. No `accepted_at` handshake, because there is no second party to wait for.
+  - `pending_student_accept` and `pending_guardian_accept` become unreachable: no code path produces them.
+  - §36.2's controls are re-keyed off the email that no longer exists and onto the code: a per-guardian bucket on code ENTRY (the guessing surface) and a per-student bucket on code REGENERATION (the churn surface).
+Rationale: the two-step flow has produced ZERO links in production against 14 guardians and 99 students. Two independent causes, both verified: no client surface exists for either acceptance step, on any branch (`git grep` for a caller of `student-resources.ts:568` or `guardian-routes.ts:330` under `client/src` returns nothing on `stripe`, on `main`, or on the pre-merge `stripe` head); and `POST /api/guardian/link` returns 503 regardless, because `rate_limit_runtime_config.bucket_definitions` has never been seeded and `packages/shared/src/services/rate-limit-ledger.ts:190-196` treats an unseeded bucket as a denial by design. The spec's mechanism requires both parties to sign in separately and act; the code requires the student to read six characters aloud. Consent is preserved and relocated: sharing the code IS the consent, and it is a positive act by the student, not a click on a link sent to them.
+REINSTATEMENT — recorded so this is not read as drift. This mechanism previously existed and was deliberately REMOVED on 2026-08-26. `server/routes/guardian-routes.ts:172-178` records it verbatim: the route "used to take an 8-character `student_link_code`", and it was replaced by the email input because "§36.1 step 1 reads 'Guardian enters student's email on their dashboard', and `student_link_code` appears NOWHERE in the locked spec corpus... The code mechanism was a pre-spec invention. The owner has ruled spec canonical without exception." That removal was correct under the rule as it stood: the spec said email, so the code went. This entry changes the spec instead, which is the step that was missing the first time. The column and its partial unique index survived the removal (`profiles.student_link_code`, `profiles_student_link_code_key`, zero rows, no writer) and are reused rather than recreated.
+Rejected alternative, and its cost: build the two missing acceptance screens against the routes that already exist. That works with NO spec change and NO DDL — both server routes are live and tested, and the gap is purely client-side. It was rejected because it preserves the friction that produced zero links: the guardian invites, then the student must separately receive a message, sign in, find the acceptance surface, and confirm, before anything exists. The code collapses that to one party acting once. The cost of the rejection is this entry, four owner-applied DDL/DML items, and the deletion of a working server-side state machine.
+Known consequence — UNDER-13, stated and not resolved here. §36.1's student-initiated path carries step 2: "If student is under-13, this path is the **required** path before any feature access (COPPA flow §37)". Deleting that path deletes the sentence that makes it mandatory. Production holds 2 profiles with `is_under_13 = true` and 0 rows in `guardian_consent_requests`, so the requirement is already unmet independently of this change. §37's token flow is a separate mechanism and is NOT replaced by this entry. Owner ruled under-13 handling out of scope for the build; recording the interaction because an SCL that deletes the path §36.1 makes mandatory, without saying so, is incomplete.
+Known residual: Doc 01A's ledger is keyed on `profile_id` (`rate_limit_check_and_increment(p_profile_id uuid, ...)`), so a per-IP or global limit on code entry is not expressible. An unauthenticated attacker has no bucket. Code entry requires an authenticated guardian, which bounds the exposure to accounts rather than requests, but the residual is real and is recorded rather than designed around.
+Owner action: amend §36.1 to specify the single code path and delete both email paths, or mark this REJECTED, in which case the two acceptance screens are the work and this entry's deletions revert. Amend §36.2's two bullets to name the code buckets rather than the guardian/email pair. If §36.1's under-13 sentence is to survive the deletion of its path, it needs a new home in §37.
+Build artifact: `claude/guardian-link-code`. Proof: PG-backed contract tests per the guardian schema-truth gate, covering single-use consumption under a concurrent race, the identical response for used/expired/invalid, and revoke → re-link → revoke.
 
 SCL-079 | 2026-09-01 | Doc 03B §3.4 / INV-03-02 — live exam gate fails OPEN on query error | PROPOSED
 Change: `isLiveExamInProgress` (entitlement-service.ts) failed closed on any DB error, returning
@@ -204,26 +297,406 @@ Doc 03D amendments owed:
   4. §6.2: no amendment needed — its framing ("the explanation is not a script; LISA never
      recites it") already matches the ruling.
 
-SCL-042 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
-> **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
-> `SCL-042` independently, on two branches that could not see each other: the Doc 05B KPI
-> fan-out entry (2026-08-19, authored on `main`) and the Stripe governing-doctrine entry
-> (2026-08-20, authored on `stripe`). The owner ruled that the collision be resolved by
-> renumbering, and the direction follows the citation counts measured at the merge: the Stripe
-> `SCL-042` had **9** citations across four plan documents and `server/lib/stripe/client.ts`,
-> and the wider Stripe block `SCL-042`–`SCL-053` carried **152**; the Doc 05B `SCL-042` had
-> **zero** anywhere outside this file.
->
-> **The Doc 05B KPI fan-out entry is therefore renumbered `SCL-042` → `SCL-054`.** The Stripe
-> `SCL-042` keeps its number and every citation to it remains correct. No citation anywhere in
-> the repository pointed at the renumbered entry, so none was rewritten; this was verified by
-> search across the tree before the change, not assumed.
->
-> `SCL-054` keeps its original 2026-08-19 date and so appears out of ID order in this
-> date-descending file. That is deliberate: the date records when the change was ruled, and
-> altering it to match the new number would falsify the record. Any surviving external reference
-> to "SCL-042" that concerns KPI fan-out, quarantine, or `mastery_data_quality_incidents` means
-> `SCL-054`.
+SCL-DRAFT-B-resume-billing-anchor | 2026-08-31 | Doc 01 does not state whether a won dispute preserves the subscription's billing cycle; it must | PROPOSED
+
+Change: REINSTATED as an SCL 2026-08-31. This entry was briefly withdrawn to a plan entry
+  under the framing "the spec is silent, so it is not an SCL". That framing was wrong.
+  Whether a customer who WINS a dispute keeps the billing cycle they paid for is a permanent
+  rule about what we owe a payer, not a decision local to this build, so it belongs in Doc 01.
+WAS: Doc 01 says nothing about the billing cycle on dispute resume. Because the spec is silent,
+  the behaviour is currently decided by an SDK default nobody chose.
+  `server/lib/stripe/webhook-handler.ts:988` resumes a paused subscription after a dispute is
+  won with no params:
+      await getStripeClient().subscriptions.resume(target.subscriptionId);
+  Per the pinned SDK, `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`,
+  `billing_cycle_anchor` defaults to `now`. So winning a dispute silently RESETS the renewal
+  date: the period restarts from the resume instant rather than continuing the cycle the
+  customer paid for. Nobody decided that; it is what happens when the argument is omitted.
+IS (PROPOSED): Doc 01 states the rule explicitly, and the code passes the argument explicitly
+  rather than relying on a vendor default. The two candidates, with what each costs:
+    - `billing_cycle_anchor: 'now'` — today's behaviour, by default rather than by choice. The
+      renewal date moves. A customer who won a dispute has their billing date shifted with no
+      notice, which is a change to what they bought.
+    - `billing_cycle_anchor: 'unchanged'` — the cycle they paid for is preserved, but Stripe
+      generates prorations for the paused interval, which appears on the next invoice.
+  Neither is free. This entry does not pick one — that is the owner's ruling — but it does
+  rule out the third option, which is leaving it implicit.
+Owner action: decide the rule, amend Doc 01 to state it, and only then change the call site.
+  `subscriptions.resume` is UNCHANGED until that ruling.
+Artifact: `server/lib/stripe/webhook-handler.ts:988`. SDK evidence:
+  `node_modules/stripe/types/SubscriptionsResource.d.ts:2145`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
+SCL-DRAFT-A-declared-country | 2026-08-31 | Doc 01 §4 specifies ONE authoritative `country_code`; collecting a declared country at signup proposes TWO columns with different authorities | PROPOSED
+
+DEFERRED 2026-08-31 — OWNER RULING. This is NOT the Stripe vertical's work and is not
+  blocked on it. It goes to the signup team, and the entry stays drafted and unallocated for
+  whoever picks it up.
+  WHY BILLING DOES NOT WAIT FOR IT: the INV-03-08 gate derives its country from the STRIPE
+  BILLING ADDRESS at `checkout.session.completed`, which exists whatever signup collects. A
+  declared country would be a second signal and a pre-purchase courtesy — never the control —
+  so no billing path is blocked by its absence.
+  THE ONE LINE THE HANDOFF MUST CARRY: the ruling must state WHICH COLUMN EACH READER
+  CONSUMES, not only the eligibility gate. There is already a non-billing reader of this
+  column (`server/routes/tutor-runtime.ts:904-908`), and a split done for the gate alone
+  would leave it reading the wrong one.
+
+Change: The owner directs that account creation collect a country from a dropdown. Doing so cannot
+  be done under §4 as written, because §4 does not merely omit a declared country — it declares the
+  single column's authority in a way a second writer would contradict. That is the spec error this
+  entry records. NOTHING IS BUILT: this is the schema ruling the work waits on.
+WAS: Doc 01 (heading verified: "## **§4 Profile schema (target-state)**", line 129) declares at
+  line 147:
+      country\_code TEXT,  \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+  Two claims in one comment: the encoding, and that the value comes FROM BILLING ADDRESS and is
+  AUTHORITATIVE. A signup dropdown writing this same column would give one field two writers with
+  different authorities — a falsifiable self-declaration and a payment-verified fact — which is the
+  parallel-paths-built-differently pattern this corpus already forbids elsewhere.
+IS (PROPOSED, not built): split the field by authority rather than overloading one column.
+      declared_country_code   -- ISO 3166-1 alpha-2, self-declared at signup. NOT authoritative.
+      billing_country_code    -- ISO 3166-1 alpha-2, from the Stripe billing address. Authoritative.
+  The INV-03-08 gate reads billing when present and declared when not, and RECORDS a
+  declared-vs-billing mismatch rather than silently resolving it. Doc 01A §52's incident taxonomy is
+  where that mismatch belongs as an abuse signal; this entry does not itself add an incident type.
+THE FAIL-OPEN RISK, stated plainly because it is the whole reason for the split: a declared country
+  used AS the gate would admit anyone willing to select a different item from a dropdown. INV-03-08
+  would then be enforced against a value the person being gated chooses. That is not a weaker
+  control, it is no control — and it would fail silently, because a falsified declaration is
+  indistinguishable from a true one at the point of reading. Billing address stays authoritative for
+  exactly this reason: it is asserted by the payment network, not by the user. A declared country is
+  a SECOND SIGNAL and never the control.
+  Corollary the implementation must honour: `declared_country_code` present and `billing_country_code`
+  absent is NOT eligibility. It is a pre-purchase courtesy signal — enough to tell someone at signup
+  that we are not available where they say they are, never enough to grant.
+What it buys, and why it is worth a schema change:
+  1. Country data before any purchase. `profiles.country_code` is null on all 115 rows today (owner-
+     verified), so free-tier students have no country at all.
+  2. An ineligible user learns at signup rather than after building a study plan.
+  3. A declared-vs-billing mismatch becomes an abuse signal against Doc 01A §52's taxonomy.
+SECOND CONSUMER, found while drafting and material to the ruling: the country column is already read
+  outside billing, at `server/routes/tutor-runtime.ts:904-908`:
+      .select("country_code")
+      getCrisisResponse((profileRow?.country_code as string | null) ?? "US")
+  That selects CRISIS-RESPONSE content for a student in distress, and because the column is null on
+  every row today, every student currently receives US crisis resources regardless of where they
+  are. This changes the shape of the decision in two ways the owner should weigh:
+  - It is an argument FOR collecting a declared country early, independent of billing: for crisis
+    routing, a self-declared country is not merely acceptable, it is the RIGHT signal, because a
+    student in distress has usually not purchased anything and nobody falsifies their country to get
+    worse crisis resources. The incentive that makes declaration untrustworthy for a paywall does not
+    exist here.
+  - It means "which column does this consumer read" must be answered for every reader, not just the
+    gate. A split done carelessly would leave this call site reading the wrong one, and its failure
+    mode is silent and safety-relevant, not financial.
+  AUDITED FURTHER, 2026-08-31, and it is worse than "reads the wrong column": the caller's
+  `?? "US"` is only half of it. `getCrisisResponse` falls back to `DEFAULT_CRISIS_RESPONSE`
+  (`server/services/tutor-crisis.ts:85`), which is BYTE-IDENTICAL to the `US` entry (`:75`) —
+  verified by string comparison. So there is no generic unknown-country response in the system
+  at all, and deleting the `?? "US"` would change nothing. Every student outside the eight
+  listed codes receives a US-only number by the same fallback, even once countries ARE being
+  collected. Written up in full, unrouted and urgent, at
+  `docs/plans/FINDING_crisis_resources_default_to_US.md`. That finding is NOT this SCL's to
+  fix and is not a billing defect.
+  Two consequences for THIS ruling, and they are binding on it:
+  1. The ruling must state WHICH COLUMN EACH READER CONSUMES — not only the eligibility gate.
+     This reader fails silently and it is a safety surface, not a financial one, so "the gate
+     reads billing, everything else figures itself out" is not an answer.
+  2. The incentive argument is asymmetric and should be recorded as such: NOBODY FALSIFIES
+     THEIR COUNTRY TO RECEIVE WORSE CRISIS RESOURCES. The property that makes a declared
+     country untrustworthy for a paywall simply does not exist on the crisis path, so a
+     self-declared country is not merely tolerable there — it is the RIGHT signal. A schema
+     that treats "declared" as second-class everywhere would get this reader wrong.
+Owner action, and the order it has to happen in:
+  1. Rule on the schema shape: two columns as proposed, or another shape.
+  2. Rule on which column each existing reader consumes — the INV-03-08 gate, and the crisis-response
+     path above.
+  3. Rule on where the dropdown lives in the signup flow.
+  Only then is there code to write. No DDL is queued by this entry and none should be until (1).
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` §4 line 147
+  (the contradicted declaration). Current readers: `server/lib/stripe/country-eligibility.ts`,
+  `server/routes/tutor-runtime.ts:904-908`. Writers today: none.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
+SCL-DRAFT-A-tier1-iso-literal | 2026-08-31 | Doc 01 Appendix A.4 seeds `tier_1_countries` with `UK`, which is not an assigned ISO 3166-1 alpha-2 code | PROPOSED
+
+Change: Doc 01 Appendix A.4's launch value for `tier_1_countries` contains a country code that does
+  not exist in the standard the same document mandates. The gate that reads this config went live in
+  production today, so the literal is no longer a documentation defect.
+WAS (spec, current): Doc 01 Appendix A.4 (heading verified: "## **A.4 `entitlement_runtime_config`**")
+  seeds
+      | `tier_1_countries` | `["US","CA","UK","AU","NZ","IE","SG"]` | — | — | Product | Countries where LISA/premium is available |
+IS (proposed): `["US","CA","GB","AU","NZ","IE","SG"]` — one element changes, `UK` to `GB`.
+Why: `UK` is not an assigned ISO 3166-1 alpha-2 code. `GB` is the alpha-2 code for the United Kingdom.
+  Three independent confirmations, each read rather than asserted:
+  1. THE SPEC CONTRADICTS ITSELF, and A.4 is the side in error. The same document, at
+     "## **§4 Profile schema (target-state)**" (heading verified, line 129), declares at line 147:
+         country\_code TEXT, \-- ISO 3166-1 alpha-2, from billing address (authoritative)
+     A.4's own list is the comparison basis for that column, so a value outside the declared encoding
+     cannot ever match it. §4 states the rule; A.4 supplies a literal that violates it. The rule wins.
+  2. THE PINNED SDK ENUMERATES ALPHA-2, AND `UK` IS NOT IN IT. `stripe@20.4.1`,
+     `node_modules/stripe/types/Checkout/Sessions.d.ts`, the
+     `Checkout.Sessions.ShippingAddressCollection.AllowedCountry` union declared at line 2367:
+         2440:            | 'GB'
+     Six of our seven codes appear verbatim in that union (US, CA, GB, AU, NZ, IE, SG). `'UK'` appears
+     ZERO times in the file.
+     NOTE ON THE REQUESTED CITATION: the brief asked this entry to cite the SDK's `card_country`
+     declaration. That identifier does not exist anywhere in the pinned SDK — `grep -rn "card_country"
+     node_modules/stripe/` returns nothing. Citing it would have reproduced exactly the defect
+     SCL-DRAFT-A-citation-verification was written to stop, in the entry written to settle it. The
+     `AllowedCountry` union above is the substituted citation and is strictly stronger: it is an
+     enumeration, so it settles `GB` versus `UK` by presence and absence rather than by prose.
+  3. THE FIELD THE GATE ACTUALLY READS is `Customer.address.country`, at
+     `server/routes/billing-routes.ts:270`:
+         : (customer as Stripe.Customer).address?.country;
+     Stripe populates that field with alpha-2, per the same declaration.
+Consequence, and why this is not cosmetic: the country gate is LIVE in production as of 2026-08-31.
+  Applying A.4's literal would refuse every British payer while the config reported itself correctly
+  configured — seven codes present, no parse error, no alert. A silent market shutdown with no error
+  signal is the worst shape a defect of this kind can take, because nothing in the system distinguishes
+  it from a working gate that no British customer happened to hit.
+Owner action: amend the literal in Doc 01 Appendix A.4 to `["US","CA","GB","AU","NZ","IE","SG"]`.
+  That is the whole change. Specifically NOT proposed:
+  - No code change. The gate is correct; it compares what Stripe returns against what config holds.
+  - No normalisation or translation layer. A `UK` -> `GB` mapping in code would let this wrong value
+    keep working, which is precisely how the NEXT wrong code survives undetected. The config holds
+    correct codes or the gate fails loudly; there is no third option worth building.
+Production state: unchanged and correct. Verified seeded as `["US","CA","GB","AU","NZ","IE","SG"]`,
+  seven codes, 2026-08-31 06:41Z. Production is the side that was already right.
+ENCODING RULE, recorded once so this does not recur a fourth time:
+  - The spec names countries in PROSE ("the United Kingdom").
+  - The config stores ISO 3166-1 ALPHA-2 (`GB`).
+  - The mapping between them is the standard itself, not a project convention, and not a table we own.
+  A prose name and a code are different things; writing the prose abbreviation into a code field is the
+  error, and it is the same error every time it appears.
+History: this is the THIRD surfacing. It was raised, worked around, and lost twice before being written
+  down. That is the reason for this entry: the recurrence is the defect, not the literal.
+Artifact: `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md` Appendix A.4
+  (the literal) and §4 line 147 (the contradicted rule).
+  Reader: `server/lib/entitlement-runtime-config.ts:43`. Gate: `server/lib/stripe/country-eligibility.ts`.
+  Consumer: `server/routes/billing-routes.ts:270-277`.
+Number: NOT ALLOCATED. Provisional id only; the owner assigns at merge.
+
+SCL-073 | 2026-08-27 | Doc 01A §52 knows a chargeback as an ABUSE SIGNAL; no section gives it an entitlement consequence | PROPOSED
+
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. What a chargeback does to entitlement is a PERMANENT RULE. Doc 01A §52 already models the
+  incident; the entitlement consequence must become spec text.
+
+Change: A dispute does NOT cancel a Stripe subscription. Current behaviour is therefore: access
+  retained, dispute fee paid, no entitlement change. This entry proposes the handling and names the
+  seam it must not bypass.
+WAS: the corpus is NOT silent on chargebacks, and an earlier draft of this entry wrongly claimed it
+  was. Doc 01A §52 (heading verified: "## **§52 Incident taxonomy**") lists, among 12 launch
+  incident types:
+      | `payment_dispute` | 5 | Chargeback or fraud claim |
+  with incident types living in `abuse_score_runtime_config.incident_types` with base weights, and
+  Doc 06B referencing all 12. So a chargeback is already modelled — as an ABUSE SIGNAL with the
+  joint-highest launch severity.
+  What no section specifies is its ENTITLEMENT consequence: which Stripe event signals it, whether
+  it revokes, and what happens when it is won. That is the actual gap, and it is narrower and more
+  awkward than "uncovered" — the corpus has an opinion about disputes that the billing surface does
+  not implement.
+IS (PROPOSED, not built): subscribe `charge.dispute.created` and, on it, do BOTH:
+    (a) revoke the entitlement, and
+    (b) record a `payment_dispute` incident per Doc 01A §52, at its existing severity.
+  Doing only (a) would silently drop a signal the abuse model already expects; doing only (b) leaves
+  paid access on a charge the bank has pulled back.
+  A won dispute needs a restore path, which requires subscribing `charge.dispute.closed` and reading
+  its outcome. That event is NOT in SCL-070's 18, and adding it is part of this ruling rather than
+  something SCL-070 already decided.
+Interaction with SCL-048 — the load-bearing part: a dispute is NOT a refund and must NOT route
+  through the refund path. SCL-048's rule is full-refund-revokes / partial-does-not, a comparison
+  against a settled amount (basis fixed by SCL-072). A dispute is an unsettled assertion by the
+  cardholder's bank that may be won or lost, and its amount is not a refund amount. Routing it
+  through the refund comparison would revoke on a dispute the merchant later wins, with no path back.
+Evidence: `charge.dispute.created` verified present in stripe@20.4.1's event union; Stripe's own
+  description shipped in that SDK reads "Occurs whenever a customer disputes a charge with their
+  bank." Corpus coverage established by `grep -rniE "dispute|chargeback" docs/Spec/` -> 68 hits,
+  read rather than counted; the load-bearing one is Doc 01A §52 above.
+  Docs: https://docs.stripe.com/disputes and https://docs.stripe.com/api/disputes
+Owner action: rule on this entry BEFORE any dispute code is written. Explicitly unresolved and
+  deliberately left so: (1) whether revocation is immediate on `dispute.created` or deferred to
+  `dispute.closed` with outcome `lost` — immediate is standard but punishes a customer whose bank
+  later finds for the merchant; (2) whether a won dispute restores the ORIGINAL period bounds or
+  issues a fresh period; (3) whether the `payment_dispute` incident should also fire on a dispute
+  the merchant WINS, since the signal's value to the abuse model may not depend on the outcome.
+Artifact (updated 2026-08-27 after the owner ruled this IN SCOPE for launch):
+  RULING: revocation ships; the `payment_dispute` incident is a NAMED LAUNCH GATE, blocked, and
+  referred as a Doc 01A platform workstream.
+  BUILT — `server/lib/stripe/dispute.ts` + `webhook-handler.ts`:
+    `charge.dispute.created` revokes (tier free, status unpaid).
+    `charge.dispute.closed` restores on `won` and on `warning_closed`, leaves revoked on `lost`.
+    All EIGHT members of the SDK's `Dispute.Status` union carry an explicit disposition; an
+    unrecognised member fails the Zod parse rather than being read as "not won", because deciding
+    entitlement by omission is how a silent default becomes a policy.
+    `warning_closed` RESTORES because an inquiry that closes without becoming a dispute withdrew no
+    funds at all — the SDK documents `balance_transactions` as "zero, one, or two" entries, and an
+    inquiry has zero.
+    A dispute does NOT route through the refund path (SCL-048): a refund is money we return, a
+    chargeback is money an issuer takes back over our objection.
+  NOT BUILT — the incident record. Doc 01A §51 defines `AbuseScoreService.recordIncident` as the
+    entry point and §54 binds any severity >= 4 incident to immediate re-scoring; §52 rates
+    `payment_dispute` at 5. That re-scoring writes `abuse_scores`, which §55 classes
+    "single-writer — only AbuseScoreService writes". AbuseScoreService does not exist in
+    TypeScript (zero references repo-wide, verified 2026-08-27), so writing the incident from the
+    billing vertical would satisfy half of §54 and skip the half another document owns. Supporting
+    state is absent too: `abuse_score_runtime_config` holds 0 rows, so §53 has no base weights,
+    and there are 0 cron jobs, so §54's nightly batch does not exist — an incident written today
+    would sit inert in a table nothing reads. The interim signal is a WARN log naming the omission.
+  DURABILITY LIMIT, reported not designed around: `entitlements.status` (genesis.sql:172) admits
+    only Stripe's own subscription statuses, so nothing records that a revocation was caused by a
+    dispute. A dispute leaves the subscription ACTIVE, so the next `customer.subscription.updated`
+    re-derives from Stripe and undoes this revocation. Closing it needs DDL — a
+    `dispute_revoked_at` column or equivalent — which is Phase 4 work and is proposed there.
+
+---
+
+SCL-072 | 2026-08-27 | Doc 01 V8 §24 / SCL-048 — refund full-vs-partial compares the CHARGED amount, never list price | PROPOSED
+
+AUDITED 2026-08-31 — UPHELD as an SCL. An interim framing ("the spec is silent here, so
+  this is a plan entry, not an SCL") was applied and then superseded the same day. The comparison basis for a full refund is a PERMANENT RULE that belongs in the
+  document, not a decision local to this build. Silence is a legitimate SCL when the gap must
+  become spec text.
+
+Change: Coupons and promotion codes mean the amount actually charged can differ from the price's
+  list amount. SCL-048 rules "full refund revokes, partial does not". If that comparison is made
+  against the LIST price, a full refund of a discounted subscription reads as partial and fails to
+  revoke — the customer keeps access after being made whole. This entry fixes the comparison basis
+  and amends SCL-048 by reference.
+WAS: SCL-048 states the full/partial rule without naming what "full" is measured against. With no
+  discounts in play the two readings coincide, which is why the ambiguity survived.
+IS: the comparison basis is the amount actually charged, never the price's list amount. Concretely,
+  sum the succeeded refunds against the charge's captured amount, both of which Stripe reports in
+  the same minor unit:
+    - `Refund.amount` — "Amount, in cents (or local equivalent)" (stripe@20.4.1 types/Refunds.d.ts)
+    - `Charge.amount_captured` — "Amount in cents (or local equivalent) captured (can be less than
+      the amount attribute on the charge if a partial capture was made)" (types/Charges.d.ts)
+  Full refund (revokes) is refunded-total >= captured amount. Anything less is partial and does not.
+Discount and promotion-code handling posture, stated explicitly because "we did not decide" is not a
+  posture: `customer.discount.created`, `customer.discount.updated`, `customer.discount.deleted`,
+  `promotion_code.created` and `promotion_code.updated` are ACKNOWLEDGED WITH NO ENTITLEMENT EFFECT.
+  They are subscribed so the surface is observable and so a discount change is not a silent event,
+  but none of them writes, alters or revokes an entitlement. Entitlement follows subscription status
+  and settled payment; a discount changes the amount, not the entitlement.
+  The one place a discount DOES matter is this comparison basis, which is the whole point of the entry.
+Amends: SCL-048, by reference. SCL-048's rule is unchanged in substance; only its comparison basis is
+  now named. This does not reopen the full/partial question.
+Owner action: fold the comparison basis into Doc 01 V8 §24 at the next spec pass.
+Artifact: none yet. Implementation is Phase 3 §4.3 of the launch-scope work block.
+
+---
+
+SCL-071 | 2026-08-27 | Doc 01 V8 §22 — entitlement is written on payment SETTLEMENT, not on Checkout Session completion | PROPOSED
+
+Change: A delayed payment method completes the Checkout Session BEFORE the money arrives. Writing
+  entitlement from `checkout.session.completed` alone therefore grants access on an unsettled
+  payment. Writing it only on settlement would leave a card payer waiting for access they have
+  already paid for. Both failure modes are real; the field that separates them is `payment_status`.
+WAS: Doc 01 V8 §22 treats `checkout.session.completed` as the entitlement trigger without
+  qualification, which is correct only because every method enabled today settles synchronously.
+IS: entitlement is written when payment is confirmed SETTLED, whichever event carries that fact.
+  The distinguishing field is `Checkout.Session.payment_status`, whose Stripe-authored description
+  shipped in stripe@20.4.1 (types/Checkout/Sessions.d.ts) reads:
+    "The payment status of the Checkout Session, one of `paid`, `unpaid`, or `no_payment_required`.
+     You can use this value to decide when to fulfill your customer's order."
+  The union is exactly `'no_payment_required' | 'paid' | 'unpaid'`.
+  So: on `checkout.session.completed`, write entitlement only when `payment_status` is `paid` or
+  `no_payment_required`. When it is `unpaid`, write nothing and wait.
+  `checkout.session.async_payment_succeeded` — "Occurs when a payment intent using a delayed payment
+  method finally succeeds" — is the event that then carries settlement, and it writes the entitlement.
+  `checkout.session.async_payment_failed` — "Occurs when a payment intent using a delayed payment
+  method fails" — produces NO entitlement, and must not be treated as a revocation of something that
+  was never granted.
+Inert today, live on a flag flip — which is exactly why it is written now: card and Link settle
+  synchronously and never emit the async pair, so this changes no behaviour on the current
+  configuration. It becomes load-bearing the moment any delayed method is enabled in the Dashboard,
+  which is a configuration change no code review would catch. A conditional written before the
+  condition arrives is cheap; the same rule discovered afterwards is an incident.
+Docs: https://docs.stripe.com/payments/checkout/fulfill-orders and
+  https://docs.stripe.com/api/checkout/sessions/object#checkout_session_object-payment_status
+Owner action: fold into Doc 01 V8 §22 at the next spec pass.
+Artifact: none yet. Implementation is Phase 3 of the launch-scope work block.
+
+---
+
+SCL-070 | 2026-08-27 | Doc 01 V8 §22.1 — the subscribed webhook event surface is 19 events, not 7 | PROPOSED
+
+Change: §22.1 specifies seven events. The owner has finalised nineteen. This records the surface,
+  the delta, the reason for each addition, and two deliberate exclusions.
+
+  AMENDED 2026-08-27 (owner ruling, same day): `charge.dispute.closed` added at the Dashboard,
+  taking the surface from eighteen to NINETEEN. It is the restore path for SCL-073: a dispute does
+  not cancel the subscription, so a customer whose dispute we WIN would otherwise be left revoked
+  while having paid. The event carries the deciding fact — stripe@20.4.1 ships its description as
+  "Occurs when a dispute is closed and the dispute status changes to `lost`, `warning_closed`, or
+  `won`" — so no second call is needed to learn the outcome.
+  `charge.dispute.funds_reinstated` was deliberately NOT added alongside it: it reports the same
+  resolution as a money movement, and subscribing both would deliver every won dispute twice in two
+  shapes, recreating the duplicate-delivery problem that the `charge.refunded` exclusion below
+  avoids.
+WAS: Doc 01 V8 §22.1 (heading verified: "### **22.1 Handled webhook events**") lists seven events
+  covering checkout completion and the subscription lifecycle. Read and enumerated 2026-08-27; the
+  seven are exactly those shown as "Already in §22.1" below.
+IS: eighteen. All eighteen verified present in stripe@20.4.1's event-type union
+  (types/EventTypes.d.ts) on 2026-08-27 — a name that does not exist cannot be subscribed, and a
+  typo here fails silently.
+
+  Already in §22.1 (7):
+    checkout.session.completed
+    customer.subscription.created
+    customer.subscription.updated
+    customer.subscription.deleted
+    invoice.payment_succeeded
+    invoice.payment_failed
+    customer.updated
+
+  Added (11), with the reason each is needed:
+    checkout.session.async_payment_succeeded  settlement for delayed methods (SCL-071)
+    checkout.session.async_payment_failed     non-settlement for delayed methods (SCL-071)
+    customer.deleted                          a deleted Customer orphans an entitlement row that
+                                              Doc 05D's cascade cannot see, because that cascade
+                                              knows nothing about Stripe objects (see amendment below)
+    customer.discount.created                 discount changes the charged amount, which is the
+    customer.discount.updated                 comparison basis for the refund rule (SCL-072)
+    customer.discount.deleted
+    promotion_code.created                    same, via promotion codes
+    promotion_code.updated
+    refund.created                            revocation on refund (SCL-048, amended by SCL-072)
+    refund.updated                            a refund reaching status `succeeded` is the revoking
+                                              transition; creation alone is not
+    charge.dispute.created                    chargebacks are uncovered corpus-wide (SCL-073)
+
+  Added by the 2026-08-27 amendment (1), bringing the total to 19:
+    charge.dispute.closed                     the restore path — a WON dispute must return access
+                                              (SCL-073); carries `status`, so the outcome needs no
+                                              second call
+
+  DELIBERATELY EXCLUDED — `charge.refunded` and `charge.refund.updated`.
+  Both exist in the SDK's event union, so this is a choice and not an oversight. Stripe's own
+  descriptions, shipped verbatim in stripe@20.4.1, direct integrators away from them:
+    charge.refunded       "Occurs whenever a charge is refunded, including partial refunds.
+                           Listen to `refund.created` for information about the refund."
+    charge.refund.updated "Occurs whenever a refund is updated on selected payment methods.
+                           For updates on all refunds, listen to `refund.updated` instead."
+  Subscribing both families would deliver every refund twice in two different shapes, and the
+  handler would have to decide which copy is authoritative on every delivery — a dedup problem
+  created for no gain. The `refund.*` family is the one Stripe points at and is complete;
+  `charge.refund.updated` is explicitly the partial one.
+Docs: https://docs.stripe.com/api/events/types and https://docs.stripe.com/webhooks
+Amendment recorded here rather than as a separate entry — `customer.deleted` and the deletion
+  cascade: an entitlement row referencing a `stripe_customer_id` that no longer exists is an orphan
+  Doc 05D's cascade cannot detect, because that cascade operates on Lyceon rows and has no knowledge
+  of Stripe object lifetimes. Intended behaviour: `customer.deleted` revokes the entitlements keyed
+  to that Customer. Flagged as a seam, not built here.
+Amendment recorded here rather than as a separate entry — portal as an input to country derivation
+  (SCL-046): the Customer Portal is configured to permit billing-address changes, which fire
+  `customer.updated`. So country egress can be triggered by the CUSTOMER, not only by an operator.
+  SCL-046 assumes operator-initiated change; that assumption is now false.
+Owner action: fold the 18-event surface into Doc 01 V8 §22.1 at the next spec pass, and rule on the
+  two amendments above.
+Artifact: none yet. Handler disposition for all 18 is a Phase 3 exit criterion.
+
+---
 
 SCL-053 | 2026-08-26 | Doc 01A Appendix A.3 restates Doc 03's daily tutor limit and has drifted from it — 100 vs 120 | PROPOSED
 
@@ -698,6 +1171,111 @@ Owner action: amend §22.1's action cell; add a one-line note to Doc 03 INV-03-0
 Artifact: not in the Phase C thin slice (unaccompanied path: payer and student are the same person, so
   the distinction does not bite — deliberately, per Charter §9).
 
+AMENDED 2026-08-27 — WHERE THE GATE LIVES, AND WHY IT IS OURS.
+  Owner ruling: exhaust the Stripe-native options before building anything, and name the surfaces
+  rejected so nobody re-litigates this. FOUR were evaluated against INV-03-08; all four fail. The
+  survey ships as a gate — `tests/ci/stripe-country-control-survey.contract.test.ts` — which PRINTS
+  the evaluation and FAILS the day Stripe ships a native billing-country allowlist, so our control is
+  deleted rather than carried forever.
+
+  1. `shipping_address_collection.allowed_countries` — REJECTED. The only `allowed_countries` in
+     Checkout create params (verified: exactly one occurrence in stripe@20.4.1
+     Checkout/SessionsResource.d.ts), and it sits inside `interface ShippingAddressCollection`,
+     documented "which countries Checkout should provide as options for shipping locations". Moot
+     regardless: owner ruling is that NO shipping address is collected.
+  2. Stripe Tax / `automatic_tax` — REJECTED. Its params are `enabled` and `liability` only. It
+     COLLECTS a billing address for calculation ("Enabling this parameter causes Checkout to collect
+     any billing address information necessary for tax calculation") and restricts nothing. Tax
+     registrations decide whether tax is CHARGED, not whether checkout proceeds — an unregistered
+     country is charged zero tax, not refused.
+  3. `payment_method_configuration` — REJECTED. A configuration id selecting which payment METHODS
+     appear. Per-country availability of methods is not a country allowlist for the customer;
+     removing a method does not stop a card from an ineligible country.
+  4. Radar rules + Value Lists — REJECTED, and this is the closest one. Radar IS a genuine native
+     country mechanism: `Radar.ValueList.item_type` includes `'country'` (verified in the SDK), and
+     a Dashboard rule can reference an API-managed list. It fails on SUBJECT and on MOMENT.
+     INV-03-08 gates LISA ACCESS on the BILLING ADDRESS, enforced on every request inside
+     `canAccessFeature` (Doc 03B). Radar decides ONE PAYMENT at ONE MOMENT. It cannot gate a
+     free-tier student, a student entitled before any rule existed, or the SCL-043 guardian case
+     where the payer's country is not the student's. WHERE THE USER LANDS also matters: a Radar rule
+     blocks the payment, so the user reaches Checkout, enters a card, and is declined — a worse
+     experience than never being offered the purchase, and it produces no server-side record of the
+     eligibility decision. Worth adding as DEFENCE IN DEPTH; it cannot be the control.
+
+  THEREFORE the control is ours, and it is a gate rather than a subsystem: one pure function,
+  `server/lib/stripe/country-eligibility.ts`, reading the Tier-1 list from
+  `entitlement_runtime_config` (key `tier_1_countries`) rather than a constant in code.
+
+  TIMING CORRECTION — the gate cannot live wholly at session creation. At that moment there is no
+  billing address to gate on: the customer types it DURING Checkout. The SDK states it —
+  `customer_details.address` is "The customer's address after a completed Checkout Session". So the
+  one rule has three call sites:
+      session creation            block only a country ALREADY known (returning payer). Unknown must
+                                  NOT block, or every first-time buyer is refused.
+      checkout.session.completed  the DERIVATION point: read the billing country, persist it to the
+                                  entitled student's `profiles.country_code`, deny entitlement if
+                                  ineligible.
+      customer.updated            EGRESS: the Portal permits customer-initiated billing-address
+                                  changes, so eligibility can lapse after purchase.
+
+  ABSENCE IS NOT INELIGIBILITY. `unknown` does not block checkout but DOES deny entitlement;
+  `profiles.country_code` is null on 0 of 115 rows, so collapsing the two would revoke everyone.
+  An unseeded Tier-1 list FAILS CLOSED — `entitlement_runtime_config` holds 0 rows in production, and
+  an empty list is a configuration not yet made, not a decision that everyone qualifies.
+
+  OWNER ACTION ADDED: seed `entitlement_runtime_config` key `tier_1_countries` (value_type `array`)
+  with INV-03-08's set {US, CA, UK, AU, NZ, IE, SG}. Until it is seeded the gate denies entitlement
+  by design, which is why this is an owner action and not a default in code.
+
+AMENDED 2026-08-28 (a) — THE ENCODING RULE. Recorded ONCE so nobody re-seeds `UK`.
+
+  Owner ruling 2026-08-28: **the spec names countries; the config stores ISO 3166-1 alpha-2; the
+  mapping between them is the standard one.** This is an ENCODING question, not an invariant question,
+  so INV-03-08's text is NOT amended and no SCL is raised against it.
+
+  The seed value for the United Kingdom is therefore **`GB`**, not the invariant's prose spelling
+  `UK`. `UK` is not an assigned ISO 3166-1 alpha-2 code (it is exceptionally reserved), Stripe sends
+  alpha-2 on the billing address, and a list containing `UK` would match no real customer — the gate
+  would deny every genuine UK purchaser while believing it admitted them.
+
+  The locked corpus already says this in its own words, which is why no spec change is needed:
+  Doc 01 V8 §4 (heading verified: "## **§4 Profile schema (target-state)**") declares
+  `country_code TEXT, -- ISO 3166-1 alpha-2, from billing address (authoritative)`. The prose in
+  INV-03-08 and the encoding in §4 are consistent; only a literal transcription of the prose into a
+  machine-readable list is wrong.
+
+  NO NORMALISATION LAYER IN CODE. `evaluateCountryEligibility` trims and uppercases and does nothing
+  else. A UK-to-GB translation would silently repair one wrong code and thereby guarantee the next
+  wrong code survives unnoticed. The config holds correct codes; that is the whole rule.
+
+  Artifact: `docs/plans/Owner_DML_tier_1_countries.sql` (seeds `GB`); the assertion is pinned in
+  `tests/ci/stripe-country-gate.contract.test.ts` ("uses `GB`, not `UK`"), which fails if the seed is
+  ever reverted to the prose spelling.
+
+AMENDED 2026-08-28 (b) — RADAR: SANCTIONED DEFENCE IN DEPTH, DEFERRED, NOT BUILT.
+
+  Stripe has **no product-availability-by-country feature**. The nearest native mechanism is a custom
+  Radar rule matching `card_country` against a country Value List (Radar Value Lists support
+  `item_type: 'country'`). It is hereby recorded as SANCTIONED defence in depth — permitted to be
+  added later, deliberately NOT built now, and explicitly not the control.
+
+  Why it cannot be the control, restated for the record: it blocks ONE PAYMENT at ONE MOMENT, whereas
+  INV-03-08 gates LISA ACCESS on every request. It therefore cannot gate a free-tier student, a
+  student entitled before any rule existed, or the SCL-043 guardian case where the payer's country is
+  not the student's. It also blocks the payment rather than the session, so the user lands on
+  Checkout's card-declined state with no explanation of the real reason.
+
+  Two further costs, stated so the deferral is a decision rather than an omission:
+    - Custom Radar rules require **Radar for Fraud Teams**, a paid add-on with a per-transaction fee.
+      The control is not free.
+    - Stripe's own documentation cautions that businesses in the EU may be affected by the
+      **Geo-blocking Regulation** when blocking by country. **Ireland is on the Tier-1 list**, so this
+      is not hypothetical for Lyceon and needs counsel input before any Radar rule is enabled.
+
+  DEFERRED UNTIL THE REAL GATE IS PROVEN. The application gate (wired 2026-08-28 at
+  `checkout.session.completed`, `server/lib/stripe/webhook-handler.ts`) is the control. Radar may be
+  added on top of a working gate; it may not substitute for one.
+
 ---
 
 SCL-045 | 2026-08-20 | Doc 01 V8 §20 — multi-student billing is one subscription item per student, not quantity | PROPOSED
@@ -1001,6 +1579,32 @@ Artifact: `docs/SpecAudit/STRIPE_GROUNDING_AUDIT.md` supplies the delta evidence
 
 SCL-054 | 2026-08-19 | Doc 05B §4.9 KPI fan-out — section/overall validators quarantine instead of aborting the mastery transaction | PROPOSED
 Renumbered: allocated `SCL-042` on `main` 2026-08-19; renumbered to `SCL-054` at the `stripe`→`main` merge on 2026-08-26 by owner ruling, resolving an ID collision with the Stripe governing-doctrine entry that independently took `SCL-042` on 2026-08-20. Nothing outside this file cited this entry under its old number, so no citation was rewritten. The 2026-08-19 date is the original and is retained.
+> **ID COLLISION — RESOLVED BY OWNER RULING, 2026-08-26.** Two different entries were allocated
+> `SCL-042` independently, on two branches that could not see each other: the Doc 05B KPI
+> fan-out entry (2026-08-19, authored on `main`) and the Stripe governing-doctrine entry
+> (2026-08-20, authored on `stripe`). The owner ruled that the collision be resolved by
+> renumbering, and the direction follows the citation counts measured at the merge: the Stripe
+> `SCL-042` had **9** citations across four plan documents and `server/lib/stripe/client.ts`,
+> and the wider Stripe block `SCL-042`–`SCL-053` carried **152**; the Doc 05B `SCL-042` had
+> **zero** anywhere outside this file.
+>
+> **The Doc 05B KPI fan-out entry is therefore renumbered `SCL-042` → `SCL-054`.** The Stripe
+> `SCL-042` keeps its number and every citation to it remains correct. No citation anywhere in
+> the repository pointed at the renumbered entry, so none was rewritten; this was verified by
+> search across the tree before the change, not assumed.
+>
+> `SCL-054` keeps its original 2026-08-19 date and so appears out of ID order in this
+> date-descending file. That is deliberate: the date records when the change was ruled, and
+> altering it to match the new number would falsify the record. Any surviving external reference
+> to "SCL-042" that concerns KPI fan-out, quarantine, or `mastery_data_quality_incidents` means
+> `SCL-054`.
+>
+> **This banner previously sat under a second `SCL-042` heading.** The 2026-08-26 `stripe`→`main`
+> merge took both sides of the collision, leaving the renumbered entry's OLD heading behind as an
+> orphan — heading and banner, no body — while the body lived on here under `SCL-054`. That orphan
+> heading made `SCL-042` a duplicate again and failed the duplicate gate on `stripe` at `60eac9c`,
+> skipping the whole `ci` job. The orphan heading is deleted and its banner reattached here.
+
 Amended 2026-09-01, in place, while still PROPOSED — narrowed to two function bodies and two columns. The incident-ledger table (`mastery_data_quality_incidents`) and the alerting requirement are WITHDRAWN, not deferred; open question (1) is closed as no-action; the "validators scan too much" framing is corrected below. The owner's instruction named this entry as "SCL-042", which is its pre-renumbering identifier: per the disambiguation note recorded at the old number, any reference to `SCL-042` concerning KPI fan-out or quarantine means this entry. `SCL-042` itself is the Stripe governing-doctrine entry and was not touched.
 Change: Doc 05B specifies that all four KPI refreshers validate canonical event history and RAISE `KPI_HISTORICAL_DATA_INVALID` on any row with NULL `correct` or NULL `occurred_at` (RB-05B-V1-02, matching 05A's hard-fail pattern per RB-05A-V1-22). Two of the four are invoked, via `refresh_domain_mastery` §4.9, inside `apply_mastery_event`'s transaction and downstream of the audit insert, while validating at a grain WIDER than the event being written: `refresh_section_kpi` at (student, section) and `refresh_overall_kpi` at (student). A single malformed row anywhere in that wider grain therefore rolls back every mastery write for that student — skill mastery, audit row, domain mastery, and projection refresh counter — permanently and for every domain. This ruling replaces RAISE with counted quarantine in those two functions only.
 THE DEFECT IS THE COUPLING, NOT THE SCOPE — correction to this entry's original framing (2026-09-01). The first draft said these two "validate far beyond the event being written", implying they over-scan. Verified against the deployed function bodies, they do not: each validates EXACTLY what it aggregates. `refresh_section_kpi` validates (student, section) and aggregates (student, section); `refresh_overall_kpi` validates (student) and aggregates (student). A validator that checked less than it aggregates would be the real defect, and neither does. What is wrong is that a student-wide DISPLAY aggregate is a hard availability dependency of a per-event write to the TRUTH ANCHOR. The fix is therefore to change what the validator DOES on failure, not what it looks at; the predicates are unchanged by this ruling.

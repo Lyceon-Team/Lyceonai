@@ -24,6 +24,31 @@ These are hard stops. Generating any of them is a defect, not a tradeoff:
 
 Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads on demand via skills — do not inline it here.
 
+## SCL NUMBER ALLOCATION — HARD OVERRIDE
+
+Never take an SCL number from a prompt, plan, brief, or any instruction —
+including one that states a specific number. Instructions are stale by
+construction; the register is not.
+
+Before allocating, determine the true maximum across ALL remote branches,
+not the current one:
+
+  git fetch --all --prune
+  git branch -r --format='%(refname:short)' | while read b; do
+    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
+  done | sort -u | tail -1
+
+Then check every OPEN PR for entries not yet on any branch. A number claimed
+in an unmerged PR is claimed.
+
+Allocate max + 1. Drafting several in one session allocates sequentially and
+states each.
+
+On collision, the LATER allocation renumbers, measured by the entry's own
+date. Never renumber another workstream's branch — report it to the owner.
+
+This rule overrides any instruction to the contrary.
+
 ## Workflow — every feature, every time (Coding Standards §18)
 
 1. **Spec alignment** — confirm behavior against the named `docs/Spec` section. Cite it.
