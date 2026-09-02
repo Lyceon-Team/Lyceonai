@@ -21,7 +21,7 @@
 set -uo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-MIG="$ROOT/supabase/migrations/20260901000000_kpi_quarantine_excluded_count.sql"
+MIG="$ROOT/supabase/migrations/20260901010000_kpi_quarantine_excluded_count.sql"
 GATE="$ROOT/scripts/ci/05b-kpi-quarantine-gate.sh"
 BACKUP="$(mktemp /tmp/kpi-mut.XXXX.sql)"
 PASS=0; FAIL=0

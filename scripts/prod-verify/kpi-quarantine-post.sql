@@ -4,7 +4,7 @@
 -- READ-ONLY. One statement, one row. The last column is the verdict.
 --
 -- Run this AFTER applying
---   supabase/migrations/20260901000000_kpi_quarantine_excluded_count.sql
+--   supabase/migrations/20260901010000_kpi_quarantine_excluded_count.sql
 --
 -- WHAT IT ESTABLISHES
 --   1. Both columns landed, NOT NULL with DEFAULT 0.

@@ -4,7 +4,7 @@
 -- READ-ONLY. One statement, one row. The last column is the verdict.
 --
 -- Run this BEFORE applying
---   supabase/migrations/20260901000000_kpi_quarantine_excluded_count.sql
+--   supabase/migrations/20260901010000_kpi_quarantine_excluded_count.sql
 --
 -- WHAT IT ESTABLISHES
 --   1. The migration has not already been applied (both functions still RAISE,
