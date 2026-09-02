@@ -132,7 +132,16 @@ echo "==> EXECUTION PROOF (a green exit is not evidence that anything ran)"
 
 # Captured to a variable and matched with `case`. NOT `grep -q`, which closes the
 # pipe at the first match and can kill the producer on SIGPIPE before it flushes.
-OUT="$(cat "$OUT_FILE")"
+#
+# ANSI IS STRIPPED BEFORE MATCHING, and that is load-bearing rather than cosmetic.
+# vitest emits plain text to a non-TTY locally but COLOURS its summary on the GitHub
+# runner, so the summary line arrives as
+#   ESC[2m      Tests ESC[22m ESC[1mESC[32m6 passed ESC[39mESC[22mESC[90m (6)ESC[39m
+# and a literal match on "Tests  6 passed (6)" fails against a run where all six cases
+# passed. That is exactly what happened on 5a06e64: the gate reported FAIL on a green
+# suite. It failed CLOSED, which is the safe direction, but a check that cannot read a
+# pass is not a check.
+OUT="$(sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT_FILE")"
 
 fail() { echo "    $1"; echo "MASTERY POSTGREST GATE: FAIL"; exit 1; }
 

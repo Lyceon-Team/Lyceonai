@@ -46,6 +46,8 @@ cd "$ROOT"
 ROUTE="server/routes/practice-canonical.ts"
 TEST="tests/ci/mastery-emission.postgrest.ci.test.ts"
 GATE="scripts/ci/mastery-postgrest-gate.sh"
+# Mirrors the gate's own constant; S0 asserts the summary matcher against it.
+EXPECTED_CASES=6
 
 CASE1="an answered question produces an attributable event"
 CASE2="below MIN_EVENTS_FOR_MASTERY the level is NULL"
@@ -135,6 +137,37 @@ check() {
   esac
   pass=$((pass + 1))
 }
+
+# ---------------------------------------------------------------------------
+# S0 — SELF-TEST: the gate's execution proof must be able to read a COLOURED run.
+# vitest prints a plain summary to a non-TTY locally and a colour-escaped one on the
+# GitHub runner. A literal substring match on the summary therefore passed locally and
+# FAILED on a fully green suite in CI (5a06e64). This asserts the gate strips ANSI
+# before matching, against the exact byte sequence the runner produced. It runs before
+# the baseline because a gate that cannot recognise a pass makes every result below it
+# meaningless.
+# ---------------------------------------------------------------------------
+echo "=== S0: the execution proof reads a colour-escaped vitest summary ==="
+COLOURED="$(python3 -c 'E=chr(27); print(f"{E}[2m      Tests {E}[22m {E}[1m{E}[32m6 passed{E}[39m{E}[22m{E}[90m (6){E}[39m")')"
+STRIPPED="$(printf '%s' "$COLOURED" | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+case "$STRIPPED" in
+  *"Tests  ${EXPECTED_CASES} passed (${EXPECTED_CASES})"*)
+    echo "  PASS  S0 coloured summary is readable after stripping"
+    pass=$((pass + 1)) ;;
+  *)
+    echo "  FAIL  S0 — the gate cannot read a coloured pass; every result below is void"
+    fail=$((fail + 1)) ;;
+esac
+# And the un-stripped form must NOT match, or the strip is doing nothing and the
+# self-test would pass for the wrong reason.
+case "$COLOURED" in
+  *"Tests  ${EXPECTED_CASES} passed (${EXPECTED_CASES})"*)
+    echo "  FAIL  S0b — raw coloured text matched, so this self-test proves nothing"
+    fail=$((fail + 1)) ;;
+  *)
+    echo "  PASS  S0b raw coloured text does NOT match — the strip is load-bearing"
+    pass=$((pass + 1)) ;;
+esac
 
 echo "=== (0) GREEN BASELINE ==="
 check "baseline green" GREEN
