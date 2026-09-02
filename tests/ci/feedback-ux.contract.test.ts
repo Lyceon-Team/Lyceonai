@@ -13,9 +13,6 @@ describe("Feedback UX hardening contract", () => {
     const calendar = read("client/src/pages/calendar.tsx");
     const fullTest = read("client/src/pages/full-test.tsx");
     const userProfile = read("client/src/pages/UserProfile.tsx");
-    const guardianPaywall = read(
-      "client/src/components/guardian/SubscriptionPaywall.tsx",
-    );
 
     // chat.tsx: behavioral render test in
     // client/src/pages/chat.error-rendering.contract.test.tsx proves the
@@ -27,8 +24,20 @@ describe("Feedback UX hardening contract", () => {
     expect(fullTest).toContain("SessionNotice");
     expect(userProfile).toContain("RecoveryNotice");
     expect(userProfile).toContain("SessionNotice");
-    expect(guardianPaywall).toContain("RecoveryNotice");
-    expect(guardianPaywall).toContain("SessionNotice");
+    /**
+     * NOT the paywall any more. `SubscriptionPaywall` was rescoped on
+     * 2026-09-02 to a pure access gate: it renders a spinner, a failed-payment
+     * card, or its children, and surfaces no billing error of its own — so
+     * asserting a notice component there would pin an import that nothing
+     * renders. The guardian surface that CAN fail in front of a user is the
+     * purchase card's checkout call, and that is where the structured notice
+     * now has to be.
+     */
+    const purchaseCard = read(
+      "client/src/components/guardian/GuardianPurchaseCard.tsx",
+    );
+    expect(purchaseCard).toContain("AppNotice");
+    expect(purchaseCard).not.toMatch(/\{\s*checkoutError\s*\}\s*<\//);
   });
 
   it("keeps premium denials routed through conversion UX", () => {

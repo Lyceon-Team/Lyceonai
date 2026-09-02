@@ -6,6 +6,7 @@ import { sendNotFound } from "../middleware/subject-resolver";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { EntitlementService } from "../services/entitlement-service";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
 
 /**
@@ -128,13 +129,76 @@ router.get(
           .json({ error: "Failed to fetch students", requestId });
       }
 
+      /**
+       * PER-STUDENT ENTITLEMENT, ONE EVALUATOR.
+       *
+       * @spec [Doc-01_V8 §31.4] | @implemented [2026-09-02]
+       *
+       * plain English: the guardian purchase card must know which of these
+       * students still need paying for. That is a question ABOUT EACH STUDENT,
+       * and it is answered by the same canonical gate everything else uses —
+       * `EntitlementService.isEntitlementActiveForProfile`, which fails CLOSED
+       * on an RPC error, so an unreadable entitlement reports "not entitled"
+       * and the student is merely OFFERED for purchase. The server refuses a
+       * genuinely-funded student at checkout with `STUDENT_ALREADY_FUNDED`, so
+       * failing closed here costs a refused click, never a double charge.
+       *
+       * WHY NOT THE §31.3 FOLD. `resolveLinkedPairPremiumAccessForGuardian`
+       * answers "does this guardian have access at all" and returns true as
+       * soon as ANY one linked student is premium. It cannot say WHICH students
+       * are covered, and asking it per student would be a different call with a
+       * different meaning. The fold is untouched by this change.
+       *
+       * N is the guardian's linked-student count — single digits by
+       * construction — so these run concurrently and add one round trip, not N.
+       */
+      const roster = students || [];
+      /**
+       * A BILLING PROBE MUST NOT TAKE THE ROSTER DOWN WITH IT. The linked-
+       * student list is this dashboard's core data; the entitlement flag is an
+       * enrichment on top of it. `isEntitlementActiveForProfile` already fails
+       * closed on an RPC *error*, but anything thrown outside that path — a
+       * transport that has no `rpc` at all, say — would otherwise reach the
+       * route's catch and turn the whole list into a 500. Degrade per student,
+       * loudly, and keep serving the list.
+       *
+       * Degrading to `false` is the safe direction: the student is OFFERED for
+       * purchase, and the server re-decides at checkout, refusing an already-
+       * funded student with `STUDENT_ALREADY_FUNDED`. The opposite default
+       * would hide a student who genuinely needs paying for — the exact defect
+       * this whole change exists to remove.
+       */
+      const entitled = await Promise.all(
+        roster.map(async (student) => {
+          try {
+            return await EntitlementService.isEntitlementActiveForProfile(
+              student.id,
+            );
+          } catch (err) {
+            logger.warn(
+              "GUARDIAN",
+              "list_students",
+              "Entitlement probe failed; treating student as unfunded",
+              { requestId, err },
+            );
+            return false;
+          }
+        }),
+      );
+
       await emitGuardianAccessEvent({
         eventType: "guardian_dashboard_viewed",
         guardianId,
         requestId,
-        details: { linked_student_count: (students || []).length },
+        details: { linked_student_count: roster.length },
       });
-      res.json({ students: students || [], requestId });
+      res.json({
+        students: roster.map((student, i) => ({
+          ...student,
+          has_active_entitlement: entitled[i] === true,
+        })),
+        requestId,
+      });
     } catch (err) {
       logger.error("GUARDIAN", "list_students", "Error", { err, requestId });
       res.status(500).json({ error: "Internal server error", requestId });
@@ -186,7 +250,8 @@ router.post(
       // one is not: both answers would tell the caller something about the keyspace.
       return res.status(400).json({
         error: {
-          message: "That code is not valid. Ask your student for a current one.",
+          message:
+            "That code is not valid. Ask your student for a current one.",
           code: GUARDIAN_LINK_CODE_REFUSED,
         },
         requestId,
@@ -216,7 +281,8 @@ router.post(
     if (!outcome.ok) {
       return res.status(400).json({
         error: {
-          message: "That code is not valid. Ask your student for a current one.",
+          message:
+            "That code is not valid. Ask your student for a current one.",
           code: GUARDIAN_LINK_CODE_REFUSED,
         },
         requestId,
@@ -292,7 +358,6 @@ router.post(
     }
   },
 );
-
 
 /**
  * DELETE /api/guardian/link/:studentId — §36.3 revocation, guardian side.
