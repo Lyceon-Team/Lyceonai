@@ -65,7 +65,15 @@ describe("Stripe mode derivation", () => {
     const { readFileSync } = await import("node:fs");
     const path = await import("node:path");
     const src = readFileSync(
-      path.resolve(__dirname, "..", "..", "server", "lib", "stripe", "client.ts"),
+      path.resolve(
+        __dirname,
+        "..",
+        "..",
+        "server",
+        "lib",
+        "stripe",
+        "client.ts",
+      ),
       "utf8",
     );
     expect(src).not.toContain("process.env.STRIPE_ENV");
