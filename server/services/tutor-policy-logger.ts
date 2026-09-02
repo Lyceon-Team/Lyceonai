@@ -7,8 +7,7 @@
  * plain English: WRITE-ONLY audit logger for every policy decision made during a
  * LISA tutor turn. Per Doc 03A §11, every policy evaluation (which prompt variant,
  * which tone, which depth, which context window was used) must be recorded with
- * enough detail to replay the decision. Three log targets:
- *   - tutor_policy_decisions  (§11.2 — which policy was selected and why)
+ * enough detail to replay the decision. Two log targets:
  *   - tutor_context_resolution_log (§11.3 — what context was assembled)
  *   - tutor_turn_metrics (§11.5 — operational telemetry for the turn)
  *
