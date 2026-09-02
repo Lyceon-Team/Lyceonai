@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
+import { ensureAccountForUser } from "../lib/account.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
@@ -596,11 +597,38 @@ export async function supabaseAuthMiddleware(
         role: req.user.role,
       },
     );
-    // The lyceon_accounts model is retired (owner ruling 2026-08-24). The
-    // production schema uses profile_id = auth.users.id directly; there is no
-    // accounts table, no account_members, and no ensure_account_for_user RPC.
-    // The previous call here fired on 100% of authenticated requests, produced
-    // PGRST202 every time, and flooded the error log channel.
+    // Ensure user has a lyceon_account and membership (student/guardian only)
+    if (req.user.role === "student" || req.user.role === "guardian") {
+      try {
+        const accountId = await ensureAccountForUser(
+          supabaseAdmin,
+          req.user.id,
+          req.user.role,
+        );
+        logger.info("AUTH", "account_ensured", "Account ensured for user", {
+          userId: req.user.id,
+          role: req.user.role,
+          accountId,
+          requestId: req.requestId,
+        });
+      } catch (accountErr) {
+        logger.error(
+          "AUTH",
+          "account_ensure_failed",
+          "Failed to ensure account for user",
+          {
+            userId: req.user.id,
+            role: req.user.role,
+            error:
+              accountErr instanceof Error
+                ? accountErr.message
+                : "Unknown error",
+            requestId: req.requestId,
+          },
+        );
+        // Continue anyway - account creation failure should not block auth
+      }
+    }
 
     next();
   } catch (error) {
