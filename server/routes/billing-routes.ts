@@ -406,8 +406,20 @@ router.post(
         customer: customerId,
         mode: "subscription",
         line_items: lineItems,
-        success_url: `${siteBaseUrl()}/dashboard?checkout=success`,
-        cancel_url: `${siteBaseUrl()}/dashboard?checkout=cancel`,
+        /**
+         * RETURN THE PAYER TO A PAGE THEIR ROLE CAN LOAD.
+         *
+         * @revised [2026-09-02]
+         *
+         * `/dashboard` is `RequireRole allow={["student","admin"]}`
+         * (`client/src/App.tsx`), so a guardian who completed checkout landed
+         * on a role denial: the money moved, the entitlement landed, and the
+         * payer was shown a wall. It also made `SubscriptionPaywall`'s
+         * `?checkout=success` polling unreachable for guardians, since that
+         * component only ever wraps `/guardian`.
+         */
+        success_url: `${siteBaseUrl()}${isGuardian ? "/guardian" : "/dashboard"}?checkout=success`,
+        cancel_url: `${siteBaseUrl()}${isGuardian ? "/guardian" : "/dashboard"}?checkout=cancel`,
         // SCL-043: the authoritative payer-to-student mapping on the
         // unaccompanied path. Deliberately UNSET for a guardian: it takes one
         // profile id, and a guardian session has no single subject — setting it

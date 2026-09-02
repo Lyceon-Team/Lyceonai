@@ -15,7 +15,8 @@
  *
  * NOT THE `guardian_links` ROW. This is the joined `profiles` projection the
  * route actually returns (`server/routes/guardian-routes.ts` selects
- * `id, email, display_name, created_at`), which is why it does not live in
+ * `id, email, display_name, created_at`), plus the per-student entitlement flag
+ * the same route derives — which is why it does not live in
  * `guardian-link-schema.ts`. The two id/timestamp primitives ARE reused from
  * there rather than redeclared, so the reasoning recorded on them — ids are
  * `string` because Postgres already guarantees the UUID format, and a
@@ -40,6 +41,28 @@ export const linkedStudentSchema = z.object({
   email: z.string(),
   display_name: z.string().nullable(),
   created_at: timestampSchema,
+  /**
+   * Whether THIS student currently holds an active entitlement.
+   *
+   * @spec [Doc-01_V8 §31.4; SCL-045 one SubscriptionItem per student]
+   *
+   * plain English: the guardian purchase card needs to know which linked
+   * students still need paying for, and that is a per-student question. It is
+   * NOT the §31.3 fold, which answers a different one — "does this guardian
+   * have access AT ALL" — by returning true as soon as ANY one linked student
+   * is premium. Gating a purchase surface on the fold is what hid the picker:
+   * the guardian could see everything through student A and so was offered no
+   * way to buy for student B.
+   *
+   * NOT A GATE, AND DELIBERATELY NOT SHAPED LIKE ONE. This field decides what
+   * the client OFFERS. Whether a purchase is permitted is re-decided server
+   * side on every request, against active `guardian_links`
+   * (`server/lib/stripe/guardian-checkout.ts`), and a student already covered
+   * by the guardian's subscription is refused there with
+   * `STUDENT_ALREADY_FUNDED`. Editing this value in devtools changes what is
+   * REQUESTED, never what is GRANTED.
+   */
+  has_active_entitlement: z.boolean(),
 });
 
 export type LinkedStudent = z.infer<typeof linkedStudentSchema>;
