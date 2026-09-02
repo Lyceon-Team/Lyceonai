@@ -84,12 +84,21 @@ BEGIN
   IF v_got <> 'not_linked' THEN RAISE EXCEPTION 'GATE 6 FAIL: revoked link expected not_linked, got %', v_got; END IF;
   RAISE NOTICE 'GATE 6 PASS: revoked link -> not_linked';
 
-  -- 7. a PENDING link is not an active link
-  UPDATE public.guardian_links SET status='pending_student_accept', revoked_at=NULL WHERE id=v_link_id;
-  SELECT public.guardian_view_decision(g, s_ok) INTO v_got;
-  IF v_got <> 'not_linked' THEN RAISE EXCEPTION 'GATE 7 FAIL: pending link expected not_linked, got %', v_got; END IF;
-  RAISE NOTICE 'GATE 7 PASS: pending_student_accept -> not_linked';
-  UPDATE public.guardian_links SET status='active' WHERE id=v_link_id;
+  -- 7. a PENDING link cannot EXIST, which is stronger than not conferring view.
+  --    This gate used to set status='pending_student_accept' and assert the function
+  --    returned 'not_linked'. SCL-080 narrowed guardian_links_status_check to
+  --    ('active','revoked'), so that UPDATE now raises 23514 and the gate died on its
+  --    own fixture. The assertion is not dropped, it is MOVED DOWN A LAYER: instead of
+  --    proving the function ignores a pending row, prove the database refuses to store
+  --    one. A status that cannot be written cannot be mis-read.
+  BEGIN
+    UPDATE public.guardian_links SET status='pending_student_accept', revoked_at=NULL WHERE id=v_link_id;
+    RAISE EXCEPTION 'GATE 7 FAIL: guardian_links accepted a pending status; the SCL-080 CHECK is not in force';
+  EXCEPTION
+    WHEN check_violation THEN
+      RAISE NOTICE 'GATE 7 PASS: pending_student_accept is refused by the status CHECK';
+  END;
+  UPDATE public.guardian_links SET status='active', revoked_at=NULL WHERE id=v_link_id;
 
   -- 8. direction matters: the student is not the guardian's guardian
   SELECT public.guardian_view_decision(s_ok, g) INTO v_got;

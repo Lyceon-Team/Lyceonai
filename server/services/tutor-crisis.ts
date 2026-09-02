@@ -148,7 +148,11 @@ export async function checkCrisisSignatures(
         "Layer 1 crisis signature match detected",
         { signatureId: row.id },
       );
-      return { triggered: true, signatureId: row.id as string, layer1Empty: false };
+      return {
+        triggered: true,
+        signatureId: row.id as string,
+        layer1Empty: false,
+      };
     }
   }
 
@@ -168,7 +172,9 @@ export async function checkCrisisSignatures(
  * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16]
  */
 export async function classifyCrisis(text: string): Promise<ClassifierResult> {
-  // Load classifier_class model alias from runtime config
+  // Load classifier model alias from runtime config.
+  // The config KEY is "crisis_classifier_model_alias"; its VALUE is the
+  // alias name (e.g. "classifier_class") that resolves to a provider model.
   const { data: configData, error: configError } = await supabaseServer
     .from("tutor_context_runtime_config")
     .select("value")
@@ -179,7 +185,7 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
     logger.error(
       "TUTOR_CRISIS",
       "classifier_config_missing",
-      "classifier_class config not found in tutor_context_runtime_config",
+      "crisis_classifier_model_alias config not found in tutor_context_runtime_config",
       configError,
     );
     // Cannot classify — return non-crisis so Layer 1 result stands
@@ -486,13 +492,84 @@ export async function flagConversationForReview(
   }
 
   // Step 2: Create a durable review case with 48h SLA (BLOCKING)
-  const { id: caseId, slaDeadline } = await createCrisisReviewCase({
-    conversationId,
-    studentId,
-    source,
-    signatureId,
-    modelConfidence,
-  });
+  //
+  // Unique-violation (23505) from idx_crisis_review_cases_conversation_active
+  // means an active case already exists for this conversation. That is not a
+  // failed write — the case IS persisted; this is a redundant signal (e.g., a
+  // second degraded turn during a sustained Vertex outage). Treat it as
+  // success-equivalent: query the existing case and proceed.
+  //
+  // This does NOT reverse B1.1d: genuine failures (FK violation, connection
+  // error, etc.) still throw and block the turn.
+  let caseId: string;
+  let slaDeadline: string;
+  try {
+    const result = await createCrisisReviewCase({
+      conversationId,
+      studentId,
+      source,
+      signatureId,
+      modelConfidence,
+    });
+    caseId = result.id;
+    slaDeadline = result.slaDeadline;
+  } catch (createErr: unknown) {
+    // Check for unique violation on the active-case partial index
+    const pgCode =
+      createErr instanceof Error &&
+      "code" in createErr &&
+      typeof (createErr as Record<string, unknown>).code === "string"
+        ? ((createErr as Record<string, unknown>).code as string)
+        : null;
+
+    // createCrisisReviewCase wraps the PG error in a new Error, so the
+    // code is not on the thrown error itself. Match the message instead.
+    const isUniqueViolation =
+      pgCode === "23505" ||
+      (createErr instanceof Error &&
+        createErr.message.includes("unique") &&
+        createErr.message.includes(
+          "idx_crisis_review_cases_conversation_active",
+        ));
+
+    if (!isUniqueViolation) {
+      // Genuine failure — re-throw per B1.1d
+      throw createErr;
+    }
+
+    // Active case already exists — query it
+    const { data: existingCase, error: lookupError } = await supabaseServer
+      .from("crisis_review_cases")
+      .select("id, sla_deadline")
+      .eq("conversation_id", conversationId)
+      .in("status", ["open", "in_review"])
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError || !existingCase) {
+      // Cannot find the case that caused the violation — this is unexpected.
+      // Re-throw the original error so B1.1d holds.
+      logger.error(
+        "TUTOR_CRISIS",
+        "crisis_case_lookup_after_duplicate_failed",
+        "unique violation on crisis_review_cases but could not find the existing case",
+        lookupError,
+        { conversationId },
+      );
+      throw createErr;
+    }
+
+    caseId = existingCase.id as string;
+    slaDeadline = existingCase.sla_deadline as string;
+
+    logger.warn(
+      "TUTOR_CRISIS",
+      "crisis_case_already_exists",
+      "active crisis review case already exists for this conversation — " +
+        "treating duplicate signal as success-equivalent per Doc 03 §21.3",
+      { conversationId, existingCaseId: caseId, source },
+    );
+  }
 
   logger.warn(
     "TUTOR_CRISIS",

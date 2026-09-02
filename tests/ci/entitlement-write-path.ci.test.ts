@@ -24,6 +24,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import Stripe from "stripe";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
@@ -264,6 +265,43 @@ vi.mock("../../server/logger", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Stripe API surface — the ONLY thing stubbed for the webhook period proof.
+//
+// MOCK BOUNDARY: `subscriptions.retrieve` is stubbed because there is no live
+// Stripe in CI. Everything the proof is about stays real — the real webhook
+// handler, the real `upsertEntitlement`, the real genesis schema, and Stripe's
+// own `constructEvent` for signature verification. Nothing mocks the module
+// under test.
+// ---------------------------------------------------------------------------
+const WEBHOOK_SECRET = "whsec_entitlement_period_ci";
+
+const stripeApi = vi.hoisted(() => ({
+  subscriptionsRetrieve: vi.fn(),
+  /**
+   * INV-03-08 gates EVERY grant since 2026-08-28 (Codex HIGH-2), so the writer
+   * reads the PAYER's Customer. Eligible here — this suite proves the write
+   * path, and the gate has its own suites.
+   */
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_period_proof",
+    address: { country: "US" },
+  })),
+}));
+
+vi.mock("../../server/lib/stripe/client", async () => {
+  const StripeSdk = (await import("stripe")).default;
+  const real = new StripeSdk("sk_test_entitlement_period_ci_placeholder");
+  return {
+    getStripeClient: () => ({
+      webhooks: real.webhooks, // REAL verification, not a stub
+      subscriptions: { retrieve: stripeApi.subscriptionsRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
+    }),
+    getExpectedLivemode: () => false,
+  };
+});
+
+// ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
 describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
@@ -320,6 +358,27 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
       const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
       await testPg.query(sql);
     }
+
+    /**
+     * 4b. Seed the Tier-1 country list in REAL PG.
+     *
+     * @spec [INV-03-08; SCL-046] | @implemented [2026-08-28 — Codex HIGH-2]
+     *
+     * The country gate now runs on every grant, and it reads
+     * `entitlement_runtime_config` through the same PG-backed adapter the
+     * writer uses. Seeding the real row rather than mocking `getTier1Countries`
+     * exercises the config reader against real PostgreSQL — which is the point
+     * of this suite — and proves the fail-closed default is a CONFIGURATION
+     * state rather than a code path: delete this seed and the grant is refused.
+     */
+    await testPg.query(
+      `INSERT INTO public.entitlement_runtime_config
+         (key, value, value_type, owner, description, environment)
+       VALUES ('tier_1_countries', $1::jsonb, 'array', 'platform',
+               'INV-03-08 Tier 1 countries (CI seed)', 'all')
+       ON CONFLICT (key) DO NOTHING`,
+      [JSON.stringify(["US", "CA", "GB", "AU", "NZ", "IE", "SG"])],
+    );
 
     // 5. Create test user (triggers handle_new_user → auto-creates profile)
     await testPg.query(
@@ -562,5 +621,92 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
       expect(pgErr.code).toBe("42703");
       expect(pgErr.message).toMatch(/account_id/);
     }
+  });
+
+  // ---------------------------------------------------------------
+  // Period-bounds proof — the live defect of 2026-08-26
+  //
+  // The first live purchase wrote an entitlement row with NULL
+  // current_period_start / current_period_end. Cause: Stripe removed both
+  // fields from the Subscription object in API version 2025-03-31.basil and
+  // moved them onto SubscriptionItem, while the handler still read them off
+  // the Subscription. The boundary schema did its job — absent normalised to
+  // null rather than undefined — so the write succeeded with NULL bounds
+  // instead of failing. The field path was wrong, not the schema.
+  //
+  // This asserts the WRITTEN ROW, read back out of PostgreSQL.
+  // ---------------------------------------------------------------
+
+  it("a written entitlement row has non-null period bounds", async () => {
+    const PERIOD_START = 1_770_000_000;
+    const PERIOD_END = 1_772_592_000;
+
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+
+    // The item-level shape Stripe actually returns under 2025-03-31.basil and
+    // later: periods live on the item, and there is no top-level period field.
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_period_proof",
+      customer: "cus_period_proof",
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: "si_period_proof",
+            price: { id: "price_period_proof" },
+            current_period_start: PERIOD_START,
+            current_period_end: PERIOD_END,
+            metadata: { student_profile_id: TEST_USER_ID },
+          },
+        ],
+      },
+    });
+
+    const event = {
+      id: "evt_period_proof",
+      type: "customer.subscription.created",
+      livemode: false,
+      data: {
+        object: {
+          id: "sub_period_proof",
+          metadata: { student_profile_id: TEST_USER_ID },
+        },
+      },
+    };
+    const payload = JSON.stringify(event);
+    const signature = Stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: WEBHOOK_SECRET,
+    });
+
+    const { processStripeWebhook } =
+      await import("../../server/lib/stripe/webhook-handler");
+    const outcome = await processStripeWebhook(Buffer.from(payload), signature);
+
+    expect(outcome.ok).toBe(true);
+
+    // The row as PostgreSQL holds it — not what the handler claims it wrote.
+    const row = await testPg!.query(
+      `SELECT current_period_start, current_period_end, stripe_price_id
+         FROM public.entitlements WHERE profile_id = $1`,
+      [TEST_USER_ID],
+    );
+    expect(row.rows.length).toBe(1);
+
+    // Both halves asserted: non-null AND the correct instant. Non-null alone
+    // would pass on any timestamp the code happened to invent.
+    expect(row.rows[0].current_period_start).not.toBeNull();
+    expect(row.rows[0].current_period_end).not.toBeNull();
+    expect(new Date(row.rows[0].current_period_start).toISOString()).toBe(
+      new Date(PERIOD_START * 1000).toISOString(),
+    );
+    expect(new Date(row.rows[0].current_period_end).toISOString()).toBe(
+      new Date(PERIOD_END * 1000).toISOString(),
+    );
+
+    // The price comes off the SAME item as the periods (SCL-045), so the two
+    // can never describe different students.
+    expect(row.rows[0].stripe_price_id).toBe("price_period_proof");
   });
 });

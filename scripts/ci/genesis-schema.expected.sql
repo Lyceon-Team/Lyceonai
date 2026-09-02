@@ -105,86 +105,6 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: guardian_links; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.guardian_links (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    guardian_profile_id uuid NOT NULL,
-    student_profile_id uuid NOT NULL,
-    status text NOT NULL,
-    initiated_by text NOT NULL,
-    initiated_at timestamp with time zone DEFAULT now() NOT NULL,
-    accepted_at timestamp with time zone,
-    accepted_by_profile_id uuid,
-    revoked_at timestamp with time zone,
-    revoked_by_profile_id uuid,
-    revocation_reason text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT guardian_links_initiated_by_check CHECK ((initiated_by = ANY (ARRAY['guardian'::text, 'student'::text, 'admin'::text]))),
-    CONSTRAINT guardian_links_status_check CHECK ((status = ANY (ARRAY['active'::text, 'pending_student_accept'::text, 'pending_guardian_accept'::text, 'revoked'::text]))),
-    CONSTRAINT guardian_not_self CHECK ((guardian_profile_id <> student_profile_id))
-);
-
-
---
--- Name: accept_guardian_link_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-DECLARE
-  v_before   public.guardian_links;
-  v_after    public.guardian_links;
-  v_required uuid;
-  v_target   uuid;
-BEGIN
-  -- FOR UPDATE, so a concurrent acceptance waits rather than races. The application version
-  -- used a compare-and-swap for the same reason; a row lock is the stronger form and costs
-  -- nothing now the whole transition is one transaction.
-  SELECT * INTO v_before FROM public.guardian_links WHERE id = p_link_id FOR UPDATE;
-
-  IF NOT FOUND OR v_before.status NOT IN ('pending_student_accept','pending_guardian_accept') THEN
-    RAISE EXCEPTION 'link is not awaiting acceptance' USING ERRCODE = 'LY001';
-  END IF;
-
-  v_required := CASE v_before.status
-                  WHEN 'pending_student_accept' THEN v_before.student_profile_id
-                  ELSE v_before.guardian_profile_id
-                END;
-
-  IF v_required <> p_accepting_profile_id THEN
-    RAISE EXCEPTION 'awaiting acceptance by the other party' USING ERRCODE = 'LY002';
-  END IF;
-
-  UPDATE public.guardian_links
-     SET status = 'active',
-         accepted_at = now(),
-         accepted_by_profile_id = p_accepting_profile_id
-   WHERE id = p_link_id
-  RETURNING * INTO v_after;
-
-  v_target := CASE WHEN p_accepting_profile_id = v_after.student_profile_id
-                   THEN v_after.guardian_profile_id
-                   ELSE v_after.student_profile_id
-              END;
-
-  -- `from` is READ from the row, never asserted. The route that hardcoded
-  -- 'pending_guardian_accept' was correct only by virtue of which half it served.
-  PERFORM public.guardian_link_audit(
-    'guardian_link_accepted', p_accepting_profile_id, v_target,
-    jsonb_build_object('from', v_before.status, 'to', v_after.status),
-    v_after.id, p_request_id
-  );
-
-  RETURN v_after;
-END;
-$$;
-
-
---
 -- Name: student_skill_mastery; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1616,51 +1536,66 @@ $$;
 
 
 --
--- Name: create_guardian_link_audited(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: guardian_links; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
+CREATE TABLE public.guardian_links (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    guardian_profile_id uuid NOT NULL,
+    student_profile_id uuid NOT NULL,
+    status text NOT NULL,
+    initiated_by text NOT NULL,
+    initiated_at timestamp with time zone DEFAULT now() NOT NULL,
+    accepted_at timestamp with time zone,
+    accepted_by_profile_id uuid,
+    revoked_at timestamp with time zone,
+    revoked_by_profile_id uuid,
+    revocation_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT guardian_links_initiated_by_check CHECK ((initiated_by = ANY (ARRAY['guardian'::text, 'student'::text, 'admin'::text]))),
+    CONSTRAINT guardian_links_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text]))),
+    CONSTRAINT guardian_not_self CHECK ((guardian_profile_id <> student_profile_id))
+);
+
+
+--
+-- Name: create_active_guardian_link_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_status text;
-  v_row    public.guardian_links;
-  v_actor  uuid;
-  v_target uuid;
+  v_row public.guardian_links;
 BEGIN
-  IF p_initiated_by NOT IN ('guardian', 'student') THEN
-    RAISE EXCEPTION 'initiated_by must be guardian or student' USING ERRCODE = '22023';
+  IF p_guardian_id = p_student_id THEN
+    RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
   END IF;
 
-  v_status := CASE p_initiated_by
-                WHEN 'guardian' THEN 'pending_student_accept'
-                ELSE 'pending_guardian_accept'
-              END;
-
+  -- Edge case 2: already linked is a 409, not a duplicate row. Only 'active' is
+  -- checked because SCL-080 leaves no reachable pending status.
   IF EXISTS (
     SELECT 1 FROM public.guardian_links
      WHERE guardian_profile_id = p_guardian_id
        AND student_profile_id  = p_student_id
-       AND status IN ('active', 'pending_student_accept', 'pending_guardian_accept')
+       AND status = 'active'
   ) THEN
     RAISE EXCEPTION 'link already exists' USING ERRCODE = 'LY004';
   END IF;
 
   INSERT INTO public.guardian_links
-    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at)
-  VALUES (p_guardian_id, p_student_id, v_status, p_initiated_by, now())
+    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at,
+     accepted_at, accepted_by_profile_id)
+  VALUES (p_guardian_id, p_student_id, 'active', 'student', now(), now(), p_student_id)
   RETURNING * INTO v_row;
 
-  IF p_initiated_by = 'guardian' THEN
-    v_actor := p_guardian_id; v_target := p_student_id;
-  ELSE
-    v_actor := p_student_id;  v_target := p_guardian_id;
-  END IF;
-
+  -- initiated_by='student' and accepted_by=the student: the student issued and shared the
+  -- code, so the student is both the initiator and the consenting party. Recording the
+  -- guardian as initiator would misattribute the consent.
   PERFORM public.guardian_link_audit(
-    'guardian_link_initiated', v_actor, v_target,
-    jsonb_build_object('from', NULL, 'to', v_row.status, 'initiated_by', p_initiated_by),
+    'guardian_link_initiated', p_student_id, p_guardian_id,
+    jsonb_build_object('from', NULL, 'to', 'active', 'via', 'student_link_code'),
     v_row.id, p_request_id
   );
 
@@ -4106,6 +4041,7 @@ CREATE TABLE public.entitlements (
     tier text NOT NULL,
     status text NOT NULL,
     stripe_subscription_id text,
+    stripe_subscription_item_id text,
     stripe_price_id text,
     current_period_start timestamp with time zone,
     current_period_end timestamp with time zone,
@@ -4116,6 +4052,13 @@ CREATE TABLE public.entitlements (
     CONSTRAINT entitlements_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'unpaid'::text, 'incomplete'::text, 'incomplete_expired'::text, 'trialing'::text]))),
     CONSTRAINT entitlements_tier_check CHECK ((tier = ANY (ARRAY['free'::text, 'premium'::text])))
 );
+
+
+--
+-- Name: COLUMN entitlements.stripe_subscription_item_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: the subscription ITEM this entitlement is keyed to. One item per entitled student, so one guardian subscription can carry several. NULL on rows written before 2026-08-27 and backfilled by the next customer.subscription.updated for that subscription — the item id is not derivable in SQL.';
 
 
 --
@@ -4815,15 +4758,23 @@ CREATE TABLE public.profiles (
     guardian_consent boolean DEFAULT false,
     consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
+    student_link_code text,
+    student_link_code_issued_at timestamp with time zone,
     last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    student_link_code text,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL
 );
+
+
+--
+-- Name: COLUMN profiles.student_link_code_issued_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
 
 
 --
@@ -5305,12 +5256,12 @@ CREATE TABLE public.tutor_context_resolution_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
     turn_ordinal integer NOT NULL,
-    context_version text NOT NULL,
+    context_version text,
     memory_summaries_count integer DEFAULT 0 NOT NULL,
     recent_messages_count integer DEFAULT 0 NOT NULL,
     mastery_snapshot_present boolean DEFAULT false NOT NULL,
     friction_signals_present boolean DEFAULT false NOT NULL,
-    scope_type text NOT NULL,
+    scope_type text,
     resolved_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -5612,8 +5563,8 @@ CREATE TABLE public.tutor_turn_metrics (
     turn_ordinal integer NOT NULL,
     orchestration_duration_ms integer NOT NULL,
     model_name text NOT NULL,
-    tokens_in integer NOT NULL,
-    tokens_out integer NOT NULL,
+    tokens_in integer DEFAULT 0 NOT NULL,
+    tokens_out integer DEFAULT 0 NOT NULL,
     cache_hit boolean DEFAULT false NOT NULL,
     compaction_recommended boolean DEFAULT false NOT NULL,
     anti_leak_triggered boolean DEFAULT false NOT NULL,
@@ -5870,22 +5821,6 @@ ALTER TABLE ONLY public.entitlement_runtime_config
 
 ALTER TABLE ONLY public.entitlements
     ADD CONSTRAINT entitlements_pkey PRIMARY KEY (id);
-
-
---
--- Name: entitlements entitlements_profile_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
-
-
---
--- Name: entitlements entitlements_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
 
 
 --
@@ -6489,14 +6424,6 @@ ALTER TABLE ONLY public.tutor_turn_metrics
 
 
 --
--- Name: guardian_links unique_active_link; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.guardian_links
-    ADD CONSTRAINT unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status) DEFERRABLE INITIALLY DEFERRED;
-
-
---
 -- Name: review_schedule uq_review_schedule_profile_question; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6510,6 +6437,20 @@ ALTER TABLE ONLY public.review_schedule
 
 ALTER TABLE ONLY public.usage_rate_limit_ledger
     ADD CONSTRAINT usage_rate_limit_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: entitlements_profile_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
+
+
+--
+-- Name: entitlements_stripe_subscription_item_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_stripe_subscription_item_id_key ON public.entitlements USING btree (stripe_subscription_item_id) WHERE (stripe_subscription_item_id IS NOT NULL);
 
 
 --
@@ -6622,6 +6563,13 @@ CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile
 --
 
 CREATE INDEX idx_entitlements_profile ON public.entitlements USING btree (profile_id);
+
+
+--
+-- Name: idx_entitlements_stripe_subscription; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL);
 
 
 --
@@ -7080,6 +7028,13 @@ CREATE INDEX idx_tutor_turn_metrics_conversation ON public.tutor_turn_metrics US
 
 
 --
+-- Name: idx_tutor_turn_metrics_crisis_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_turn_metrics_crisis_outcome ON public.tutor_turn_metrics USING btree (crisis_classifier_outcome) WHERE (crisis_classifier_outcome IS NOT NULL);
+
+
+--
 -- Name: idx_usage_rate_limit_ledger_scope_user_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7119,6 +7074,13 @@ COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner 
 --
 
 CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btree (student_link_code) WHERE (student_link_code IS NOT NULL);
+
+
+--
+-- Name: unique_active_guardian_link; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_active_guardian_link ON public.guardian_links USING btree (guardian_profile_id, student_profile_id) WHERE (status = 'active'::text);
 
 
 --
@@ -8002,7 +7964,7 @@ ALTER TABLE ONLY public.review_sessions
 --
 
 ALTER TABLE ONLY public.tutor_context_resolution_log
-    ADD CONSTRAINT tutor_context_resolution_log_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_context_resolution_log_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -8178,7 +8140,7 @@ ALTER TABLE ONLY public.tutor_question_links
 --
 
 ALTER TABLE ONLY public.tutor_turn_metrics
-    ADD CONSTRAINT tutor_turn_metrics_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_turn_metrics_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -9296,21 +9258,6 @@ GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid,
 
 
 --
--- Name: TABLE guardian_links; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role;
-
-
---
--- Name: FUNCTION accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.accept_guardian_link_audited(p_link_id uuid, p_accepting_profile_id uuid, p_request_id text) TO service_role;
-
-
---
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -9448,6 +9395,13 @@ GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO s
 
 
 --
+-- Name: FUNCTION capture_mastery_constant_change(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.capture_mastery_constant_change() TO service_role;
+
+
+--
 -- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9567,11 +9521,17 @@ GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO servic
 
 
 --
--- Name: FUNCTION create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text); Type: ACL; Schema: public; Owner: -
+-- Name: TABLE guardian_links; Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_initiated_by text, p_request_id text) TO service_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role;
+
+
+--
+-- Name: FUNCTION crisis_review_cases_updated_at(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.crisis_review_cases_updated_at() TO service_role;
 
 
 --
@@ -9629,6 +9589,13 @@ GRANT ALL ON FUNCTION public.guardian_link_audit(p_action text, p_actor uuid, p_
 
 REVOKE ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
@@ -10114,10 +10081,18 @@ GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO serv
 
 
 --
+-- Name: FUNCTION update_updated_at_column(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.update_updated_at_column() TO service_role;
+
+
+--
 -- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.validate_memory_summary_schema() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.validate_memory_summary_schema() TO service_role;
 
 
 --
@@ -10254,6 +10229,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history
 
 
 --
+-- Name: TABLE crisis_review_audit_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.crisis_review_audit_log TO service_role;
+
+
+--
+-- Name: TABLE crisis_review_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.crisis_review_cases TO service_role;
+
+
+--
 -- Name: TABLE difficulties; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10305,10 +10294,24 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service
 
 
 --
+-- Name: TABLE exam_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.exam_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
+
+
+--
+-- Name: TABLE full_length_adaptive_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.full_length_adaptive_config_history TO service_role;
 
 
 --
@@ -10379,6 +10382,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_constants TO service_r
 --
 
 GRANT ALL ON TABLE public.mastery_constants_change_log TO service_role;
+
+
+--
+-- Name: SEQUENCE mastery_constants_change_log_change_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.mastery_constants_change_log_change_id_seq TO service_role;
+
+
+--
+-- Name: TABLE mastery_constants_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mastery_constants_history TO service_role;
 
 
 --
@@ -10726,6 +10743,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO ser
 
 
 --
+-- Name: TABLE practice_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.practice_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10738,6 +10762,13 @@ GRANT SELECT ON TABLE public.profiles TO authenticated;
 --
 
 GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
+
+
+--
+-- Name: SEQUENCE projection_refresh_outbox_outbox_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.projection_refresh_outbox_outbox_id_seq TO service_role;
 
 
 --
@@ -10773,6 +10804,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE review_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.review_runtime_config_history TO service_role;
 
 
 --
@@ -11053,6 +11091,13 @@ GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
 
 
 --
+-- Name: SEQUENCE student_section_projection_snapshots_snapshot_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.student_section_projection_snapshots_snapshot_id_seq TO service_role;
+
+
+--
 -- Name: TABLE student_skill_kpi; Type: ACL; Schema: public; Owner: -
 --
 
@@ -11148,6 +11193,76 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.taxonomy_versions TO service_r
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_context_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE tutor_context_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE tutor_conversations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_injection_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_injection_log TO service_role;
+
+
+--
+-- Name: TABLE tutor_injection_signatures; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_injection_signatures TO service_role;
+
+
+--
+-- Name: TABLE tutor_instruction_assignments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_instruction_assignments TO service_role;
+
+
+--
+-- Name: TABLE tutor_instruction_exposures; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_instruction_exposures TO service_role;
+
+
+--
+-- Name: TABLE tutor_memory_summaries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_memory_summaries TO service_role;
+
+
+--
+-- Name: TABLE tutor_messages; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_messages TO service_role;
+
+
+--
+-- Name: TABLE tutor_question_links; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_question_links TO service_role;
+
+
+--
+-- Name: TABLE usage_rate_limit_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 
 
 --
