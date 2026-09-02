@@ -289,80 +289,33 @@ export async function revokeGuardianLink(
   return parseGuardianLink(data);
 }
 
-import { SupabaseClient } from "@supabase/supabase-js";
 import { EntitlementService } from "../services/entitlement-service";
 
-/**
- * Ensures a user has an associated lyceon_account and membership.
- * Calls the RPC ensure_account_for_user(p_user_id, p_role) to create or fetch account.
- * Returns the account_id.
- */
-export async function ensureAccountForUser(
-  supabase: SupabaseClient,
-  userId: string,
-  role: "student" | "guardian" | "admin",
-): Promise<string> {
-  const { data, error } = await supabase.rpc("ensure_account_for_user", {
-    p_user_id: userId,
-    p_role: role,
-  });
-
-  if (error) {
-    console.error("[Account] RPC ensure_account_for_user failed:", error);
-    throw new Error(
-      `RPC ensure_account_for_user failed: code=${error.code} message=${error.message} details=${error.details ?? ""} hint=${error.hint ?? ""}`,
-    );
-  }
-
-  if (!data) {
-    throw new Error("RPC ensure_account_for_user returned no accountId");
-  }
-
-  return data as string;
-}
+// ── Retired accounts model (owner ruling 2026-08-24) ─────────────────
+//
+// The following functions were removed:
+//   - ensureAccountForUser  — called missing RPC ensure_account_for_user
+//   - getAccountIdForUser   — read from non-existent account_members table
+//   - getAllAccountsForUser  — read from non-existent account_members + accounts
+//
+// The production schema uses profile_id = auth.users.id directly, with
+// entitlements keyed on profile_id and no account_id indirection.
+// See WS-GL_Stage1_Audit.md §1 blocker B-3.
+//
+// getAllAccountsForUser is still imported by account-routes.ts (/api/account/status).
+// That route returns { hasAccount: false } when the query returns empty,
+// which is the correct degraded behavior. The route itself is a separate
+// cleanup item — it does not cause 500s.
 
 /**
- * Get account_id for a user by looking up account_members
- */
-export async function getAccountIdForUser(
-  userId: string,
-): Promise<string | null> {
-  const { data, error } = await supabaseServer
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", userId)
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    console.error("[Account] Failed to get account for user:", error);
-    throw new Error(`Failed to get account: ${error.message}`);
-  }
-
-  return data?.account_id || null;
-}
-
-/**
- * Get all account memberships for a user
+ * Stub — getAllAccountsForUser reads from the non-existent account_members
+ * table. Returns empty so /api/account/status degrades to { hasAccount: false }
+ * instead of throwing PGRST205 on every request.
  */
 export async function getAllAccountsForUser(
-  userId: string,
+  _userId: string,
 ): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
-  const { data, error } = await supabaseServer
-    .from("account_members")
-    .select("account_id, role, accounts(created_at)")
-    .eq("user_id", userId)
-    .order("created_at", { foreignTable: "accounts", ascending: false });
-
-  if (error) {
-    console.error("[Account] Failed to get accounts for user:", error);
-    throw new Error(`Failed to get accounts: ${error.message}`);
-  }
-
-  return (data || []).map((row: any) => ({
-    accountId: row.account_id,
-    role: row.role,
-    createdAt: row.accounts?.created_at || new Date().toISOString(),
-  }));
+  return [];
 }
 
 /**
