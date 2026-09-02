@@ -330,6 +330,18 @@ async function invokeClassifier(
  * @spec [Doc-03_V3 §21, SCL-023, INV-03-16]
  */
 export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
+  // TEMPORARY DIAGNOSTIC — remove once GCP_PROJECT_ID issue is resolved
+  logger.warn("TUTOR_CRISIS", "env_diagnostic", "ENV DIAGNOSTIC", {
+    matchingKeys: Object.keys(process.env)
+      .filter((k) => /PROJECT|VERTEX|GCP|MODEL_ARMOR/i.test(k))
+      .sort(),
+    gcpProjectIdType: typeof process.env.GCP_PROJECT_ID,
+    gcpProjectIdLength: process.env.GCP_PROJECT_ID?.length ?? -1,
+    vertexProjectIdLength: process.env.VERTEX_PROJECT_ID?.length ?? -1,
+    classifierModelLength:
+      process.env.VERTEX_CLASSIFIER_CLASS_MODEL?.length ?? -1,
+  });
+
   // Run both layers in parallel per SCL-023
   const [signatureResult, classifierResult] = await Promise.all([
     checkCrisisSignatures(text),
