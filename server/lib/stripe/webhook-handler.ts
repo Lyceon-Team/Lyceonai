@@ -56,7 +56,9 @@ import {
 import {
   resolveEntitlementItem,
   stripeSubscriptionItemSchema,
+  type StripeSubscriptionItem,
 } from "./subscription-item";
+import { classifyError } from "../redact";
 import { dispositionFor } from "./event-surface";
 import {
   disputeEventSchema,
@@ -1331,6 +1333,135 @@ async function writeEntitlementsForAllItems(
 }
 
 /**
+ * Write the session's subject onto the SubscriptionItem Checkout left bare.
+ *
+ * @spec [SCL-045 one SubscriptionItem per student; Charter §6 metadata
+ *        identifies, it does not authorise] | @implemented [2026-09-02]
+ *
+ * plain English: Stripe Checkout does not copy `line_items[].metadata` onto the
+ * SubscriptionItem it creates, so a guardian's first purchase produces an item
+ * with `metadata: {}`. This writes the student the session named onto that item,
+ * so both purchase paths — Checkout and `subscriptionItems.create` — leave the
+ * same item-level shape behind. Expected outcome: every item on a guardian
+ * subscription names its own student, from the first purchase onwards.
+ *
+ * VERIFIED, NOT ASSUMED. `sub_1UB8p5DPtjyWEVqErGBHVFQF` in live Stripe carries
+ * the full subject on the subscription and `metadata: {}` on item
+ * `si_VBVqCKx5JSjVkF`. That question had been carried as an open verification
+ * since Phase 3; the answer is that Checkout does not propagate it.
+ *
+ * WHY IT MATTERS, AND WHAT IT IS NOT FOR. It is NOT what makes the first
+ * purchase work — `writeEntitlementsForAllItems`'s single-student fallback
+ * already resolves a lone bare item from subscription metadata, and already
+ * writes `stripe_subscription_item_id` from the item's own id. The defect it
+ * closes appears at the SECOND student: once a guardian adds one, the
+ * subscription has two items, the fallback is correctly restricted to the
+ * one-item case, and the first student's bare item stops resolving — so their
+ * entitlement is never refreshed again on renewal. Filling the item in at
+ * purchase time is what keeps that from arising.
+ *
+ * IT GRANTS NOTHING. The value written comes from OUR session metadata, set
+ * server-side at session creation, and the writer still re-resolves every item
+ * subject against the payer's active `guardian_links` afterwards. Authorisation
+ * stays in exactly one place; this only makes the identifier durable. Writing it
+ * before that check is deliberate — checking here too would be a second copy of
+ * the §6 rule, which is the pattern this vertical keeps removing.
+ *
+ * IT REFUSES TO GUESS. Only when EXACTLY ONE item lacks a subject is anything
+ * written: with several bare items the session's single student names one of
+ * them at most, and choosing would be the guess `writeEntitlementsForAllItems`
+ * exists to refuse. Items that already carry metadata are never overwritten,
+ * which also makes a replayed event a no-op on its second pass.
+ */
+async function propagateSubjectToBareItem(
+  subscription: RetrievedSubscription,
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventType: string,
+  eventId: string,
+): Promise<RetrievedSubscription> {
+  const studentProfileId = session.metadata?.student_profile_id;
+  if (!studentProfileId) return subscription;
+
+  const items = subscription.items?.data ?? [];
+  const bare = items.filter((i) => !i.metadata?.student_profile_id);
+  if (bare.length !== 1) return subscription;
+
+  const target = bare[0];
+  if (!target) return subscription;
+
+  /**
+   * A FAILED BOOKKEEPING WRITE MUST NOT TAKE DOWN THE MONEY PATH.
+   *
+   * This is the one place in this function that can fail for reasons of its
+   * own, and letting it throw would make the grant depend on it: Stripe would
+   * retry, and a persistent API failure would leave a payer who has been
+   * charged with no entitlement for the whole retry window. That is precisely
+   * the shape this change exists to close — a secondary derivation taking down
+   * a purchase that had already succeeded — and rebuilding it here, one layer
+   * over, would be the same mistake with a different name.
+   *
+   * So the grant proceeds on the unmodified subscription: the single-student
+   * fallback still resolves the subject, and the entitlement is written. What
+   * is lost is durability, not this purchase — and it is logged at ERROR
+   * naming the item, because nothing retries it and an operator setting the
+   * metadata by hand is the remedy.
+   *
+   * NOT a silent catch: it is caught, named, and reported. Nothing else in this
+   * function is caught, so a shape failure from `parseOrFail` on a SUCCESSFUL
+   * response still propagates — that would mean Stripe answered something this
+   * handler does not understand, which a retry can legitimately fix.
+   */
+  let updated: StripeSubscriptionItem;
+  try {
+    updated = parseOrFail(
+      stripeSubscriptionItemSchema,
+      await getStripeClient().subscriptionItems.update(target.id, {
+        // Merged, not replaced: Stripe's metadata update is per key, and an
+        // item may carry keys this handler does not read.
+        metadata: {
+          ...(target.metadata ?? {}),
+          student_profile_id: studentProfileId,
+        },
+      }),
+      eventType,
+    );
+  } catch (err: unknown) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Could not write the student onto the SubscriptionItem. The entitlement is still granted from subscription metadata, but this item will stop resolving once a second student is added to this subscription — set its `student_profile_id` by hand.",
+      {
+        eventId,
+        subscriptionRef: digestId(subscription.id),
+        itemRef: digestId(target.id),
+        ...classifyError(err),
+      },
+    );
+    return subscription;
+  }
+
+  logger.info(
+    "STRIPE_WEBHOOK",
+    eventType,
+    "Wrote the session's student onto the SubscriptionItem Checkout left bare (Checkout does not propagate line_items metadata)",
+    {
+      eventId,
+      subscriptionRef: digestId(subscription.id),
+      itemRef: digestId(target.id),
+      studentProfileRef: digestId(studentProfileId),
+    },
+  );
+
+  return {
+    ...subscription,
+    items: {
+      ...(subscription.items ?? { data: [] }),
+      data: items.map((i) => (i.id === target.id ? updated : i)),
+    },
+  };
+}
+
+/**
  * FULFILMENT — the one path both settlement events share.
  *
  * @spec [SCL-071 entitlement is written on payment SETTLEMENT, not on Checkout
@@ -1466,7 +1597,15 @@ async function fulfilCheckoutSession(
       await getStripeClient().subscriptions.retrieve(subscriptionId),
       eventType,
     );
-    await writeEntitlementsForAllItems(retrieved, eventType, eventId);
+    // Checkout leaves the item bare; fill it in so both purchase paths converge
+    // on the same item-level shape before the one writer reads it.
+    const propagated = await propagateSubjectToBareItem(
+      retrieved,
+      session,
+      eventType,
+      eventId,
+    );
+    await writeEntitlementsForAllItems(propagated, eventType, eventId);
     return;
   }
 
