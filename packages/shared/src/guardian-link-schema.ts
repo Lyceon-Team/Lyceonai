@@ -23,14 +23,14 @@ import { z } from "zod";
 
 /**
  * genesis.sql:
- *   CHECK (status IN ('active','pending_student_accept','pending_guardian_accept','revoked'))
+ *   CHECK (status IN ('active','revoked'))
+ *
+ * SCL-080 narrowed both the column and this enum. The two pending statuses are gone: the
+ * acceptance step they waited on no longer exists, so no code path produces them and the
+ * database refuses them. A schema wider than its column is a parse that can never fail
+ * where the write already would have.
  */
-export const guardianLinkStatusSchema = z.enum([
-  "active",
-  "pending_student_accept",
-  "pending_guardian_accept",
-  "revoked",
-]);
+export const guardianLinkStatusSchema = z.enum(["active", "revoked"]);
 export type GuardianLinkStatus = z.infer<typeof guardianLinkStatusSchema>;
 
 /**
@@ -46,29 +46,6 @@ export const guardianLinkStoredInitiatorSchema = z.enum([
   "admin",
 ]);
 
-/** The initiators §36.1 actually defines a flow for. Writes are restricted to these. */
-export const guardianLinkInitiatorSchema = z.enum(["guardian", "student"]);
-export type GuardianLinkInitiator = z.infer<typeof guardianLinkInitiatorSchema>;
-
-/**
- * @spec [Doc-01_V8 §36.1 Initiation step 1 — the initiating party enters the OTHER party's
- *        email; lyceon-coding-standards.md §7.1 (Zod at every boundary)]
- *        | @implemented [2026-08-26, moved to shared 2026-08-27]
- *
- * plain English: the only shape a link-initiation request accepts, in EITHER direction.
- * `.strict()` so an extra field is a 400 rather than something silently ignored; `.email()`
- * so the per-address rate bucket in §36.2 is keyed on something that is actually an address.
- *
- * It lived in `guardian-routes.ts` while only the guardian could initiate. The student-side
- * route takes the identical shape — the guardian's address rather than the student's — so it
- * moved here rather than being written a second time (Coding Standards §7.2). One definition,
- * so the two directions cannot drift on what they accept.
- */
-export const guardianLinkRequestSchema = z
-  .object({ email: z.string().trim().min(3).max(320).email() })
-  .strict();
-export type GuardianLinkRequest = z.infer<typeof guardianLinkRequestSchema>;
-
 /**
  * @spec [Doc-01_V8 §36.3 Revocation — `revocation_reason` is recorded; Coding Standards §7.1]
  *   | @implemented [2026-08-27]
@@ -81,7 +58,6 @@ export type GuardianLinkRequest = z.infer<typeof guardianLinkRequestSchema>;
 export const guardianLinkRevokeSchema = z
   .object({ reason: z.string().trim().min(1).max(200).optional() })
   .strict();
-export type GuardianLinkRevoke = z.infer<typeof guardianLinkRevokeSchema>;
 
 /**
  * A `timestamptz` as it arrives from whichever transport read it.
@@ -93,7 +69,7 @@ export type GuardianLinkRevoke = z.infer<typeof guardianLinkRevokeSchema>;
  * schema pass under the transport that hides the difference and fail under the one that
  * exposes it, which is the wrong way round.
  */
-const timestampSchema = z
+export const timestampSchema = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v.toISOString() : v));
 
@@ -107,7 +83,7 @@ const timestampSchema = z
  * while breaking every fixture that uses a readable id. Writes are a different matter, but
  * writes are not parsed here.
  */
-const idSchema = z.string().min(1);
+export const idSchema = z.string().min(1);
 
 export const guardianLinkSchema = z.object({
   id: idSchema,
@@ -129,28 +105,6 @@ export type GuardianLink = z.infer<typeof guardianLinkSchema>;
 export const GUARDIAN_LINK_COLUMNS = Object.keys(guardianLinkSchema.shape).join(
   ", ",
 );
-
-/**
- * §36.1's initiation table: whoever started it decides which party must accept.
- * Guardian-initiated waits on the student; student-initiated waits on the guardian.
- */
-export const PENDING_STATUS_FOR_INITIATOR: Record<
-  GuardianLinkInitiator,
-  Extract<
-    GuardianLinkStatus,
-    "pending_student_accept" | "pending_guardian_accept"
-  >
-> = {
-  guardian: "pending_student_accept",
-  student: "pending_guardian_accept",
-};
-
-/** Statuses that occupy the pair — a second link must not be created alongside any of these. */
-export const OCCUPYING_STATUSES: GuardianLinkStatus[] = [
-  "active",
-  "pending_student_accept",
-  "pending_guardian_accept",
-];
 
 /**
  * Parse one row returned by the database. Throws with the offending field named — the
@@ -188,10 +142,6 @@ export function parseGuardianLinks(rows: unknown): GuardianLink[] {
 export const GUARDIAN_LINK_ERROR = {
   /** An active or pending link already exists for this exact pair. */
   ALREADY_EXISTS: "GUARDIAN_LINK_ALREADY_EXISTS",
-  /** The link is not in a state that admits the requested transition. */
-  NOT_PENDING: "GUARDIAN_LINK_NOT_PENDING",
-  /** The caller is not the party §36.1 requires to accept this link. */
-  WRONG_ACCEPTOR: "GUARDIAN_LINK_WRONG_ACCEPTOR",
   /**
    * No active link to revoke. Deliberately keeps the pre-existing `LINK_NOT_ACTIVE`
    * string: the condition is unchanged and callers already branch on it, so a namespaced
@@ -213,8 +163,9 @@ export const GUARDIAN_LINK_ERROR = {
  * becomes an opaque failure.
  */
 export const GUARDIAN_LINK_SQLSTATE: Readonly<Record<string, string>> = {
-  LY001: GUARDIAN_LINK_ERROR.NOT_PENDING,
-  LY002: GUARDIAN_LINK_ERROR.WRONG_ACCEPTOR,
+  // LY001 (not pending) and LY002 (wrong acceptor) are gone with SCL-080: both were raised
+  // only by accept_guardian_link_audited, which migration 20260901000000 drops. LY003 and
+  // LY004 are raised by the two functions that survive.
   LY003: GUARDIAN_LINK_ERROR.NOT_ACTIVE,
   LY004: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
 };

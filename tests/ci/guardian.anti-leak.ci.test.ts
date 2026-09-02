@@ -147,7 +147,6 @@ const accountMocks = {
   getAllGuardianStudentLinks: vi.fn(async () => [
     { student_user_id: STUDENT_ID },
   ]),
-  createGuardianLink: vi.fn(),
   revokeGuardianLink: vi.fn(),
   ensureAccountForUser: vi.fn(async () => ({ id: "acc-1" })),
 };
