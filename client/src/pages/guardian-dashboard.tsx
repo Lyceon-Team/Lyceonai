@@ -48,6 +48,7 @@ import {
   ManageSubscriptionButton,
 } from "@/components/guardian/SubscriptionPaywall";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
@@ -342,7 +343,15 @@ export default function GuardianDashboard() {
                 </p>
               </div>
             </div>
-            <ManageSubscriptionButton />
+            {/*
+              Shown only when there is a subscription to manage. It used to
+              render unconditionally, which is how an unpaid guardian reached a
+              Stripe portal reporting "No payment method / No invoice history".
+            */}
+            <ManageSubscriptionButton
+              effectiveAccess={billingStatus?.effectiveAccess}
+              isPaid={billingStatus?.isPaid}
+            />
           </div>
 
           {showPaidUnlinkedCta && (
@@ -378,7 +387,6 @@ export default function GuardianDashboard() {
             </div>
           )}
 
-
           <Card className="bg-card border-border/60">
             <CardHeader>
               <CardTitle className="text-[#0F2E48] flex items-center gap-2">
@@ -386,8 +394,8 @@ export default function GuardianDashboard() {
                 Link a Student
               </CardTitle>
               <CardDescription>
-                Ask your student for their link code, from their account settings.
-                Entering it links you straight away.
+                Ask your student for their link code, from their account
+                settings. Entering it links you straight away.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -416,7 +424,9 @@ export default function GuardianDashboard() {
                 <Button
                   type="submit"
                   data-testid="guardian-link-code-submit"
-                  disabled={linkMutation.isPending || linkCode.trim().length === 0}
+                  disabled={
+                    linkMutation.isPending || linkCode.trim().length === 0
+                  }
                   className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
                 >
                   {linkMutation.isPending ? "Linking..." : "Link student"}
@@ -450,6 +460,17 @@ export default function GuardianDashboard() {
               )}
             </CardContent>
           </Card>
+
+          {/*
+            THE PURCHASE SURFACE, DELIBERATELY OUTSIDE THE PAYWALL.
+            It renders on the guardian's own dashboard, keyed on whether any
+            LINKED STUDENT lacks entitlement — never on whether this guardian
+            has access. Those are opposites: §31.3's fold grants the guardian
+            access as soon as ANY one student is premium, which is exactly when
+            a second, unpaid student still needs buying for. `students` is the
+            list this page already fetched, so the card costs no extra request.
+          */}
+          {students !== null && <GuardianPurchaseCard students={students} />}
 
           <Card className="bg-card border-border/60">
             <CardHeader>
@@ -509,8 +530,8 @@ export default function GuardianDashboard() {
                     No students linked yet
                   </h3>
                   <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Ask your student for the code in their account settings, then
-                    enter it above. They are linked as soon as you do.
+                    Ask your student for the code in their account settings,
+                    then enter it above. They are linked as soon as you do.
                   </p>
                 </div>
               ) : (
