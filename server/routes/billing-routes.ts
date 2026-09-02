@@ -407,6 +407,44 @@ router.post(
         mode: "subscription",
         line_items: lineItems,
         /**
+         * SAVE THE BILLING ADDRESS ONTO THE CUSTOMER — ONE FACT, ONE SOURCE.
+         *
+         * @spec [INV-03-08; Charter §7 "one fact, one source"]
+         * @implemented [2026-09-02]
+         *
+         * plain English: tell Stripe to copy the address the payer types during
+         * Checkout onto the Customer. Expected outcome: the grant gate, which
+         * reads `Customer.address.country`, has something to read.
+         *
+         * WHAT WENT WRONG WITHOUT IT. Stripe collects the billing address per
+         * PAYMENT METHOD and does not write it back to the Customer unless
+         * asked. So `Customer.address` stayed `null` on every customer we have,
+         * while the session carried a complete address. Two gates then read the
+         * same fact from two sources and disagreed on the same purchase:
+         * `fulfilCheckoutSession` passed guardian `c6d3fc60` on
+         * `session.customer_details.address.country = "US"`, and
+         * `assertCountryEligibleForGrant` denied the same purchase seconds
+         * later on `Customer.address = null` -> verdict `unknown` ->
+         * `hold_for_operator`. Charge taken, subscription live, nothing
+         * refunded, no entitlement. Every grant behaved this way from
+         * 2026-08-28, when the Customer-level gate landed, until this change.
+         *
+         * WHY NOT POINT THE GRANT GATE AT THE SESSION INSTEAD. Renewals have no
+         * session. The Customer is the correct source precisely because it is
+         * the one that still exists at `customer.subscription.updated`; it was
+         * simply never populated. Fixing the read would have fixed checkout and
+         * left every renewal denying.
+         *
+         * `customer_update` requires `customer` to be set, which it is on every
+         * path through this route (see `customerId` above).
+         * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-customer_update-address
+         *
+         * IT DOES NOT BACKFILL. Customers that already exist with a null
+         * address keep it until their next Checkout; that is an owner action,
+         * not a code path.
+         */
+        customer_update: { address: "auto" },
+        /**
          * RETURN THE PAYER TO A PAGE THEIR ROLE CAN LOAD.
          *
          * @revised [2026-09-02]
