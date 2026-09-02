@@ -613,9 +613,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // `is_under_13 !== false` (fail-closed). No additional check needed here —
   // any request reaching this handler has already passed the age gate.
 
-  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4).
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4, SCL-079).
   // LISA must be unavailable while the student has an active full-length exam
-  // session. Fail CLOSED — a failing live-exam check blocks tutor access.
+  // session. Blocks when a live exam IS found. Fails OPEN when the query
+  // itself fails (SCL-079, Karl ruling 2026-09-01) — see entitlement-service
+  // docblock for the threat-model justification.
   const liveExamInProgress =
     await EntitlementService.isLiveExamInProgress(studentId);
   if (liveExamInProgress) {
