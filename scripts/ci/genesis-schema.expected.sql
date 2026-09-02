@@ -4106,6 +4106,7 @@ CREATE TABLE public.entitlements (
     tier text NOT NULL,
     status text NOT NULL,
     stripe_subscription_id text,
+    stripe_subscription_item_id text,
     stripe_price_id text,
     current_period_start timestamp with time zone,
     current_period_end timestamp with time zone,
@@ -4116,6 +4117,13 @@ CREATE TABLE public.entitlements (
     CONSTRAINT entitlements_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'unpaid'::text, 'incomplete'::text, 'incomplete_expired'::text, 'trialing'::text]))),
     CONSTRAINT entitlements_tier_check CHECK ((tier = ANY (ARRAY['free'::text, 'premium'::text])))
 );
+
+
+--
+-- Name: COLUMN entitlements.stripe_subscription_item_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: the subscription ITEM this entitlement is keyed to. One item per entitled student, so one guardian subscription can carry several. NULL on rows written before 2026-08-27 and backfilled by the next customer.subscription.updated for that subscription — the item id is not derivable in SQL.';
 
 
 --
@@ -5817,22 +5825,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: entitlements entitlements_profile_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
-
-
---
--- Name: entitlements entitlements_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlements
-    ADD CONSTRAINT entitlements_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
-
-
---
 -- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6441,6 +6433,20 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 
 --
+-- Name: entitlements_profile_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
+
+
+--
+-- Name: entitlements_stripe_subscription_item_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX entitlements_stripe_subscription_item_id_key ON public.entitlements USING btree (stripe_subscription_item_id) WHERE (stripe_subscription_item_id IS NOT NULL);
+
+
+--
 -- Name: idx_abuse_incidents_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6550,6 +6556,13 @@ CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile
 --
 
 CREATE INDEX idx_entitlements_profile ON public.entitlements USING btree (profile_id);
+
+
+--
+-- Name: idx_entitlements_stripe_subscription; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL);
 
 
 --
@@ -9320,6 +9333,13 @@ GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO s
 
 
 --
+-- Name: FUNCTION capture_mastery_constant_change(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.capture_mastery_constant_change() TO service_role;
+
+
+--
 -- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9447,6 +9467,13 @@ GRANT ALL ON FUNCTION public.create_guardian_link_audited(p_guardian_id uuid, p_
 
 
 --
+-- Name: FUNCTION crisis_review_cases_updated_at(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.crisis_review_cases_updated_at() TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9501,6 +9528,13 @@ GRANT ALL ON FUNCTION public.guardian_link_audit(p_action text, p_actor uuid, p_
 
 REVOKE ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
@@ -9986,10 +10020,18 @@ GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO serv
 
 
 --
+-- Name: FUNCTION update_updated_at_column(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.update_updated_at_column() TO service_role;
+
+
+--
 -- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.validate_memory_summary_schema() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.validate_memory_summary_schema() TO service_role;
 
 
 --
@@ -10126,6 +10168,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history
 
 
 --
+-- Name: TABLE crisis_review_audit_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.crisis_review_audit_log TO service_role;
+
+
+--
+-- Name: TABLE crisis_review_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.crisis_review_cases TO service_role;
+
+
+--
 -- Name: TABLE difficulties; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10177,10 +10233,24 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service
 
 
 --
+-- Name: TABLE exam_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.exam_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
+
+
+--
+-- Name: TABLE full_length_adaptive_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.full_length_adaptive_config_history TO service_role;
 
 
 --
@@ -10251,6 +10321,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_constants TO service_r
 --
 
 GRANT ALL ON TABLE public.mastery_constants_change_log TO service_role;
+
+
+--
+-- Name: SEQUENCE mastery_constants_change_log_change_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.mastery_constants_change_log_change_id_seq TO service_role;
+
+
+--
+-- Name: TABLE mastery_constants_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mastery_constants_history TO service_role;
 
 
 --
@@ -10598,6 +10682,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO ser
 
 
 --
+-- Name: TABLE practice_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.practice_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10610,6 +10701,13 @@ GRANT SELECT ON TABLE public.profiles TO authenticated;
 --
 
 GRANT ALL ON TABLE public.projection_refresh_outbox TO service_role;
+
+
+--
+-- Name: SEQUENCE projection_refresh_outbox_outbox_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.projection_refresh_outbox_outbox_id_seq TO service_role;
 
 
 --
@@ -10645,6 +10743,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE review_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.review_runtime_config_history TO service_role;
 
 
 --
@@ -10925,6 +11030,13 @@ GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
 
 
 --
+-- Name: SEQUENCE student_section_projection_snapshots_snapshot_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.student_section_projection_snapshots_snapshot_id_seq TO service_role;
+
+
+--
 -- Name: TABLE student_skill_kpi; Type: ACL; Schema: public; Owner: -
 --
 
@@ -11020,6 +11132,76 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.taxonomy_versions TO service_r
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_context_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE tutor_context_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE tutor_conversations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_injection_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_injection_log TO service_role;
+
+
+--
+-- Name: TABLE tutor_injection_signatures; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_injection_signatures TO service_role;
+
+
+--
+-- Name: TABLE tutor_instruction_assignments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_instruction_assignments TO service_role;
+
+
+--
+-- Name: TABLE tutor_instruction_exposures; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_instruction_exposures TO service_role;
+
+
+--
+-- Name: TABLE tutor_memory_summaries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_memory_summaries TO service_role;
+
+
+--
+-- Name: TABLE tutor_messages; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_messages TO service_role;
+
+
+--
+-- Name: TABLE tutor_question_links; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tutor_question_links TO service_role;
+
+
+--
+-- Name: TABLE usage_rate_limit_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 
 
 --

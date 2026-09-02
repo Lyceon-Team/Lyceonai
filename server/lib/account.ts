@@ -420,6 +420,14 @@ interface Entitlement {
   tier: EntitlementTier;
   status: EntitlementStatus;
   stripe_subscription_id: string | null;
+  /**
+   * SCL-045 / migration 20260827010000: the subscription ITEM this entitlement
+   * is keyed to. One item per entitled student, so one guardian subscription
+   * carries several. Nullable because rows written before 2026-08-27 have no
+   * item id — it is not derivable in SQL and arrives on the next
+   * `customer.subscription.updated`.
+   */
+  stripe_subscription_item_id: string | null;
   stripe_price_id: string | null;
   current_period_start: string | null;
   current_period_end: string | null;
@@ -511,7 +519,7 @@ export async function getEntitlementForProfile(
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .eq("profile_id", profileId)
     .maybeSingle();
@@ -524,21 +532,74 @@ export async function getEntitlementForProfile(
 }
 
 /**
+ * @spec [SCL-073 disputes; genesis.sql:173 `stripe_subscription_id TEXT UNIQUE`]
+ * @implemented [2026-08-27]
+ * plain English: find EVERY entitlement a Stripe subscription pays for.
+ * Expected outcome: a list — empty when the subscription pays for nothing we
+ * hold, one row on the individual path, N rows on a guardian subscription that
+ * funds N students.
+ *
+ * @revised [2026-08-28 — Codex HIGH-4] It previously returned ONE row via
+ * `.maybeSingle()`. That was correct only while `stripe_subscription_id` was
+ * UNIQUE. Migration `20260827010000` dropped that constraint and moved the key
+ * to `stripe_subscription_item_id`, so on a guardian subscription `maybeSingle`
+ * raises rather than returning rows — meaning a chargeback or a full refund
+ * against a guardian invoice revoked NOBODY. The migration's own header named
+ * this function as work to be done and it was not done; this is that change.
+ *
+ * Trade-off: callers must now decide what several rows mean. That decision is
+ * theirs and differs by path — several rows on ONE subscription is the normal
+ * guardian shape, whereas several SUBSCRIPTIONS matching one charge is still
+ * ambiguous and still fails closed. Collapsing both into "one row" is what hid
+ * the defect. Edge case: a subscription id we never recorded returns `[]`
+ * rather than throwing, because a dispute on a charge unrelated to any
+ * entitlement is a fact, not an error.
+ */
+export async function getEntitlementsBySubscriptionId(
+  stripeSubscriptionId: string,
+): Promise<Entitlement[]> {
+  const { data, error } = await supabaseServer
+    .from("entitlements")
+    .select(
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+    )
+    .eq("stripe_subscription_id", stripeSubscriptionId)
+    // Deterministic order so a fan-out revokes in a stable, reproducible
+    // sequence and a partial failure is replayable.
+    .order("stripe_subscription_item_id", { ascending: true });
+
+  if (error) {
+    throw new Error(
+      `Failed to fetch entitlements by subscription: ${error.message}`,
+    );
+  }
+
+  return (data ?? []) as Entitlement[];
+}
+
+/**
  * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181 | STRIPE-001] @implemented 2026-08-09
  * plain English: webhook-only upsert keyed on UNIQUE(profile_id). Persists Stripe's
  * authoritative subscription state verbatim into the genesis entitlements table.
  * onConflict targets the profile_id_unique constraint (added by migration).
  * stripe_customer_id is NOT written here — it lives on profiles (genesis:149).
  */
+/**
+ * The shape a writer may hand `upsertEntitlement`. Exported so callers that
+ * build an update in one place and apply it in another (the dispute/refund
+ * fan-out) can name the type instead of widening it to a string.
+ */
+export type EntitlementUpdate = Partial<Omit<Entitlement, "profile_id">>;
+
 export async function upsertEntitlement(
   profileId: string,
-  updates: Partial<Omit<Entitlement, "profile_id">>,
+  updates: EntitlementUpdate,
 ): Promise<Entitlement> {
   const { data, error } = await supabaseServer
     .from("entitlements")
     .upsert({ profile_id: profileId, ...updates }, { onConflict: "profile_id" })
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
     )
     .single();
 
@@ -570,6 +631,45 @@ export async function getProfileStripeCustomerId(
   }
 
   return data?.stripe_customer_id ?? null;
+}
+
+/**
+ * @spec [Doc-01_V8 §4; genesis.sql:149,160; SCL-070 amendment | owner ruling 2026-08-31]
+ * @implemented [2026-08-31]
+ *
+ * plain English: the REVERSE of `getProfileStripeCustomerId` — given a Stripe
+ * Customer id, find the Lyceon profile that holds it. Needed because
+ * `customer.deleted` arrives carrying only the Customer id, and by then the
+ * Customer is gone from Stripe, so the payer cannot be re-read from the API.
+ * Our own row is the only remaining link.
+ *
+ * expected outcome: the payer's `profiles.id`, or null when no profile holds
+ * this Customer.
+ *
+ * trade-offs / edge cases:
+ *  - `profiles.stripe_customer_id` is UNIQUE (genesis:149) and indexed
+ *    (genesis:160), so at most one row can match; `maybeSingle` is exact here,
+ *    not a convenience.
+ *  - NULL is a FACT, not an error: a Customer we never recorded funds nothing
+ *    of ours, so the caller changes nothing. Absence and ambiguity are
+ *    different failures and must not share a branch.
+ */
+export async function getProfileIdByStripeCustomerId(
+  stripeCustomerId: string,
+): Promise<string | null> {
+  const { data, error } = await supabaseServer
+    .from("profiles")
+    .select("id")
+    .eq("stripe_customer_id", stripeCustomerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Failed to read profile by stripe_customer_id: ${error.message}`,
+    );
+  }
+
+  return data?.id ?? null;
 }
 
 /**
@@ -851,6 +951,44 @@ export async function resolveLinkedPairPremiumAccessForStudent(
 }
 
 /**
+ * @spec [Doc 01 V8 §31.3 — a guardian's premium derives from ANY ONE active
+ *        premium student; SP25-001 single evaluator] | @implemented [2026-08-27]
+ * plain English: find the linked student whose entitlement gives this guardian
+ * premium. Expected outcome: the first active link whose student is entitled;
+ * or the first active link when none is; or null when there are no links.
+ * Trade-off: asks the canonical evaluator once per link and short-circuits on
+ * the first hit, so a guardian with an entitled student costs one call and only
+ * an all-free guardian pays for every link — deterministic because
+ * `getAllGuardianStudentLinks` orders by `created_at`. Edge case: a guardian
+ * with links but no entitled student must still report `hasActiveLink: true`,
+ * which is why the fallback returns the first link rather than null — "linked
+ * but not premium" and "not linked at all" are different facts.
+ *
+ * Consumes WS-GL Phase B's reader. No second link reader is built here.
+ */
+async function resolveConferringLink(
+  guardianProfileId: string,
+): Promise<{ link: GuardianLink; active: boolean } | null> {
+  const links = await getAllGuardianStudentLinks(guardianProfileId);
+  if (links.length === 0) return null;
+
+  for (const candidate of links) {
+    if (!candidate.student_profile_id) continue;
+    const active = await EntitlementService.isEntitlementActiveForProfile(
+      candidate.student_profile_id,
+    );
+    // The verdict travels WITH the link. Returning only the link would make the
+    // caller ask the evaluator the same question again for the same student —
+    // a second round trip for an answer already computed, on a path that runs
+    // per request.
+    if (active) return { link: candidate, active: true };
+  }
+
+  const first = links[0];
+  return first ? { link: first, active: false } : null;
+}
+
+/**
  * @spec [Doc-01_V8 §20–§24; SP25-001; guardian trust model] @implemented 2026-08-09
  * plain English: resolve premium access for a guardian. Guardian access derives from the
  * LINKED STUDENT's entitlement — guardian's own entitlement is diagnostic-only metadata.
@@ -863,9 +1001,24 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   // profile_id = userId — read guardian entitlement directly (diagnostic only)
   const guardianEntitlement = await getEntitlementForProfile(guardianUserId);
 
+  // §31.3: a guardian's premium derives from ANY ONE active premium student —
+  // a fold over every active link, not a lookup of one.
+  //
+  // The defect this replaces: `getPrimaryGuardianLink` returns the OLDEST
+  // active link, so a guardian with two linked students where only the SECOND
+  // is premium derived `free`. The link that confers access is whichever
+  // student is actually entitled, and until this fold existed nothing looked
+  // past the first.
+  //
+  // Asking about a NAMED student is a different question and keeps its
+  // single-link behaviour: "does this guardian have access at all" folds,
+  // "what is this guardian's access to THIS student" does not.
+  const folded = requestedStudentId
+    ? null
+    : await resolveConferringLink(guardianUserId);
   const link = requestedStudentId
     ? await getGuardianLinkForStudent(guardianUserId, requestedStudentId)
-    : await getPrimaryGuardianLink(guardianUserId);
+    : (folded?.link ?? null);
 
   // Consequence edit, declared per WS-GL Stage 2 Closure Plan §10 (ruling 3): the callee's
   // contract now names the column the table actually has. Field rename only — no behaviour
@@ -896,9 +1049,15 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
   // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
   // visibility requires active link (resolved above) AND active student entitlement (here).
-  const studentActive = await EntitlementService.isEntitlementActiveForProfile(
-    link.student_profile_id,
-  );
+  // Reuse the fold's verdict when it produced one: it evaluated THIS student on
+  // THIS request, so asking again would be a second round trip for an answer we
+  // already hold. The named-student path has no fold and still evaluates here.
+  const studentActive =
+    folded !== null
+      ? folded.active
+      : await EntitlementService.isEntitlementActiveForProfile(
+          link.student_profile_id,
+        );
   const hasPremiumAccess = studentActive;
 
   return {

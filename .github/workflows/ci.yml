@@ -44,6 +44,15 @@ jobs:
       - name: Validate Route Registry
         run: pnpm run route:validate
 
+      # No SCL id may head two entries in the register. Three collisions
+      # (SCL-021, SCL-024, SCL-042) reached it despite every author having read
+      # the register first — reading does not reserve a number, so only a
+      # mechanical check closes the same-day race. The two pre-existing
+      # collisions are allowlisted by exact count inside the script, with an
+      # expiry note; a third heading on either still fails.
+      - name: SCL register — no duplicate ids
+        run: node scripts/ci/scl-duplicate-check.mjs
+
       - name: Run Security Tests (IDOR + entitlements regression)
         run: pnpm run test:security
 
@@ -501,6 +510,37 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/guardian-link-student-side.pg.ci.test.ts
+
+      # @spec [owner instruction 2026-08-28 Task 1 Gates A and B] | @implemented [2026-09-01]
+      #
+      # The three files converted off mocked query layers and hand-written row fixtures on
+      # 2026-09-01, added here by hand per the NOTE above — which is the whole reason that
+      # note exists. Without this step they run in NO job: the whole-suite `pnpm test` step
+      # does not set PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips every one of them and
+      # reports green.
+      #
+      # WHY THE SKIP CHECK. A PG-backed suite that skips exits 0. That is a vacuous pass, and
+      # a vacuous pass is exactly the defect class this job exists to stop — the same shape as
+      # "zero scanned files is not zero violations" in the gates. If PGHOST ever stops
+      # reaching the runner, this step must go RED rather than quietly stop proving anything.
+      - name: Guardian schema-truth conversions → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          out=$(pnpm exec vitest run \
+            tests/ci/guardian-checkout.contract.test.ts \
+            tests/ci/guardian-premium-fold.contract.test.ts \
+            packages/shared/src/__tests__/guardian-student-schema.test.ts 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q "skipped"; then
+            echo "FAIL: a PG-backed guardian suite SKIPPED rather than running."
+            echo "      These files gate on PGHOST; a skip here is a vacuous pass."
+            exit 1
+          fi
 
       # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
       # The proof above can only be trusted if its cases can FAIL. Three times in three

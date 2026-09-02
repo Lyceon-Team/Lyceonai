@@ -93,7 +93,7 @@ export type GuardianLinkRevoke = z.infer<typeof guardianLinkRevokeSchema>;
  * schema pass under the transport that hides the difference and fail under the one that
  * exposes it, which is the wrong way round.
  */
-const timestampSchema = z
+export const timestampSchema = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v.toISOString() : v));
 
@@ -107,7 +107,7 @@ const timestampSchema = z
  * while breaking every fixture that uses a readable id. Writes are a different matter, but
  * writes are not parsed here.
  */
-const idSchema = z.string().min(1);
+export const idSchema = z.string().min(1);
 
 export const guardianLinkSchema = z.object({
   id: idSchema,

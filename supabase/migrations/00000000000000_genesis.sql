@@ -170,7 +170,11 @@ CREATE TABLE public.entitlements (
   profile_id             UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
   tier                   TEXT NOT NULL CHECK (tier IN ('free', 'premium')),
   status                 TEXT NOT NULL CHECK (status IN ('active','past_due','canceled','unpaid','incomplete','incomplete_expired','trialing')),
-  stripe_subscription_id TEXT UNIQUE,
+  stripe_subscription_id TEXT,
+  -- SCL-045 (migration 20260827010000): the UNIQUE here was DROPPED. One
+  -- guardian subscription entitles several students, one item each, so the
+  -- subscription id is no longer a key. The item id below is.
+  stripe_subscription_item_id TEXT,
   stripe_price_id        TEXT,
   current_period_start   TIMESTAMPTZ,
   current_period_end     TIMESTAMPTZ,
@@ -179,9 +183,16 @@ CREATE TABLE public.entitlements (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE public.entitlements ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
+-- Production holds this as a unique INDEX, not a table constraint: migration
+-- 20260809000000_entitlements_profile_id_unique_and_webhook_events.sql:21 created it
+-- with CREATE UNIQUE INDEX IF NOT EXISTS. Genesis declared ADD CONSTRAINT, which no
+-- migration ever ran. Corrected toward production — production is right and the file
+-- was wrong. Still a valid ON CONFLICT (profile_id) target either way.
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
 CREATE INDEX idx_entitlements_profile ON public.entitlements (profile_id);
 CREATE INDEX idx_entitlements_active  ON public.entitlements (profile_id) WHERE status = 'active' OR status = 'past_due';
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_stripe_subscription_item_id_key ON public.entitlements (stripe_subscription_item_id) WHERE stripe_subscription_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entitlements_stripe_subscription ON public.entitlements (stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
 
 -- @spec [Doc-01_V8, §27] entitlement_features — declarative feature gates; admin-mutable.
 CREATE TABLE public.entitlement_features (
