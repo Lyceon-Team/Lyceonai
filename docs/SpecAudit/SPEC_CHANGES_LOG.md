@@ -2039,3 +2039,21 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03D §0, §5.1 authoring brief — SCL-037 (INV-03-04 justification narrowed to product decision; redirect-over-refuse posture grounded)
 - Doc 03D §9 — SCL-038 (record expected effect-size range and power consequences; coordinate marketing substantiation)
 - Doc 03D §6.2, §6.3, §6.6 — SCL-060 (active question explanation is internal context, not an anti-leak surface; anti-echo directive + INV-03-04 are the defense layers)
+
+SCL-081 | 2026-09-02 | Doc 05A §4.9 — the inline comment names a call the RPC does not make, and 05C §8.4 says the opposite | PROPOSED
+Id: `SCL-081` re-derived at the moment of use, 2026-09-02, across all 33 remote branches (`git grep -ohE "SCL-[0-9]{3}" <ref> -- docs/`). Highest allocated anywhere is `SCL-080` (`origin/stripe`, `origin/main`). No collision.
+Change: correct one inline comment in Doc 05A §4.9's code block. No behaviour changes, no invariant moves, and no other passage is affected. This is a documentation defect in a LOCKED document, raised rather than silently ignored, because it points a reader at a seam that does not exist.
+WAS: Doc 05A §4.9, in the code block immediately after the `PERFORM public.refresh_domain_mastery(...)` call, verbatim:
+  `-- refresh_domain_mastery internally calls refresh_section_projection`
+IS: `refresh_domain_mastery` does NOT call `refresh_section_projection`, and no 05B function does. The 05A→05C seam is a DIRECT call from `apply_mastery_event` to `bump_projection_refresh_counter`, made after `refresh_domain_mastery` returns.
+Evidence, from the deployed body rather than from reading:
+  - `supabase/migrations/20260613000000_lane_c_mastery_seam.sql:238-239` — the two calls are siblings in `apply_mastery_event`, in this order:
+      `PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);`
+      `PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);`
+  - `refresh_domain_mastery` fans out to the four KPI refreshers (Doc 05B §4.9) and to nothing in 05C.
+  - A production stack trace from CI on 2026-09-01 shows the real nesting and stops at the KPI refresher: `refresh_overall_kpi ... <- SQL statement "SELECT public.refresh_domain_mastery(...)" <- PL/pgSQL function apply_mastery_event ... line 154 at PERFORM`.
+CONTRADICTED BY THE OWNING DOCUMENT: Doc 05C §8.4 is explicit and says the reverse — "The only cross-doc seam is a single 05C-owned increment function that `apply_mastery_event` calls", and, in its own code comment, "05C-owned increment function. apply_mastery_event (05A) calls THIS; it does not touch any projection column directly. This is the single cross-doc seam". Per RB-05C-V1-03 the projection-refresh state is 05C-owned precisely so that 05A/05B do not reach into it. So the corpus already contains the correct statement; 05A §4.9's comment is the outlier.
+Rationale: 05C owns projections, and the owning document wins. The 05A comment also names a function, `refresh_section_projection`, whose relationship to the actual `compute_section_projection` / `bump_projection_refresh_counter` pair is not stated anywhere — so a reader trying to follow §4.9's chain looks for a call that is not there and a function that does not carry that seam. The cost of the defect is not behavioural but navigational, which is exactly the kind of drift a locked corpus should not accumulate.
+Why this surfaced now: `tests/ci/mastery-emission.postgrest.ci.test.ts` asserts `student_projection_refresh_state.events_since_refresh` as the witness that `apply_mastery_event` ran to completion, because `bump_projection_refresh_counter` is its final statement before `RETURN`. Establishing that the counter really is terminal required resolving which function calls it, and the two documents disagreed.
+Owner action: amend Doc 05A §4.9's inline comment to state the actual seam — e.g. `-- refresh_domain_mastery fans out to the four KPI refreshers (Doc 05B §4.9); the 05C projection-refresh throttle is invoked separately by this function, per Doc 05C §8.4` — or, if a `refresh_section_projection` seam was in fact intended and 05C §8.4 is the passage in error, say so and the code is what changes instead.
+Build artifact: no code change. This entry records a documentation defect only; nothing in this PR depends on the outcome.
