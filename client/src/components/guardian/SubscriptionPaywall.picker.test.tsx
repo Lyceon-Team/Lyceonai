@@ -119,7 +119,12 @@ describe("guardian student picker on the checkout surface", () => {
     // Choose a plan but no student.
     fireEvent.click(await screen.findByText(/Monthly/i));
 
-    const subscribe = screen.getByRole("button", { name: /Subscribe Now/i });
+    // SCL-080: the label is "Start Student Subscription". It used to be "Subscribe Now"
+    // only because that was the FALSE branch of `requiresStudentSubscription`, which no
+    // server route ever wrote — the accidental copy, not the chosen one.
+    const subscribe = screen.getByRole("button", {
+      name: /Start Student Subscription/i,
+    });
     expect(subscribe).toBeDisabled();
 
     fireEvent.click(subscribe);
@@ -139,7 +144,12 @@ describe("guardian student picker on the checkout surface", () => {
     fireEvent.change(select, { target: { value: STUDENT_B } });
     fireEvent.click(await screen.findByText(/Monthly/i));
 
-    const subscribe = screen.getByRole("button", { name: /Subscribe Now/i });
+    // SCL-080: the label is "Start Student Subscription". It used to be "Subscribe Now"
+    // only because that was the FALSE branch of `requiresStudentSubscription`, which no
+    // server route ever wrote — the accidental copy, not the chosen one.
+    const subscribe = screen.getByRole("button", {
+      name: /Start Student Subscription/i,
+    });
     await waitFor(() => expect(subscribe).not.toBeDisabled());
     fireEvent.click(subscribe);
 

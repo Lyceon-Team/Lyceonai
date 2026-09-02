@@ -41,8 +41,6 @@ import {
   AlertTriangle,
   Calendar,
   CreditCard,
-  Search,
-  Loader2,
 } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -79,19 +77,19 @@ interface StudentSummary {
 interface GuardianBillingStatus {
   isPaid: boolean;
   effectiveAccess: boolean;
-  hasLinkedStudent?: boolean;
-  linkRequiredForPremium?: boolean;
+  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  hasActiveLink?: boolean;
 }
 
 export default function GuardianDashboard() {
   const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
   const queryClient = useQueryClient();
-  // @spec [Doc-01_V8, §36.1 Initiation step 1] | @implemented [2026-08-26]
-  // plain English: the guardian identifies the student by EMAIL, not by an 8-character code.
-  // The code mechanism appears nowhere in the locked spec corpus; §36.1 step 1 reads
-  // "Guardian enters student's email on their dashboard". Consequence edit forced by the
-  // route's contract — see docs/plans/WS-GL_PhaseB_Report.md §4.1.
-  const [linkEmail, setLinkEmail] = useState("");
+  // @spec [SCL-080; supersedes Doc-01_V8 §36.1 Initiation step 1] | @implemented [2026-09-01]
+  // plain English: the guardian identifies the student by a 6-character CODE the student
+  // displays and shares, not by email. The comment that stood here said the opposite and
+  // said the code mechanism "appears nowhere in the locked spec corpus" — true when it was
+  // written, and superseded by SCL-080, which is why the state below is already `linkCode`.
+  const [linkCode, setLinkCode] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
@@ -181,34 +179,31 @@ export default function GuardianDashboard() {
     enabled: isGuardian && isAuthenticated,
     retry: 1,
   });
+  /**
+   * SCL-080: the guardian REDEEMS a code the student shared. This replaced an email
+   * invitation that created a `pending_student_accept` row and waited for an acceptance
+   * screen that existed on no branch — which is why `guardian_links` held zero rows.
+   */
   const linkMutation = useMutation({
-    mutationFn: async (email: string) => {
-      const res = await csrfFetch("/api/guardian/link", {
+    mutationFn: async (code: string) => {
+      const res = await csrfFetch("/api/guardian/link/redeem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ code }),
       });
       const data = await res.json();
       if (!res.ok)
         throw new Error(
-          data.error?.message || data.error || "Failed to link student",
+          data.error?.message || data.error || "Could not use that code",
         );
       return data;
     },
-    onSuccess: (data) => {
-      // §36.1: the link is created PENDING. The student has to accept before the
-      // guardian sees anything, so the message must not claim the link is live.
-      // The response is deliberately identical whether or not the address matches a
-      // student account (anti-enumeration), so it cannot name the student either.
-      const linkId =
-        typeof data?.data?.link_id === "string" ? data.data.link_id : null;
-      setLinkSuccess(
-        linkId
-          ? `Request created. Ask your student to sign in and accept the pending guardian link from their account. Request ID: ${linkId}.`
-          : "Request created. Ask your student to sign in and accept the pending guardian link from their account.",
-      );
-      setLinkEmail("");
+    onSuccess: () => {
+      // The link is LIVE on this response — there is nothing to wait for, so the copy
+      // must not imply there is.
+      setLinkSuccess("Linked. Their progress is available now.");
+      setLinkCode("");
       setLinkError(null);
       setIsRateLimited(false);
       setLastUpdated(new Date());
@@ -221,7 +216,7 @@ export default function GuardianDashboard() {
       ) {
         setIsRateLimited(true);
         setLinkError(
-          "Too many link attempts. Please wait 15 minutes before trying again.",
+          "Too many attempts. Please wait 15 minutes before trying again.",
         );
       } else {
         setLinkError(err.message);
@@ -258,11 +253,14 @@ export default function GuardianDashboard() {
     e.preventDefault();
     setLinkError(null);
     setLinkSuccess(null);
-    if (!linkEmail.trim()) {
-      setLinkError("Please enter your student's email address");
+    const normalised = linkCode.replace(/\s+/g, "").toUpperCase();
+    if (normalised.length === 0) {
+      setLinkError("Enter the code your student gave you");
       return;
     }
-    linkMutation.mutate(linkEmail.trim());
+    // Normalised here AND on the server. The server's parse is the one that decides; this
+    // only spares the round trip for whitespace and case.
+    linkMutation.mutate(normalised);
   };
 
   const handleUnlinkClick = (student: LinkedStudent) => {
@@ -321,9 +319,9 @@ export default function GuardianDashboard() {
     return value === null || value === undefined ? null : Number(value);
   };
   const showPaidUnlinkedCta =
-    !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
+    billingStatus?.hasActiveLink === false && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
-    !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
+    billingStatus?.hasActiveLink === false && !billingStatus?.isPaid;
 
   return (
     <SubscriptionPaywall>
@@ -380,27 +378,6 @@ export default function GuardianDashboard() {
             </div>
           )}
 
-          {students?.length === 0 && (
-            <Card className="bg-card border-border/60">
-              <CardHeader>
-                <CardTitle className="text-[#0F2E48]">
-                  Connection Required
-                </CardTitle>
-                <CardDescription>
-                  Send a guardian link request to your student's account email.
-                  Reporting starts after the student accepts from their account.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
-                <div className="rounded-lg bg-secondary/50 p-3">
-                  Progress summaries appear after a student is linked.
-                </div>
-                <div className="rounded-lg bg-secondary/50 p-3">
-                  Calendar access is read-only and respects student ownership.
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           <Card className="bg-card border-border/60">
             <CardHeader>
@@ -409,8 +386,8 @@ export default function GuardianDashboard() {
                 Link a Student
               </CardTitle>
               <CardDescription>
-                Enter your student's account email. They must accept the pending
-                guardian link from their own account before reporting unlocks.
+                Ask your student for their link code, from their account settings.
+                Entering it links you straight away.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -419,25 +396,30 @@ export default function GuardianDashboard() {
                 className="flex flex-col sm:flex-row gap-3"
               >
                 <div className="flex-1">
-                  <Label htmlFor="linkEmail" className="sr-only">
-                    Student Email Address
+                  <Label htmlFor="linkCode" className="sr-only">
+                    Student link code
                   </Label>
                   <Input
-                    id="linkEmail"
-                    type="email"
+                    id="linkCode"
+                    data-testid="guardian-link-code-input"
+                    type="text"
                     autoComplete="off"
-                    placeholder="Enter your student's email address"
-                    value={linkEmail}
-                    onChange={(e) => setLinkEmail(e.target.value)}
-                    maxLength={320}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    placeholder="Enter your student's code"
+                    value={linkCode}
+                    onChange={(e) => setLinkCode(e.target.value)}
+                    maxLength={12}
+                    className="font-mono tracking-[0.2em] uppercase"
                   />
                 </div>
                 <Button
                   type="submit"
-                  disabled={linkMutation.isPending || !linkEmail.includes("@")}
+                  data-testid="guardian-link-code-submit"
+                  disabled={linkMutation.isPending || linkCode.trim().length === 0}
                   className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
                 >
-                  {linkMutation.isPending ? "Sending..." : "Send Request"}
+                  {linkMutation.isPending ? "Linking..." : "Link student"}
                 </Button>
               </form>
               {linkError && (
@@ -527,8 +509,8 @@ export default function GuardianDashboard() {
                     No students linked yet
                   </h3>
                   <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Enter your student's account email above, then ask them to
-                    sign in and accept the pending guardian link.
+                    Ask your student for the code in their account settings, then
+                    enter it above. They are linked as soon as you do.
                   </p>
                 </div>
               ) : (

@@ -78,7 +78,11 @@ Zero new entries on `ci-known-gaps`.
 
 The owner performs every one: migrations, merges, secret rotation, Stripe dashboard changes, flag activation.
 
-The migration freeze (WS-M) is in force. Phase C requires zero DDL. Every DDL need goes to a queue file with its reason. If Phase C blocks on a table that doesn't exist, stop and report — do not author the migration.
+**Every DDL change lands in three places: a migration file, production, and `genesis.sql`.** Author the migration under `supabase/migrations/` and fold the identical end state into `00000000000000_genesis.sql`, which is the schema reference in the repo. The OWNER applies the change to production — an agent never does, and the Supabase connector stays read-only. `scripts/ci/genesis-fresh-apply.sh` then proves on every CI run that the pipeline reproduces the committed snapshot, so a migration that disagrees with genesis fails before it reaches a review.
+
+Genesis is the reference for names, production is the reference for existence. Where the two disagree, report it — never pick silently.
+
+The migration freeze (WS-M) is GONE, permanently, by owner ruling 2026-09-01. `docs/plans/WS-M_Migration_Integrity.md` was deleted in `aa4fd40`, and this paragraph used to assert the freeze while citing that deleted file — a dangling citation of exactly the class this program keeps catching. The freeze does not come back.
 
 You work on `claude/*` branches, open draft PRs, never merge, never force-push a shared branch.
 

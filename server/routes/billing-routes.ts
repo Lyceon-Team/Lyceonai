@@ -492,6 +492,20 @@ router.get(
           currentPeriodEnd: null,
           stripeSubscriptionId: null,
           effectiveAccess: access.hasPremiumAccess,
+          /**
+           * Whether this guardian is linked to any student at all, straight from §31.3's
+           * fold — the same call that decided `effectiveAccess`, so the two cannot disagree.
+           *
+           * WHY THIS FIELD EXISTS AND ITS FOUR PREDECESSORS DO NOT. The client used to read
+           * `linkRequiredForPremium`, `hasLinkedStudent`, `requiresStudentSubscription` and
+           * `lockedReason`. NONE of them was ever written by any server route, so all four
+           * were permanently `undefined` and every branch keyed on them was dead. The visible
+           * consequence: `SubscriptionPaywall`'s escape hatch never fired, so a guardian with
+           * no linked student fell through to a pricing page — with the surface for linking a
+           * student trapped inside the dashboard that page was hiding. This field is the
+           * condition those four were reaching for, with a writer.
+           */
+          hasActiveLink: access.hasActiveLink,
           needsPaymentUpdate:
             access.studentEntitlementStatus === "past_due" ||
             access.studentEntitlementStatus === "unpaid",

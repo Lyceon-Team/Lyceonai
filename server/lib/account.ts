@@ -1,16 +1,16 @@
 /**
  * Guardian↔student linkage — the canonical `guardian_links` data layer.
  *
- * @spec [Doc-01_V8, §35 Guardian-student linkage; §36.1 Initiation; §36.3 Revocation]
- *       | @implemented [2026-08-26]
+ * @spec [Doc-01_V8, §35 Guardian-student linkage; §36.3 Revocation; SCL-080, which
+ *        supersedes §36.1's two-step initiation] | @implemented [2026-08-26; SCL-080 2026-09-01]
  *
- * plain English: create, read, accept and revoke the links between a guardian and the
- * students they can see. What it does: writes rows to `guardian_links` using the column
- * names and status domain the table actually has, and moves a link through the two-step
- * lifecycle §36.1 specifies rather than writing it straight to `active`. Expected outcome:
- * a guardian-initiated link lands in `pending_student_accept` and becomes `active` only
- * when the student accepts; the reverse for a student-initiated one; a guardian may hold
- * links to more than one student. Trade-offs and edge cases are stated per function.
+ * plain English: create, read and revoke the links between a guardian and the students they
+ * can see. What it does: writes rows to `guardian_links` using the column names and status
+ * domain the table actually has. Expected outcome: a redeemed student code lands the link
+ * straight in `active` — SCL-080 removed the acceptance step, because the student's choice
+ * to share the code IS the consent, so there is no second party left to wait for and no
+ * pending status to pass through. A guardian may hold links to more than one student.
+ * Trade-offs and edge cases are stated per function.
  *
  * WHAT THIS REPLACES, AND WHY. The previous implementation referenced four columns that
  * do not exist on this table — `student_user_id`, `account_id`, `linked_at`, and an
@@ -35,7 +35,6 @@ import {
   parseGuardianLink,
   parseGuardianLinks,
   type GuardianLink,
-  type GuardianLinkInitiator,
 } from "../../packages/shared/src/guardian-link-schema";
 
 /**
@@ -46,7 +45,6 @@ import {
 export type {
   GuardianLink,
   GuardianLinkStatus,
-  GuardianLinkInitiator,
 } from "../../packages/shared/src/guardian-link-schema";
 
 /**
@@ -171,21 +169,24 @@ export async function getAnyGuardianLinkForPair(
  * plain English: read one link by its id, whatever its status. Expected outcome: the row, or
  * null if no such link exists.
  *
- * WHY THIS EXISTS SEPARATELY FROM `acceptGuardianLink`, WHICH ALSO READS THE ROW.
+ * WHY THIS EXISTS SEPARATELY FROM THE WRITE THAT FOLLOWS IT.
  *   Q7 draws the enumeration line at PARTY-HOOD, not at authorization: a caller named on the
- *   link already knows it exists, so telling them "awaiting the other party" leaks nothing,
- *   while a caller who is not on it must not learn the link exists at all. `acceptGuardianLink`
- *   raises the same `WRONG_ACCEPTOR` for both — the party who must wait, and the stranger —
- *   so a route cannot tell those two apart from its error alone. This read is how the route
- *   answers "are you on this link?" BEFORE the accept attempt, and it is deliberately status-
- *   agnostic: a revoked link the caller is named on is still theirs to be told about.
+ *   link already knows it exists, so telling them "that link is not active" leaks nothing,
+ *   while a caller who is not on it must not learn the link exists at all. The audited write
+ *   raises the same error for both — the party in the wrong state, and the stranger — so a
+ *   route cannot tell those two apart from its error alone. This read is how the route
+ *   answers "are you on this link?" BEFORE attempting the write, and it is deliberately
+ *   status-agnostic: a revoked link the caller is named on is still theirs to be told about.
  *
- * trade-off: the row is read twice on the success path, once here and once inside
- * `acceptGuardianLink`. That is accepted rather than optimised away, because the alternative —
- * widening the domain function's error contract — changes a function the guardian route also
- * calls, and that unification is its own step (adoption plan step 6). The second read costs a
- * primary-key lookup; the compare-and-swap inside `acceptGuardianLink` still owns correctness
- * against a concurrent transition, so nothing here is load-bearing for the race.
+ * @revised [2026-09-01 — SCL-080] This docblock used to justify the read against
+ * `acceptGuardianLink`, which was deleted with the acceptance step. The remaining caller is
+ * the STUDENT's revoke route (`server/routes/student-resources.ts`), and the reasoning is
+ * unchanged — party-hood before the write — so the read stays and only the name goes.
+ *
+ * trade-off: the row is read twice on the success path, once here and once inside the audited
+ * write. Accepted rather than optimised away: the second read costs a primary-key lookup, and
+ * the compare-and-swap inside the write still owns correctness against a concurrent
+ * transition, so nothing here is load-bearing for the race.
  */
 export async function getGuardianLinkById(
   linkId: string,
@@ -205,92 +206,7 @@ export async function getGuardianLinkById(
   return data ? parseGuardianLink(data) : null;
 }
 
-/**
- * @spec [Doc-01_V8, §35; §38 Guardian visibility model] | @implemented [2026-08-26]
- * plain English: the gate every guardian read surface calls before showing a student's data.
- * Expected outcome: true only when an ACTIVE link exists — a pending link grants nothing,
- * which is the point of §36.1's two-step flow.
- */
-export async function isGuardianLinkedToStudent(
-  guardianProfileId: string,
-  studentProfileId: string,
-): Promise<boolean> {
-  const link = await getGuardianLinkForStudent(
-    guardianProfileId,
-    studentProfileId,
-  );
-  return link !== null;
-}
 
-/**
- * @spec [Doc-01_V8, §36.1 Initiation] | @implemented [2026-08-26]
- * plain English: start a link. What it does: writes one `guardian_links` row in the pending
- * state §36.1 assigns to the initiating party, with `initiated_by` and `initiated_at` set.
- * Expected outcome: `pending_student_accept` for a guardian-initiated link,
- * `pending_guardian_accept` for a student-initiated one — never `active`, because §36.1
- * makes acceptance by the counterparty the only route to `active`.
- * Trade-off: §35 permits a guardian to hold links to more than one student, so this refuses
- * only a duplicate of the SAME pair, not a second student. Edge case: a pair that already
- * has an active or pending row raises ALREADY_EXISTS rather than writing a second row, which
- * `unique_active_link` would reject anyway — this turns a 23505 into a typed error.
- */
-export async function createGuardianLink(
-  guardianProfileId: string,
-  studentProfileId: string,
-  initiatedBy: GuardianLinkInitiator,
-  requestId?: string,
-): Promise<GuardianLink> {
-  const { data, error } = await supabaseServer.rpc(
-    "create_guardian_link_audited",
-    {
-      p_guardian_id: guardianProfileId,
-      p_student_id: studentProfileId,
-      p_initiated_by: initiatedBy,
-      p_request_id: requestId ?? null,
-    },
-  );
-
-  if (error) {
-    throwGuardianLinkError(error, "create_link");
-  }
-  if (!data) {
-    throw new Error("Failed to create guardian link: no row returned");
-  }
-  return parseGuardianLink(data);
-}
-
-/**
- * @spec [Doc-01_V8, §36.1 Initiation steps 5] | @implemented [2026-08-26]
- * plain English: the counterparty confirms, and the link goes live. What it does: sets
- * `status='active'`, `accepted_at` and `accepted_by_profile_id` on a pending row.
- * Expected outcome: the three columns §36.1 leaves unwritten until this moment are all
- * populated in one statement. Trade-off: the acceptor is checked against the pending status
- * server-side — a guardian cannot accept a link that is waiting on the student, which is the
- * whole content of the two-step flow. Edge case: a link already active, or already revoked,
- * raises NOT_PENDING rather than silently re-accepting.
- */
-export async function acceptGuardianLink(
-  linkId: string,
-  acceptingProfileId: string,
-  requestId?: string,
-): Promise<GuardianLink> {
-  const { data, error } = await supabaseServer.rpc(
-    "accept_guardian_link_audited",
-    {
-      p_link_id: linkId,
-      p_accepting_profile_id: acceptingProfileId,
-      p_request_id: requestId ?? null,
-    },
-  );
-
-  if (error) {
-    throwGuardianLinkError(error, "accept_link");
-  }
-  if (!data) {
-    throw new Error("Failed to accept guardian link: no row returned");
-  }
-  return parseGuardianLink(data);
-}
 
 /**
  * @spec [Doc-01_V8, §36.3 Revocation] | @implemented [2026-08-26]
@@ -306,6 +222,46 @@ export async function acceptGuardianLink(
  * emitting it would be a write nothing reads; both are recorded as deferred in
  * `WS-GL_Stage2_Closure_Plan.md` §4.
  */
+/**
+ * Create a LIVE guardian link, audited. The single owner of that write.
+ *
+ * @spec [SCL-080; Doc-01_V8 §35] | @implemented [2026-09-01]
+ *
+ * plain English: a guardian redeemed a student's code, so the link exists immediately —
+ * there is no acceptance step to wait for. Expected outcome: one `active` row and one audit
+ * record, both written inside the function so neither can happen without the other.
+ *
+ * Delegates to `create_active_guardian_link_audited`, which supersedes
+ * `create_guardian_link_audited` — that one hardcoded a pending status and had no path to
+ * `active`. Writing the INSERT here instead would fork link creation into two
+ * implementations and bypass the audit trail, which CLAUDE.md forbids by name.
+ *
+ * Errors are surfaced through `throwGuardianLinkError` so `LY004` (already linked) reaches
+ * the route as the 409 it is, rather than a 500.
+ */
+export async function createActiveGuardianLink(
+  guardianProfileId: string,
+  studentProfileId: string,
+  requestId?: string,
+): Promise<GuardianLink> {
+  const { data, error } = await supabaseServer.rpc(
+    "create_active_guardian_link_audited",
+    {
+      p_guardian_id: guardianProfileId,
+      p_student_id: studentProfileId,
+      p_request_id: requestId ?? null,
+    },
+  );
+
+  if (error) {
+    throwGuardianLinkError(error, "create_active_link");
+  }
+  if (!data) {
+    throw new Error("Failed to create guardian link: no row returned");
+  }
+  return parseGuardianLink(data);
+}
+
 export async function revokeGuardianLink(
   guardianProfileId: string,
   studentProfileId: string,
@@ -845,27 +801,6 @@ export async function getAllGuardianStudentLinks(
 }
 
 /**
- * @spec [Doc-01_V8, §35; §31.3] | @implemented [2026-08-26]
- * plain English: the guardian's oldest active link, or null. What it does: returns the first
- * row `getAllGuardianStudentLinks` yields. Expected outcome: with one link, identical to the
- * previous behaviour; with several, a deterministic choice (oldest `created_at`) instead of
- * the thrown "1:1 invariant violated".
- *
- * TRADE-OFF, STATED PLAINLY: this function is a 1:1-era shape. §31.3 says a guardian's
- * premium derives from *any one* active premium student, which is a fold over ALL links, not
- * a lookup of one. Making `resolveLinkedPairPremiumAccessForGuardian` perform that fold is a
- * behaviour change on the entitlement surface, which is outside WS-GL's edit scope (Charter
- * §0). So this keeps its single-link contract and stops throwing; the §31.3 derivation is
- * reported as an entitlement-surface item, not silently half-built here.
- */
-export async function getPrimaryGuardianLink(
-  guardianProfileId: string,
-): Promise<GuardianLink | null> {
-  const links = await getAllGuardianStudentLinks(guardianProfileId);
-  return links[0] ?? null;
-}
-
-/**
  * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
  * plain English: the guardians actively linked to a given student. Expected outcome: a list
  * — §35 constrains neither side to one, and the previous "Student has multiple active
@@ -891,9 +826,10 @@ export async function getActiveGuardianLinksForStudent(
 
 /**
  * @spec [Doc-01_V8, §35] | @implemented [2026-08-26]
- * plain English: the student's oldest active guardian link, or null. Same 1:1-era shape and
- * same trade-off as `getPrimaryGuardianLink` — kept for its existing callers, no longer
- * throwing when the student has more than one guardian.
+ * plain English: the student's oldest active guardian link, or null. A 1:1-era shape kept
+ * for its existing callers, no longer throwing when the student has more than one guardian.
+ * Its guardian-side twin `getPrimaryGuardianLink` was DELETED by SCL-080's sweep — it had no
+ * callers left once the §31.3 fold below replaced it.
  */
 export async function getLinkedGuardianForStudent(
   studentProfileId: string,
@@ -1004,9 +940,9 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   // §31.3: a guardian's premium derives from ANY ONE active premium student —
   // a fold over every active link, not a lookup of one.
   //
-  // The defect this replaces: `getPrimaryGuardianLink` returns the OLDEST
-  // active link, so a guardian with two linked students where only the SECOND
-  // is premium derived `free`. The link that confers access is whichever
+  // The defect this replaced: `getPrimaryGuardianLink` (since deleted) returned
+  // the OLDEST active link, so a guardian with two linked students where only the
+  // SECOND is premium derived `free`. The link that confers access is whichever
   // student is actually entitled, and until this fold existed nothing looked
   // past the first.
   //

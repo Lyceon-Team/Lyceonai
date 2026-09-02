@@ -49,16 +49,16 @@ SELECT '2. link-without-creation-audit' AS check,
  )
  ORDER BY gl.initiated_at;
 
--- === 3. Same question for the other two transitions. Expected: zero rows each. ===
-SELECT '3. accepted-without-audit' AS check, gl.id AS link_id, gl.accepted_at AS at
-  FROM public.guardian_links gl
- WHERE gl.accepted_at IS NOT NULL
-   AND NOT EXISTS (
-     SELECT 1 FROM public.audit_logs a
-      WHERE a.action = 'guardian_link_accepted'
-        AND a.context->>'link_id' = gl.id::text)
-UNION ALL
-SELECT '3. revoked-without-audit', gl.id, gl.revoked_at
+-- === 3. Same question for revocation. Expected: zero rows. ===
+--     SCL-080 REMOVED the paired 'accepted-without-audit' check that used to sit here.
+--     It was not merely unreachable, it was a FALSE POSITIVE: the one-step flow sets
+--     accepted_at AT CREATION (`create_active_guardian_link_audited` records the student
+--     as both initiator and acceptor, because sharing the code IS the consent) and emits
+--     'guardian_link_initiated' — never 'guardian_link_accepted'. So every real SCL-080
+--     link satisfies `accepted_at IS NOT NULL` with no 'guardian_link_accepted' row, and
+--     the old check would have reported the FIRST successful link as a gap. Section 2
+--     already covers those rows through their creation audit.
+SELECT '3. revoked-without-audit' AS check, gl.id AS link_id, gl.revoked_at AS at
   FROM public.guardian_links gl
  WHERE gl.revoked_at IS NOT NULL
    AND NOT EXISTS (
@@ -88,8 +88,7 @@ SELECT '5. functions' AS check,
   JOIN pg_namespace n ON n.oid = p.pronamespace
  WHERE n.nspname = 'public'
    AND p.proname IN ('guardian_link_audit',
-                     'create_guardian_link_audited',
-                     'accept_guardian_link_audited',
+                     'create_active_guardian_link_audited',
                      'revoke_guardian_link_audited')
  ORDER BY p.proname;
 
@@ -102,7 +101,7 @@ SELECT '6. append-only trigger' AS check, tgname
    AND NOT tgisinternal;
 
 -- === 7. THE VERDICT — the rollup a console showing only the last grid must be able to act on.
---     PASS requires all four gaps empty AND the four functions present, SECURITY DEFINER,
+--     PASS requires all three gaps empty AND the three functions present, SECURITY DEFINER,
 --     AND the append-only trigger in place. A missing function is not a "no data yet" state:
 --     it means the migration has not been applied and every count above is answering a
 --     question about a mechanism that does not exist.
@@ -112,11 +111,6 @@ WITH gaps AS (
       WHERE NOT EXISTS (SELECT 1 FROM public.audit_logs a
                          WHERE a.action = 'guardian_link_initiated'
                            AND a.context->>'link_id' = gl.id::text))            AS created_gap,
-    (SELECT count(*) FROM public.guardian_links gl
-      WHERE gl.accepted_at IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM public.audit_logs a
-                         WHERE a.action = 'guardian_link_accepted'
-                           AND a.context->>'link_id' = gl.id::text))            AS accepted_gap,
     (SELECT count(*) FROM public.guardian_links gl
       WHERE gl.revoked_at IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM public.audit_logs a
@@ -130,8 +124,7 @@ WITH gaps AS (
     (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public' AND p.prosecdef
         AND p.proname IN ('guardian_link_audit',
-                          'create_guardian_link_audited',
-                          'accept_guardian_link_audited',
+                          'create_active_guardian_link_audited',
                           'revoke_guardian_link_audited'))                      AS definer_fns,
     (SELECT count(*) FROM pg_trigger
       WHERE tgrelid = 'public.audit_logs'::regclass AND NOT tgisinternal
@@ -140,13 +133,13 @@ WITH gaps AS (
 )
 SELECT
   CASE
-    WHEN definer_fns < 4 THEN
-      'FAIL — migration 20260828000000 is not applied: only ' || definer_fns ||
-      ' of 4 SECURITY DEFINER transition functions exist'
+    WHEN definer_fns < 3 THEN
+      'FAIL — migration 20260901000000 (SCL-080) is not applied: only ' || definer_fns ||
+      ' of 3 SECURITY DEFINER transition functions exist'
     WHEN append_only < 1 THEN
       'FAIL — audit_logs_no_mutate trigger is missing: the trail is editable'
-    WHEN created_gap + accepted_gap + revoked_gap + orphan_audit_gap > 0 THEN
-      'FAIL — ' || (created_gap + accepted_gap + revoked_gap + orphan_audit_gap) ||
+    WHEN created_gap + revoked_gap + orphan_audit_gap > 0 THEN
+      'FAIL — ' || (created_gap + revoked_gap + orphan_audit_gap) ||
       ' link/audit gap(s); see sections 2-4'
     WHEN links_total = 0 THEN
       'PASS (vacuous) — mechanism is in place; no guardian_links rows exist yet, so nothing ' ||
@@ -154,5 +147,5 @@ SELECT
     ELSE
       'PASS — ' || links_total || ' link(s), every transition carries its audit row'
   END                                                                           AS verdict,
-  created_gap, accepted_gap, revoked_gap, orphan_audit_gap, definer_fns, append_only, links_total
+  created_gap, revoked_gap, orphan_audit_gap, definer_fns, append_only, links_total
   FROM gaps;
