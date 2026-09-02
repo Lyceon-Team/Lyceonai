@@ -685,10 +685,20 @@ jobs:
           sudo mv /tmp/postgrest /usr/local/bin/postgrest
           postgrest --version
 
-      - name: Mastery emission → REAL PostgREST transport proof (3.1)
+      # Runs tests/ci/mastery-emission.postgrest.ci.test.ts BY NAME. The gate greps
+      # its own output for the EXECUTING marker and the exact case count, because a
+      # self-skipping vitest file exits 0 and reads green from the outside.
+      - name: Mastery emission → REAL PostgREST proof (route → supabase-js → PostgREST → PG)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/mastery-transport-gate.sh
+          bash scripts/ci/mastery-postgrest-gate.sh
+
+      # Proves the proof can fail, and that each mutation reds the assertion it names.
+      # M1 and M3 both attack case 1 and are kept apart by WHICH line they red.
+      - name: Mastery emission → REAL PostgREST proof — mutation harness
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-postgrest-gate.mutations.sh
 
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
