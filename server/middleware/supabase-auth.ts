@@ -596,12 +596,6 @@ export async function supabaseAuthMiddleware(
         role: req.user.role,
       },
     );
-    // The lyceon_accounts model is retired (owner ruling 2026-08-24). The
-    // production schema uses profile_id = auth.users.id directly; there is no
-    // accounts table, no account_members, and no ensure_account_for_user RPC.
-    // The previous call here fired on 100% of authenticated requests, produced
-    // PGRST202 every time, and flooded the error log channel.
-
     next();
   } catch (error) {
     logger.error(
