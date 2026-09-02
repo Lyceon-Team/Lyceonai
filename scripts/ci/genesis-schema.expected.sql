@@ -2878,6 +2878,7 @@ CREATE TABLE public.student_overall_kpi (
     kpi_refresh_version text DEFAULT 'v1.0'::text NOT NULL,
     refreshed_at timestamp with time zone DEFAULT now() NOT NULL,
     refreshed_at_t_now timestamp with time zone NOT NULL,
+    excluded_event_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT student_overall_kpi_current_streak_days_check CHECK ((current_streak_days >= 0)),
     CONSTRAINT student_overall_kpi_events_last_30d_check CHECK ((events_last_30d >= 0)),
     CONSTRAINT student_overall_kpi_events_last_7d_check CHECK ((events_last_7d >= 0)),
@@ -2885,6 +2886,13 @@ CREATE TABLE public.student_overall_kpi (
     CONSTRAINT student_overall_kpi_longest_streak_days_check CHECK ((longest_streak_days >= 0)),
     CONSTRAINT student_overall_kpi_sections_active_check CHECK (((sections_active >= 0) AND (sections_active <= 2)))
 );
+
+
+--
+-- Name: COLUMN student_overall_kpi.excluded_event_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_overall_kpi.excluded_event_count IS 'Canonical events excluded from this row''s aggregates for NULL correct/occurred_at. Recomputed every refresh from the same event set as every other column (INV-05B-14). Operator-only: Doc 05 Parent AC#20 locks student and guardian read surfaces to mastery_level.';
 
 
 --
@@ -2914,6 +2922,9 @@ BEGIN
   v_t_short_cutoff := p_t_now - make_interval(days => v_short_days);
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
+  -- RB-05B-V1-02 partially superseded (SCL-054). This is the student-wide validator whose
+  -- RAISE produced the outage's blast radius: it aborted the whole mastery transaction for
+  -- a student because of a row in a section the event under test never touched.
   SELECT count(*) INTO v_bad_count FROM (
     SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered'
@@ -2921,9 +2932,6 @@ BEGIN
     SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
       WHERE ra.student_id = p_student_id
   ) e WHERE e.correct IS NULL OR e.occurred_at IS NULL;
-  IF v_bad_count > 0 THEN
-    RAISE EXCEPTION 'KPI_HISTORICAL_DATA_INVALID: % canonical rows have NULL correct/occurred_at for student % (refresh_overall_kpi)', v_bad_count, p_student_id;
-  END IF;
 
   WITH all_events AS (
     SELECT section, correct, occurred_at FROM (
@@ -2933,6 +2941,8 @@ BEGIN
       SELECT ra.section, ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
         WHERE ra.student_id = p_student_id
     ) e
+    -- The quarantine itself. Excluded rows enter NO aggregate below.
+    WHERE e.correct IS NOT NULL AND e.occurred_at IS NOT NULL
   ),
   aggregates AS (
     SELECT
@@ -2959,12 +2969,14 @@ BEGIN
     student_id, events_total, events_last_7d, events_last_30d,
     accuracy_overall, accuracy_last_7d, accuracy_last_30d,
     sections_active, current_streak_days, longest_streak_days, last_active_at,
-    kpi_refresh_version, refreshed_at, refreshed_at_t_now
+    kpi_refresh_version, refreshed_at, refreshed_at_t_now,
+    excluded_event_count
   )
   SELECT p_student_id, a.evt_total, a.evt_7d, a.evt_30d,
     a.acc_overall, a.acc_7d, a.acc_30d,
     a.sec_active, s.current_streak, s.longest_streak, a.last_active,
-    'v1.0', now(), p_t_now
+    'v1.0', now(), p_t_now,
+    v_bad_count
   FROM aggregates a CROSS JOIN streak s
   ON CONFLICT (student_id) DO UPDATE SET
     events_total=EXCLUDED.events_total, events_last_7d=EXCLUDED.events_last_7d,
@@ -2973,7 +2985,8 @@ BEGIN
     sections_active=EXCLUDED.sections_active, current_streak_days=EXCLUDED.current_streak_days,
     longest_streak_days=EXCLUDED.longest_streak_days, last_active_at=EXCLUDED.last_active_at,
     kpi_refresh_version=EXCLUDED.kpi_refresh_version, refreshed_at=EXCLUDED.refreshed_at,
-    refreshed_at_t_now=EXCLUDED.refreshed_at_t_now
+    refreshed_at_t_now=EXCLUDED.refreshed_at_t_now,
+    excluded_event_count=EXCLUDED.excluded_event_count
   RETURNING * INTO v_result_row;
 
   RETURN v_result_row;
@@ -2999,12 +3012,20 @@ CREATE TABLE public.student_section_kpi (
     kpi_refresh_version text DEFAULT 'v1.0'::text NOT NULL,
     refreshed_at timestamp with time zone DEFAULT now() NOT NULL,
     refreshed_at_t_now timestamp with time zone NOT NULL,
+    excluded_event_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT student_section_kpi_current_streak_days_check CHECK ((current_streak_days >= 0)),
     CONSTRAINT student_section_kpi_events_last_30d_check CHECK ((events_last_30d >= 0)),
     CONSTRAINT student_section_kpi_events_last_7d_check CHECK ((events_last_7d >= 0)),
     CONSTRAINT student_section_kpi_events_total_check CHECK ((events_total >= 0)),
     CONSTRAINT student_section_kpi_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
+
+
+--
+-- Name: COLUMN student_section_kpi.excluded_event_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_section_kpi.excluded_event_count IS 'Canonical events excluded from this row''s aggregates for NULL correct/occurred_at. Recomputed every refresh from the same event set as every other column (INV-05B-14). Operator-only: Doc 05 Parent AC#20 locks student and guardian read surfaces to mastery_level.';
 
 
 --
@@ -3034,7 +3055,9 @@ BEGIN
   v_t_short_cutoff := p_t_now - make_interval(days => v_short_days);
   v_t_long_cutoff  := p_t_now - make_interval(days => v_long_days);
 
-  -- RB-05B-V1-02: explicit data-integrity validation, no silent NULL filter.
+  -- RB-05B-V1-02 partially superseded (SCL-054): the identical predicate now CLASSIFIES
+  -- rather than aborts. The count is kept and persisted below; it is not discarded, which
+  -- is what separates this from the silent NULL filter RB-05B-V1-02 correctly rejected.
   SELECT count(*) INTO v_bad_count FROM (
     SELECT pi.is_correct AS correct, pi.occurred_at FROM public.practice_session_items pi
       WHERE pi.user_id = p_student_id AND pi.status = 'answered' AND pi.question_section = p_section
@@ -3042,9 +3065,6 @@ BEGIN
     SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
       WHERE ra.student_id = p_student_id AND ra.section = p_section
   ) e WHERE e.correct IS NULL OR e.occurred_at IS NULL;
-  IF v_bad_count > 0 THEN
-    RAISE EXCEPTION 'KPI_HISTORICAL_DATA_INVALID: % canonical rows have NULL correct/occurred_at for student %, section % (refresh_section_kpi)', v_bad_count, p_student_id, p_section;
-  END IF;
 
   WITH section_events AS (
     SELECT correct, occurred_at FROM (
@@ -3054,6 +3074,8 @@ BEGIN
       SELECT ra.is_correct, ra.occurred_at FROM public.review_error_attempts ra
         WHERE ra.student_id = p_student_id AND ra.section = p_section
     ) e
+    -- The quarantine itself. Excluded rows enter NO aggregate below.
+    WHERE e.correct IS NOT NULL AND e.occurred_at IS NOT NULL
   ),
   aggregates AS (
     SELECT
@@ -3077,11 +3099,13 @@ BEGIN
   INSERT INTO public.student_section_kpi (
     student_id, section, events_total, events_last_7d, events_last_30d,
     accuracy_overall, accuracy_last_7d, accuracy_last_30d,
-    current_streak_days, last_active_at, kpi_refresh_version, refreshed_at, refreshed_at_t_now
+    current_streak_days, last_active_at, kpi_refresh_version, refreshed_at, refreshed_at_t_now,
+    excluded_event_count
   )
   SELECT p_student_id, p_section, a.evt_total, a.evt_7d, a.evt_30d,
     ROUND(a.acc_overall, 4), ROUND(a.acc_7d, 4), ROUND(a.acc_30d, 4),
-    s.current_streak, a.last_active, 'v1.0', now(), p_t_now
+    s.current_streak, a.last_active, 'v1.0', now(), p_t_now,
+    v_bad_count
   FROM aggregates a CROSS JOIN streak s
   ON CONFLICT (student_id, section) DO UPDATE SET
     events_total=EXCLUDED.events_total, events_last_7d=EXCLUDED.events_last_7d,
@@ -3089,7 +3113,8 @@ BEGIN
     accuracy_last_7d=EXCLUDED.accuracy_last_7d, accuracy_last_30d=EXCLUDED.accuracy_last_30d,
     current_streak_days=EXCLUDED.current_streak_days, last_active_at=EXCLUDED.last_active_at,
     kpi_refresh_version=EXCLUDED.kpi_refresh_version, refreshed_at=EXCLUDED.refreshed_at,
-    refreshed_at_t_now=EXCLUDED.refreshed_at_t_now
+    refreshed_at_t_now=EXCLUDED.refreshed_at_t_now,
+    excluded_event_count=EXCLUDED.excluded_event_count
   RETURNING * INTO v_result_row;
 
   RETURN v_result_row;
