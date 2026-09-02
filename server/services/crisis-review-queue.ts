@@ -109,6 +109,9 @@ const SOURCE_FALLBACK: Partial<Record<CrisisSource, CrisisSource>> = {
 /** PostgreSQL error code for check_violation (23514). */
 const PG_CHECK_VIOLATION = "23514";
 
+/** PostgreSQL error code for unique_violation (23505). */
+const PG_UNIQUE_VIOLATION = "23505";
+
 // ── Create Case ───────────────────────────────────────────────────────
 
 /**
@@ -214,6 +217,50 @@ export async function createCrisisReviewCase(
 
       return { id: retryData.id as string, slaDeadline };
     }
+  }
+
+  // ── Duplicate crisis case (Defect 2 — WS-T1) ─────────────────────
+  // idx_crisis_review_cases_conversation_active allows one active case per
+  // conversation. A second crisis turn on the same conversation hits 23505.
+  // That is a redundant write, not a failed write: the case already exists
+  // and will be reviewed. Return the existing case ID so the caller can
+  // proceed (B1.1d: case already durable → safety obligation met).
+  if (
+    error &&
+    error.code === PG_UNIQUE_VIOLATION &&
+    error.message.includes("conversation_active")
+  ) {
+    logger.info(
+      "CRISIS_REVIEW",
+      "case_already_open",
+      "crisis review case already open for this conversation — " +
+        "redundant write treated as success (B1.1d)",
+      {
+        conversationId: params.conversationId,
+        source: params.source,
+        pgCode: error.code,
+      },
+    );
+
+    // Fetch the existing active case to return its ID.
+    const { data: existing } = await supabaseServer
+      .from("crisis_review_cases")
+      .select("id, sla_deadline")
+      .eq("conversation_id", params.conversationId)
+      .is("resolved_at", null)
+      .single();
+
+    if (existing) {
+      return {
+        id: existing.id as string,
+        slaDeadline: existing.sla_deadline as string,
+      };
+    }
+
+    // Race: case was resolved between the INSERT and the SELECT.
+    // Extremely unlikely, but we still need a case. Fall through to the
+    // generic error handler, which will throw and block the turn — correct
+    // per B1.1d (better to fail loudly than to lose a case silently).
   }
 
   if (error || !data) {

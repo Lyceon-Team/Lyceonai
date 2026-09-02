@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
-import { ensureAccountForUser } from "../lib/account.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
@@ -597,39 +596,6 @@ export async function supabaseAuthMiddleware(
         role: req.user.role,
       },
     );
-    // Ensure user has a lyceon_account and membership (student/guardian only)
-    if (req.user.role === "student" || req.user.role === "guardian") {
-      try {
-        const accountId = await ensureAccountForUser(
-          supabaseAdmin,
-          req.user.id,
-          req.user.role,
-        );
-        logger.info("AUTH", "account_ensured", "Account ensured for user", {
-          userId: req.user.id,
-          role: req.user.role,
-          accountId,
-          requestId: req.requestId,
-        });
-      } catch (accountErr) {
-        logger.error(
-          "AUTH",
-          "account_ensure_failed",
-          "Failed to ensure account for user",
-          {
-            userId: req.user.id,
-            role: req.user.role,
-            error:
-              accountErr instanceof Error
-                ? accountErr.message
-                : "Unknown error",
-            requestId: req.requestId,
-          },
-        );
-        // Continue anyway - account creation failure should not block auth
-      }
-    }
-
     next();
   } catch (error) {
     logger.error(
