@@ -16,22 +16,32 @@ import {
   type BillingPlan,
   type BillingPlanMetadata,
 } from '@/lib/billing-client';
+import {
+  useGuardianStudents,
+  studentLabel,
+} from '@/hooks/useGuardianStudents';
 
+/**
+ * ONLY the fields this component reads. Seven more were declared here and never
+ * read — accountId, plan, currentPeriodEnd, stripeSubscriptionId, isPaid,
+ * premiumSource and billingOwnerRole. The last two were the same defect as the
+ * four named below: no server route ever wrote them, so they could only ever be
+ * `undefined`. Declaring a field the server does not send is how the escape hatch
+ * came to be dead in the first place; the type now states what actually arrives.
+ */
 interface BillingStatus {
-  accountId: string | null;
-  plan: string;
   stripeStatus: string;
-  currentPeriodEnd: string | null;
-  stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  requiresStudentSubscription?: boolean;
-  isPaid: boolean;
-  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
-  hasLinkedStudent?: boolean;
-  linkRequiredForPremium?: boolean;
-  billingOwnerRole?: 'student' | 'guardian';
-  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
+  /**
+   * Written by the guardian branch of `/api/billing/status` from §31.3's fold. Replaces
+   * `linkRequiredForPremium`, `hasLinkedStudent`, `requiresStudentSubscription` and
+   * `lockedReason`, none of which any server route ever wrote — so every branch keyed on
+   * them was dead, and the escape hatch below never fired. Absent for a student, whose
+   * branch of that route does not compute it; `=== false` is therefore the
+   * guardian-with-no-link test, and `undefined` leaves the student paths untouched.
+   */
+  hasActiveLink?: boolean;
 }
 
 interface SubscriptionPaywallProps {
@@ -52,6 +62,13 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkoutErrorDetails, setCheckoutErrorDetails] = useState<{ stripeMessage?: string; requestId?: string; details?: any } | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly' | 'yearly' | null>(null);
+  /**
+   * WHICH student this purchase is for. A SELECTION, never an authorisation:
+   * the server re-resolves it against the guardian's ACTIVE `guardian_links` on
+   * every request (`server/lib/stripe/guardian-checkout.ts:101`). Editing it in
+   * devtools changes what is requested, never what is granted.
+   */
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -86,7 +103,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
 
   const isPollingTimeout = pollingStartTime && (Date.now() - pollingStartTime) > POLLING_TIMEOUT_MS;
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && !isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && billingStatus?.hasActiveLink && !isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
         <div className="flex flex-col items-center gap-4">
@@ -98,7 +115,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && billingStatus?.hasActiveLink && isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
         <Card className="w-full max-w-md">
@@ -137,9 +154,28 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     enabled: !billingStatus?.effectiveAccess,
   });
 
+  /**
+   * The guardian's actively linked students, read server-side. The client
+   * renders exactly what it is given and never assembles or filters this list.
+   */
+  const {
+    data: studentsData,
+    isLoading: studentsLoading,
+    error: studentsError,
+  } = useGuardianStudents({ enabled: !billingStatus?.effectiveAccess });
+  const linkedStudents = studentsData?.students ?? [];
+  const hasNoLinkedStudents = !studentsLoading && !studentsError && linkedStudents.length === 0;
+
   const checkoutMutation = useMutation({
     mutationFn: async (plan: BillingPlan) => {
-      await startSubscriptionCheckout(plan);
+      // The guardian path is per student (Doc 01 V8 §20, §31.4, §36.4), so the
+      // selected subject travels with the purchase. `startSubscriptionCheckout`
+      // omits the field entirely when nothing is selected, which is the
+      // unaccompanied-student shape.
+      await startSubscriptionCheckout(
+        plan,
+        selectedStudentId ? { studentProfileId: selectedStudentId } : undefined,
+      );
       return { url: true };
     },
     onSuccess: () => {},
@@ -201,7 +237,10 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  if (billingStatus?.linkRequiredForPremium) {
+  // A guardian with no linked student has nothing to buy yet, and the surface for linking
+  // one lives INSIDE the dashboard this component wraps. Paywalling them here is what
+  // stranded them on a pricing page hiding the very surface they needed.
+  if (billingStatus?.hasActiveLink === false) {
     return <>{children}</>;
   }
 
@@ -260,7 +299,6 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   }
 
   const prices = Array.isArray(pricesData) ? pricesData : [];
-  const requiresStudentSubscription = !!billingStatus?.requiresStudentSubscription;
 
   if (pricesError) {
     const pricesErrorMessage = pricesError instanceof Error
@@ -289,24 +327,25 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             <Shield className="h-8 w-8 text-[#0F2E48]" />
           </div>
           <CardTitle className="text-2xl text-[#0F2E48]">
-            {requiresStudentSubscription ? 'Student Subscription Required' : 'Parent Access Subscription'}
+            Student Subscription Required
           </CardTitle>
           <CardDescription className="text-base">
-            {requiresStudentSubscription
-              ? "Guardian reporting unlocks only when your linked student's subscription is active."
-              : "Subscribe to monitor your child's SAT preparation progress"}
+            Guardian reporting unlocks only when your linked student's subscription is active.
           </CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6">
-          {requiresStudentSubscription && (
-            <Alert className="border-amber-200 bg-amber-50">
+          {/* Always shown: a guardian purchase is per student (SCL-080, §31.4, §36.4), so
+              billing is ALWAYS tied to a linked student. This hung off
+              `requiresStudentSubscription`, which nothing wrote — so the alternative copy,
+              "Parent Access Subscription", was the only copy anyone saw, and it sells the
+              guardian a subscription for themselves. That is not the product. */}
+          <Alert className="border-amber-200 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
                 Billing is tied to the linked student account. Start or renew the student subscription to unlock guardian visibility.
               </AlertDescription>
             </Alert>
-          )}
 
           <div className="space-y-3">
             <div className="flex items-start gap-3">
@@ -327,7 +366,6 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             </div>
           </div>
 
-          {/* TODO(billing): Guardian selector is legacy and should be removed only after /upgrade parity tests pass. */}
           {pricesLoading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />
@@ -406,6 +444,66 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
               />
             )
           )}
+          {/*
+            WHO THIS PURCHASE IS FOR. A guardian purchase is per student
+            (Doc 01 V8 §20, §31.4, §36.4), so the subject is chosen before the
+            plan is bought. This control IDENTIFIES a student; it does not
+            AUTHORISE one — the server re-resolves the id against active
+            `guardian_links` on every request.
+          */}
+          <div className="space-y-2" data-testid="student-picker">
+            <label
+              htmlFor="checkout-student"
+              className="text-sm font-medium text-[#0F2E48]"
+            >
+              Who is this subscription for?
+            </label>
+
+            {studentsLoading && (
+              <p className="text-sm text-[#0F2E48]/60" data-testid="student-picker-loading">
+                Loading your linked students...
+              </p>
+            )}
+
+            {studentsError && (
+              <AppNotice
+                variant="warning"
+                title="Could not load your linked students."
+                message="Please refresh and try again."
+                mode="inline"
+              />
+            )}
+
+            {hasNoLinkedStudents && (
+              <AppNotice
+                variant="warning"
+                title="No linked students yet."
+                message="Link a student to your account before subscribing — a guardian subscription always pays for a specific student."
+                mode="inline"
+              />
+            )}
+
+            {!studentsLoading && !studentsError && linkedStudents.length > 0 && (
+              <select
+                id="checkout-student"
+                data-testid="student-select"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={selectedStudentId ?? ''}
+                onChange={(e) => {
+                  setCheckoutError(null);
+                  setSelectedStudentId(e.target.value || null);
+                }}
+              >
+                <option value="">Select a student...</option>
+                {linkedStudents.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {studentLabel(student)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
         </CardContent>
 
         <CardFooter className="flex flex-col gap-3">
@@ -419,9 +517,21 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
                 setCheckoutError('Please select a subscription plan.');
                 return;
               }
+              if (!selectedStudentId) {
+                // No selection means NO REQUEST: the server would answer 400
+                // STUDENT_NOT_SELECTED, and a round trip to learn what the form
+                // already knows is not a useful error.
+                setCheckoutError('Please choose which student this subscription is for.');
+                return;
+              }
               checkoutMutation.mutate(selectedPlan);
             }}
-            disabled={checkoutMutation.isPending || pricesLoading || !selectedPlan}
+            disabled={
+              checkoutMutation.isPending ||
+              pricesLoading ||
+              !selectedPlan ||
+              !selectedStudentId
+            }
           >
             {checkoutMutation.isPending ? (
               <>
@@ -431,7 +541,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                {requiresStudentSubscription ? 'Start Student Subscription' : 'Subscribe Now'}
+                Start Student Subscription
                 <ArrowRight className="ml-2 h-4 w-4" />
               </>
             )}

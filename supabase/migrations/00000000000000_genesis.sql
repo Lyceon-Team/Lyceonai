@@ -151,6 +151,12 @@ CREATE TABLE public.profiles (
   guardian_consent      BOOLEAN DEFAULT FALSE,
   consent_given_at      TIMESTAMPTZ,
   guardian_profile_id   UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  -- SCL-080: the student-displayed guardian link code, and when it was issued. The code
+  -- column arrived in migration 20260619000100 and was never folded back here; both are
+  -- carried now so genesis states the whole pair. TTL lives in
+  -- auth_runtime_config.student_link_code_ttl_seconds, not in the schema.
+  student_link_code            TEXT,
+  student_link_code_issued_at  TIMESTAMPTZ,
   last_login_at         TIMESTAMPTZ,
   deleted_at            TIMESTAMPTZ, -- soft-delete marker (Part VII)
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -160,6 +166,10 @@ CREATE INDEX idx_profiles_role            ON public.profiles (role)             
 CREATE INDEX idx_profiles_stripe_customer ON public.profiles (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
 CREATE INDEX idx_profiles_deleted         ON public.profiles (deleted_at)         WHERE deleted_at IS NOT NULL;
 CREATE UNIQUE INDEX idx_profiles_email_active ON public.profiles (lower(email))   WHERE deleted_at IS NULL;
+-- SCL-080: a link code is looked up BY VALUE on redemption, so it must be unique among
+-- live codes; NULL means the student has never been issued one.
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_student_link_code_key
+  ON public.profiles (student_link_code) WHERE student_link_code IS NOT NULL;
 -- @adaptation A1: derive age fields at write (schema-layer COPPA enforcement)
 CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
@@ -170,7 +180,11 @@ CREATE TABLE public.entitlements (
   profile_id             UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
   tier                   TEXT NOT NULL CHECK (tier IN ('free', 'premium')),
   status                 TEXT NOT NULL CHECK (status IN ('active','past_due','canceled','unpaid','incomplete','incomplete_expired','trialing')),
-  stripe_subscription_id TEXT UNIQUE,
+  stripe_subscription_id TEXT,
+  -- SCL-045 (migration 20260827010000): the UNIQUE here was DROPPED. One
+  -- guardian subscription entitles several students, one item each, so the
+  -- subscription id is no longer a key. The item id below is.
+  stripe_subscription_item_id TEXT,
   stripe_price_id        TEXT,
   current_period_start   TIMESTAMPTZ,
   current_period_end     TIMESTAMPTZ,
@@ -179,9 +193,16 @@ CREATE TABLE public.entitlements (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE public.entitlements ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
+-- Production holds this as a unique INDEX, not a table constraint: migration
+-- 20260809000000_entitlements_profile_id_unique_and_webhook_events.sql:21 created it
+-- with CREATE UNIQUE INDEX IF NOT EXISTS. Genesis declared ADD CONSTRAINT, which no
+-- migration ever ran. Corrected toward production — production is right and the file
+-- was wrong. Still a valid ON CONFLICT (profile_id) target either way.
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_profile_id_unique ON public.entitlements USING btree (profile_id);
 CREATE INDEX idx_entitlements_profile ON public.entitlements (profile_id);
 CREATE INDEX idx_entitlements_active  ON public.entitlements (profile_id) WHERE status = 'active' OR status = 'past_due';
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_stripe_subscription_item_id_key ON public.entitlements (stripe_subscription_item_id) WHERE stripe_subscription_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entitlements_stripe_subscription ON public.entitlements (stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
 
 -- @spec [Doc-01_V8, §27] entitlement_features — declarative feature gates; admin-mutable.
 CREATE TABLE public.entitlement_features (
@@ -220,7 +241,8 @@ CREATE TABLE public.guardian_links (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   guardian_profile_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
   student_profile_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-  status                 TEXT NOT NULL CHECK (status IN ('active','pending_student_accept','pending_guardian_accept','revoked')),
+  -- SCL-080: the acceptance step is gone, so no code path produces a pending status.
+  status                 TEXT NOT NULL CHECK (status IN ('active','revoked')),
   initiated_by           TEXT NOT NULL CHECK (initiated_by IN ('guardian','student','admin')),
   initiated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
   accepted_at            TIMESTAMPTZ,
@@ -229,10 +251,15 @@ CREATE TABLE public.guardian_links (
   revoked_by_profile_id  UUID REFERENCES public.profiles(id),
   revocation_reason      TEXT,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status)
-    DEFERRABLE INITIALLY DEFERRED,
   CONSTRAINT guardian_not_self CHECK (guardian_profile_id <> student_profile_id)
 );
+-- SCL-080: one ACTIVE link per (guardian, student) pair, any number of historical revoked
+-- rows. Replaces the former 3-column unique_active_link, whose `status` column let a pair
+-- hold one row per status rather than one live link.
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_guardian_link
+  ON public.guardian_links (guardian_profile_id, student_profile_id)
+  WHERE status = 'active';
+
 CREATE INDEX idx_guardian_links_guardian ON public.guardian_links (guardian_profile_id) WHERE status = 'active';
 CREATE INDEX idx_guardian_links_student  ON public.guardian_links (student_profile_id)  WHERE status = 'active';
 

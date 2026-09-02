@@ -63,30 +63,3 @@ export function subjectDigest(value: string, length: number): string {
 export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
-
-/**
- * @spec [Doc-01_V8, §36.2] | @implemented [2026-08-26]
- * plain English: the `bucket_key` for "how many times has this guardian tried to link to
- * this email address today". Expected outcome: a stable key per (guardian, email) pair that
- * carries no raw address into a retained ledger row.
- *
- * The discriminator-in-`bucket_key` pattern: §41's ledger is keyed
- * `PRIMARY KEY (profile_id, bucket_key, window_start)` and `profile_id` is `NOT NULL
- * REFERENCES profiles(id)`, so a subject with no Lyceon profile — exactly the case §36.2's
- * per-email control exists to protect — cannot be the ledger's subject. Putting the email's
- * digest inside `bucket_key` and keying `profile_id` on the GUARDIAN expresses
- * "this guardian, against this email, today" without requiring the email to have a profile.
- *
- * RESIDUAL GAP, NAMED: this closes the per-guardian reading of §36.2 only. N distinct
- * guardians could each reach the limit against the same address, so a global per-email cap
- * is NOT enforced. §36.2's text ("Per-student-email: max 3 link attempts per day (prevents
- * spam linking to an email)") is genuinely ambiguous between per-guardian and global scope.
- * A global cap needs a subject abstraction §41's `profile_id` cannot express — that is DDL,
- * therefore V1.1, and it is surfaced as an SCL candidate rather than assumed.
- */
-export function guardianLinkEmailBucketKey(email: string): string {
-  return `guardian_link_email_attempts:${subjectDigest(
-    normaliseEmail(email),
-    DIGEST_LEN_BUCKET_KEY,
-  )}`;
-}

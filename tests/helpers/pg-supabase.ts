@@ -26,6 +26,8 @@
  */
 
 import { Client } from "pg";
+import fs from "node:fs";
+import path from "node:path";
 
 export type PgSupabaseResult<T = unknown> = {
   data: T | null;
@@ -360,4 +362,69 @@ export function pgConnConfig(database: string): {
     password: process.env.PGPASSWORD ?? "postgres",
     database,
   };
+}
+
+/**
+ * Create a throwaway database, apply the real genesis + migration pipeline to it, and
+ * return a connected client.
+ *
+ * @spec [Doc-01_V8, §35/§36; owner instruction 2026-08-28 Task 1 Gate A] | @implemented [2026-09-01]
+ *
+ * plain English: every PG-backed test needs the same four steps before it can assert
+ * anything — make a clean database, stub the Supabase-provided roles and `auth` schema,
+ * replay `supabase/migrations` in sorted order, and drop the `on_auth_user_created`
+ * trigger so a test can seed `auth.users` and `profiles` explicitly. Expected outcome:
+ * one definition of "a database with this repo's schema in it".
+ *
+ * WHY IT LIVES HERE. Four test files had already inlined their own `applyMigrations`
+ * (`guardian-link.pg.ci.test.ts`, `guardian-link-student-side.pg.ci.test.ts`,
+ * `diagnostic.handler-pg.ci.test.ts`, `entitlement-write-path.ci.test.ts`). Adding a
+ * fifth, sixth and seventh copy for the three files converted on 2026-09-01 is the
+ * divergence CLAUDE.md forbids by name, so the canonical version is extracted here and
+ * the new conversions consume it. The four existing copies are consolidation candidates
+ * and are deliberately NOT edited — they belong to other surfaces, and rewriting them
+ * would widen a CI fix into a refactor.
+ *
+ * Trade-off: drops `on_auth_user_created`. That trigger's own behaviour is proved by
+ * `scripts/ci/genesis-fresh-apply.sh` A.2/A.3, not here; leaving it armed would pre-empt
+ * the explicit `profiles` rows a fixture needs. Edge case: `DROP DATABASE` fails if a
+ * previous run left a connection open, so the caller owns `client.end()`.
+ */
+export async function bootstrapPgDatabase(dbName: string): Promise<Client> {
+  const admin = new Client(pgConnConfig("postgres"));
+  await admin.connect();
+  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+  await admin.query(`CREATE DATABASE ${dbName}`);
+  await admin.end();
+
+  const client = new Client(pgConnConfig(dbName));
+  await client.connect();
+
+  // Supabase provides these in real environments; a bare Postgres does not.
+  await client.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN; END IF;
+    END $$;
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
+    CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
+  `);
+
+  const dir = path.resolve(
+    path.dirname(new URL(import.meta.url).pathname),
+    "../../supabase/migrations",
+  );
+  for (const f of fs
+    .readdirSync(dir)
+    .filter((n) => n.endsWith(".sql"))
+    .sort()) {
+    await client.query(fs.readFileSync(path.join(dir, f), "utf8"));
+  }
+
+  await client.query(
+    `DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;`,
+  );
+  return client;
 }
