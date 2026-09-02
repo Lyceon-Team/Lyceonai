@@ -64,6 +64,7 @@ import {
   resolveGuardianPurchaseSubject,
   subscriptionAlreadyFundsStudent,
 } from "../lib/stripe/guardian-checkout";
+import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
@@ -143,6 +144,38 @@ router.post(
     const isGuardian = role === "guardian";
 
     try {
+      /**
+       * ONE RULE, BOTH ROUTES — the self-pay half.
+       *
+       * @spec [Doc 01 V8 §20; SCL-029] | @implemented [2026-09-02]
+       *
+       * Runs BEFORE `getStripeClient()` and before the Customer is created, so
+       * a student who already has a subscription causes no Stripe object of any
+       * kind to come into existence. The guardian half runs at its own earliest
+       * point — immediately after `resolveGuardianPurchaseSubject`, since the
+       * subject there is not known until the links are read.
+       *
+       * The subject on this path is the authenticated caller; nothing in the
+       * body selects it.
+       */
+      if (!isGuardian) {
+        const eligibility =
+          await evaluateSubjectPurchaseEligibility(studentProfileId);
+        if (!eligibility.ok) {
+          logger.info("BILLING", "checkout", "Self-pay purchase refused", {
+            requestId,
+            studentProfileId,
+            code: eligibility.code,
+          });
+          return res
+            .status(eligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409)
+            .json({
+              error: { message: eligibility.reason, code: eligibility.code },
+              requestId,
+            });
+        }
+      }
+
       const priceId = getPriceId(plan);
       const stripe = getStripeClient();
 
@@ -222,6 +255,40 @@ router.post(
             });
         }
         const selectedStudentId = subject.studentProfileId;
+
+        /**
+         * ONE RULE, BOTH ROUTES — the guardian half. Same function, same code,
+         * asked about the SELECTED STUDENT rather than the guardian: a guardian
+         * with premium access derived from child A must still be able to buy
+         * for child B.
+         *
+         * This runs before `subscriptions.list` and before either write branch,
+         * so a refusal creates no Stripe object. It does NOT replace
+         * `subscriptionAlreadyFundsStudent` below — that answers a different
+         * question of a different source (does this guardian's own subscription
+         * already carry an item for this student), and it stays because it
+         * closes the window before the webhook has written the row.
+         */
+        const guardianEligibility =
+          await evaluateSubjectPurchaseEligibility(selectedStudentId);
+        if (!guardianEligibility.ok) {
+          logger.info("BILLING", "checkout", "Guardian purchase refused", {
+            requestId,
+            payerProfileId,
+            code: guardianEligibility.code,
+          });
+          return res
+            .status(
+              guardianEligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409,
+            )
+            .json({
+              error: {
+                message: guardianEligibility.reason,
+                code: guardianEligibility.code,
+              },
+              requestId,
+            });
+        }
 
         /**
          * BRANCH FIRST, THEN GATE. The order is the fix.

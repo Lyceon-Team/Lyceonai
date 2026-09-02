@@ -149,61 +149,15 @@ side effect of this one.
 endpoint now targets `/api/billing/webhook`, which matches the mounted route. That owner action
 appears done; §5 is left as written because it is the record of the finding, not of current state.
 
-## 9. Owner action — a period in the database that Stripe never sent (verified 2026-09-02)
+## 9. CLOSED, no action — the `current_period_end` question
 
-**There is no fabricating fallback in the code. The value was written from outside the
-application.** That is the finding; the brief expected a `now() + interval` fallback to delete, and
-there is none to delete.
+**Owner ruling 2026-09-02: the value on student `3f18cbe2` is not fabricated and is not a defect.**
+The finding raised earlier that day is closed as resolved-no-action and is not an owner action. It
+has been removed from the open lists in this document and in
+`Stripe_Decision_vs_Failure_Sweep.md`. Recorded here only so a future reader who notices the same
+value does not re-open it.
 
-`entitlements` for student `3f18cbe2` holds:
-
-```
-current_period_start  NULL
-current_period_end    2027-09-02 09:51:10.059762+00
-updated_at            2026-08-26 22:55:07.402374+00   (= created_at, never moved)
-```
-
-Ruled out, each by a direct check rather than by inspection:
-
-- **The only two writers of that column** are `webhook-handler.ts:706` and `:1365`, both
-  `epochToIso(item…)`. `epochToIso` takes whole Stripe epoch seconds, so it cannot produce
-  `.059762` microseconds. Nothing else in `server/`, `apps/`, `packages/` or `scripts/` writes
-  `current_period_end`.
-- **No column default and no trigger.** `information_schema.columns` gives `column_default: null`
-  for both period columns; `pg_trigger` on `public.entitlements` returns zero non-internal rows.
-- **No webhook ran at that moment.** `stripe_webhook_events` jumps 09:41:26 → 10:02:14 on
-  2026-09-02; nothing is recorded at 09:51:10.
-- **No Supabase Edge Functions exist** on the project.
-- **The value matches neither subscription.** `sub_1U8pin…`'s item ends 2027-08-26 22:55:01;
-  `sub_1U4bqZ…`'s ends 2027-08-15 07:17:36. `2027-09-02 09:51:10` is exactly one year after
-  09:51:10 **on the day it was observed**.
-
-`updated_at` not moving is consistent with either a direct `UPDATE` or an `upsertEntitlement` call,
-because **nothing maintains `updated_at` on this table** — no trigger, and `upsertEntitlement` never
-includes it, so the `now()` DEFAULT only ever applies on INSERT. Same class as `profiles.updated_at`.
-It is therefore not evidence either way, and is reported as its own defect below.
-
-**Owner action.** The row's period is not recoverable from anything this system holds, so it must be
-set from Stripe or cleared. Read-only verification of the true value first:
-
-```sql
--- what the row says now
-SELECT profile_id, current_period_start, current_period_end, updated_at
-  FROM public.entitlements WHERE profile_id::text LIKE '3f18cbe2%';
-```
-
-Stripe's answer for `sub_1U8pin…` item `si_V97ymukbvCzxjf` is
-`current_period_start = 1787784901` (2026-08-26 22:55:01Z) and
-`current_period_end = 1819320901` (2027-08-26 22:55:01Z).
-
-Either set those two values, or set both to NULL and let the next
-`customer.subscription.updated` for that subscription rewrite them from the item — the handler now
-provably writes NULL rather than a computed date when the item carries no period, and writes the
-item's own epochs when it does (`tests/ci/stripe-unresolvable-subject.contract.test.ts`).
-**Leaving the fabricated date is the one option to avoid**: renewal, grace and dunning all read it.
-
-**`updated_at` is maintained by nothing.** No trigger exists on `entitlements`, and no writer sets
-the column, so it records insert time forever. `profiles.updated_at` has the same defect. Fixing it
-is a migration (a `moddatetime`-style trigger, or adding the column to every writer) and belongs to
-whoever owns that migration queue — recorded here rather than fixed, because a column nobody
-maintains is silently misleading in exactly the way this section had to work around.
+One adjacent fact remains true and is stated once, not as an action: **nothing maintains
+`entitlements.updated_at`** — there is no trigger on the table and no writer sets the column, so it
+records insert time only. `profiles.updated_at` is the same. Anyone reading either column as
+"when did this last change" will be wrong.

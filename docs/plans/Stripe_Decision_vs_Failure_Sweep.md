@@ -90,13 +90,17 @@ SubscriptionItem, which SCL-045 already threads through the writer as
 schema change plus a rewrite of every reader — a separate, specified change, not a side effect of a
 webhook fix.
 
-## Related gap, out of scope and confirmed
+## Related gap — now CLOSED
 
-**The self-pay route has no already-funded guard.** `STUDENT_ALREADY_FUNDED`
-(`billing-routes.ts:315-324`, via `subscriptionAlreadyFundsStudent`) exists **only** on the guardian
-add-item branch. The self-pay `else` branch checks only that a student is not naming another
-student; nothing stops a student who already holds an active subscription from buying a second one.
+**The self-pay route had no already-funded guard.** `STUDENT_ALREADY_FUNDED` existed **only** on the
+guardian add-item branch; the self-pay branch checked only that a student was not naming another
+student. Nothing stopped a student who already held an active subscription from buying a second one,
+and `cus_V4lNXGNkj7FQH3`'s two active subscriptions for student `3f18cbe2` (2026-08-15 and
+2026-08-26) are that gap already exercised in production.
 
-`cus_V4lNXGNkj7FQH3`'s two active subscriptions for one student are that gap, already exercised in
-production. It is the same root as the hazard above: nothing in the purchase path knows a student is
-already funded, and nothing in the write path can represent it if they are.
+**Closed 2026-09-02.** `evaluateSubjectPurchaseEligibility`
+(`server/lib/stripe/purchase-eligibility.ts`) is called by BOTH branches before any Stripe object is
+created, refusing on the platform predicate's whole set — `active`, `past_due` and `trialing` — with
+the existing `STUDENT_ALREADY_FUNDED` code. The last-writer-wins hazard above is unchanged and
+remains reported, not fixed: this guard stops new duplicates arising, it does not make one
+entitlement row able to represent two subscriptions.
