@@ -86,7 +86,7 @@ describe("FullTest review/report session sync", () => {
             {
               sessionId: "session-a",
               status: "completed",
-              currentSection: "math",
+              currentSection: "M",
               currentModule: 2,
               testFormId: "form-1",
               startedAt: "2026-03-20T09:00:00.000Z",
@@ -99,7 +99,7 @@ describe("FullTest review/report session sync", () => {
             {
               sessionId: "session-b",
               status: "completed",
-              currentSection: "math",
+              currentSection: "M",
               currentModule: 2,
               testFormId: "form-1",
               startedAt: "2026-03-21T09:00:00.000Z",
@@ -134,7 +134,7 @@ describe("FullTest review/report session sync", () => {
           session: {
             id: "session-b",
             status: "completed",
-            currentSection: "math",
+            currentSection: "M",
             currentModule: 2,
             startedAt: "2026-03-21T09:00:00.000Z",
             completedAt: "2026-03-21T11:00:00.000Z",

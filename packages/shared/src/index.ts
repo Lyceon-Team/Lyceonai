@@ -1,5 +1,3 @@
-export * from "./types.js";
-export * from "./validate.js";
 export * from "./mastery-levels.js";
 export * from "./projection-confidence.js";
 export * from "./mastery-emission.js";

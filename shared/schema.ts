@@ -6,6 +6,8 @@
 // not a second ORM-defined schema. Edge case: all six importers consume only
 // `import type` interfaces, so removal is type-safe and build-neutral.
 
+import type { CanonicalSectionCode } from "./question-bank-contract";
+
 export interface QuestionOption {
   key: "A" | "B" | "C" | "D";
   text: string;
@@ -15,7 +17,9 @@ export interface StudentQuestion {
   id: string;
   canonical_id: string | null;
   stem: string;
-  section_code: "M" | "RW" | "MATH" | null;
+  // Canonical only. The former `| "MATH"` member let a single field hold two
+  // vocabularies at once; Doc 04B V4.3 §11.2 names 'MATH' as a retired defect.
+  section_code: CanonicalSectionCode | null;
   question_type: "multiple_choice" | "free_response";
   options: QuestionOption[];
   explanation: string | null;

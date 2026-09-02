@@ -7,11 +7,18 @@ import {
   resolveCanonicalDomain,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
+  type CanonicalSectionCode,
 } from "../../shared/question-bank-contract";
+import { sectionDisplayLabel } from "../../shared/section-display";
 
-const SAT_TOPICS = {
-  math: {
-    section: "M",
+// @spec [Doc-05B §4.2] | @implemented [2026-09-02]
+// plain English: keyed by the canonical section code, so the key, the response's
+// `section` field and the `questions.section` column are all the same string. The
+// previous shape carried THREE fields for one concept — `section: "math"`,
+// `sectionCode: "M"` and `label: "Math"` — and the client matched on the one the
+// database does not store.
+const SAT_TOPICS: Record<CanonicalSectionCode, { domains: string[] }> = {
+  M: {
     domains: [
       "Algebra",
       "Advanced Math",
@@ -19,8 +26,7 @@ const SAT_TOPICS = {
       "Geometry and Trigonometry",
     ],
   },
-  reading_writing: {
-    section: "RW",
+  RW: {
     domains: [
       "Craft and Structure",
       "Information and Ideas",
@@ -73,20 +79,12 @@ export async function getPracticeTopics(_req: Request, res: Response) {
     }
 
     return res.status(200).json({
-      sections: [
-        {
-          section: "math",
-          label: "Math",
-          sectionCode: SAT_TOPICS.math.section,
-          domains: buildDomains("M", SAT_TOPICS.math.domains),
-        },
-        {
-          section: "reading_writing",
-          label: "Reading & Writing",
-          sectionCode: SAT_TOPICS.reading_writing.section,
-          domains: buildDomains("RW", SAT_TOPICS.reading_writing.domains),
-        },
-      ],
+      sections: (["M", "RW"] as const).map((sectionCode) => ({
+        section: sectionCode,
+        // The only label produced by this route, from the one display mapping.
+        label: sectionDisplayLabel(sectionCode),
+        domains: buildDomains(sectionCode, SAT_TOPICS[sectionCode].domains),
+      })),
     });
   } catch {
     return res.status(500).json({ error: "Internal server error" });

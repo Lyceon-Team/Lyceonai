@@ -50,7 +50,13 @@ import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
-import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
+import {
+  isMathSection,
+  sectionDisplayLabel,
+  SECTION_LABEL_MATH,
+  SECTION_LABEL_RW,
+} from "@shared/section-display";
+import type { CanonicalSectionCode } from "@shared/question-bank-contract";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 
@@ -118,9 +124,10 @@ function Practice() {
   >([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [focusSection, setFocusSection] = useState<
-    "math" | "reading_writing" | ""
-  >("math");
+  // "" means "all sections". Section values are the canonical codes the API returns.
+  const [focusSection, setFocusSection] = useState<CanonicalSectionCode | "">(
+    "M",
+  );
   const [, setLocation] = useLocation();
   const [isStarting, setIsStarting] = useState(false);
 
@@ -196,16 +203,15 @@ function Practice() {
   const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
   const mathDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "math")?.domains,
+    topicsData?.sections?.find((s: any) => s.section === "M")?.domains,
   );
   const readingDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "reading_writing")
-      ?.domains,
+    topicsData?.sections?.find((s: any) => s.section === "RW")?.domains,
   );
 
   const visibleDomains = useMemo(() => {
-    if (focusSection === "math") return mathDomains;
-    if (focusSection === "reading_writing") return readingDomains;
+    if (focusSection === "M") return mathDomains;
+    if (focusSection === "RW") return readingDomains;
     return [...mathDomains, ...readingDomains];
   }, [focusSection, mathDomains, readingDomains]);
 
@@ -232,7 +238,7 @@ function Practice() {
   };
 
   const buildFilters = (
-    section: "math" | "reading_writing",
+    section: CanonicalSectionCode,
   ): PracticeSessionFilters => ({
     sections: [section],
     domains: selectedDomains.length > 0 ? selectedDomains : undefined,
@@ -242,7 +248,7 @@ function Practice() {
     targetQuestionCount: Number(questionCount) || 10,
   });
 
-  const handleStartSession = async (section: "math" | "reading_writing") => {
+  const handleStartSession = async (section: CanonicalSectionCode) => {
     setIsStarting(true);
     const sessionFilters = buildFilters(section);
     const newId = await practiceHook.startSession(sessionFilters);
@@ -280,16 +286,16 @@ function Practice() {
   const quickFocus = useMemo(
     () => [
       {
-        section: "reading_writing" as const,
-        title: "Reading & Writing",
+        section: "RW" as const,
+        title: SECTION_LABEL_RW,
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
         icon: BookOpen,
         testId: "button-practice-reading",
         variant: "outline" as const,
       },
       {
-        section: "math" as const,
-        title: "Math",
+        section: "M" as const,
+        title: SECTION_LABEL_MATH,
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
         icon: Calculator,
         testId: "button-practice-math",
@@ -506,7 +512,7 @@ function Practice() {
                       <Select
                         value={focusSection}
                         onValueChange={(v) => {
-                          setFocusSection(v as "math" | "reading_writing" | "");
+                          setFocusSection(v as CanonicalSectionCode | "");
                           setSelectedDomains([]);
                           setSelectedSkills([]);
                         }}
@@ -515,10 +521,8 @@ function Practice() {
                           <SelectValue placeholder="All sections" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="math">Math</SelectItem>
-                          <SelectItem value="reading_writing">
-                            Reading & Writing
-                          </SelectItem>
+                          <SelectItem value="M">{SECTION_LABEL_MATH}</SelectItem>
+                          <SelectItem value="RW">{SECTION_LABEL_RW}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -776,7 +780,7 @@ function Practice() {
 
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-                      Reading & Writing Domains
+                      {SECTION_LABEL_RW} Domains
                     </p>
                     {readingDomains.length === 0 ? (
                       <p className="text-sm text-muted-foreground">

@@ -7,8 +7,10 @@ import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
   const row: any = {
     canonical_id,
     status: "draft",
-    section: "Reading and Writing",
-    section_code: "RW",
+    // `questions.section` is CHECK-constrained to 'M'/'RW', and there is no
+    // `section_code` column on the table at all — this canary inserted a display string
+    // into the first and a value into the second, so it could never have succeeded.
+    section: "RW",
     question_type: "multiple_choice",
     stem: "CANARY: does canonical insert work via supabaseServer?",
     options: [

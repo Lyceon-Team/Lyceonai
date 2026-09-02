@@ -135,6 +135,17 @@ jobs:
       - name: Fixture canonicality self-test (proves each mutation turns it red)
         run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
 
+      # Five section vocabularies coexisted here: 'M'/'RW' (what all sixteen CHECK
+      # constraints accept), 'MATH'/'RW', 'Math'/'Reading & Writing', 'math'/'rw', and
+      # 'Math'/'RW'/'Random'. The last one reached storage — jsonb, inside
+      # practice_sessions.filters, the one section field no CHECK can see — and thirteen
+      # production rows held it. This gate keeps the count at one.
+      - name: Section vocabulary gate (no section literal outside M/RW off the display path)
+        run: node scripts/ci/section-vocabulary-gate.mjs
+
+      - name: Section vocabulary self-test (proves each mutation turns it red)
+        run: bash scripts/ci/section-vocabulary-gate.mutations.sh
+
       # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
       # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
       # cannot see it — only a text search over the committed tree can.

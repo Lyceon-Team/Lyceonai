@@ -48,7 +48,7 @@ describe("Full-Length History Route Contract", () => {
       {
         sessionId: "session-completed-1",
         status: "completed",
-        currentSection: "math",
+        currentSection: "M",
         currentModule: 2,
         testFormId: "form-1",
         startedAt: "2026-03-20T10:00:00.000Z",
@@ -59,7 +59,7 @@ describe("Full-Length History Route Contract", () => {
       {
         sessionId: "session-live-1",
         status: "in_progress",
-        currentSection: "rw",
+        currentSection: "RW",
         currentModule: 1,
         testFormId: "form-1",
         startedAt: "2026-03-21T08:00:00.000Z",

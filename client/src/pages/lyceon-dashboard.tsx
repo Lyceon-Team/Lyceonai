@@ -29,6 +29,7 @@ import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
+import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
 
 interface KpiExplanation {
   ruleId: string;
@@ -572,12 +573,12 @@ export default function LyceonDashboard() {
                     max={1600}
                   />
                   <ScoreSnapshotRow
-                    label="Reading & Writing"
+                    label={SECTION_LABEL_RW}
                     value={estimateData?.estimate?.rw ?? null}
                     max={800}
                   />
                   <ScoreSnapshotRow
-                    label="Math"
+                    label={SECTION_LABEL_MATH}
                     value={estimateData?.estimate?.math ?? null}
                     max={800}
                   />
