@@ -83,6 +83,43 @@ This rule overrides any instruction to the contrary.
 
 ## Entries
 
+SCL-079 | 2026-09-01 | Doc 03B §3.4 / INV-03-02 — live exam gate fails OPEN on query error | PROPOSED
+Change: `isLiveExamInProgress` (entitlement-service.ts) failed closed on any DB error, returning
+  `true` (exam in progress → block tutor access). The queried table (`full_length_exams`) does not
+  exist — the correct table is `full_length_exam_sessions`, and neither is in the production
+  genesis schema (the exam vertical is unbuilt). The query errored on every call, the error path
+  returned `true`, and LISA returned `403 tutor_unavailable_during_live_exam` on every
+  POST /messages for every student. Total LISA outage, no exam to finish, block can never clear.
+WAS: query error → `return true` (fail closed). No distinction between "active exam found" and
+  "query failed." Table name `full_length_exams` (no migration, does not exist). Column name
+  `student_id` (correct column is `user_id`).
+IS: query error → `return false` (fail OPEN), log warning. Table name corrected to
+  `full_length_exam_sessions`. Column corrected to `user_id`. When the query succeeds: active
+  exam row → `true` (block, INV-03-02 enforced); no row → `false` (allow).
+Rationale (Karl ruling 2026-09-01): SCL-032's threat model governs. A student in another tab has
+  Gemini, ChatGPT, and search, all of which give more than an anti-leak tutor. The exam block is
+  low-value integrity protection — its absence during infrastructure failure costs little.
+  Blocking ALL tutoring — which is what a fail-closed gate on a missing table does — costs a lot.
+  This is a narrow, stated exception: every other fail-closed gate on the LISA surface
+  (entitlement, anti-leak, crisis) stays closed. The exception is justified only because (a) the
+  threat model is weak (SCL-032), (b) the failure mode is total (100% of traffic, not one
+  student), and (c) the block can never clear (no exam exists to finish). None of these three
+  conditions hold for entitlement or anti-leak gates.
+Scope: this fail-open applies ONLY to `isLiveExamInProgress`. It does NOT generalize. Do not
+  copy this pattern without an owner ruling. SCL-032 narrowed WHERE INV-03-02 applies (POST
+  /messages only); this SCL narrows HOW the gate behaves when it cannot run.
+Bugs fixed in the same change:
+  - Table name: `full_length_exams` → `full_length_exam_sessions` (matches all 22 query sites in
+    `fullLengthExam.ts` and the pre-baseline migration `20260213_full_length_exam_hardening.sql`).
+  - Column name: `student_id` → `user_id` (matches the actual schema).
+Version: no spec amendment — INV-03-02 is unchanged, and the fail-open is a runtime posture
+  decision, not an invariant change. The invariant ("LISA is unavailable during live full-length
+  exam") remains true when the exam vertical exists. This SCL governs what happens when the
+  vertical does not exist or is unreachable.
+Owner action: confirm PROPOSED → OPEN. No spec edit needed unless the exam vertical's absence
+  should be noted in Doc 03B §3.4.
+Artifact: `server/services/entitlement-service.ts` `isLiveExamInProgress`. PR against `main`.
+
 SCL-078 | 2026-08-28 | Doc 01 V8 §16 grants Admin `✓` on linked-student read; R5 denies it | PROPOSED
 Change: the admin bypass on guardian-gated reads is deleted (owner ruling 2026-08-28, "R5 reaches all four bypasses"; `guardian-rebuild-design-spec` §1.5). Doc 01 V8 §16's permission matrix still grants it. The implementation is now stricter than the locked spec, deliberately, and that gap is recorded here rather than left for a reader to find as a defect.
 WAS, verbatim (Doc 01 V8 §16 permission matrix, `Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md:776`):
