@@ -124,9 +124,84 @@ describe("structured JSON log output — redaction proof", () => {
     // Severity is ERROR
     expect(parsed.severity).toBe("ERROR");
 
-    // Error object is present (serialized)
+    /**
+     * INVERTED 2026-08-28 (Codex HIGH-6). This previously asserted
+     * `parsed.error.message === 'DB connection failed'` — it REQUIRED the
+     * prohibited behaviour. It therefore stayed green while raw vendor and
+     * database messages leaked, and would have failed the moment the required
+     * suppression was implemented. A test that fails when the defect is fixed
+     * is worse than no test.
+     *
+     * Both halves asserted: the prose is ABSENT, and a usable classification is
+     * PRESENT. Asserting only absence would pass for a logger that dropped the
+     * error entirely and left an operator with nothing.
+     */
     expect(parsed.error).toBeDefined();
-    expect(parsed.error.message).toBe("DB connection failed");
+    expect(parsed.error.message).toBeUndefined();
+    expect(parsed.error.stack).toBeUndefined();
+    expect(rawJson).not.toContain("DB connection failed");
+    // What replaces it: the error's TYPE plus an allow-listed classification.
+    expect(parsed.error.name).toBe("Error");
+    expect(parsed.error.errorClass).toBe("unknown");
+  });
+
+  /**
+   * The two leaks that were actually printed from a run, not imagined.
+   * @spec [Charter §6; Doc 01A §14] | @implemented [2026-08-28 — Codex HIGH-4]
+   */
+  it("suppresses vendor prose and database prose, including a uuid embedded INSIDE the message", () => {
+    writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    const PROFILE = "3f18cbe2-a999-41d4-852b-2af27e19d04e";
+    class AuthSessionMissingError extends Error {
+      constructor() {
+        super("Auth session missing!");
+        this.name = "AuthSessionMissingError";
+      }
+    }
+    const dbError = Object.assign(
+      new Error(
+        `duplicate key value violates unique constraint "entitlements_profile_id_unique" DETAIL: Key (profile_id)=(${PROFILE}) already exists.`,
+      ),
+      { code: "23505", details: `Key (profile_id)=(${PROFILE})`, hint: null },
+    );
+
+    logger.error(
+      "DB",
+      "vendor_prose",
+      "Vendor failure",
+      new AuthSessionMissingError(),
+      {
+        dbError,
+      },
+    );
+
+    const line = writeSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((str) => {
+        try {
+          return JSON.parse(str).event === "vendor_prose";
+        } catch {
+          return false;
+        }
+      });
+    expect(line).toBeDefined();
+    const raw = String(line);
+
+    // Vendor prose, database prose, the constraint body, the stack, and — the
+    // one no key or value rule could ever reach — the uuid EMBEDDED in the
+    // message are all absent.
+    expect(raw).not.toContain("Auth session missing");
+    expect(raw).not.toContain("duplicate key value");
+    expect(raw).not.toContain("entitlements_profile_id_unique");
+    expect(raw).not.toContain("node_modules");
+    expect(raw).not.toContain(PROFILE);
+
+    // And an operator still learns which error, of what kind.
+    const parsed = JSON.parse(raw);
+    expect(parsed.error.name).toBe("AuthSessionMissingError");
+    expect(parsed.data.dbError.errorClass).toBe("unique_violation");
+    expect(parsed.data.dbError.errorCode).toBe("23505");
   });
 
   it("emits valid single-line JSON parseable by Cloud Logging", () => {
@@ -171,8 +246,19 @@ describe("structured JSON log output — redaction proof", () => {
     expect(parsed.service).toBeDefined();
     expect(parsed.environment).toBeDefined();
 
-    // Correlation ID threaded through
+    // Correlation ID threaded through, un-digested: `request_id` is a
+    // domain-entity correlation key, not a person.
     expect(parsed.request_id).toBe("req-123-abc");
-    expect(parsed.user_id).toBe("user-456");
+
+    // CHANGED 2026-08-28 (Codex HIGH-6). This previously asserted the RAW
+    // 'user-456'. A user id is a person-linked identifier and the logger
+    // boundary now digests it structurally, so asserting the raw value would
+    // be asserting the defect. Correlation is preserved — the digest is stable,
+    // so two lines about the same user still join — while the log no longer
+    // discloses WHO. Asserting a non-empty digest that differs from the input
+    // is the pair of claims that matters; asserting only "not raw" would pass
+    // for a logger that blanked the field and destroyed correlation.
+    expect(parsed.user_id).not.toBe("user-456");
+    expect(parsed.user_id).toMatch(/^[0-9a-f]{8}$/);
   });
 });

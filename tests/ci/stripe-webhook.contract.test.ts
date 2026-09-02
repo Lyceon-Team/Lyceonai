@@ -19,7 +19,9 @@ const STUDENT_ID = "44444444-4444-4444-8444-444444444444";
 const state = vi.hoisted(() => ({ expectedLivemode: false }));
 
 const dbMocks = vi.hoisted(() => ({
-  insert: vi.fn(async () => ({ error: null as { code?: string; message?: string } | null })),
+  insert: vi.fn(async () => ({
+    error: null as { code?: string; message?: string } | null,
+  })),
   delete: vi.fn(async () => ({ error: null })),
 }));
 
@@ -33,6 +35,14 @@ const accountMocks = vi.hoisted(() => ({
 
 const stripeApi = vi.hoisted(() => ({
   subscriptionsRetrieve: vi.fn(),
+  // INV-03-08 now gates EVERY grant, so the writer reads the payer's Customer.
+  // Eligible by default here; denial has its own suites.
+  customersRetrieve: vi.fn(async () => ({
+    id: "cus_test_1",
+    address: { country: "US" },
+  })),
+  subscriptionsUpdate: vi.fn(),
+  subscriptionsResume: vi.fn(),
 }));
 
 vi.mock("../../server/lib/stripe/client", async () => {
@@ -42,7 +52,12 @@ vi.mock("../../server/lib/stripe/client", async () => {
     getStripeClient: () => ({
       // REAL verification — not a stub.
       webhooks: real.webhooks,
-      subscriptions: { retrieve: stripeApi.subscriptionsRetrieve },
+      customers: { retrieve: stripeApi.customersRetrieve },
+      subscriptions: {
+        retrieve: stripeApi.subscriptionsRetrieve,
+        update: stripeApi.subscriptionsUpdate,
+        resume: stripeApi.subscriptionsResume,
+      },
     }),
     getExpectedLivemode: () => state.expectedLivemode,
   };
@@ -62,6 +77,12 @@ vi.mock("../../server/lib/account", () => ({
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
 }));
 
+vi.mock("../../server/lib/entitlement-runtime-config", () => ({
+  // The INV-03-08 country gate runs on checkout.session.completed. These
+  // suites are not about the gate, so the Tier-1 list is seeded eligible;
+  // denial has its own suite (tests/ci/stripe-country-gate.contract.test.ts).
+  getTier1Countries: vi.fn(async () => ["US", "CA", "GB"]),
+}));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -84,6 +105,8 @@ function checkoutEvent(
     livemode?: boolean;
     metadata?: Record<string, string>;
     clientReferenceId?: string | null;
+    /** INV-03-08 billing country; `null` exercises the unknown verdict. */
+    country?: string | null;
   } = {},
 ) {
   return {
@@ -102,6 +125,17 @@ function checkoutEvent(
             ? STUDENT_ID
             : overrides.clientReferenceId,
         metadata: overrides.metadata ?? { student_profile_id: STUDENT_ID },
+        // INV-03-08: a COMPLETED session carries the billing address the
+        // customer typed during Checkout. Eligible by default here so this
+        // suite keeps testing what it is about; the country gate's own denial
+        // cases live in tests/ci/stripe-country-gate.contract.test.ts.
+        customer_details: {
+          address: {
+            country: overrides.country === undefined ? "US" : overrides.country,
+          },
+        },
+        // SCL-071: settled. The settlement gate has its own suite.
+        payment_status: "paid",
       },
     },
   };
@@ -119,13 +153,26 @@ describe("Stripe webhook handler contract", () => {
     state.expectedLivemode = false;
     dbMocks.insert.mockResolvedValue({ error: null });
     dbMocks.delete.mockResolvedValue({ error: null });
+    // The shape Stripe actually returns from API version 2025-03-31.basil
+    // onward: `current_period_start` / `current_period_end` were REMOVED from
+    // the Subscription and added to SubscriptionItem. This fixture previously
+    // carried them at the top level, which no live retrieve has produced since
+    // that version — it encoded a shape Stripe no longer sends.
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
-      current_period_start: 1_760_000_000,
-      current_period_end: 1_762_000_000,
-      items: { data: [{ price: { id: "price_monthly" } }] },
+      items: {
+        data: [
+          {
+            id: "si_test_1",
+            price: { id: "price_monthly" },
+            current_period_start: 1_760_000_000,
+            current_period_end: 1_762_000_000,
+          },
+        ],
+      },
     });
   });
 
@@ -186,6 +233,7 @@ describe("Stripe webhook handler contract", () => {
   it("persists Stripe's re-fetched status, not the status in the delivered payload", async () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "canceled",
       cancel_at_period_end: true,
       items: { data: [] },
@@ -200,6 +248,90 @@ describe("Stripe webhook handler contract", () => {
       status: "canceled",
       tier: "free",
     });
+  });
+
+  // -------------------------------------------------------------------
+  // Period bounds — Stripe API 2025-03-31.basil moved them onto the item
+  // -------------------------------------------------------------------
+
+  it("derives period bounds from the subscription item when the subscription carries no top-level period fields", async () => {
+    const START = 1_770_000_000;
+    const END = 1_772_592_000;
+
+    const retrieved = {
+      id: "sub_test_1",
+      customer: "cus_test_1",
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: "si_test_1",
+            price: { id: "price_monthly" },
+            current_period_start: START,
+            current_period_end: END,
+          },
+        ],
+      },
+    };
+
+    // The premise of the test, asserted rather than assumed: this payload has
+    // NO top-level period fields. If a future edit reintroduces them, the test
+    // would silently stop proving what it claims to prove.
+    expect(retrieved).not.toHaveProperty("current_period_start");
+    expect(retrieved).not.toHaveProperty("current_period_end");
+
+    stripeApi.subscriptionsRetrieve.mockResolvedValue(retrieved);
+
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+    await process_(body, signature);
+
+    // Both halves: present AND correct. `not.toBeNull()` alone would pass on
+    // any date the code invented.
+    expect(accountMocks.upsertEntitlement.mock.calls[0][1]).toMatchObject({
+      current_period_start: new Date(START * 1000).toISOString(),
+      current_period_end: new Date(END * 1000).toISOString(),
+      stripe_price_id: "price_monthly",
+    });
+  });
+
+  it("fails closed rather than guessing when several items name no matching student", async () => {
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_test_1",
+      customer: "cus_test_1",
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: "si_other_a",
+            price: { id: "price_a" },
+            current_period_start: 1,
+            current_period_end: 2,
+            metadata: {
+              student_profile_id: "11111111-1111-1111-1111-111111111111",
+            },
+          },
+          {
+            id: "si_other_b",
+            price: { id: "price_b" },
+            current_period_start: 3,
+            current_period_end: 4,
+            metadata: {
+              student_profile_id: "22222222-2222-2222-2222-222222222222",
+            },
+          },
+        ],
+      },
+    });
+
+    const process_ = await handler();
+    const { body, signature } = signedRequest(checkoutEvent());
+    await expect(process_(body, signature)).rejects.toThrow(
+      /no subscription item resolves to the subject student/,
+    );
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });
 
   it("treats a duplicate event id as already processed and does not double-write", async () => {
@@ -292,6 +424,7 @@ describe("Stripe webhook handler contract", () => {
   it("rejects a re-fetched subscription that lacks a status rather than writing a partial row", async () => {
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       // no `status` at all
       items: { data: [] },
     });
@@ -306,12 +439,17 @@ describe("Stripe webhook handler contract", () => {
   });
 
   it("normalises absent period fields to null instead of undefined", async () => {
+    // Unchanged in intent, moved to the level that now carries the fields: an
+    // item with no period must still normalise to null rather than letting
+    // `undefined` reach the write. This is the behaviour that kept the
+    // 2026-08-26 defect to NULL bounds instead of a malformed row.
     stripeApi.subscriptionsRetrieve.mockResolvedValue({
       id: "sub_test_1",
+      customer: "cus_test_1",
       status: "active",
       cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_monthly" } }] },
-      // period fields absent
+      items: { data: [{ id: "si_test_1", price: { id: "price_monthly" } }] },
+      // period fields absent — on the item, where Stripe now carries them
     });
 
     const process_ = await handler();

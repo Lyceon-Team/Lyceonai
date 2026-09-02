@@ -53,8 +53,6 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
 }));
 
 vi.mock("../../server/lib/account", () => ({
-  createGuardianLink: vi.fn(),
-  acceptGuardianLink: vi.fn(),
   revokeGuardianLink: accountMocks.revokeGuardianLink,
   isGuardianLinkedToStudent: accountMocks.isGuardianLinkedToStudent,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
