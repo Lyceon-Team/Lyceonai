@@ -148,3 +148,16 @@ side effect of this one.
 **Note on §5 above, now stale.** Both endpoints then targeted `/api/stripe/webhook`. The single live
 endpoint now targets `/api/billing/webhook`, which matches the mounted route. That owner action
 appears done; §5 is left as written because it is the record of the finding, not of current state.
+
+## 9. CLOSED, no action — the `current_period_end` question
+
+**Owner ruling 2026-09-02: the value on student `3f18cbe2` is not fabricated and is not a defect.**
+The finding raised earlier that day is closed as resolved-no-action and is not an owner action. It
+has been removed from the open lists in this document and in
+`Stripe_Decision_vs_Failure_Sweep.md`. Recorded here only so a future reader who notices the same
+value does not re-open it.
+
+One adjacent fact remains true and is stated once, not as an action: **nothing maintains
+`entitlements.updated_at`** — there is no trigger on the table and no writer sets the column, so it
+records insert time only. `profiles.updated_at` is the same. Anyone reading either column as
+"when did this last change" will be wrong.

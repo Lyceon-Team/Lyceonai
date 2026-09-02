@@ -67,6 +67,7 @@ import {
 } from "./dispute";
 import { refundEventSchema, decideRefundRevocation } from "./refund";
 import type { RemediationStatus } from "./country-denial-remediation";
+import { isRemediationStatus } from "./country-denial-remediation";
 import {
   CountryDenialError,
   planForDenial,
@@ -243,6 +244,7 @@ export type WebhookOutcome =
         | "already_processed"
         | "ignored"
         | "held"
+        | "unresolvable_subject"
         | RemediationStatus;
     }
   | {
@@ -441,6 +443,47 @@ export class StripePayloadShapeError extends Error {
 }
 
 /**
+ * Thrown when a well-formed payload names nobody this system can entitle.
+ *
+ * @spec [OWNER RULING 2026-09-01 as extended 2026-09-02 — a denial or an
+ *        unresolvable subject is a DECISION and decisions settle at 200]
+ * @implemented [2026-09-02]
+ *
+ * NOT a subclass of `StripePayloadShapeError`, for the same reason
+ * `CountryDenialError` is not: the payload shape is fine. Stripe sent exactly
+ * what it was asked for; the object simply carries metadata this system does
+ * not recognise as naming a student. No redelivery adds that metadata, so a
+ * retry cannot change the answer — and the retry is the harm.
+ *
+ * WHAT IT COST BEFORE. Subscription `sub_1U4bqZDPtjyWEVqEEZXzvbnh` predates
+ * SCL-043 and carries `{profile_id, payer_user_id, payer_role, plan}` where the
+ * current shape carries `student_profile_id`. Cancelling it in the Customer
+ * Portal emitted `customer.subscription.updated`; `resolveStudentProfileId`
+ * found no key it recognised, threw a shape error, the route turned it into a
+ * 500, and Stripe has been retrying an event no redelivery could ever satisfy.
+ *
+ * DELIBERATELY NOT FIXED BY MAKING THE LEGACY METADATA RESOLVABLE. Adding
+ * `student_profile_id` to that subscription would resolve it to student
+ * `3f18cbe2` — and since `upsertEntitlement` keys on `profile_id` alone with
+ * `onConflict`, the ORPHAN's cancellation would then overwrite that student's
+ * good `active` entitlement from `sub_1U8pin…` with `canceled`/`free`. Making
+ * the event resolvable converts harmless noise into a live revocation. The
+ * last-writer-wins hazard behind that is reported separately; it is not this
+ * change's to fix.
+ */
+export class UnresolvableSubjectError extends Error {
+  constructor(
+    eventType: string,
+    readonly detail: string,
+  ) {
+    super(
+      `Stripe ${eventType} names no student this system can entitle: ${detail}`,
+    );
+    this.name = "UnresolvableSubjectError";
+  }
+}
+
+/**
  * Generic over the SCHEMA rather than over its output type. Inferring `T` from
  * `z.ZodType<T>` produces a fresh anonymous type at each call site, so two
  * calls against the same schema yield types TypeScript reports as "two
@@ -491,7 +534,10 @@ function resolveStudentProfileId(
 
   const parsed = profileIdSchema.safeParse(candidate);
   if (!parsed.success) {
-    throw new StripePayloadShapeError(
+    // A DECISION, NOT A SHAPE FAILURE. The payload parsed; it simply names
+    // nobody. The caller decides what to do about that — the lifecycle arm
+    // settles, because no redelivery will add the metadata.
+    throw new UnresolvableSubjectError(
       eventType,
       "no valid student_profile_id in metadata or client_reference_id",
     );
@@ -1860,7 +1906,11 @@ async function handleCustomerDeleted(event: Stripe.Event): Promise<void> {
  * whole point of the change this file exists for — a denial is a decision, and
  * decisions settle.
  */
-type DispatchStatus = "processed" | "held" | RemediationStatus;
+type DispatchStatus =
+  | "processed"
+  | "held"
+  | "unresolvable_subject"
+  | RemediationStatus;
 
 /**
  * Cancel, refund, and let the event SETTLE — the terminal state for a payer we
@@ -1932,7 +1982,13 @@ async function remediateCountryDenial(
   // operator actually triages on. Without it, "does anyone still owe this
   // customer money?" is answered by knowing which of six log codes to grep —
   // which is the same "you can tell them apart" claim that did not hold.
-  if (status !== "processed" && status !== "held") {
+  // POSITIVE MEMBERSHIP, not an exclusion list. This used to read
+  // `status !== "processed" && status !== "held"` — a negative filter that
+  // silently admits every status added later, and did: `unresolvable_subject`
+  // widened it and only the type checker noticed. Asking "is this a
+  // remediation?" is the question the branch actually means, and it stays
+  // correct however many non-remediation statuses exist.
+  if (isRemediationStatus(status)) {
     logger.warn(
       "STRIPE_WEBHOOK",
       "COUNTRY_DENIAL_OUTCOME",
@@ -2470,7 +2526,47 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
     return "processed";
   }
 
-  const studentProfileId = resolveStudentProfileId(subscription, event.type);
+  /**
+   * AN UNRESOLVABLE SUBJECT SETTLES. It does not retry forever.
+   *
+   * @spec [OWNER RULING 2026-09-01 as extended 2026-09-02] | @implemented [2026-09-02]
+   *
+   * plain English: a subscription whose metadata names nobody we can entitle is
+   * acknowledged and logged, and nothing is written. Expected outcome: a legacy
+   * or third-party subscription on a Customer we know stops generating 500s.
+   *
+   * Nothing is written, and that is the point twice over: once because we have
+   * no subject, and once because the plausible "fix" — resolving these to the
+   * student on the Customer — would let an orphan's cancellation overwrite that
+   * student's good entitlement. See `UnresolvableSubjectError`.
+   *
+   * ONLY THIS ARM. `fulfilCheckoutSession` still lets it propagate, and that is
+   * left unchanged deliberately: there the money has just moved, so a silent
+   * 200 would hide a payer who was charged and entitled nobody. Reported rather
+   * than widened.
+   */
+  let studentProfileId: string;
+  try {
+    studentProfileId = resolveStudentProfileId(subscription, event.type);
+  } catch (err: unknown) {
+    if (!(err instanceof UnresolvableSubjectError)) throw err;
+    logger.warn(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "SETTLED WITHOUT WRITING: this subscription names no student this system can entitle, so no redelivery could change the outcome. Nothing was read or written for any profile.",
+      {
+        eventId: event.id,
+        subscriptionRef: digestId(subscription.id),
+        // KEYS, never values: enough to tell a pre-SCL-043 subscription
+        // (`profile_id`, `payer_user_id`, `payer_role`) from a current one that
+        // has genuinely lost its subject, without logging any profile id.
+        metadataKeys: Object.keys(retrieved.metadata ?? {}).sort(),
+        detail: err.detail,
+      },
+    );
+    return "unresolvable_subject";
+  }
+
   await writeEntitlementFromSubscription(
     subscription.id,
     studentProfileId,
