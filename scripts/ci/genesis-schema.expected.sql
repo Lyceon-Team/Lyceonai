@@ -5298,6 +5298,31 @@ CREATE TABLE public.taxonomy_versions (
 
 
 --
+-- Name: tutor_context_resolution_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_context_resolution_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    turn_ordinal integer NOT NULL,
+    context_version text NOT NULL,
+    memory_summaries_count integer DEFAULT 0 NOT NULL,
+    recent_messages_count integer DEFAULT 0 NOT NULL,
+    mastery_snapshot_present boolean DEFAULT false NOT NULL,
+    friction_signals_present boolean DEFAULT false NOT NULL,
+    scope_type text NOT NULL,
+    resolved_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE tutor_context_resolution_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_context_resolution_log IS 'Doc 03A §11.3: per-turn context assembly audit. Records what context was assembled (version, counts, flags). Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
 -- Name: tutor_context_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5575,6 +5600,37 @@ CREATE TABLE public.tutor_question_links (
 --
 
 COMMENT ON TABLE public.tutor_question_links IS 'Question relationship log — audit trail for tutor-suggested retries (§8.5). §18.5.';
+
+
+--
+-- Name: tutor_turn_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_turn_metrics (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    turn_ordinal integer NOT NULL,
+    orchestration_duration_ms integer NOT NULL,
+    model_name text NOT NULL,
+    tokens_in integer NOT NULL,
+    tokens_out integer NOT NULL,
+    cache_hit boolean DEFAULT false NOT NULL,
+    compaction_recommended boolean DEFAULT false NOT NULL,
+    anti_leak_triggered boolean DEFAULT false NOT NULL,
+    injection_detected boolean DEFAULT false NOT NULL,
+    crisis_triggered boolean DEFAULT false NOT NULL,
+    crisis_classifier_outcome text,
+    prompt_version text,
+    context_hash text,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE tutor_turn_metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
 
 
 --
@@ -6329,6 +6385,14 @@ ALTER TABLE ONLY public.taxonomy_versions
 
 
 --
+-- Name: tutor_context_resolution_log tutor_context_resolution_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_resolution_log
+    ADD CONSTRAINT tutor_context_resolution_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6414,6 +6478,14 @@ ALTER TABLE ONLY public.tutor_messages
 
 ALTER TABLE ONLY public.tutor_question_links
     ADD CONSTRAINT tutor_question_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_turn_metrics tutor_turn_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_turn_metrics
+    ADD CONSTRAINT tutor_turn_metrics_pkey PRIMARY KEY (id);
 
 
 --
@@ -6854,6 +6926,13 @@ CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skil
 
 
 --
+-- Name: idx_tutor_context_resolution_log_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_context_resolution_log_conversation ON public.tutor_context_resolution_log USING btree (conversation_id, turn_ordinal);
+
+
+--
 -- Name: idx_tutor_conversations_crisis; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6991,6 +7070,13 @@ CREATE INDEX idx_tutor_question_links_source ON public.tutor_question_links USIN
 --
 
 CREATE INDEX idx_tutor_question_links_student ON public.tutor_question_links USING btree (student_id, created_at DESC);
+
+
+--
+-- Name: idx_tutor_turn_metrics_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_turn_metrics_conversation ON public.tutor_turn_metrics USING btree (conversation_id, turn_ordinal);
 
 
 --
@@ -7912,6 +7998,14 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: tutor_context_resolution_log tutor_context_resolution_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_resolution_log
+    ADD CONSTRAINT tutor_context_resolution_log_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8077,6 +8171,14 @@ ALTER TABLE ONLY public.tutor_question_links
 
 ALTER TABLE ONLY public.tutor_question_links
     ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_turn_metrics tutor_turn_metrics_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_turn_metrics
+    ADD CONSTRAINT tutor_turn_metrics_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
 
 
 --
@@ -8797,6 +8899,19 @@ CREATE POLICY student_skill_mastery_student_read ON public.student_skill_mastery
 ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_context_resolution_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_context_resolution_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_context_resolution_log tutor_context_resolution_log_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_context_resolution_log_service_role ON public.tutor_context_resolution_log TO service_role USING (true);
+
+
+--
 -- Name: tutor_context_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9127,6 +9242,19 @@ CREATE POLICY tutor_question_links_runtime_update ON public.tutor_question_links
 --
 
 CREATE POLICY tutor_question_links_select_own ON public.tutor_question_links FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_turn_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_turn_metrics ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_turn_metrics tutor_turn_metrics_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_turn_metrics_service_role ON public.tutor_turn_metrics TO service_role USING (true);
 
 
 --

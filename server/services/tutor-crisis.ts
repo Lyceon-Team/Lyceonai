@@ -172,7 +172,7 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
   const { data: configData, error: configError } = await supabaseServer
     .from("tutor_context_runtime_config")
     .select("value")
-    .eq("key", "classifier_class")
+    .eq("key", "crisis_classifier_model_alias")
     .single();
 
   if (configError || !configData) {

@@ -333,80 +333,21 @@ export async function revokeGuardianLink(
   return parseGuardianLink(data);
 }
 
-import { SupabaseClient } from "@supabase/supabase-js";
 import { EntitlementService } from "../services/entitlement-service";
 
 /**
- * Ensures a user has an associated lyceon_account and membership.
- * Calls the RPC ensure_account_for_user(p_user_id, p_role) to create or fetch account.
- * Returns the account_id.
- */
-export async function ensureAccountForUser(
-  supabase: SupabaseClient,
-  userId: string,
-  role: "student" | "guardian" | "admin",
-): Promise<string> {
-  const { data, error } = await supabase.rpc("ensure_account_for_user", {
-    p_user_id: userId,
-    p_role: role,
-  });
-
-  if (error) {
-    console.error("[Account] RPC ensure_account_for_user failed:", error);
-    throw new Error(
-      `RPC ensure_account_for_user failed: code=${error.code} message=${error.message} details=${error.details ?? ""} hint=${error.hint ?? ""}`,
-    );
-  }
-
-  if (!data) {
-    throw new Error("RPC ensure_account_for_user returned no accountId");
-  }
-
-  return data as string;
-}
-
-/**
- * Get account_id for a user by looking up account_members
- */
-export async function getAccountIdForUser(
-  userId: string,
-): Promise<string | null> {
-  const { data, error } = await supabaseServer
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", userId)
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    console.error("[Account] Failed to get account for user:", error);
-    throw new Error(`Failed to get account: ${error.message}`);
-  }
-
-  return data?.account_id || null;
-}
-
-/**
- * Get all account memberships for a user
+ * Stub — the accounts model is retired (owner ruling 2026-08-24).
+ * `account-routes.ts` calls this; returning [] degrades to { hasAccount: false }.
+ *
+ * @deprecated WS-T1: `lyceon_accounts`, `account_members`, and the
+ * `ensure_account_for_user` RPC never existed in production. The profile_id
+ * model replaced them before launch. This stub keeps the route handler
+ * compile-safe until account-routes is cleaned up.
  */
 export async function getAllAccountsForUser(
-  userId: string,
+  _userId: string,
 ): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
-  const { data, error } = await supabaseServer
-    .from("account_members")
-    .select("account_id, role, accounts(created_at)")
-    .eq("user_id", userId)
-    .order("created_at", { foreignTable: "accounts", ascending: false });
-
-  if (error) {
-    console.error("[Account] Failed to get accounts for user:", error);
-    throw new Error(`Failed to get accounts: ${error.message}`);
-  }
-
-  return (data || []).map((row: any) => ({
-    accountId: row.account_id,
-    role: row.role,
-    createdAt: row.accounts?.created_at || new Date().toISOString(),
-  }));
+  return [];
 }
 
 /**
