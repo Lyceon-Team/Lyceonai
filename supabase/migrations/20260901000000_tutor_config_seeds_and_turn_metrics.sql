@@ -1,6 +1,10 @@
 -- ──────────────────────────────────────────────────────────────────────
--- Production defects: config seed rows + tutor_turn_metrics table
+-- Production defects: config seed rows + tutor observability tables
 -- LYCEON-MIGRATION-REVIEWED
+--
+-- @spec  [Doc-03A_V1 §11.3, §11.5; CR-03C-V3-01 §3.4; Doc-03D §8.1;
+--         Doc 03C V3 §5.2, §30.1]
+-- @implemented [2026-09-02]
 --
 -- Rollback:
 --   DELETE FROM public.tutor_context_runtime_config
@@ -11,36 +15,32 @@
 --     );
 --   DROP TABLE IF EXISTS public.tutor_turn_metrics;
 --   DROP TABLE IF EXISTS public.tutor_context_resolution_log;
---   DROP TABLE IF EXISTS public.tutor_policy_decisions;
 --
--- Defect 1: Model alias config keys are not in production.
---   tutor_context_runtime_config has ZERO rows for model alias, classifier,
---   crisis retry, or Model Armor template keys. The classifier reads
---   "crisis_classifier_model_alias" and gets PGRST116 (0 rows). Layer 2
---   cannot run → every turn falls to the degraded crisis path.
+-- Part 1: Seeds 6 config keys into tutor_context_runtime_config (crisis
+--   classifier alias, retry count, Model Armor template IDs, and the two
+--   spec-mandated vertex model alias keys from Doc 03C V3 §5.2/§30.1).
+--   ON CONFLICT DO NOTHING — safe to reapply.
 --
---   Seeds the 4 missing keys from the tutor-config.ts registry that have
---   no migration. Also seeds the 2 spec-mandated alias keys from
---   Doc 03C V3 §5.2 / §30.1 (flash_class, pro_class).
+-- Part 2: CREATE TABLE tutor_turn_metrics — operational telemetry for every
+--   tutor turn (Doc 03A §11.5). Includes crisis_classifier_outcome for Cloud
+--   Monitoring log-based metric alerting (CR-03C-V3-01 §3.4), and prompt_version
+--   + context_hash for prompt-version tracing (Doc 03D §8.1).
 --
--- Defect 4: tutor_turn_metrics table does not exist.
---   Code writes to it at 11 call sites (non-blocking), all producing
---   PGRST205. Doc 03D §8.1 requires prompt_version and context_hash on
---   every turn for attribution — nothing is being recorded.
+-- Part 3: CREATE TABLE tutor_context_resolution_log — records what context was
+--   assembled for each turn (Doc 03A §11.3).
 --
---   Creates the table with the 13 columns logTurnMetrics() expects, plus
---   prompt_version and context_hash for Doc 03D §8.1 compliance (nullable
---   until the call sites are updated to pass them).
+-- NO tutor_policy_decisions — ruled dead in WS-L9 (0 write call sites, no spec
+-- reference, logPolicyDecision function does not exist).
 --
--- Also creates tutor_policy_decisions and tutor_context_resolution_log
--- (the two sibling audit tables referenced by tutor-policy-logger.ts
--- that are equally missing).
+-- RLS: enabled on both tables. These are service-internal audit/observability
+-- tables — no anon/authenticated access. service_role gets full access per
+-- established tutor-table pattern.
 --
--- @spec [Doc 03C V3 §5.2, §30.1; Doc 03D §8.1; CR-03C-V3-01 §3.2]
+-- DO NOT APPLY TO PROD — Karl applies after review.
 -- ──────────────────────────────────────────────────────────────────────
 
 -- =====================================================================
--- PART 1: Config seed rows (Defect 1)
+-- PART 1: Config seed rows
 -- =====================================================================
 
 -- Crisis classifier model alias (CR-03C-V3-01 §3.2)
@@ -97,7 +97,7 @@ ON CONFLICT (key) DO NOTHING;
 
 
 -- =====================================================================
--- PART 2: tutor_turn_metrics table (Defect 4)
+-- PART 2: tutor_turn_metrics table (Doc 03A §11.5)
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS public.tutor_turn_metrics (
@@ -134,12 +134,17 @@ CREATE INDEX IF NOT EXISTS idx_tutor_turn_metrics_crisis_outcome
 -- RLS: service-role only (no student/guardian access to telemetry)
 ALTER TABLE public.tutor_turn_metrics ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY tutor_turn_metrics_service_role ON public.tutor_turn_metrics
+  FOR ALL TO service_role USING (true);
+
+COMMENT ON TABLE public.tutor_turn_metrics IS
+  'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
 
 -- =====================================================================
--- PART 3: Sibling audit tables (also missing, same logger)
+-- PART 3: tutor_context_resolution_log (Doc 03A §11.3)
 -- =====================================================================
 
--- tutor_context_resolution_log (Doc 03A V1 §11.3)
 CREATE TABLE IF NOT EXISTS public.tutor_context_resolution_log (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id             UUID NOT NULL
@@ -160,21 +165,8 @@ CREATE INDEX IF NOT EXISTS idx_tutor_context_resolution_log_conversation
 
 ALTER TABLE public.tutor_context_resolution_log ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY tutor_context_resolution_log_service_role ON public.tutor_context_resolution_log
+  FOR ALL TO service_role USING (true);
 
--- tutor_policy_decisions (Doc 03A V1 §11.4)
-CREATE TABLE IF NOT EXISTS public.tutor_policy_decisions (
-  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id             UUID NOT NULL
-                              REFERENCES public.tutor_conversations(id)
-                              ON DELETE CASCADE,
-  turn_ordinal                INTEGER NOT NULL,
-  policy_name                 TEXT NOT NULL,
-  decision                    TEXT NOT NULL,
-  reason                      TEXT,
-  decided_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_tutor_policy_decisions_conversation
-  ON public.tutor_policy_decisions (conversation_id, turn_ordinal);
-
-ALTER TABLE public.tutor_policy_decisions ENABLE ROW LEVEL SECURITY;
+COMMENT ON TABLE public.tutor_context_resolution_log IS
+  'Doc 03A §11.3: per-turn context assembly audit. Records what context was assembled (version, counts, flags). Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';

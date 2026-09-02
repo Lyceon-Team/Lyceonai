@@ -5267,6 +5267,13 @@ CREATE TABLE public.tutor_context_resolution_log (
 
 
 --
+-- Name: TABLE tutor_context_resolution_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_context_resolution_log IS 'Doc 03A §11.3: per-turn context assembly audit. Records what context was assembled (version, counts, flags). Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
 -- Name: tutor_context_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5519,21 +5526,6 @@ COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation histor
 
 
 --
--- Name: tutor_policy_decisions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.tutor_policy_decisions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    conversation_id uuid NOT NULL,
-    turn_ordinal integer NOT NULL,
-    policy_name text NOT NULL,
-    decision text NOT NULL,
-    reason text,
-    decided_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: tutor_question_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5583,6 +5575,13 @@ CREATE TABLE public.tutor_turn_metrics (
     context_hash text,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: TABLE tutor_turn_metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
 
 
 --
@@ -6409,14 +6408,6 @@ ALTER TABLE ONLY public.tutor_messages
 
 
 --
--- Name: tutor_policy_decisions tutor_policy_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tutor_policy_decisions
-    ADD CONSTRAINT tutor_policy_decisions_pkey PRIMARY KEY (id);
-
-
---
 -- Name: tutor_question_links tutor_question_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6430,14 +6421,6 @@ ALTER TABLE ONLY public.tutor_question_links
 
 ALTER TABLE ONLY public.tutor_turn_metrics
     ADD CONSTRAINT tutor_turn_metrics_pkey PRIMARY KEY (id);
-
-
---
--- Name: guardian_links unique_active_link; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.guardian_links
-    ADD CONSTRAINT unique_active_link UNIQUE NULLS NOT DISTINCT (guardian_profile_id, student_profile_id, status) DEFERRABLE INITIALLY DEFERRED;
 
 
 --
@@ -7014,13 +6997,6 @@ CREATE INDEX idx_tutor_messages_injection ON public.tutor_messages USING btree (
 --
 
 CREATE INDEX idx_tutor_messages_student_recent ON public.tutor_messages USING btree (student_id, created_at DESC);
-
-
---
--- Name: idx_tutor_policy_decisions_conversation; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_tutor_policy_decisions_conversation ON public.tutor_policy_decisions USING btree (conversation_id, turn_ordinal);
 
 
 --
@@ -8128,14 +8104,6 @@ ALTER TABLE ONLY public.tutor_messages
 
 
 --
--- Name: tutor_policy_decisions tutor_policy_decisions_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tutor_policy_decisions
-    ADD CONSTRAINT tutor_policy_decisions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
-
-
---
 -- Name: tutor_question_links tutor_question_links_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8899,6 +8867,13 @@ ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tutor_context_resolution_log ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_context_resolution_log tutor_context_resolution_log_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_context_resolution_log_service_role ON public.tutor_context_resolution_log TO service_role USING (true);
+
+
+--
 -- Name: tutor_context_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9198,12 +9173,6 @@ CREATE POLICY tutor_messages_select_own ON public.tutor_messages FOR SELECT USIN
 
 
 --
--- Name: tutor_policy_decisions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.tutor_policy_decisions ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: tutor_question_links; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9242,6 +9211,13 @@ CREATE POLICY tutor_question_links_select_own ON public.tutor_question_links FOR
 --
 
 ALTER TABLE public.tutor_turn_metrics ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_turn_metrics tutor_turn_metrics_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_turn_metrics_service_role ON public.tutor_turn_metrics TO service_role USING (true);
+
 
 --
 -- Name: usage_rate_limit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
