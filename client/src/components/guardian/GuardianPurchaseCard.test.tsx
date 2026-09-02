@@ -21,6 +21,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GuardianPurchaseCard } from "./GuardianPurchaseCard";
 import type { LinkedStudent } from "@/hooks/useGuardianStudents";
+import { makeLinkedStudent } from "../../../../packages/shared/src/__fixtures__/linked-student";
 
 const startSubscriptionCheckoutMock = vi.fn();
 const getBillingPlansMock = vi.fn();
@@ -34,19 +35,20 @@ vi.mock("@/lib/billing-client", () => ({
 const STUDENT_A = "11111111-1111-4111-8111-111111111111";
 const STUDENT_B = "22222222-2222-4222-8222-222222222222";
 
+/**
+ * Rows come from the shared factory, which parses them through
+ * `linkedStudentSchema` — the contract `guardian-student-schema.test.ts` proves
+ * against real Postgres columns. Naming the columns here instead would be a
+ * private copy of the schema, which is what the guardian schema-truth gate's
+ * RULE B exists to refuse.
+ */
 function student(
   id: string,
   name: string | null,
   email: string,
   entitled: boolean,
 ): LinkedStudent {
-  return {
-    id,
-    email,
-    display_name: name,
-    created_at: "2026-01-01",
-    has_active_entitlement: entitled,
-  };
+  return makeLinkedStudent({ id, email, displayName: name, entitled });
 }
 
 function renderCard(students: LinkedStudent[]) {
