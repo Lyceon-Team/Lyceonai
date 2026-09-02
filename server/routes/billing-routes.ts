@@ -66,6 +66,11 @@ import {
 } from "../lib/stripe/guardian-checkout";
 import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
 import {
+  checkoutIdempotencyKey,
+  subscriptionItemIdempotencyKey,
+  isStripeIdempotencyConflict,
+} from "../lib/stripe/purchase-idempotency";
+import {
   evaluateCountryEligibility,
   deniesEntitlement,
   blocksCheckout,
@@ -206,6 +211,13 @@ router.post(
 
       let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
       let sessionMetadata: Record<string, string>;
+      /**
+       * The STUDENT this purchase funds, in scope for the idempotency key at
+       * the Checkout call below. `selectedStudentId` is block-scoped to the
+       * guardian branch and `studentProfileId` is the payer on that branch, so
+       * neither alone is the subject at the call site. Assigned on both paths.
+       */
+      let subjectStudentId: string;
 
       /**
        * §4.8 GUARDIAN-PAID PURCHASE — PER STUDENT. The production call site.
@@ -398,14 +410,60 @@ router.post(
           // depend on Checkout propagating `line_items[].metadata` — the one
           // mechanism §4.8's plan could never verify. Only a guardian's FIRST
           // purchase goes through Checkout at all.
-          const item = await stripe.subscriptionItems.create({
-            subscription: currentSubscription.id,
-            price: priceId,
-            quantity: 1,
-            // proration_behavior deliberately omitted: Stripe's default
-            // `create_prorations` is exactly the wanted behaviour.
-            metadata: { student_profile_id: selectedStudentId },
-          });
+          /**
+           * IDEMPOTENT ADD-ITEM. A repeated key inside the window returns the
+           * ORIGINAL item rather than adding a second one, so a double-submit
+           * cannot bill the guardian twice for one student.
+           * `subscriptionAlreadyFundsStudent` above catches the case where the
+           * item is already visible on the retrieved subscription; this catches
+           * the one where two requests are in flight together and neither has
+           * seen the other's item yet.
+           */
+          let item: Stripe.SubscriptionItem;
+          try {
+            item = await stripe.subscriptionItems.create(
+              {
+                subscription: currentSubscription.id,
+                price: priceId,
+                quantity: 1,
+                // proration_behavior deliberately omitted: Stripe's default
+                // `create_prorations` is exactly the wanted behaviour.
+                metadata: { student_profile_id: selectedStudentId },
+              },
+              {
+                idempotencyKey: subscriptionItemIdempotencyKey({
+                  subjectProfileId: selectedStudentId,
+                  subscriptionId: currentSubscription.id,
+                  priceId,
+                  nowMs: Date.now(),
+                }),
+              },
+            );
+          } catch (err: unknown) {
+            if (!isStripeIdempotencyConflict(err)) throw err;
+            // The key was used inside this window with different parameters —
+            // a concurrent attempt for the same student on the same
+            // subscription. NEVER retry without the key: that is the second
+            // charge this exists to prevent.
+            logger.warn(
+              "BILLING",
+              "checkout",
+              "Add-item refused: an attempt for this student is already in flight",
+              {
+                requestId,
+                payerProfileId,
+                studentProfileId: selectedStudentId,
+              },
+            );
+            return res.status(409).json({
+              error: {
+                message:
+                  "A purchase for this student is already being processed. Please wait a moment and refresh.",
+                code: "PURCHASE_IN_FLIGHT",
+              },
+              requestId,
+            });
+          }
 
           logger.info(
             "BILLING",
@@ -448,6 +506,7 @@ router.post(
           payer_relationship: "guardian",
           plan,
         };
+        subjectStudentId = selectedStudentId;
       } else {
         if (parsed.data.student_profile_id) {
           // Rejected, not ignored: a student who thinks they bought for someone
@@ -467,9 +526,10 @@ router.post(
           payer_relationship: "self",
           plan,
         };
+        subjectStudentId = studentProfileId;
       }
 
-      const session = await stripe.checkout.sessions.create({
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: "subscription",
         line_items: lineItems,
@@ -532,7 +592,51 @@ router.post(
         ...(isGuardian ? {} : { client_reference_id: studentProfileId }),
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
-      });
+      };
+
+      /**
+       * IDEMPOTENT SESSION CREATION — the in-flight half of the double-purchase
+       * defence.
+       *
+       * The durable guard above closes the SETTLED case. Between this call
+       * returning and `checkout.session.completed` writing the entitlement row,
+       * `entitlement_active()` is still false and a second submit would sail
+       * through it. A repeated key inside the window returns the ORIGINAL
+       * session instead of creating a second one.
+       *
+       * The key is keyed on the STUDENT, not the payer, so student S
+       * self-paying and guardian G buying for S inside one window collide
+       * deliberately — see `checkoutIdempotencyKey`. Stripe answers that with
+       * `idempotency_error`, which is a REFUSAL and is surfaced as one.
+       */
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await stripe.checkout.sessions.create(sessionParams, {
+          idempotencyKey: checkoutIdempotencyKey({
+            subjectProfileId: subjectStudentId,
+            priceId,
+            nowMs: Date.now(),
+          }),
+        });
+      } catch (err: unknown) {
+        if (!isStripeIdempotencyConflict(err)) throw err;
+        // NEVER fall through to a second create without the key: that is the
+        // second subscription this exists to prevent.
+        logger.warn(
+          "BILLING",
+          "checkout",
+          "Checkout refused: an attempt for this student is already in flight",
+          { requestId, payerProfileId },
+        );
+        return res.status(409).json({
+          error: {
+            message:
+              "A purchase for this student is already being processed. Please wait a moment and refresh.",
+            code: "PURCHASE_IN_FLIGHT",
+          },
+          requestId,
+        });
+      }
 
       // Charter §6: on the unaccompanied path the student IS the payer, so the
       // profile id and the Checkout Session id are both payer identifiers.
