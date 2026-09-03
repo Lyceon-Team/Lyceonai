@@ -7,7 +7,8 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
+import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   ArrowRight,
@@ -109,7 +110,7 @@ function ScoreSnapshotRow({
 }
 
 export default function LyceonDashboard() {
-  const { user } = useSupabaseAuth();
+  const { user, isGuardian } = useSupabaseAuth();
   const [, setLocation] = useLocation();
 
   const { data: profileData, error: profileError } =
@@ -241,8 +242,15 @@ export default function LyceonDashboard() {
     return "Complete one focused SAT practice block today.";
   })();
 
+  /**
+   * Routed through the ONE destination resolver rather than hardcoding
+   * `/upgrade`. This page is `RequireRole allow={["student","admin"]}` so a
+   * guardian never reaches it — the resolver is used anyway, because a
+   * hardcoded route is the thing that has to stop being written, not the
+   * particular button that got away with it.
+   */
   const handleUpgradeToPremium = () => {
-    setLocation("/upgrade");
+    setLocation(resolveCtaDestination({ isGuardian }));
   };
 
   return (
@@ -558,12 +566,11 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-full" />
                 </div>
               ) : estimateIsPremiumLocked ? (
-                <EmptyStateCTA
-                  title="Unlock detailed breakdown"
-                  message="Detailed score breakdown is locked behind paid KPI access."
-                  actionLabel="View plans"
-                  onAction={handleUpgradeToPremium}
-                />
+                /* One CTA card. This was an `EmptyStateCTA` whose action
+                   hardcoded `/upgrade`; the card resolves the destination from
+                   the role and reaches the reactivate state for a lapsed
+                   subscriber. */
+                <PremiumUpgradePrompt featureBenefit="your detailed score breakdown" />
               ) : (
                 <div className="space-y-4">
                   <ScoreSnapshotRow

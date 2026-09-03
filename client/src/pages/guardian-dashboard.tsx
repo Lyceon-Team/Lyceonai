@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect } from "wouter";
@@ -14,6 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { csrfFetch } from "@/lib/csrf";
+import {
+  parseApiErrorFromResponse,
+  getPremiumDenialReason,
+} from "@/lib/api-error";
 import {
   GUARDIAN_STUDENTS_QUERY_KEY,
   useGuardianStudents,
@@ -39,16 +43,18 @@ import {
   UserMinus,
   RefreshCw,
   AlertTriangle,
-  Calendar,
   CreditCard,
 } from "lucide-react";
-import { Link } from "wouter";
 import {
   SubscriptionPaywall,
   ManageSubscriptionButton,
 } from "@/components/guardian/SubscriptionPaywall";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
+import { GuardianTemplatePreview } from "@/components/guardian/GuardianTemplatePreview";
+import { GuardianMetricTile } from "@/components/guardian/GuardianMetricTile";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
+import { studentLabel } from "@/hooks/useGuardianStudents";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
@@ -80,6 +86,18 @@ interface GuardianBillingStatus {
   effectiveAccess: boolean;
   /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
   hasActiveLink?: boolean;
+  /**
+   * A payment on the conferring student's subscription needs attention.
+   *
+   * IT IS A BANNER, NOT A GATE — owner ruling 2026-09-03. This field used to
+   * make `SubscriptionPaywall` replace the whole dashboard, which locked out a
+   * guardian whose student was `past_due` and therefore, per SCL-029, still
+   * fully entitled. Reading it here and rendering a dismissible notice ABOVE
+   * the dashboard is the whole of its job now.
+   */
+  needsPaymentUpdate?: boolean;
+  /** A subscription exists on the conferring student and grants nothing. */
+  lapsed?: boolean;
 }
 
 export default function GuardianDashboard() {
@@ -100,6 +118,7 @@ export default function GuardianDashboard() {
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
+  const [paymentNoticeDismissed, setPaymentNoticeDismissed] = useState(false);
 
   const {
     data: studentsData,
@@ -125,8 +144,17 @@ export default function GuardianDashboard() {
         { credentials: "include" },
       );
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to fetch summary");
+        /**
+         * A REAL `HttpApiError`, so the denial is classifiable.
+         *
+         * This threw `new Error(data.error)` — a bare Error carrying no status
+         * and no code. Selecting an unentitled linked student makes this route
+         * answer `402 PAYMENT_REQUIRED` (`server/middleware/subject-resolver.ts`),
+         * and with the status discarded the dashboard rendered "We couldn't
+         * load progress data. Try again." — a retry button on an entitlement
+         * denial, which no amount of retrying resolves.
+         */
+        throw await parseApiErrorFromResponse(res, "Failed to fetch summary");
       }
       return res.json() as Promise<StudentSummary>;
     },
@@ -324,6 +352,25 @@ export default function GuardianDashboard() {
   const showUnlinkedLinkFirstHint =
     billingStatus?.hasActiveLink === false && !billingStatus?.isPaid;
 
+  /**
+   * THE GUARDIAN'S REAL PAID BOUNDARY.
+   *
+   * @spec [owner ruling 2026-09-03 §2 third and fourth CTA states]
+   *
+   * Five of the seven paid surfaces this app has are `RequireRole
+   * allow={["student","admin"]}` (see `App.tsx`), so a guardian never reaches
+   * them. Their boundary is HERE: selecting a linked student whose entitlement
+   * is inactive makes `/api/students/:id/kpi/overall` and `/mastery/domains`
+   * answer `402 PAYMENT_REQUIRED`. Until now that rendered as "We couldn't load
+   * progress data. Try again." — a retry button on a denial.
+   *
+   * Derived in the render body from data already fetched: a pure function of
+   * fetched state never belongs in a `useEffect` (Coding Standards §11.4).
+   */
+  const selectedStudentDenied =
+    getPremiumDenialReason(summaryError) !== null ||
+    getPremiumDenialReason(weaknessError) !== null;
+
   return (
     <SubscriptionPaywall>
       <div className="min-h-screen bg-background p-6">
@@ -351,8 +398,59 @@ export default function GuardianDashboard() {
             <ManageSubscriptionButton
               effectiveAccess={billingStatus?.effectiveAccess}
               isPaid={billingStatus?.isPaid}
+              lapsed={billingStatus?.lapsed}
             />
           </div>
+
+          {/*
+            THE BANNER THAT REPLACES THE INTERSTITIAL.
+
+            `needsPaymentUpdate` used to make `SubscriptionPaywall` render a
+            full-screen "Payment Update Required" card INSTEAD of this whole
+            dashboard. It is true for `past_due`, and SCL-029 rules `past_due`
+            ENTITLED — so a guardian with full access lost the link panel, the
+            purchase card and every progress view at once, and the only control
+            left could fail silently. A notice belongs above the page, never in
+            front of it. Dismissible, because a parent who has seen it and is
+            dealing with it should not be told twice on every navigation.
+          */}
+          {billingStatus?.needsPaymentUpdate && !paymentNoticeDismissed && (
+            <Alert
+              className="border-amber-200 bg-amber-50"
+              data-testid="guardian-payment-health-banner"
+            >
+              <AlertTriangle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-800">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">
+                      A subscription payment needs attention.
+                    </div>
+                    <div className="text-sm">
+                      Your linked student keeps their access while the payment
+                      retries. Updating the card now avoids losing it.
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ManageSubscriptionButton
+                      effectiveAccess={billingStatus?.effectiveAccess}
+                      isPaid={billingStatus?.isPaid}
+                      lapsed={billingStatus?.lapsed}
+                      label="Update payment method"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPaymentNoticeDismissed(true)}
+                      data-testid="dismiss-payment-health-banner"
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
 
           {showPaidUnlinkedCta && (
             <Alert className="border-[#0F2E48]/20 bg-[#0F2E48]/5">
@@ -470,7 +568,27 @@ export default function GuardianDashboard() {
             a second, unpaid student still needs buying for. `students` is the
             list this page already fetched, so the card costs no extra request.
           */}
-          {students !== null && <GuardianPurchaseCard students={students} />}
+          {students !== null && (
+            <GuardianPurchaseCard
+              students={students}
+              // The student the guardian just hit a boundary on arrives
+              // preselected, so "Subscribe for X" lands on a form already
+              // answering "which student?".
+              preselectStudentId={
+                selectedStudentDenied ? selectedStudentId : null
+              }
+            />
+          )}
+
+          {/*
+            THE TEMPLATE PREVIEW — the no-linked-student state only.
+            Once a link exists the dashboard has real panels and a real name to
+            show, and this would be a downgrade. Structural, never sample: see
+            the component header for why numbers are refused outright.
+          */}
+          {students !== null && students.length === 0 && (
+            <GuardianTemplatePreview />
+          )}
 
           <Card className="bg-card border-border/60">
             <CardHeader>
@@ -559,6 +677,24 @@ export default function GuardianDashboard() {
                           >
                             {student.email}
                           </div>
+                          {/*
+                            WHICH student is unpaid, on the list itself.
+                            `has_active_entitlement` has been on the wire since
+                            2026-09-02 and was read only by the purchase card's
+                            filter, so a guardian with two linked students could
+                            not tell from this page which one still needed
+                            paying for — while being asked to pay for one.
+                          */}
+                          {!student.has_active_entitlement && (
+                            <div
+                              className={`mt-1 text-xs font-medium ${selectedStudentId === student.id ? "text-amber-200" : "text-amber-700"}`}
+                              data-testid="student-unfunded-badge"
+                            >
+                              {student.entitlement_lapsed
+                                ? "Subscription ended"
+                                : "No subscription yet"}
+                            </div>
+                          )}
                         </button>
                         <Button
                           variant="ghost"
@@ -582,6 +718,28 @@ export default function GuardianDashboard() {
 
           {selectedStudentId && (
             <>
+              {/*
+                ONE CARD, ONE CONDITION, both panels. A 402 on either the KPI or
+                the mastery read means the same thing about the same student, so
+                it is answered once, above them, rather than twice inside them
+                as two different recoverable errors.
+              */}
+              {selectedStudentDenied && selectedStudent && (
+                <PremiumUpgradePrompt
+                  featureBenefit={`${studentLabel(selectedStudent)}'s progress, KPIs and domain mastery`}
+                  state={
+                    selectedStudent.entitlement_lapsed
+                      ? {
+                          kind: "guardian_student_lapsed",
+                          studentName: studentLabel(selectedStudent),
+                        }
+                      : {
+                          kind: "guardian_student_unfunded",
+                          studentName: studentLabel(selectedStudent),
+                        }
+                  }
+                />
+              )}
               <Card className="bg-card border-border/60">
                 <CardHeader>
                   <CardTitle className="text-[#0F2E48]">
@@ -599,6 +757,13 @@ export default function GuardianDashboard() {
                     <div className="text-center py-8 text-[#0F2E48]/60">
                       Loading progress...
                     </div>
+                  ) : selectedStudentDenied ? (
+                    // The CTA above owns this state. Offering "Try again" for a
+                    // 402 is advice that cannot work.
+                    <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                      Progress unlocks once this student has an active
+                      subscription.
+                    </div>
                   ) : summaryError ? (
                     <div className="py-6">
                       <RecoveryNotice
@@ -609,38 +774,32 @@ export default function GuardianDashboard() {
                     </div>
                   ) : summaryData ? (
                     <div className="space-y-6">
+                      {/*
+                        THE SAME COMPONENT the template preview renders in its
+                        `locked` variant. One tile, two states — so the preview
+                        cannot drift into a lookalike of a card it no longer
+                        resembles.
+                      */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                          <Clock className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
-                          <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryMetricValue("current_streak") ?? "--"}
-                          </div>
-                          <div className="text-xs text-[#0F2E48]/60">
-                            Day Streak
-                          </div>
-                        </div>
-                        <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                          <Target className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
-                          <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryMetricValue("week_questions") ?? "--"}
-                          </div>
-                          <div className="text-xs text-[#0F2E48]/60">
-                            Questions Attempted (7d)
-                          </div>
-                        </div>
-                        <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                          <div className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2 flex items-center justify-center font-bold">
-                            %
-                          </div>
-                          <div className="text-2xl font-bold text-[#0F2E48]">
-                            {summaryMetricValue("week_accuracy") !== null
+                        <GuardianMetricTile
+                          label="Day Streak"
+                          icon={<Clock className="h-5 w-5" />}
+                          value={summaryMetricValue("current_streak") ?? "--"}
+                        />
+                        <GuardianMetricTile
+                          label="Questions Attempted (7d)"
+                          icon={<Target className="h-5 w-5" />}
+                          value={summaryMetricValue("week_questions") ?? "--"}
+                        />
+                        <GuardianMetricTile
+                          label="Accuracy"
+                          icon="%"
+                          value={
+                            summaryMetricValue("week_accuracy") !== null
                               ? `${summaryMetricValue("week_accuracy")}%`
-                              : "--"}
-                          </div>
-                          <div className="text-xs text-[#0F2E48]/60">
-                            Accuracy
-                          </div>
-                        </div>
+                              : "--"
+                          }
+                        />
                       </div>
                       {summaryData.metrics &&
                         summaryData.metrics.length > 0 && (
@@ -711,6 +870,11 @@ export default function GuardianDashboard() {
                   {weaknessLoading ? (
                     <div className="text-center py-8 text-[#0F2E48]/60">
                       Loading domain mastery...
+                    </div>
+                  ) : selectedStudentDenied ? (
+                    <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                      Domain mastery unlocks once this student has an active
+                      subscription.
                     </div>
                   ) : weaknessError || (weaknessData && !weaknessDomains) ? (
                     <div className="py-6">

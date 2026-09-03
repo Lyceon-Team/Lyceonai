@@ -65,6 +65,8 @@ import {
   subscriptionAlreadyFundsStudent,
 } from "../lib/stripe/guardian-checkout";
 import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
+import { resolveEntitlementDisplay } from "../lib/entitlement-display";
+import { EntitlementService } from "../services/entitlement-service";
 import {
   checkoutIdempotencyKey,
   subscriptionItemIdempotencyKey,
@@ -707,12 +709,32 @@ router.get(
     if (role === "guardian") {
       try {
         const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
+        /**
+         * ONE RESOLVER, BOTH BRANCHES (owner ruling 2026-09-03).
+         *
+         * This branch used to answer from `access.hasPremiumAccess` alone —
+         * the SQL predicate, no product check — while the self-pay branch below
+         * applied `tier === "premium"` on top of a TS mirror of that predicate.
+         * One route, two arms, two answers for one student. Both now call
+         * `resolveEntitlementDisplay` and nothing else, and the fold supplies
+         * the same two facts the self-pay branch supplies.
+         *
+         * `access.hasPremiumAccess` is itself computed by that function inside
+         * the fold, so the two cannot disagree here either.
+         */
+        const display = resolveEntitlementDisplay({
+          standingGood: access.studentStandingGood,
+          tier: access.studentEntitlementTier,
+          status: access.studentEntitlementStatus,
+        });
+        const hasBillingAccount =
+          (await getProfileStripeCustomerId(userId)) !== null;
         return res.json({
-          plan: access.hasPremiumAccess ? "premium" : "free",
+          plan: display.effectiveAccess ? "premium" : "free",
           stripeStatus: access.studentEntitlementStatus,
           currentPeriodEnd: null,
           stripeSubscriptionId: null,
-          effectiveAccess: access.hasPremiumAccess,
+          effectiveAccess: display.effectiveAccess,
           /**
            * Whether this guardian is linked to any student at all, straight from §31.3's
            * fold — the same call that decided `effectiveAccess`, so the two cannot disagree.
@@ -727,10 +749,33 @@ router.get(
            * condition those four were reaching for, with a writer.
            */
           hasActiveLink: access.hasActiveLink,
-          needsPaymentUpdate:
-            access.studentEntitlementStatus === "past_due" ||
-            access.studentEntitlementStatus === "unpaid",
-          isPaid: access.hasPremiumAccess,
+          needsPaymentUpdate: display.needsPaymentUpdate,
+          /**
+           * Did a subscription exist for the conferring student and stop
+           * granting access? The client offers the PORTAL rather than checkout
+           * when it did — see `hasBillingAccount` below for why that pair of
+           * facts is what the fourth CTA state needs.
+           */
+          lapsed: display.lapsed,
+          /**
+           * Does this profile already have a Stripe Customer?
+           *
+           * @spec [owner ruling 2026-09-03 — "a lapsed subscriber with a
+           *        Customer goes to the portal, not to checkout"]
+           *
+           * A BOOLEAN, NEVER THE ID. The client's only question is whether the
+           * portal is reachable at all; the customer id answers that and is a
+           * vendor identifier the browser has no use for. Sending it would be a
+           * gratuitous widening of what a compromised client can read.
+           *
+           * Why it matters commercially: none of `canceled`, `unpaid` or
+           * `incomplete_expired` is in the platform predicate, so
+           * `evaluateSubjectPurchaseEligibility` permits a fresh checkout for a
+           * lapsed subscriber — selling a SECOND subscription to someone who
+           * can reactivate the first in the portal for less.
+           */
+          hasBillingAccount,
+          isPaid: display.effectiveAccess,
           // The guardian's access is DERIVED, and saying so is the difference
           // between a correct answer and a coincidentally equal one.
           source: "guardian_linked_student",
@@ -751,27 +796,50 @@ router.get(
     }
 
     try {
-      const entitlement = await getEntitlementForProfile(userId);
+      const [entitlement, standing, customerId] = await Promise.all([
+        getEntitlementForProfile(userId),
+        EntitlementService.evaluateEntitlementActive(userId),
+        getProfileStripeCustomerId(userId),
+      ]);
+
+      /**
+       * THE TS MIRROR OF THE SQL PREDICATE IS GONE.
+       *
+       * What stood here was `new Set(["active","past_due","trialing"])` with a
+       * comment conceding it was a mirror "for display only". A mirror is a
+       * second definition however it is labelled, and SCL-029 widening the
+       * predicate to include `trialing` had already caught it out once. The
+       * standing-good half now comes from `entitlement_active()` itself, and
+       * `resolveEntitlementDisplay` applies the product check — the same two
+       * inputs, through the same function, as the guardian branch above.
+       */
+      if (!standing.ok) {
+        throw new Error("entitlement_active() was unreadable");
+      }
 
       const tier = entitlement?.tier ?? "free";
-      const status = entitlement?.status ?? "inactive";
+      // `"missing"` where the guardian branch says `"missing"`. This read
+      // `"inactive"` — a value in no genesis status enum and in no other
+      // response on this route, which is exactly the kind of private vocabulary
+      // that makes one endpoint's two branches read as two endpoints.
+      const status = entitlement?.status ?? "missing";
       const currentPeriodEnd = entitlement?.current_period_end ?? null;
-
-      // The entitled set is {active, past_due, trialing} — the canonical SQL
-      // predicate's set (SCL-029). Mirrored here for display only; the gate
-      // itself calls entitlement_active().
-      const entitledStatuses = new Set(["active", "past_due", "trialing"]);
-      const effectiveAccess =
-        tier === "premium" && entitledStatuses.has(status);
+      const display = resolveEntitlementDisplay({
+        standingGood: standing.active,
+        tier,
+        status,
+      });
 
       return res.json({
         plan: tier,
         stripeStatus: status,
         currentPeriodEnd,
         stripeSubscriptionId: entitlement?.stripe_subscription_id ?? null,
-        effectiveAccess,
-        needsPaymentUpdate: status === "past_due" || status === "unpaid",
-        isPaid: effectiveAccess,
+        effectiveAccess: display.effectiveAccess,
+        needsPaymentUpdate: display.needsPaymentUpdate,
+        lapsed: display.lapsed,
+        hasBillingAccount: customerId !== null,
+        isPaid: display.effectiveAccess,
         requestId,
       });
     } catch (err: unknown) {
@@ -834,9 +902,22 @@ router.post(
         });
       }
 
+      /**
+       * ROLE-AWARE, like `success_url`/`cancel_url` already were.
+       *
+       * @spec [Doc 01 V8 §31.4] | @implemented [2026-09-03]
+       *
+       * This read `${siteBaseUrl()}/dashboard` for BOTH roles while the two
+       * checkout URLs one block up had already been made role-aware. `/dashboard`
+       * is `RequireRole allow={["student","admin"]}` (`client/src/App.tsx`), so a
+       * guardian returning from the Stripe portal landed on a route their role is
+       * bounced from and was redirected to `/guardian` by `RequireRole` — the
+       * same defect class as the original `success_url`, left unfixed one block
+       * away from its own fix.
+       */
       const session = await getStripeClient().billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${siteBaseUrl()}/dashboard`,
+        return_url: `${siteBaseUrl()}${role === "guardian" ? "/guardian" : "/dashboard"}`,
       });
 
       return res.json({ url: session.url, requestId });

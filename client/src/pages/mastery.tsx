@@ -4,10 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useState } from "react";
 import { isEntitlementDenialError } from "@/lib/api-error";
-import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   fetchMasteryDomains,
@@ -156,7 +156,6 @@ function SkillPanel({
 }
 
 export default function MasteryPage() {
-  const [, navigate] = useLocation();
   const { user } = useSupabaseAuth();
   const [selected, setSelected] = useState<{
     section: MasterySection;
@@ -225,12 +224,10 @@ export default function MasteryPage() {
 
         {error &&
           (isEntitlementDenialError(error) ? (
-            <EmptyStateCTA
-              title="Mastery is locked"
-              message="This account needs premium access before mastery can be displayed."
-              actionLabel="View plans"
-              onAction={() => navigate("/upgrade")}
-            />
+            /* One CTA card, one destination resolver. This was an
+               `EmptyStateCTA` hardcoding `/upgrade`, which a guardian's role is
+               bounced from. */
+            <PremiumUpgradePrompt featureBenefit="your full mastery breakdown" />
           ) : (
             <RecoveryNotice
               title="We couldn't load mastery data."
