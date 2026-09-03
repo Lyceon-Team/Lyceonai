@@ -14,11 +14,26 @@
  */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { ManageSubscriptionButton } from "./SubscriptionPaywall";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ManageSubscriptionButton } from "./ManageSubscriptionButton";
 
 vi.mock("@/lib/csrf", () => ({ csrfFetch: vi.fn() }));
+vi.mock("@/lib/billing-client", () => ({ openBillingPortal: vi.fn() }));
+
+const toastCalls: Array<{ title?: string; description?: string }> = [];
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({
+    toast: (args: { title?: string; description?: string }) => {
+      toastCalls.push(args);
+    },
+  }),
+}));
+
+beforeEach(() => {
+  toastCalls.length = 0;
+  vi.clearAllMocks();
+});
 
 function renderButton(props: Record<string, unknown>) {
   const queryClient = new QueryClient({
@@ -64,18 +79,44 @@ describe("ManageSubscriptionButton", () => {
   });
 
   /**
-   * The payment-update card is the one place the portal is unambiguously
-   * right: `needsPaymentUpdate` means a subscription EXISTS and is failing,
-   * which is exactly what the portal fixes — even though `effectiveAccess` is
-   * false while it fails.
+   * A LAPSED subscription is the one case the paid gate cannot cover: it grants
+   * nothing, so `effectiveAccess` is false, and yet a Stripe subscription
+   * object exists and the portal can reactivate it.
+   *
+   * This replaces a `forcePortal` prop whose only caller was the
+   * `needsPaymentUpdate` interstitial deleted on 2026-09-03 from the component
+   * now called `CheckoutReturnPoller`. Keeping the prop
+   * would have left an escape hatch with no caller — and an escape hatch nobody
+   * calls is the shape every dead branch on this surface started as.
    */
-  it("renders under forcePortal, which is the failed-payment remedy", () => {
-    renderButton({
-      effectiveAccess: false,
-      isPaid: false,
-      forcePortal: true,
-      label: "Update Payment Method",
-    });
-    expect(screen.getByText("Update Payment Method")).toBeTruthy();
+  it("renders for a lapsed subscription, which grants nothing but can be reactivated", () => {
+    renderButton({ effectiveAccess: false, isPaid: false, lapsed: true });
+    expect(screen.getByTestId("manage-subscription-button")).toBeTruthy();
+  });
+
+  /**
+   * A guardian whose linked student SELF-PAID holds no Stripe Customer, so the
+   * route answers `409 NO_STRIPE_CUSTOMER`. That used to leave the button
+   * spinning down in silence: the component had an `onSuccess` handler and no
+   * `onError`, so the rejection landed in `mutation.error` and was rendered
+   * nowhere. It now goes through `useBillingPortal`, which toasts.
+   */
+  it("surfaces a portal failure instead of swallowing it", async () => {
+    const { openBillingPortal } = await import("@/lib/billing-client");
+    vi.mocked(openBillingPortal).mockRejectedValueOnce(
+      Object.assign(
+        new Error("No billing account exists for this profile yet"),
+        {
+          status: 409,
+          code: "NO_STRIPE_CUSTOMER",
+        },
+      ),
+    );
+
+    renderButton({ effectiveAccess: true, isPaid: true });
+    fireEvent.click(screen.getByTestId("manage-subscription-button"));
+
+    await waitFor(() => expect(toastCalls.length).toBeGreaterThan(0));
+    expect(toastCalls[0]?.description).toContain("no billing account");
   });
 });

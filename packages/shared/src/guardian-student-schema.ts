@@ -63,6 +63,31 @@ export const linkedStudentSchema = z.object({
    * REQUESTED, never what is GRANTED.
    */
   has_active_entitlement: z.boolean(),
+  /**
+   * Did a subscription EXIST for this student and stop granting access?
+   *
+   * @spec [owner ruling 2026-09-03 — "a lapsed subscriber with a Customer goes
+   *        to the portal, not to checkout"] | @implemented [2026-09-03]
+   *
+   * plain English: separates "nobody has ever paid for this student" from "a
+   * subscription for this student lapsed". Both leave `has_active_entitlement`
+   * false, and the right control differs: the first needs a purchase, the
+   * second usually needs the Customer Portal, where reactivating costs less
+   * than a fresh subscription.
+   *
+   * WHY THE CLIENT CANNOT DERIVE THIS. `evaluateSubjectPurchaseEligibility`
+   * permits a fresh checkout for a lapsed student — none of `canceled`,
+   * `unpaid`, `incomplete_expired` is in the platform predicate — so without
+   * this field the purchase card cheerfully sells a SECOND subscription to
+   * someone who can reactivate the first.
+   *
+   * A DERIVED BOOLEAN, NOT THE RAW STATUS. The status enum is server
+   * vocabulary; handing it over would invite a second interpretation of it in
+   * the client, which is how `linkRequiredForPremium` and its three siblings
+   * came to be read by branches nothing wrote. `resolveEntitlementDisplay` is
+   * the one interpreter, server-side.
+   */
+  entitlement_lapsed: z.boolean(),
 });
 
 export type LinkedStudent = z.infer<typeof linkedStudentSchema>;
