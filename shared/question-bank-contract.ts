@@ -68,12 +68,31 @@ export function isValidCanonicalId(value: unknown): value is string {
   return /^[A-Za-z0-9._:-]{6,128}$/.test(normalized);
 }
 
+/**
+ * @spec [Doc-04B_V4.3 §11.2; Doc-05B §4.2] | @implemented [2026-09-02]
+ * plain English: THE boundary normaliser for section values arriving from outside
+ * the system — a query string, an ingestion record, an admin patch payload. It maps
+ * the spellings a human or an external file might plausibly use onto the one code the
+ * database stores, and returns null for anything else so the caller fails closed.
+ *
+ * This file and `shared/section-display.ts` are the ONLY two files allowed to name a
+ * non-canonical section spelling (`scripts/ci/section-vocabulary-gate.mjs` enforces
+ * that). Here they are inputs; there they are rendered output. Nowhere else.
+ *
+ * edge cases: the word "MATH" is deliberately NOT accepted. It is not an external
+ * vocabulary — it was our own defect, produced by `upper(p_section)` and named as a
+ * retired bug by Doc 04B V4.3 §11.2 and its defect register at V4.3 §"fixed in V4.2".
+ * `scripts/assemble-batch.ts:410` already rejects it against the frozen taxonomy, so
+ * accepting it here only widened the surface without widening what could be stored.
+ * The unabbreviated section name is "Math", and that is display text, not an input
+ * code.
+ */
 export function normalizeSectionCode(
   value: unknown,
 ): CanonicalSectionCode | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
-  if (normalized === "M" || normalized === "MATH") return "M";
+  if (normalized === "M") return "M";
   if (normalized === "RW" || normalized === "R" || normalized === "W")
     return "RW";
   if (
@@ -188,6 +207,10 @@ export function assertCanonicalDomain(
   return domain as string;
 }
 
+/**
+ * Query-string tolerance for `?section=`. A URL is a genuine external boundary, so
+ * the long lowercase names stay accepted here; the return value is always canonical.
+ */
 export function resolveSectionFilterValues(input: unknown): string[] | null {
   if (typeof input !== "string") return null;
   const normalized = input.trim().toLowerCase();

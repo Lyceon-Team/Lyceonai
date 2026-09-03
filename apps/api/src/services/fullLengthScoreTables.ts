@@ -1,5 +1,15 @@
+import type { CanonicalSectionCode } from "../../../../shared/question-bank-contract";
+
+/**
+ * @spec [Doc-04B_V4.3 §11.2] | @implemented [2026-09-02]
+ * plain English: section keys are the canonical codes the database stores. The former
+ * lowercase 'rw'/'math' keys were the input vocabulary of 04B's
+ * compute_section_scaled_score, a function that is not deployed; keeping a second
+ * spelling alive for it meant every value crossed three vocabularies to reach a table
+ * lookup.
+ */
 export type ExamSectionScoreTable = {
-  section: "rw" | "math";
+  section: CanonicalSectionCode;
   totalQuestions: number;
   scaledByRawCorrect: number[];
 };
@@ -17,21 +27,24 @@ const MATH_SCALED_BY_RAW_CORRECT = [
   609, 623, 636, 650, 664, 677, 691, 705, 718, 732, 745, 759, 773, 786, 800,
 ] as const;
 
-export const SECTION_SCORE_TABLES: Record<"rw" | "math", ExamSectionScoreTable> = {
-  rw: {
-    section: "rw",
+export const SECTION_SCORE_TABLES: Record<
+  CanonicalSectionCode,
+  ExamSectionScoreTable
+> = {
+  RW: {
+    section: "RW",
     totalQuestions: 54,
     scaledByRawCorrect: [...RW_SCALED_BY_RAW_CORRECT],
   },
-  math: {
-    section: "math",
+  M: {
+    section: "M",
     totalQuestions: 44,
     scaledByRawCorrect: [...MATH_SCALED_BY_RAW_CORRECT],
   },
 };
 
 export function getModeledScaledScore(
-  section: "rw" | "math",
+  section: CanonicalSectionCode,
   rawCorrect: number,
   totalQuestions: number
 ): number {

@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw, Settings } from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
+import { sectionCodeFromLabel } from "@shared/section-display";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { AppNotice } from "@/components/feedback/AppNotice";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
@@ -220,8 +221,11 @@ export default function CalendarPage() {
       const pct = plannedMin <= 0 ? 0 : Math.min(100, Math.round((completedMin / plannedMin) * 100));
 
       const tasks = plan?.tasks ?? [];
-      const mathTask = tasks.find((t) => t.section === "Math");
-      const rwTask = tasks.find((t) => t.section === "Reading & Writing");
+      // The calendar API serializes a rendered label, so match on the code it maps to
+      // rather than on the label text. A literal comparison here silently found nothing
+      // the day the label changed.
+      const mathTask = tasks.find((t) => sectionCodeFromLabel(t.section) === "M");
+      const rwTask = tasks.find((t) => sectionCodeFromLabel(t.section) === "RW");
       const mathPlanned = mathTask?.minutes ?? 0;
       const rwPlanned = rwTask?.minutes ?? 0;
       const mathCompleted = Math.round(completedMin * (mathPlanned / (plannedMin || 1)));
@@ -354,7 +358,9 @@ export default function CalendarPage() {
           ? "review"
           : "practice";
 
-    let section = currentTask?.section ?? "Math";
+    // Held as a canonical code and sent as one. The server accepts either, but the
+    // client no longer constructs a section value out of display text.
+    let section: string = sectionCodeFromLabel(currentTask?.section) ?? "M";
     let taskType: "practice" | "review_practice" | "full_length";
     let mode: string;
     const target: {
@@ -376,10 +382,15 @@ export default function CalendarPage() {
     };
 
     if (taskKind === "practice") {
-      const sectionInput = window.prompt("Practice section (Math/RW)", section);
+      const sectionInput = window.prompt("Practice section (M/RW)", section);
       if (sectionInput == null) return;
-      section = sectionInput.toLowerCase().includes("rw") ? "Reading & Writing" : "Math";
-      target.section = section === "Math" ? "MATH" : "RW";
+      const sectionCode = sectionCodeFromLabel(sectionInput);
+      if (!sectionCode) {
+        setMonthError("Practice overrides require a section of M or RW.");
+        return;
+      }
+      section = sectionCode;
+      target.section = sectionCode;
       taskType = "practice";
       mode = "focused";
       const domainInput = window.prompt("Practice target domain (required)", currentTask?.target?.domain ?? "");
@@ -887,8 +898,10 @@ function DayDetailPanel({
 
   const handleStartPractice = () => {
     if (!day || !day.focus || day.focus.length === 0) return;
-    const primarySection = day.focus[0].section;
-    const route = primarySection === "Math" ? "/math-practice" : "/reading-writing-practice";
+    const route =
+      sectionCodeFromLabel(day.focus[0].section) === "M"
+        ? "/math-practice"
+        : "/reading-writing-practice";
     navigate(`${route}?calendarDayId=${day.dateKey}`);
   };
 

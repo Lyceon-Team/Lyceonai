@@ -524,16 +524,16 @@ describe("Calendar Ownership Contract", () => {
       .put(`/api/calendar/day/${overrideDay}`)
       .send({
         planned_minutes: 55,
-        focus: [{ section: "Math", weight: 1, competencies: ["math.algebra"] }],
+        focus: [{ section: "M", weight: 1, competencies: ["math.algebra"] }],
         tasks: [
           {
             type: "practice",
             task_type: "practice",
-            section: "Math",
+            section: "M",
             mode: "skill-focused",
             minutes: 55,
             target: {
-              section: "MATH",
+              section: "M",
               skill_code: "math.algebra",
               domain: null,
               subskill: null,
@@ -580,13 +580,13 @@ describe("Calendar Ownership Contract", () => {
             day_date: dayA,
             planned_minutes: 50,
             completed_minutes: 0,
-            focus: [{ section: "Math", weight: 1 }],
+            focus: [{ section: "M", weight: 1 }],
             tasks: [
               {
                 id: "task-b-1",
                 type: "practice",
                 task_type: "practice",
-                section: "Math",
+                section: "M",
                 mode: "manual",
                 minutes: 50,
                 is_user_override: true,
@@ -610,11 +610,11 @@ describe("Calendar Ownership Contract", () => {
             day_date: dayB,
             planned_minutes: 50,
             completed_minutes: 0,
-            focus: [{ section: "Math", weight: 1 }],
+            focus: [{ section: "M", weight: 1 }],
             tasks: [
               {
                 type: "practice",
-                section: "Math",
+                section: "M",
                 mode: "manual",
                 minutes: 50,
               },
@@ -640,10 +640,10 @@ describe("Calendar Ownership Contract", () => {
             day_date: dayB,
             ordinal: 1,
             task_type: "practice",
-            section: "MATH",
+            section: "M",
             duration_minutes: 50,
             source_skill_code: "math.algebra",
-            source_domain: "math_foundations",
+            source_domain: "Algebra",
             source_subskill: null,
             source_reason: { source: "manual_override" },
             status: "planned",
@@ -818,12 +818,12 @@ describe("Calendar Ownership Contract", () => {
       .put(`/api/calendar/day/${start}`)
       .send({
         planned_minutes: 25,
-        focus: [{ section: "Math", weight: 1 }],
+        focus: [{ section: "M", weight: 1 }],
         tasks: [
           {
             type: "practice",
             task_type: "practice",
-            section: "Math",
+            section: "M",
             mode: "mixed",
             minutes: 25,
           },
@@ -889,17 +889,17 @@ describe("Calendar Ownership Contract", () => {
       .put(`/api/calendar/day/${start}`)
       .send({
         planned_minutes: 40,
-        focus: [{ section: "Math", weight: 1 }],
+        focus: [{ section: "M", weight: 1 }],
         tasks: [
           {
             type: "practice",
             task_type: "practice",
-            section: "Math",
+            section: "M",
             mode: "manual",
             minutes: 40,
             target: {
-              section: "MATH",
-              domain: "algebra",
+              section: "M",
+              domain: "Algebra",
               skill_code: "math.algebra",
               subskill: null,
               target_type: "practice_target",
@@ -1069,7 +1069,7 @@ describe("Calendar Ownership Contract", () => {
             completed_minutes: 0,
             focus: [],
             tasks: [
-              { type: "practice", section: "Math", mode: "mixed", minutes: 40 },
+              { type: "practice", section: "M", mode: "mixed", minutes: 40 },
             ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
@@ -1109,11 +1109,11 @@ describe("Calendar Ownership Contract", () => {
             day_date: dayA,
             planned_minutes: 50,
             completed_minutes: 0,
-            focus: [{ section: "Math", weight: 1 }],
+            focus: [{ section: "M", weight: 1 }],
             tasks: [
               {
                 type: "practice",
-                section: "Math",
+                section: "M",
                 mode: "manual",
                 minutes: 50,
               },
@@ -1136,11 +1136,11 @@ describe("Calendar Ownership Contract", () => {
             day_date: dayB,
             planned_minutes: 50,
             completed_minutes: 0,
-            focus: [{ section: "Math", weight: 1 }],
+            focus: [{ section: "M", weight: 1 }],
             tasks: [
               {
                 type: "practice",
-                section: "Math",
+                section: "M",
                 mode: "manual",
                 minutes: 50,
               },
@@ -1196,7 +1196,7 @@ describe("Calendar Ownership Contract", () => {
             completed_minutes: 0,
             focus: [],
             tasks: [
-              { type: "practice", section: "Math", mode: "mixed", minutes: 30 },
+              { type: "practice", section: "M", mode: "mixed", minutes: 30 },
             ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
@@ -1219,7 +1219,7 @@ describe("Calendar Ownership Contract", () => {
             day_date: day,
             ordinal: 1,
             task_type: "practice",
-            section: "MATH",
+            section: "M",
             duration_minutes: 30,
             source_skill_code: null,
             source_domain: null,
@@ -1261,7 +1261,7 @@ describe("Calendar Ownership Contract", () => {
             completed_minutes: 0,
             focus: [],
             tasks: [
-              { type: "practice", section: "Math", mode: "mixed", minutes: 30 },
+              { type: "practice", section: "M", mode: "mixed", minutes: 30 },
             ],
             plan_version: 1,
             generated_at: new Date().toISOString(),
@@ -1284,7 +1284,7 @@ describe("Calendar Ownership Contract", () => {
             day_date: day,
             ordinal: 1,
             task_type: "practice",
-            section: "MATH",
+            section: "M",
             duration_minutes: 30,
             source_skill_code: null,
             source_domain: null,

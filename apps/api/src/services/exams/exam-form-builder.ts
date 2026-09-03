@@ -1,8 +1,14 @@
 // apps/api/src/services/exams/exam-form-builder.ts
 import { seedOffset3 } from './seeded';
-import { normalizeSectionCode as normalizeCanonicalSectionCode } from '../../../../../shared/question-bank-contract';
+import {
+  normalizeSectionCode,
+  type CanonicalSectionCode,
+} from '../../../../../shared/question-bank-contract';
 
-export type SectionCode = 'RW' | 'MATH';
+// The local `SectionCode = 'RW' | 'MATH'` is gone. It was the same name as
+// shared/question-bank-contract's CanonicalSectionCode carrying a different value set,
+// and normalizeExamSectionCode existed only to convert between them.
+export type SectionCode = CanonicalSectionCode;
 export type ModuleId = 'RW1' | 'RW2' | 'M1' | 'M2';
 export type DifficultyBucket = 'easy' | 'medium' | 'hard';
 
@@ -56,9 +62,7 @@ function bucketRank(b: DifficultyBucket): number {
 }
 
 function normalizeExamSectionCode(q: QuestionRow): SectionCode | null {
-  const normalized = normalizeCanonicalSectionCode(q.section_code ?? q.section ?? null);
-  if (!normalized) return null;
-  return normalized === 'M' ? 'MATH' : 'RW';
+  return normalizeSectionCode(q.section_code ?? q.section ?? null);
 }
 
 function normalizeBucket(q: QuestionRow): DifficultyBucket | null {
@@ -170,7 +174,7 @@ export function buildGeneratedFullLengthFormFromPool(args: {
   const eligible = questions.filter(isEligibleBase);
 
   const rwPool = eligible.filter((q) => normalizeExamSectionCode(q) === 'RW');
-  const mathPool = eligible.filter((q) => normalizeExamSectionCode(q) === 'MATH');
+  const mathPool = eligible.filter((q) => normalizeExamSectionCode(q) === 'M');
 
   const rwOrdered = rwPool.slice().sort((a, b) => sortKeyRW(a).localeCompare(sortKeyRW(b)));
   const mathOrdered = mathPool.slice().sort((a, b) => sortKeyMath(a).localeCompare(sortKeyMath(b)));
