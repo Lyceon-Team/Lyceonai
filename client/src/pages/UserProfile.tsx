@@ -37,15 +37,12 @@ import {
   Calendar,
   Trophy,
   Target,
-  BookOpen,
   Clock,
   TrendingUp,
   Star,
   AlertCircle,
   CheckCircle,
-  Copy,
   Mail,
-  Users,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
