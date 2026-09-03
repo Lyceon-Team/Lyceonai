@@ -80,6 +80,12 @@ import {
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
+import { resendWebhookHandler } from "./routes/resend-webhook";
+import notificationsRouter from "./routes/notifications";
+import {
+  NOTIFICATION_API_MOUNT,
+  RESEND_WEBHOOK_PATH,
+} from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
@@ -155,6 +161,15 @@ app.post(
         .json({ error: "Webhook processing failed", requestId });
     }
   },
+);
+
+// Resend webhook — raw Buffer, Svix-signature-verified, registered BEFORE express.json()
+// (contracts/notifications.contract.md §7.1). Written fresh; not a copy of the Stripe handler.
+// CSRF_EXEMPT_REASON: Webhook uses Svix signature verification instead of CSRF
+app.post(
+  RESEND_WEBHOOK_PATH,
+  express.raw({ type: "application/json" }),
+  resendWebhookHandler,
 );
 
 app.use(express.json({ limit: "1mb" }));
@@ -399,6 +414,15 @@ app.use(
   profileRoutes,
 );
 
+
+// Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
+// principal; every read/write is a recipient-scoped SQL function.
+app.use(
+  NOTIFICATION_API_MOUNT,
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  notificationsRouter,
+);
 
 // Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
 // to the student and to a linked guardian by the same handler; `resolveSubject` inside the

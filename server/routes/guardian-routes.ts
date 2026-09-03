@@ -32,6 +32,8 @@ import {
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
+import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
+import { notificationEventId } from "../lib/notifications/event-id";
 
 const router = Router();
 
@@ -309,6 +311,14 @@ router.post(
         studentProfileId,
         requestId,
       );
+
+      // Doc 01 §36.1 step 6 / contract §6.1. The RPC committed the link AND its notification
+      // event + messages in one transaction; deliver this event's email now — awaited, not
+      // fire-and-forget (Vercel may freeze the function after the response). The dispatcher
+      // never throws: a failed send stays queued with its error and the daily sweep retries.
+      await dispatchQueuedMessages({
+        eventId: notificationEventId("guardian_linked", link.id),
+      });
 
       return res.status(201).json({
         data: { link_id: link.id, student_profile_id: studentProfileId },

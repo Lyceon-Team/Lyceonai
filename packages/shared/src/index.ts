@@ -12,3 +12,5 @@ export * from "./guardian-subject.js";
 export * from "./rule4-columns.js";
 export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";
+export * from "./result.js";
+export * from "./notifications-schema.js";

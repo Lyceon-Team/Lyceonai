@@ -13,6 +13,7 @@ import {
   STALE_PRACTICE_SESSION_TTL_DAYS,
 } from "../lib/stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
+import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -303,6 +304,44 @@ router.get(
         err,
       );
       res.status(500).json({ error: "baseline_pending_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/notification-dispatch-sweep
+ * @spec [contracts/notifications.contract.md §6.2] | @implemented 2026-09-03
+ *
+ * plain English: backstop only. Timeliness comes from the inline dispatch in the request
+ * that produced the event; this daily pass picks up `queued` email rows a frozen function
+ * left behind (attempts below the cap) and hands them to the same dispatcher. Vercel Cron
+ * on the hobby plan runs at most daily, so nothing here may be relied on for latency.
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/notification-dispatch-sweep",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await dispatchQueuedMessages();
+      logger.info(
+        "NOTIFICATIONS",
+        "dispatch_sweep_job",
+        "Scheduled notification dispatch sweep completed",
+        summary,
+      );
+      res.json({ ok: true, ...summary });
+    } catch (err) {
+      logger.error(
+        "NOTIFICATIONS",
+        "dispatch_sweep_job_error",
+        "Scheduled notification dispatch sweep failed",
+        err,
+      );
+      res.status(500).json({ error: "notification_dispatch_sweep_failed" });
     }
   },
 );

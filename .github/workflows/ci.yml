@@ -520,6 +520,27 @@ jobs:
             exit 1
           fi
 
+      # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
+      # The notifications rebuild's proof: every DB-touching case runs against the real
+      # migrations on the throwaway Postgres above, with no mocked table anywhere — the
+      # deleted stack passed CI for months by mocking tables that existed in no environment.
+      # Same skip check as the guardian suite: a PG-backed suite that skips is a vacuous pass.
+      - name: Notifications rebuild → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          out=$(pnpm exec vitest run tests/ci/notifications.pg.ci.test.ts 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q "skipped"; then
+            echo "FAIL: the notifications PG suite SKIPPED rather than running."
+            exit 1
+          fi
+          echo "$out" | grep -q "notifications.pg.ci.test.ts" || { echo "FAIL: suite file not reported in the vitest output"; exit 1; }
+
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost
