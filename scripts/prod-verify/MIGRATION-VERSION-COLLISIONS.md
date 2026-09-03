@@ -120,3 +120,64 @@ here. `packages/shared/src/session-mode.ts` cites
 stands.
 
 **Not done:** anything on `main`. Karl owns those merges.
+
+---
+
+# 4. A fourth pair — `20260901000000`, caught before merge (2026-09-02)
+
+**Status: RESOLVED before either file merged to `cleanup`. Renumbered by `git mv`
+under the same rule as §1–§3.**
+
+| Version | File A (guardian-link lane) | File B (mastery/KPI lane) |
+|---|---|---|
+| `20260901000000` | `_scl_080_guardian_link_code.sql` | `_kpi_quarantine_excluded_count.sql` |
+
+Same cause as the first three: two workstreams each took the day's round
+timestamp. Two independent migrations, no duplicate work, nothing to discard.
+
+## Which one was renumbered, and why it was not a judgement call
+
+`_scl_080_guardian_link_code` is **already applied to production** — its
+`create_active_guardian_link_audited` is live, and it dropped
+`create_guardian_link_audited` / `accept_guardian_link_audited` from
+`20260828000000`. Renumbering an applied migration would change the version
+string of work already in the database, which is the one thing a renumber must
+never do. `_kpi_quarantine_excluded_count` is unapplied and unmerged, so it is
+the one that moves:
+
+```
+20260901000000_kpi_quarantine_excluded_count.sql  ->  20260901010000_kpi_quarantine_excluded_count.sql
+```
+
+`+010000` on the same day, matching §1–§3 rather than moving the file to a date
+it was not authored on.
+
+## Why it was worth doing while the ledger is still hand-maintained
+
+`supabase_migrations.schema_migrations` currently holds 16 rows with a maximum
+version of `20260624020000`, so nothing in the runner would have noticed today —
+Karl applies by hand through the console. That is exactly why it was worth
+fixing now rather than later: the reconciliation in
+`MIGRATION-HISTORY-RECONCILIATION.md` is parked so it can be done, and it keys on
+`version`, which is the table's primary key. A reconciliation that writes one row
+for `20260901000000` would mark **both** files recorded, and the runner would
+never apply the one that had not run. The window in which this is a one-line
+`git mv` closes the moment that reconciliation happens.
+
+It is also an ambiguity in the instruction itself: with two files under one
+version, "apply `20260901000000`" does not name a migration, and the operator
+pre/post pair for the KPI file cites the version in its header.
+
+## References updated with the rename
+
+`scripts/ci/05b-kpi-quarantine-gate.mutations.sh` (which patches the migration by
+path and fails STALE if it cannot find it), and the header of each half of the
+operator pair, `scripts/prod-verify/kpi-quarantine-pre.sql` /
+`kpi-quarantine-post.sql`. `docs/SpecAudit/SPEC_CHANGES_LOG.md` SCL-054 names the
+new filename and records the renumber inline — the §1–§3 rule against rewriting a
+dated record does not bite here, because that entry is still PROPOSED and the
+migration has never existed under the old name in any merged tree.
+
+`scripts/ci/genesis-schema.expected.sql` is unaffected and was re-generated to
+prove it: the snapshot is `pg_dump --schema=public`, which carries no migration
+filenames, so a renumber cannot move it. Byte-identical output is the evidence.

@@ -29,4 +29,3 @@ Each pending migration ships a reversible DOWN block, so activation is fully rev
 
 | File | Purpose | Contract |
 |---|---|---|
-| `20260617000000_notification_outbox.sql` | Notification emission foundation — `notification_outbox` table (CHECK enums + FK + insert-once + service-role RLS). No dispatcher/delivery. | `contracts/notification-outbox.contract.md` |

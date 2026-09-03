@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import NotificationDropdown from "./NotificationDropdown";
 
 export default function Navigation() {
   const [location, navigate] = useLocation();
@@ -112,7 +111,6 @@ export default function Navigation() {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-            {!isGuardian && <NotificationDropdown />}
 
             {isAuthenticated ? (
               <DropdownMenu>

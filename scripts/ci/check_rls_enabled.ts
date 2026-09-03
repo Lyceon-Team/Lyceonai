@@ -18,7 +18,6 @@ const REQUIRED_RLS_TABLES = [
   'attempts',
   'practice_sessions',
   'exam_attempts',
-  'notifications',
   'chat_messages',
   'orgs',
   'memberships',
@@ -26,7 +25,11 @@ const REQUIRED_RLS_TABLES = [
   'sections',
   'items',
   'audit_logs',
-  'system_event_logs'
+  'system_event_logs',
+  // contracts/notifications.contract.md C1.5 — RLS on all three notification tables
+  'notification_events',
+  'notification_messages',
+  'notification_delivery_events'
 ];
 
 async function checkRlsEnabled() {

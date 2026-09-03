@@ -13,7 +13,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { isMathSection } from "@shared/section-display";
+import { sectionDisplayLabel } from "@shared/section-display";
 import MathRenderer from "@/components/MathRenderer";
 
 interface ReviewModule {
@@ -59,7 +59,10 @@ export interface FullLengthReviewData {
 }
 
 function sectionLabel(section: string): string {
-  return isMathSection(section) ? "Math" : "Reading & Writing";
+  // The label comes from the one display mapping. This function used to import
+  // isMathSection from that module and then hand-roll the label, which is how the
+  // module's own "R&W" ended up disagreeing with every consumer.
+  return sectionDisplayLabel(section) ?? "";
 }
 
 export default function FullLengthReviewView({
