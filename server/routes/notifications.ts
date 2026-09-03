@@ -14,9 +14,9 @@
  * Mounted at NOTIFICATION_API_MOUNT behind requireSupabaseAuth + doubleCsrfProtection in
  * server/index.ts. Envelope: `{ data, requestId }` / `{ error: { message, code }, requestId }`.
  *
- * Cursor pagination: the opaque cursor is the last item's (created_at, message_id); the SQL
- * function applies the row comparison, so a page boundary between two rows created in the
- * same microsecond is still deterministic.
+ * Cursor pagination: the opaque cursor is the last item's message id; the SQL function
+ * resolves that row's (created_at, message_id) at full precision and applies the keyset
+ * comparison, so a client carrying millisecond timestamps cannot skip or repeat a row.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -102,7 +102,6 @@ router.get("/", async (req: Request, res: Response) => {
   const { data, error } = await supabaseServer.rpc("notification_feed", {
     p_recipient_id: recipientId,
     p_limit: limit + 1,
-    p_before_created_at: before?.createdAt ?? null,
     p_before_message_id: before?.messageId ?? null,
   });
   if (error) {
@@ -170,10 +169,7 @@ router.get("/", async (req: Request, res: Response) => {
   const last = page[page.length - 1];
   const nextCursor =
     rows.data.length > limit && last
-      ? encodeFeedCursor({
-          createdAt: last.created_at,
-          messageId: last.message_id,
-        })
+      ? encodeFeedCursor({ messageId: last.message_id })
       : null;
 
   return res.json({ data: { items, nextCursor }, requestId: req.requestId });

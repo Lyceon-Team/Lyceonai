@@ -51,7 +51,7 @@
 --   DROP FUNCTION IF EXISTS public.mark_all_notifications_seen(uuid);
 --   DROP FUNCTION IF EXISTS public.mark_notification(uuid, uuid, boolean, boolean, boolean);
 --   DROP FUNCTION IF EXISTS public.notification_unread_count(uuid);
---   DROP FUNCTION IF EXISTS public.notification_feed(uuid, integer, timestamptz, uuid);
+--   DROP FUNCTION IF EXISTS public.notification_feed(uuid, integer, uuid);
 --   DROP FUNCTION IF EXISTS public.apply_notification_delivery_event(text, text, text, timestamptz);
 --   DROP FUNCTION IF EXISTS public.record_notification_send_attempt(uuid, boolean, text, text, integer);
 --   DROP FUNCTION IF EXISTS public.notification_apply_transition(uuid, text);
@@ -449,8 +449,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.notification_feed(
   p_recipient_id        uuid,
   p_limit               integer,
-  p_before_created_at   timestamptz DEFAULT NULL,
-  p_before_message_id   uuid        DEFAULT NULL
+  p_before_message_id   uuid DEFAULT NULL
 ) RETURNS TABLE (
   message_id          uuid,
   event_id            uuid,
@@ -473,8 +472,16 @@ AS $$
    WHERE m.recipient_profile_id = p_recipient_id
      AND m.channel = 'in_app'
      AND m.archived_at IS NULL
-     AND (p_before_created_at IS NULL
-          OR (m.created_at, m.message_id) < (p_before_created_at, p_before_message_id))
+     -- Keyset cursor keyed by message id only: the (created_at, message_id) tuple is read back
+     -- here at full microsecond precision, so a client that carries timestamps at millisecond
+     -- precision (or none) cannot skip or repeat a row. A cursor naming another recipient's
+     -- message resolves to NULL and yields an empty page.
+     AND (p_before_message_id IS NULL
+          OR (m.created_at, m.message_id) < (
+               SELECT b.created_at, b.message_id
+                 FROM public.notification_messages b
+                WHERE b.message_id = p_before_message_id
+                  AND b.recipient_profile_id = p_recipient_id))
    ORDER BY m.created_at DESC, m.message_id DESC
    LIMIT p_limit;
 $$;
@@ -546,7 +553,7 @@ REVOKE ALL ON FUNCTION public.emit_notification_event(uuid, text, uuid, jsonb, j
 REVOKE ALL ON FUNCTION public.notification_apply_transition(uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.record_notification_send_attempt(uuid, boolean, text, text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.apply_notification_delivery_event(text, text, text, timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.notification_feed(uuid, integer, timestamptz, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.notification_feed(uuid, integer, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.notification_unread_count(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.mark_notification(uuid, uuid, boolean, boolean, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.mark_all_notifications_seen(uuid) FROM PUBLIC;
@@ -556,7 +563,7 @@ GRANT EXECUTE ON FUNCTION public.emit_notification_event(uuid, text, uuid, jsonb
 GRANT EXECUTE ON FUNCTION public.notification_apply_transition(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.record_notification_send_attempt(uuid, boolean, text, text, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.apply_notification_delivery_event(text, text, text, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.notification_feed(uuid, integer, timestamptz, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.notification_feed(uuid, integer, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.notification_unread_count(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_notification(uuid, uuid, boolean, boolean, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_all_notifications_seen(uuid) TO service_role;

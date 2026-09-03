@@ -125,9 +125,11 @@ export const NOTIFICATION_API_MOUNT = "/api/notifications";
 export const NOTIFICATION_FEED_DEFAULT_LIMIT = 20;
 export const NOTIFICATION_FEED_MAX_LIMIT = 50;
 
-/** Opaque cursor content: the last item's (created_at, message_id), base64url-encoded JSON. */
+/**
+ * Opaque cursor content: the last item's message id, base64url-encoded JSON. The server
+ * resolves the (created_at, message_id) keyset from the id at full precision.
+ */
 export const notificationFeedCursorSchema = z.object({
-  createdAt: z.string().min(1),
   messageId: z.string().uuid(),
 });
 export type NotificationFeedCursor = z.infer<

@@ -2455,10 +2455,10 @@ $$;
 
 
 --
--- Name: notification_feed(uuid, integer, timestamp with time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: notification_feed(uuid, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_message_id uuid DEFAULT NULL::uuid) RETURNS TABLE(message_id uuid, event_id uuid, event_type text, subject_profile_id uuid, payload jsonb, created_at timestamp with time zone, seen_at timestamp with time zone, read_at timestamp with time zone)
+CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid DEFAULT NULL::uuid) RETURNS TABLE(message_id uuid, event_id uuid, event_type text, subject_profile_id uuid, payload jsonb, created_at timestamp with time zone, seen_at timestamp with time zone, read_at timestamp with time zone)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -2469,8 +2469,16 @@ CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p
    WHERE m.recipient_profile_id = p_recipient_id
      AND m.channel = 'in_app'
      AND m.archived_at IS NULL
-     AND (p_before_created_at IS NULL
-          OR (m.created_at, m.message_id) < (p_before_created_at, p_before_message_id))
+     -- Keyset cursor keyed by message id only: the (created_at, message_id) tuple is read back
+     -- here at full microsecond precision, so a client that carries timestamps at millisecond
+     -- precision (or none) cannot skip or repeat a row. A cursor naming another recipient's
+     -- message resolves to NULL and yields an empty page.
+     AND (p_before_message_id IS NULL
+          OR (m.created_at, m.message_id) < (
+               SELECT b.created_at, b.message_id
+                 FROM public.notification_messages b
+                WHERE b.message_id = p_before_message_id
+                  AND b.recipient_profile_id = p_recipient_id))
    ORDER BY m.created_at DESC, m.message_id DESC
    LIMIT p_limit;
 $$;
@@ -10192,11 +10200,11 @@ GRANT ALL ON FUNCTION public.notification_event_id(p_event_type text, p_source_i
 
 
 --
--- Name: FUNCTION notification_feed(p_recipient_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_message_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_message_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_message_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) TO service_role;
 
 
 --
