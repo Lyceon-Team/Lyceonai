@@ -128,30 +128,13 @@ Running the PG suite repeatedly, 1 run in 8 failed `feed cursor pagination walks
 
 Nothing below was executed. This session has no `RESEND_API_KEY`, no Vercel deploy, and no prod write access; the transport was proved against an in-memory fake that records requests.
 
-1. **Karl applies Migration A.** Then, read-only:
-   ```sql
-   select relname, relrowsecurity from pg_class where relname in ('notification_events','notification_messages','notification_delivery_events');
-   select conname, confdeltype from pg_constraint where conname in ('notification_events_subject_profile_id_fkey','notification_messages_recipient_profile_id_fkey');  -- both 'c'
-   select policyname, cmd from pg_policies where tablename = 'notification_messages';  -- select_self, update_self
-   select tgname from pg_trigger where tgrelid = 'public.notification_messages'::regclass and not tgisinternal;  -- notification_messages_recipient_guard
-   select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname in ('emit_notification_event','notification_event_id','record_notification_send_attempt','apply_notification_delivery_event','notification_feed','notification_unread_count','mark_notification','mark_all_notifications_seen');
-   select position('emit_notification_event' in pg_get_functiondef('public.create_active_guardian_link_audited'::regproc)) > 0 as rpc_emits;
-   ```
+1. **Karl applies Migration A.** Then runs `scripts/prod-verify/notifications_rebuild_verify.sql` (one paste, one grid, verdict row per assertion, expected values inline, overall row last). It must read `OK`. The file is the only source of these checks; no query is to be read out of this document (standing rule, §10).
 2. **Set env in Vercel** (production): `RESEND_WEBHOOK_SECRET`, `NOTIFICATION_FROM_EMAIL=notifications@send.lyceon.ai` (`RESEND_API_KEY` exists). Register the Resend webhook endpoint `https://lyceon.ai/api/webhooks/resend` for `email.delivered`, `email.bounced`, `email.complained`, `email.failed`. Deploy.
-3. **A guardian redeems a link code in production.** Then:
-   ```sql
-   select event_type, subject_profile_id, payload from public.notification_events order by created_at desc limit 1;
-   select recipient_profile_id, channel, status, attempts, last_error, provider_message_id from public.notification_messages where event_id = (select event_id from public.notification_events order by created_at desc limit 1);
-   -- expect: student in_app delivered; guardian in_app delivered; guardian email sent (then delivered)
-   ```
+3. **A guardian redeems a link code in production.** Then runs `scripts/prod-verify/notifications_rebuild_live-detail.sql` (listing: the latest event, its messages, their delivery events). Expect: student `in_app` delivered; guardian `in_app` delivered; guardian `email` sent with a `re_…` provider id and attempts = 1; payload = `link_id` + `student_display_name` only.
 4. **Bells**: the student's header shows an unread badge of 1; the guardian's shows 1. Opening the popover marks them seen.
 5. **A real email** arrives at the guardian's inbox from `notifications@send.lyceon.ai` with subject `You're now linked to <student> on Lyceon`. Keep the headers.
-6. **Webhook**: after Resend fires `email.delivered`:
-   ```sql
-   select status, delivered_at, provider_message_id from public.notification_messages where channel='email' order by created_at desc limit 1;  -- delivered, not null, re_...
-   select provider_event_id, event_type, outcome, applied_at from public.notification_delivery_events order by received_at desc limit 3;
-   ```
-7. **Karl applies Migration B.** `select to_regclass('public.notification_outbox');` → NULL.
+6. **Webhook**: after Resend fires `email.delivered`, the same `notifications_rebuild_live-detail.sql` shows the email row `delivered` with `delivered_at` set and one delivery-event row with outcome `applied`.
+7. **Karl applies Migration B.** Then runs `scripts/prod-verify/notifications_outbox_drop_verify.sql`; it must read `OK` (outbox absent, cascade function names the rebuilt tables, A's tables intact).
 
 ## 6. What this build does not do (by ruling or by limit)
 
@@ -186,3 +169,25 @@ The `spec-auditor` subagent reviewed the full `origin/cleanup...HEAD` diff (59 f
 | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/routes/notifications.ts` `decodeFeedCursor`: the `catch` returned `null` without a log line, unlike every sibling catch in this rebuild (Coding Standards §13) | `logger.debug("NOTIFICATIONS", "feed_cursor_malformed", …)` with `requestId` and `cursorLength` only. Neither the cursor nor the parser's message is logged: Node's JSON error text quotes a slice of the input, which would echo client data. The route passes `req.requestId` through. |
 | `scripts/ci/check_rls_enabled.ts`: the stale `notifications` entry was removed but the three new tables were not added. The script is not wired into `ci.yml`; C1.5 is proven by the live `asRole` cases in the PG suite | The three tables added to `REQUIRED_RLS_TABLES` so the list is correct if the script is ever wired in. File formatting left as found (already outside Prettier on the base; CI does not run Prettier).                                                                          |
+
+## 10. Prod verification files (2026-09-03)
+
+Standing rule: prod verification runs from a committed `.sql` file with a verdict column, expected values inline, and a committed negative control; never from queries read out of a document. The inline queries that §5 carried are withdrawn and replaced by three files under `scripts/prod-verify/`, each executed by CI in console mode against genesis + all migrations (`scripts/ci/prod-verify-console-gate.sh`):
+
+| File                                   | When                     | Shape                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `notifications_rebuild_verify.sql`     | after Migration A        | 22 assertion rows + OVERALL. Tables ×3, RLS ×3, ON DELETE CASCADE ×4 (both `profiles` keys and both internal keys, read from `pg_constraint.confdeltype`), the two self policies by full text + policy counts on all three tables, the column-guard trigger by type bits/function/enabled state + its 42501, the RPC body containing `PERFORM public.emit_notification_event(`, the CHECK as PostgreSQL renders it, the nine functions, and two controls. |
+| `notifications_rebuild_live-detail.sql` | after a real redemption | one listing: latest event → messages → delivery events.                                                                                                                                                                                                      |
+| `notifications_outbox_drop_verify.sql` | after Migration B        | 4 rows + OVERALL: outbox absent, cascade function no longer mentions it, names the rebuilt tables, A's tables intact.                                                                                                                                       |
+
+**The negative control** (rows 21–22 of the verify file). Every cascade row goes through one `pg_temp` function that maps `confdeltype` to its keyword. The file creates a temp parent and two temp children, one keyed `ON DELETE NO ACTION` and one `ON DELETE CASCADE`, and runs the same function on both: row 21 passes only when the CASCADE key reads PASS, row 22 only when the NO ACTION key reads FAIL. A file whose assertion cannot tell the two apart reads STOP on its own controls. Temp tables may reference only temp tables, so the control parent is private rather than `public.profiles`; the function under test is identical either way.
+
+**Observed failing once** (local Postgres 16, genesis + all migrations, console mode via `psql -c "$(cat file)"`):
+
+| Mutation                                                                   | Row | Observed                                                                                   | OVERALL                          |
+| -------------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------------------ | -------------------------------- |
+| `notification_events_subject_profile_id_fkey` recreated `ON DELETE NO ACTION` | 7   | `NO ACTION` vs expected `CASCADE` → FAIL                                                    | `STOP: 1 assertion(s) FAIL`      |
+| CHECK widened to `IN ('guardian_linked','guardian_consent_requested')`     | 19  | `CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_consent_requested'::text])))` → FAIL | `STOP: 1 assertion(s) FAIL`      |
+| `ALTER TABLE … DISABLE TRIGGER notification_messages_recipient_guard`      | 16  | `… DISABLED` vs `… enabled` → FAIL                                                          | `STOP: 1 assertion(s) FAIL`      |
+| `CREATE TABLE public.notification_outbox` (outbox-drop file)               | 1   | `STILL PRESENT` → FAIL                                                                      | `STOP: 1 assertion(s) FAIL`      |
+| none (restored)                                                            | all | 22 PASS, control row 22 observed `FAIL` as required                                         | `OK: Migration A landed as written …` |
