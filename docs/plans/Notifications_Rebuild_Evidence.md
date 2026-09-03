@@ -159,3 +159,11 @@ Nothing below was executed. This session has no `RESEND_API_KEY`, no Vercel depl
 - No retention sweep (Phase 2; rule stated in contract §11; SCL-082 PROPOSED).
 - No Realtime; the bell refetches on open and on window focus.
 - No real email was sent from this session.
+
+## 7. CI rounds on the PR (post-push)
+
+| Head | Failure | Cause | Fix |
+|---|---|---|---|
+| `9fd12dd` | `practice-integration` — "FAIL: the SCL-080 PG suite SKIPPED rather than running" although the suite passed 7/7 | the step greps vitest output for the word `skipped`; the dispatcher's summary log carried `"skipped":0` | counter renamed to `deferred` (`server/lib/notifications/dispatch.ts`); reproduced locally: both PG suites pass and `grep -q skipped` no longer matches (`9dee68d`) |
+| `9fd12dd` | `ci` — boot probe: "the bundle does NOT boot" with the documented environment | `validateEnvironment()` is fatal in production without the three notification variables, and they were not in `scripts/ci/boot-env.manifest.json` | added with fake values; local `pnpm run probe:boot`: sufficiency PASS, necessity PASS for all 9 (each of the three breaks the boot when removed); `boot-probe.selftest.sh` PASS. This is the review moment the manifest exists for: **the same three names must be set in Vercel production.** |
+| `9fd12dd` | CodeQL high: "Incomplete URL substring sanitization" at the test's grep clause `read(f).includes("api.resend.com")` | a hostname substring check pattern, flagged regardless of intent | the clause is a regex test on file contents (`/api\.resend\.com/.test(...)`); suite 17/17 |

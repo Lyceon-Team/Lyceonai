@@ -945,7 +945,7 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
     );
     const read = (f: string) => fs.readFileSync(path.join(root, f), "utf8");
     const resendCallers = files.filter(
-      (f) => !/\.test\./.test(f) && read(f).includes("api.resend.com"),
+      (f) => !/\.test\./.test(f) && /api\.resend\.com/.test(read(f)),
     );
     expect(resendCallers).toEqual(["server/lib/notifications/transport.ts"]);
     expect(
