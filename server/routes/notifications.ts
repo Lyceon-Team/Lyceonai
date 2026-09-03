@@ -71,11 +71,23 @@ export function encodeFeedCursor(cursor: NotificationFeedCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
-export function decodeFeedCursor(raw: string): NotificationFeedCursor | null {
+export function decodeFeedCursor(
+  raw: string,
+  requestId?: string,
+): NotificationFeedCursor | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
   } catch {
+    // A malformed cursor is the client's expected failure (400 upstream), never a throw;
+    // logged so the catch is not silent (Coding Standards §13). Neither the cursor nor the
+    // parser's message is logged: Node's JSON error text quotes a slice of the input.
+    logger.debug(
+      "NOTIFICATIONS",
+      "feed_cursor_malformed",
+      "Feed cursor did not decode",
+      { requestId, cursorLength: raw.length },
+    );
     return null;
   }
   const result = notificationFeedCursorSchema.safeParse(parsed);
@@ -93,7 +105,7 @@ router.get("/", async (req: Request, res: Response) => {
 
   let before: NotificationFeedCursor | null = null;
   if (query.data.cursor !== undefined) {
-    before = decodeFeedCursor(query.data.cursor);
+    before = decodeFeedCursor(query.data.cursor, req.requestId);
     if (!before)
       return sendInvalid(res, req.requestId, { cursor: ["malformed cursor"] });
   }
