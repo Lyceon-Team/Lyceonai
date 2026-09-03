@@ -13,12 +13,8 @@ import {
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
-  it("names exactly the three launch event types", () => {
-    expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
-      "guardian_linked",
-      "guardian_consent_requested",
-      "account_deletion_scheduled",
-    ]);
+  it("names exactly the one launch event type (R7/R8)", () => {
+    expect([...NOTIFICATION_EVENT_TYPES]).toEqual(["guardian_linked"]);
   });
 
   it("guardian_linked payload is link_id + student_display_name and nothing else (C8.1)", () => {

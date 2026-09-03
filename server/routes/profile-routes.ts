@@ -9,6 +9,7 @@ import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { LEGAL_DOCS } from "../../shared/legal-consent.js";
 import crypto from "crypto";
+import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
 const router = Router();
 
@@ -313,6 +314,19 @@ router.patch("/", async (req: Request, res: Response) => {
         guardianConsentRequestId = requestId;
       }
 
+      // Doc 01 §37.2 steps 1–3 / ruling R7+R9: the request row is the durable record; the
+      // email is a direct send keyed by that row's id, so a repeated PATCH cannot mail twice.
+      // Best-effort: a mail failure is logged inside the sender and never fails the profile
+      // update — the guardian can be re-mailed from the same row.
+      const consentRequestId: string | null = guardianConsentRequestId;
+      if (consentRequestId) {
+        await sendGuardianConsentRequestEmail({
+          consentRequestId,
+          guardianEmail: guardianEmail!,
+          studentDisplayName: data.displayName,
+          requestId: req.requestId,
+        });
+      }
     }
 
     // Finalize profile fields with server-authoritative role and under-13 state.

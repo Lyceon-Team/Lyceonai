@@ -15,11 +15,12 @@ import { z } from "zod";
 
 // ── Event types, channels, statuses (mirror the SQL CHECKs) ─────────────────
 
-export const NOTIFICATION_EVENT_TYPES = [
-  "guardian_linked",
-  "guardian_consent_requested",
-  "account_deletion_scheduled",
-] as const;
+/**
+ * Launch scope is one event type (owner rulings R7/R8, 2026-09-03). The consent request and
+ * the deletion-scheduled email are direct sends, not events — see
+ * server/lib/notifications/direct-sends.ts.
+ */
+export const NOTIFICATION_EVENT_TYPES = ["guardian_linked"] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
 

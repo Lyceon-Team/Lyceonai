@@ -5080,7 +5080,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_consent_requested'::text, 'account_deletion_scheduled'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = 'guardian_linked'::text))
 );
 
 

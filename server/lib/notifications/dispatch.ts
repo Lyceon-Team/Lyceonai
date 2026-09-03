@@ -36,7 +36,7 @@ import {
 } from "../../../packages/shared/src/notifications-schema";
 import { logger } from "../../logger";
 import { renderEmail, siteUrlFromEnv } from "./templates";
-import { createResendTransport, type EmailTransport } from "./transport";
+import { defaultEmailTransport, type EmailTransport } from "./transport";
 
 export type DispatchSummary = {
   selected: number;
@@ -54,12 +54,6 @@ export type DispatchOptions = {
 };
 
 const DISPATCH_DEFAULT_LIMIT = 100;
-
-let defaultTransport: EmailTransport | null = null;
-function transportFromEnv(): EmailTransport {
-  if (!defaultTransport) defaultTransport = createResendTransport();
-  return defaultTransport;
-}
 
 type RecordArgs = {
   p_message_id: string;
@@ -177,7 +171,7 @@ async function dispatchOne(
   }
 
   const sent = await transport({
-    messageId: row.message_id,
+    idempotencyKey: row.message_id,
     to: address,
     subject: rendered.value.subject,
     html: rendered.value.html,
@@ -215,7 +209,7 @@ export async function dispatchQueuedMessages(
     deferred: 0,
     selectFailed: false,
   };
-  const transport = options.transport ?? transportFromEnv();
+  const transport = options.transport ?? defaultEmailTransport();
   const limit = options.limit ?? DISPATCH_DEFAULT_LIMIT;
 
   let query = supabaseServer

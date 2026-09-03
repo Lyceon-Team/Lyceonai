@@ -3,7 +3,8 @@
  *        redaction; lyceon-coding-standards §3.6 Result, §12.1 never log content, §13 no
  *        silent catch] | @implemented [2026-09-03]
  *
- * plain English: the ONLY module in the codebase that talks to Resend. One REST call per
+ * plain English: the ONLY module in the codebase that talks to Resend — for notification
+ * messages (dispatch.ts) and for the two direct sends (direct-sends.ts). One REST call per
  * message, `Idempotency-Key: <message_id>` so a retried send of the same row cannot become
  * a second email, sender from NOTIFICATION_FROM_EMAIL. Expected provider failures (missing
  * config, non-2xx, network) come back as a Result — the dispatcher records them against
@@ -26,7 +27,8 @@ import { logger } from "../../logger";
 export const RESEND_API_BASE_URL = "https://api.resend.com";
 
 export type EmailSendInput = {
-  messageId: string;
+  /** Resend Idempotency-Key. The dispatcher passes the message_id; direct sends pass a key derived from their request row id. */
+  idempotencyKey: string;
   to: string;
   subject: string;
   html: string;
@@ -80,7 +82,7 @@ export function createResendTransport(
         "NOTIFICATIONS",
         "email_transport_unconfigured",
         "RESEND_API_KEY or NOTIFICATION_FROM_EMAIL is not set; email not sent",
-        { messageId: input.messageId },
+        { idempotencyKey: input.idempotencyKey },
       );
       return err({
         kind: "config_missing",
@@ -95,7 +97,7 @@ export function createResendTransport(
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
-          "Idempotency-Key": input.messageId,
+          "Idempotency-Key": input.idempotencyKey,
         },
         body: JSON.stringify({
           from,
@@ -112,7 +114,7 @@ export function createResendTransport(
         "email_send_network_error",
         "Resend request failed",
         {
-          messageId: input.messageId,
+          idempotencyKey: input.idempotencyKey,
           recipient: redactEmail(input.to),
           error: message,
         },
@@ -136,7 +138,7 @@ export function createResendTransport(
           "email_send_error_body_unparsed",
           "Resend error body was not JSON",
           {
-            messageId: input.messageId,
+            idempotencyKey: input.idempotencyKey,
             status: response.status,
             error:
               parseErr instanceof Error ? parseErr.message : String(parseErr),
@@ -148,7 +150,7 @@ export function createResendTransport(
         "email_send_rejected",
         "Resend rejected the send",
         {
-          messageId: input.messageId,
+          idempotencyKey: input.idempotencyKey,
           recipient: redactEmail(input.to),
           status: response.status,
         },
@@ -183,10 +185,18 @@ export function createResendTransport(
     }
 
     logger.info("NOTIFICATIONS", "email_sent", "Email accepted by Resend", {
-      messageId: input.messageId,
+      idempotencyKey: input.idempotencyKey,
       providerMessageId: id,
       recipient: redactEmail(input.to),
     });
     return ok({ providerMessageId: id });
   };
+}
+
+let defaultTransport: EmailTransport | null = null;
+
+/** The process-wide transport built from the environment; created on first use. */
+export function defaultEmailTransport(): EmailTransport {
+  if (!defaultTransport) defaultTransport = createResendTransport();
+  return defaultTransport;
 }

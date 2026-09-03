@@ -4,9 +4,10 @@
  * plain English: one template per event type, selected here. Payloads arrive as `unknown`
  * (they were read back from jsonb) and are parsed against the event's strict schema before a
  * template sees them — an event whose payload carries an unexpected key does not render,
- * which is the payload rule enforced at read time as well as at write time. The two reserved
- * event types have no emitter and therefore no template; asking for one is an expected
- * failure, returned as a Result, never thrown.
+ * which is the payload rule enforced at read time as well as at write time. A payload that
+ * does not parse is an expected failure, returned as a Result, never thrown. The consent
+ * request and deletion-scheduled emails are direct sends (rulings R7/R8) and live in
+ * ./guardian-consent-request.ts and ./deletion-scheduled.ts, outside this switch.
  */
 import {
   guardianLinkedPayloadSchema,
@@ -30,9 +31,6 @@ export function renderInApp(
         return err("guardian_linked payload does not match its schema");
       return ok(guardianLinkedInApp(parsed.data, ctx));
     }
-    case "guardian_consent_requested":
-    case "account_deletion_scheduled":
-      return err(`no template for reserved event type ${eventType}`);
   }
 }
 
@@ -48,9 +46,6 @@ export function renderEmail(
         return err("guardian_linked payload does not match its schema");
       return ok(guardianLinkedEmail(parsed.data, ctx));
     }
-    case "guardian_consent_requested":
-    case "account_deletion_scheduled":
-      return err(`no template for reserved event type ${eventType}`);
   }
 }
 

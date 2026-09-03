@@ -35,10 +35,12 @@
 -- and the variant bits set to 10. server/lib/notifications/event-id.ts derives the same
 -- uuid; parity is asserted in the PG suite. Core `sha256()` — no extension dependency.
 --
--- RESERVED EVENT TYPES. `guardian_consent_requested` and `account_deletion_scheduled` are
--- admitted by the CHECK but have NO emitter in this migration: the first addresses an email
--- with no profile row, the second needs a raw recovery token that must never be persisted.
--- Both wait on an owner ruling (contract §2.3).
+-- ONE EVENT TYPE AT LAUNCH (owner rulings R7/R8, 2026-09-03). `guardian_consent_requested` is
+-- not a notification: its recipient has no account by definition, and every message row is
+-- addressed to a profile. `account_deletion_scheduled` is not a notification: it carries a
+-- credential that can never sit in a payload. Both are direct sends through the one Resend
+-- transport at their request sites (server/lib/notifications/direct-sends.ts). Adding an event
+-- type is a CHECK change here plus a contract row.
 --
 -- IDEMPOTENT. CREATE TABLE / CREATE INDEX / CREATE POLICY guard with IF NOT EXISTS where
 -- Postgres allows it; functions are CREATE OR REPLACE; the trigger is dropped-then-created.
@@ -76,8 +78,7 @@ CREATE TABLE IF NOT EXISTS public.notification_events (
   subject_profile_id  uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   payload             jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at          timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT notification_events_type_check CHECK (event_type IN (
-    'guardian_linked', 'guardian_consent_requested', 'account_deletion_scheduled'))
+  CONSTRAINT notification_events_type_check CHECK (event_type IN ('guardian_linked'))
 );
 
 COMMENT ON TABLE public.notification_events IS

@@ -432,7 +432,7 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
     for (const [type, source] of [
       ["guardian_linked", "7c9e6679-7425-40de-944b-e07fc1f90ae7"],
       ["guardian_linked", "00000000-0000-0000-0000-000000000000"],
-      ["account_deletion_scheduled", "abc"],
+      ["some_future_type", "abc"],
     ]) {
       const r = await pg.query(
         `SELECT public.notification_event_id($1, $2) AS id`,

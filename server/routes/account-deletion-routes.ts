@@ -7,6 +7,7 @@ import {
 } from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { logger } from "../logger";
+import { sendAccountDeletionScheduledEmail } from "../lib/notifications/direct-sends";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 // buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
 // loading this route module); re-exported here for existing importers (deletion-lifecycle.test.ts).
@@ -164,7 +165,12 @@ export async function performDeletionRequestV2(
   admin: DeletionAdminClient,
   profileId: string,
 ): Promise<
-  | { requestedAt: string; scheduledHardDeleteAt: string; rawToken: string }
+  | {
+      requestedAt: string;
+      scheduledHardDeleteAt: string;
+      rawToken: string;
+      requestRowId: string | null;
+    }
   | { error: string }
 > {
   const { rawToken, tokenHash } = generateRecoveryToken();
@@ -184,10 +190,30 @@ export async function performDeletionRequestV2(
   if (!row?.requested_at || !row.scheduled_hard_delete_at) {
     return { error: "Deletion request did not return a schedule" };
   }
+  // The request row is the durable record the deletion-scheduled email is keyed on (ruling
+  // R9). It is unique per token hash while pending, so this resolves exactly one row.
+  const { data: rowRef, error: rowError } = await admin
+    .from("account_deletion_requests")
+    .select("id")
+    .eq("recovery_token_hash", tokenHash)
+    .limit(1);
+  const requestRowId =
+    Array.isArray(rowRef) && rowRef[0] && typeof rowRef[0].id === "string"
+      ? rowRef[0].id
+      : null;
+  if (rowError || !requestRowId) {
+    logger.error(
+      "DELETION",
+      "request_row_lookup_failed",
+      "Deletion request committed but its row id could not be read; the confirmation email cannot be keyed",
+      { profileId, error: rowError?.message ?? "no row" },
+    );
+  }
   return {
     requestedAt: row.requested_at,
     scheduledHardDeleteAt: row.scheduled_hard_delete_at,
     rawToken,
+    requestRowId,
   };
 }
 
@@ -238,6 +264,29 @@ router.post(
               requestId,
             },
           );
+        }
+        // §40.2.1 Phase 4 / rulings R8+R9: confirmation email with the 7-day recovery link, sent
+        // directly (it carries the token) and keyed by the request row id. Best-effort: the
+        // deletion is committed; a mail failure is logged inside the sender, never surfaced.
+        if (result.requestRowId) {
+          const { data: authUser } = await admin.auth.admin.getUserById(userId);
+          const email = authUser?.user?.email;
+          if (email) {
+            await sendAccountDeletionScheduledEmail({
+              deletionRequestId: result.requestRowId,
+              email,
+              rawToken: result.rawToken,
+              scheduledHardDeleteAt: result.scheduledHardDeleteAt,
+              requestId,
+            });
+          } else {
+            logger.warn(
+              "DELETION",
+              "recovery_email_skipped",
+              "No address to send the deletion-scheduled email",
+              { userId, requestId },
+            );
+          }
         }
         logger.info(
           "DELETION",

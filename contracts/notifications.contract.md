@@ -23,6 +23,7 @@ Three email lanes exist. This contract governs exactly one.
 | Auth email (password reset, email change, confirmation) | Supabase Auth via its SMTP integration (Resend) | none — no send code, no templates |
 | Billing email (receipts, dunning, trial ending) | Stripe | none |
 | **Product notifications** (in-app + email from one event) | **this contract** | `notification_events`, `notification_messages`, `notification_delivery_events`, `server/lib/notifications/*`, `server/routes/notifications.ts`, `server/routes/resend-webhook.ts` |
+| **Direct transactional sends** (guardian consent request; deletion-scheduled recovery link) | **this contract, §0.4** — same transport, NOT events (owner rulings R7/R8, 2026-09-03) | `server/lib/notifications/direct-sends.ts` and its two call sites |
 
 **C0.1** No code under `server/lib/notifications/` or `server/routes/notifications.ts` sends auth or billing mail.
 *Violated if:* a template or transport call in those paths references password reset, email change, confirmation, receipts, invoices, or trial state.
@@ -33,12 +34,18 @@ Three email lanes exist. This contract governs exactly one.
 **C0.3** `contact@lyceon.ai` does not appear in any file under `server/`, `apps/`, `packages/`, `client/`, or `supabase/`.
 *Violated if:* `grep -rn "contact@lyceon.ai" server apps packages client supabase` returns anything.
 
+**C0.4** Two transactional emails are direct sends, not notification events, by owner ruling (2026-09-03): the guardian consent request (R7 — the recipient has no account by definition; every message row is addressed to a profile) and the deletion-scheduled recovery email (R8 — it carries a credential that can never sit in a persisted, recipient-readable payload). Each is sent at its request site through `server/lib/notifications/direct-sends.ts` → `transport.ts`, from `NOTIFICATION_FROM_EMAIL`, with `Idempotency-Key` derived from the durable request row id: `guardian-consent-request:<guardian_consent_requests.id>` and `account-deletion-scheduled:<account_deletion_requests.id>`. Nothing about either message (address, body, token) is persisted by this lane.
+*Violated if:* a `notification_events` row exists with either type; the consent route or the deletion route no longer calls its sender (`tests/ci/notifications.direct-sends.test.ts` greps both call sites); a captured send lacks the row-derived key; or a token or address appears in any notification table.
+
+**C0.5** Both direct sends are best-effort after their mutation has committed: a transport failure is a `Result`, logged with ids and a redacted address, and never fails the request that produced it.
+*Violated if:* a consent-request PATCH or a deletion request returns 5xx because mail failed, or the sender throws.
+
 ---
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked`, `guardian_consent_requested`, `account_deletion_scheduled`.
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any other value or omits one of the three; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` (launch scope after rulings R7/R8; adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked`; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -67,10 +74,10 @@ Three email lanes exist. This contract governs exactly one.
 | event_type | subject | recipients and channels | emitted by |
 |---|---|---|---|
 | `guardian_linked` | the student | student: `in_app`; guardian: `in_app`, `email` | `create_active_guardian_link_audited` |
-| `guardian_consent_requested` | the student | **reserved — not emitted in this build.** The recipient is `guardian_consent_requests.guardian_email`, an address that usually has no `profiles` row (Doc 01 §37.2 step 4 creates the account after the email). `notification_messages.recipient_profile_id` is `NOT NULL FK → profiles`, so this event cannot be addressed under §1 until the owner rules on an address-recipient shape. | none |
-| `account_deletion_scheduled` | the user | **reserved — not emitted in this build.** The only content of value is the raw recovery token, which is generated once and never stored raw (`server/routes/account-deletion-routes.ts`, sha256 only). §8 forbids sensitive values in `payload`, and `payload` persists 90 days. Emitting requires an owner ruling on a render-time secret path. | none |
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; or an emitter exists for a reserved type without a recorded owner ruling in the SCL register or `docs/plans/`.
+Not event types (see §0.4): the guardian consent request and the deletion-scheduled email are direct sends.
+
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.
@@ -252,3 +259,4 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 | C7.2, C7.3, C7.4, C5.4 | valid signature applies; invalid returns 400 and writes nothing; replay is a no-op |
 | C9.1, C9.2, C9.3 | `SET ROLE authenticated` / `anon` with `auth.uid()` fixtures |
 | C0.2, C0.3, C10.2 | grep clauses, run in the same suite |
+| C0.4, C0.5 | `tests/ci/notifications.direct-sends.test.ts` — row-derived keys, sender, links, no tracking, Result on failure, both call sites wired |
