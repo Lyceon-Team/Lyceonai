@@ -17,7 +17,7 @@
  * `notification-dispatch-sweep` cron calls it without an event id as a backstop for rows a
  * frozen function left behind.
  *
- * NEVER THROWS FOR ONE ROW. A per-row failure is logged and counted; the loop continues,
+ * NEVER THROWS FOR ONE ROW. A per-row failure is logged and counted (`deferred`); the loop continues,
  * because one bad recipient must not hold every other message. A failure to even SELECT
  * the queue is logged at error and reported in the summary as `selectFailed`.
  *
@@ -42,7 +42,7 @@ export type DispatchSummary = {
   selected: number;
   sent: number;
   failed: number;
-  skipped: number;
+  deferred: number;
   selectFailed: boolean;
 };
 
@@ -93,7 +93,7 @@ async function recordAttempt(args: RecordArgs): Promise<boolean> {
 async function dispatchOne(
   row: NotificationMessageRow,
   transport: EmailTransport,
-): Promise<"sent" | "failed" | "skipped"> {
+): Promise<"sent" | "failed" | "deferred"> {
   const { data: eventRows, error: eventError } = await supabaseServer
     .from("notification_events")
     .select("*")
@@ -111,7 +111,7 @@ async function dispatchOne(
         message: eventError.message,
       },
     );
-    return "skipped";
+    return "deferred";
   }
   const event = z.array(notificationEventRowSchema).safeParse(eventRows);
   if (!event.success || event.data.length !== 1) {
@@ -125,7 +125,7 @@ async function dispatchOne(
     return "failed";
   }
   const eventRow = event.data[0];
-  if (!eventRow) return "skipped";
+  if (!eventRow) return "deferred";
 
   const { data: recipientRows, error: recipientError } = await supabaseServer
     .from("profiles")
@@ -143,7 +143,7 @@ async function dispatchOne(
         message: recipientError.message,
       },
     );
-    return "skipped";
+    return "deferred";
   }
   const recipient = z
     .array(notificationRecipientRowSchema)
@@ -192,7 +192,7 @@ async function dispatchOne(
       p_error: null,
       p_max_attempts: NOTIFICATION_EMAIL_MAX_ATTEMPTS,
     });
-    return recorded ? "sent" : "skipped";
+    return recorded ? "sent" : "deferred";
   }
 
   await recordAttempt({
@@ -212,7 +212,7 @@ export async function dispatchQueuedMessages(
     selected: 0,
     sent: 0,
     failed: 0,
-    skipped: 0,
+    deferred: 0,
     selectFailed: false,
   };
   const transport = options.transport ?? transportFromEnv();
