@@ -76,7 +76,7 @@ interface BillingStatusResponse {
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
   hasActiveLink?: boolean;
 }
 

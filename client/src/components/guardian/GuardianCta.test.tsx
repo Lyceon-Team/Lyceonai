@@ -14,7 +14,7 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SubscriptionPaywall } from "./SubscriptionPaywall";
+import { CheckoutReturnPoller } from "./CheckoutReturnPoller";
 import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { resolveCtaDestination, resolveCtaCopy } from "@/lib/billing-cta";
@@ -65,7 +65,7 @@ beforeEach(() => {
  * `GET /api/billing/status` reports `effectiveAccess: true` and
  * `needsPaymentUpdate: true` together for a `past_due` student, because
  * SCL-029 rules `past_due` ENTITLED so that "a student whose card is mid-retry
- * does not lose their tutor". `SubscriptionPaywall` used to test the second and
+ * does not lose their tutor". The component now called `CheckoutReturnPoller` used to test the second and
  * ignore the first, returning a full-screen interstitial INSTEAD of its
  * children — so a guardian with full access lost the link panel, the purchase
  * card and every progress view at once.
@@ -84,11 +84,11 @@ describe("guardian dashboard survives a payment-health signal (test 1)", () => {
     );
 
     withClient(
-      <SubscriptionPaywall>
+      <CheckoutReturnPoller>
         <div data-testid="guardian-dashboard-body">
           <div data-testid="guardian-purchase-card" />
         </div>
-      </SubscriptionPaywall>,
+      </CheckoutReturnPoller>,
     );
 
     expect(await screen.findByTestId("guardian-dashboard-body")).toBeTruthy();

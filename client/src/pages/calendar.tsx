@@ -4,14 +4,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw, Settings } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Play,
+  Flame,
+  AlertCircle,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { AppNotice } from "@/components/feedback/AppNotice";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
-import { getPremiumDenialReason, isSessionError, isTransportError, toUserFacingMessage } from "@/lib/api-error";
+import {
+  getPremiumDenialReason,
+  isSessionError,
+  isTransportError,
+  toUserFacingMessage,
+} from "@/lib/api-error";
 import {
   getCalendarProfile,
   saveCalendarProfile,
@@ -39,7 +54,11 @@ interface CalendarDay {
   pct: number;
   mathPct: number;
   rwPct: number;
-  focus: Array<{ section: string; weight: number; competencies?: string[] }> | null;
+  focus: Array<{
+    section: string;
+    weight: number;
+    competencies?: string[];
+  }> | null;
   tasks: CalendarTask[] | null;
   isUserOverride: boolean;
   replacesOverride: boolean;
@@ -48,7 +67,11 @@ interface CalendarDay {
   replacementAt: string | null;
 }
 
-function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: number): { label: string; className: string } {
+function getStatusBadge(
+  status: DayStatus,
+  completedMin: number,
+  plannedMin: number,
+): { label: string; className: string } {
   switch (status) {
     case "planned":
       return { label: "Planned", className: "bg-muted text-muted-foreground" };
@@ -73,9 +96,15 @@ export function formatDateKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-export function getDateKeyInTimeZone(timeZone: string | null | undefined, date: Date = new Date()): string {
+export function getDateKeyInTimeZone(
+  timeZone: string | null | undefined,
+  date: Date = new Date(),
+): string {
   const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
+    timeZone:
+      timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+      "America/Chicago",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -87,17 +116,24 @@ export function getDateKeyInTimeZone(timeZone: string | null | undefined, date: 
   return `${year}-${month}-${day}`;
 }
 
-export function isDateBeforeToday(dateKey: string, todayDateKey: string): boolean {
+export function isDateBeforeToday(
+  dateKey: string,
+  todayDateKey: string,
+): boolean {
   return dateKey < todayDateKey;
 }
 
-function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
+function buildMonthGrid(
+  year: number,
+  month: number,
+): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startWeekday = firstDay.getDay();
   const daysInMonth = lastDay.getDate();
 
-  const grid: Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> = [];
+  const grid: Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> =
+    [];
 
   for (let i = 0; i < startWeekday; i++) {
     const prevDate = new Date(year, month, -startWeekday + i + 1);
@@ -137,11 +173,16 @@ export default function CalendarPage() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
 
-  const [profile, setProfile] = useState<StudyProfile | null | undefined>(undefined);
+  const [profile, setProfile] = useState<StudyProfile | null | undefined>(
+    undefined,
+  );
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileLoadError, setProfileLoadError] = useState<unknown>(null);
   const [monthData, setMonthData] = useState<StudyPlanDay[]>([]);
-  const [streak, setStreak] = useState<{ current: number; longest: number }>({ current: 0, longest: 0 });
+  const [streak, setStreak] = useState<{ current: number; longest: number }>({
+    current: 0,
+    longest: 0,
+  });
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
   const [monthErrorObj, setMonthErrorObj] = useState<unknown>(null);
@@ -152,10 +193,16 @@ export default function CalendarPage() {
   const month = currentMonth.getMonth();
 
   const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
-  const todayDateKey = useMemo(() => getDateKeyInTimeZone(profile?.timezone), [profile?.timezone]);
+  const todayDateKey = useMemo(
+    () => getDateKeyInTimeZone(profile?.timezone),
+    [profile?.timezone],
+  );
 
-  const gridStartDate = monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
-  const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? formatDateKey(new Date(year, month + 1, 0));
+  const gridStartDate =
+    monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
+  const gridEndDate =
+    monthGrid[monthGrid.length - 1]?.dateKey ??
+    formatDateKey(new Date(year, month + 1, 0));
 
   useEffect(() => {
     setProfileLoading(true);
@@ -217,17 +264,30 @@ export default function CalendarPage() {
         else if (completedMin < plannedMin) status = "in_progress";
         else status = "complete";
       }
-      const pct = plannedMin <= 0 ? 0 : Math.min(100, Math.round((completedMin / plannedMin) * 100));
+      const pct =
+        plannedMin <= 0
+          ? 0
+          : Math.min(100, Math.round((completedMin / plannedMin) * 100));
 
       const tasks = plan?.tasks ?? [];
       const mathTask = tasks.find((t) => t.section === "Math");
       const rwTask = tasks.find((t) => t.section === "Reading & Writing");
       const mathPlanned = mathTask?.minutes ?? 0;
       const rwPlanned = rwTask?.minutes ?? 0;
-      const mathCompleted = Math.round(completedMin * (mathPlanned / (plannedMin || 1)));
-      const rwCompleted = Math.round(completedMin * (rwPlanned / (plannedMin || 1)));
-      const mathPct = mathPlanned > 0 ? Math.min(100, Math.round((mathCompleted / mathPlanned) * 100)) : 0;
-      const rwPct = rwPlanned > 0 ? Math.min(100, Math.round((rwCompleted / rwPlanned) * 100)) : 0;
+      const mathCompleted = Math.round(
+        completedMin * (mathPlanned / (plannedMin || 1)),
+      );
+      const rwCompleted = Math.round(
+        completedMin * (rwPlanned / (plannedMin || 1)),
+      );
+      const mathPct =
+        mathPlanned > 0
+          ? Math.min(100, Math.round((mathCompleted / mathPlanned) * 100))
+          : 0;
+      const rwPct =
+        rwPlanned > 0
+          ? Math.min(100, Math.round((rwCompleted / rwPlanned) * 100))
+          : 0;
 
       return {
         dateKey: cell.dateKey,
@@ -250,7 +310,9 @@ export default function CalendarPage() {
     });
   }, [monthGrid, monthDataMap]);
 
-  const selectedDay = selectedDateKey ? calendarDays.find((d) => d.dateKey === selectedDateKey) ?? null : null;
+  const selectedDay = selectedDateKey
+    ? (calendarDays.find((d) => d.dateKey === selectedDateKey) ?? null)
+    : null;
 
   const monthLabel = currentMonth.toLocaleDateString("en-US", {
     month: "long",
@@ -258,13 +320,17 @@ export default function CalendarPage() {
   });
 
   const handlePrevMonth = () => {
-    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+    setCurrentMonth(
+      (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1),
+    );
     setSelectedDateKey(null);
     setMonthError(null);
   };
 
   const handleNextMonth = () => {
-    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    setCurrentMonth(
+      (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1),
+    );
     setSelectedDateKey(null);
     setMonthError(null);
   };
@@ -287,7 +353,9 @@ export default function CalendarPage() {
 
   const handleRegeneratePlan = async () => {
     if (!profile) return;
-    const confirmed = window.confirm("Regenerate will rebuild future plan days, including user overrides. Continue?");
+    const confirmed = window.confirm(
+      "Regenerate will rebuild future plan days, including user overrides. Continue?",
+    );
     if (!confirmed) return;
     setActionLoading(true);
     setMonthError(null);
@@ -305,10 +373,19 @@ export default function CalendarPage() {
 
   const handleQuickEditSettings = async () => {
     if (!profile) return;
-    const dailyMinutesInput = window.prompt("Daily study minutes", String(profile.daily_minutes ?? 30));
+    const dailyMinutesInput = window.prompt(
+      "Daily study minutes",
+      String(profile.daily_minutes ?? 30),
+    );
     if (dailyMinutesInput == null) return;
-    const parsedMinutes = Math.max(10, Math.min(240, parseInt(dailyMinutesInput, 10) || 30));
-    const examDateInput = window.prompt("Exam date (YYYY-MM-DD, optional)", profile.exam_date ?? "");
+    const parsedMinutes = Math.max(
+      10,
+      Math.min(240, parseInt(dailyMinutesInput, 10) || 30),
+    );
+    const examDateInput = window.prompt(
+      "Exam date (YYYY-MM-DD, optional)",
+      profile.exam_date ?? "",
+    );
     if (examDateInput == null) return;
 
     setActionLoading(true);
@@ -334,21 +411,29 @@ export default function CalendarPage() {
       setMonthError("Past days are immutable.");
       return;
     }
-    const nextMinutesInput = window.prompt("Planned minutes for this day", String(day.plannedMin || 30));
+    const nextMinutesInput = window.prompt(
+      "Planned minutes for this day",
+      String(day.plannedMin || 30),
+    );
     if (nextMinutesInput == null) return;
     const nextMinutes = Math.max(0, parseInt(nextMinutesInput, 10) || 0);
     const currentTask = day.tasks?.[0];
     const currentKind =
       currentTask?.task_type === "full_length"
         ? "full_length"
-        : currentTask?.task_type === "review_practice" || currentTask?.task_type === "review_full_length"
+        : currentTask?.task_type === "review_practice" ||
+            currentTask?.task_type === "review_full_length"
           ? "review"
           : "practice";
-    const taskKindInput = window.prompt("Override task type (practice/review/full_length)", currentKind);
+    const taskKindInput = window.prompt(
+      "Override task type (practice/review/full_length)",
+      currentKind,
+    );
     if (taskKindInput == null) return;
     const taskKindNormalized = taskKindInput.trim().toLowerCase();
     const taskKind: "practice" | "review" | "full_length" =
-      taskKindNormalized === "full_length" || taskKindNormalized === "full-length"
+      taskKindNormalized === "full_length" ||
+      taskKindNormalized === "full-length"
         ? "full_length"
         : taskKindNormalized === "review"
           ? "review"
@@ -362,7 +447,10 @@ export default function CalendarPage() {
       domain: string | null;
       skill_code: string | null;
       subskill: string | null;
-      target_type: "practice_target" | "review_session" | "scheduled_full_length";
+      target_type:
+        | "practice_target"
+        | "review_session"
+        | "scheduled_full_length";
       review_session_id: string | null;
       exam_id: string | null;
     } = {
@@ -378,13 +466,21 @@ export default function CalendarPage() {
     if (taskKind === "practice") {
       const sectionInput = window.prompt("Practice section (Math/RW)", section);
       if (sectionInput == null) return;
-      section = sectionInput.toLowerCase().includes("rw") ? "Reading & Writing" : "Math";
+      section = sectionInput.toLowerCase().includes("rw")
+        ? "Reading & Writing"
+        : "Math";
       target.section = section === "Math" ? "MATH" : "RW";
       taskType = "practice";
       mode = "focused";
-      const domainInput = window.prompt("Practice target domain (required)", currentTask?.target?.domain ?? "");
+      const domainInput = window.prompt(
+        "Practice target domain (required)",
+        currentTask?.target?.domain ?? "",
+      );
       if (domainInput == null) return;
-      const skillInput = window.prompt("Practice target skill code (required)", currentTask?.target?.skill_code ?? "");
+      const skillInput = window.prompt(
+        "Practice target skill code (required)",
+        currentTask?.target?.skill_code ?? "",
+      );
       if (skillInput == null) return;
       target.domain = domainInput.trim() || null;
       target.skill_code = skillInput.trim() || null;
@@ -398,7 +494,10 @@ export default function CalendarPage() {
       section = "";
       mode = "review";
       target.target_type = "review_session";
-      const reviewSessionId = window.prompt("Review session ID (required)", currentTask?.target?.review_session_id ?? "");
+      const reviewSessionId = window.prompt(
+        "Review session ID (required)",
+        currentTask?.target?.review_session_id ?? "",
+      );
       if (reviewSessionId == null) return;
       target.review_session_id = reviewSessionId.trim() || null;
       if (!target.review_session_id) {
@@ -410,7 +509,10 @@ export default function CalendarPage() {
       section = "";
       mode = "full-length";
       target.target_type = "scheduled_full_length";
-      const examId = window.prompt("Full-length exam ID (required)", currentTask?.target?.exam_id ?? "");
+      const examId = window.prompt(
+        "Full-length exam ID (required)",
+        currentTask?.target?.exam_id ?? "",
+      );
       if (examId == null) return;
       target.exam_id = examId.trim() || null;
       if (!target.exam_id) {
@@ -530,7 +632,10 @@ export default function CalendarPage() {
     return (
       <AppShell>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <PremiumUpgradePrompt reason={profilePremiumReason} mode="inline" />
+          <PremiumUpgradePrompt
+            featureBenefit="your study calendar and plan"
+            mode="inline"
+          />
         </div>
       </AppShell>
     );
@@ -538,7 +643,9 @@ export default function CalendarPage() {
 
   if (profileLoadError && !profilePremiumReason) {
     const profileErrorMessage =
-      profileLoadError instanceof Error ? profileLoadError.message : "Failed to load calendar profile.";
+      profileLoadError instanceof Error
+        ? profileLoadError.message
+        : "Failed to load calendar profile.";
     const profileNoticeMessage = isTransportError(profileLoadError)
       ? profileErrorMessage
       : toUserFacingMessage(profileLoadError).message;
@@ -577,26 +684,52 @@ export default function CalendarPage() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-start justify-between mb-8 gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Study Plan</p>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">Academic Projection</h1>
-            <p className="text-sm text-muted-foreground mt-1">Live calendar generated from your profile, progress, and plan services.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+              Study Plan
+            </p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">
+              Academic Projection
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Live calendar generated from your profile, progress, and plan
+              services.
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <Button variant="outline" size="sm" onClick={handleQuickEditSettings} disabled={actionLoading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleQuickEditSettings}
+              disabled={actionLoading}
+            >
               <Settings className="h-4 w-4 mr-2" />
               Edit Settings
             </Button>
-            <Button variant="outline" size="sm" onClick={handleRefreshPlan} disabled={actionLoading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${actionLoading ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshPlan}
+              disabled={actionLoading}
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${actionLoading ? "animate-spin" : ""}`}
+              />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={handleRegeneratePlan} disabled={actionLoading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRegeneratePlan}
+              disabled={actionLoading}
+            >
               Regenerate
             </Button>
             <Button variant="outline" size="icon" onClick={handlePrevMonth}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm font-medium min-w-[140px] text-center">{monthLabel}</span>
+            <span className="text-sm font-medium min-w-[140px] text-center">
+              {monthLabel}
+            </span>
             <Button variant="outline" size="icon" onClick={handleNextMonth}>
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -614,7 +747,10 @@ export default function CalendarPage() {
           if (monthPremiumReason && !monthLoading) {
             return (
               <div className="mb-6">
-                <PremiumUpgradePrompt reason={monthPremiumReason} mode="inline" />
+                <PremiumUpgradePrompt
+                  featureBenefit="your study calendar and plan"
+                  mode="inline"
+                />
               </div>
             );
           }
@@ -623,21 +759,19 @@ export default function CalendarPage() {
             const monthNoticeMessage = isTransportError(monthErrorObj)
               ? monthError
               : toUserFacingMessage(monthErrorObj).message;
-            return (
-              isSessionError(monthErrorObj) ? (
-                <SessionNotice
-                  className="mb-6"
-                  message={monthNoticeMessage}
-                  onRefreshSession={() => window.location.reload()}
-                />
-              ) : (
-                <RecoveryNotice
-                  className="mb-6"
-                  message={monthNoticeMessage}
-                  onRetry={loadMonthData}
-                  retryLabel="Retry"
-                />
-              )
+            return isSessionError(monthErrorObj) ? (
+              <SessionNotice
+                className="mb-6"
+                message={monthNoticeMessage}
+                onRefreshSession={() => window.location.reload()}
+              />
+            ) : (
+              <RecoveryNotice
+                className="mb-6"
+                message={monthNoticeMessage}
+                onRetry={loadMonthData}
+                retryLabel="Retry"
+              />
             );
           }
 
@@ -648,7 +782,9 @@ export default function CalendarPage() {
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-2 rounded-lg border border-orange-200/70">
             <Flame className="h-5 w-5" />
-            <span className="text-sm font-semibold">{streak.current} day streak</span>
+            <span className="text-sm font-semibold">
+              {streak.current} day streak
+            </span>
           </div>
           <div className="text-sm text-muted-foreground bg-secondary/50 px-3 py-2 rounded-lg">
             Longest: {streak.longest} days
@@ -681,7 +817,11 @@ export default function CalendarPage() {
   );
 }
 
-function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void }) {
+function ProfileSetupPanel({
+  onSave,
+}: {
+  onSave: (profile: StudyProfile) => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dailyMinutes, setDailyMinutes] = useState(30);
@@ -694,7 +834,8 @@ function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void
     setSaving(true);
     setError(null);
     try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago";
+      const timezone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago";
       const profile = await saveCalendarProfile({
         daily_minutes: dailyMinutes,
         baseline_score: baselineScore ? parseInt(baselineScore, 10) : null,
@@ -713,10 +854,15 @@ function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void
   return (
     <div className="max-w-md mx-auto">
       <div className="bg-card rounded-xl border border-border/60 p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Initial Setup</p>
-        <h2 className="text-xl font-semibold text-foreground mb-4">Set Up Your Study Plan</h2>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+          Initial Setup
+        </p>
+        <h2 className="text-xl font-semibold text-foreground mb-4">
+          Set Up Your Study Plan
+        </h2>
         <p className="text-sm text-muted-foreground mb-6">
-          Tell us about your goals so we can create a personalized study calendar.
+          Tell us about your goals so we can create a personalized study
+          calendar.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -728,7 +874,9 @@ function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void
               min={5}
               max={600}
               value={dailyMinutes}
-              onChange={(e) => setDailyMinutes(parseInt(e.target.value, 10) || 30)}
+              onChange={(e) =>
+                setDailyMinutes(parseInt(e.target.value, 10) || 30)
+              }
             />
           </div>
 
@@ -828,7 +976,9 @@ function MonthGrid({
                 ${isToday ? "bg-primary/10" : ""}
               `}
             >
-              <span className={`text-xs font-medium ${d.isCurrentMonth ? "text-foreground" : "text-muted-foreground"}`}>
+              <span
+                className={`text-xs font-medium ${d.isCurrentMonth ? "text-foreground" : "text-muted-foreground"}`}
+              >
                 {d.day}
               </span>
               {d.isCurrentMonth && (
@@ -888,14 +1038,19 @@ function DayDetailPanel({
   const handleStartPractice = () => {
     if (!day || !day.focus || day.focus.length === 0) return;
     const primarySection = day.focus[0].section;
-    const route = primarySection === "Math" ? "/math-practice" : "/reading-writing-practice";
+    const route =
+      primarySection === "Math"
+        ? "/math-practice"
+        : "/reading-writing-practice";
     navigate(`${route}?calendarDayId=${day.dateKey}`);
   };
 
   if (!day || !day.isCurrentMonth) {
     return (
       <div className="bg-card rounded-xl border border-border/60 p-6">
-        <p className="text-muted-foreground text-sm">Select a day to view details</p>
+        <p className="text-muted-foreground text-sm">
+          Select a day to view details
+        </p>
       </div>
     );
   }
@@ -910,7 +1065,9 @@ function DayDetailPanel({
   });
 
   const studiedSections =
-    day.tasks?.filter((t) => t.minutes > 0 && Boolean(t.section)).map((t) => t.section as string) ?? [];
+    day.tasks
+      ?.filter((t) => t.minutes > 0 && Boolean(t.section))
+      .map((t) => t.section as string) ?? [];
   const hasPlan = day.plannedMin > 0;
   const hasTasks = (day.tasks?.length ?? 0) > 0;
   const isPastDay = isDateBeforeToday(day.dateKey, todayDateKey);
@@ -921,7 +1078,9 @@ function DayDetailPanel({
     <div className="bg-card rounded-xl border border-border/60 p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">{dateLabel}</h2>
-        <span className={`px-2 py-1 rounded text-xs font-medium ${badge.className}`}>
+        <span
+          className={`px-2 py-1 rounded text-xs font-medium ${badge.className}`}
+        >
           {badge.label}
         </span>
       </div>
@@ -929,11 +1088,15 @@ function DayDetailPanel({
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-secondary/50 rounded-lg p-3">
           <p className="text-xs text-muted-foreground">Planned</p>
-          <p className="text-lg font-semibold text-foreground">{day.plannedMin} min</p>
+          <p className="text-lg font-semibold text-foreground">
+            {day.plannedMin} min
+          </p>
         </div>
         <div className="bg-secondary/50 rounded-lg p-3">
           <p className="text-xs text-muted-foreground">Completed</p>
-          <p className="text-lg font-semibold text-foreground">{day.completedMin} min</p>
+          <p className="text-lg font-semibold text-foreground">
+            {day.completedMin} min
+          </p>
         </div>
       </div>
 
@@ -989,7 +1152,10 @@ function DayDetailPanel({
               const statusLabel = task.status ?? "planned";
               const taskId = task.id;
               return (
-                <div key={taskId || `${task.type}-${index}`} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                <div
+                  key={taskId || `${task.type}-${index}`}
+                  className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
+                >
                   <div>
                     <p className="text-sm font-medium text-foreground">
                       {task.section || task.type}
@@ -1001,15 +1167,24 @@ function DayDetailPanel({
                       <p className="text-xs text-muted-foreground">
                         Target: {task.target.target_type ?? "practice_target"}
                         {task.target.domain ? ` | ${task.target.domain}` : ""}
-                        {task.target.skill_code ? ` | ${task.target.skill_code}` : ""}
-                        {task.target.review_session_id ? ` | session ${task.target.review_session_id}` : ""}
-                        {task.target.exam_id ? ` | exam ${task.target.exam_id}` : ""}
+                        {task.target.skill_code
+                          ? ` | ${task.target.skill_code}`
+                          : ""}
+                        {task.target.review_session_id
+                          ? ` | session ${task.target.review_session_id}`
+                          : ""}
+                        {task.target.exam_id
+                          ? ` | exam ${task.target.exam_id}`
+                          : ""}
                       </p>
                     )}
                     {task.replaces_override && (
                       <p className="text-xs text-orange-600">
                         Replaced override task
-                        {task.replacement_source ? ` via ${task.replacement_source}` : ""}.
+                        {task.replacement_source
+                          ? ` via ${task.replacement_source}`
+                          : ""}
+                        .
                       </p>
                     )}
                   </div>
@@ -1018,7 +1193,14 @@ function DayDetailPanel({
                     variant="outline"
                     size="sm"
                     disabled={!taskId || !canMutate}
-                    onClick={() => taskId && onTaskStatusChange(day, taskId, isCompleted ? "planned" : "completed")}
+                    onClick={() =>
+                      taskId &&
+                      onTaskStatusChange(
+                        day,
+                        taskId,
+                        isCompleted ? "planned" : "completed",
+                      )
+                    }
                   >
                     {isCompleted ? "Mark Planned" : "Mark Complete"}
                   </Button>
@@ -1031,14 +1213,31 @@ function DayDetailPanel({
 
       {hasPlan && (
         <div className="space-y-2">
-          <Button variant="outline" className="w-full" onClick={() => onEditDay(day)} disabled={!canMutate}>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onEditDay(day)}
+            disabled={!canMutate}
+          >
             Edit This Day
           </Button>
-          <Button variant="outline" className="w-full" onClick={() => onRegenerateDay(day)} disabled={!canMutate}>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onRegenerateDay(day)}
+            disabled={!canMutate}
+          >
             Regenerate Day
           </Button>
-          <Button variant="outline" className="w-full" onClick={() => onResetDayToAuto(day)} disabled={!canResetToAuto}>
-            {day.isUserOverride ? "Reset to Auto" : "Reset to Auto (already auto)"}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onResetDayToAuto(day)}
+            disabled={!canResetToAuto}
+          >
+            {day.isUserOverride
+              ? "Reset to Auto"
+              : "Reset to Auto (already auto)"}
           </Button>
         </div>
       )}
@@ -1062,7 +1261,8 @@ function DayDetailPanel({
 
       {!hasPlan && (
         <p className="text-sm text-muted-foreground">
-          No plan is set for this day. Plans are generated by your study schedule.
+          No plan is set for this day. Plans are generated by your study
+          schedule.
         </p>
       )}
     </div>
