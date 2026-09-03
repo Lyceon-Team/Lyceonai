@@ -156,7 +156,7 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     session.id = GUARDIAN;
     session.role = "guardian";
     await pg.query(`DELETE FROM public.guardian_links`);
-    await pg.query(`DELETE FROM public.notification_outbox`);
+    await pg.query(`DELETE FROM public.notification_events`);
     await pg.query(`DELETE FROM public.rate_limit_ledger`);
     await pg.query(
       `UPDATE public.profiles SET student_link_code = NULL, student_link_code_issued_at = NULL`,
