@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import type { CanonicalSectionCode } from "../../../../shared/question-bank-contract";
 
 export type PlannerMode = "auto" | "custom";
 export type FullTestCadence = "weekly" | "biweekly" | "none";
@@ -32,7 +33,7 @@ export type StudyProfileSettings = {
 };
 
 export type SkillSignal = {
-  section: "MATH" | "RW";
+  section: CanonicalSectionCode;
   skillCode: string;
   domain: string;
   subskill: string | null;
@@ -42,7 +43,7 @@ export type SkillSignal = {
 };
 
 export type PrioritySkill = {
-  section: "MATH" | "RW";
+  section: CanonicalSectionCode;
   domain: string | null;
   skillCode: string;
   skillLabel: string;
@@ -54,7 +55,7 @@ export type PrioritySkill = {
 
 export type AttemptSignal = {
   attemptedAt: string;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   skillCode: string | null;
   questionCanonicalId: string | null;
   isCorrect: boolean;
@@ -72,14 +73,14 @@ export type ExistingDaySignal = {
 export type ExistingTaskSignal = {
   dayDate: string;
   taskType: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   durationMinutes: number;
   sourceSkillCode: string | null;
 };
 
 export type PlannedTask = {
   taskType: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   durationMinutes: number;
   sourceSkillCode: string | null;
   sourceDomain: string | null;
@@ -93,7 +94,7 @@ export type PlannedDay = {
   dayDate: string;
   plannedMinutes: number;
   studyMinutesTarget: number;
-  focus: Array<{ section: "MATH" | "RW"; weight: number; skill_codes: string[] }>;
+  focus: Array<{ section: CanonicalSectionCode; weight: number; skill_codes: string[] }>;
   isExamDay: boolean;
   isTaperDay: boolean;
   isFullTestDay: boolean;
@@ -176,7 +177,7 @@ function yesterdayMinutes(skillCode: string, dayDate: string, attempts: AttemptS
 function rankSectionCandidates(params: {
   userId: string;
   dayDate: string;
-  section: "MATH" | "RW";
+  section: CanonicalSectionCode;
   dailyMinutes: number;
   timezone: string;
   candidates: SkillSignal[];
@@ -188,8 +189,8 @@ function rankSectionCandidates(params: {
     return [
       {
         section: params.section,
-        skillCode: params.section === "MATH" ? "math.algebra_basics" : "rw.command_of_evidence",
-        domain: params.section === "MATH" ? "math_foundations" : "rw_foundations",
+        skillCode: params.section === "M" ? "math.algebra_basics" : "rw.command_of_evidence",
+        domain: params.section === "M" ? "math_foundations" : "rw_foundations",
         subskill: null,
         masteryScore: 0.5,
         accuracy: 0.5,
@@ -233,22 +234,22 @@ function rankSectionCandidates(params: {
   return scored.map((entry) => entry.candidate);
 }
 
-function chooseTopBandCandidate(candidates: SkillSignal[], userId: string, dayDate: string, section: "MATH" | "RW"): SkillSignal {
+function chooseTopBandCandidate(candidates: SkillSignal[], userId: string, dayDate: string, section: CanonicalSectionCode): SkillSignal {
   const topBand = candidates.slice(0, Math.min(3, candidates.length));
   const index = stableHash(`${userId}|${dayDate}|${section}|band`) % topBand.length;
   return topBand[index];
 }
 
-function chooseCompressedMajorSection(dayDate: string, userId: string, existingTasks: ExistingTaskSignal[]): "MATH" | "RW" {
+function chooseCompressedMajorSection(dayDate: string, userId: string, existingTasks: ExistingTaskSignal[]): CanonicalSectionCode {
   const previousDay = DateTime.fromISO(dayDate).minus({ days: 1 }).toISODate();
   if (previousDay) {
     const previousTasks = existingTasks.filter((task) => task.dayDate === previousDay && task.section != null);
-    const math = previousTasks.filter((task) => task.section === "MATH").reduce((sum, task) => sum + task.durationMinutes, 0);
+    const math = previousTasks.filter((task) => task.section === "M").reduce((sum, task) => sum + task.durationMinutes, 0);
     const rw = previousTasks.filter((task) => task.section === "RW").reduce((sum, task) => sum + task.durationMinutes, 0);
     if (math > rw) return "RW";
-    if (rw > math) return "MATH";
+    if (rw > math) return "M";
   }
-  return stableHash(`${userId}|${dayDate}|compressed`) % 2 === 0 ? "MATH" : "RW";
+  return stableHash(`${userId}|${dayDate}|compressed`) % 2 === 0 ? "M" : "RW";
 }
 
 function pickWeakestPrioritySkill(prioritySkills?: PrioritySkill[]): PrioritySkill | null {
@@ -530,7 +531,7 @@ export function generateDeterministicPlan(params: {
       const rankedMath = rankSectionCandidates({
         userId: params.profile.userId,
         dayDate,
-        section: "MATH",
+        section: "M",
         dailyMinutes: params.profile.dailyMinutes,
         timezone: params.profile.timezone,
         candidates: params.skillSignals,
@@ -547,7 +548,7 @@ export function generateDeterministicPlan(params: {
         attempts: params.attempts,
         existingTasks: existingTaskList,
       });
-      const mathPick = chooseTopBandCandidate(rankedMath, params.profile.userId, dayDate, "MATH");
+      const mathPick = chooseTopBandCandidate(rankedMath, params.profile.userId, dayDate, "M");
       const rwPick = chooseTopBandCandidate(rankedRw, params.profile.userId, dayDate, "RW");
 
       const effectiveMinutes = isTaperDay ? Math.max(10, Math.round(params.profile.dailyMinutes * 0.4)) : params.profile.dailyMinutes;
@@ -556,9 +557,9 @@ export function generateDeterministicPlan(params: {
 
       if (effectiveMinutes < 25) {
         const majorSection = chooseCompressedMajorSection(dayDate, params.profile.userId, existingTaskList);
-        const minorSection: "MATH" | "RW" = majorSection === "MATH" ? "RW" : "MATH";
-        const majorPick = majorSection === "MATH" ? mathPick : rwPick;
-        const minorPick = minorSection === "MATH" ? mathPick : rwPick;
+        const minorSection: CanonicalSectionCode = majorSection === "M" ? "RW" : "M";
+        const majorPick = majorSection === "M" ? mathPick : rwPick;
+        const minorPick = minorSection === "M" ? mathPick : rwPick;
         const majorMinutes = Math.max(6, Math.round(sectionBudget * 0.7));
         const minorMinutes = Math.max(0, sectionBudget - majorMinutes);
 
@@ -591,7 +592,7 @@ export function generateDeterministicPlan(params: {
         const rwMinutes = Math.max(8, sectionBudget - mathMinutes);
         dayTasks.push({
           taskType: "practice",
-          section: "MATH",
+          section: "M",
           durationMinutes: mathMinutes,
           sourceSkillCode: mathPick.skillCode,
           sourceDomain: mathPick.domain,
@@ -634,7 +635,7 @@ export function generateDeterministicPlan(params: {
       }
 
       dayFocus.push(
-        { section: "MATH", weight: 0.5, skill_codes: [mathPick.skillCode] },
+        { section: "M", weight: 0.5, skill_codes: [mathPick.skillCode] },
         { section: "RW", weight: 0.5, skill_codes: [rwPick.skillCode] }
       );
     }

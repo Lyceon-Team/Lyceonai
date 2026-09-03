@@ -7,6 +7,8 @@ import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
+import { getEntitlementForProfile } from "../lib/account";
+import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
 
 /**
@@ -32,6 +34,8 @@ import {
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
+import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
+import { notificationEventId } from "../lib/notifications/event-id";
 
 const router = Router();
 
@@ -171,9 +175,42 @@ router.get(
       const entitled = await Promise.all(
         roster.map(async (student) => {
           try {
-            return await EntitlementService.isEntitlementActiveForProfile(
-              student.id,
-            );
+            /**
+             * SEQUENTIAL ON PURPOSE, inside one student's probe.
+             *
+             * `Promise.all([a(), b()])` orphans a()'s promise when b() throws
+             * SYNCHRONOUSLY — the array literal never finishes evaluating, so
+             * `Promise.all` is never called and nothing is ever attached to
+             * a(). The rejection then escapes this try/catch as an unhandled
+             * rejection, which is precisely how this surfaced: a test whose
+             * module mock omits one of these two exports makes the missing one
+             * a synchronous `TypeError`.
+             *
+             * The concurrency that matters is across STUDENTS (the `map` below
+             * is still a `Promise.all`), so this costs one extra round trip per
+             * student on a list that is single digits by construction.
+             */
+            const standingGood =
+              await EntitlementService.isEntitlementActiveForProfile(
+                student.id,
+              );
+            const entitlement = await getEntitlementForProfile(student.id);
+            /**
+             * ONE INTERPRETER OF (standing-good, tier, status), server side.
+             *
+             * @spec [owner ruling 2026-09-03] | @implemented [2026-09-03]
+             *
+             * `entitlement_lapsed` separates "nobody has ever paid for this
+             * student" from "a subscription for this student lapsed", which is
+             * the difference between offering checkout and offering the portal.
+             * The client is handed the derived booleans, never the status enum,
+             * so there is no second reading of the vocabulary in the browser.
+             */
+            return resolveEntitlementDisplay({
+              standingGood,
+              tier: entitlement?.tier ?? "free",
+              status: entitlement?.status ?? "missing",
+            });
           } catch (err) {
             logger.warn(
               "GUARDIAN",
@@ -181,7 +218,14 @@ router.get(
               "Entitlement probe failed; treating student as unfunded",
               { requestId, err },
             );
-            return false;
+            // Unfunded AND not lapsed: the safe direction is to offer a
+            // purchase, which the server re-decides, rather than to send them
+            // to a portal that may hold nothing for this student.
+            return {
+              effectiveAccess: false,
+              needsPaymentUpdate: false,
+              lapsed: false,
+            };
           }
         }),
       );
@@ -195,7 +239,8 @@ router.get(
       res.json({
         students: roster.map((student, i) => ({
           ...student,
-          has_active_entitlement: entitled[i] === true,
+          has_active_entitlement: entitled[i]?.effectiveAccess === true,
+          entitlement_lapsed: entitled[i]?.lapsed === true,
         })),
         requestId,
       });
@@ -310,30 +355,13 @@ router.post(
         requestId,
       );
 
-      // §36.1 step 6 in the shape SCL-080 leaves: the student is told, because they are the
-      // party whose data just became visible. Emission only — there is no dispatcher, so
-      // this is a row, not a message (CLAUDE.md, notification-outbox contract).
-      const { error: outboxError } = await supabaseServer
-        .from("notification_outbox")
-        .insert({
-          // Deterministic and insert-once: one notification per link, so a retry of this
-          // request cannot produce a second.
-          event_id: link.id,
-          event_type: "guardian_linked",
-          recipient_kind: "student",
-          recipient_profile_id: studentProfileId,
-          payload: { link_id: link.id, via: "student_link_code" },
-        });
-      if (outboxError && outboxError.code !== "23505") {
-        // Never swallowed, never fatal: the link is real and the student's access is
-        // unaffected by a missing notification row.
-        logger.warn(
-          "GUARDIAN",
-          "link_notify",
-          "Guardian link created but the outbox emission failed",
-          { requestId, reason: outboxError.message },
-        );
-      }
+      // Doc 01 §36.1 step 6 / contract §6.1. The RPC committed the link AND its notification
+      // event + messages in one transaction; deliver this event's email now — awaited, not
+      // fire-and-forget (Vercel may freeze the function after the response). The dispatcher
+      // never throws: a failed send stays queued with its error and the daily sweep retries.
+      await dispatchQueuedMessages({
+        eventId: notificationEventId("guardian_linked", link.id),
+      });
 
       return res.status(201).json({
         data: { link_id: link.id, student_profile_id: studentProfileId },

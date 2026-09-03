@@ -27,7 +27,7 @@ function hasCanonicalOptionMetadata(value: any): boolean {
 async function main() {
   const { data: headRows, error: headErr } = await supabase
     .from("questions")
-    .select("id, canonical_id, section_code, question_type, difficulty, source_type")
+    .select("id, canonical_id, section, question_type, difficulty, source_type")
     .limit(5);
 
   if (headErr) throw headErr;
@@ -36,7 +36,7 @@ async function main() {
 
   const { data: all, error: allErr } = await supabase
     .from("questions")
-    .select("id, section_code, question_type, difficulty, source_type, options, option_metadata, tags, competencies, provenance_chunk_ids");
+    .select("id, section, question_type, difficulty, source_type, options, option_metadata, tags, competencies, provenance_chunk_ids");
 
   if (allErr) throw allErr;
 
@@ -49,7 +49,12 @@ async function main() {
   let invalidJsonMetadata = 0;
 
   for (const row of all ?? []) {
-    if (row.section_code !== "MATH" && row.section_code !== "RW") invalidSectionCode++;
+    // The column is `questions.section`, CHECK-constrained to 'M' or 'RW'. This read
+    // `section_code` — a column that does not exist — and compared it against a
+    // spelling the CHECK rejects, so every one of the 5,301 published questions
+    // counted as invalid. A diagnostic that always reports total failure is worse
+    // than no diagnostic.
+    if (row.section !== "M" && row.section !== "RW") invalidSectionCode++;
     if (row.question_type !== "multiple_choice") invalidQuestionType++;
     if (![1, 2, 3].includes(row.difficulty)) invalidDifficulty++;
     if (![0, 1, 2, 3].includes(row.source_type)) invalidSourceType++;
@@ -61,7 +66,7 @@ async function main() {
   }
 
   console.log("[Verify] total:", all?.length ?? 0);
-  console.log("[Verify] invalid section_code:", invalidSectionCode);
+  console.log("[Verify] invalid section:", invalidSectionCode);
   console.log("[Verify] invalid question_type:", invalidQuestionType);
   console.log("[Verify] invalid difficulty:", invalidDifficulty);
   console.log("[Verify] invalid source_type:", invalidSourceType);

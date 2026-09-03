@@ -699,8 +699,8 @@ export function buildStudentFullLengthReportView(
     ...report,
     kpis: buildFullTestKpis({
       scaledTotal: report.scaledScore.total,
-      scaledRw: report.scaledScore.rw,
-      scaledMath: report.scaledScore.math,
+      scaledRw: report.scaledScore.RW,
+      scaledMath: report.scaledScore.M,
       totalCorrect: report.rawScore.total.correct,
       totalQuestions: report.rawScore.total.total,
     }),
@@ -907,8 +907,8 @@ export function projectGuardianFullLengthReportView(
   return {
     sessionId: view.sessionId,
     estimatedScore: {
-      rw: view.scaledScore.rw,
-      math: view.scaledScore.math,
+      rw: view.scaledScore.RW,
+      math: view.scaledScore.M,
       total: view.scaledScore.total,
     },
     completedAt: view.completedAt,

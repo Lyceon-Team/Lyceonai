@@ -41,7 +41,7 @@ describe('Auth Integration Tests', () => {
     it('should return 401 for practice sessions without auth', async () => {
       const res = await request(app)
         .post('/api/practice/sessions')
-        .send({ mode: 'flow', section: 'math' });
+        .send({ mode: 'flow', section: 'M' });
       expect([401, 404]).toContain(res.status);
     });
 
@@ -136,7 +136,7 @@ describe('Auth Integration Tests', () => {
       // For now, we just verify the endpoint exists and requires auth
       const res = await request(app)
         .post('/api/practice/sessions')
-        .send({ mode: 'flow', section: 'math' });
+        .send({ mode: 'flow', section: 'M' });
       
       expect([401, 404]).toContain(res.status); // Not authenticated
     });

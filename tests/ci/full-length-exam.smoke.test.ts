@@ -102,24 +102,24 @@ describe("Full-Length Exam Smoke Tests (No DB)", () => {
   describe("Adaptive Logic Constants", () => {
     it("should use correct adaptive thresholds", () => {
       // RW: 21+ correct (out of 27) → hard
-      expect(ADAPTIVE_THRESHOLDS.rw.hardThreshold).toBe(21);
+      expect(ADAPTIVE_THRESHOLDS.RW.hardThreshold).toBe(21);
 
       // Math: 15+ correct (out of 22) → hard
-      expect(ADAPTIVE_THRESHOLDS.math.hardThreshold).toBe(15);
+      expect(ADAPTIVE_THRESHOLDS.M.hardThreshold).toBe(15);
     });
 
     it("should use correct module configurations", () => {
       // RW modules: 32 minutes, 27 questions each
-      expect(MODULE_CONFIG.rw.module1.durationMs).toBe(32 * 60 * 1000);
-      expect(MODULE_CONFIG.rw.module1.questionCount).toBe(27);
-      expect(MODULE_CONFIG.rw.module2.durationMs).toBe(32 * 60 * 1000);
-      expect(MODULE_CONFIG.rw.module2.questionCount).toBe(27);
+      expect(MODULE_CONFIG.RW.module1.durationMs).toBe(32 * 60 * 1000);
+      expect(MODULE_CONFIG.RW.module1.questionCount).toBe(27);
+      expect(MODULE_CONFIG.RW.module2.durationMs).toBe(32 * 60 * 1000);
+      expect(MODULE_CONFIG.RW.module2.questionCount).toBe(27);
 
       // Math modules: 35 minutes, 22 questions each
-      expect(MODULE_CONFIG.math.module1.durationMs).toBe(35 * 60 * 1000);
-      expect(MODULE_CONFIG.math.module1.questionCount).toBe(22);
-      expect(MODULE_CONFIG.math.module2.durationMs).toBe(35 * 60 * 1000);
-      expect(MODULE_CONFIG.math.module2.questionCount).toBe(22);
+      expect(MODULE_CONFIG.M.module1.durationMs).toBe(35 * 60 * 1000);
+      expect(MODULE_CONFIG.M.module1.questionCount).toBe(22);
+      expect(MODULE_CONFIG.M.module2.durationMs).toBe(35 * 60 * 1000);
+      expect(MODULE_CONFIG.M.module2.questionCount).toBe(22);
     });
 
     it("should have correct break duration", () => {

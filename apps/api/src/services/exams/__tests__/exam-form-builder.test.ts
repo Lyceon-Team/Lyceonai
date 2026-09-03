@@ -1,10 +1,14 @@
 // apps/api/src/services/exams/__tests__/exam-form-builder.test.ts
 import { describe, expect, it } from 'vitest';
-import { buildGeneratedFullLengthFormFromPool, type QuestionRow } from '../exam-form-builder';
+import {
+  buildGeneratedFullLengthFormFromPool,
+  type QuestionRow,
+  type SectionCode,
+} from '../exam-form-builder';
 
 function q(
   canonical_id: string,
-  section_code: 'RW' | 'MATH',
+  section_code: SectionCode,
   domain: string,
   skill: string,
   difficulty: 'easy' | 'medium' | 'hard'
@@ -12,7 +16,7 @@ function q(
   return {
     canonical_id,
     section_code,
-    section: section_code === 'MATH' ? 'Math' : 'Reading and Writing',
+    section: section_code,
     question_type: 'multiple_choice',
     domain,
     skill,
@@ -44,7 +48,7 @@ function makePool(): QuestionRow[] {
   for (const d of mathDomains) {
     for (let i = 0; i < 50; i++) {
       const difficulty = i < 18 ? 'easy' : i < 36 ? 'medium' : 'hard';
-      out.push(q(`M_${d}_${c++}`, 'MATH', d, `skill_${i % 7}`, difficulty));
+      out.push(q(`M_${d}_${c++}`, 'M', d, `skill_${i % 7}`, difficulty));
     }
   }
 

@@ -211,13 +211,17 @@ function applyFixtureRules(props, canonical, report) {
   //   `domain` is the discriminator. The canonical (section, domain) pair is what these
   //   rules are ABOUT, it exists only on records shaped like database rows, and exam-module
   //   state has no domain at all.
-  //   NOT YET ENABLED: adding `props.has("domain")` as a second discriminator surfaces 26
-  //   candidate findings across 8 files (section "Math"/"MATH", snake_case domains and
-  //   skills, and one flatly wrong (RW, "Algebra") pair). Those are real candidates, but
-  //   they belong to the owner's parked section-vocabulary audit, not to a gate-plumbing
-  //   change. Enabling it here would fail the build on a question nobody has ruled on yet.
+  //
+  //   `domain` IS NOW ENABLED as a second discriminator (2026-09-02). It was withheld
+  //   because it surfaced 26 findings across 7 files that belonged to the owner's parked
+  //   section-vocabulary audit; that audit has been ruled on and those findings are closed,
+  //   so the discriminator no longer fails the build on an open question. The caveat it was
+  //   written against is also gone: `SectionType = "rw" | "math"` was deleted, so there is
+  //   no longer a legitimate exam fixture carrying a non-canonical section, and this gate
+  //   needs no exemption for one.
   const looksLikeMasteryFixture =
-    section !== undefined && ROW_MARKERS.some((marker) => props.has(marker));
+    section !== undefined &&
+    (props.has("domain") || ROW_MARKERS.some((marker) => props.has(marker)));
   if (!looksLikeMasteryFixture || section.value === null) {
     return;
   }
@@ -260,22 +264,33 @@ function applyFixtureRules(props, canonical, report) {
 }
 
 /** TypeScript/JavaScript source: object literals, located by AST position. */
-function checkSourceFile(relPath, source, canonical, violations) {
+function checkSourceFile(relPath, source, canonical, violations, exemptions) {
   const sf = ts.createSourceFile(
     resolve(REPO_ROOT, relPath),
     source,
     ts.ScriptTarget.Latest,
     true,
   );
+  const lines = source.split("\n");
   const visit = (node) => {
     if (ts.isObjectLiteralExpression(node)) {
       const props = stringLiteralProps(node, sf);
-      applyFixtureRules(props, canonical, (key, rule, message) => {
-        const entry = props.get(key);
-        const anchor = entry ? entry.node : node;
-        const { line } = sf.getLineAndCharacterOfPosition(anchor.getStart(sf));
-        violations.push({ file: relPath, line: line + 1, rule, message });
-      });
+      const { line: objectLine } = sf.getLineAndCharacterOfPosition(
+        node.getStart(sf),
+      );
+      // Keyed by the MARKER, not by the object, so one marker governing nested literals
+      // is reported once rather than once per level.
+      const markerLine = negativeFixtureMarkerLine(lines, objectLine);
+      if (markerLine > 0) {
+        exemptions.add(`${relPath}:${markerLine}`);
+      } else {
+        applyFixtureRules(props, canonical, (key, rule, message) => {
+          const entry = props.get(key);
+          const anchor = entry ? entry.node : node;
+          const { line } = sf.getLineAndCharacterOfPosition(anchor.getStart(sf));
+          violations.push({ file: relPath, line: line + 1, rule, message });
+        });
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -396,13 +411,40 @@ function checkUnparsedFile(relPath, source, violations) {
   });
 }
 
+/**
+ * DELIBERATE NEGATIVE FIXTURES.
+ *
+ * A test whose whole purpose is to prove the database REJECTS a bad value must contain
+ * that bad value. `tests/assemble-batch.test.ts` asserts the ingestion gate raises
+ * DOMAIN_SECTION_MISMATCH for the pair (RW, "Algebra"); rewriting that fixture to be
+ * canonical would delete the assertion's subject.
+ *
+ * The exemption is scoped to ONE object literal, must sit within three lines above it,
+ * and must carry a reason. It is not a file-level or rule-level switch: a file with an
+ * exempt fixture is still fully checked everywhere else. Exemptions are COUNTED and
+ * printed on success, so they cannot accumulate unnoticed — the failure mode this gate
+ * exists to prevent is a check that quietly stops checking.
+ */
+const NEGATIVE_FIXTURE_MARKER =
+  /canonicality-gate:\s*negative-fixture\s*[-—:]\s*\S+/;
+const MARKER_LOOKBACK_LINES = 3;
+
+/** Returns the 1-indexed line of the governing marker, or 0 if there is none. */
+function negativeFixtureMarkerLine(lines, objectStartLine) {
+  const from = Math.max(0, objectStartLine - 1 - MARKER_LOOKBACK_LINES);
+  for (let i = from; i < objectStartLine; i += 1) {
+    if (NEGATIVE_FIXTURE_MARKER.test(lines[i] ?? "")) return i + 1;
+  }
+  return 0;
+}
+
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"];
 const JSON_EXTENSIONS = [".json", ".ndjson"];
 
-function checkFile(relPath, canonical, violations) {
+function checkFile(relPath, canonical, violations, exemptions) {
   const source = readFileSync(resolve(REPO_ROOT, relPath), "utf8");
   if (SOURCE_EXTENSIONS.some((ext) => relPath.endsWith(ext))) {
-    checkSourceFile(relPath, source, canonical, violations);
+    checkSourceFile(relPath, source, canonical, violations, exemptions);
     return;
   }
   if (JSON_EXTENSIONS.some((ext) => relPath.endsWith(ext))) {
@@ -437,8 +479,9 @@ function main() {
   }
 
   const violations = [];
+  const exemptions = new Set();
   for (const file of files) {
-    checkFile(file, canonical, violations);
+    checkFile(file, canonical, violations, exemptions);
   }
 
   if (violations.length > 0) {
@@ -460,6 +503,13 @@ function main() {
   console.log(
     `OK: fixture canonicality — ${files.length} test file(s) scanned, no non-canonical (section, domain, skill) fixture found.`,
   );
+  // Printed on every green run. An exemption that nobody sees is an exemption that grows.
+  console.log(
+    `    ${exemptions.size} deliberate negative fixture(s) exempt by marker:`,
+  );
+  for (const e of [...exemptions].sort()) {
+    console.log(`      ${e}`);
+  }
 }
 
 main();

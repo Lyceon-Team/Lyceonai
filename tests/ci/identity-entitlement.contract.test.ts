@@ -250,6 +250,12 @@ describe("Identity + Entitlement Runtime Contract", () => {
       hasPremiumAccess: true,
       hasActiveLink: true,
       studentEntitlementStatus: "active",
+      // Both facts, because the route now reaches `resolveEntitlementDisplay`
+      // with the SAME two inputs the self-pay branch uses (owner ruling
+      // 2026-09-03). A fixture carrying only the status would be asserting
+      // against a shape the real fold no longer returns.
+      studentEntitlementTier: "premium",
+      studentStandingGood: true,
     });
 
     const res = await request(await billingApp()).get("/api/billing/status");
@@ -277,6 +283,8 @@ describe("Identity + Entitlement Runtime Contract", () => {
       hasPremiumAccess: false,
       hasActiveLink: true,
       studentEntitlementStatus: "canceled",
+      studentEntitlementTier: "premium",
+      studentStandingGood: false,
     });
 
     const res = await request(await billingApp()).get("/api/billing/status");
@@ -776,20 +784,44 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
   // --- entitled set + live pricing ---------------------------------------------
 
+  /**
+   * `effectiveAccess` is the CONJUNCTION of two independent facts, and this
+   * table is the proof that neither one alone decides it.
+   *
+   * @spec [SCL-029 the platform predicate; Doc 01 V8 §31.2 the product check;
+   *        owner ruling 2026-09-03 "one resolver, both branches"]
+   *
+   * The version this replaces enumerated statuses and asserted the route's own
+   * TS `Set(["active","past_due","trialing"])` mirror of `entitlement_active()`.
+   * That mirror is deleted: the standing-good half now comes from the SQL
+   * predicate through `EntitlementService`, so mocking the predicate is what
+   * proves the route CONSULTS it instead of re-deriving it. `tier` is varied
+   * independently because a row that is billing-healthy on the FREE tier grants
+   * nothing, and the previous table — every case pinned to `tier: "premium"` —
+   * could not have caught a route that ignored tier. The guardian branch did
+   * exactly that.
+   */
   it.each([
-    ["active", true],
-    ["past_due", true],
-    ["trialing", true],
-    ["canceled", false],
-    ["unpaid", false],
+    ["active", true, "premium", true],
+    ["past_due", true, "premium", true],
+    ["trialing", true, "premium", true],
+    ["canceled", false, "premium", false],
+    ["unpaid", false, "premium", false],
+    // Standing good, wrong product: access is refused, and only the tier half
+    // can refuse it.
+    ["active", true, "free", false],
   ])(
-    "reports effectiveAccess=%s for premium/%s per the canonical entitled set",
-    async (status, expected) => {
+    "effectiveAccess is predicate(%s)=%s AND tier=%s -> %s",
+    async (status, standingGood, tier, expected) => {
       accountMocks.getEntitlementForProfile.mockResolvedValueOnce({
-        tier: "premium",
+        tier,
         status,
         current_period_end: null,
         stripe_subscription_id: "sub_1",
+      });
+      entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+        ok: true,
+        active: standingGood,
       });
 
       const res = await request(await billingApp()).get("/api/billing/status");
@@ -798,6 +830,102 @@ describe("Identity + Entitlement Runtime Contract", () => {
       expect(res.body.effectiveAccess).toBe(expected);
     },
   );
+
+  /**
+   * The ONE ANSWER rule, asserted as one answer.
+   *
+   * A guardian's derived verdict and the student's own verdict are produced by
+   * the same function from the same two facts, so for identical inputs the two
+   * branches of this one route must return identical `effectiveAccess`. Before
+   * 2026-09-03 they could not: the self-pay branch applied `tier`, the guardian
+   * branch applied none, so `tier: "free"` + standing good answered `false` for
+   * a student and `true` for their guardian.
+   */
+  it("answers identically for a student and for their guardian on one row", async () => {
+    const row = {
+      tier: "free" as const,
+      status: "active" as const,
+      current_period_end: null,
+      stripe_subscription_id: "sub_1",
+    };
+
+    accountMocks.getEntitlementForProfile.mockResolvedValueOnce(row);
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+      ok: true,
+      active: true,
+    });
+    const studentRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    authState.currentUser = {
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    } as any;
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: false,
+      hasActiveLink: true,
+      studentEntitlementStatus: row.status,
+      studentEntitlementTier: row.tier,
+      studentStandingGood: true,
+    });
+    const guardianRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    expect(studentRes.status).toBe(200);
+    expect(guardianRes.status).toBe(200);
+    expect(studentRes.body.effectiveAccess).toBe(false);
+    expect(guardianRes.body.effectiveAccess).toBe(
+      studentRes.body.effectiveAccess,
+    );
+  });
+
+  /**
+   * The fourth CTA state's two inputs, both of which had no writer before.
+   *
+   * @spec [owner ruling 2026-09-03 — "a lapsed subscriber with a Customer goes
+   *        to the portal, not to checkout"]
+   */
+  it("reports lapsed and hasBillingAccount so the client can offer the portal", async () => {
+    accountMocks.getEntitlementForProfile.mockResolvedValueOnce({
+      tier: "premium",
+      status: "canceled",
+      current_period_end: null,
+      stripe_subscription_id: "sub_1",
+    });
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+      ok: true,
+      active: false,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValueOnce("cus_test");
+
+    const res = await request(await billingApp()).get("/api/billing/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body.effectiveAccess).toBe(false);
+    expect(res.body.lapsed).toBe(true);
+    expect(res.body.hasBillingAccount).toBe(true);
+  });
+
+  it("reports lapsed=false for a profile that has never subscribed", async () => {
+    accountMocks.getEntitlementForProfile.mockResolvedValueOnce(null);
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+      ok: true,
+      active: false,
+    });
+
+    const res = await request(await billingApp()).get("/api/billing/status");
+
+    expect(res.status).toBe(200);
+    // No row at all is "offer them a purchase", never "offer them the portal".
+    expect(res.body.lapsed).toBe(false);
+    expect(res.body.hasBillingAccount).toBe(false);
+    expect(res.body.stripeStatus).toBe("missing");
+  });
 
   it("reads plan pricing live from Stripe rather than from hardcoded amounts", async () => {
     stripeMocks.pricesRetrieve.mockResolvedValue({

@@ -38,18 +38,22 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Link } from "wouter";
-import { isMathSection } from "@shared/section-display";
+import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-type SectionType = "rw" | "math" | "break";
+// `break` is a session lifecycle state, not a section, which is why this union is
+// not simply CanonicalSectionCode. The section members are now the codes the server
+// sends; the former "rw" | "math" spelling was deleted with the exam surface's local
+// SectionType.
+type ExamSectionState = "RW" | "M" | "break";
 
 interface ExamSession {
   id: string;
   status: string;
-  current_section: SectionType | null;
+  current_section: ExamSectionState | null;
   current_module: number | null;
   started_at: string | null;
   completed_at: string | null;
@@ -540,7 +544,8 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     moduleIndex: number | null,
   ): string => {
     if (!section || !moduleIndex) return "";
-    const label = isMathSection(section) ? "Math" : "Reading & Writing";
+    const label = sectionDisplayLabel(section);
+    if (!label) return "";
     return `${label} Module ${moduleIndex}`;
   };
 

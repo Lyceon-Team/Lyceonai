@@ -134,13 +134,13 @@ describe("ResumePracticePage — diagnostic session resume", () => {
   /**
    * Sanity: a regular math session resumes normally through the section resolver.
    */
-  it("regular math session renders CanonicalPracticePage with section='math'", () => {
+  it("regular math session renders CanonicalPracticePage with section='M'", () => {
     canonicalProps.captured = null;
 
     queryMock.useQuery.mockReturnValue({
       data: {
         sessionId: "math-session-001",
-        section: "math",
+        section: "M",
         mode: "balanced",
         state: "active",
         currentOrdinal: 3,
@@ -158,7 +158,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     expect(screen.getByTestId("canonical-practice-page")).not.toBeNull();
 
     expect(canonicalProps.captured).not.toBeNull();
-    expect(canonicalProps.captured!.section).toBe("math");
+    expect(canonicalProps.captured!.section).toBe("M");
     expect(canonicalProps.captured!.isDiagnostic).toBeUndefined();
     expect(canonicalProps.captured!.completionHref).toBe("/practice");
   });

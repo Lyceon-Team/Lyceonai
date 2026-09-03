@@ -5,6 +5,7 @@ import { Play, Shuffle, TrendingUp, Check, Upload, MessageSquare } from "lucide-
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import type { ProgressStats } from "@shared/schema";
+import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
 
 export default function ProgressSidebar() {
   // Progress stats API - DISABLED (endpoint not implemented)
@@ -62,7 +63,7 @@ export default function ProgressSidebar() {
           <div className="space-y-4">
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-foreground">Math Section</span>
+                <span className="text-sm font-medium text-foreground">{SECTION_LABEL_MATH} Section</span>
                 <span 
                   className="text-sm text-muted-foreground"
                   data-testid="text-math-progress"
@@ -79,7 +80,7 @@ export default function ProgressSidebar() {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-foreground">Reading & Writing</span>
+                <span className="text-sm font-medium text-foreground">{SECTION_LABEL_RW}</span>
                 <span 
                   className="text-sm text-muted-foreground"
                   data-testid="text-reading-progress"

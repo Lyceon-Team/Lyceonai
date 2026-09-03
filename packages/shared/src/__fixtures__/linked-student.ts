@@ -35,6 +35,13 @@ export type LinkedStudentOverrides = {
   /** `null` is a real state — an unnamed student falls back to email. */
   readonly displayName?: string | null;
   readonly entitled?: boolean;
+  /**
+   * A subscription existed for this student and stopped granting access.
+   * Defaults false — "never subscribed" is the ordinary state, and a fixture
+   * that silently claimed otherwise would make the portal CTA look reachable
+   * in tests that never meant to exercise it.
+   */
+  readonly lapsed?: boolean;
 };
 
 export function makeLinkedStudent(
@@ -50,5 +57,6 @@ export function makeLinkedStudent(
         : overrides.displayName,
     created_at: "2026-01-01T00:00:00.000Z",
     has_active_entitlement: overrides.entitled ?? false,
+    entitlement_lapsed: overrides.lapsed ?? false,
   });
 }

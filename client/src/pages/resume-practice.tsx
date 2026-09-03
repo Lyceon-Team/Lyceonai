@@ -30,8 +30,7 @@ import { Loader2 } from "lucide-react";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
 import {
-  isMathSection,
-  isRwSection,
+  sectionCodeForDisplay,
   sectionDisplayLabel,
 } from "@shared/section-display";
 
@@ -117,7 +116,7 @@ export default function ResumePracticePage() {
       <CanonicalPracticePage
         title="Diagnostic Assessment"
         badgeLabel="Diagnostic"
-        section="math"
+        section="M"
         sessionId={sessionId}
         isDiagnostic
         completionHref="/dashboard"
@@ -126,13 +125,9 @@ export default function ResumePracticePage() {
   }
 
   // ── Regular (single-section) sessions: resolve and guard ──
-  const resolvedSection: "math" | "reading_writing" | null = isMathSection(
-    session.section,
-  )
-    ? "math"
-    : isRwSection(session.section)
-      ? "reading_writing"
-      : null;
+  // The API now returns the canonical code, so this is a validation of a value the
+  // page already holds rather than a translation into a third spelling.
+  const resolvedSection = sectionCodeForDisplay(session.section);
 
   if (!resolvedSection) {
     return (

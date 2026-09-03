@@ -135,6 +135,17 @@ jobs:
       - name: Fixture canonicality self-test (proves each mutation turns it red)
         run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
 
+      # Five section vocabularies coexisted here: 'M'/'RW' (what all sixteen CHECK
+      # constraints accept), 'MATH'/'RW', 'Math'/'Reading & Writing', 'math'/'rw', and
+      # 'Math'/'RW'/'Random'. The last one reached storage — jsonb, inside
+      # practice_sessions.filters, the one section field no CHECK can see — and thirteen
+      # production rows held it. This gate keeps the count at one.
+      - name: Section vocabulary gate (no section literal outside M/RW off the display path)
+        run: node scripts/ci/section-vocabulary-gate.mjs
+
+      - name: Section vocabulary self-test (proves each mutation turns it red)
+        run: bash scripts/ci/section-vocabulary-gate.mutations.sh
+
       # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
       # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
       # cannot see it — only a text search over the committed tree can.
@@ -502,12 +513,32 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          out=$(pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts 2>&1)
-          echo "$out"
-          if echo "$out" | grep -q "skipped"; then
-            echo "FAIL: the SCL-080 PG suite SKIPPED rather than running."
-            exit 1
-          fi
+          node scripts/ci/vitest-summary-gate.mjs --selftest
+          # R10 (2026-09-03): the verdict is vitest's JSON report, not a substring grep over
+          # raw stdout — a log line containing "skipped" once turned a 7/7 pass red here.
+          pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-link-code.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
+            --file tests/ci/guardian-link-code.pg.ci.test.ts
+
+      # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
+      # The notifications rebuild's proof: every DB-touching case runs against the real
+      # migrations on the throwaway Postgres above, with no mocked table anywhere — the
+      # deleted stack passed CI for months by mocking tables that existed in no environment.
+      # Verdict read from vitest's JSON report (scripts/ci/vitest-summary-gate.mjs): a
+      # PG-backed suite that skips is a vacuous pass, and a substring grep cannot tell.
+      - name: Notifications rebuild → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/notifications.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-notifications.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-notifications.json \
+            --file tests/ci/notifications.pg.ci.test.ts
 
       - name: Guardian schema-truth conversions → real PG proof
         env:
@@ -517,16 +548,15 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          out=$(pnpm exec vitest run \
+          pnpm exec vitest run \
             tests/ci/guardian-checkout.contract.test.ts \
             tests/ci/guardian-premium-fold.contract.test.ts \
-            packages/shared/src/__tests__/guardian-student-schema.test.ts 2>&1)
-          echo "$out"
-          if echo "$out" | grep -q "skipped"; then
-            echo "FAIL: a PG-backed guardian suite SKIPPED rather than running."
-            echo "      These files gate on PGHOST; a skip here is a vacuous pass."
-            exit 1
-          fi
+            packages/shared/src/__tests__/guardian-student-schema.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-conversions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-conversions.json \
+            --file tests/ci/guardian-checkout.contract.test.ts \
+            --file tests/ci/guardian-premium-fold.contract.test.ts \
+            --file packages/shared/src/__tests__/guardian-student-schema.test.ts
 
       # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
       # The proof above can only be trusted if its cases can FAIL. Three times in three
@@ -683,6 +713,18 @@ jobs:
         run: bash scripts/ci/mastery-levels-gate.sh
         shell: bash
 
+      # The 2026-06-26 outage, reproduced as a permanent test: a corrupt row in one
+      # section must not abort a valid mastery write in another. SCL-054 / INV-05B-16.
+      - name: KPI quarantine gate (blast radius; excluded_event_count)
+        run: bash scripts/ci/05b-kpi-quarantine-gate.sh
+        shell: bash
+
+      # Proves the gate above can fail, and fails on the assertion each mutation names.
+      # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
+      - name: KPI quarantine gate — mutation proof
+        run: bash scripts/ci/05b-kpi-quarantine-gate.mutations.sh
+        shell: bash
+
       # The gate that would have caught this outage on day one.
       - name: Install PostgREST (real transport)
         run: |
@@ -692,10 +734,20 @@ jobs:
           sudo mv /tmp/postgrest /usr/local/bin/postgrest
           postgrest --version
 
-      - name: Mastery emission → REAL PostgREST transport proof (3.1)
+      # Runs tests/ci/mastery-emission.postgrest.ci.test.ts BY NAME. The gate greps
+      # its own output for the EXECUTING marker and the exact case count, because a
+      # self-skipping vitest file exits 0 and reads green from the outside.
+      - name: Mastery emission → REAL PostgREST proof (route → supabase-js → PostgREST → PG)
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/mastery-transport-gate.sh
+          bash scripts/ci/mastery-postgrest-gate.sh
+
+      # Proves the proof can fail, and that each mutation reds the assertion it names.
+      # M1 and M3 both attack case 1 and are kept apart by WHICH line they red.
+      - name: Mastery emission → REAL PostgREST proof — mutation harness
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-postgrest-gate.mutations.sh
 
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the

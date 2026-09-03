@@ -24,6 +24,29 @@ import { Container, Card, Section } from "@/components/layout/primitives";
 type DemoState = "idle" | "thinking" | "answered";
 type HeroVariant = "A" | "B";
 
+/**
+ * The free-tier daily practice allowance, as advertised.
+ *
+ * @spec [Doc 02B (V4) "12. Entitlement Gate System" -> "Entitlement Matrix"
+ *        and "Quota Contract": "Free users may submit up to
+ *        `practice_runtime_config.daily_quota_free` practice questions per
+ *        calendar day (40 at launch)"] | @implemented [2026-09-03]
+ *
+ * THE SOURCE OF TRUTH IS THE DATABASE, NOT THIS LINE.
+ * `practice_runtime_config.daily_quota_free` is what the runtime enforces, and
+ * it reads 40 in production (verified 2026-09-03). This page is served to
+ * logged-out visitors, so it cannot read an authenticated config endpoint; the
+ * number is therefore restated here, which is a drift risk and is named as one.
+ * Changing the config without changing this line makes the homepage lie again —
+ * the defect this replaces. Reported to the owner as a follow-up: a public
+ * free-tier endpoint would close it properly.
+ *
+ * Doc 01A Appendix A.3's example bucket map carries a THIRD number for this
+ * ("practice_daily_free": 20) against a bucket that exists in neither
+ * production nor Doc 02B. That divergence is reported, not resolved here.
+ */
+const FREE_DAILY_PRACTICE_QUESTIONS = 40;
+
 export default function HomePage() {
   const [demoState, setDemoState] = useState<DemoState>("idle");
   const [variant, setVariant] = useState<HeroVariant | null>(null);
@@ -548,22 +571,35 @@ export default function HomePage() {
                 </p>
               </div>
 
+              {/*
+                EVERY LINE HERE IS ENFORCED SOMEWHERE. Corrected 2026-09-03 on
+                the owner's ruling after all four previous claims were checked
+                against Doc 02B's "Entitlement Matrix" and against production:
+
+                - "Up to 10 practice questions per day" understated the real
+                  allowance by a factor of four.
+                - "Up to 5 tutor chat messages per day" advertised a PREMIUM
+                  feature as free. `server/routes/tutor-runtime.ts` denies every
+                  non-entitled profile with `entitlement_required` — free gets
+                  zero, not five.
+                - "Full-length SAT exam mode" did the same:
+                  `server/routes/full-length-exam-routes.ts` answers 402
+                  `PREMIUM_REQUIRED`. It has moved to the paid card.
+                - "Progress and dashboard tracking" was true only of the single
+                  overall projection; the mastery breakdown is premium.
+              */}
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Up to 10 practice questions per day
+                  {FREE_DAILY_PRACTICE_QUESTIONS} practice questions per day
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />A worked
+                  explanation after every question you answer
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Up to 5 tutor chat messages per day
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Full-length SAT exam mode
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Progress and dashboard tracking
+                  Full diagnostic test and your overall score estimate
                 </li>
               </ul>
 
@@ -602,6 +638,16 @@ export default function HomePage() {
                   <span>
                     <strong>Unlimited</strong> tutor chat messages
                   </span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
+                  <span>
+                    Full-length SAT exams, with review and score reports
+                  </span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
+                  <span>Complete mastery breakdown and study calendar</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />

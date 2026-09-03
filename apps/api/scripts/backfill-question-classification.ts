@@ -32,7 +32,7 @@ function parseTaggedValue(tags: string[], prefix: string): string | null {
 
 function toSkillCode(sectionCode: string | null, domain: string | null, skill: string | null): string | null {
   if (!sectionCode || !domain || !skill) return null;
-  const section = sectionCode === "MATH" ? "MATH" : "RW";
+  const section = sectionCode === "M" ? "M" : "RW";
   const left = domain.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
   const right = skill.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
   if (!left || !right) return null;

@@ -1,6 +1,11 @@
 import { DateTime } from "luxon";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import {
+  normalizeSectionCode,
+  type CanonicalSectionCode,
+} from "../../../../shared/question-bank-contract";
+import { sectionDisplayLabel } from "../../../../shared/section-display";
+import {
   DEFAULT_HORIZON_DAYS,
   type BlockedWindow,
   type DayStatus,
@@ -69,7 +74,7 @@ type PlanTaskRow = {
   day_date: string;
   ordinal: number;
   task_type: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   duration_minutes: number;
   source_skill_code: string | null;
   source_domain: string | null;
@@ -112,7 +117,7 @@ type SkillMasteryRow = {
 };
 
 export type ExamSkillDiagnostic = {
-  section: "MATH" | "RW";
+  section: CanonicalSectionCode;
   domain: string;
   skill: string;
   accuracy: number;
@@ -208,12 +213,14 @@ function normalizeBlockedWindows(value: unknown): BlockedWindow[] {
   return windows;
 }
 
-function normalizeSection(value: unknown): "MATH" | "RW" | null {
-  const normalized = typeof value === "string" ? value.toLowerCase().trim() : "";
-  if (!normalized) return null;
-  if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
-  if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
-  return null;
+// @spec [Doc-05B §4.2] | @implemented [2026-09-02]
+// plain English: this file reads `student_skill_mastery.section`, a LIVE column
+// CHECK-constrained to 'M'/'RW'. The local normaliser it replaces turned that canonical
+// value into a second spelling on the way in, which is where the planner's vocabulary
+// diverged from the database's. It now uses the shared boundary normaliser and keeps
+// the value it was given.
+function normalizeSection(value: unknown): CanonicalSectionCode | null {
+  return normalizeSectionCode(value);
 }
 
 function profileSummaryFromRow(userId: string, row: StudyProfileRow | null): ProfileSummary & { userId: string } {
@@ -246,20 +253,21 @@ function plannerSettingsFromSummary(summary: ProfileSummary & { userId: string }
   };
 }
 
-function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
-  if (section === "MATH") return "Math";
-  if (section === "RW") return "Reading & Writing";
-  return null;
+// One of three private copies of the display mapping that lived in the calendar
+// services. All three now call shared/section-display, which is the only place a
+// section label is spelled out.
+function taskSectionToLegacy(section: CanonicalSectionCode | null): string | null {
+  return sectionDisplayLabel(section);
 }
 
 function serializeTaskSummary(args: {
   taskType: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   durationMinutes: number;
   status?: TaskStatus;
   ordinal?: number;
   target: {
-    section: "MATH" | "RW" | null;
+    section: CanonicalSectionCode | null;
     skill_code: string | null;
     domain: string | null;
     subskill: string | null;
@@ -591,7 +599,7 @@ async function persistGeneratedDays(params: {
       planned_minutes: day.plannedMinutes,
       completed_minutes: existing?.completed_minutes ?? 0,
       focus: day.focus.map((focus) => ({
-        section: focus.section === "MATH" ? "Math" : "Reading & Writing",
+        section: sectionDisplayLabel(focus.section),
         weight: focus.weight,
         competencies: focus.skill_codes,
       })),
