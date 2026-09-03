@@ -16,6 +16,8 @@
  * the route layer pattern is belt-and-suspenders.
  *
  * edge cases:
+ *  - Token mint failure: returns `orchestration_auth_failed`. Distinct from network
+ *    errors (worker_unreachable) and HTTP-level auth errors (403/401).
  *  - Worker unreachable (network error / timeout): returns a typed
  *    `orchestration_failed_recoverable` result on the first attempt, never throws.
  *  - Worker returns 5xx: retried once, then returns `orchestration_failed_recoverable`.
@@ -25,7 +27,10 @@
  *    still delivered (the student gets the safe fallback, not an error).
  */
 import { z } from "zod";
+import { GoogleAuth } from "google-auth-library";
+import type { IdTokenClient } from "google-auth-library";
 import { logger } from "../logger";
+import { getGcpCredentials } from "./gcp-credentials";
 import { scanAndSubstitute } from "../services/tutor-antileak";
 import { TutorConfig } from "../services/tutor-config";
 import type { TutorResult } from "../services/tutor-error-codes";
@@ -43,7 +48,6 @@ import type {
 // ── Config ───────────────────────────────────────────────────────────
 
 const WORKER_URL_ENV_KEY = "TUTOR_ORCHESTRATOR_WORKER_URL";
-const WORKER_SECRET_ENV_KEY = "TUTOR_ORCHESTRATOR_WORKER_SHARED_SECRET";
 const DEFAULT_WORKER_URL = "http://localhost:8080";
 
 /** Two attempts total (one initial + one retry), 5xx-triggered retries only. */
@@ -55,19 +59,97 @@ function getWorkerBaseUrl(): string {
 }
 
 /**
- * Boundary auth header. Mirrors the "shared_secret" mode read by
- * apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts. When the secret
- * is unset (local dev, boundary auth mode "none"), no header is sent.
+ * Returns true when the worker URL is a production Cloud Run endpoint that
+ * requires GCP OIDC authentication. Local-dev URLs (http://localhost:*) do
+ * not require and cannot receive an OIDC token — the audience would be
+ * invalid and the token mint would fail.
  */
-function buildRequestHeaders(): Record<string, string> {
+function requiresOidcAuth(baseUrl: string): boolean {
+  return baseUrl.startsWith("https://");
+}
+
+// ── OIDC token client (module-cached) ────────────────────────────────
+
+/**
+ * Cached IdTokenClient keyed by audience (= worker base URL). google-auth-library
+ * handles token refresh internally; we only construct the client once per audience.
+ *
+ * @spec [Doc-06B §3 "Secrets at Runtime"]
+ */
+let cachedIdTokenClient: IdTokenClient | null = null;
+let cachedAudience: string | null = null;
+
+/**
+ * Returns an IdTokenClient for the given audience, constructing and caching
+ * it on first call. Uses getGcpCredentials() as the identity source — no
+ * second credential path.
+ */
+async function getIdTokenClient(audience: string): Promise<IdTokenClient> {
+  if (cachedIdTokenClient && cachedAudience === audience) {
+    return cachedIdTokenClient;
+  }
+
+  const creds = getGcpCredentials();
+  const auth = new GoogleAuth({ credentials: creds });
+  const client = await auth.getIdTokenClient(audience);
+
+  cachedIdTokenClient = client;
+  cachedAudience = audience;
+  return client;
+}
+
+/**
+ * Resets the cached OIDC token client. Test-only — allows each test to
+ * start from a clean state without cross-test leakage.
+ */
+export function _resetOidcClientCache(): void {
+  cachedIdTokenClient = null;
+  cachedAudience = null;
+}
+
+/**
+ * Builds request headers with OIDC ID token for production, or plain
+ * Content-Type for local dev. The ID token satisfies both GCP's ingress
+ * (--no-allow-unauthenticated) and the worker's boundary-auth
+ * (TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE=require_bearer) in one move.
+ *
+ * Never throws: returns a TutorResult failure on token mint errors so
+ * the caller can distinguish auth failures from network failures.
+ */
+async function buildRequestHeaders(
+  baseUrl: string,
+): Promise<TutorResult<Record<string, string>>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const secret = process.env[WORKER_SECRET_ENV_KEY]?.trim();
-  if (secret && secret.length > 0) {
-    headers.Authorization = `Bearer ${secret}`;
+
+  if (!requiresOidcAuth(baseUrl)) {
+    return { ok: true, value: headers };
   }
-  return headers;
+
+  try {
+    const client = await getIdTokenClient(baseUrl);
+    const tokenHeaders = await client.getRequestHeaders();
+    const authValue = tokenHeaders.get("Authorization");
+    if (authValue) {
+      headers.Authorization = authValue;
+    }
+    return { ok: true, value: headers };
+  } catch (err: unknown) {
+    // Token mint failed. Log a fixed message — no credential material.
+    logger.error(
+      "TUTOR_ORCHESTRATOR_CLIENT",
+      "oidc_token_mint_failed",
+      "Failed to mint OIDC identity token for orchestrator worker",
+      err instanceof Error ? err : { message: String(err) },
+      { audience: baseUrl },
+    );
+    return {
+      ok: false,
+      errorCode: "orchestration_auth_failed" as const,
+      details: { reason: "oidc_token_mint_failed" },
+    };
+  }
 }
 
 // ── Result types ─────────────────────────────────────────────────────
@@ -82,16 +164,27 @@ export type CompactResult = TutorResult<CompactResponse>;
  * the response body against `responseSchema` — the response is `unknown`
  * until it passes Zod parsing (Coding Standards §3.2, §7.1).
  *
- * Never throws: every failure mode (network, timeout, non-2xx, malformed
- * JSON, schema mismatch) returns a `TutorResult` failure branch instead.
+ * Never throws: every failure mode (auth, network, timeout, non-2xx,
+ * malformed JSON, schema mismatch) returns a `TutorResult` failure branch.
+ *
+ * Auth is resolved once before the retry loop — a token mint failure is
+ * not retried (would fail identically), and is reported as
+ * `orchestration_auth_failed` to distinguish it from transient worker errors.
  */
 async function postToWorker<TSchema extends z.ZodTypeAny>(
   path: string,
   responseSchema: TSchema,
   payload: unknown,
 ): Promise<TutorResult<z.infer<TSchema>>> {
-  const url = `${getWorkerBaseUrl()}${path}`;
+  const baseUrl = getWorkerBaseUrl();
+  const url = `${baseUrl}${path}`;
   const timeoutMs = TutorConfig.get("tutor_request_timeout_seconds") * 1000;
+
+  // ── Auth (pre-loop — token mint failure is not retried) ─────────
+  const headersResult = await buildRequestHeaders(baseUrl);
+  if (!headersResult.ok) {
+    return headersResult;
+  }
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const controller = new AbortController();
@@ -101,7 +194,7 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
     try {
       response = await fetch(url, {
         method: "POST",
-        headers: buildRequestHeaders(),
+        headers: headersResult.value,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -150,15 +243,37 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
     }
 
     if (!response.ok) {
-      // Non-5xx failure (4xx): a retry would not help — request or config
-      // is wrong, not the worker's transient state.
-      logger.error(
-        "TUTOR_ORCHESTRATOR_CLIENT",
-        "worker_error_status",
-        `Orchestrator worker returned ${response.status}`,
-        { status: response.status },
-        { path },
-      );
+      // ── Distinguish 403 (GCP ingress) from 401 (boundary-auth) ──
+      // 403: Cloud Run's own ingress rejected the request — the OIDC token
+      //   was invalid, expired, or the service account lacks invoker role.
+      // 401: the worker's boundary-auth middleware rejected the token —
+      //   configuration mismatch (e.g. auth mode vs token shape).
+      // Other 4xx: request or config is wrong, not the worker's state.
+      if (response.status === 403) {
+        logger.error(
+          "TUTOR_ORCHESTRATOR_CLIENT",
+          "worker_auth_rejected_403",
+          "Orchestrator worker rejected request at GCP ingress (403); OIDC token may be invalid or service account lacks invoker role",
+          { status: 403 },
+          { path },
+        );
+      } else if (response.status === 401) {
+        logger.error(
+          "TUTOR_ORCHESTRATOR_CLIENT",
+          "worker_auth_rejected_401",
+          "Orchestrator worker boundary-auth rejected request (401); auth mode or token shape mismatch",
+          { status: 401 },
+          { path },
+        );
+      } else {
+        logger.error(
+          "TUTOR_ORCHESTRATOR_CLIENT",
+          "worker_error_status",
+          `Orchestrator worker returned ${response.status}`,
+          { status: response.status },
+          { path },
+        );
+      }
       return {
         ok: false,
         errorCode: "orchestration_failed",

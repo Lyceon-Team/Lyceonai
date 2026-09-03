@@ -157,6 +157,14 @@ export const TUTOR_CANONICAL_WRITE_FAILED: TutorErrorCode = {
 } as const;
 
 /** @spec [Doc-03B_V2 §6.9] */
+export const TUTOR_ORCHESTRATION_AUTH_FAILED: TutorErrorCode = {
+  httpStatus: 503,
+  code: "orchestration_auth_failed",
+  message:
+    "Failed to authenticate to the tutor orchestrator. Please try again.",
+} as const;
+
+/** @spec [Doc-03B_V2 §6.9] */
 export const TUTOR_ORCHESTRATION_FAILED: TutorErrorCode = {
   httpStatus: 500,
   code: "orchestration_failed",
@@ -198,6 +206,7 @@ export const TUTOR_ERROR_CODES = {
   idempotency_conflict: TUTOR_IDEMPOTENCY_CONFLICT,
   idempotency_lookup_failed: TUTOR_IDEMPOTENCY_LOOKUP_FAILED,
   canonical_write_failed: TUTOR_CANONICAL_WRITE_FAILED,
+  orchestration_auth_failed: TUTOR_ORCHESTRATION_AUTH_FAILED,
   orchestration_failed: TUTOR_ORCHESTRATION_FAILED,
   orchestration_failed_recoverable: TUTOR_ORCHESTRATION_FAILED_RECOVERABLE,
   entitlement_check_unavailable: TUTOR_ENTITLEMENT_CHECK_UNAVAILABLE,
