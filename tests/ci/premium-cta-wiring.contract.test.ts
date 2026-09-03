@@ -8,6 +8,20 @@ function read(filePath: string): string {
   return fs.readFileSync(path.join(repoRoot, filePath), "utf8");
 }
 
+/**
+ * The same file with comments removed.
+ *
+ * Needed wherever the assertion is that a name has GONE from the code: every
+ * file that removed one also explains why, and a scanner that cannot tell prose
+ * from code would force those explanations to be deleted to go green — trading
+ * the record of a defect for a passing grep.
+ */
+function readCode(filePath: string): string {
+  return read(filePath)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
 describe("Premium CTA wiring contract", () => {
   it('removes dead "/" upgrade links from known premium lock surfaces', () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
@@ -21,27 +35,45 @@ describe("Premium CTA wiring contract", () => {
     expect(projection).not.toContain('href="/"');
   });
 
-  it("routes premium lock surfaces to canonical /upgrade flow", () => {
+  /**
+   * The destination is resolved from the ROLE, in one place — it is no longer
+   * spelled on each surface.
+   *
+   * @spec [owner ruling 2026-09-03 §3]
+   *
+   * This used to assert `setLocation("/upgrade")` and `navigate("/upgrade")`
+   * literally, which pinned the exact defect the ruling removes: `/upgrade` is
+   * `RequireRole allow={["student","admin"]}`, so every literal was a control
+   * that could not work for a guardian. The assertion now pins the resolver.
+   */
+  it("resolves the billing destination from the role, never from a literal", () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-    const projection = read(
-      "client/src/components/progress/ScoreProjectionCard.tsx",
-    );
 
-    expect(dashboard).toContain('setLocation("/upgrade")');
-    expect(mastery).toContain('navigate("/upgrade")');
-    expect(projection).toContain('navigate("/upgrade")');
+    expect(dashboard).toContain("resolveCtaDestination");
+    expect(mastery).toContain("PremiumUpgradePrompt");
     expect(dashboard).not.toContain("startSubscriptionCheckout('monthly')");
     expect(mastery).not.toContain("startSubscriptionCheckout('monthly')");
-    expect(projection).not.toContain('startSubscriptionCheckout("monthly")');
   });
 
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
-    const userProfile = read("client/src/pages/UserProfile.tsx");
+    const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    expect(userProfile).toContain("queryKey: ['/api/billing/status']");
-    expect(userProfile).toContain("openBillingPortal");
-    expect(userProfile).toContain("navigate('/upgrade')");
+    // Quote-agnostic: prettier owns quote style, and pinning it would make a
+    // formatter run read as a behaviour change.
+    expect(userProfile).toMatch(
+      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
+    );
+    // One portal hook, not a fourth copy of the mutation.
+    expect(userProfile).toContain("useBillingPortal");
+    /**
+     * `navigate('/upgrade')` USED to be asserted here, and it was the bug: the
+     * button was enabled for a guardian with a linked student and pointed at a
+     * route `RequireRole` bounces them from. The destination now comes from the
+     * resolver, which cannot return `/upgrade` for a guardian.
+     */
+    expect(userProfile).toContain("resolveCtaDestination");
+    expect(userProfile).not.toContain("navigate('/upgrade')");
     expect(userProfile).toContain("Manage Subscription");
     expect(userProfile).toContain("View Plans");
   });
@@ -73,7 +105,7 @@ describe("Premium CTA wiring contract", () => {
     const purchaseCard = read(
       "client/src/components/guardian/GuardianPurchaseCard.tsx",
     );
-    const guardianPaywall = read(
+    const guardianPaywall = readCode(
       "client/src/components/guardian/SubscriptionPaywall.tsx",
     );
 
@@ -106,12 +138,31 @@ describe("Premium CTA wiring contract", () => {
     expect(guardianPaywall).not.toContain('data-testid="student-select"');
     expect(guardianPaywall).not.toContain("startSubscriptionCheckout");
 
-    // The portal path stays where it belongs, and keeps its failed-payment
-    // branch. Asserted without the surrounding quotes: prettier owns quote
-    // style, and pinning it here would make a formatter run look like a
-    // behaviour change.
-    expect(guardianPaywall).toContain("/api/billing/portal");
-    expect(guardianPaywall).toContain("needsPaymentUpdate");
+    /**
+     * THE GATE IS GONE, AND THIS IS THE ASSERTION THAT KEEPS IT GONE.
+     *
+     * @spec [owner ruling 2026-09-03 §1; SCL-029 `past_due` is ENTITLED]
+     *
+     * `needsPaymentUpdate` used to appear here as an EARLY RETURN that replaced
+     * the whole guardian dashboard. It is true for `past_due`, which SCL-029
+     * rules entitled, so `GET /api/billing/status` answered
+     * `effectiveAccess: true` and `needsPaymentUpdate: true` for one student at
+     * once — and this component read the second and ignored the first. A
+     * guardian with full access lost the link panel, the purchase card and
+     * every progress view, and the one control left on the interstitial could
+     * fail in silence.
+     *
+     * The previous version of this test asserted the string was PRESENT. That
+     * is why it is called out rather than quietly deleted: the assertion was
+     * pinning the defect in place.
+     */
+    expect(guardianPaywall).not.toContain("needsPaymentUpdate");
+
+    // The portal call moved into `useBillingPortal`, which is the single error
+    // surface for all three call sites — so the endpoint string belongs there
+    // now, and must NOT be re-spelled here.
+    expect(guardianPaywall).toContain("useBillingPortal");
+    expect(guardianPaywall).not.toContain("/api/billing/portal");
   });
 
   /**

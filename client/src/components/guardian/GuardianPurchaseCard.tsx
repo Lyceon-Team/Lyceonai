@@ -28,7 +28,7 @@
  * subscription is refused with `STUDENT_ALREADY_FUNDED`. Editing the select in
  * devtools changes what is REQUESTED, never what is GRANTED.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Card,
@@ -51,6 +51,7 @@ import {
   type BillingPlanMetadata,
 } from "@/lib/billing-client";
 import { studentLabel, type LinkedStudent } from "@/hooks/useGuardianStudents";
+import { useBillingPortal } from "@/hooks/useBillingPortal";
 
 function formatPrice(amountCents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
@@ -68,15 +69,37 @@ type GuardianPurchaseCardProps = {
    * linked.
    */
   readonly students: readonly LinkedStudent[];
+  /**
+   * A student to open with already chosen — the one the guardian just hit a
+   * paid boundary on. "Subscribe for Sam" that lands on an empty dropdown is a
+   * CTA that makes you do the work twice.
+   */
+  readonly preselectStudentId?: string | null;
 };
 
-export function GuardianPurchaseCard({ students }: GuardianPurchaseCardProps) {
+export function GuardianPurchaseCard({
+  students,
+  preselectStudentId = null,
+}: GuardianPurchaseCardProps) {
   const [selectedPlan, setSelectedPlan] = useState<BillingPlan | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [itemAdded, setItemAdded] = useState(false);
+  const portal = useBillingPortal();
+
+  /**
+   * A prop-driven selection is genuine synchronisation with something outside
+   * React, not derived state — the guardian may still change the dropdown
+   * afterwards, so this cannot be computed in the render body (Coding Standards
+   * §11.4 forbids `useEffect` for DERIVED state; this is not derived).
+   */
+  useEffect(() => {
+    if (preselectStudentId) {
+      setSelectedStudentId(preselectStudentId);
+    }
+  }, [preselectStudentId]);
 
   /**
    * Edge cases 1 and 3, both by the same expression. Every linked student
@@ -85,6 +108,13 @@ export function GuardianPurchaseCard({ students }: GuardianPurchaseCardProps) {
    * Edge case 2 falls out as well: a mixed roster offers only the unpaid.
    */
   const unfundedStudents = students.filter((s) => !s.has_active_entitlement);
+
+  const selectedStudent =
+    unfundedStudents.find((s) => s.id === selectedStudentId) ?? null;
+  const selectedStudentLapsed = selectedStudent?.entitlement_lapsed === true;
+  const selectedStudentLabel = selectedStudent
+    ? studentLabel(selectedStudent)
+    : "";
 
   const { data: pricesData, isLoading: pricesLoading } = useQuery<
     BillingPlanMetadata[]
@@ -188,7 +218,18 @@ export function GuardianPurchaseCard({ students }: GuardianPurchaseCardProps) {
           </select>
         </div>
 
-        {pricesLoading ? (
+        {selectedStudentLapsed ? (
+          /* Picking a plan is meaningless when the remedy is reactivating the
+             plan they already had; offering one would invite the double charge
+             the footer branch exists to prevent. */
+          <Alert>
+            <AlertDescription>
+              {selectedStudentLabel}&apos;s subscription ended. Reactivating the
+              one you had costs less than starting a new plan — the button below
+              opens your billing portal.
+            </AlertDescription>
+          </Alert>
+        ) : pricesLoading ? (
           <div className="flex justify-center py-6">
             <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />
           </div>
@@ -252,48 +293,74 @@ export function GuardianPurchaseCard({ students }: GuardianPurchaseCardProps) {
       </CardContent>
 
       <CardFooter>
-        <Button
-          className="w-full bg-[#0F2E48] hover:bg-[#0F2E48]/90 text-white"
-          size="lg"
-          data-testid="guardian-purchase-submit"
-          onClick={() => {
-            setCheckoutError(null);
-            setItemAdded(false);
-            if (!selectedStudentId) {
-              // No selection means NO REQUEST: the server would answer 400
-              // STUDENT_NOT_SELECTED, and a round trip to learn what the form
-              // already knows is not a useful error.
-              setCheckoutError(
-                "Please choose which student this subscription is for.",
-              );
-              return;
+        {selectedStudentLapsed ? (
+          /**
+           * THE FOURTH STATE — owner ruling 2026-09-03.
+           *
+           * This student HAD a subscription and it stopped granting access.
+           * `evaluateSubjectPurchaseEligibility` would permit a fresh checkout
+           * — none of `canceled`, `unpaid`, `incomplete_expired` is in the
+           * platform predicate — so without this branch the card sells a SECOND
+           * subscription to a guardian who can reactivate the first in the
+           * portal for less, and the overlap bills twice.
+           */
+          <Button
+            className="w-full"
+            size="lg"
+            variant="outline"
+            data-testid="guardian-reactivate-submit"
+            onClick={() => portal.open()}
+            disabled={portal.isPending}
+          >
+            <CreditCard className="mr-2 h-4 w-4" />
+            {portal.isPending
+              ? "Opening billing..."
+              : `Reactivate for ${selectedStudentLabel}`}
+          </Button>
+        ) : (
+          <Button
+            className="w-full bg-[#0F2E48] hover:bg-[#0F2E48]/90 text-white"
+            size="lg"
+            data-testid="guardian-purchase-submit"
+            onClick={() => {
+              setCheckoutError(null);
+              setItemAdded(false);
+              if (!selectedStudentId) {
+                // No selection means NO REQUEST: the server would answer 400
+                // STUDENT_NOT_SELECTED, and a round trip to learn what the form
+                // already knows is not a useful error.
+                setCheckoutError(
+                  "Please choose which student this subscription is for.",
+                );
+                return;
+              }
+              if (!selectedPlan) {
+                setCheckoutError("Please select a subscription plan.");
+                return;
+              }
+              checkoutMutation.mutate(selectedPlan);
+            }}
+            disabled={
+              checkoutMutation.isPending ||
+              pricesLoading ||
+              !selectedPlan ||
+              !selectedStudentId
             }
-            if (!selectedPlan) {
-              setCheckoutError("Please select a subscription plan.");
-              return;
-            }
-            checkoutMutation.mutate(selectedPlan);
-          }}
-          disabled={
-            checkoutMutation.isPending ||
-            pricesLoading ||
-            !selectedPlan ||
-            !selectedStudentId
-          }
-        >
-          {checkoutMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Redirecting to checkout...
-            </>
-          ) : (
-            <>
-              <CreditCard className="mr-2 h-4 w-4" />
-              Start Student Subscription
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </>
-          )}
-        </Button>
+          >
+            {checkoutMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Redirecting to checkout...
+              </>
+            ) : (
+              <>
+                <CreditCard className="mr-2 h-4 w-4" />
+                Start Student Subscription
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </>
+            )}
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

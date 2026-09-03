@@ -40,18 +40,66 @@ describe("Feedback UX hardening contract", () => {
     expect(purchaseCard).not.toMatch(/\{\s*checkoutError\s*\}\s*<\//);
   });
 
-  it("keeps premium denials routed through conversion UX", () => {
-    const chat = read("client/src/pages/chat.tsx");
-    const calendar = read("client/src/pages/calendar.tsx");
-    const fullTest = read("client/src/pages/full-test.tsx");
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    const mastery = read("client/src/pages/mastery.tsx");
+  /**
+   * ONE CTA COMPONENT, every paid boundary — owner ruling 2026-09-03 §3.
+   *
+   * This used to accept `EmptyStateCTA` on two of the five surfaces, which is
+   * how two shapes for one message survived: `EmptyStateCTA` takes an
+   * `onAction` callback, so each caller hardcoded its own destination, and one
+   * of those destinations (`/upgrade`) is a route a guardian's role is bounced
+   * from. The component is deleted; the assertion now names one component
+   * everywhere, and the practice surface — whose quota block was a fourth
+   * inline shape — is in the list.
+   */
+  it("routes every premium denial through the one CTA component", () => {
+    const surfaces = [
+      "client/src/pages/chat.tsx",
+      "client/src/pages/calendar.tsx",
+      "client/src/pages/full-test.tsx",
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/pages/mastery.tsx",
+      "client/src/pages/practice.tsx",
+    ];
+    for (const surface of surfaces) {
+      expect(read(surface), surface).toContain("PremiumUpgradePrompt");
+    }
+  });
 
-    expect(chat).toContain("PremiumUpgradePrompt");
-    expect(calendar).toContain("PremiumUpgradePrompt");
-    expect(fullTest).toContain("PremiumUpgradePrompt");
-    expect(dashboard).toContain("EmptyStateCTA");
-    expect(mastery).toContain("EmptyStateCTA");
+  /**
+   * The destination is a pure function of the role, in ONE place.
+   *
+   * A surface that writes `/upgrade` itself is the defect this closes:
+   * `App.tsx` registers `/upgrade` as `RequireRole allow={["student","admin"]}`,
+   * so a guardian pressing such a control is bounced by `RequireRole` and
+   * nothing happens. `resolveCtaDestination` is the only sanctioned source of
+   * that string outside the route registry and the resolver's own tests.
+   */
+  it("lets no surface name a billing route for itself", () => {
+    const surfaces = [
+      "client/src/pages/chat.tsx",
+      "client/src/pages/calendar.tsx",
+      "client/src/pages/full-test.tsx",
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/pages/mastery.tsx",
+      "client/src/pages/practice.tsx",
+      "client/src/pages/UserProfile.tsx",
+      "client/src/components/billing/PremiumUpgradePrompt.tsx",
+    ];
+    for (const surface of surfaces) {
+      /**
+       * COMMENTS ARE STRIPPED FIRST, and that is load-bearing rather than
+       * fussy. Every file below EXPLAINS why it no longer names the route, and
+       * a scanner that cannot tell prose from code would have forced those
+       * explanations to be deleted to go green — trading the record of a defect
+       * for a passing grep.
+       */
+      const code = read(surface)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1");
+      expect(code, `${surface} hardcodes /upgrade`).not.toMatch(
+        /["'`]\/upgrade["'`]/,
+      );
+    }
   });
 
   /**

@@ -68,17 +68,18 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(r.rowCount).toBe(1);
       /**
-       * `has_active_entitlement` is DERIVED, not projected. The route SELECTs
-       * the four columns above and then asks
-       * `EntitlementService.isEntitlementActiveForProfile` per student, so it
-       * cannot come out of this query and is attached here the way the route
-       * attaches it. Kept out of `PROJECTED_COLUMNS` deliberately: putting it
-       * there would make the SELECT fail with 42703 and wrongly suggest the
-       * flag is a `profiles` column someone could rename.
+       * `has_active_entitlement` and `entitlement_lapsed` are DERIVED, not
+       * projected. The route SELECTs the four columns above and then resolves
+       * both per student through `resolveEntitlementDisplay`, so neither can
+       * come out of this query; they are attached here the way the route
+       * attaches them. Kept out of `PROJECTED_COLUMNS` deliberately: putting
+       * either there would make the SELECT fail with 42703 and wrongly suggest
+       * the flag is a `profiles` column someone could rename.
        */
       STUDENT = {
         ...(r.rows[0] as Record<string, unknown>),
         has_active_entitlement: false,
+        entitlement_lapsed: false,
       };
     });
 
