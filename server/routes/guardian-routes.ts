@@ -7,6 +7,8 @@ import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
+import { getEntitlementForProfile } from "../lib/account";
+import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
 
 /**
@@ -171,9 +173,42 @@ router.get(
       const entitled = await Promise.all(
         roster.map(async (student) => {
           try {
-            return await EntitlementService.isEntitlementActiveForProfile(
-              student.id,
-            );
+            /**
+             * SEQUENTIAL ON PURPOSE, inside one student's probe.
+             *
+             * `Promise.all([a(), b()])` orphans a()'s promise when b() throws
+             * SYNCHRONOUSLY — the array literal never finishes evaluating, so
+             * `Promise.all` is never called and nothing is ever attached to
+             * a(). The rejection then escapes this try/catch as an unhandled
+             * rejection, which is precisely how this surfaced: a test whose
+             * module mock omits one of these two exports makes the missing one
+             * a synchronous `TypeError`.
+             *
+             * The concurrency that matters is across STUDENTS (the `map` below
+             * is still a `Promise.all`), so this costs one extra round trip per
+             * student on a list that is single digits by construction.
+             */
+            const standingGood =
+              await EntitlementService.isEntitlementActiveForProfile(
+                student.id,
+              );
+            const entitlement = await getEntitlementForProfile(student.id);
+            /**
+             * ONE INTERPRETER OF (standing-good, tier, status), server side.
+             *
+             * @spec [owner ruling 2026-09-03] | @implemented [2026-09-03]
+             *
+             * `entitlement_lapsed` separates "nobody has ever paid for this
+             * student" from "a subscription for this student lapsed", which is
+             * the difference between offering checkout and offering the portal.
+             * The client is handed the derived booleans, never the status enum,
+             * so there is no second reading of the vocabulary in the browser.
+             */
+            return resolveEntitlementDisplay({
+              standingGood,
+              tier: entitlement?.tier ?? "free",
+              status: entitlement?.status ?? "missing",
+            });
           } catch (err) {
             logger.warn(
               "GUARDIAN",
@@ -181,7 +216,14 @@ router.get(
               "Entitlement probe failed; treating student as unfunded",
               { requestId, err },
             );
-            return false;
+            // Unfunded AND not lapsed: the safe direction is to offer a
+            // purchase, which the server re-decides, rather than to send them
+            // to a portal that may hold nothing for this student.
+            return {
+              effectiveAccess: false,
+              needsPaymentUpdate: false,
+              lapsed: false,
+            };
           }
         }),
       );
@@ -195,7 +237,8 @@ router.get(
       res.json({
         students: roster.map((student, i) => ({
           ...student,
-          has_active_entitlement: entitled[i] === true,
+          has_active_entitlement: entitled[i]?.effectiveAccess === true,
+          entitlement_lapsed: entitled[i]?.lapsed === true,
         })),
         requestId,
       });
