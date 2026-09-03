@@ -17,7 +17,6 @@ import {
   Calendar,
 } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
-import NotificationDropdown from "@/components/NotificationDropdown";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -156,7 +155,6 @@ function AppHeader() {
           {/* User Menu */}
           <div className="flex items-center gap-2">
             {/* Notifications Bell */}
-            {user && <NotificationDropdown />}
 
             {/* Mobile Menu Button */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>

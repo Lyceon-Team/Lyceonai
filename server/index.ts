@@ -50,7 +50,6 @@ import {
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
-import notificationRoutes from "./routes/notification-routes";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -400,13 +399,6 @@ app.use(
   profileRoutes,
 );
 
-// Notifications Routes
-app.use(
-  "/api/notifications",
-  requireSupabaseAuth,
-  doubleCsrfProtection,
-  notificationRoutes,
-);
 
 // Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
 // to the student and to a linked guardian by the same handler; `resolveSubject` inside the
@@ -985,11 +977,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions`);

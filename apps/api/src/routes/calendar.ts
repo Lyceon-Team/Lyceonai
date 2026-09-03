@@ -16,7 +16,6 @@ import {
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
-import { publishCalendarEventNotificationBestEffort } from "../../../../server/services/notification-authority";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
@@ -478,11 +477,6 @@ async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: s
     // best effort only
   }
 
-  await publishCalendarEventNotificationBestEffort({
-    userId: args.userId,
-    eventType: args.eventType,
-    details: args.details,
-  });
 }
 
 async function ensurePremiumAccess(

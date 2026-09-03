@@ -9,7 +9,6 @@ import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { LEGAL_DOCS } from "../../shared/legal-consent.js";
 import crypto from "crypto";
-import { sendEmail } from "../lib/email.js";
 
 const router = Router();
 
@@ -314,21 +313,6 @@ router.patch("/", async (req: Request, res: Response) => {
         guardianConsentRequestId = requestId;
       }
 
-      const siteUrl =
-        process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get("host")}`;
-      const verificationLink = `${siteUrl}/guardian/verify-consent?requestId=${guardianConsentRequestId}`;
-
-      await sendEmail({
-        to: guardianEmail!,
-        subject: `Guardian consent required for ${data.displayName}`,
-        html: `
-          <h1>Guardian Consent Required</h1>
-          <p>${data.displayName} has entered profile details on Lyceon.</p>
-          <p>To continue, complete verified guardian consent at:</p>
-          <p><a href="${verificationLink}">${verificationLink}</a></p>
-          <p>This link expires in 14 days.</p>
-        `,
-      });
     }
 
     // Finalize profile fields with server-authoritative role and under-13 state.

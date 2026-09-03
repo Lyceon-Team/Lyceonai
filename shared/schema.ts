@@ -31,62 +31,6 @@ export interface StudentQuestion {
   difficulty?: number | null;
 }
 
-export type NotificationType =
-  | "system_update"
-  | "study_reminder"
-  | "progress_alert"
-  | "achievement"
-  | "ai_tutor_suggestion";
-
-export type NotificationCategory =
-  | "study_progress"
-  | "learning_analytics"
-  | "question_updates"
-  | "motivation"
-  | "ai_tutor"
-  | "technical"
-  | "milestones";
-
-export type NotificationPriority = "low" | "normal" | "high" | "urgent";
-
-export interface Notification {
-  id: string;
-  userId: string;
-  type: NotificationType;
-  category: NotificationCategory;
-  priority: NotificationPriority;
-  title: string;
-  body: string;
-  ctaUrl: string | null;
-  ctaText?: string | null;
-  channelOrigin: string | null;
-  metadata: Record<string, unknown> | null;
-  isRead: boolean;
-  createdAt: string;
-  readAt: string | null;
-  archivedAt: string | null;
-  expiresAt: string | null;
-  updatedAt?: string | null;
-  message?: string;
-  actionUrl?: string | null;
-  actionText?: string | null;
-}
-
-export type NotificationDigestFrequency = "never" | "daily" | "weekly";
-
-export interface UserNotificationPreferences {
-  userId: string;
-  emailEnabled: boolean;
-  studyRemindersEnabled: boolean;
-  streakEnabled: boolean;
-  planUpdatesEnabled: boolean;
-  guardianUpdatesEnabled: boolean;
-  marketingEnabled: boolean;
-  digestFrequency: NotificationDigestFrequency;
-  quietHours: Record<string, unknown> | null;
-  updatedAt: string | null;
-}
-
 // Full-length exam runtime types (service-owned supabase rows).
 export interface FullLengthExamSession {
   id: string;

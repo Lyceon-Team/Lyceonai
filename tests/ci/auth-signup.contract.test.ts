@@ -77,9 +77,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
   resolveUserIdFromToken: vi.fn(async () => null),
 }));
 
-vi.mock("../../server/lib/email.js", () => ({
-  sendEmail: vi.fn(async () => ({ success: true })),
-}));
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({

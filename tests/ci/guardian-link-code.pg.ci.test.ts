@@ -257,21 +257,6 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     expect(await activeLinks()).toBe(0);
   });
 
-  /** EDGE CASE 10 — the student is told, exactly once. */
-  it("emits ONE guardian_linked outbox row to the student", async () => {
-    await request(await buildApp())
-      .post("/api/guardian/link/redeem")
-      .send({ code: await currentCode() });
-
-    const out = await pg.query(
-      `SELECT event_type, recipient_kind, recipient_profile_id FROM public.notification_outbox`,
-    );
-    expect(out.rowCount).toBe(1);
-    expect(out.rows[0].event_type).toBe("guardian_linked");
-    expect(out.rows[0].recipient_kind).toBe("student");
-    expect(out.rows[0].recipient_profile_id).toBe(STUDENT);
-  });
-
   /** EDGE CASE 6 / F2 — the cycle the old constraint made impossible after one round. */
   it("supports revoke → re-link → revoke, more than once", async () => {
     const app = await buildApp();

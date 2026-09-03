@@ -310,31 +310,6 @@ router.post(
         requestId,
       );
 
-      // §36.1 step 6 in the shape SCL-080 leaves: the student is told, because they are the
-      // party whose data just became visible. Emission only — there is no dispatcher, so
-      // this is a row, not a message (CLAUDE.md, notification-outbox contract).
-      const { error: outboxError } = await supabaseServer
-        .from("notification_outbox")
-        .insert({
-          // Deterministic and insert-once: one notification per link, so a retry of this
-          // request cannot produce a second.
-          event_id: link.id,
-          event_type: "guardian_linked",
-          recipient_kind: "student",
-          recipient_profile_id: studentProfileId,
-          payload: { link_id: link.id, via: "student_link_code" },
-        });
-      if (outboxError && outboxError.code !== "23505") {
-        // Never swallowed, never fatal: the link is real and the student's access is
-        // unaffected by a missing notification row.
-        logger.warn(
-          "GUARDIAN",
-          "link_notify",
-          "Guardian link created but the outbox emission failed",
-          { requestId, reason: outboxError.message },
-        );
-      }
-
       return res.status(201).json({
         data: { link_id: link.id, student_profile_id: studentProfileId },
         requestId,

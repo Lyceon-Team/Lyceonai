@@ -6,7 +6,6 @@ import {
   requireSupabaseAuth,
 } from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { sendEmail } from "../lib/email";
 import { logger } from "../logger";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 // buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
@@ -192,71 +191,6 @@ export async function performDeletionRequestV2(
   };
 }
 
-function deletionRecoveryBaseUrl(): string {
-  return (
-    process.env.APP_BASE_URL ??
-    (process.env.NODE_ENV === "development"
-      ? "http://localhost:5000"
-      : "https://lyceon.ai")
-  );
-}
-
-// @spec [Doc-01 §40.2.1 Phase 4] confirmation email carrying the 7-day recovery link. Best-effort:
-// the deletion is already committed, so a mail failure is logged, not surfaced. PRIVACY: never logs
-// the address, token, or body — only userId + requestId + outcome (Coding Standards §12.1).
-async function sendDeletionScheduledEmail(
-  admin: DeletionAdminClient,
-  userId: string,
-  rawToken: string,
-  scheduledHardDeleteAt: string,
-  requestId?: string,
-): Promise<void> {
-  try {
-    const { data, error } = await admin.auth.admin.getUserById(userId);
-    const email = data?.user?.email;
-    if (error || !email) {
-      logger.warn(
-        "DELETION",
-        "recovery_email_skipped",
-        "No address to send deletion-scheduled email",
-        { userId, requestId },
-      );
-      return;
-    }
-    const recoverUrl = `${deletionRecoveryBaseUrl()}/account/recover?token=${encodeURIComponent(rawToken)}`;
-    const when = new Date(scheduledHardDeleteAt).toUTCString();
-    await sendEmail({
-      to: email,
-      subject: "Your Lyceon account is scheduled for deletion",
-      html:
-        `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong> (7 days from your request).</p>` +
-        `<p>Lyceon tracks your learning progress over time — once your account is deleted, ` +
-        `that history is gone permanently, and returning means starting over with a new account.</p>` +
-        `<p>If you have a paid subscription, your paid access ends and you will not be charged again after <strong>${when}</strong>.</p>` +
-        `<p>If you didn't request this or change your mind, restore your account before <strong>${when}</strong>:</p>` +
-        `<p><a href="${recoverUrl}">Restore my account</a></p>` +
-        `<p>This link stops working once deletion completes.</p>`,
-    });
-    logger.info(
-      "DELETION",
-      "recovery_email_sent",
-      "Deletion-scheduled email sent",
-      { userId, requestId },
-    );
-  } catch (err) {
-    logger.warn(
-      "DELETION",
-      "recovery_email_failed",
-      "Failed to send deletion-scheduled email",
-      {
-        userId,
-        requestId,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
-  }
-}
-
 /**
  * POST /api/account/delete
  * Request account deletion. Schedules the hard delete 7 days out per Doc-01 §40.
@@ -305,14 +239,6 @@ router.post(
             },
           );
         }
-        // §40.2.1 Phase 4: confirmation email with the 7-day recovery link (best-effort).
-        await sendDeletionScheduledEmail(
-          admin,
-          userId,
-          result.rawToken,
-          result.scheduledHardDeleteAt,
-          requestId,
-        );
         logger.info(
           "DELETION",
           "requested",

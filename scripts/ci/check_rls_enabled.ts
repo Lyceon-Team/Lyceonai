@@ -18,7 +18,6 @@ const REQUIRED_RLS_TABLES = [
   'attempts',
   'practice_sessions',
   'exam_attempts',
-  'notifications',
   'chat_messages',
   'orgs',
   'memberships',

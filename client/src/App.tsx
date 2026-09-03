@@ -223,7 +223,6 @@ function Router() {
             </RequireRole>
           )}
         />
-        <Route path="/reset-password" component={UpdatePassword} />
         {/* §40.4 deletion recovery — public (token-gated, no session needed) */}
         <Route path="/account/recover" component={AccountRecover} />
 
