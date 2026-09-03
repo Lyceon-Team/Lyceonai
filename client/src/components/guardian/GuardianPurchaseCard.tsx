@@ -11,7 +11,8 @@
  * two transactions, which is the point — the alternative charges for children
  * the guardian never chose. Edge cases are enumerated below.
  *
- * WHY THIS IS NOT IN `SubscriptionPaywall`, WHICH IS WHERE IT USED TO LIVE.
+ * WHY THIS IS NOT IN `SubscriptionPaywall` — since renamed to
+ * `CheckoutReturnPoller` — WHICH IS WHERE IT USED TO LIVE.
  * The paywall renders only while the guardian has NO access, and returns its
  * children the moment §31.3's fold finds any one linked student premium. A
  * purchase surface gated that way is gated on the exact opposite of when it is

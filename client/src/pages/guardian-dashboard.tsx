@@ -45,10 +45,8 @@ import {
   AlertTriangle,
   CreditCard,
 } from "lucide-react";
-import {
-  SubscriptionPaywall,
-  ManageSubscriptionButton,
-} from "@/components/guardian/SubscriptionPaywall";
+import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
+import { ManageSubscriptionButton } from "@/components/guardian/ManageSubscriptionButton";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
 import { GuardianTemplatePreview } from "@/components/guardian/GuardianTemplatePreview";
@@ -84,13 +82,13 @@ interface StudentSummary {
 interface GuardianBillingStatus {
   isPaid: boolean;
   effectiveAccess: boolean;
-  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
   hasActiveLink?: boolean;
   /**
    * A payment on the conferring student's subscription needs attention.
    *
    * IT IS A BANNER, NOT A GATE — owner ruling 2026-09-03. This field used to
-   * make `SubscriptionPaywall` replace the whole dashboard, which locked out a
+   * make `SubscriptionPaywall` (now `CheckoutReturnPoller`) replace the whole dashboard, which locked out a
    * guardian whose student was `past_due` and therefore, per SCL-029, still
    * fully entitled. Reading it here and rendering a dismissible notice ABOVE
    * the dashboard is the whole of its job now.
@@ -372,7 +370,7 @@ export default function GuardianDashboard() {
     getPremiumDenialReason(weaknessError) !== null;
 
   return (
-    <SubscriptionPaywall>
+    <CheckoutReturnPoller>
       <div className="min-h-screen bg-background p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
@@ -405,7 +403,8 @@ export default function GuardianDashboard() {
           {/*
             THE BANNER THAT REPLACES THE INTERSTITIAL.
 
-            `needsPaymentUpdate` used to make `SubscriptionPaywall` render a
+            `needsPaymentUpdate` used to make the component now called
+            `CheckoutReturnPoller` render a
             full-screen "Payment Update Required" card INSTEAD of this whole
             dashboard. It is true for `past_due`, and SCL-029 rules `past_due`
             ENTITLED — so a guardian with full access lost the link panel, the
@@ -954,6 +953,6 @@ export default function GuardianDashboard() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </SubscriptionPaywall>
+    </CheckoutReturnPoller>
   );
 }

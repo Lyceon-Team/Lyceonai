@@ -16,7 +16,7 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ManageSubscriptionButton } from "./SubscriptionPaywall";
+import { ManageSubscriptionButton } from "./ManageSubscriptionButton";
 
 vi.mock("@/lib/csrf", () => ({ csrfFetch: vi.fn() }));
 vi.mock("@/lib/billing-client", () => ({ openBillingPortal: vi.fn() }));
@@ -84,7 +84,8 @@ describe("ManageSubscriptionButton", () => {
    * object exists and the portal can reactivate it.
    *
    * This replaces a `forcePortal` prop whose only caller was the
-   * `needsPaymentUpdate` interstitial deleted on 2026-09-03. Keeping the prop
+   * `needsPaymentUpdate` interstitial deleted on 2026-09-03 from the component
+   * now called `CheckoutReturnPoller`. Keeping the prop
    * would have left an escape hatch with no caller — and an escape hatch nobody
    * calls is the shape every dead branch on this surface started as.
    */

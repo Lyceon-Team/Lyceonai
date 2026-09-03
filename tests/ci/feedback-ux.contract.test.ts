@@ -25,7 +25,8 @@ describe("Feedback UX hardening contract", () => {
     expect(userProfile).toContain("RecoveryNotice");
     expect(userProfile).toContain("SessionNotice");
     /**
-     * NOT the paywall any more. `SubscriptionPaywall` was rescoped on
+     * NOT the paywall any more. `SubscriptionPaywall` (renamed
+     * `CheckoutReturnPoller` on 2026-09-03) was rescoped on
      * 2026-09-02 to a pure access gate: it renders a spinner, a failed-payment
      * card, or its children, and surfaces no billing error of its own — so
      * asserting a notice component there would pin an import that nothing
@@ -119,7 +120,7 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
-      "client/src/components/guardian/SubscriptionPaywall.tsx",
+      "client/src/components/guardian/CheckoutReturnPoller.tsx",
     ];
 
     // Regex matching the Hard difficulty config object within DIFFICULTY_OPTIONS.
@@ -189,7 +190,7 @@ describe("Feedback UX hardening contract", () => {
 
   it("preserves structured API errors in guardian subscription paywall", () => {
     const guardianPaywall = read(
-      "client/src/components/guardian/SubscriptionPaywall.tsx",
+      "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );
     expect(guardianPaywall).toContain("parseApiErrorFromResponse");
     expect(guardianPaywall).not.toContain("throw new Error(data.error");

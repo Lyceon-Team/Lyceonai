@@ -227,7 +227,12 @@ function TutorErrorDisplay({
 
   // For upgrade actions, render the PremiumUpgradePrompt instead
   if (notice.action === "upgrade") {
-    return <PremiumUpgradePrompt reason="premium_required" mode="inline" />;
+    return (
+      <PremiumUpgradePrompt
+        featureBenefit="the interactive tutor"
+        mode="inline"
+      />
+    );
   }
 
   return (
@@ -484,7 +489,7 @@ export default function ChatPage() {
         {activePremiumReason && !dismissedPremium && (
           <div className="py-4">
             <PremiumUpgradePrompt
-              reason={activePremiumReason}
+              featureBenefit="the interactive tutor"
               mode="inline"
               onDismiss={() => setDismissedPremium(true)}
             />

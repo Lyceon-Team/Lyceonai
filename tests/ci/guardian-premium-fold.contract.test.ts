@@ -222,7 +222,8 @@ describe.skipIf(!PG_AVAILABLE)(
      * THE FAILURE THIS PINS, END TO END. `past_due` is entitled, so the old
      * first-match-wins loop stopped at student A, `GET /api/billing/status`
      * reported `stripeStatus: "past_due"` as the GUARDIAN's status, and
-     * `SubscriptionPaywall`'s `needsPaymentUpdate` early return then replaced
+     * `SubscriptionPaywall`'s `needsPaymentUpdate` early return (the component
+     * is now `CheckoutReturnPoller`) then replaced
      * the entire guardian dashboard — link panel, purchase card and all — for a
      * guardian whose other student was paying perfectly well.
      */

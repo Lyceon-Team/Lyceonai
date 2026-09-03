@@ -51,6 +51,20 @@ import {
   type BillingCtaState,
 } from "@/lib/billing-cta";
 
+/**
+ * Kept only because `chat.tsx` and `full-test.tsx` type their own local denial
+ * state with it. This component no longer accepts it as a prop.
+ *
+ * THE PROP IS DELETED, not deprecated (owner ruling 2026-09-03). Three of these
+ * five values — `payment_past_due`, `subscription_canceled`,
+ * `subscription_expired` — are unreachable: `getPremiumDenialReason` returns
+ * them only when an error body carries a `reason` field with that literal, and
+ * no server route emits one. The other two both meant "not entitled", which
+ * this component establishes from `/api/billing/status` with more precision
+ * than a denial reason can carry. An accepted-and-ignored prop marked
+ * `@deprecated` is still a prop someone will pass believing it works, which is
+ * the same defect as a branch keyed on a field nothing writes.
+ */
 export type PremiumPromptReason =
   | "premium_required"
   | "payment_required"
@@ -64,20 +78,6 @@ export type PremiumUpgradePromptProps = {
    * point of the guardian-facing copy.
    */
   readonly state?: BillingCtaState;
-  /**
-   * Accepted and IGNORED, deliberately.
-   *
-   * Three of its five values — `payment_past_due`, `subscription_canceled`,
-   * `subscription_expired` — were unreachable: `getPremiumDenialReason` returns
-   * them only when an error body carries a `reason` field with that literal,
-   * and no server route emits one. The other two both meant "not entitled",
-   * which this component now establishes from `/api/billing/status` with more
-   * precision than a denial reason could carry. The prop stays so existing call
-   * sites keep compiling; it is scheduled for deletion once they are updated.
-   *
-   * @deprecated pass `state`, or nothing at all.
-   */
-  readonly reason?: PremiumPromptReason;
   /**
    * What THIS surface gives you paid — "your study calendar", "the interactive
    * tutor", "your full mastery breakdown". Not a generic pitch: a lock on the

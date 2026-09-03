@@ -1,5 +1,5 @@
 /**
- * Checkout-return states for the guardian dashboard. NOT a gate any more.
+ * The guardian's return from Stripe Checkout: a processing state that polls.
  *
  * @spec [Doc-01_V8 §31.3 guardian access derives from a linked student's
  *        entitlement; §31.4; SCL-029 `past_due` is ENTITLED]
@@ -9,6 +9,13 @@
  * "processing your payment" state and polls until the webhook lands. Every
  * other time it renders its children. Expected outcome: nothing this component
  * knows can stop a guardian reaching their dashboard.
+ *
+ * IT WAS CALLED `SubscriptionPaywall` UNTIL 2026-09-03, and by then the name
+ * was a lie: the gate it was named for had been deleted and all that remained
+ * was the polling described above. A component whose name describes something
+ * it stopped doing is how the next reader is misled — the same class of defect
+ * as the "Parent Access Subscription" copy and the `linkRequiredForPremium`
+ * branch, both of which read as true and were not. Owner ruling: rename it.
  *
  * THE GATE THAT USED TO BE HERE, AND WHY IT IS GONE (owner ruling 2026-09-03).
  * An early return on `needsPaymentUpdate` replaced the ENTIRE dashboard with a
@@ -54,7 +61,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
-import { useBillingPortal } from "@/hooks/useBillingPortal";
 
 /**
  * ONLY the fields this component reads — and `needsPaymentUpdate`,
@@ -77,11 +83,11 @@ interface BillingStatus {
   hasActiveLink?: boolean;
 }
 
-interface SubscriptionPaywallProps {
+interface CheckoutReturnPollerProps {
   children: React.ReactNode;
 }
 
-export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
+export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
   const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
 
   const urlParams =
@@ -203,72 +209,4 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   }
 
   return <>{children}</>;
-}
-
-type ManageSubscriptionButtonProps = {
-  /** From `/api/billing/status`. Absent while the status is still loading. */
-  readonly effectiveAccess?: boolean;
-  readonly isPaid?: boolean;
-  /**
-   * A subscription EXISTS on this profile even though it grants nothing right
-   * now — `lapsed` from `/api/billing/status`. The portal is the right control
-   * for it, and `effectiveAccess` is false, so this is the one case that is not
-   * covered by the paid gate below.
-   */
-  readonly lapsed?: boolean;
-  readonly label?: string;
-};
-
-/**
- * The portal MANAGES an existing subscription and cannot create one.
- *
- * @spec [Doc-01_V8 §31.4] | @implemented [2026-09-02]
- *
- * plain English: shown only when there is something to manage. What it used to
- * do: take no props, query nothing, and render for every guardian who could
- * load the page — which is how an unpaid guardian reached a Stripe portal
- * reading "No payment method / No invoice history". That was correct portal
- * behaviour answering a question that should never have been asked. Edge case:
- * while the status is loading both props are `undefined` and the button stays
- * hidden, because a control that appears and then vanishes is worse than one
- * that arrives a beat late.
- */
-export function ManageSubscriptionButton({
-  effectiveAccess,
-  isPaid,
-  lapsed = false,
-  label = "Manage Subscription",
-}: ManageSubscriptionButtonProps = {}) {
-  /**
-   * ONE PORTAL HOOK, ONE ERROR SURFACE.
-   *
-   * This used to hold its own `useMutation` with an `onSuccess` handler and no
-   * `onError`, so a failure set `portalMutation.error` and rendered it nowhere:
-   * the button stopped spinning and said nothing. A guardian whose linked
-   * student SELF-PAID has no Stripe Customer of their own, so the route answers
-   * `409 NO_STRIPE_CUSTOMER` — and that silence, on the interstitial this file
-   * used to render, was a total lockout with no visible reason.
-   */
-  const portal = useBillingPortal();
-
-  // Nothing to manage, nothing shown. While the status is still loading both
-  // props are `undefined` and the button stays hidden, because a control that
-  // appears and then vanishes is worse than one that arrives a beat late.
-  const hasSomethingToManage =
-    lapsed === true || (effectiveAccess === true && isPaid === true);
-  if (!hasSomethingToManage) {
-    return null;
-  }
-
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      data-testid="manage-subscription-button"
-      onClick={() => portal.open()}
-      disabled={portal.isPending}
-    >
-      {portal.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : label}
-    </Button>
-  );
 }

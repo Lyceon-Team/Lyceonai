@@ -105,8 +105,11 @@ describe("Premium CTA wiring contract", () => {
     const purchaseCard = read(
       "client/src/components/guardian/GuardianPurchaseCard.tsx",
     );
-    const guardianPaywall = readCode(
-      "client/src/components/guardian/SubscriptionPaywall.tsx",
+    const checkoutPoller = readCode(
+      "client/src/components/guardian/CheckoutReturnPoller.tsx",
+    );
+    const portalButton = readCode(
+      "client/src/components/guardian/ManageSubscriptionButton.tsx",
     );
 
     // The surface exists, on the card, with the shared plans helper.
@@ -129,14 +132,15 @@ describe("Premium CTA wiring contract", () => {
     /**
      * AND THE PART THAT IS A REGRESSION TEST, NOT A WIRING TEST.
      *
-     * The picker used to live in `SubscriptionPaywall`, which renders only
+     * The picker used to live in `SubscriptionPaywall` — now
+     * `CheckoutReturnPoller` — which renders only
      * while the guardian LACKS access. §31.3's fold grants access as soon as
      * any one linked student is premium, so paying for the first child deleted
      * the only way to pay for the second. Asserting the paywall no longer
      * carries a picker is what stops it being put back there.
      */
-    expect(guardianPaywall).not.toContain('data-testid="student-select"');
-    expect(guardianPaywall).not.toContain("startSubscriptionCheckout");
+    expect(checkoutPoller).not.toContain('data-testid="student-select"');
+    expect(checkoutPoller).not.toContain("startSubscriptionCheckout");
 
     /**
      * THE GATE IS GONE, AND THIS IS THE ASSERTION THAT KEEPS IT GONE.
@@ -156,13 +160,26 @@ describe("Premium CTA wiring contract", () => {
      * is why it is called out rather than quietly deleted: the assertion was
      * pinning the defect in place.
      */
-    expect(guardianPaywall).not.toContain("needsPaymentUpdate");
+    expect(checkoutPoller).not.toContain("needsPaymentUpdate");
 
-    // The portal call moved into `useBillingPortal`, which is the single error
-    // surface for all three call sites — so the endpoint string belongs there
-    // now, and must NOT be re-spelled here.
-    expect(guardianPaywall).toContain("useBillingPortal");
-    expect(guardianPaywall).not.toContain("/api/billing/portal");
+    /**
+     * THE PORTAL LIVES IN ITS OWN FILE, and the assertion follows it.
+     *
+     * `ManageSubscriptionButton` was exported from the same module as the
+     * poller until 2026-09-03. A file named for checkout-return polling that
+     * also exported a subscription-management button is the same misdirection
+     * the rename removed, so the button moved out — and its test file was
+     * already called `ManageSubscriptionButton.test.tsx`, importing from a
+     * module of a different name.
+     *
+     * The endpoint string belongs in `useBillingPortal`, the single error
+     * surface for every portal call site, and must NOT be re-spelled in either
+     * component.
+     */
+    expect(portalButton).toContain("useBillingPortal");
+    expect(portalButton).not.toContain("/api/billing/portal");
+    expect(checkoutPoller).not.toContain("useBillingPortal");
+    expect(checkoutPoller).not.toContain("/api/billing/portal");
   });
 
   /**
@@ -171,7 +188,8 @@ describe("Premium CTA wiring contract", () => {
    * `/dashboard` is `RequireRole allow={["student","admin"]}`, so an
    * unconditional `success_url` of `/dashboard` sent a guardian who had just
    * paid to a role denial — money moved, entitlement landed, payer shown a
-   * wall — and left the `?checkout=success` polling in `SubscriptionPaywall`
+   * wall — and left the `?checkout=success` polling in what is now
+   * `CheckoutReturnPoller`
    * unreachable, since that component only ever wraps `/guardian`.
    *
    * Asserted on the source rather than by driving Stripe: the branch is one
