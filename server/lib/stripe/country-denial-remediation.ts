@@ -220,6 +220,28 @@ export const REMEDIATION_STATUSES = [
 export type RemediationStatus = (typeof REMEDIATION_STATUSES)[number];
 
 /**
+ * Is this dispatch status one of the remediation outcomes?
+ *
+ * @implemented [2026-09-02]
+ *
+ * plain English: answers "did a country denial move money" without the caller
+ * listing every status that is NOT a remediation. Lives beside the list it
+ * tests so the two cannot drift.
+ *
+ * WHY IT EXISTS. The one caller used to ask the inverse —
+ * `status !== "processed" && status !== "held"` — which is an exclusion list,
+ * and an exclusion list is wrong the moment anyone adds a status. Adding
+ * `unresolvable_subject` did exactly that; the type checker caught it, but only
+ * because `RemediationStatus` happened to be the narrower parameter type. A
+ * positive test cannot fail that way.
+ */
+export function isRemediationStatus(
+  status: string,
+): status is RemediationStatus {
+  return (REMEDIATION_STATUSES as readonly string[]).includes(status);
+}
+
+/**
  * The outcomes that leave a human owing the customer something.
  *
  * Named as a set rather than left to each caller to re-derive, because the
