@@ -899,6 +899,29 @@ if (isMainModule) {
   // Validate environment variables on startup
   validateEnvironment();
 
+  // Validate GCP credentials at startup (production only).
+  // This makes GCP_SERVICE_ACCOUNT_JSON load-bearing at boot, so the boot
+  // probe can enforce its presence. Without this, a missing credential is
+  // only discovered at request time — which is the drift that let the
+  // ENAMETOOLONG leak run to production.
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const { getGcpCredentials } = require("./lib/gcp-credentials") as {
+        getGcpCredentials: () => { project_id: string };
+      };
+      const creds = getGcpCredentials();
+      console.log(
+        `✅ [GCP] Service account loaded (project: ${creds.project_id})`,
+      );
+    } catch (err: unknown) {
+      // The credential loader's errors are fixed-vocabulary and safe to log.
+      console.error(
+        `❌ [GCP] ${err instanceof Error ? err.message : "credential load failed"}`,
+      );
+      process.exit(1);
+    }
+  }
+
   // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
   function validateSiteUrl(): void {
     const publicSiteUrl = process.env.PUBLIC_SITE_URL;
