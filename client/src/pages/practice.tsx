@@ -48,6 +48,7 @@ import {
 import { type PracticeDifficulty } from "@/lib/practice-filters";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
 import {
@@ -693,17 +694,16 @@ function Practice() {
                   </div>
                 )}
 
+                {/*
+                  ONE CTA CARD. This was an inline block with its own copy and a
+                  hardcoded `/upgrade` link — a fourth shape for one message, and
+                  a destination a guardian's role is bounced from. The card
+                  resolves the destination from the role and reaches the
+                  reactivate state for a lapsed subscriber, neither of which an
+                  inline `<Link href="/upgrade">` could do.
+                */}
                 {practiceHook.quotaExhausted && (
-                  <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 flex items-center gap-3 text-orange-800 text-sm">
-                    <AlertCircle className="h-4 w-4" />
-                    Your practice quota is exhausted. Upgrade your plan to
-                    continue practicing.
-                    <Link href="/upgrade">
-                      <Button variant="outline" size="sm" className="ml-auto">
-                        Upgrade
-                      </Button>
-                    </Link>
-                  </div>
+                  <PremiumUpgradePrompt featureBenefit="unlimited daily practice" />
                 )}
 
                 {practiceHook.error && !practiceHook.quotaExhausted && (

@@ -1,35 +1,57 @@
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppShell } from '@/components/layout/app-shell';
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AppShell } from "@/components/layout/app-shell";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
-import { PageCard } from '@/components/common/page-card';
-import { EmptyState } from '@/components/common/empty-state';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { PageCard } from "@/components/common/page-card";
+import { EmptyState } from "@/components/common/empty-state";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  User, Settings, CreditCard, Shield, LogOut,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  User,
+  Settings,
+  CreditCard,
+  Shield,
+  LogOut,
   Calendar,
-  Trophy, Target, Clock, TrendingUp, Star,
-  AlertCircle, CheckCircle,
-  Mail
-} from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { useLocation } from 'wouter';
-import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import { SUPPORT_EMAIL } from '@/lib/support-contact';
-import { openBillingPortal } from '@/lib/billing-client';
-import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
-import { SessionNotice } from '@/components/feedback/SessionNotice';
-import { DeleteAccountCard } from '@/components/account-deletion/DeleteAccountCard';
-import { isSessionError, toUserFacingMessage } from '@/lib/api-error';
+  Trophy,
+  Target,
+  Clock,
+  TrendingUp,
+  Star,
+  AlertCircle,
+  CheckCircle,
+  Mail,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { SUPPORT_EMAIL } from "@/lib/support-contact";
+import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { resolveCtaDestination } from "@/lib/billing-cta";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
+import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
+import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 
 interface UserProfile {
   id: string;
@@ -47,12 +69,11 @@ interface BillingStatusResponse {
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
-  /** From §31.3's fold; see SubscriptionPaywall for why its four predecessors are gone. */
+  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
   hasActiveLink?: boolean;
 }
 
-
-type RoleSwitchTarget = 'student' | 'guardian' | 'teacher';
+type RoleSwitchTarget = "student" | "guardian" | "teacher";
 
 function buildRoleSwitchTemplate(args: {
   currentRole: string;
@@ -61,20 +82,20 @@ function buildRoleSwitchTemplate(args: {
   displayName?: string;
 }) {
   return [
-    'Hello Lyceon Support Team,',
-    '',
-    'I am requesting a role update for my account.',
+    "Hello Lyceon Support Team,",
+    "",
+    "I am requesting a role update for my account.",
     `Current role: ${args.currentRole}`,
     `Requested role: ${args.requestedRole}`,
     `Account email: ${args.accountEmail}`,
-    `Account name: ${args.displayName || 'Not provided'}`,
-    '',
-    'Reason for request:',
-    '- Please review and update my account role as appropriate.',
-    '',
-    'Thank you,',
+    `Account name: ${args.displayName || "Not provided"}`,
+    "",
+    "Reason for request:",
+    "- Please review and update my account role as appropriate.",
+    "",
+    "Thank you,",
     args.displayName || args.accountEmail,
-  ].join('\n');
+  ].join("\n");
 }
 
 export function formatMemberSince(createdAt?: string): string {
@@ -89,12 +110,13 @@ export function formatMemberSince(createdAt?: string): string {
 // These features are temporarily disabled and shown as placeholders
 
 export default function UserProfile() {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState("profile");
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const { user, signOut } = useSupabaseAuth();
-  const [roleSwitchTarget, setRoleSwitchTarget] = useState<RoleSwitchTarget>('student');
-  const [roleSwitchMessage, setRoleSwitchMessage] = useState('');
+  const { user, signOut, isGuardian } = useSupabaseAuth();
+  const [roleSwitchTarget, setRoleSwitchTarget] =
+    useState<RoleSwitchTarget>("student");
+  const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
 
   // Get user profile from canonical endpoint
   const {
@@ -104,7 +126,7 @@ export default function UserProfile() {
     error: profileErrorObj,
     refetch: refetchProfile,
   } = useQuery<{ user: UserProfile; authenticated: boolean }>({
-    queryKey: ['/api/profile'],
+    queryKey: ["/api/profile"],
     enabled: !!user,
   });
 
@@ -115,7 +137,7 @@ export default function UserProfile() {
     error: billingStatusErrorObj,
     refetch: refetchBillingStatus,
   } = useQuery<BillingStatusResponse>({
-    queryKey: ['/api/billing/status'],
+    queryKey: ["/api/billing/status"],
     enabled: !!user,
   });
 
@@ -124,7 +146,7 @@ export default function UserProfile() {
     try {
       await signOut();
       queryClient.clear();
-      navigate('/login');
+      navigate("/login");
       toast({
         title: "Logged Out",
         description: "You have been successfully logged out.",
@@ -140,18 +162,23 @@ export default function UserProfile() {
 
   const profileUser = userProfile?.user;
 
-  const currentRole = user?.role || 'student';
-  const accountEmail = user?.email || profileUser?.email || '';
-  const accountName = profileUser?.name || user?.display_name || '';
+  const currentRole = user?.role || "student";
+  const accountEmail = user?.email || profileUser?.email || "";
+  const accountName = profileUser?.name || user?.display_name || "";
   const memberSinceLabel = formatMemberSince(profileUser?.createdAt);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return;
     }
 
-    const tab = new URLSearchParams(window.location.search).get('tab');
-    if (tab === 'profile' || tab === 'progress' || tab === 'settings' || tab === 'billing') {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (
+      tab === "profile" ||
+      tab === "progress" ||
+      tab === "settings" ||
+      tab === "billing"
+    ) {
       setActiveTab(tab);
     }
   }, [location]);
@@ -171,30 +198,30 @@ export default function UserProfile() {
     );
   }, [accountEmail, accountName, currentRole, roleSwitchTarget]);
 
-
-
-  const openPortalMutation = useMutation({
-    mutationFn: async () => openBillingPortal(),
-    onError: (error) => {
-      const notice = toUserFacingMessage(error);
-      toast({
-        title: notice.title,
-        description: error instanceof Error ? error.message : notice.message,
-      });
-    },
-  });
+  /**
+   * ONE PORTAL HOOK. This site already had the only correct error behaviour of
+   * the three portal call sites, so it is the behaviour that was lifted rather
+   * than re-implemented — `useBillingPortal` now serves all three, and the
+   * `409 NO_STRIPE_CUSTOMER` case gets a sentence that is actually advice.
+   */
+  const portal = useBillingPortal();
 
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
-  const roleSwitchPreview = [`To: ${SUPPORT_EMAIL}`, `Subject: ${roleSwitchSubject}`, '', roleSwitchMessage].join('\n');
-  const hasManageableSubscription = !!billingStatus && (
-    billingStatus.effectiveAccess ||
-    billingStatus.needsPaymentUpdate ||
-    !!billingStatus.stripeSubscriptionId ||
-    billingStatus.stripeStatus === 'active' ||
-    billingStatus.stripeStatus === 'trialing' ||
-    billingStatus.stripeStatus === 'past_due'
-  );
+  const roleSwitchPreview = [
+    `To: ${SUPPORT_EMAIL}`,
+    `Subject: ${roleSwitchSubject}`,
+    "",
+    roleSwitchMessage,
+  ].join("\n");
+  const hasManageableSubscription =
+    !!billingStatus &&
+    (billingStatus.effectiveAccess ||
+      billingStatus.needsPaymentUpdate ||
+      !!billingStatus.stripeSubscriptionId ||
+      billingStatus.stripeStatus === "active" ||
+      billingStatus.stripeStatus === "trialing" ||
+      billingStatus.stripeStatus === "past_due");
 
   if (profileLoading) {
     return (
@@ -202,7 +229,9 @@ export default function UserProfile() {
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Loading your profile...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading your profile...
+            </p>
           </div>
         </div>
       </AppShell>
@@ -210,7 +239,9 @@ export default function UserProfile() {
   }
 
   if (profileError) {
-    const profileMessage = (profileErrorObj as Error)?.message ?? toUserFacingMessage(profileErrorObj).message;
+    const profileMessage =
+      (profileErrorObj as Error)?.message ??
+      toUserFacingMessage(profileErrorObj).message;
     return (
       <AppShell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
@@ -242,7 +273,7 @@ export default function UserProfile() {
             description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
             action={{
               label: "Refresh",
-              onClick: () => refetchProfile()
+              onClick: () => refetchProfile(),
             }}
           />
         </div>
@@ -255,12 +286,18 @@ export default function UserProfile() {
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 max-w-6xl">
         {/* Page Header */}
         <div className="mb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Account Center</p>
-          <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            Account Center
+          </p>
+          <h1
+            className="text-3xl font-bold text-foreground mb-2"
+            data-testid="page-title"
+          >
             Profile & Settings
           </h1>
           <p className="text-muted-foreground">
-            Manage your account identity, guardian linking, and current runtime-backed settings.
+            Manage your account identity, guardian linking, and current
+            runtime-backed settings.
           </p>
         </div>
         {/* Profile Header */}
@@ -269,17 +306,28 @@ export default function UserProfile() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
               <div className="relative">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={profileUser.avatarUrl} alt={profileUser.name || user?.email} />
+                  <AvatarImage
+                    src={profileUser.avatarUrl}
+                    alt={profileUser.name || user?.email}
+                  />
                   <AvatarFallback className="text-lg">
-                    {profileUser.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                    {profileUser.name?.charAt(0) ||
+                      user?.email?.charAt(0) ||
+                      "U"}
                   </AvatarFallback>
                 </Avatar>
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold mb-1" data-testid="text-profile-name">
+                <h2
+                  className="text-2xl font-bold mb-1"
+                  data-testid="text-profile-name"
+                >
                   {profileUser.name || user?.email}
                 </h2>
-                <p className="text-muted-foreground mb-3" data-testid="text-profile-email">
+                <p
+                  className="text-muted-foreground mb-3"
+                  data-testid="text-profile-email"
+                >
                   {user?.email}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -310,7 +358,11 @@ export default function UserProfile() {
         )}
 
         {/* Profile Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
@@ -345,7 +397,7 @@ export default function UserProfile() {
                     <Label htmlFor="name">Full Name</Label>
                     <Input
                       id="name"
-                      value={profileUser?.name || ''}
+                      value={profileUser?.name || ""}
                       disabled
                       data-testid="input-name"
                     />
@@ -354,7 +406,7 @@ export default function UserProfile() {
                     <Label htmlFor="username">Username</Label>
                     <Input
                       id="username"
-                      value={profileUser?.username || ''}
+                      value={profileUser?.username || ""}
                       disabled
                       data-testid="input-username"
                     />
@@ -364,7 +416,7 @@ export default function UserProfile() {
                     <Input
                       id="email"
                       type="email"
-                      value={user?.email || ''}
+                      value={user?.email || ""}
                       disabled
                       data-testid="input-email"
                     />
@@ -400,8 +452,9 @@ export default function UserProfile() {
                 <Alert>
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
-                    This account is protected by runtime authentication controls.
-                    Use the password reset/update flow for credential changes when using email sign-in.
+                    This account is protected by runtime authentication
+                    controls. Use the password reset/update flow for credential
+                    changes when using email sign-in.
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -411,14 +464,16 @@ export default function UserProfile() {
               <CardHeader>
                 <CardTitle>Request Role Change</CardTitle>
                 <CardDescription>
-                  Role changes are support-mediated and are not applied directly in-app.
+                  Role changes are support-mediated and are not applied directly
+                  in-app.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    No in-product role switch is available. Use this request form to draft an email to {SUPPORT_EMAIL}.
+                    No in-product role switch is available. Use this request
+                    form to draft an email to {SUPPORT_EMAIL}.
                   </AlertDescription>
                 </Alert>
 
@@ -426,9 +481,14 @@ export default function UserProfile() {
                   <Label htmlFor="role-switch-target">Requested Role</Label>
                   <Select
                     value={roleSwitchTarget}
-                    onValueChange={(value) => setRoleSwitchTarget(value as RoleSwitchTarget)}
+                    onValueChange={(value) =>
+                      setRoleSwitchTarget(value as RoleSwitchTarget)
+                    }
                   >
-                    <SelectTrigger id="role-switch-target" data-testid="select-role-switch-target">
+                    <SelectTrigger
+                      id="role-switch-target"
+                      data-testid="select-role-switch-target"
+                    >
                       <SelectValue placeholder="Select target role" />
                     </SelectTrigger>
                     <SelectContent>
@@ -444,7 +504,9 @@ export default function UserProfile() {
                   <Textarea
                     id="role-switch-message"
                     value={roleSwitchMessage}
-                    onChange={(event) => setRoleSwitchMessage(event.target.value)}
+                    onChange={(event) =>
+                      setRoleSwitchMessage(event.target.value)
+                    }
                     className="min-h-[220px]"
                     data-testid="textarea-role-switch-message"
                   />
@@ -494,8 +556,9 @@ export default function UserProfile() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Detailed progress tracking on this page is intentionally disabled until the rebuild is complete.
-                Visit the Dashboard for the current live KPI truth.
+                Detailed progress tracking on this page is intentionally
+                disabled until the rebuild is complete. Visit the Dashboard for
+                the current live KPI truth.
               </AlertDescription>
             </Alert>
 
@@ -508,10 +571,15 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-overall-score">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-overall-score"
+                  >
                     —
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">
+                    Check Dashboard
+                  </p>
                 </CardContent>
               </Card>
 
@@ -523,7 +591,10 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-questions-total">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-questions-total"
+                  >
                     —
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -540,10 +611,15 @@ export default function UserProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-primary" data-testid="text-study-time">
+                  <div
+                    className="text-3xl font-bold text-primary"
+                    data-testid="text-study-time"
+                  >
                     —
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">
+                    Check Dashboard
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -568,7 +644,7 @@ export default function UserProfile() {
           <TabsContent value="settings" className="space-y-6">
             {/* SCL-080: the student's own code. Guardians have no code of their own — they
                 enter one — so this is student-only. */}
-            {currentRole === 'student' && user?.id && (
+            {currentRole === "student" && user?.id && (
               <StudentLinkCodePanel studentId={user.id} />
             )}
 
@@ -601,17 +677,25 @@ export default function UserProfile() {
                 {billingStatusLoading ? (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>Loading live billing status...</AlertDescription>
+                    <AlertDescription>
+                      Loading live billing status...
+                    </AlertDescription>
                   </Alert>
                 ) : billingStatusError ? (
                   isSessionError(billingStatusErrorObj) ? (
                     <SessionNotice
-                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      message={
+                        (billingStatusErrorObj as Error)?.message ??
+                        toUserFacingMessage(billingStatusErrorObj).message
+                      }
                       onRefreshSession={() => window.location.reload()}
                     />
                   ) : (
                     <RecoveryNotice
-                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      message={
+                        (billingStatusErrorObj as Error)?.message ??
+                        toUserFacingMessage(billingStatusErrorObj).message
+                      }
                       onRetry={() => void refetchBillingStatus()}
                     />
                   )
@@ -620,37 +704,59 @@ export default function UserProfile() {
                     <Alert>
                       <Star className="h-4 w-4" />
                       <AlertDescription>
-                        Subscription access is server-authoritative and sourced from the canonical entitlement state.
+                        Subscription access is server-authoritative and sourced
+                        from the canonical entitlement state.
                       </AlertDescription>
                     </Alert>
 
                     <div className="rounded-lg border p-4 space-y-2">
-                      <p className="text-sm text-muted-foreground">Current status</p>
+                      <p className="text-sm text-muted-foreground">
+                        Current status
+                      </p>
                       <p className="font-medium">
-                        {billingStatus?.stripeStatus ? billingStatus.stripeStatus.replace('_', ' ') : 'unknown'}
+                        {billingStatus?.stripeStatus
+                          ? billingStatus.stripeStatus.replace("_", " ")
+                          : "unknown"}
                       </p>
                       {billingStatus?.hasActiveLink === false && (
                         <p className="text-sm text-muted-foreground">
-                          Link a student account first to unlock guardian premium billing.
+                          Link a student account first to unlock guardian
+                          premium billing.
                         </p>
                       )}
                     </div>
 
                     {hasManageableSubscription ? (
                       <Button
-                        onClick={() => openPortalMutation.mutate()}
-                        disabled={openPortalMutation.isPending}
+                        onClick={() => portal.open()}
+                        disabled={portal.isPending}
                         data-testid="button-manage-subscription"
                       >
-                        {openPortalMutation.isPending ? 'Opening portal...' : 'Manage Subscription'}
+                        {portal.isPending
+                          ? "Opening portal..."
+                          : "Manage Subscription"}
                       </Button>
                     ) : (
+                      /**
+                       * ROLE-AWARE, THROUGH THE ONE RESOLVER.
+                       *
+                       * This navigated every role to `/upgrade`, which
+                       * `App.tsx` registers as
+                       * `RequireRole allow={["student","admin"]}`. A guardian
+                       * WITH a linked student passed the `disabled` check, so
+                       * the button was enabled, pressed, and bounced straight
+                       * back to `/guardian` by `RequireRole` — the control
+                       * existed, the server was correct, and the two did not
+                       * meet. `resolveCtaDestination` makes that unwritable.
+                       */
                       <Button
-                        onClick={() => navigate('/upgrade')}
+                        onClick={() =>
+                          navigate(resolveCtaDestination({ isGuardian }))
+                        }
                         disabled={billingStatus?.hasActiveLink === false}
                         data-testid="button-upgrade-subscription"
                       >
-                        View Plans
+                        {isGuardian ? "Go to your dashboard" : "View Plans"}
                       </Button>
                     )}
                   </>
@@ -663,4 +769,3 @@ export default function UserProfile() {
     </AppShell>
   );
 }
-

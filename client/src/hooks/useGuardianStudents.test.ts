@@ -43,6 +43,7 @@ const STUDENT = {
   display_name: "Ada",
   created_at: "2026-03-20T12:00:00.000Z",
   has_active_entitlement: false,
+  entitlement_lapsed: false,
 };
 
 describe("useGuardianStudents", () => {

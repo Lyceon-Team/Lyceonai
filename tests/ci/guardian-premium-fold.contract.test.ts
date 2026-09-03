@@ -102,6 +102,29 @@ async function seedLink(
   );
 }
 
+/**
+ * Insert a real `entitlements` row.
+ *
+ * The fold now reads `tier` and `status` from this table, because §31.2's
+ * derivation is `snap.isActive && snap.tier === 'premium'` and the tier half was
+ * missing until 2026-09-03. The evaluator stub answers the STANDING-GOOD half
+ * (so its calls can still be counted); Postgres answers the product half. A
+ * student with no row is `free`/`missing`, which is the state of everyone who
+ * has never bought anything.
+ */
+async function seedEntitlement(
+  profileId: string,
+  status: string,
+  tier: "premium" | "free" = "premium",
+): Promise<void> {
+  await pg.query(
+    `INSERT INTO public.entitlements (profile_id, tier, status)
+     VALUES ($1,$2,$3)
+     ON CONFLICT (profile_id) DO UPDATE SET tier = EXCLUDED.tier, status = EXCLUDED.status`,
+    [profileId, tier, status],
+  );
+}
+
 async function resolver() {
   return (await import("../../server/lib/account"))
     .resolveLinkedPairPremiumAccessForGuardian;
@@ -145,11 +168,13 @@ describe.skipIf(!PG_AVAILABLE)(
       vi.clearAllMocks();
       // Each case owns the link set it describes; no case inherits another's rows.
       await pg.query(`DELETE FROM public.guardian_links`);
+      await pg.query(`DELETE FROM public.entitlements`);
     });
 
     it("derives premium when only the SECOND student is entitled — the broken case", async () => {
       await seedLink(STUDENT_A, "2026-01-01T00:00:00Z"); // oldest — NOT premium
       await seedLink(STUDENT_B, "2026-02-01T00:00:00Z"); // premium
+      await seedEntitlement(STUDENT_B, "active");
       dbMocks.isActive.mockImplementation(
         async (id: string) => id === STUDENT_B,
       );
@@ -163,9 +188,10 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(access.studentUserId).toBe(STUDENT_B);
     });
 
-    it("derives premium when the FIRST student is entitled, without asking about the rest", async () => {
+    it("derives premium when the FIRST student is entitled", async () => {
       await seedLink(STUDENT_A, "2026-01-01T00:00:00Z");
       await seedLink(STUDENT_B, "2026-02-01T00:00:00Z");
+      await seedEntitlement(STUDENT_A, "active");
       dbMocks.isActive.mockImplementation(
         async (id: string) => id === STUDENT_A,
       );
@@ -175,9 +201,85 @@ describe.skipIf(!PG_AVAILABLE)(
 
       expect(access.hasPremiumAccess).toBe(true);
       expect(access.studentUserId).toBe(STUDENT_A);
-      // Short-circuits: student B is never evaluated. This is why the evaluator
-      // stays a stub — a real one could not be counted.
-      expect(dbMocks.isActive).toHaveBeenCalledTimes(1);
+      /**
+       * EVERY link is evaluated — the short-circuit this used to assert is
+       * GONE, deliberately (owner ruling 2026-09-03).
+       *
+       * `isEntitlementActiveForProfile` counts `past_due` as entitled
+       * (SCL-029), so stopping at the first accepted link let a `past_due`
+       * student mask an `active` one and report their status as the guardian's.
+       * Doc 01 V8 §31.2's own reference derivation is a `Promise.all` over all
+       * linked students, and §31.2.1 rules that sufficient at V1 scale, so this
+       * moves toward the spec. The cost is bounded by the linked-student count.
+       */
+      expect(dbMocks.isActive).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * TEST 2 of the owner's 2026-09-03 acceptance list: with one `past_due` and
+     * one `active` student, the conferring link is the `active` one.
+     *
+     * THE FAILURE THIS PINS, END TO END. `past_due` is entitled, so the old
+     * first-match-wins loop stopped at student A, `GET /api/billing/status`
+     * reported `stripeStatus: "past_due"` as the GUARDIAN's status, and
+     * `SubscriptionPaywall`'s `needsPaymentUpdate` early return (the component
+     * is now `CheckoutReturnPoller`) then replaced
+     * the entire guardian dashboard — link panel, purchase card and all — for a
+     * guardian whose other student was paying perfectly well.
+     */
+    it("prefers a healthy ACTIVE student over an entitled-but-past_due one", async () => {
+      await seedLink(STUDENT_A, "2026-01-01T00:00:00Z"); // oldest, and past_due
+      await seedLink(STUDENT_B, "2026-02-01T00:00:00Z"); // healthy
+      await seedEntitlement(STUDENT_A, "past_due");
+      await seedEntitlement(STUDENT_B, "active");
+      // Both are entitled by the platform predicate; that is the whole point.
+      dbMocks.isActive.mockResolvedValue(true);
+
+      const resolve = await resolver();
+      const access = await resolve(GUARDIAN);
+
+      expect(access.hasPremiumAccess).toBe(true);
+      expect(access.studentUserId).toBe(STUDENT_B);
+      expect(access.studentEntitlementStatus).toBe("active");
+    });
+
+    /**
+     * The other direction, so the preference is a PREFERENCE and not a filter:
+     * a `past_due` student with no healthier sibling still confers access.
+     * SCL-029 is explicit that a student mid-retry keeps what they paid for.
+     */
+    it("still confers premium when the only entitled student is past_due", async () => {
+      await seedLink(STUDENT_A, "2026-01-01T00:00:00Z");
+      await seedEntitlement(STUDENT_A, "past_due");
+      dbMocks.isActive.mockResolvedValue(true);
+
+      const resolve = await resolver();
+      const access = await resolve(GUARDIAN);
+
+      expect(access.hasPremiumAccess).toBe(true);
+      expect(access.studentUserId).toBe(STUDENT_A);
+      expect(access.studentEntitlementStatus).toBe("past_due");
+    });
+
+    /**
+     * §31.2's derivation is `isActive && tier === 'premium'`. The tier half had
+     * no implementation on this path until 2026-09-03, so a row that was
+     * billing-healthy on the FREE tier conferred guardian access it had never
+     * paid for.
+     */
+    it("refuses premium for a billing-healthy student on the FREE tier", async () => {
+      await seedLink(STUDENT_A, "2026-01-01T00:00:00Z");
+      await seedEntitlement(STUDENT_A, "active", "free");
+      dbMocks.isActive.mockResolvedValue(true);
+
+      const resolve = await resolver();
+      const access = await resolve(GUARDIAN);
+
+      expect(access.hasPremiumAccess).toBe(false);
+      expect(access.premiumSource).toBe("none");
+      // The link is still real — "linked but not premium" must not collapse
+      // into "not linked".
+      expect(access.hasActiveLink).toBe(true);
     });
 
     it("keeps 'linked but not premium' distinguishable from 'not linked'", async () => {
