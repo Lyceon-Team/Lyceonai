@@ -50,7 +50,6 @@ import {
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
-import notificationRoutes from "./routes/notification-routes";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -81,6 +80,12 @@ import {
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
+import { resendWebhookHandler } from "./routes/resend-webhook";
+import notificationsRouter from "./routes/notifications";
+import {
+  NOTIFICATION_API_MOUNT,
+  RESEND_WEBHOOK_PATH,
+} from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
@@ -156,6 +161,15 @@ app.post(
         .json({ error: "Webhook processing failed", requestId });
     }
   },
+);
+
+// Resend webhook — raw Buffer, Svix-signature-verified, registered BEFORE express.json()
+// (contracts/notifications.contract.md §7.1). Written fresh; not a copy of the Stripe handler.
+// CSRF_EXEMPT_REASON: Webhook uses Svix signature verification instead of CSRF
+app.post(
+  RESEND_WEBHOOK_PATH,
+  express.raw({ type: "application/json" }),
+  resendWebhookHandler,
 );
 
 app.use(express.json({ limit: "1mb" }));
@@ -400,12 +414,14 @@ app.use(
   profileRoutes,
 );
 
-// Notifications Routes
+
+// Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
+// principal; every read/write is a recipient-scoped SQL function.
 app.use(
-  "/api/notifications",
+  NOTIFICATION_API_MOUNT,
   requireSupabaseAuth,
   doubleCsrfProtection,
-  notificationRoutes,
+  notificationsRouter,
 );
 
 // Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
@@ -1008,11 +1024,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions`);

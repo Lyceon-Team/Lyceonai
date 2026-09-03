@@ -6,8 +6,8 @@ import {
   requireSupabaseAuth,
 } from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { sendEmail } from "../lib/email";
 import { logger } from "../logger";
+import { sendAccountDeletionScheduledEmail } from "../lib/notifications/direct-sends";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 // buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
 // loading this route module); re-exported here for existing importers (deletion-lifecycle.test.ts).
@@ -165,7 +165,12 @@ export async function performDeletionRequestV2(
   admin: DeletionAdminClient,
   profileId: string,
 ): Promise<
-  | { requestedAt: string; scheduledHardDeleteAt: string; rawToken: string }
+  | {
+      requestedAt: string;
+      scheduledHardDeleteAt: string;
+      rawToken: string;
+      requestRowId: string | null;
+    }
   | { error: string }
 > {
   const { rawToken, tokenHash } = generateRecoveryToken();
@@ -185,76 +190,31 @@ export async function performDeletionRequestV2(
   if (!row?.requested_at || !row.scheduled_hard_delete_at) {
     return { error: "Deletion request did not return a schedule" };
   }
+  // The request row is the durable record the deletion-scheduled email is keyed on (ruling
+  // R9). It is unique per token hash while pending, so this resolves exactly one row.
+  const { data: rowRef, error: rowError } = await admin
+    .from("account_deletion_requests")
+    .select("id")
+    .eq("recovery_token_hash", tokenHash)
+    .limit(1);
+  const requestRowId =
+    Array.isArray(rowRef) && rowRef[0] && typeof rowRef[0].id === "string"
+      ? rowRef[0].id
+      : null;
+  if (rowError || !requestRowId) {
+    logger.error(
+      "DELETION",
+      "request_row_lookup_failed",
+      "Deletion request committed but its row id could not be read; the confirmation email cannot be keyed",
+      { profileId, error: rowError?.message ?? "no row" },
+    );
+  }
   return {
     requestedAt: row.requested_at,
     scheduledHardDeleteAt: row.scheduled_hard_delete_at,
     rawToken,
+    requestRowId,
   };
-}
-
-function deletionRecoveryBaseUrl(): string {
-  return (
-    process.env.APP_BASE_URL ??
-    (process.env.NODE_ENV === "development"
-      ? "http://localhost:5000"
-      : "https://lyceon.ai")
-  );
-}
-
-// @spec [Doc-01 §40.2.1 Phase 4] confirmation email carrying the 7-day recovery link. Best-effort:
-// the deletion is already committed, so a mail failure is logged, not surfaced. PRIVACY: never logs
-// the address, token, or body — only userId + requestId + outcome (Coding Standards §12.1).
-async function sendDeletionScheduledEmail(
-  admin: DeletionAdminClient,
-  userId: string,
-  rawToken: string,
-  scheduledHardDeleteAt: string,
-  requestId?: string,
-): Promise<void> {
-  try {
-    const { data, error } = await admin.auth.admin.getUserById(userId);
-    const email = data?.user?.email;
-    if (error || !email) {
-      logger.warn(
-        "DELETION",
-        "recovery_email_skipped",
-        "No address to send deletion-scheduled email",
-        { userId, requestId },
-      );
-      return;
-    }
-    const recoverUrl = `${deletionRecoveryBaseUrl()}/account/recover?token=${encodeURIComponent(rawToken)}`;
-    const when = new Date(scheduledHardDeleteAt).toUTCString();
-    await sendEmail({
-      to: email,
-      subject: "Your Lyceon account is scheduled for deletion",
-      html:
-        `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong> (7 days from your request).</p>` +
-        `<p>Lyceon tracks your learning progress over time — once your account is deleted, ` +
-        `that history is gone permanently, and returning means starting over with a new account.</p>` +
-        `<p>If you have a paid subscription, your paid access ends and you will not be charged again after <strong>${when}</strong>.</p>` +
-        `<p>If you didn't request this or change your mind, restore your account before <strong>${when}</strong>:</p>` +
-        `<p><a href="${recoverUrl}">Restore my account</a></p>` +
-        `<p>This link stops working once deletion completes.</p>`,
-    });
-    logger.info(
-      "DELETION",
-      "recovery_email_sent",
-      "Deletion-scheduled email sent",
-      { userId, requestId },
-    );
-  } catch (err) {
-    logger.warn(
-      "DELETION",
-      "recovery_email_failed",
-      "Failed to send deletion-scheduled email",
-      {
-        userId,
-        requestId,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
-  }
 }
 
 /**
@@ -305,14 +265,29 @@ router.post(
             },
           );
         }
-        // §40.2.1 Phase 4: confirmation email with the 7-day recovery link (best-effort).
-        await sendDeletionScheduledEmail(
-          admin,
-          userId,
-          result.rawToken,
-          result.scheduledHardDeleteAt,
-          requestId,
-        );
+        // §40.2.1 Phase 4 / rulings R8+R9: confirmation email with the 7-day recovery link, sent
+        // directly (it carries the token) and keyed by the request row id. Best-effort: the
+        // deletion is committed; a mail failure is logged inside the sender, never surfaced.
+        if (result.requestRowId) {
+          const { data: authUser } = await admin.auth.admin.getUserById(userId);
+          const email = authUser?.user?.email;
+          if (email) {
+            await sendAccountDeletionScheduledEmail({
+              deletionRequestId: result.requestRowId,
+              email,
+              rawToken: result.rawToken,
+              scheduledHardDeleteAt: result.scheduledHardDeleteAt,
+              requestId,
+            });
+          } else {
+            logger.warn(
+              "DELETION",
+              "recovery_email_skipped",
+              "No address to send the deletion-scheduled email",
+              { userId, requestId },
+            );
+          }
+        }
         logger.info(
           "DELETION",
           "requested",

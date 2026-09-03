@@ -301,6 +301,48 @@ $$;
 
 
 --
+-- Name: apply_notification_delivery_event(text, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apply_notification_delivery_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_message_id uuid;
+  v_applied    boolean;
+BEGIN
+  INSERT INTO public.notification_delivery_events
+    (provider_event_id, provider_message_id, event_type, occurred_at, outcome)
+  VALUES (p_provider_event_id, p_provider_message_id, p_event_type, p_occurred_at, 'unmatched')
+  ON CONFLICT (provider_event_id) DO NOTHING;
+  IF NOT FOUND THEN
+    RETURN 'duplicate';
+  END IF;
+
+  SELECT message_id INTO v_message_id
+    FROM public.notification_messages
+   WHERE provider_message_id = p_provider_message_id
+     AND channel = 'email'
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN 'unmatched';   -- reconciled by record_notification_send_attempt if the send lands later
+  END IF;
+
+  v_applied := public.notification_apply_transition(v_message_id, p_event_type);
+
+  UPDATE public.notification_delivery_events
+     SET message_id = v_message_id,
+         outcome    = CASE WHEN v_applied THEN 'applied' ELSE 'ignored' END,
+         applied_at = now()
+   WHERE provider_event_id = p_provider_event_id;
+
+  RETURN CASE WHEN v_applied THEN 'applied' ELSE 'ignored' END;
+END;
+$$;
+
+
+--
 -- Name: backfill_recompute_student(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1567,7 +1609,8 @@ CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_row public.guardian_links;
+  v_row          public.guardian_links;
+  v_student_name text;
 BEGIN
   IF p_guardian_id = p_student_id THEN
     RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
@@ -1597,6 +1640,21 @@ BEGIN
     'guardian_link_initiated', p_student_id, p_guardian_id,
     jsonb_build_object('from', NULL, 'to', 'active', 'via', 'student_link_code'),
     v_row.id, p_request_id
+  );
+
+  -- Doc 01 §36.1 step 6 — both parties notified, in THIS transaction (contract §2.2).
+  -- Student: in_app. Guardian: in_app + email. Payload: link_id and the student's display
+  -- name only (contract §8.1; Doc 01 §38.1/§38.2 — nothing beyond identity to a guardian).
+  SELECT display_name INTO v_student_name FROM public.profiles WHERE id = p_student_id;
+  PERFORM public.emit_notification_event(
+    public.notification_event_id('guardian_linked', v_row.id::text),
+    'guardian_linked',
+    p_student_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', p_student_id,  'channels', jsonb_build_array('in_app')),
+      jsonb_build_object('profile_id', p_guardian_id, 'channels', jsonb_build_array('in_app', 'email'))
+    ),
+    jsonb_build_object('link_id', v_row.id, 'student_display_name', coalesce(v_student_name, ''))
   );
 
   RETURN v_row;
@@ -1640,6 +1698,40 @@ BEGIN
   -- rows where retention is not required; retain anonymized analytics per
   -- account_deletion_runtime_config.anonymization_retention_days. Not added until the delete list
   -- is traced to Doc 03A — leaving it out keeps this RPC non-destructive beyond the PII row.
+END;
+$$;
+
+
+--
+-- Name: emit_notification_event(uuid, text, uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_recipients IS NULL OR jsonb_typeof(p_recipients) <> 'array' THEN
+    RAISE EXCEPTION 'emit_notification_event: p_recipients must be a JSON array'
+      USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.notification_events (event_id, event_type, subject_profile_id, payload)
+  VALUES (p_event_id, p_event_type, p_subject_profile_id, coalesce(p_payload, '{}'::jsonb))
+  ON CONFLICT (event_id) DO NOTHING;
+
+  -- in_app rows are the delivery: delivered on insert. email rows start queued.
+  INSERT INTO public.notification_messages
+    (event_id, recipient_profile_id, channel, status, delivered_at)
+  SELECT
+    p_event_id,
+    (r ->> 'profile_id')::uuid,
+    c.channel,
+    CASE WHEN c.channel = 'in_app' THEN 'delivered' ELSE 'queued' END,
+    CASE WHEN c.channel = 'in_app' THEN now() ELSE NULL END
+  FROM jsonb_array_elements(p_recipients) AS r
+  CROSS JOIN LATERAL jsonb_array_elements_text(r -> 'channels') AS c(channel)
+  ON CONFLICT (event_id, recipient_profile_id, channel) DO NOTHING;
 END;
 $$;
 
@@ -2050,7 +2142,7 @@ BEGIN
   -- contains profiles.actor_id — the ONLY surface linking identity to the
   -- synthetic identifier. Deleting the row makes the link irreversible.
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
-  -- abuse_scores, notification_outbox, legal_acceptances.
+  -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
   -- Operator-FK edges (36 config/history) were preflight-guarded above.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
@@ -2202,6 +2294,79 @@ $$;
 
 
 --
+-- Name: mark_all_notifications_seen(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_all_notifications_seen(p_recipient_id uuid) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  UPDATE public.notification_messages
+     SET seen_at = now()
+   WHERE recipient_profile_id = p_recipient_id
+     AND channel = 'in_app'
+     AND archived_at IS NULL
+     AND seen_at IS NULL;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+
+--
+-- Name: notification_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_messages (
+    message_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    event_id uuid NOT NULL,
+    recipient_profile_id uuid NOT NULL,
+    channel text NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    provider_message_id text,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    seen_at timestamp with time zone,
+    read_at timestamp with time zone,
+    archived_at timestamp with time zone,
+    sent_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_messages_channel_check CHECK ((channel = ANY (ARRAY['in_app'::text, 'email'::text]))),
+    CONSTRAINT notification_messages_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'sent'::text, 'delivered'::text, 'bounced'::text, 'complained'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: TABLE notification_messages; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_messages IS 'One row per (event, recipient, channel). in_app rows are delivered on insert and ARE the feed; email rows are moved queued->sent by the dispatcher and onward by verified provider webhooks.';
+
+
+--
+-- Name: mark_notification(uuid, uuid, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean) RETURNS SETOF public.notification_messages
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.notification_messages
+     SET seen_at     = CASE WHEN (p_seen OR p_read) AND seen_at IS NULL THEN now() ELSE seen_at END,
+         read_at     = CASE WHEN p_read AND read_at IS NULL THEN now() ELSE read_at END,
+         archived_at = CASE WHEN p_archived AND archived_at IS NULL THEN now() ELSE archived_at END
+   WHERE message_id = p_message_id
+     AND recipient_profile_id = p_recipient_id
+     AND channel = 'in_app'
+  RETURNING *;
+$$;
+
+
+--
 -- Name: mastery_min_events(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2226,6 +2391,145 @@ CREATE FUNCTION public.mastery_model_version() RETURNS text
   SELECT (value #>> '{}')::text
   FROM public.mastery_constants
   WHERE key = 'mastery_model_version';
+$$;
+
+
+--
+-- Name: notification_apply_transition(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_apply_transition(p_message_id uuid, p_event_type text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_status text;
+  v_next   text;
+BEGIN
+  SELECT status INTO v_status
+    FROM public.notification_messages
+   WHERE message_id = p_message_id AND channel = 'email'
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  v_next := CASE
+    WHEN p_event_type = 'email.delivered'  AND v_status = 'sent'                      THEN 'delivered'
+    WHEN p_event_type = 'email.bounced'    AND v_status IN ('sent', 'delivered')      THEN 'bounced'
+    WHEN p_event_type = 'email.complained' AND v_status IN ('sent', 'delivered')      THEN 'complained'
+    WHEN p_event_type = 'email.failed'     AND v_status = 'sent'                      THEN 'failed'
+    ELSE NULL
+  END;
+
+  IF v_next IS NULL THEN
+    RETURN false;   -- illegal or no-op transition: recorded by the caller, never applied
+  END IF;
+
+  UPDATE public.notification_messages
+     SET status       = v_next,
+         delivered_at = CASE WHEN v_next = 'delivered' THEN now() ELSE delivered_at END,
+         last_error   = CASE WHEN v_next = 'failed' THEN 'provider reported email.failed' ELSE last_error END
+   WHERE message_id = p_message_id;
+  RETURN true;
+END;
+$$;
+
+
+--
+-- Name: notification_event_id(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_event_id(p_event_type text, p_source_id text) RETURNS uuid
+    LANGUAGE plpgsql IMMUTABLE STRICT
+    AS $$
+DECLARE
+  v_bytes bytea;
+BEGIN
+  v_bytes := substring(sha256(convert_to(p_event_type || ':' || p_source_id, 'UTF8')) FROM 1 FOR 16);
+  v_bytes := set_byte(v_bytes, 6, (get_byte(v_bytes, 6) & 15) | 80);   -- version 5 nibble
+  v_bytes := set_byte(v_bytes, 8, (get_byte(v_bytes, 8) & 63) | 128);  -- RFC 4122 variant
+  RETURN encode(v_bytes, 'hex')::uuid;
+END;
+$$;
+
+
+--
+-- Name: notification_feed(uuid, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid DEFAULT NULL::uuid) RETURNS TABLE(message_id uuid, event_id uuid, event_type text, subject_profile_id uuid, payload jsonb, created_at timestamp with time zone, seen_at timestamp with time zone, read_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT m.message_id, m.event_id, e.event_type, e.subject_profile_id, e.payload,
+         m.created_at, m.seen_at, m.read_at
+    FROM public.notification_messages m
+    JOIN public.notification_events   e ON e.event_id = m.event_id
+   WHERE m.recipient_profile_id = p_recipient_id
+     AND m.channel = 'in_app'
+     AND m.archived_at IS NULL
+     -- Keyset cursor keyed by message id only: the (created_at, message_id) tuple is read back
+     -- here at full microsecond precision, so a client that carries timestamps at millisecond
+     -- precision (or none) cannot skip or repeat a row. A cursor naming another recipient's
+     -- message resolves to NULL and yields an empty page.
+     AND (p_before_message_id IS NULL
+          OR (m.created_at, m.message_id) < (
+               SELECT b.created_at, b.message_id
+                 FROM public.notification_messages b
+                WHERE b.message_id = p_before_message_id
+                  AND b.recipient_profile_id = p_recipient_id))
+   ORDER BY m.created_at DESC, m.message_id DESC
+   LIMIT p_limit;
+$$;
+
+
+--
+-- Name: notification_messages_guard_recipient_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_messages_guard_recipient_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- SECURITY INVOKER: current_user is the role issuing the UPDATE. The dispatcher and the
+  -- webhook receiver run as service_role (or as the SECURITY DEFINER owner) and pass through.
+  IF current_user IN ('authenticated', 'anon') THEN
+    IF NEW.message_id           IS DISTINCT FROM OLD.message_id
+    OR NEW.event_id             IS DISTINCT FROM OLD.event_id
+    OR NEW.recipient_profile_id IS DISTINCT FROM OLD.recipient_profile_id
+    OR NEW.channel              IS DISTINCT FROM OLD.channel
+    OR NEW.status               IS DISTINCT FROM OLD.status
+    OR NEW.provider_message_id  IS DISTINCT FROM OLD.provider_message_id
+    OR NEW.attempts             IS DISTINCT FROM OLD.attempts
+    OR NEW.last_error           IS DISTINCT FROM OLD.last_error
+    OR NEW.sent_at              IS DISTINCT FROM OLD.sent_at
+    OR NEW.delivered_at         IS DISTINCT FROM OLD.delivered_at
+    OR NEW.created_at           IS DISTINCT FROM OLD.created_at
+    THEN
+      RAISE EXCEPTION 'notification_messages: a recipient may change only seen_at, read_at and archived_at'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: notification_unread_count(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_unread_count(p_recipient_id uuid) RETURNS integer
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT count(*)::integer
+    FROM public.notification_messages
+   WHERE recipient_profile_id = p_recipient_id
+     AND channel = 'in_app'
+     AND archived_at IS NULL
+     AND seen_at IS NULL;
 $$;
 
 
@@ -2578,6 +2882,77 @@ $$;
 --
 
 COMMENT ON FUNCTION public.record_mastery_derivation_gap() IS 'Snapshots mastery_derivation_gap_summary into mastery_derivation_gap_ledger. Detection only — writes no mastery table.';
+
+
+--
+-- Name: record_notification_send_attempt(uuid, boolean, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_notification_send_attempt(p_message_id uuid, p_ok boolean, p_provider_message_id text, p_error text, p_max_attempts integer) RETURNS SETOF public.notification_messages
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row  public.notification_messages;
+  v_ev   record;
+  v_applied boolean;
+BEGIN
+  SELECT * INTO v_row
+    FROM public.notification_messages
+   WHERE message_id = p_message_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'record_notification_send_attempt: message % not found', p_message_id
+      USING ERRCODE = 'LYN01';
+  END IF;
+  IF v_row.channel <> 'email' OR v_row.status <> 'queued' THEN
+    RAISE EXCEPTION 'record_notification_send_attempt: message % is not a queued email (channel=%, status=%)',
+      p_message_id, v_row.channel, v_row.status
+      USING ERRCODE = 'LYN02';
+  END IF;
+
+  IF p_ok THEN
+    IF p_provider_message_id IS NULL OR p_provider_message_id = '' THEN
+      RAISE EXCEPTION 'record_notification_send_attempt: a successful send must carry a provider message id'
+        USING ERRCODE = '22023';
+    END IF;
+    UPDATE public.notification_messages
+       SET status              = 'sent',
+           sent_at             = now(),
+           provider_message_id = p_provider_message_id,
+           attempts            = attempts + 1,
+           last_error          = NULL
+     WHERE message_id = p_message_id;
+
+    -- Race closure (§6.5): webhooks that arrived before this record are applied now, oldest first.
+    FOR v_ev IN
+      SELECT provider_event_id, event_type
+        FROM public.notification_delivery_events
+       WHERE provider_message_id = p_provider_message_id
+         AND message_id IS NULL
+       ORDER BY occurred_at, received_at
+       FOR UPDATE
+    LOOP
+      v_applied := public.notification_apply_transition(p_message_id, v_ev.event_type);
+      UPDATE public.notification_delivery_events
+         SET message_id = p_message_id,
+             outcome    = CASE WHEN v_applied THEN 'applied' ELSE 'ignored' END,
+             applied_at = now()
+       WHERE provider_event_id = v_ev.provider_event_id;
+    END LOOP;
+  ELSE
+    -- A failed send stays queued, distinguishable from an unattempted one by attempts/last_error,
+    -- until the cap is reached. Never `sent`, never silently dropped.
+    UPDATE public.notification_messages
+       SET attempts   = attempts + 1,
+           last_error = coalesce(p_error, 'send failed'),
+           status     = CASE WHEN attempts + 1 >= p_max_attempts THEN 'failed' ELSE 'queued' END
+     WHERE message_id = p_message_id;
+  END IF;
+
+  RETURN QUERY SELECT * FROM public.notification_messages WHERE message_id = p_message_id;
+END;
+$$;
 
 
 --
@@ -4672,22 +5047,48 @@ CREATE TABLE public.mobile_auth_config_history (
 
 
 --
--- Name: notification_outbox; Type: TABLE; Schema: public; Owner: -
+-- Name: notification_delivery_events; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.notification_outbox (
+CREATE TABLE public.notification_delivery_events (
+    provider_event_id text NOT NULL,
+    provider_message_id text NOT NULL,
+    event_type text NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    message_id uuid,
+    outcome text DEFAULT 'unmatched'::text NOT NULL,
+    applied_at timestamp with time zone,
+    CONSTRAINT notification_delivery_events_outcome_check CHECK ((outcome = ANY (ARRAY['applied'::text, 'ignored'::text, 'unmatched'::text])))
+);
+
+
+--
+-- Name: TABLE notification_delivery_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_delivery_events IS 'Verified provider (Resend/Svix) webhook receipts. Dedupe key is the svix-id. Inserted and applied in ONE function call (apply_notification_delivery_event) so claimed-but-not-applied is unrepresentable. Unmatched rows are reconciled when the dispatcher records the send.';
+
+
+--
+-- Name: notification_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_events (
     event_id uuid NOT NULL,
     event_type text NOT NULL,
-    recipient_kind text NOT NULL,
-    recipient_profile_id uuid NOT NULL,
+    subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    processed_at timestamp with time zone,
-    channel_hint text,
-    CONSTRAINT notification_outbox_channel_hint_check CHECK (((channel_hint IS NULL) OR (channel_hint = ANY (ARRAY['in_app'::text, 'email'::text, 'push'::text])))),
-    CONSTRAINT notification_outbox_event_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'quota_reached'::text, 'trial_ending'::text, 'payment_failed'::text, 'score_projection_updated'::text, 'mastery_milestone'::text]))),
-    CONSTRAINT notification_outbox_recipient_kind_check CHECK ((recipient_kind = ANY (ARRAY['student'::text, 'guardian'::text, 'both'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = 'guardian_linked'::text))
 );
+
+
+--
+-- Name: TABLE notification_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_events IS 'One row per notifiable moment, written in the same transaction as the mutation that produced it. payload holds identifiers and rendering parameters only (contract §8). Service-role only.';
 
 
 --
@@ -6049,11 +6450,35 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
--- Name: notification_outbox notification_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: notification_delivery_events notification_delivery_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.notification_outbox
-    ADD CONSTRAINT notification_outbox_pkey PRIMARY KEY (event_id);
+ALTER TABLE ONLY public.notification_delivery_events
+    ADD CONSTRAINT notification_delivery_events_pkey PRIMARY KEY (provider_event_id);
+
+
+--
+-- Name: notification_events notification_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_events
+    ADD CONSTRAINT notification_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: notification_messages notification_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_messages
+    ADD CONSTRAINT notification_messages_pkey PRIMARY KEY (message_id);
+
+
+--
+-- Name: notification_messages notification_messages_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_messages
+    ADD CONSTRAINT notification_messages_unique UNIQUE (event_id, recipient_profile_id, channel);
 
 
 --
@@ -6668,20 +7093,6 @@ CREATE INDEX idx_mccl_time ON public.mastery_constants_change_log USING btree (c
 
 
 --
--- Name: idx_notification_outbox_recipient; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_notification_outbox_recipient ON public.notification_outbox USING btree (recipient_profile_id, created_at DESC);
-
-
---
--- Name: idx_notification_outbox_unprocessed; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_notification_outbox_unprocessed ON public.notification_outbox USING btree (created_at) WHERE (processed_at IS NULL);
-
-
---
 -- Name: idx_practice_items_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7081,6 +7492,34 @@ CREATE UNIQUE INDEX mastery_levels_sort_order_unique ON public.mastery_levels US
 
 
 --
+-- Name: notification_delivery_events_unmatched_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_events_unmatched_idx ON public.notification_delivery_events USING btree (provider_message_id, occurred_at) WHERE (message_id IS NULL);
+
+
+--
+-- Name: notification_messages_dispatch_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_messages_dispatch_idx ON public.notification_messages USING btree (created_at) WHERE ((channel = 'email'::text) AND (status = 'queued'::text));
+
+
+--
+-- Name: notification_messages_feed_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_messages_feed_idx ON public.notification_messages USING btree (recipient_profile_id, created_at DESC) WHERE ((channel = 'in_app'::text) AND (archived_at IS NULL));
+
+
+--
+-- Name: notification_messages_provider_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_messages_provider_idx ON public.notification_messages USING btree (provider_message_id) WHERE (provider_message_id IS NOT NULL);
+
+
+--
 -- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7323,6 +7762,13 @@ CREATE TRIGGER mobile_auth_config_history_no_mutate BEFORE DELETE OR UPDATE ON p
 --
 
 CREATE TRIGGER mobile_auth_config_notify AFTER INSERT OR UPDATE ON public.mobile_auth_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: notification_messages notification_messages_recipient_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER notification_messages_recipient_guard BEFORE UPDATE ON public.notification_messages FOR EACH ROW EXECUTE FUNCTION public.notification_messages_guard_recipient_update();
 
 
 --
@@ -7785,11 +8231,35 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
--- Name: notification_outbox notification_outbox_recipient_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: notification_delivery_events notification_delivery_events_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.notification_outbox
-    ADD CONSTRAINT notification_outbox_recipient_profile_id_fkey FOREIGN KEY (recipient_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.notification_delivery_events
+    ADD CONSTRAINT notification_delivery_events_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.notification_messages(message_id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_events notification_events_subject_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_events
+    ADD CONSTRAINT notification_events_subject_profile_id_fkey FOREIGN KEY (subject_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_messages notification_messages_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_messages
+    ADD CONSTRAINT notification_messages_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.notification_events(event_id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_messages notification_messages_recipient_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_messages
+    ADD CONSTRAINT notification_messages_recipient_profile_id_fkey FOREIGN KEY (recipient_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -8508,10 +8978,36 @@ ALTER TABLE public.mobile_auth_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mobile_auth_config_history ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: notification_outbox; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: notification_delivery_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.notification_outbox ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_delivery_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_messages; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_messages ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_messages notification_messages_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notification_messages_select_self ON public.notification_messages FOR SELECT TO authenticated USING ((recipient_profile_id = auth.uid()));
+
+
+--
+-- Name: notification_messages notification_messages_update_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notification_messages_update_self ON public.notification_messages FOR UPDATE TO authenticated USING ((recipient_profile_id = auth.uid())) WITH CHECK ((recipient_profile_id = auth.uid()));
+
 
 --
 -- Name: observability_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9340,6 +9836,14 @@ GRANT ALL ON FUNCTION public.apply_mastery_event(p_student_id uuid, p_section te
 
 
 --
+-- Name: FUNCTION apply_notification_delivery_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apply_notification_delivery_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apply_notification_delivery_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9568,6 +10072,14 @@ GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email 
 
 
 --
+-- Name: FUNCTION emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION entitlement_active(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9632,6 +10144,30 @@ GRANT ALL ON FUNCTION public.lookup_mastery_level(p_score numeric, p_constants j
 
 
 --
+-- Name: FUNCTION mark_all_notifications_seen(p_recipient_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_all_notifications_seen(p_recipient_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_all_notifications_seen(p_recipient_id uuid) TO service_role;
+
+
+--
+-- Name: TABLE notification_messages; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_messages TO service_role;
+GRANT SELECT,UPDATE ON TABLE public.notification_messages TO authenticated;
+
+
+--
+-- Name: FUNCTION mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION mastery_min_events(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9645,6 +10181,38 @@ GRANT ALL ON FUNCTION public.mastery_min_events() TO service_role;
 
 REVOKE ALL ON FUNCTION public.mastery_model_version() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.mastery_model_version() TO service_role;
+
+
+--
+-- Name: FUNCTION notification_apply_transition(p_message_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_apply_transition(p_message_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_apply_transition(p_message_id uuid, p_event_type text) TO service_role;
+
+
+--
+-- Name: FUNCTION notification_event_id(p_event_type text, p_source_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_event_id(p_event_type text, p_source_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_event_id(p_event_type text, p_source_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION notification_unread_count(p_recipient_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_unread_count(p_recipient_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_unread_count(p_recipient_id uuid) TO service_role;
 
 
 --
@@ -9721,6 +10289,14 @@ GRANT SELECT,INSERT ON TABLE public.mastery_derivation_gap_ledger TO service_rol
 
 REVOKE ALL ON FUNCTION public.record_mastery_derivation_gap() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_mastery_derivation_gap() TO service_role;
+
+
+--
+-- Name: FUNCTION record_notification_send_attempt(p_message_id uuid, p_ok boolean, p_provider_message_id text, p_error text, p_max_attempts integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_notification_send_attempt(p_message_id uuid, p_ok boolean, p_provider_message_id text, p_error text, p_max_attempts integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_notification_send_attempt(p_message_id uuid, p_ok boolean, p_provider_message_id text, p_error text, p_max_attempts integer) TO service_role;
 
 
 --
@@ -10740,10 +11316,17 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO 
 
 
 --
--- Name: TABLE notification_outbox; Type: ACL; Schema: public; Owner: -
+-- Name: TABLE notification_delivery_events; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.notification_outbox TO service_role;
+GRANT ALL ON TABLE public.notification_delivery_events TO service_role;
+
+
+--
+-- Name: TABLE notification_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_events TO service_role;
 
 
 --

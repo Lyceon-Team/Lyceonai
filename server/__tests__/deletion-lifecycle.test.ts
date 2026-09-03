@@ -381,13 +381,24 @@ describe("Deletion Lifecycle V2 — token recovery (§40.4) + request (§40.2.1)
       data: [{ requested_at: "R", scheduled_hard_delete_at: "S" }],
       error: null,
     }));
-    const admin = { rpc } as unknown as FakeAdmin;
+    // R9 (2026-09-03): after the RPC, the request row is read back by token hash so the
+    // deletion-scheduled email can be keyed on its id.
+    const from = vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          limit: async () => ({ data: [{ id: "req-row-1" }], error: null }),
+        }),
+      }),
+    }));
+    const admin = { rpc, from } as unknown as FakeAdmin;
     const result = await performDeletionRequestV2(admin, "profile-1");
     expect("error" in result).toBe(false);
     expect(result).toMatchObject({
       requestedAt: "R",
       scheduledHardDeleteAt: "S",
+      requestRowId: "req-row-1",
     });
+    expect(from).toHaveBeenCalledWith("account_deletion_requests");
     expect(typeof (result as { rawToken: string }).rawToken).toBe("string");
     const args = rpc.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(args.p_profile_id).toBe("profile-1");

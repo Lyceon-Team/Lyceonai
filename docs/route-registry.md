@@ -20,7 +20,6 @@ This document is the single authoritative registry of:
 | `/` | public | free | HomePage | N/A (static) | ACTIVE |
 | `/login` | public | free | Login | `/api/auth/signin`, `/api/auth/signup` | ACTIVE |
 | `/signup` | public | free | Redirect→`/login` | N/A | ACTIVE |
-| `/reset-password` | public | free | UpdatePassword | `/api/auth/reset-password` | ACTIVE |
 | `/update-password` | public | free | UpdatePassword | `/api/auth/update-password` | ACTIVE |
 | `/account/recover` | public | free | AccountRecover | `/api/account/recover-deletion` | ACTIVE |
 | `/digital-sat` | public | free | DigitalSAT | N/A (static SEO) | ACTIVE |

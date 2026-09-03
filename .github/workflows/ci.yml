@@ -513,12 +513,32 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          out=$(pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts 2>&1)
-          echo "$out"
-          if echo "$out" | grep -q "skipped"; then
-            echo "FAIL: the SCL-080 PG suite SKIPPED rather than running."
-            exit 1
-          fi
+          node scripts/ci/vitest-summary-gate.mjs --selftest
+          # R10 (2026-09-03): the verdict is vitest's JSON report, not a substring grep over
+          # raw stdout — a log line containing "skipped" once turned a 7/7 pass red here.
+          pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-link-code.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
+            --file tests/ci/guardian-link-code.pg.ci.test.ts
+
+      # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
+      # The notifications rebuild's proof: every DB-touching case runs against the real
+      # migrations on the throwaway Postgres above, with no mocked table anywhere — the
+      # deleted stack passed CI for months by mocking tables that existed in no environment.
+      # Verdict read from vitest's JSON report (scripts/ci/vitest-summary-gate.mjs): a
+      # PG-backed suite that skips is a vacuous pass, and a substring grep cannot tell.
+      - name: Notifications rebuild → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/notifications.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-notifications.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-notifications.json \
+            --file tests/ci/notifications.pg.ci.test.ts
 
       - name: Guardian schema-truth conversions → real PG proof
         env:
@@ -528,16 +548,15 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          out=$(pnpm exec vitest run \
+          pnpm exec vitest run \
             tests/ci/guardian-checkout.contract.test.ts \
             tests/ci/guardian-premium-fold.contract.test.ts \
-            packages/shared/src/__tests__/guardian-student-schema.test.ts 2>&1)
-          echo "$out"
-          if echo "$out" | grep -q "skipped"; then
-            echo "FAIL: a PG-backed guardian suite SKIPPED rather than running."
-            echo "      These files gate on PGHOST; a skip here is a vacuous pass."
-            exit 1
-          fi
+            packages/shared/src/__tests__/guardian-student-schema.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-conversions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-conversions.json \
+            --file tests/ci/guardian-checkout.contract.test.ts \
+            --file tests/ci/guardian-premium-fold.contract.test.ts \
+            --file packages/shared/src/__tests__/guardian-student-schema.test.ts
 
       # @spec [owner instruction 2026-08-27 Part B — "make the guards structural, not habitual"]
       # The proof above can only be trusted if its cases can FAIL. Three times in three
