@@ -19,7 +19,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -91,13 +91,10 @@ const KNOWN_NON_CONFIG = new Set([
 
 function loadManifest(): ManifestData {
   const helperPath = path.join(ROOT, "scripts/ci/_yaml-to-json.py");
-  const jsonStr = execSync(
-    `python3 ${JSON.stringify(helperPath)} ${JSON.stringify(MANIFEST_PATH)}`,
-    {
-      encoding: "utf-8",
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
+  const jsonStr = execFileSync("python3", [helperPath, MANIFEST_PATH], {
+    encoding: "utf-8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
   return JSON.parse(jsonStr) as ManifestData;
 }
 
