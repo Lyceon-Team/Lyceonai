@@ -64,6 +64,12 @@ import {
   resolveGuardianPurchaseSubject,
   subscriptionAlreadyFundsStudent,
 } from "../lib/stripe/guardian-checkout";
+import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
+import {
+  checkoutIdempotencyKey,
+  subscriptionItemIdempotencyKey,
+  isStripeIdempotencyConflict,
+} from "../lib/stripe/purchase-idempotency";
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
@@ -143,6 +149,38 @@ router.post(
     const isGuardian = role === "guardian";
 
     try {
+      /**
+       * ONE RULE, BOTH ROUTES — the self-pay half.
+       *
+       * @spec [Doc 01 V8 §20; SCL-029] | @implemented [2026-09-02]
+       *
+       * Runs BEFORE `getStripeClient()` and before the Customer is created, so
+       * a student who already has a subscription causes no Stripe object of any
+       * kind to come into existence. The guardian half runs at its own earliest
+       * point — immediately after `resolveGuardianPurchaseSubject`, since the
+       * subject there is not known until the links are read.
+       *
+       * The subject on this path is the authenticated caller; nothing in the
+       * body selects it.
+       */
+      if (!isGuardian) {
+        const eligibility =
+          await evaluateSubjectPurchaseEligibility(studentProfileId);
+        if (!eligibility.ok) {
+          logger.info("BILLING", "checkout", "Self-pay purchase refused", {
+            requestId,
+            studentProfileId,
+            code: eligibility.code,
+          });
+          return res
+            .status(eligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409)
+            .json({
+              error: { message: eligibility.reason, code: eligibility.code },
+              requestId,
+            });
+        }
+      }
+
       const priceId = getPriceId(plan);
       const stripe = getStripeClient();
 
@@ -173,6 +211,13 @@ router.post(
 
       let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
       let sessionMetadata: Record<string, string>;
+      /**
+       * The STUDENT this purchase funds, in scope for the idempotency key at
+       * the Checkout call below. `selectedStudentId` is block-scoped to the
+       * guardian branch and `studentProfileId` is the payer on that branch, so
+       * neither alone is the subject at the call site. Assigned on both paths.
+       */
+      let subjectStudentId: string;
 
       /**
        * §4.8 GUARDIAN-PAID PURCHASE — PER STUDENT. The production call site.
@@ -222,6 +267,40 @@ router.post(
             });
         }
         const selectedStudentId = subject.studentProfileId;
+
+        /**
+         * ONE RULE, BOTH ROUTES — the guardian half. Same function, same code,
+         * asked about the SELECTED STUDENT rather than the guardian: a guardian
+         * with premium access derived from child A must still be able to buy
+         * for child B.
+         *
+         * This runs before `subscriptions.list` and before either write branch,
+         * so a refusal creates no Stripe object. It does NOT replace
+         * `subscriptionAlreadyFundsStudent` below — that answers a different
+         * question of a different source (does this guardian's own subscription
+         * already carry an item for this student), and it stays because it
+         * closes the window before the webhook has written the row.
+         */
+        const guardianEligibility =
+          await evaluateSubjectPurchaseEligibility(selectedStudentId);
+        if (!guardianEligibility.ok) {
+          logger.info("BILLING", "checkout", "Guardian purchase refused", {
+            requestId,
+            payerProfileId,
+            code: guardianEligibility.code,
+          });
+          return res
+            .status(
+              guardianEligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409,
+            )
+            .json({
+              error: {
+                message: guardianEligibility.reason,
+                code: guardianEligibility.code,
+              },
+              requestId,
+            });
+        }
 
         /**
          * BRANCH FIRST, THEN GATE. The order is the fix.
@@ -331,14 +410,60 @@ router.post(
           // depend on Checkout propagating `line_items[].metadata` — the one
           // mechanism §4.8's plan could never verify. Only a guardian's FIRST
           // purchase goes through Checkout at all.
-          const item = await stripe.subscriptionItems.create({
-            subscription: currentSubscription.id,
-            price: priceId,
-            quantity: 1,
-            // proration_behavior deliberately omitted: Stripe's default
-            // `create_prorations` is exactly the wanted behaviour.
-            metadata: { student_profile_id: selectedStudentId },
-          });
+          /**
+           * IDEMPOTENT ADD-ITEM. A repeated key inside the window returns the
+           * ORIGINAL item rather than adding a second one, so a double-submit
+           * cannot bill the guardian twice for one student.
+           * `subscriptionAlreadyFundsStudent` above catches the case where the
+           * item is already visible on the retrieved subscription; this catches
+           * the one where two requests are in flight together and neither has
+           * seen the other's item yet.
+           */
+          let item: Stripe.SubscriptionItem;
+          try {
+            item = await stripe.subscriptionItems.create(
+              {
+                subscription: currentSubscription.id,
+                price: priceId,
+                quantity: 1,
+                // proration_behavior deliberately omitted: Stripe's default
+                // `create_prorations` is exactly the wanted behaviour.
+                metadata: { student_profile_id: selectedStudentId },
+              },
+              {
+                idempotencyKey: subscriptionItemIdempotencyKey({
+                  subjectProfileId: selectedStudentId,
+                  subscriptionId: currentSubscription.id,
+                  priceId,
+                  nowMs: Date.now(),
+                }),
+              },
+            );
+          } catch (err: unknown) {
+            if (!isStripeIdempotencyConflict(err)) throw err;
+            // The key was used inside this window with different parameters —
+            // a concurrent attempt for the same student on the same
+            // subscription. NEVER retry without the key: that is the second
+            // charge this exists to prevent.
+            logger.warn(
+              "BILLING",
+              "checkout",
+              "Add-item refused: an attempt for this student is already in flight",
+              {
+                requestId,
+                payerProfileId,
+                studentProfileId: selectedStudentId,
+              },
+            );
+            return res.status(409).json({
+              error: {
+                message:
+                  "A purchase for this student is already being processed. Please wait a moment and refresh.",
+                code: "PURCHASE_IN_FLIGHT",
+              },
+              requestId,
+            });
+          }
 
           logger.info(
             "BILLING",
@@ -381,6 +506,7 @@ router.post(
           payer_relationship: "guardian",
           plan,
         };
+        subjectStudentId = selectedStudentId;
       } else {
         if (parsed.data.student_profile_id) {
           // Rejected, not ignored: a student who thinks they bought for someone
@@ -400,12 +526,51 @@ router.post(
           payer_relationship: "self",
           plan,
         };
+        subjectStudentId = studentProfileId;
       }
 
-      const session = await stripe.checkout.sessions.create({
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: "subscription",
         line_items: lineItems,
+        /**
+         * SAVE THE BILLING ADDRESS ONTO THE CUSTOMER — ONE FACT, ONE SOURCE.
+         *
+         * @spec [INV-03-08; Charter §7 "one fact, one source"]
+         * @implemented [2026-09-02]
+         *
+         * plain English: tell Stripe to copy the address the payer types during
+         * Checkout onto the Customer. Expected outcome: the grant gate, which
+         * reads `Customer.address.country`, has something to read.
+         *
+         * WHAT WENT WRONG WITHOUT IT. Stripe collects the billing address per
+         * PAYMENT METHOD and does not write it back to the Customer unless
+         * asked. So `Customer.address` stayed `null` on every customer we have,
+         * while the session carried a complete address. Two gates then read the
+         * same fact from two sources and disagreed on the same purchase:
+         * `fulfilCheckoutSession` passed guardian `c6d3fc60` on
+         * `session.customer_details.address.country = "US"`, and
+         * `assertCountryEligibleForGrant` denied the same purchase seconds
+         * later on `Customer.address = null` -> verdict `unknown` ->
+         * `hold_for_operator`. Charge taken, subscription live, nothing
+         * refunded, no entitlement. Every grant behaved this way from
+         * 2026-08-28, when the Customer-level gate landed, until this change.
+         *
+         * WHY NOT POINT THE GRANT GATE AT THE SESSION INSTEAD. Renewals have no
+         * session. The Customer is the correct source precisely because it is
+         * the one that still exists at `customer.subscription.updated`; it was
+         * simply never populated. Fixing the read would have fixed checkout and
+         * left every renewal denying.
+         *
+         * `customer_update` requires `customer` to be set, which it is on every
+         * path through this route (see `customerId` above).
+         * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-customer_update-address
+         *
+         * IT DOES NOT BACKFILL. Customers that already exist with a null
+         * address keep it until their next Checkout; that is an owner action,
+         * not a code path.
+         */
+        customer_update: { address: "auto" },
         /**
          * RETURN THE PAYER TO A PAGE THEIR ROLE CAN LOAD.
          *
@@ -427,7 +592,51 @@ router.post(
         ...(isGuardian ? {} : { client_reference_id: studentProfileId }),
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
-      });
+      };
+
+      /**
+       * IDEMPOTENT SESSION CREATION — the in-flight half of the double-purchase
+       * defence.
+       *
+       * The durable guard above closes the SETTLED case. Between this call
+       * returning and `checkout.session.completed` writing the entitlement row,
+       * `entitlement_active()` is still false and a second submit would sail
+       * through it. A repeated key inside the window returns the ORIGINAL
+       * session instead of creating a second one.
+       *
+       * The key is keyed on the STUDENT, not the payer, so student S
+       * self-paying and guardian G buying for S inside one window collide
+       * deliberately — see `checkoutIdempotencyKey`. Stripe answers that with
+       * `idempotency_error`, which is a REFUSAL and is surfaced as one.
+       */
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await stripe.checkout.sessions.create(sessionParams, {
+          idempotencyKey: checkoutIdempotencyKey({
+            subjectProfileId: subjectStudentId,
+            priceId,
+            nowMs: Date.now(),
+          }),
+        });
+      } catch (err: unknown) {
+        if (!isStripeIdempotencyConflict(err)) throw err;
+        // NEVER fall through to a second create without the key: that is the
+        // second subscription this exists to prevent.
+        logger.warn(
+          "BILLING",
+          "checkout",
+          "Checkout refused: an attempt for this student is already in flight",
+          { requestId, payerProfileId },
+        );
+        return res.status(409).json({
+          error: {
+            message:
+              "A purchase for this student is already being processed. Please wait a moment and refresh.",
+            code: "PURCHASE_IN_FLIGHT",
+          },
+          requestId,
+        });
+      }
 
       // Charter §6: on the unaccompanied path the student IS the payer, so the
       // profile id and the Checkout Session id are both payer identifiers.

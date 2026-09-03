@@ -61,14 +61,12 @@ export const env = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
 
   // Document AI configuration with fallback to legacy names
-  DOC_AI_PROCESSOR:
-    process.env.DOC_AI_PROCESSOR || process.env.DOCUMENT_AI_PROCESSOR_ID,
-  GOOGLE_APPLICATION_CREDENTIALS_JSON:
-    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
-    process.env.DOCUMENT_AI_APIJSON,
-  GCP_LOCATION:
-    process.env.GCP_LOCATION || process.env.DOCUMENT_AI_LOCATION || "us",
-
+  // NOTE: GOOGLE_APPLICATION_CREDENTIALS_JSON was removed — it was dead code
+  // (no Document AI client exists in this codebase). GCP credentials are now
+  // loaded via server/lib/gcp-credentials.ts from GCP_SERVICE_ACCOUNT_JSON.
+  DOC_AI_PROCESSOR: process.env.DOC_AI_PROCESSOR || process.env.DOCUMENT_AI_PROCESSOR_ID,
+  GCP_LOCATION: process.env.GCP_LOCATION || process.env.DOCUMENT_AI_LOCATION || 'us',
+  
   // Mathpix (for selective math region patching)
   MATHPIX_API_ID: process.env.MATHPIX_API_ID,
   MATHPIX_API_KEY_ONLY: process.env.MATHPIX_API_KEY_ONLY,
@@ -208,26 +206,13 @@ export function validateEnvironment() {
       console.warn(`⚠️ [ENV] QA_LLM_ENABLED=true but missing GEMINI_API_KEY`);
     }
   }
-
-  // OCR provider validation with fallback reporting
-  if (env.OCR_PROVIDER === "docai") {
-    const docAiConfigured =
-      env.DOC_AI_PROCESSOR && env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-    if (docAiConfigured) {
-      const usingFallback =
-        !process.env.DOC_AI_PROCESSOR ||
-        !process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-      if (usingFallback) {
-        console.log(
-          `✅ [ENV] Document AI configured via fallback (DOCUMENT_AI_PROCESSOR_ID, DOCUMENT_AI_APIJSON)`,
-        );
-      } else {
-        console.log(`✅ [ENV] Document AI configured`);
-      }
+  
+  // OCR provider validation
+  if (env.OCR_PROVIDER === 'docai') {
+    if (env.DOC_AI_PROCESSOR) {
+      console.log(`✅ [ENV] Document AI processor configured`);
     } else {
-      console.warn(
-        `⚠️ [ENV] OCR_PROVIDER=docai but missing DOC_AI_PROCESSOR or GOOGLE_APPLICATION_CREDENTIALS_JSON`,
-      );
+      console.warn(`⚠️ [ENV] OCR_PROVIDER=docai but missing DOC_AI_PROCESSOR`);
     }
   }
 
