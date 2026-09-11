@@ -148,6 +148,8 @@ describe("assemble-batch gate", () => {
 
   it("rejects invalid section", () => {
     const dir = join(SCRATCH, "bad-section");
+    // canonicality-gate: negative-fixture — the subject of this assertion is a section
+    // value the frozen taxonomy rejects. Making it canonical would delete the test.
     writeParts(dir, [validMcqRecord({ section: "MATH" })]);
     const result = runGate(dir, { dryRun: true });
     expect(result.status).not.toBe(0);
@@ -156,6 +158,8 @@ describe("assemble-batch gate", () => {
 
   it("rejects domain-section mismatch", () => {
     const dir = join(SCRATCH, "domain-mismatch");
+    // canonicality-gate: negative-fixture — (RW, "Algebra") is the pair
+    // questions_domain_section_canonical rejects; it is what this test asserts on.
     writeParts(dir, [validMcqRecord({ section: "RW", domain: "Algebra" })]);
     const result = runGate(dir, { dryRun: true });
     expect(result.status).not.toBe(0);

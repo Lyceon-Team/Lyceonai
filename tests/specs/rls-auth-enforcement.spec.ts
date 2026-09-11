@@ -116,7 +116,7 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       },
       data: {
         mode: 'flow',
-        section: 'Math',
+        section: 'M',
         difficulty: 'medium',
       },
     });
@@ -167,7 +167,7 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       },
       data: {
         mode: 'structured',
-        section: 'Reading',
+        section: 'RW',
         difficulty: 'hard',
       },
     });
@@ -308,7 +308,7 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       },
       data: {
         mode: 'flow',
-        section: 'Writing',
+        section: 'RW',
       },
     });
 
@@ -327,7 +327,7 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       },
       data: {
         mode: 'flow',
-        section: 'Math',
+        section: 'M',
         difficulty: 'medium',
       },
     });
@@ -383,7 +383,7 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       },
       data: {
         mode: 'flow',
-        section: 'Math',
+        section: 'M',
         difficulty: 'medium',
       },
     });

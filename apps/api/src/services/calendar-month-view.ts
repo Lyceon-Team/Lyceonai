@@ -2,6 +2,11 @@ import { DateTime } from "luxon";
 import { supabaseServer } from "../lib/supabase-server";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "./mastery-constants";
 import type { DayStatus, TaskType } from "./calendar-planner";
+import type { CanonicalSectionCode } from "../../../../shared/question-bank-contract";
+import {
+  sectionCodeFromLabel,
+  sectionDisplayLabel,
+} from "../../../../shared/section-display";
 
 type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed";
 
@@ -39,7 +44,7 @@ type PlanTaskRow = {
   day_date: string;
   ordinal: number;
   task_type: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   duration_minutes: number;
   source_skill_code: string | null;
   source_domain: string | null;
@@ -87,7 +92,7 @@ function parseTaskStatus(value: unknown): TaskStatus {
   return "planned";
 }
 
-function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+function normalizeTaskType(value: unknown, section: CanonicalSectionCode | null, mode: unknown): TaskType {
   const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
   const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
   if (raw === "full_length" || raw === "full_length_exam" || raw === "full_test" || raw === "full-length") return "full_length";
@@ -96,14 +101,13 @@ function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: 
   if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
   if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
   if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
-  if (section === "MATH" || section === "RW") return "practice";
+  if (section !== null) return "practice";
   return "practice";
 }
 
-function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
-  if (section === "MATH") return "Math";
-  if (section === "RW") return "Reading & Writing";
-  return null;
+// Second of the three private copies of the display mapping.
+function taskSectionToLegacy(section: CanonicalSectionCode | null): string | null {
+  return sectionDisplayLabel(section);
 }
 
 function taskModeForDay(task: Pick<PlanTaskRow, "task_type" | "metadata">): string {
@@ -309,7 +313,11 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
     const derived = computeDayStatusFromTasks(day.day_date, DateTime.now().setZone(timezone).toISODate()!, dayTasks);
     const fallbackTasks = Array.isArray(day.tasks)
       ? day.tasks.map((task: any) => {
-          const section = typeof task?.section === "string" ? (task.section.includes("Math") ? "MATH" : task.section.includes("Writing") ? "RW" : null) : null;
+          // `day.tasks` is a jsonb blob of already-rendered task summaries, so the
+          // section arrives as a LABEL. sectionCodeFromLabel is the declared inverse of
+          // sectionDisplayLabel; the substring sniffing it replaces matched "Math" and
+          // "Writing" anywhere in the string and produced a code the database rejects.
+          const section = sectionCodeFromLabel(task?.section);
           const canonicalType = normalizeTaskType(task?.task_type ?? task?.type, section, task?.mode);
           const target = task?.target && typeof task.target === "object" ? task.target : {
             section,

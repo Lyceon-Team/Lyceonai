@@ -26,10 +26,12 @@ import {
 } from "./calendar-planner-reprioritization";
 import {
   normalizeClientInstanceId,
-  normalizeSectionCode as normalizeCanonicalSectionCode,
+  normalizeSectionCode,
   projectStudentSafeQuestion,
   resolveClientInstanceBinding,
+  type CanonicalSectionCode,
 } from "../../../../shared/question-bank-contract";
+import { sectionDisplayLabel } from "../../../../shared/section-display";
 import type {
   FullLengthExamSession,
   FullLengthExamModule,
@@ -53,7 +55,7 @@ import {
  * Math Module 2: 35 minutes, 22 questions (adaptive)
  */
 export const MODULE_CONFIG = {
-  rw: {
+  RW: {
     module1: {
       durationMs: 32 * 60 * 1000, // 32 minutes
       questionCount: 27,
@@ -63,7 +65,7 @@ export const MODULE_CONFIG = {
       questionCount: 27,
     },
   },
-  math: {
+  M: {
     module1: {
       durationMs: 35 * 60 * 1000, // 35 minutes
       questionCount: 22,
@@ -85,13 +87,13 @@ export const BREAK_DURATION_MS = 10 * 60 * 1000; // 10 minutes
  * Based on Module 1 raw score (number correct)
  */
 export const ADAPTIVE_THRESHOLDS = {
-  rw: {
+  RW: {
     // For RW Module 1 (27 questions)
     // ≥ 21 correct → hard
     // < 21 correct → medium
     hardThreshold: 21,
   },
-  math: {
+  M: {
     // For Math Module 1 (22 questions)
     // ≥ 15 correct → hard
     // < 15 correct → medium
@@ -120,10 +122,10 @@ type Module2DomainKey =
   | "geometry_trigonometry";
 
 const MODULE2_DOMAIN_QUOTAS: Record<
-  SectionType,
+  CanonicalSectionCode,
   Record<Module2DomainKey, number>
 > = {
-  rw: {
+  RW: {
     information_and_ideas: 7,
     craft_and_structure: 8,
     expression_of_ideas: 5,
@@ -133,7 +135,7 @@ const MODULE2_DOMAIN_QUOTAS: Record<
     problem_solving_data_analysis: 0,
     geometry_trigonometry: 0,
   },
-  math: {
+  M: {
     algebra: 8,
     advanced_math: 8,
     problem_solving_data_analysis: 3,
@@ -170,7 +172,14 @@ const MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED =
 // TYPES
 // ============================================================================
 
-export type SectionType = "rw" | "math";
+/**
+ * @spec [Doc-04B_V4.3 §11.2] | @implemented [2026-09-02]
+ * The exam surface used to declare `CanonicalSectionCode = "RW" | "M"` and a second type
+ * named CanonicalSectionCode valued `"MATH" | "RW"`, neither of which is what the
+ * database stores. A single value crossed both on its way from `questions.section` to
+ * a score table. Both are gone; `CanonicalSectionCode` from
+ * shared/question-bank-contract is the only section type on this surface.
+ */
 export type ModuleIndex = 1 | 2;
 export type DifficultyBucket = "easy" | "medium" | "hard";
 export type QuestionDifficulty = 1 | 2 | 3;
@@ -197,7 +206,7 @@ type TestFormItemRecord = {
 };
 
 type ResolvedFormItem = {
-  section: SectionType;
+  section: CanonicalSectionCode;
   moduleIndex: ModuleIndex;
   ordinal: number;
   canonicalQuestionId: string;
@@ -305,7 +314,7 @@ export interface SubmitModuleResult {
   correctCount: number;
   totalCount: number;
   nextModule: {
-    section: SectionType;
+    section: CanonicalSectionCode;
     moduleIndex: ModuleIndex;
   } | null;
   isBreak: boolean;
@@ -341,22 +350,22 @@ export interface SkillDiagnosticItem {
 export interface CompleteExamResult {
   sessionId: string;
   rawScore: {
-    rw: SectionRawScore;
-    math: SectionRawScore;
+    RW: SectionRawScore;
+    M: SectionRawScore;
     total: SectionRawScore;
   };
   scaledScore: {
-    rw: number;
-    math: number;
+    RW: number;
+    M: number;
     total: number;
   };
   domainBreakdown: {
-    rw: DomainBreakdownItem[];
-    math: DomainBreakdownItem[];
+    RW: DomainBreakdownItem[];
+    M: DomainBreakdownItem[];
   };
   skillDiagnostics: {
-    rw: SkillDiagnosticItem[];
-    math: SkillDiagnosticItem[];
+    RW: SkillDiagnosticItem[];
+    M: SkillDiagnosticItem[];
   };
   rwScore: {
     module1: SectionRawScore;
@@ -383,8 +392,8 @@ export function buildExamPrioritySkillDiagnostics(
   result: CompleteExamResult,
 ): ExamSkillDiagnostic[] {
   const diagnostics: ExamSkillDiagnostic[] = [];
-  const rwSkills = result.skillDiagnostics?.rw ?? [];
-  const mathSkills = result.skillDiagnostics?.math ?? [];
+  const rwSkills = result.skillDiagnostics?.RW ?? [];
+  const mathSkills = result.skillDiagnostics?.M ?? [];
 
   for (const item of rwSkills) {
     if (!item?.skill || !item?.domain) continue;
@@ -400,7 +409,7 @@ export function buildExamPrioritySkillDiagnostics(
   for (const item of mathSkills) {
     if (!item?.skill || !item?.domain) continue;
     diagnostics.push({
-      section: "MATH",
+      section: "M",
       domain: item.domain,
       skill: item.skill,
       accuracy: Number.isFinite(item.accuracy) ? item.accuracy : 1,
@@ -487,7 +496,7 @@ function stableSeedSort<T>(
 }
 
 function normalizeDomainKey(
-  section: SectionType,
+  section: CanonicalSectionCode,
   value: unknown,
 ): Module2DomainKey | null {
   if (typeof value !== "string") return null;
@@ -496,7 +505,7 @@ function normalizeDomainKey(
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ");
 
-  if (section === "rw") {
+  if (section === "RW") {
     if (normalized.includes("information") || normalized.includes("idea")) {
       return "information_and_ideas";
     }
@@ -569,7 +578,7 @@ function bucketMatchesDifficulty(
 
 async function loadAdaptiveConfig(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  section: SectionType,
+  section: CanonicalSectionCode,
 ): Promise<AdaptiveConfigRow> {
   const { data, error } = await supabase
     .from("full_length_adaptive_config")
@@ -602,7 +611,7 @@ async function loadAdaptiveConfig(
 }
 
 interface DiagnosticInputRow {
-  section: SectionType;
+  section: CanonicalSectionCode;
   isCorrect: boolean;
   domain: string;
   skill: string;
@@ -627,12 +636,12 @@ export function calculateScaledScore(
     );
   }
 
-  if (totalQuestions === SECTION_SCORE_TABLES.rw.totalQuestions) {
-    return getModeledScaledScore("rw", rawCorrect, totalQuestions);
+  if (totalQuestions === SECTION_SCORE_TABLES.RW.totalQuestions) {
+    return getModeledScaledScore("RW", rawCorrect, totalQuestions);
   }
 
-  if (totalQuestions === SECTION_SCORE_TABLES.math.totalQuestions) {
-    return getModeledScaledScore("math", rawCorrect, totalQuestions);
+  if (totalQuestions === SECTION_SCORE_TABLES.M.totalQuestions) {
+    return getModeledScaledScore("M", rawCorrect, totalQuestions);
   }
 
   throw new Error(
@@ -641,33 +650,28 @@ export function calculateScaledScore(
 }
 
 function calculateSectionScaledScore(
-  section: SectionType,
+  section: CanonicalSectionCode,
   rawCorrect: number,
   totalQuestions: number,
 ): number {
   return getModeledScaledScore(section, rawCorrect, totalQuestions);
 }
 
-function toSectionType(value: unknown): SectionType | null {
-  if (value === "rw" || value === "math") {
-    return value;
-  }
-  if (value === "RW") return "rw";
-  if (value === "M" || value === "MATH") return "math";
-
-  const normalized = normalizeCanonicalSectionCode(value);
-  if (!normalized) {
-    return null;
-  }
-  return normalized === "RW" ? "rw" : "math";
+/**
+ * plain English: coerces a stored section value to the canonical code. This used to
+ * expand 'M' into a second spelling; there is nothing left to expand into, so it is
+ * now the shared boundary normaliser and nothing more.
+ */
+function toSectionCode(value: unknown): CanonicalSectionCode | null {
+  return normalizeSectionCode(value);
 }
 
-function moduleKey(section: SectionType, moduleIndex: ModuleIndex): string {
+function moduleKey(section: CanonicalSectionCode, moduleIndex: ModuleIndex): string {
   return `${section}:${moduleIndex}`;
 }
 
 function deriveModulePositionFromOrdinal(
-  section: SectionType,
+  section: CanonicalSectionCode,
   ordinal: number,
 ): { moduleIndex: ModuleIndex; moduleOrdinal: number } | null {
   const module1Count = MODULE_CONFIG[section].module1.questionCount;
@@ -690,7 +694,7 @@ function deriveModulePositionFromOrdinal(
 
 function requireModuleItems(
   itemsByModule: Map<string, ResolvedFormItem[]>,
-  section: SectionType,
+  section: CanonicalSectionCode,
   moduleIndex: ModuleIndex,
 ): ResolvedFormItem[] {
   const key = moduleKey(section, moduleIndex);
@@ -787,7 +791,7 @@ function materializeSessionQuestionSnapshot(
     );
   }
 
-  const sectionCode = normalizeCanonicalSectionCode(row.section_code ?? null);
+  const sectionCode = normalizeSectionCode(row.section_code ?? null);
 
   const sourceType =
     typeof row.source_type === "number"
@@ -802,7 +806,7 @@ function materializeSessionQuestionSnapshot(
         ? row.canonical_id
         : null,
     question_stem: typeof row.stem === "string" ? row.stem : "",
-    question_section_code: sectionCode === "M" ? "MATH" : sectionCode,
+    question_section_code: sectionCode,
     question_type: "multiple_choice" as const,
     question_options: options,
     question_difficulty: normalizeQuestionDifficultyValue(row.difficulty),
@@ -913,14 +917,14 @@ async function resolvePublishedFormForSession(
   const seenModuleOrdinals = new Set<string>();
   const canonicalQuestionIds = new Set<string>();
   const orderedDraftItems: Array<{
-    section: SectionType;
+    section: CanonicalSectionCode;
     moduleIndex: ModuleIndex;
     ordinal: number;
     canonicalQuestionId: string;
   }> = [];
 
   for (const item of formItems) {
-    const section = toSectionType(item.section);
+    const section = toSectionCode(item.section);
     if (!section) {
       throw new Error(
         `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid section in test_form_items`,
@@ -1018,7 +1022,7 @@ async function resolvePublishedFormForSession(
       throw new Error(FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE);
     }
 
-    const questionSection = toSectionType(question.section_code);
+    const questionSection = toSectionCode(question.section_code);
     if (!questionSection || questionSection !== item.section) {
       throw new Error(FORM_SECTION_MISMATCH_MESSAGE);
     }
@@ -1035,7 +1039,7 @@ async function resolvePublishedFormForSession(
     itemsByModule.set(key, moduleItems);
   }
 
-  for (const section of ["rw", "math"] as const) {
+  for (const section of ["RW", "M"] as const) {
     for (const moduleIndex of [1, 2] as const) {
       const moduleItems = requireModuleItems(
         itemsByModule,
@@ -1097,7 +1101,7 @@ async function materializeModuleFromResolvedForm(args: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   resolvedForm: ResolvedPublishedForm;
   moduleId: string;
-  section: SectionType;
+  section: CanonicalSectionCode;
   moduleIndex: ModuleIndex;
   proofErrorMessage?: string;
 }): Promise<void> {
@@ -1183,10 +1187,6 @@ async function materializeModuleFromResolvedForm(args: {
   }
 }
 
-function sectionCodeFilter(section: SectionType): string[] {
-  return section === "rw" ? ["RW"] : ["M", "MATH"];
-}
-
 function getCandidateKey(row: FullLengthQuestionSnapshotRow): string {
   const canonical =
     typeof row.canonical_id === "string" ? row.canonical_id.trim() : "";
@@ -1208,7 +1208,7 @@ async function materializeModule2FromBlueprint(args: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   sessionId: string;
   moduleId: string;
-  section: SectionType;
+  section: CanonicalSectionCode;
   difficultyBucket: DifficultyBucket;
   seed: string;
   excludeCanonicalIds: string[];
@@ -1233,7 +1233,10 @@ async function materializeModule2FromBlueprint(args: {
     .from("servable_questions")
     .select(QUESTION_SNAPSHOT_SELECT)
     .eq("question_type", "multiple_choice")
-    .in("section_code", sectionCodeFilter(args.section))
+    // A one-element `.in` rather than `.eq`: the filter used to be
+    // sectionCodeFilter(section) returning ["M","MATH"], and only the second element is
+    // gone. Narrowing the operator too would be an unrelated query-shape change.
+    .in("section_code", [args.section])
     .limit(1200)
     .returns<FullLengthQuestionSnapshotRow[]>();
 
@@ -1362,7 +1365,7 @@ async function materializeModule2FromBlueprint(args: {
 async function prepareDeferredModule2FromPersistedOutcome(args: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   sessionId: string;
-  section: SectionType;
+  section: CanonicalSectionCode;
   seed: string;
   module1CorrectCount: number;
 }): Promise<{ difficultyBucket: DifficultyBucket }> {
@@ -1571,7 +1574,7 @@ function normalizeSkillFromCompetencies(competencies: unknown): string | null {
 }
 
 function extractDomainAndSkill(
-  section: SectionType,
+  section: CanonicalSectionCode,
   question: Record<string, unknown> | undefined,
 ): { domain: string; skill: string } {
   const explicitDomain = normalizeLabel(question?.domain);
@@ -1579,8 +1582,10 @@ function extractDomainAndSkill(
     ? normalizeLabel(question?.tags[0])
     : null;
 
-  const fallbackDomain =
-    section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  // Display text, and the only place this function produces any: the label comes from
+  // shared/section-display so "Reading & Writing" reads identically here and on every
+  // other surface. It previously said "Reading and Writing" — a twelfth spelling.
+  const fallbackDomain = `${sectionDisplayLabel(section) ?? "Section"} Overall`;
   const domain = explicitDomain || tagsDomain || fallbackDomain;
 
   const explicitSkill = normalizeLabel(question?.skill);
@@ -1596,7 +1601,7 @@ function extractDomainAndSkill(
 }
 
 function buildSectionDiagnostics(
-  section: SectionType,
+  section: CanonicalSectionCode,
   rows: DiagnosticInputRow[],
   fallbackRaw: SectionRawScore,
 ): SectionDiagnostics {
@@ -1662,8 +1667,10 @@ function buildSectionDiagnostics(
     return { domains, skills };
   }
 
-  const fallbackDomain =
-    section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  // Display text, and the only place this function produces any: the label comes from
+  // shared/section-display so "Reading & Writing" reads identically here and on every
+  // other surface. It previously said "Reading and Writing" — a twelfth spelling.
+  const fallbackDomain = `${sectionDisplayLabel(section) ?? "Section"} Overall`;
   const fallbackAccuracy = toAccuracy(fallbackRaw.correct, fallbackRaw.total);
 
   return {
@@ -1724,40 +1731,40 @@ function buildCompleteExamResult(
   };
 
   const rwScaled = calculateSectionScaledScore(
-    "rw",
+    "RW",
     rwRaw.correct,
     rwRaw.total,
   );
   const mathScaled = calculateSectionScaledScore(
-    "math",
+    "M",
     mathRaw.correct,
     mathRaw.total,
   );
   const scaledTotal = rwScaled + mathScaled;
 
   const rows = input.diagnosticRows || [];
-  const rwDiagnostics = buildSectionDiagnostics("rw", rows, rwRaw);
-  const mathDiagnostics = buildSectionDiagnostics("math", rows, mathRaw);
+  const rwDiagnostics = buildSectionDiagnostics("RW", rows, rwRaw);
+  const mathDiagnostics = buildSectionDiagnostics("M", rows, mathRaw);
 
   return {
     sessionId: input.sessionId,
     rawScore: {
-      rw: rwRaw,
-      math: mathRaw,
+      RW: rwRaw,
+      M: mathRaw,
       total: overallRaw,
     },
     scaledScore: {
-      rw: rwScaled,
-      math: mathScaled,
+      RW: rwScaled,
+      M: mathScaled,
       total: scaledTotal,
     },
     domainBreakdown: {
-      rw: rwDiagnostics.domains,
-      math: mathDiagnostics.domains,
+      RW: rwDiagnostics.domains,
+      M: mathDiagnostics.domains,
     },
     skillDiagnostics: {
-      rw: rwDiagnostics.skills,
-      math: mathDiagnostics.skills,
+      RW: rwDiagnostics.skills,
+      M: mathDiagnostics.skills,
     },
     rwScore: {
       module1: input.rwModule1,
@@ -1834,9 +1841,9 @@ async function computeDiagnosticRows(
   modules: Array<{ id: string; section: string }>,
 ): Promise<DiagnosticInputRow[]> {
   try {
-    const moduleSectionById = new Map<string, SectionType>();
+    const moduleSectionById = new Map<string, CanonicalSectionCode>();
     for (const module of modules) {
-      if (module.section === "rw" || module.section === "math") {
+      if (module.section === "RW" || module.section === "M") {
         moduleSectionById.set(module.id, module.section);
       }
     }
@@ -1878,7 +1885,7 @@ async function computeDiagnosticRows(
     }
 
     return moduleQuestions.map((moduleQuestion) => {
-      const section = moduleSectionById.get(moduleQuestion.module_id) || "rw";
+      const section = moduleSectionById.get(moduleQuestion.module_id) || "RW";
       const diagnostic = extractDomainAndSkill(section, {
         domain: (moduleQuestion as any).question_domain,
         skill: (moduleQuestion as any).question_skill,
@@ -1968,10 +1975,14 @@ async function computeExamScores(
     modules as Array<{ id: string; section: string }>,
   );
 
-  const rwModule1 = moduleScores["rw_1"] || { correct: 0, total: 0 };
-  const rwModule2 = moduleScores["rw_2"] || { correct: 0, total: 0 };
-  const mathModule1 = moduleScores["math_1"] || { correct: 0, total: 0 };
-  const mathModule2 = moduleScores["math_2"] || { correct: 0, total: 0 };
+  // Composite keys, built above as `${module.section}_${module.module_index}` from the
+  // stored section value. They must track the section vocabulary; when the section was
+  // 'rw'/'math' and these read "rw_1", a mismatch here produced a zero raw score and
+  // "Missing modeled score table ... totalQuestions=0" rather than a visible error.
+  const rwModule1 = moduleScores["RW_1"] || { correct: 0, total: 0 };
+  const rwModule2 = moduleScores["RW_2"] || { correct: 0, total: 0 };
+  const mathModule1 = moduleScores["M_1"] || { correct: 0, total: 0 };
+  const mathModule2 = moduleScores["M_2"] || { correct: 0, total: 0 };
 
   return buildCompleteExamResult({
     sessionId,
@@ -2399,30 +2410,30 @@ export async function createExamSession(
   const modules = [
     {
       session_id: session.id,
-      section: "rw",
+      section: "RW",
       module_index: 1,
-      target_duration_ms: MODULE_CONFIG.rw.module1.durationMs,
+      target_duration_ms: MODULE_CONFIG.RW.module1.durationMs,
       status: "not_started",
     },
     {
       session_id: session.id,
-      section: "rw",
+      section: "RW",
       module_index: 2,
-      target_duration_ms: MODULE_CONFIG.rw.module2.durationMs,
+      target_duration_ms: MODULE_CONFIG.RW.module2.durationMs,
       status: "not_started",
     },
     {
       session_id: session.id,
-      section: "math",
+      section: "M",
       module_index: 1,
-      target_duration_ms: MODULE_CONFIG.math.module1.durationMs,
+      target_duration_ms: MODULE_CONFIG.M.module1.durationMs,
       status: "not_started",
     },
     {
       session_id: session.id,
-      section: "math",
+      section: "M",
       module_index: 2,
-      target_duration_ms: MODULE_CONFIG.math.module2.durationMs,
+      target_duration_ms: MODULE_CONFIG.M.module2.durationMs,
       status: "not_started",
     },
   ];
@@ -2440,7 +2451,7 @@ export async function createExamSession(
 
   const moduleIdByKey = new Map<string, string>();
   for (const moduleRow of createdModules) {
-    const section = toSectionType(moduleRow.section);
+    const section = toSectionCode(moduleRow.section);
     if (!section) {
       throw new Error("Invalid module section while creating session");
     }
@@ -2454,7 +2465,7 @@ export async function createExamSession(
   }
 
   // Contract gate: at session start only module 1 rows may be materialized.
-  for (const section of ["rw", "math"] as const) {
+  for (const section of ["RW", "M"] as const) {
     const key = moduleKey(section, 1);
     const moduleId = moduleIdByKey.get(key);
     if (!moduleId) {
@@ -2719,7 +2730,7 @@ async function startModule(
     return;
   }
 
-  const section = module.section as SectionType;
+  const section = module.section as CanonicalSectionCode;
   const moduleIndex = module.module_index as ModuleIndex;
   const expectedQuestionCount =
     MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"]
@@ -3025,7 +3036,7 @@ export async function persistModuleCalculatorState(
     throw new Error("Module not found");
   }
 
-  if (String(module.section ?? "").toLowerCase() !== "math") {
+  if (normalizeSectionCode(module.section) !== "M") {
     throw new Error("Calculator state is only available for math modules");
   }
 
@@ -3120,10 +3131,10 @@ export async function submitModule(
 
     const correctCount = responses?.filter((r) => r.is_correct).length || 0;
 
-    const currentSection = session.current_section as SectionType;
+    const currentSection = session.current_section as CanonicalSectionCode;
     const currentModuleIndex = session.current_module as ModuleIndex;
 
-    let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null =
+    let nextModule: { section: CanonicalSectionCode; moduleIndex: ModuleIndex } | null =
       null;
     let isBreak = false;
 
@@ -3139,7 +3150,7 @@ export async function submitModule(
         section: currentSection,
         moduleIndex: 2,
       };
-    } else if (currentSection === "rw") {
+    } else if (currentSection === "RW") {
       isBreak = true;
     } else {
       nextModule = null;
@@ -3233,10 +3244,10 @@ export async function submitModule(
   );
 
   // Determine next module
-  const currentSection = session.current_section as SectionType;
+  const currentSection = session.current_section as CanonicalSectionCode;
   const currentModuleIndex = session.current_module as ModuleIndex;
 
-  let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null =
+  let nextModule: { section: CanonicalSectionCode; moduleIndex: ModuleIndex } | null =
     null;
   let isBreak = false;
 
@@ -3262,7 +3273,7 @@ export async function submitModule(
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.sessionId);
-  } else if (currentSection === "rw") {
+  } else if (currentSection === "RW") {
     // Moving from RW Module 2 to break
     isBreak = true;
 
@@ -3324,7 +3335,7 @@ export async function startExam(
     .from("full_length_exam_sessions")
     .update({
       status: "in_progress",
-      current_section: "rw",
+      current_section: "RW",
       current_module: 1,
       started_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -3376,7 +3387,7 @@ export async function continueFromBreak(
   const { error: updateError } = await supabase
     .from("full_length_exam_sessions")
     .update({
-      current_section: "math",
+      current_section: "M",
       current_module: 1,
       break_started_at: null,
       updated_at: new Date().toISOString(),
@@ -3432,7 +3443,7 @@ export async function completeExam(
     throw new Error("Invalid exam state");
   }
 
-  if (session.current_section !== "math") {
+  if (session.current_section !== "M") {
     throw new Error("Invalid exam state");
   }
 
@@ -3444,7 +3455,7 @@ export async function completeExam(
     .from("full_length_exam_modules")
     .select("*")
     .eq("session_id", params.sessionId)
-    .eq("section", "math")
+    .eq("section", "M")
     .eq("module_index", 2)
     .single();
 
@@ -3522,8 +3533,8 @@ export async function completeExam(
     userId: params.userId,
     details: {
       scaledTotal: result.scaledScore.total,
-      scaledRw: result.scaledScore.rw,
-      scaledMath: result.scaledScore.math,
+      scaledRw: result.scaledScore.RW,
+      scaledMath: result.scaledScore.M,
     },
   });
 
@@ -3635,7 +3646,6 @@ export const ANSWER_FIELDS_POST_COMPLETION = [
   "option_metadata",
 ] as const;
 
-type CanonicalSectionCode = "MATH" | "RW";
 type CanonicalSourceType = 0 | 1 | 2 | 3;
 
 type OptionMetadataEntry = {
@@ -3770,14 +3780,7 @@ export interface GetExamReviewParams {
 function normalizeReviewSectionCode(
   value: unknown,
 ): CanonicalSectionCode | null {
-  if (value === "MATH" || value === "RW") {
-    return value;
-  }
-  const normalized = normalizeCanonicalSectionCode(value);
-  if (!normalized) {
-    return null;
-  }
-  return normalized === "M" ? "MATH" : "RW";
+  return normalizeSectionCode(value);
 }
 
 function normalizeDifficulty(value: unknown): QuestionDifficulty | null {
@@ -3836,11 +3839,8 @@ export function projectSafeQuestionFields(
     explanation: null,
   });
   const sectionCode =
-    safeBase.section_code === "M"
-      ? "MATH"
-      : safeBase.section_code === "RW"
-        ? "RW"
-        : normalizeReviewSectionCode(question.section_code);
+    normalizeReviewSectionCode(safeBase.section_code) ??
+    normalizeReviewSectionCode(question.section_code);
   return {
     id: safeBase.id,
     canonical_id: safeBase.canonical_id,

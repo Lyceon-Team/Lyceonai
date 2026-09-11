@@ -85,10 +85,6 @@ vi.mock("../../server/services/kpi-access", () => ({
   }),
 }));
 
-// Stub notification-authority (calendar emitCalendarEvent calls it best-effort).
-vi.mock("../../server/services/notification-authority", () => ({
-  publishCalendarEventNotificationBestEffort: async () => {},
-}));
 
 vi.mock("../../server/middleware/supabase-auth", () => ({
   enforceDeletionLock: (_req: any, _res: any, next: any) => next(),

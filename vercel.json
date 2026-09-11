@@ -19,6 +19,10 @@
     {
       "path": "/api/internal/baseline-pending-sweep",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/internal/notification-dispatch-sweep",
+      "schedule": "30 4 * * *"
     }
   ],
   "routes": [

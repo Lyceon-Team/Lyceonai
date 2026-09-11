@@ -22,6 +22,7 @@ import {
   getConfidenceColor,
 } from "@/lib/projectionApi";
 import { useLocation } from "wouter";
+import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
 
 export function ScoreProjectionCard() {
   const [, navigate] = useLocation();
@@ -147,14 +148,14 @@ export function ScoreProjectionCard() {
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border p-3">
               <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                Math
+                {SECTION_LABEL_MATH}
               </div>
               <div className="text-2xl font-semibold">{data.baseline.math}</div>
               <div className="text-xs text-muted-foreground">/ 800</div>
             </div>
             <div className="rounded-lg border p-3">
               <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                Reading & Writing
+                {SECTION_LABEL_RW}
               </div>
               <div className="text-2xl font-semibold">{data.baseline.rw}</div>
               <div className="text-xs text-muted-foreground">/ 800</div>
@@ -245,14 +246,14 @@ export function ScoreProjectionCard() {
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border p-3">
             <div className="text-xs text-muted-foreground uppercase tracking-wide">
-              Math
+              {SECTION_LABEL_MATH}
             </div>
             <div className="text-2xl font-semibold">{estimate.math}</div>
             <div className="text-xs text-muted-foreground">/ 800</div>
           </div>
           <div className="rounded-lg border p-3">
             <div className="text-xs text-muted-foreground uppercase tracking-wide">
-              Reading & Writing
+              {SECTION_LABEL_RW}
             </div>
             <div className="text-2xl font-semibold">{estimate.rw}</div>
             <div className="text-xs text-muted-foreground">/ 800</div>

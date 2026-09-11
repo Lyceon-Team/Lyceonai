@@ -783,3 +783,53 @@ redaction changes — a test that agrees with the code instead of the schema sat
 §7.1 (parse at every boundary).
 
 **Owner:** each workstream for its own files; `platform` for the decision to widen the gate's scope.
+
+---
+
+## Calendar surface writes to three tables that do not exist in production 🔴
+
+**Measured, 2026-09-02, against the live project (`to_regclass`, read-only):**
+
+| Table the code writes | Exists in prod | Exists in `supabase/migrations` | Exists in `genesis-schema.expected.sql` |
+|---|---|---|---|
+| `student_study_plan_tasks` | no | no | no |
+| `student_study_plan_days` | no | no | no |
+| `student_study_profile` | no | no | no |
+| `student_question_attempts` | no | no | no |
+| `system_event_logs` | no | no | no |
+
+`apps/api/src/routes/calendar.ts` (1,929 lines), `apps/api/src/services/calendar-planner.ts`,
+`calendar-planner-reprioritization.ts` and `calendar-month-view.ts` all read and write these
+tables. Every request to the calendar surface fails on its first query. The tables are not
+merely unapplied — no migration in this repository has ever defined them, so this is not a
+"Karl has not run it yet" gap.
+
+**Why it is recorded here rather than fixed.** Owner ruling, 2026-09-02: rewriting a surface
+that 500s on its first query is work with no observable outcome. The decision that is actually
+open is whether the calendar gets **built** (its tables authored and applied) or **deleted**.
+Until that is made, adding behaviour here is speculative.
+
+**What was fixed anyway, and why.** The section vocabulary of these files WAS canonicalised in
+the same change, ahead of the flag-don't-rewrite ruling, because leaving it would have cost
+more than fixing it:
+
+- `calendar-planner-reprioritization.ts` reads `student_skill_mastery.section` — a **live**,
+  CHECK-constrained column — and its local normaliser converted the canonical `'M'` it found
+  into `'MATH'` on the way in. That is a live table feeding a dead surface a spelling the
+  database rejects, and quarantining it would have required a conversion function at the seam.
+- `ExamSkillDiagnostic` is shared with `fullLengthExam.ts`, so its section type could not stay
+  non-canonical without the exam surface inheriting it.
+- The alternative was a five-file exclusion list in `scripts/ci/section-vocabulary-gate.mjs`,
+  which would have made "`MATH` anywhere is red" untrue and given the gate a permanent hole.
+
+So the gap below is about the missing TABLES, not about the vocabulary.
+
+**Re-arm criterion.** When the calendar is built, its `section` columns must be
+`CHECK (section = ANY (ARRAY['M','RW']))` like the other sixteen, and the code must keep the
+canonical codes it now holds. When it is deleted, these files and their tests go with it. Either
+way this row is removed, not amended.
+
+**Owner:** `platform` — the build-or-delete decision is Karl's; whoever executes it owns the row.
+
+**Spec citations:** Doc 05B §4.2 (canonical section codes); Coding Standards §2 (DB access
+through centralized utilities against the real schema), §17 (no silent failure).

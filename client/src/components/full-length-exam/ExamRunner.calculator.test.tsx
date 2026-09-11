@@ -78,7 +78,7 @@ function response(body: unknown, ok = true, status = 200) {
 }
 
 function stateFixture(params: {
-  section: "math" | "rw";
+  section: "M" | "rw";
   moduleIndex: number;
   moduleId: string;
   questionId: string;
@@ -136,7 +136,7 @@ describe("ExamRunner calculator behavior", () => {
     queryMocks.apiRequest.mockResolvedValueOnce(
       response(
         stateFixture({
-          section: "math",
+          section: "M",
           moduleIndex: 1,
           moduleId: "math-1",
           questionId: "q1",
@@ -162,7 +162,7 @@ describe("ExamRunner calculator behavior", () => {
     queryMocks.apiRequest.mockResolvedValueOnce(
       response(
         stateFixture({
-          section: "rw",
+          section: "RW",
           moduleIndex: 1,
           moduleId: "rw-1",
           questionId: "q1",
@@ -182,7 +182,7 @@ describe("ExamRunner calculator behavior", () => {
   it("preserves in-memory calculator state per module across navigation within loaded session", async () => {
     const sessionSnapshots = [
       stateFixture({
-        section: "math",
+        section: "M",
         moduleIndex: 1,
         moduleId: "math-1",
         questionId: "m1-q1",
@@ -191,7 +191,7 @@ describe("ExamRunner calculator behavior", () => {
         totalCount: 3,
       }),
       stateFixture({
-        section: "math",
+        section: "M",
         moduleIndex: 1,
         moduleId: "math-1",
         questionId: "m1-q2",
@@ -200,7 +200,7 @@ describe("ExamRunner calculator behavior", () => {
         totalCount: 3,
       }),
       stateFixture({
-        section: "rw",
+        section: "RW",
         moduleIndex: 1,
         moduleId: "rw-1",
         questionId: "rw-q1",
@@ -209,7 +209,7 @@ describe("ExamRunner calculator behavior", () => {
         totalCount: 2,
       }),
       stateFixture({
-        section: "math",
+        section: "M",
         moduleIndex: 1,
         moduleId: "math-1",
         questionId: "m1-q3",
@@ -267,7 +267,7 @@ describe("ExamRunner calculator behavior", () => {
     queryMocks.apiRequest.mockResolvedValueOnce(
       response({
         ...stateFixture({
-          section: "math",
+          section: "M",
           moduleIndex: 1,
           moduleId: "math-1",
           questionId: "m1-q1",
@@ -277,7 +277,7 @@ describe("ExamRunner calculator behavior", () => {
         }),
         currentModule: {
           id: "math-1",
-          section: "math",
+          section: "M",
           module_index: 1,
           status: "in_progress",
           started_at: "2026-03-18T10:00:00.000Z",
@@ -318,7 +318,7 @@ describe("ExamRunner calculator behavior", () => {
     queryMocks.apiRequest.mockResolvedValueOnce(
       response(
         stateFixture({
-          section: "rw",
+          section: "RW",
           moduleIndex: 1,
           moduleId: "rw-1",
           questionId: "rw-q1",
