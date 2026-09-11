@@ -6,6 +6,9 @@ import { sendNotFound } from "../middleware/subject-resolver";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { EntitlementService } from "../services/entitlement-service";
+import { getEntitlementForProfile } from "../lib/account";
+import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
 
 /**
@@ -31,6 +34,8 @@ import {
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
+import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
+import { notificationEventId } from "../lib/notifications/event-id";
 
 const router = Router();
 
@@ -128,13 +133,117 @@ router.get(
           .json({ error: "Failed to fetch students", requestId });
       }
 
+      /**
+       * PER-STUDENT ENTITLEMENT, ONE EVALUATOR.
+       *
+       * @spec [Doc-01_V8 §31.4] | @implemented [2026-09-02]
+       *
+       * plain English: the guardian purchase card must know which of these
+       * students still need paying for. That is a question ABOUT EACH STUDENT,
+       * and it is answered by the same canonical gate everything else uses —
+       * `EntitlementService.isEntitlementActiveForProfile`, which fails CLOSED
+       * on an RPC error, so an unreadable entitlement reports "not entitled"
+       * and the student is merely OFFERED for purchase. The server refuses a
+       * genuinely-funded student at checkout with `STUDENT_ALREADY_FUNDED`, so
+       * failing closed here costs a refused click, never a double charge.
+       *
+       * WHY NOT THE §31.3 FOLD. `resolveLinkedPairPremiumAccessForGuardian`
+       * answers "does this guardian have access at all" and returns true as
+       * soon as ANY one linked student is premium. It cannot say WHICH students
+       * are covered, and asking it per student would be a different call with a
+       * different meaning. The fold is untouched by this change.
+       *
+       * N is the guardian's linked-student count — single digits by
+       * construction — so these run concurrently and add one round trip, not N.
+       */
+      const roster = students || [];
+      /**
+       * A BILLING PROBE MUST NOT TAKE THE ROSTER DOWN WITH IT. The linked-
+       * student list is this dashboard's core data; the entitlement flag is an
+       * enrichment on top of it. `isEntitlementActiveForProfile` already fails
+       * closed on an RPC *error*, but anything thrown outside that path — a
+       * transport that has no `rpc` at all, say — would otherwise reach the
+       * route's catch and turn the whole list into a 500. Degrade per student,
+       * loudly, and keep serving the list.
+       *
+       * Degrading to `false` is the safe direction: the student is OFFERED for
+       * purchase, and the server re-decides at checkout, refusing an already-
+       * funded student with `STUDENT_ALREADY_FUNDED`. The opposite default
+       * would hide a student who genuinely needs paying for — the exact defect
+       * this whole change exists to remove.
+       */
+      const entitled = await Promise.all(
+        roster.map(async (student) => {
+          try {
+            /**
+             * SEQUENTIAL ON PURPOSE, inside one student's probe.
+             *
+             * `Promise.all([a(), b()])` orphans a()'s promise when b() throws
+             * SYNCHRONOUSLY — the array literal never finishes evaluating, so
+             * `Promise.all` is never called and nothing is ever attached to
+             * a(). The rejection then escapes this try/catch as an unhandled
+             * rejection, which is precisely how this surfaced: a test whose
+             * module mock omits one of these two exports makes the missing one
+             * a synchronous `TypeError`.
+             *
+             * The concurrency that matters is across STUDENTS (the `map` below
+             * is still a `Promise.all`), so this costs one extra round trip per
+             * student on a list that is single digits by construction.
+             */
+            const standingGood =
+              await EntitlementService.isEntitlementActiveForProfile(
+                student.id,
+              );
+            const entitlement = await getEntitlementForProfile(student.id);
+            /**
+             * ONE INTERPRETER OF (standing-good, tier, status), server side.
+             *
+             * @spec [owner ruling 2026-09-03] | @implemented [2026-09-03]
+             *
+             * `entitlement_lapsed` separates "nobody has ever paid for this
+             * student" from "a subscription for this student lapsed", which is
+             * the difference between offering checkout and offering the portal.
+             * The client is handed the derived booleans, never the status enum,
+             * so there is no second reading of the vocabulary in the browser.
+             */
+            return resolveEntitlementDisplay({
+              standingGood,
+              tier: entitlement?.tier ?? "free",
+              status: entitlement?.status ?? "missing",
+            });
+          } catch (err) {
+            logger.warn(
+              "GUARDIAN",
+              "list_students",
+              "Entitlement probe failed; treating student as unfunded",
+              { requestId, err },
+            );
+            // Unfunded AND not lapsed: the safe direction is to offer a
+            // purchase, which the server re-decides, rather than to send them
+            // to a portal that may hold nothing for this student.
+            return {
+              effectiveAccess: false,
+              needsPaymentUpdate: false,
+              lapsed: false,
+            };
+          }
+        }),
+      );
+
       await emitGuardianAccessEvent({
         eventType: "guardian_dashboard_viewed",
         guardianId,
         requestId,
-        details: { linked_student_count: (students || []).length },
+        details: { linked_student_count: roster.length },
       });
-      res.json({ students: students || [], requestId });
+      res.json({
+        students: roster.map((student, i) => ({
+          ...student,
+          has_active_entitlement: entitled[i]?.effectiveAccess === true,
+          entitlement_lapsed: entitled[i]?.lapsed === true,
+        })),
+        requestId,
+      });
     } catch (err) {
       logger.error("GUARDIAN", "list_students", "Error", { err, requestId });
       res.status(500).json({ error: "Internal server error", requestId });
@@ -186,7 +295,8 @@ router.post(
       // one is not: both answers would tell the caller something about the keyspace.
       return res.status(400).json({
         error: {
-          message: "That code is not valid. Ask your student for a current one.",
+          message:
+            "That code is not valid. Ask your student for a current one.",
           code: GUARDIAN_LINK_CODE_REFUSED,
         },
         requestId,
@@ -216,7 +326,8 @@ router.post(
     if (!outcome.ok) {
       return res.status(400).json({
         error: {
-          message: "That code is not valid. Ask your student for a current one.",
+          message:
+            "That code is not valid. Ask your student for a current one.",
           code: GUARDIAN_LINK_CODE_REFUSED,
         },
         requestId,
@@ -244,30 +355,13 @@ router.post(
         requestId,
       );
 
-      // §36.1 step 6 in the shape SCL-080 leaves: the student is told, because they are the
-      // party whose data just became visible. Emission only — there is no dispatcher, so
-      // this is a row, not a message (CLAUDE.md, notification-outbox contract).
-      const { error: outboxError } = await supabaseServer
-        .from("notification_outbox")
-        .insert({
-          // Deterministic and insert-once: one notification per link, so a retry of this
-          // request cannot produce a second.
-          event_id: link.id,
-          event_type: "guardian_linked",
-          recipient_kind: "student",
-          recipient_profile_id: studentProfileId,
-          payload: { link_id: link.id, via: "student_link_code" },
-        });
-      if (outboxError && outboxError.code !== "23505") {
-        // Never swallowed, never fatal: the link is real and the student's access is
-        // unaffected by a missing notification row.
-        logger.warn(
-          "GUARDIAN",
-          "link_notify",
-          "Guardian link created but the outbox emission failed",
-          { requestId, reason: outboxError.message },
-        );
-      }
+      // Doc 01 §36.1 step 6 / contract §6.1. The RPC committed the link AND its notification
+      // event + messages in one transaction; deliver this event's email now — awaited, not
+      // fire-and-forget (Vercel may freeze the function after the response). The dispatcher
+      // never throws: a failed send stays queued with its error and the daily sweep retries.
+      await dispatchQueuedMessages({
+        eventId: notificationEventId("guardian_linked", link.id),
+      });
 
       return res.status(201).json({
         data: { link_id: link.id, student_profile_id: studentProfileId },
@@ -292,7 +386,6 @@ router.post(
     }
   },
 );
-
 
 /**
  * DELETE /api/guardian/link/:studentId — §36.3 revocation, guardian side.

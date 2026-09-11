@@ -33,7 +33,9 @@ import {
   projectStudentSafeQuestion,
   resolveCanonicalDomain,
   resolveClientInstanceBinding,
+  normalizeSectionCode,
   resolveSectionFilterValues,
+  type CanonicalSectionCode,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
 import type { PracticeSessionItemRow } from "../../packages/shared/src/practice-schema";
@@ -140,7 +142,13 @@ type SessionMetadata = {
 };
 
 type CanonicalSessionSpec = {
-  sections: Array<"Math" | "RW">;
+  // @spec [Doc-05B §4.2; questions_section_check] | @implemented [2026-09-02]
+  // This array is PERSISTED, in practice_sessions.filters->session_spec->sections. It
+  // used to hold "Math" | "RW" — a display spelling and a canonical code in the same
+  // field — and because jsonb carries no CHECK constraint, 13 production rows stored
+  // it that way while every relational section column stayed clean. Migration
+  // 20260902000000 rewrites those rows; this type is what stops it recurring.
+  sections: CanonicalSectionCode[];
   domains: string[];
   skills: string[];
   difficulties: Array<"easy" | "medium" | "hard">;
@@ -448,32 +456,30 @@ function normalizeSessionState(status: string): PracticeLifecycleState {
   return "active";
 }
 
-function normalizeSectionParam(
-  section?: string | null,
-): "Math" | "RW" | "Random" {
-  if (!section) return "Random";
-  const s = section.trim().toLowerCase();
-  if (s === "math") return "Math";
-  if (
-    s === "rw" ||
-    s === "reading_writing" ||
-    s === "reading" ||
-    s === "writing"
-  )
-    return "RW";
-  if (s === "random") return "Random";
-  return "Random";
+/**
+ * @spec [Doc-05B §4.2] | @implemented [2026-09-02]
+ * plain English: the single section normaliser on the practice path. A request token
+ * becomes a canonical code, or null when no section filter was asked for.
+ *
+ * It replaces `normalizeSectionParam`, which returned "Math" | "RW" | "Random" — a
+ * display spelling, a canonical code and a sentinel in one union. "Math" survived
+ * exactly two statements before resolveAllowedSectionCodes lower-cased it back to
+ * "math" so resolveSectionFilterValues could turn it into "M", but it was persisted on
+ * the way past. Null now carries what "Random" carried: no section filter.
+ *
+ * edge cases: an unrecognised token returns null, i.e. an unfiltered pool, which is the
+ * behaviour "Random" already had. A wrong section value never reaches
+ * select_practice_pool_random, where it would return zero rows rather than raise.
+ */
+function normalizeSectionToken(raw: unknown): CanonicalSectionCode | null {
+  const filters = resolveSectionFilterValues(raw);
+  const first = filters?.[0];
+  return normalizeSectionCode(first ?? raw);
 }
 
-function normalizeSectionToken(raw: unknown): "Math" | "RW" | null {
-  if (typeof raw !== "string") return null;
-  const normalized = normalizeSectionParam(raw);
-  return normalized === "Random" ? null : normalized;
-}
-
-function normalizeSectionList(raw: unknown): Array<"Math" | "RW"> {
+function normalizeSectionList(raw: unknown): CanonicalSectionCode[] {
   if (!Array.isArray(raw)) return [];
-  const values: Array<"Math" | "RW"> = [];
+  const values: CanonicalSectionCode[] = [];
   for (const item of raw) {
     const token = normalizeSectionToken(item);
     if (!token || values.includes(token)) continue;
@@ -904,12 +910,13 @@ function deriveTargetQuestionCountFromMinutes(
   return coerceTargetQuestionCount(derived, maxCap, defaultCount);
 }
 
+// null means "no single section" — either none was requested or more than one was.
 function resolveSectionForSession(
-  specSections: Array<"Math" | "RW">,
-  legacySection: "Math" | "RW" | "Random",
-): "Math" | "RW" | "Random" {
+  specSections: CanonicalSectionCode[],
+  legacySection: CanonicalSectionCode | null,
+): CanonicalSectionCode | null {
   if (specSections.length === 1) return specSections[0];
-  if (specSections.length > 1) return "Random";
+  if (specSections.length > 1) return null;
   return legacySection;
 }
 
@@ -917,11 +924,11 @@ function normalizeSessionSpec(
   input: z.infer<typeof StartSessionBodySchema>,
   config: PracticeConfig,
 ): {
-  section: "Math" | "RW" | "Random";
+  section: CanonicalSectionCode | null;
   targetQuestionCount: number;
   sessionSpec: CanonicalSessionSpec;
 } {
-  const legacySection = normalizeSectionParam(input.section);
+  const legacySection = normalizeSectionToken(input.section);
   const sectionValues = normalizeSectionList(input.sections);
 
   if (sectionValues.length === 0) {
@@ -970,20 +977,6 @@ function normalizeSessionSpec(
       mode,
     },
   };
-}
-
-function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
-  const codes = new Set<string>();
-  for (const section of sections) {
-    const sectionKey = section === "Math" ? "math" : "rw";
-    const sectionCodes = resolveSectionFilterValues(sectionKey) ?? [];
-    for (const code of sectionCodes) {
-      if (typeof code === "string" && code.trim().length > 0) {
-        codes.add(code.trim());
-      }
-    }
-  }
-  return Array.from(codes);
 }
 
 // listExactFilteredQuestionPool and filterPoolBySessionSpec REMOVED —
@@ -1295,7 +1288,7 @@ async function startOrReplaySession(args: {
   userId: string;
   actorId: string;
   role: string | undefined;
-  section: "Math" | "RW" | "Random";
+  section: CanonicalSectionCode | null;
   mode: string;
   clientInstanceId: string;
   idempotencyKey: string | null;
@@ -1524,7 +1517,10 @@ async function startOrReplaySession(args: {
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
   // 2. Resolve filter params for the RPC
-  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+  // The spec already holds canonical codes, which is what questions.section stores and
+  // what select_practice_pool_random matches on. resolveAllowedSectionCodes used to sit
+  // here converting "Math" back down to "M" in two more hops.
+  const sectionCodes = args.sessionSpec.sections;
   const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
     d === "easy" ? 1 : d === "hard" ? 3 : 2,
   );
@@ -2153,14 +2149,13 @@ router.get(
 
         const metadata = asSessionMetadata(s.filters);
         const specSections = metadata.session_spec?.sections ?? [];
-        const section =
-          specSections.length === 1
-            ? specSections[0] === "Math"
-              ? "math"
-              : "reading_writing"
-            : s.mode === "math"
-              ? "math"
-              : null;
+        // The response carries the canonical code. It used to carry a seventh spelling
+        // ("math" | "reading_writing") produced here and nowhere else; the client turns
+        // it into a label with shared/section-display.
+        const section = resolveSectionForSession(
+          specSections,
+          normalizeSectionToken(s.mode),
+        );
         return {
           id: s.id,
           section,
@@ -2632,14 +2627,10 @@ router.get(
     );
     const state = normalizeSessionState(session.status);
     const specSections = metadata.session_spec?.sections ?? [];
-    const section =
-      specSections.length === 1
-        ? specSections[0] === "Math"
-          ? "math"
-          : "reading_writing"
-        : session.mode === "math"
-          ? "math"
-          : null;
+    const section = resolveSectionForSession(
+      specSections,
+      normalizeSectionToken(session.mode),
+    );
 
     return res.json({
       sessionId: session.id,

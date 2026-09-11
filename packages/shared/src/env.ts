@@ -54,7 +54,28 @@ export const envSchema = z.object({
   STRIPE_PRICE_PARENT_MONTHLY: z.string().min(1).optional(),
   STRIPE_PRICE_PARENT_QUARTERLY: z.string().min(1).optional(),
   STRIPE_PRICE_PARENT_YEARLY: z.string().min(1).optional(),
+
+  // Product notifications (contracts/notifications.contract.md §12.2). Read at:
+  //   RESEND_API_KEY           server/lib/notifications/transport.ts
+  //   RESEND_WEBHOOK_SECRET    server/routes/resend-webhook.ts
+  //   NOTIFICATION_FROM_EMAIL  server/lib/notifications/transport.ts
+  // Optional in the shape for the same reason as the Stripe keys; production
+  // presence is enforced at startup by apps/api/src/env.ts validateEnvironment().
+  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
+  NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
 });
+
+/**
+ * The notification lane's three variables, as one schema so the startup validator and
+ * the transport parse the same shape.
+ */
+export const notificationEnvSchema = envSchema.pick({
+  RESEND_API_KEY: true,
+  RESEND_WEBHOOK_SECRET: true,
+  NOTIFICATION_FROM_EMAIL: true,
+});
+export type NotificationEnv = z.infer<typeof notificationEnvSchema>;
 
 /**
  * The Stripe variable names this codebase reads, derived from the canonical
@@ -77,6 +98,8 @@ export function parseEnv(source: unknown = process.env): Env {
 }
 
 /** Non-throwing variant for callers that want to handle the failure explicitly. */
-export function safeParseEnv(source: unknown = process.env): z.SafeParseReturnType<unknown, Env> {
+export function safeParseEnv(
+  source: unknown = process.env,
+): z.SafeParseReturnType<unknown, Env> {
   return envSchema.safeParse(source);
 }

@@ -6,6 +6,8 @@
 // not a second ORM-defined schema. Edge case: all six importers consume only
 // `import type` interfaces, so removal is type-safe and build-neutral.
 
+import type { CanonicalSectionCode } from "./question-bank-contract";
+
 export interface QuestionOption {
   key: "A" | "B" | "C" | "D";
   text: string;
@@ -15,7 +17,9 @@ export interface StudentQuestion {
   id: string;
   canonical_id: string | null;
   stem: string;
-  section_code: "M" | "RW" | "MATH" | null;
+  // Canonical only. The former `| "MATH"` member let a single field hold two
+  // vocabularies at once; Doc 04B V4.3 §11.2 names 'MATH' as a retired defect.
+  section_code: CanonicalSectionCode | null;
   question_type: "multiple_choice" | "free_response";
   options: QuestionOption[];
   explanation: string | null;
@@ -25,62 +29,6 @@ export interface StudentQuestion {
   subskill?: string | null;
   skill_code?: string | null;
   difficulty?: number | null;
-}
-
-export type NotificationType =
-  | "system_update"
-  | "study_reminder"
-  | "progress_alert"
-  | "achievement"
-  | "ai_tutor_suggestion";
-
-export type NotificationCategory =
-  | "study_progress"
-  | "learning_analytics"
-  | "question_updates"
-  | "motivation"
-  | "ai_tutor"
-  | "technical"
-  | "milestones";
-
-export type NotificationPriority = "low" | "normal" | "high" | "urgent";
-
-export interface Notification {
-  id: string;
-  userId: string;
-  type: NotificationType;
-  category: NotificationCategory;
-  priority: NotificationPriority;
-  title: string;
-  body: string;
-  ctaUrl: string | null;
-  ctaText?: string | null;
-  channelOrigin: string | null;
-  metadata: Record<string, unknown> | null;
-  isRead: boolean;
-  createdAt: string;
-  readAt: string | null;
-  archivedAt: string | null;
-  expiresAt: string | null;
-  updatedAt?: string | null;
-  message?: string;
-  actionUrl?: string | null;
-  actionText?: string | null;
-}
-
-export type NotificationDigestFrequency = "never" | "daily" | "weekly";
-
-export interface UserNotificationPreferences {
-  userId: string;
-  emailEnabled: boolean;
-  studyRemindersEnabled: boolean;
-  streakEnabled: boolean;
-  planUpdatesEnabled: boolean;
-  guardianUpdatesEnabled: boolean;
-  marketingEnabled: boolean;
-  digestFrequency: NotificationDigestFrequency;
-  quietHours: Record<string, unknown> | null;
-  updatedAt: string | null;
 }
 
 // Full-length exam runtime types (service-owned supabase rows).

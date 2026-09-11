@@ -276,13 +276,13 @@ describe("CanonicalPracticePage calculator UX", () => {
   });
 
   it("shows calculator toggle on math practice question and keeps question UI usable when toggled", () => {
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -304,7 +304,7 @@ describe("CanonicalPracticePage calculator UX", () => {
       <CanonicalPracticePage
         title="RW Practice"
         badgeLabel="RW"
-        section="reading_writing"
+        section="RW"
       />,
     );
 
@@ -313,13 +313,13 @@ describe("CanonicalPracticePage calculator UX", () => {
 
   it("uses resizable side panel above split breakpoint when calculator is expanded", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -333,13 +333,13 @@ describe("CanonicalPracticePage calculator UX", () => {
 
   it("resizable handle has accessible aria-label", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -353,13 +353,13 @@ describe("CanonicalPracticePage calculator UX", () => {
 
   it("falls back to stacked layout on narrow viewport even when expanded", () => {
     mockMatchMedia(false);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -379,13 +379,13 @@ describe("CanonicalPracticePage divider accessibility", () => {
 
   it("handle has role=separator, aria-orientation=vertical, and is focusable", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -400,13 +400,13 @@ describe("CanonicalPracticePage divider accessibility", () => {
   it("handleGroupLayout sets ARIA pixel values on the separator after layout fires (stubbed BCR)", async () => {
     const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -459,13 +459,13 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
 
   it("calculator panel has CSS min-width set to CALC_MIN_PX (true pixel floor)", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -477,13 +477,13 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
 
   it("question panel has CSS min-width set to QUESTION_MIN_PX", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -498,13 +498,13 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
 
   it("below-breakpoint fallback renders calculator full-width, not in narrow sidebar", () => {
     mockMatchMedia(false);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -543,13 +543,13 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
   it("initial layout at breakpoint (1062px): calculator resolved width ≥ 450px", async () => {
     const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -579,13 +579,13 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
   it("at ARIA valuemax: calculator resolved width = CALC_MIN_PX ≥ 450px", async () => {
     const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -615,13 +615,13 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     const widerWidth = 1400;
     const restoreBCR = stubAllBCR(widerWidth);
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -652,13 +652,13 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     // Start at breakpoint width
     const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -706,13 +706,13 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     const contentWidth = viewportWidth - APP_HORIZONTAL_PADDING; // 992
     const restoreBCR = stubAllBCR(contentWidth);
     mockMatchMedia(false);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -754,13 +754,13 @@ describe("CanonicalPracticePage CSS pixel floor (single source of truth)", () =>
 
   it("both panels have CSS min-width set (browser-enforced, continuous pixel floor)", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -783,13 +783,13 @@ describe("CanonicalPracticePage CSS pixel floor (single source of truth)", () =>
 
   it("static minSize percentage at breakpoint container bounds both panels above pixel floor", () => {
     mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -896,7 +896,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -908,7 +908,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     const setSelectedAnswer = vi.fn();
     const submitAnswer = vi.fn();
     hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("Math", {
+      buildHookState("M", {
         canSubmit: true,
         selectedAnswer: null,
         setSelectedAnswer,
@@ -920,7 +920,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -938,7 +938,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     unmount();
 
     hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("Math", {
+      buildHookState("M", {
         selectedAnswer: "A",
         showResult: true,
         isCorrect: true,
@@ -951,7 +951,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -977,7 +977,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
 
   it("MCQ incorrect: wrong selected option gets rose highlight, correct gets emerald (non-regression)", () => {
     hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("Math", {
+      buildHookState("M", {
         selectedAnswer: "B",
         showResult: true,
         isCorrect: false,
@@ -990,7 +990,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -1018,7 +1018,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -1049,7 +1049,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -1065,7 +1065,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -1094,7 +1094,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 
@@ -1123,7 +1123,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
-        section="math"
+        section="M"
       />,
     );
 

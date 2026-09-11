@@ -53,7 +53,7 @@ describe("useCanonicalPractice target_minutes contract", () => {
             sessionItemId: "item-1",
             questionType: "multiple_choice",
             stem: "What is 2 + 2?",
-            section: "Math",
+            section: "M",
             options: [
               { id: "A", text: "4" },
               { id: "B", text: "5" },

@@ -2,13 +2,20 @@ import { Router, type Response } from "express";
 import { DateTime } from "luxon";
 import { supabaseServer } from "../lib/supabase-server";
 import {
+  normalizeSectionCode,
+  type CanonicalSectionCode,
+} from "../../../../shared/question-bank-contract";
+import {
+  sectionCodeFromLabel,
+  sectionDisplayLabel,
+} from "../../../../shared/section-display";
+import {
   type AuthenticatedRequest,
   type SupabaseUser,
   requireRequestAuthContext,
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
-import { publishCalendarEventNotificationBestEffort } from "../../../../server/services/notification-authority";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
@@ -34,7 +41,7 @@ type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed"
 type CalendarEventType = "plan_generated" | "day_edited" | "plan_refreshed" | "block_completed" | "override_applied";
 type GenerationSource = "auto" | "user" | "refresh" | "regenerate" | "generate";
 type TaskTarget = {
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   skill_code: string | null;
   domain: string | null;
   subskill: string | null;
@@ -114,7 +121,7 @@ type PlanTaskRow = {
   day_date: string;
   ordinal: number;
   task_type: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   duration_minutes: number;
   source_skill_code: string | null;
   source_domain: string | null;
@@ -260,15 +267,18 @@ function normalizeBlockedWindows(value: unknown): BlockedWindow[] {
   return windows;
 }
 
-function normalizeSection(value: unknown): "MATH" | "RW" | null {
-  const normalized = typeof value === "string" ? value.toLowerCase().trim() : "";
-  if (!normalized) return null;
-  if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
-  if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
-  return null;
+// @spec [Doc-04B_V4.3 §11.2] | @implemented [2026-09-02]
+// plain English: accepts either a section code (from a client that holds one) or a
+// rendered label (from an older payload, or from the task blobs this route persists as
+// display text). Both directions live in the two shared modules; this function no
+// longer carries its own substring-sniffing copy, and no longer produces a spelling the
+// database has never accepted.
+function normalizeSection(value: unknown): CanonicalSectionCode | null {
+  if (typeof value !== "string") return null;
+  return normalizeSectionCode(value) ?? sectionCodeFromLabel(value);
 }
 
-function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+function normalizeTaskType(value: unknown, section: CanonicalSectionCode | null, mode: unknown): TaskType {
   const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
   const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
 
@@ -278,11 +288,11 @@ function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: 
   if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
   if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
   if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
-  if (section === "MATH" || section === "RW") return "practice";
+  if (section !== null) return "practice";
   return "practice";
 }
 
-function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType: TaskType): TaskTarget {
+function normalizeTaskTarget(task: any, section: CanonicalSectionCode | null, taskType: TaskType): TaskTarget {
   const target = task?.target && typeof task.target === "object" ? (task.target as Record<string, unknown>) : null;
   const reviewSessionId =
     typeof task?.override_target_session_id === "string"
@@ -311,7 +321,7 @@ function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType:
           : "practice_target";
 
   return {
-    section: section ?? (typeof target?.section === "string" && target.section.includes("Writing") ? "RW" : typeof target?.section === "string" && target.section.includes("Math") ? "MATH" : null),
+    section: section ?? normalizeSection(target?.section),
     skill_code:
       typeof task?.source_skill_code === "string"
         ? task.source_skill_code
@@ -338,7 +348,7 @@ function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType:
 
 function serializeTaskSummary(args: {
   taskType: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   durationMinutes: number;
   status?: TaskStatus;
   ordinal?: number;
@@ -467,11 +477,6 @@ async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: s
     // best effort only
   }
 
-  await publishCalendarEventNotificationBestEffort({
-    userId: args.userId,
-    eventType: args.eventType,
-    details: args.details,
-  });
 }
 
 async function ensurePremiumAccess(
@@ -688,10 +693,11 @@ function ensureIsoDateInput(value: unknown): string | null {
 // Do NOT merge these into the service — the write path operates on planner types,
 // not on the serialized view shape.
 
-function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
-  if (section === "MATH") return "Math";
-  if (section === "RW") return "Reading & Writing";
-  return null;
+// Third of the three private copies of the display mapping. All three now delegate.
+// The name is kept because it is the response field's historical contract: this route
+// serializes a LABEL to the client, and the label is now produced in one place.
+function taskSectionToLegacy(section: CanonicalSectionCode | null): string | null {
+  return sectionDisplayLabel(section);
 }
 
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
@@ -894,7 +900,7 @@ async function persistGeneratedDays(params: {
       planned_minutes: day.plannedMinutes,
       completed_minutes: existing?.completed_minutes ?? 0,
       focus: day.focus.map((focus) => ({
-        section: focus.section === "MATH" ? "Math" : "Reading & Writing",
+        section: sectionDisplayLabel(focus.section),
         weight: focus.weight,
         competencies: focus.skill_codes,
       })),
@@ -1643,7 +1649,7 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
         return {
           type: task.taskType,
           task_type: task.taskType,
-          section: task.section === "MATH" ? "Math" : task.section === "RW" ? "Reading & Writing" : null,
+          section: sectionDisplayLabel(task.section),
           target: {
             section: task.target.section,
             skill_code: task.target.skill_code,

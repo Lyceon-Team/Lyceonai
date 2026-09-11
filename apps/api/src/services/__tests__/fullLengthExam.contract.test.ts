@@ -30,7 +30,7 @@ describe('Full-Length Exam Contract Closure', () => {
       id: 'session-contract-1',
       user_id: 'student-1',
       status: 'in_progress',
-      current_section: 'math',
+      current_section: 'M',
       current_module: 2,
     };
 
@@ -39,16 +39,16 @@ describe('Full-Length Exam Contract Closure', () => {
     const mathModule2 = {
       id: 'module-math-2',
       session_id: 'session-contract-1',
-      section: 'math',
+      section: 'M',
       module_index: 2,
       status: 'submitted',
     };
 
     const modules = [
-      { id: 'module-rw-1', section: 'rw', module_index: 1 },
-      { id: 'module-rw-2', section: 'rw', module_index: 2 },
-      { id: 'module-math-1', section: 'math', module_index: 1 },
-      { id: 'module-math-2', section: 'math', module_index: 2 },
+      { id: 'module-rw-1', section: 'RW', module_index: 1 },
+      { id: 'module-rw-2', section: 'RW', module_index: 2 },
+      { id: 'module-math-1', section: 'M', module_index: 1 },
+      { id: 'module-math-2', section: 'M', module_index: 2 },
     ];
 
     const responsesByModule: Record<string, Array<{ question_id: string; is_correct: boolean }>> = {
@@ -146,7 +146,7 @@ describe('Full-Length Exam Contract Closure', () => {
                 if (field === 'session_id') {
                   return {
                     eq: vi.fn((field2: string, value2: string) => {
-                      if (field2 === 'section' && value2 === 'math') {
+                      if (field2 === 'section' && value2 === 'M') {
                         return {
                           eq: vi.fn(() => ({
                             single: vi.fn(async () => ({
@@ -253,28 +253,28 @@ describe('Full-Length Exam Contract Closure', () => {
       userId: 'student-1',
     });
 
-    const sumRwDomains = result.domainBreakdown.rw.reduce((sum, d) => sum + d.total, 0);
-    const sumMathDomains = result.domainBreakdown.math.reduce((sum, d) => sum + d.total, 0);
-    const sumRwSkills = result.skillDiagnostics.rw.reduce((sum, d) => sum + d.total, 0);
-    const sumMathSkills = result.skillDiagnostics.math.reduce((sum, d) => sum + d.total, 0);
+    const sumRwDomains = result.domainBreakdown.RW.reduce((sum, d) => sum + d.total, 0);
+    const sumMathDomains = result.domainBreakdown.M.reduce((sum, d) => sum + d.total, 0);
+    const sumRwSkills = result.skillDiagnostics.RW.reduce((sum, d) => sum + d.total, 0);
+    const sumMathSkills = result.skillDiagnostics.M.reduce((sum, d) => sum + d.total, 0);
 
-    expect(result.rawScore.rw.correct).toBe(result.rwScore.totalCorrect);
-    expect(result.rawScore.math.correct).toBe(result.mathScore.totalCorrect);
+    expect(result.rawScore.RW.correct).toBe(result.rwScore.totalCorrect);
+    expect(result.rawScore.M.correct).toBe(result.mathScore.totalCorrect);
     expect(result.rawScore.total.correct).toBe(result.overallScore.totalCorrect);
 
-    expect(result.rawScore.rw.total).toBe(54);
-    expect(result.rawScore.math.total).toBe(44);
+    expect(result.rawScore.RW.total).toBe(54);
+    expect(result.rawScore.M.total).toBe(44);
     expect(result.rawScore.total.total).toBe(98);
 
-    expect(result.scaledScore.rw).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.rw.correct, result.rawScore.rw.total));
-    expect(result.scaledScore.math).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.math.correct, result.rawScore.math.total));
-    expect(result.scaledScore.total).toBe(result.scaledScore.rw + result.scaledScore.math);
+    expect(result.scaledScore.RW).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.RW.correct, result.rawScore.RW.total));
+    expect(result.scaledScore.M).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.M.correct, result.rawScore.M.total));
+    expect(result.scaledScore.total).toBe(result.scaledScore.RW + result.scaledScore.M);
     expect(result.overallScore.scaledTotal).toBe(result.scaledScore.total);
 
-    expect(sumRwDomains).toBe(result.rawScore.rw.total);
-    expect(sumMathDomains).toBe(result.rawScore.math.total);
-    expect(sumRwSkills).toBe(result.rawScore.rw.total);
-    expect(sumMathSkills).toBe(result.rawScore.math.total);
+    expect(sumRwDomains).toBe(result.rawScore.RW.total);
+    expect(sumMathDomains).toBe(result.rawScore.M.total);
+    expect(sumRwSkills).toBe(result.rawScore.RW.total);
+    expect(sumMathSkills).toBe(result.rawScore.M.total);
   });
 
   it('duplicate same-answer submission is idempotent (first write wins)', async () => {
@@ -294,7 +294,7 @@ describe('Full-Length Exam Contract Closure', () => {
                     data: {
                       id: 'session-idempotent-1',
                       status: 'in_progress',
-                      current_section: 'rw',
+                      current_section: 'RW',
                       current_module: 1,
                     },
                     error: null,
@@ -427,7 +427,7 @@ describe('Full-Length Exam Contract Closure', () => {
                     data: {
                       id: 'session-idempotent-2',
                       status: 'in_progress',
-                      current_section: 'rw',
+                      current_section: 'RW',
                       current_module: 1,
                     },
                     error: null,

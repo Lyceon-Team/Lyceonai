@@ -46,6 +46,22 @@ vi.mock("../../server/logger", () => ({
   },
 }));
 
+// Mock GCP credentials — Layer 2 tests mock the GoogleGenAI constructor
+// separately; the credential loader just needs to return a valid shape
+// so invokeClassifier can reach the constructor.
+vi.mock("../../server/lib/gcp-credentials", () => ({
+  getGcpCredentials: () => ({
+    type: "service_account",
+    project_id: "test-project",
+    private_key_id: "fake",
+    private_key: "-----BEGIN FAKE-----\nnotreal\n-----END FAKE-----\n",
+    client_email: "test@test.iam.gserviceaccount.com",
+    client_id: "000000000000000000000",
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+  }),
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**

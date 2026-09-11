@@ -9,8 +9,8 @@ Owner ruling, 2026-08-19. Governs this session end to end.
 
 Companion documents, referenced not restated:
 
-* `docs/SpecAudit/STRIPE_GROUNDING_AUDIT.md` — accepted grounding, plus the Phase A addendum and the G-28 correction
-* `docs/plans/Stripe_Phase1_SCL_and_ThinSlice_Briefs.md` — the ten SCL briefs (A–J) and the thin-slice definition
+- `docs/SpecAudit/STRIPE_GROUNDING_AUDIT.md` — accepted grounding, plus the Phase A addendum and the G-28 correction
+- `docs/plans/Stripe_Phase1_SCL_and_ThinSlice_Briefs.md` — the ten SCL briefs (A–J) and the thin-slice definition
 
 Those files hold the detail. This one holds the rules. Where they conflict, this file wins.
 
@@ -28,11 +28,11 @@ Doc 01 V8 is canonical. V6 is retired; if a V6 file is still present in `docs/Sp
 
 ## 2. Evidence discipline
 
-* Print the artifact, don't read the code. The webhook payload, the entitlement row, the Checkout Session object, the request body. Not the type, not the handler, not a description of the flow. When you would write "X is handled correctly," print X instead.
-* `file:line` for repo claims. The literal `SELECT` and its output for production claims. Doc + section + verified heading for spec claims — open the section and confirm it says what you claim. A citation whose heading doesn't match its use is a finding.
-* Every Stripe assertion links a specific Stripe documentation page. An SCL claiming "Stripe does it this way" without a link is not reviewable, and unlinked appeals to Stripe-native turn the ruling into an excuse for whatever you already wanted to build.
-* Absence requires proof — the command and its empty output, on more than one search term. Never report a failed command as a zero result.
-* Never restate spec content into a working document. Reference by document and section. A plan that enumerates a spec's table list becomes a second unversioned source of truth that drifts.
+- Print the artifact, don't read the code. The webhook payload, the entitlement row, the Checkout Session object, the request body. Not the type, not the handler, not a description of the flow. When you would write "X is handled correctly," print X instead.
+- `file:line` for repo claims. The literal `SELECT` and its output for production claims. Doc + section + verified heading for spec claims — open the section and confirm it says what you claim. A citation whose heading doesn't match its use is a finding.
+- Every Stripe assertion links a specific Stripe documentation page. An SCL claiming "Stripe does it this way" without a link is not reviewable, and unlinked appeals to Stripe-native turn the ruling into an excuse for whatever you already wanted to build.
+- Absence requires proof — the command and its empty output, on more than one search term. Never report a failed command as a zero result.
+- Never restate spec content into a working document. Reference by document and section. A plan that enumerates a spec's table list becomes a second unversioned source of truth that drifts.
 
 ## 3. Schema naming — genesis first, prod verifies
 
@@ -68,11 +68,11 @@ Zero new entries on `ci-known-gaps`.
 
 ## 6. Safety invariants
 
-* No caller-supplied value gates an entitlement decision. Entitlement derives from Stripe's webhook events and the database. A client claiming to be entitled is a client, not a fact. This includes deriving a decision from whether a field is present — a caller controls that too.
-* Fail closed. Every gate denies on error, never permits.
-* Never collapse an error into a legitimate empty value. A failed lookup is not an empty result set.
-* Signature verification and `livemode` assertion precede all processing.
-* No secrets, card data, or raw payer PII in logs.
+- No caller-supplied value gates an entitlement decision. Entitlement derives from Stripe's webhook events and the database. A client claiming to be entitled is a client, not a fact. This includes deriving a decision from whether a field is present — a caller controls that too.
+- Fail closed. Every gate denies on error, never permits.
+- Never collapse an error into a legitimate empty value. A failed lookup is not an empty result set.
+- Signature verification and `livemode` assertion precede all processing.
+- No secrets, card data, or raw payer PII in logs.
 
 ## 7. Irreversible operations — owner only
 
@@ -102,9 +102,9 @@ Three phases, hard gates between them. Report and stop at each. Phase A is compl
 
 Write the ten SCLs (A–J) per the briefs in `docs/plans/Stripe_Phase1_SCL_and_ThinSlice_Briefs.md`, with the Phase A amendments already ruled:
 
-* SCL-D also records the application-layer foreclosure (`createGuardianLink` refuses the second link) and the CI gate that must retire with it. Cite Doc 01 V8 §36.4 — "You are still paying for this student's subscription" — as spec-level support for per-item granularity over a quantity model.
-* SCL-B cites Refund Policy §10's existing contemplation of a third-party payer.
-* Add a short vocabulary SCL against Doc 09 §5.2: "tier" there means billing period, not entitlement level.
+- SCL-D also records the application-layer foreclosure (`createGuardianLink` refuses the second link) and the CI gate that must retire with it. Cite Doc 01 V8 §36.4 — "You are still paying for this student's subscription" — as spec-level support for per-item granularity over a quantity model.
+- SCL-B cites Refund Policy §10's existing contemplation of a third-party payer.
+- Add a short vocabulary SCL against Doc 09 §5.2: "tier" there means billing period, not entitlement level.
 
 The guardian-link data-layer breakage is a defect, not an SCL — the spec is right and the code is wrong. Record it as a defect with its own workstream and name it in the plan as a blocking dependency for the guardian-paid path. Do not fix it.
 
@@ -126,12 +126,12 @@ Deliverables: the printed evidence set per the thin-slice brief, the deletion ma
 
 This vertical closes when, and not before:
 
-* Every item in the audit's §3.1 repo inventory is marked kept / rebuilt / deleted, each with the spec section or Stripe doc page that replaces it
-* Grep-proven zero remaining references to every deleted symbol
-* Every deleted test replaced by one built to spec, or justified in writing
-* Zero new `ci-known-gaps` entries
-* Dead database objects queued for removal — `_rl_has_active_entitlement` is used by zero policies, verified
-* Every DDL need queued, none authored
+- Every item in the audit's §3.1 repo inventory is marked kept / rebuilt / deleted, each with the spec section or Stripe doc page that replaces it
+- Grep-proven zero remaining references to every deleted symbol
+- Every deleted test replaced by one built to spec, or justified in writing
+- Zero new `ci-known-gaps` entries
+- Dead database objects queued for removal — `_rl_has_active_entitlement` is used by zero policies, verified
+- Every DDL need queued, none authored
 
 ## 11. Self-check before reporting any phase
 
@@ -151,7 +151,7 @@ This vertical closes when, and not before:
 Recorded here so the charter stays the single rules document. Not part of the 2026-08-19 verbatim text above.
 
 1. **Phase B approved.** All four brief corrections accepted (SCL-G `refund.*` over `charge.refunded`; SCL-D `UNIQUE(profile_id)` kept; SCL-D foreclosure wider than `getPrimaryGuardianLink`; `%consent%` sweep returns three tables).
-2. **SCL-D verified independently against production.** `entitlements_profile_id_unique` exists as a unique *index*, not a table constraint — which is why it is absent from `pg_constraint` and why the brief missed it. It is a valid `onConflict` target. D-1 as queued is correct.
+2. **SCL-D verified independently against production.** `entitlements_profile_id_unique` exists as a unique _index_, not a table constraint — which is why it is absent from `pg_constraint` and why the brief missed it. It is a valid `onConflict` target. D-1 as queued is correct.
 3. **SCL-G amended** for partial refunds. Refund Policy §8.1 cannot carry a partial-no-revoke carve-out; the distinction became `Stripe_Open_Questions.md` Q4.
 4. **New DDL queue item D-5** — parallel-paths class: the entitled-status set exists in two independent copies (`entitlement_active()` body and `idx_entitlements_active` predicate).
 5. **B1 ruled — Stripe Entitlements REJECTED**, on the Customer-keying argument, not the seven-versus-one count. `entitlement_features` stays, as data.
@@ -162,7 +162,7 @@ Recorded here so the charter stays the single rules document. Not part of the 20
 works.**
 
 §5 already says to plant the failure and watch it fail. It did not say what to do when the plant
-*passes*. The tempting reading — "the behaviour must be covered some other way" — is exactly
+_passes_. The tempting reading — "the behaviour must be covered some other way" — is exactly
 backwards: a plant that does not fail proves the test cannot see the defect it names.
 
 The rule: when a plant passes, the test is not validated, it is **disproven**. Reformulate the test
@@ -180,6 +180,44 @@ Two instances, both real:
    where charged and list differ. The same plant then failed. That test exists solely because the
    first formulation could not catch it.
 
-The common shape in both: the plant was invisible because the *fixture* made two different values
+The common shape in both: the plant was invisible because the _fixture_ made two different values
 coincide. When choosing plant values, prefer inputs where the correct and incorrect implementations
 must diverge — equal values hide substitutions.
+
+## Amendment — one fact, one source (owner, 2026-09-02)
+
+**A gate that re-derives what another gate has already established is a defect, not defence in
+depth.** When one fact is read from two places, the two do not reinforce each other — they get the
+chance to disagree, and the disagreement is silent until it costs something. Extend an existing
+reader; never add a second one.
+
+Defence in depth is _layers of different questions_ — is the payload well formed, is the payer
+authorised, has the money settled. Asking the SAME question twice against two sources is not a
+layer. If a second call site needs the fact, it calls the same reader; if that reader's input is
+missing, populate the input rather than teaching one call site to look elsewhere.
+
+Three instances, all real, in ascending order of what they cost:
+
+1. **The entitled-status set** — `entitlement_active()`'s body and `idx_entitlements_active`'s
+   predicate. Two independent copies of `{active, past_due, trialing}`. They agree only because
+   migration `20260616120000` widened both **in one change**; genesis line 203 still declares the
+   narrower two-status predicate and is corrected by that migration on a fresh apply. Coupling
+   maintained by hand, so far successfully. Recorded as DDL queue item D-5.
+2. **The Stripe mode** — a `STRIPE_ENV` variable alongside the secret key's own prefix. A
+   misconfigured environment could hold a live key and declare `test`, and the livemode assertion
+   would agree with the declaration while the key told the truth. `STRIPE_ENV` was deleted; the
+   prefix is now the only fact, because it is the one that cannot disagree with the key
+   (`server/lib/stripe/client.ts`).
+3. **The billing country** — the session's `customer_details.address.country` and the Customer's
+   `address.country`. This one was not caught by inspection; it took the money path down for two
+   days. `fulfilCheckoutSession` passed guardian `c6d3fc60` on the session's `US`;
+   `assertCountryEligibleForGrant` refused the same purchase seconds later on `Customer.address =
+null`, because Stripe collects the billing address per payment method and does not write it back
+   to the Customer unless asked. Verdict `unknown` -> `hold_for_operator`: charge taken,
+   subscription live, nothing refunded, no entitlement. Every grant behaved this way from
+   2026-08-28, when the Customer-level gate landed. **The fix populates the source, it does not
+   move the read** — renewals have no session, so the Customer is the correct source and was simply
+   never filled in (`customer_update: { address: "auto" }`, `server/routes/billing-routes.ts`).
+
+The shape to watch for: a second reader is usually added because the first one's input "isn't
+available here". That is a statement about the input, not about the fact. Fix the input.

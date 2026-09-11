@@ -279,7 +279,7 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
 
     for (const row of rows) {
       const sectionCode = String(row.section ?? "").toUpperCase();
-      if (sectionCode === "M" || sectionCode === "MATH") {
+      if (sectionCode === "M") {
         math += 1;
       } else if (sectionCode === "RW") {
         readingWriting += 1;

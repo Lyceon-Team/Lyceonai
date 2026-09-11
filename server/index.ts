@@ -50,7 +50,6 @@ import {
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
-import notificationRoutes from "./routes/notification-routes";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -66,6 +65,7 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
+import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
@@ -81,6 +81,12 @@ import {
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
+import { resendWebhookHandler } from "./routes/resend-webhook";
+import notificationsRouter from "./routes/notifications";
+import {
+  NOTIFICATION_API_MOUNT,
+  RESEND_WEBHOOK_PATH,
+} from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
@@ -156,6 +162,15 @@ app.post(
         .json({ error: "Webhook processing failed", requestId });
     }
   },
+);
+
+// Resend webhook — raw Buffer, Svix-signature-verified, registered BEFORE express.json()
+// (contracts/notifications.contract.md §7.1). Written fresh; not a copy of the Stripe handler.
+// CSRF_EXEMPT_REASON: Webhook uses Svix signature verification instead of CSRF
+app.post(
+  RESEND_WEBHOOK_PATH,
+  express.raw({ type: "application/json" }),
+  resendWebhookHandler,
 );
 
 app.use(express.json({ limit: "1mb" }));
@@ -400,12 +415,14 @@ app.use(
   profileRoutes,
 );
 
-// Notifications Routes
+
+// Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
+// principal; every read/write is a recipient-scoped SQL function.
 app.use(
-  "/api/notifications",
+  NOTIFICATION_API_MOUNT,
   requireSupabaseAuth,
   doubleCsrfProtection,
-  notificationRoutes,
+  notificationsRouter,
 );
 
 // Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
@@ -600,6 +617,21 @@ app.use(
   doubleCsrfProtection,
   guardianRoutes,
 );
+
+// Public Pricing Route (UNAUTHENTICATED BY DESIGN — the first /api/public/* mount)
+//
+// @spec [Doc 09 §1.4, §5.1 Stripe canonical for pricing at runtime]
+// @implemented [2026-09-03]
+//
+// The homepage is served to logged-out visitors and quotes a price, so it needs
+// one it did not invent. `/api/billing/plans` stays behind `requireSupabaseAuth`
+// (billing-routes.ts:973-974) rather than being exempted for a marketing page;
+// this route returns the monthly amount, currency and interval and nothing that
+// describes the billing configuration. Mounted with NO auth and NO CSRF: it is
+// a GET that reads no session and writes nothing. `globalRateLimiter` above
+// still applies (1000/IP/15min), but that bounds one caller, not distributed
+// load; the module's 15-minute memo is what bounds calls to Stripe itself.
+app.use("/api/public", publicPricingRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
@@ -899,6 +931,29 @@ if (isMainModule) {
   // Validate environment variables on startup
   validateEnvironment();
 
+  // Validate GCP credentials at startup (production only).
+  // This makes GCP_SERVICE_ACCOUNT_JSON load-bearing at boot, so the boot
+  // probe can enforce its presence. Without this, a missing credential is
+  // only discovered at request time — which is the drift that let the
+  // ENAMETOOLONG leak run to production.
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const { getGcpCredentials } = require("./lib/gcp-credentials") as {
+        getGcpCredentials: () => { project_id: string };
+      };
+      const creds = getGcpCredentials();
+      console.log(
+        `✅ [GCP] Service account loaded (project: ${creds.project_id})`,
+      );
+    } catch (err: unknown) {
+      // The credential loader's errors are fixed-vocabulary and safe to log.
+      console.error(
+        `❌ [GCP] ${err instanceof Error ? err.message : "credential load failed"}`,
+      );
+      process.exit(1);
+    }
+  }
+
   // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
   function validateSiteUrl(): void {
     const publicSiteUrl = process.env.PUBLIC_SITE_URL;
@@ -985,11 +1040,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions`);

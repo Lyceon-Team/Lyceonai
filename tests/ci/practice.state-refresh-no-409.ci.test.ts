@@ -42,7 +42,7 @@ const sessionRow = {
   mode: "practice",
   filters: {
     client_instance_id: BOUND_INSTANCE,
-    session_spec: { sections: ["Math"] },
+    session_spec: { sections: ["M"] },
   },
   target_count: 10,
   platform: "web",
@@ -221,7 +221,9 @@ describe("Practice /state — refresh regression guard", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(res.body.section).toBe("math");
+    // The /state response now carries the canonical code, not a seventh spelling
+    // ("math" | "reading_writing") that existed only between this route and the client.
+    expect(res.body.section).toBe("M");
   });
 
   it("includes readOnly flag in the response", async () => {
