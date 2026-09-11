@@ -66,6 +66,7 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
+import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
@@ -600,6 +601,21 @@ app.use(
   doubleCsrfProtection,
   guardianRoutes,
 );
+
+// Public Pricing Route (UNAUTHENTICATED BY DESIGN — the first /api/public/* mount)
+//
+// @spec [Doc 09 §1.4, §5.1 Stripe canonical for pricing at runtime]
+// @implemented [2026-09-03]
+//
+// The homepage is served to logged-out visitors and quotes a price, so it needs
+// one it did not invent. `/api/billing/plans` stays behind `requireSupabaseAuth`
+// (billing-routes.ts:973-974) rather than being exempted for a marketing page;
+// this route returns the monthly amount, currency and interval and nothing that
+// describes the billing configuration. Mounted with NO auth and NO CSRF: it is
+// a GET that reads no session and writes nothing. `globalRateLimiter` above
+// still applies (1000/IP/15min), but that bounds one caller, not distributed
+// load; the module's 15-minute memo is what bounds calls to Stripe itself.
+app.use("/api/public", publicPricingRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
