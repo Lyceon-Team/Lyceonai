@@ -132,3 +132,43 @@ export const billingPortalOutcomeSchema = z.object({
   url: z.string().url(),
 });
 
+/**
+ * What GET /api/public/pricing returns — the ONE monthly price, for strangers.
+ *
+ * @spec [Doc 09 §1.4, §5.1 Stripe is canonical for pricing magnitudes at
+ *        runtime; Coding Standards §7.1, §7.2] | @implemented [2026-09-03]
+ *
+ * plain English: the homepage quotes money to logged-out visitors, so it needs
+ * a price it did not make up. Expected outcome: a number that came from Stripe
+ * this quarter-hour, or no number at all. Trade-off: monthly only — the public
+ * card advertises one plan and the plan comparison lives behind auth on
+ * `/upgrade`. Edge case: an unconfigured price id and a Stripe outage both
+ * resolve to "no data", and the card renders without a price line.
+ *
+ * `amountCents` IS `.int().positive()`, AND THAT IS THE ANTI-`$NaN` GUARD.
+ * `upgrade.tsx:92` spreads the API row over a fallback row
+ * (`{...fallback, ...fromApi}`), so a `null` amount from the API OVERWRITES the
+ * fallback and reaches the formatter — the author rescued
+ * `equivalentMonthlyCents` and `savingsPercent` from exactly that hazard on the
+ * next two lines and missed the price itself. Here the shape refuses a null,
+ * a zero and a missing key at the boundary, so there is no path on which the
+ * client holds a price it cannot render. There is no fallback to overwrite
+ * either: a hardcoded amount would be the two-sources-for-one-fact defect on
+ * the one page that quotes money to people who have not signed up.
+ *
+ * NO PRICE ID, NO PRODUCT, NO PLAN LIST. This is served unauthenticated; it
+ * carries the three fields a price tag needs and nothing that describes the
+ * billing configuration behind it.
+ */
+export const publicPricingSchema = z.object({
+  amountCents: z.number().int().positive(),
+  currency: z.string().min(1),
+  interval: z.literal("month"),
+});
+
+export type PublicPricing = z.infer<typeof publicPricingSchema>;
+
+/** The success envelope, per Coding Standards §8.2 (`{ data: T }`). */
+export const publicPricingResponseSchema = z.object({
+  data: publicPricingSchema,
+});
