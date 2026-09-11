@@ -1,8 +1,9 @@
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-3 (sign-out failures route through
  *        resolveAuthErrorMessage, the auth display chokepoint); lyceon-coding-standards
- *        §11.1 (components render, hooks own effects), §11.3 (UI hides by role, the server
- *        enforces)] | @implemented [2026-09-11]
+ *        §11.1 (components render UI; the sign-out behaviour lives in a hook, not in the
+ *        component body — it calls the auth context's signOut, not the query layer), §11.3
+ *        (UI hides by role, the server enforces)] | @implemented [2026-09-11]
  *
  * plain English: the signed-in user's header menu (name, email, Settings, Sign Out) and the
  * sign-out handler behind it, shared by every authenticated shell so the student header and
