@@ -46,6 +46,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
+import { GuardianShell } from "@/components/layout/GuardianShell";
 import { ManageSubscriptionButton } from "@/components/guardian/ManageSubscriptionButton";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
@@ -371,36 +372,37 @@ export default function GuardianDashboard() {
 
   return (
     <CheckoutReturnPoller>
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
-            <div className="flex items-center gap-3 min-w-0">
-              <Users className="h-8 w-8 text-[#0F2E48]" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0F2E48]/60 mb-1">
-                  Guardian Portal
-                </p>
-                <h1 className="text-3xl font-bold text-[#0F2E48] tracking-tight">
-                  Student Performance Data
-                </h1>
-                <p className="text-[#0F2E48]/60 text-sm">
-                  Read-only reporting from linked student runtime records.
-                </p>
+      <GuardianShell>
+        <div className="bg-background p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
+              <div className="flex items-center gap-3 min-w-0">
+                <Users className="h-8 w-8 text-[#0F2E48]" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0F2E48]/60 mb-1">
+                    Guardian Portal
+                  </p>
+                  <h1 className="text-3xl font-bold text-[#0F2E48] tracking-tight">
+                    Student Performance Data
+                  </h1>
+                  <p className="text-[#0F2E48]/60 text-sm">
+                    Read-only reporting from linked student runtime records.
+                  </p>
+                </div>
               </div>
-            </div>
-            {/*
+              {/*
               Shown only when there is a subscription to manage. It used to
               render unconditionally, which is how an unpaid guardian reached a
               Stripe portal reporting "No payment method / No invoice history".
             */}
-            <ManageSubscriptionButton
-              effectiveAccess={billingStatus?.effectiveAccess}
-              isPaid={billingStatus?.isPaid}
-              lapsed={billingStatus?.lapsed}
-            />
-          </div>
+              <ManageSubscriptionButton
+                effectiveAccess={billingStatus?.effectiveAccess}
+                isPaid={billingStatus?.isPaid}
+                lapsed={billingStatus?.lapsed}
+              />
+            </div>
 
-          {/*
+            {/*
             THE BANNER THAT REPLACES THE INTERSTITIAL.
 
             `needsPaymentUpdate` used to make the component now called
@@ -413,152 +415,154 @@ export default function GuardianDashboard() {
             front of it. Dismissible, because a parent who has seen it and is
             dealing with it should not be told twice on every navigation.
           */}
-          {billingStatus?.needsPaymentUpdate && !paymentNoticeDismissed && (
-            <Alert
-              className="border-amber-200 bg-amber-50"
-              data-testid="guardian-payment-health-banner"
-            >
-              <AlertTriangle className="h-4 w-4 text-amber-700" />
-              <AlertDescription className="text-amber-800">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium">
-                      A subscription payment needs attention.
-                    </div>
-                    <div className="text-sm">
-                      Your linked student keeps their access while the payment
-                      retries. Updating the card now avoids losing it.
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <ManageSubscriptionButton
-                      effectiveAccess={billingStatus?.effectiveAccess}
-                      isPaid={billingStatus?.isPaid}
-                      lapsed={billingStatus?.lapsed}
-                      label="Update payment method"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setPaymentNoticeDismissed(true)}
-                      data-testid="dismiss-payment-health-banner"
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {showPaidUnlinkedCta && (
-            <Alert className="border-[#0F2E48]/20 bg-[#0F2E48]/5">
-              <CreditCard className="h-4 w-4 text-[#0F2E48]" />
-              <AlertDescription className="text-[#0F2E48]">
-                <div className="font-medium">Your subscription is active.</div>
-                <div className="text-sm text-[#0F2E48]/80">
-                  Link your student to unlock guardian progress, KPI, and
-                  calendar views.
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {showUnlinkedLinkFirstHint && (
-            <Alert className="border-amber-200 bg-amber-50">
-              <AlertTriangle className="h-4 w-4 text-amber-700" />
-              <AlertDescription className="text-amber-800">
-                Link your student first, then choose a subscription to unlock
-                premium guardian views.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {studentsMalformed && (
-            <div className="py-2">
-              <RecoveryNotice
-                title="We couldn't load your linked students."
-                message="Try again. If this keeps happening, refresh the page."
-                onRetry={() => void refetchStudents()}
-              />
-            </div>
-          )}
-
-          <Card className="bg-card border-border/60">
-            <CardHeader>
-              <CardTitle className="text-[#0F2E48] flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                Link a Student
-              </CardTitle>
-              <CardDescription>
-                Ask your student for their link code, from their account
-                settings. Entering it links you straight away.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={handleLink}
-                className="flex flex-col sm:flex-row gap-3"
+            {billingStatus?.needsPaymentUpdate && !paymentNoticeDismissed && (
+              <Alert
+                className="border-amber-200 bg-amber-50"
+                data-testid="guardian-payment-health-banner"
               >
-                <div className="flex-1">
-                  <Label htmlFor="linkCode" className="sr-only">
-                    Student link code
-                  </Label>
-                  <Input
-                    id="linkCode"
-                    data-testid="guardian-link-code-input"
-                    type="text"
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    placeholder="Enter your student's code"
-                    value={linkCode}
-                    onChange={(e) => setLinkCode(e.target.value)}
-                    maxLength={12}
-                    className="font-mono tracking-[0.2em] uppercase"
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  data-testid="guardian-link-code-submit"
-                  disabled={
-                    linkMutation.isPending || linkCode.trim().length === 0
-                  }
-                  className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
-                >
-                  {linkMutation.isPending ? "Linking..." : "Link student"}
-                </Button>
-              </form>
-              {linkError && (
-                <Alert
-                  className={`mt-4 ${isRateLimited ? "bg-amber-50 border-amber-200" : "border-border/70 bg-card/70"}`}
-                >
-                  {isRateLimited ? (
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-[#0F2E48]/70" />
-                  )}
-                  <AlertDescription
-                    className={
-                      isRateLimited ? "text-amber-800" : "text-[#0F2E48]/80"
-                    }
-                  >
-                    {linkError}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {linkSuccess && (
-                <Alert className="mt-4 bg-green-50 border-green-200">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    {linkSuccess}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">
+                        A subscription payment needs attention.
+                      </div>
+                      <div className="text-sm">
+                        Your linked student keeps their access while the payment
+                        retries. Updating the card now avoids losing it.
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <ManageSubscriptionButton
+                        effectiveAccess={billingStatus?.effectiveAccess}
+                        isPaid={billingStatus?.isPaid}
+                        lapsed={billingStatus?.lapsed}
+                        label="Update payment method"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPaymentNoticeDismissed(true)}
+                        data-testid="dismiss-payment-health-banner"
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
 
-          {/*
+            {showPaidUnlinkedCta && (
+              <Alert className="border-[#0F2E48]/20 bg-[#0F2E48]/5">
+                <CreditCard className="h-4 w-4 text-[#0F2E48]" />
+                <AlertDescription className="text-[#0F2E48]">
+                  <div className="font-medium">
+                    Your subscription is active.
+                  </div>
+                  <div className="text-sm text-[#0F2E48]/80">
+                    Link your student to unlock guardian progress, KPI, and
+                    calendar views.
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {showUnlinkedLinkFirstHint && (
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">
+                  Link your student first, then choose a subscription to unlock
+                  premium guardian views.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {studentsMalformed && (
+              <div className="py-2">
+                <RecoveryNotice
+                  title="We couldn't load your linked students."
+                  message="Try again. If this keeps happening, refresh the page."
+                  onRetry={() => void refetchStudents()}
+                />
+              </div>
+            )}
+
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <CardTitle className="text-[#0F2E48] flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Link a Student
+                </CardTitle>
+                <CardDescription>
+                  Ask your student for their link code, from their account
+                  settings. Entering it links you straight away.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form
+                  onSubmit={handleLink}
+                  className="flex flex-col sm:flex-row gap-3"
+                >
+                  <div className="flex-1">
+                    <Label htmlFor="linkCode" className="sr-only">
+                      Student link code
+                    </Label>
+                    <Input
+                      id="linkCode"
+                      data-testid="guardian-link-code-input"
+                      type="text"
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      placeholder="Enter your student's code"
+                      value={linkCode}
+                      onChange={(e) => setLinkCode(e.target.value)}
+                      maxLength={12}
+                      className="font-mono tracking-[0.2em] uppercase"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    data-testid="guardian-link-code-submit"
+                    disabled={
+                      linkMutation.isPending || linkCode.trim().length === 0
+                    }
+                    className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
+                  >
+                    {linkMutation.isPending ? "Linking..." : "Link student"}
+                  </Button>
+                </form>
+                {linkError && (
+                  <Alert
+                    className={`mt-4 ${isRateLimited ? "bg-amber-50 border-amber-200" : "border-border/70 bg-card/70"}`}
+                  >
+                    {isRateLimited ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-[#0F2E48]/70" />
+                    )}
+                    <AlertDescription
+                      className={
+                        isRateLimited ? "text-amber-800" : "text-[#0F2E48]/80"
+                      }
+                    >
+                      {linkError}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {linkSuccess && (
+                  <Alert className="mt-4 bg-green-50 border-green-200">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <AlertDescription className="text-green-800">
+                      {linkSuccess}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+
+            {/*
             THE PURCHASE SURFACE, DELIBERATELY OUTSIDE THE PAYWALL.
             It renders on the guardian's own dashboard, keyed on whether any
             LINKED STUDENT lacks entitlement — never on whether this guardian
@@ -567,116 +571,116 @@ export default function GuardianDashboard() {
             a second, unpaid student still needs buying for. `students` is the
             list this page already fetched, so the card costs no extra request.
           */}
-          {students !== null && (
-            <GuardianPurchaseCard
-              students={students}
-              // The student the guardian just hit a boundary on arrives
-              // preselected, so "Subscribe for X" lands on a form already
-              // answering "which student?".
-              preselectStudentId={
-                selectedStudentDenied ? selectedStudentId : null
-              }
-            />
-          )}
+            {students !== null && (
+              <GuardianPurchaseCard
+                students={students}
+                // The student the guardian just hit a boundary on arrives
+                // preselected, so "Subscribe for X" lands on a form already
+                // answering "which student?".
+                preselectStudentId={
+                  selectedStudentDenied ? selectedStudentId : null
+                }
+              />
+            )}
 
-          {/*
+            {/*
             THE TEMPLATE PREVIEW — the no-linked-student state only.
             Once a link exists the dashboard has real panels and a real name to
             show, and this would be a downgrade. Structural, never sample: see
             the component header for why numbers are refused outright.
           */}
-          {students !== null && students.length === 0 && (
-            <GuardianTemplatePreview />
-          )}
+            {students !== null && students.length === 0 && (
+              <GuardianTemplatePreview />
+            )}
 
-          <Card className="bg-card border-border/60">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-[#0F2E48]">
-                  Linked Students
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {lastUpdated && (
-                    <span className="text-xs text-[#0F2E48]/50">
-                      Updated {lastUpdated.toLocaleTimeString()}
-                    </span>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      refetchStudents();
-                      setLastUpdated(new Date());
-                    }}
-                    className="text-[#0F2E48]/60 hover:text-[#0F2E48]"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-[#0F2E48]">
+                    Linked Students
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {lastUpdated && (
+                      <span className="text-xs text-[#0F2E48]/50">
+                        Updated {lastUpdated.toLocaleTimeString()}
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        refetchStudents();
+                        setLastUpdated(new Date());
+                      }}
+                      className="text-[#0F2E48]/60 hover:text-[#0F2E48]"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <CardDescription>
-                {students === null
-                  ? "Linked students unavailable."
-                  : students.length === 0
-                    ? "No students linked yet. Use the form above to link a student."
-                    : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {studentsLoading ? (
-                <div className="text-center py-8 text-[#0F2E48]/60">
-                  Loading students...
-                </div>
-              ) : studentsError || students === null ? (
-                /* `students === null` is a SUCCESSFUL response whose `students` was not an
+                <CardDescription>
+                  {students === null
+                    ? "Linked students unavailable."
+                    : students.length === 0
+                      ? "No students linked yet. Use the form above to link a student."
+                      : `${students.length} student${students.length !== 1 ? "s" : ""} linked`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {studentsLoading ? (
+                  <div className="text-center py-8 text-[#0F2E48]/60">
+                    Loading students...
+                  </div>
+                ) : studentsError || students === null ? (
+                  /* `students === null` is a SUCCESSFUL response whose `students` was not an
                    array. It renders here, beside the failed fetch, because both mean the
                    same thing to a parent: we could not establish the roster. What it must
                    NOT do is fall through to "No students linked yet" — that is a claim
                    about their account, made from a value we never read. */
-                <div className="py-6">
-                  <RecoveryNotice
-                    title="We couldn't load students."
-                    message="Try again. If this keeps happening, refresh the page."
-                    onRetry={() => void refetchStudents()}
-                  />
-                </div>
-              ) : students.length === 0 ? (
-                <div className="text-center py-12 px-4">
-                  <Users className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-[#0F2E48] mb-2">
-                    No students linked yet
-                  </h3>
-                  <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Ask your student for the code in their account settings,
-                    then enter it above. They are linked as soon as you do.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {students.map((student) => (
-                    <div
-                      key={student.id}
-                      className={`p-4 rounded-lg border transition-colors ${
-                        selectedStudentId === student.id
-                          ? "bg-[#0F2E48] text-white border-[#0F2E48]"
-                          : "bg-secondary/50 border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => setSelectedStudentId(student.id)}
-                          className="flex-1 text-left"
-                        >
-                          <div className="font-medium">
-                            {student.display_name ||
-                              student.email.split("@")[0]}
-                          </div>
-                          <div
-                            className={`text-sm ${selectedStudentId === student.id ? "text-white/70" : "text-[#0F2E48]/60"}`}
+                  <div className="py-6">
+                    <RecoveryNotice
+                      title="We couldn't load students."
+                      message="Try again. If this keeps happening, refresh the page."
+                      onRetry={() => void refetchStudents()}
+                    />
+                  </div>
+                ) : students.length === 0 ? (
+                  <div className="text-center py-12 px-4">
+                    <Users className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-[#0F2E48] mb-2">
+                      No students linked yet
+                    </h3>
+                    <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
+                      Ask your student for the code in their account settings,
+                      then enter it above. They are linked as soon as you do.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {students.map((student) => (
+                      <div
+                        key={student.id}
+                        className={`p-4 rounded-lg border transition-colors ${
+                          selectedStudentId === student.id
+                            ? "bg-[#0F2E48] text-white border-[#0F2E48]"
+                            : "bg-secondary/50 border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => setSelectedStudentId(student.id)}
+                            className="flex-1 text-left"
                           >
-                            {student.email}
-                          </div>
-                          {/*
+                            <div className="font-medium">
+                              {student.display_name ||
+                                student.email.split("@")[0]}
+                            </div>
+                            <div
+                              className={`text-sm ${selectedStudentId === student.id ? "text-white/70" : "text-[#0F2E48]/60"}`}
+                            >
+                              {student.email}
+                            </div>
+                            {/*
                             WHICH student is unpaid, on the list itself.
                             `has_active_entitlement` has been on the wire since
                             2026-09-02 and was read only by the purchase card's
@@ -684,275 +688,276 @@ export default function GuardianDashboard() {
                             not tell from this page which one still needed
                             paying for — while being asked to pay for one.
                           */}
-                          {!student.has_active_entitlement && (
-                            <div
-                              className={`mt-1 text-xs font-medium ${selectedStudentId === student.id ? "text-amber-200" : "text-amber-700"}`}
-                              data-testid="student-unfunded-badge"
-                            >
-                              {student.entitlement_lapsed
-                                ? "Subscription ended"
-                                : "No subscription yet"}
-                            </div>
-                          )}
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnlinkClick(student);
-                          }}
-                          className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-red-600"}`}
-                          title="Unlink Student"
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
+                            {!student.has_active_entitlement && (
+                              <div
+                                className={`mt-1 text-xs font-medium ${selectedStudentId === student.id ? "text-amber-200" : "text-amber-700"}`}
+                                data-testid="student-unfunded-badge"
+                              >
+                                {student.entitlement_lapsed
+                                  ? "Subscription ended"
+                                  : "No subscription yet"}
+                              </div>
+                            )}
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnlinkClick(student);
+                            }}
+                            className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-red-600"}`}
+                            title="Unlink Student"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-          {selectedStudentId && (
-            <>
-              {/*
+            {selectedStudentId && (
+              <>
+                {/*
                 ONE CARD, ONE CONDITION, both panels. A 402 on either the KPI or
                 the mastery read means the same thing about the same student, so
                 it is answered once, above them, rather than twice inside them
                 as two different recoverable errors.
               */}
-              {selectedStudentDenied && selectedStudent && (
-                <PremiumUpgradePrompt
-                  featureBenefit={`${studentLabel(selectedStudent)}'s progress, KPIs and domain mastery`}
-                  state={
-                    selectedStudent.entitlement_lapsed
-                      ? {
-                          kind: "guardian_student_lapsed",
-                          studentName: studentLabel(selectedStudent),
-                        }
-                      : {
-                          kind: "guardian_student_unfunded",
-                          studentName: studentLabel(selectedStudent),
-                        }
-                  }
-                />
-              )}
-              <Card className="bg-card border-border/60">
-                <CardHeader>
-                  <CardTitle className="text-[#0F2E48]">
-                    Student Progress
-                  </CardTitle>
-                  <CardDescription>
-                    {selectedStudent?.display_name ||
-                      selectedStudent?.email?.split("@")[0] ||
-                      "Student"}
-                    's activity in the last 7 days
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {summaryLoading ? (
-                    <div className="text-center py-8 text-[#0F2E48]/60">
-                      Loading progress...
-                    </div>
-                  ) : selectedStudentDenied ? (
-                    // The CTA above owns this state. Offering "Try again" for a
-                    // 402 is advice that cannot work.
-                    <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
-                      Progress unlocks once this student has an active
-                      subscription.
-                    </div>
-                  ) : summaryError ? (
-                    <div className="py-6">
-                      <RecoveryNotice
-                        title="We couldn't load progress data."
-                        message="Try again. If this keeps happening, refresh the page."
-                        onRetry={() => void refetchSummary()}
-                      />
-                    </div>
-                  ) : summaryData ? (
-                    <div className="space-y-6">
-                      {/*
+                {selectedStudentDenied && selectedStudent && (
+                  <PremiumUpgradePrompt
+                    featureBenefit={`${studentLabel(selectedStudent)}'s progress, KPIs and domain mastery`}
+                    state={
+                      selectedStudent.entitlement_lapsed
+                        ? {
+                            kind: "guardian_student_lapsed",
+                            studentName: studentLabel(selectedStudent),
+                          }
+                        : {
+                            kind: "guardian_student_unfunded",
+                            studentName: studentLabel(selectedStudent),
+                          }
+                    }
+                  />
+                )}
+                <Card className="bg-card border-border/60">
+                  <CardHeader>
+                    <CardTitle className="text-[#0F2E48]">
+                      Student Progress
+                    </CardTitle>
+                    <CardDescription>
+                      {selectedStudent?.display_name ||
+                        selectedStudent?.email?.split("@")[0] ||
+                        "Student"}
+                      's activity in the last 7 days
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {summaryLoading ? (
+                      <div className="text-center py-8 text-[#0F2E48]/60">
+                        Loading progress...
+                      </div>
+                    ) : selectedStudentDenied ? (
+                      // The CTA above owns this state. Offering "Try again" for a
+                      // 402 is advice that cannot work.
+                      <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                        Progress unlocks once this student has an active
+                        subscription.
+                      </div>
+                    ) : summaryError ? (
+                      <div className="py-6">
+                        <RecoveryNotice
+                          title="We couldn't load progress data."
+                          message="Try again. If this keeps happening, refresh the page."
+                          onRetry={() => void refetchSummary()}
+                        />
+                      </div>
+                    ) : summaryData ? (
+                      <div className="space-y-6">
+                        {/*
                         THE SAME COMPONENT the template preview renders in its
                         `locked` variant. One tile, two states — so the preview
                         cannot drift into a lookalike of a card it no longer
                         resembles.
                       */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <GuardianMetricTile
-                          label="Day Streak"
-                          icon={<Clock className="h-5 w-5" />}
-                          value={summaryMetricValue("current_streak") ?? "--"}
-                        />
-                        <GuardianMetricTile
-                          label="Questions Attempted (7d)"
-                          icon={<Target className="h-5 w-5" />}
-                          value={summaryMetricValue("week_questions") ?? "--"}
-                        />
-                        <GuardianMetricTile
-                          label="Accuracy"
-                          icon="%"
-                          value={
-                            summaryMetricValue("week_accuracy") !== null
-                              ? `${summaryMetricValue("week_accuracy")}%`
-                              : "--"
-                          }
-                        />
-                      </div>
-                      {summaryData.metrics &&
-                        summaryData.metrics.length > 0 && (
-                          <div className="grid sm:grid-cols-2 gap-3">
-                            {summaryData.metrics.slice(0, 4).map((metric) => (
-                              <div
-                                key={metric.id}
-                                className="rounded-lg border border-border/60 bg-secondary/35 p-3"
-                              >
-                                <p className="text-sm font-medium text-[#0F2E48]">
-                                  {metric.label}
-                                </p>
-                                <p className="text-xs text-[#0F2E48]/65 mt-1">
-                                  {metric.explanation?.whatThisMeans ||
-                                    "Runtime-backed KPI metric"}
-                                </p>
-                              </div>
-                            ))}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <GuardianMetricTile
+                            label="Day Streak"
+                            icon={<Clock className="h-5 w-5" />}
+                            value={summaryMetricValue("current_streak") ?? "--"}
+                          />
+                          <GuardianMetricTile
+                            label="Questions Attempted (7d)"
+                            icon={<Target className="h-5 w-5" />}
+                            value={summaryMetricValue("week_questions") ?? "--"}
+                          />
+                          <GuardianMetricTile
+                            label="Accuracy"
+                            icon="%"
+                            value={
+                              summaryMetricValue("week_accuracy") !== null
+                                ? `${summaryMetricValue("week_accuracy")}%`
+                                : "--"
+                            }
+                          />
+                        </div>
+                        {summaryData.metrics &&
+                          summaryData.metrics.length > 0 && (
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              {summaryData.metrics.slice(0, 4).map((metric) => (
+                                <div
+                                  key={metric.id}
+                                  className="rounded-lg border border-border/60 bg-secondary/35 p-3"
+                                >
+                                  <p className="text-sm font-medium text-[#0F2E48]">
+                                    {metric.label}
+                                  </p>
+                                  <p className="text-xs text-[#0F2E48]/65 mt-1">
+                                    {metric.explanation?.whatThisMeans ||
+                                      "Runtime-backed KPI metric"}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        {summaryMetricValue("week_questions") === 0 && (
+                          <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
+                            <p className="text-amber-800 text-sm">
+                              No practice activity in the last 7 days. Encourage
+                              your student to start a practice session.
+                            </p>
                           </div>
                         )}
-                      {summaryMetricValue("week_questions") === 0 && (
-                        <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
-                          <p className="text-amber-800 text-sm">
-                            No practice activity in the last 7 days. Encourage
-                            your student to start a practice session.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 px-4">
-                      <AlertCircle className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-[#0F2E48] mb-2">
-                        No Progress Data Available
-                      </h3>
-                      <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                        Unable to load progress data for this student. This may
-                        be because the student hasn't started any practice
-                        sessions yet.
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 px-4">
+                        <AlertCircle className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-[#0F2E48] mb-2">
+                          No Progress Data Available
+                        </h3>
+                        <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
+                          Unable to load progress data for this student. This
+                          may be because the student hasn't started any practice
+                          sessions yet.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <Card className="bg-card border-border/60">
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-[#0F2E48]">
-                        Domain Mastery
-                      </CardTitle>
-                      <CardDescription>
-                        Where this student&apos;s answers place them in each
-                        domain. Guardian surfaces are domain-level only.
-                      </CardDescription>
+                <Card className="bg-card border-border/60">
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-[#0F2E48]">
+                          Domain Mastery
+                        </CardTitle>
+                        <CardDescription>
+                          Where this student&apos;s answers place them in each
+                          domain. Guardian surfaces are domain-level only.
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => refetchWeakness()}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => refetchWeakness()}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {weaknessLoading ? (
-                    <div className="text-center py-8 text-[#0F2E48]/60">
-                      Loading domain mastery...
-                    </div>
-                  ) : selectedStudentDenied ? (
-                    <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
-                      Domain mastery unlocks once this student has an active
-                      subscription.
-                    </div>
-                  ) : weaknessError || (weaknessData && !weaknessDomains) ? (
-                    <div className="py-6">
-                      <RecoveryNotice
-                        title="We couldn't load weakness data."
-                        message="Try again. If this keeps happening, refresh the page."
-                        onRetry={() => void refetchWeakness()}
-                      />
-                    </div>
-                  ) : !weaknessDomains || weaknessDomains.length === 0 ? (
-                    <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
-                      No domain mastery is available for this student yet.
-                    </div>
-                  ) : (
-                    /*
-                     * Owner ruling 2026-08-21 Q7: these cards are NOT clickable — not
-                     * disabled, not clickable-and-denied. A card that looks interactive and
-                     * then refuses is worse than one that never invites the click, so this
-                     * is a plain <div> list with no button, no link, no cursor affordance
-                     * and no drill-down target. There is no guardian skill endpoint to open
-                     * (RULE 7), so an affordance here could only ever lead to a refusal.
-                     */
-                    <div
-                      className="space-y-3"
-                      data-testid="guardian-domain-list"
-                    >
-                      {weaknessDomains.map((node) => (
-                        <div
-                          key={`${node.section}-${node.domain}`}
-                          className="rounded-lg border border-border/60 bg-secondary/35 p-3"
-                          data-testid="guardian-domain-row"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-medium text-[#0F2E48]">
-                              {node.domain}
-                            </p>
-                            <LevelPill
-                              levelKey={node.levelKey}
-                              displayName={node.displayName}
-                            />
+                  </CardHeader>
+                  <CardContent>
+                    {weaknessLoading ? (
+                      <div className="text-center py-8 text-[#0F2E48]/60">
+                        Loading domain mastery...
+                      </div>
+                    ) : selectedStudentDenied ? (
+                      <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                        Domain mastery unlocks once this student has an active
+                        subscription.
+                      </div>
+                    ) : weaknessError || (weaknessData && !weaknessDomains) ? (
+                      <div className="py-6">
+                        <RecoveryNotice
+                          title="We couldn't load weakness data."
+                          message="Try again. If this keeps happening, refresh the page."
+                          onRetry={() => void refetchWeakness()}
+                        />
+                      </div>
+                    ) : !weaknessDomains || weaknessDomains.length === 0 ? (
+                      <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                        No domain mastery is available for this student yet.
+                      </div>
+                    ) : (
+                      /*
+                       * Owner ruling 2026-08-21 Q7: these cards are NOT clickable — not
+                       * disabled, not clickable-and-denied. A card that looks interactive and
+                       * then refuses is worse than one that never invites the click, so this
+                       * is a plain <div> list with no button, no link, no cursor affordance
+                       * and no drill-down target. There is no guardian skill endpoint to open
+                       * (RULE 7), so an affordance here could only ever lead to a refusal.
+                       */
+                      <div
+                        className="space-y-3"
+                        data-testid="guardian-domain-list"
+                      >
+                        {weaknessDomains.map((node) => (
+                          <div
+                            key={`${node.section}-${node.domain}`}
+                            className="rounded-lg border border-border/60 bg-secondary/35 p-3"
+                            data-testid="guardian-domain-row"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-medium text-[#0F2E48]">
+                                {node.domain}
+                              </p>
+                              <LevelPill
+                                levelKey={node.levelKey}
+                                displayName={node.displayName}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
 
-        <AlertDialog
-          open={!!unlinkStudentId}
-          onOpenChange={() => setUnlinkStudentId(null)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Unlink Student</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to unlink {unlinkStudentName}? You will no
-                longer be able to view their progress. You can re-link them
-                later using their code.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={unlinkMutation.isPending}>
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmUnlink}
-                disabled={unlinkMutation.isPending}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                {unlinkMutation.isPending ? "Unlinking..." : "Unlink"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+          <AlertDialog
+            open={!!unlinkStudentId}
+            onOpenChange={() => setUnlinkStudentId(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unlink Student</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to unlink {unlinkStudentName}? You will
+                  no longer be able to view their progress. You can re-link them
+                  later using their code.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={unlinkMutation.isPending}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmUnlink}
+                  disabled={unlinkMutation.isPending}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {unlinkMutation.isPending ? "Unlinking..." : "Unlink"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </GuardianShell>
     </CheckoutReturnPoller>
   );
 }
