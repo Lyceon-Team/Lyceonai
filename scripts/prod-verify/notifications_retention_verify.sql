@@ -9,7 +9,7 @@
 -- @spec [contracts/notifications.contract.md C11.1 (window = 90, defined once), C11.2 (the
 --        sweep: SECURITY DEFINER, pinned search_path, reads the window function, no literal
 --        window), C3.1 (feed carries p_archived and archived_at), C3.2 (mark-all-read)]
--- @implemented [2026-09-15]
+-- @implemented [2026-09-15, amended 2026-09-16]
 --
 -- plain English: one row per assertion, expected inline, OVERALL last. Rows 1–8 are the
 -- objects the first migration creates or replaces; rows 9–11 are the orphan branch added by
