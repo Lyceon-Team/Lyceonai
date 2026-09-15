@@ -535,6 +535,9 @@ jobs:
       # deleted stack passed CI for months by mocking tables that existed in no environment.
       # Verdict read from vitest's JSON report (scripts/ci/vitest-summary-gate.mjs): a
       # PG-backed suite that skips is a vacuous pass, and a substring grep cannot tell.
+      # 2026-09-15: the retention sweep (C11.1–C11.3: 90-day window defined once in SQL, the
+      # cascade proven by message count, the zero-deletion log line) and the notifications
+      # page API (archive view, mark-all-read, recipient denial) run in the same step.
       - name: Notifications rebuild → real PG proof
         env:
           PGHOST: localhost
@@ -543,10 +546,13 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          pnpm exec vitest run tests/ci/notifications.pg.ci.test.ts \
+          pnpm exec vitest run \
+            tests/ci/notifications.pg.ci.test.ts \
+            tests/ci/notifications-retention-page.pg.ci.test.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-notifications.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-notifications.json \
-            --file tests/ci/notifications.pg.ci.test.ts
+            --file tests/ci/notifications.pg.ci.test.ts \
+            --file tests/ci/notifications-retention-page.pg.ci.test.ts
 
       # @spec [Doc-01_V8 §36.3 (either party revokes; the other is told), §36.2 (invite limits);
       #        contracts/notifications.contract.md §2.3 guardian_unlinked row, §13] | @implemented [2026-09-15]

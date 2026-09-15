@@ -3,16 +3,19 @@
  *        thin handlers (auth → parse → domain → serialize), §8.2 envelope, §7.1 Zod at every
  *        boundary] | @implemented [2026-09-03]
  *
- * plain English: the in-app feed. Four routes, one recipient rule: the recipient is the
+ * plain English: the in-app feed. Five routes, one recipient rule: the recipient is the
  * authenticated principal, resolved ONCE by `recipientOf`, and no request value can name a
  * different one. Every read and write goes through a recipient-scoped SQL function
  * (`notification_feed`, `notification_unread_count`, `mark_notification`,
- * `mark_all_notifications_seen`), so a `message_id` that belongs to someone else is simply
+ * `mark_all_notifications_seen`, `mark_all_notifications_read`), so a `message_id` that belongs to someone else is simply
  * not found — 404, never 403, and never a row change. Titles and bodies are rendered here
  * from the event's payload so the client carries no copy and no payload knowledge.
  *
  * Mounted at NOTIFICATION_API_MOUNT behind requireSupabaseAuth + doubleCsrfProtection in
  * server/index.ts. Envelope: `{ data, requestId }` / `{ error: { message, code }, requestId }`.
+ *
+ * `?archived=true` selects the archive view (rows with `archived_at` set) instead of the
+ * inbox; the same recipient rule and the same cursor apply (owner brief 2026-09-15 Part B1).
  *
  * Cursor pagination: the opaque cursor is the last item's message id; the SQL function
  * resolves that row's (created_at, message_id) at full precision and applies the keyset
@@ -115,6 +118,7 @@ router.get("/", async (req: Request, res: Response) => {
     p_recipient_id: recipientId,
     p_limit: limit + 1,
     p_before_message_id: before?.messageId ?? null,
+    p_archived: query.data.archived,
   });
   if (error) {
     logger.error(
@@ -175,6 +179,7 @@ router.get("/", async (req: Request, res: Response) => {
       createdAt: row.created_at,
       seenAt: row.seen_at,
       readAt: row.read_at,
+      archivedAt: row.archived_at,
     };
   });
 
@@ -232,6 +237,39 @@ router.post("/mark-all-seen", async (req: Request, res: Response) => {
       "NOTIFICATIONS",
       "mark_all_seen_failed",
       "mark_all_notifications_seen failed",
+      {
+        requestId: req.requestId,
+        code: error.code,
+        message: error.message,
+      },
+    );
+    return sendServerError(res, req.requestId);
+  }
+  const marked = z.number().int().min(0).safeParse(data);
+  if (!marked.success) return sendServerError(res, req.requestId);
+  return res.json({ data: { marked: marked.data }, requestId: req.requestId });
+});
+
+/**
+ * POST /mark-all-read — stamps read_at (and seen_at where unset) on every unread, unarchived
+ * in_app row. @spec [contracts/notifications.contract.md §3.2; owner brief 2026-09-15 Part B1
+ * (mark-all-read control)] | @implemented [2026-09-15]
+ */
+router.post("/mark-all-read", async (req: Request, res: Response) => {
+  const recipientId = recipientOf(req, res);
+  if (!recipientId) return;
+
+  const { data, error } = await supabaseServer.rpc(
+    "mark_all_notifications_read",
+    {
+      p_recipient_id: recipientId,
+    },
+  );
+  if (error) {
+    logger.error(
+      "NOTIFICATIONS",
+      "mark_all_read_failed",
+      "mark_all_notifications_read failed",
       {
         requestId: req.requestId,
         code: error.code,

@@ -32,6 +32,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 import { GuardianShell } from "./GuardianShell";
+import NotificationsPage from "@/pages/notifications";
 
 type TestUser = {
   id: string;
@@ -55,12 +56,20 @@ vi.mock("@/contexts/SupabaseAuthContext", () => ({
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
-// The bell's only network call on mount is the unread count; answer it with zero.
+// The bell's only network call on mount is the unread count; the page also loads an empty
+// feed and marks-all-seen. Every call is answered with the empty/zero shape for its route.
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: vi.fn(async () => ({
+  apiRequest: vi.fn(async (url: string) => ({
     ok: true,
     status: 200,
-    json: async () => ({ data: { unread: 0 }, requestId: "test" }),
+    json: async () => ({
+      data: url.includes("unread-count")
+        ? { unread: 0 }
+        : url.includes("mark-all")
+          ? { marked: 0 }
+          : { items: [], nextCursor: null },
+      requestId: "test",
+    }),
   })),
 }));
 
@@ -217,3 +226,66 @@ describe.each(Object.entries(RENDER))(
     });
   },
 );
+
+/**
+ * Gate 3 — the /notifications page is mounted in BOTH shells (owner brief 2026-09-15 Part B1
+ * "Mount it in both shells"; B3 (5)). The page picks its shell by role, so it is rendered once
+ * per role and the assertion is on the shell's own chrome: the guardian shell header for a
+ * guardian, the student shell (no guardian header) for a student — with the page body inside
+ * <main> and the bell in the header either way. The route registration is checked from source
+ * so a page nobody can navigate to cannot pass.
+ */
+describe("the /notifications page renders inside each shell by role (gate 3)", () => {
+  it("is registered as a route in App.tsx behind RequireRole for student, guardian and admin", () => {
+    const appSource = fs.readFileSync(
+      path.resolve(LAYOUT_DIR, "../../App.tsx"),
+      "utf8",
+    );
+    const idx = appSource.indexOf('path="/notifications"');
+    expect(idx, "no /notifications route in App.tsx").toBeGreaterThan(-1);
+    const after = appSource.slice(idx, idx + 400);
+    expect(after).toMatch(
+      /RequireRole allow=\{\["student", "guardian", "admin"\]\}/,
+    );
+    expect(after).toMatch(/<NotificationsPage \/>/);
+  });
+
+  it("a guardian gets the page inside GuardianShell (guardian header, bell in header)", async () => {
+    authState = signedIn("guardian");
+    const { container } = withClient(<NotificationsPage />);
+    expect(await screen.findByTestId("notifications-page")).toBeTruthy();
+    const header = container.querySelector("header");
+    expect(header?.getAttribute("data-testid")).toBe("guardian-shell-header");
+    expect(
+      header?.querySelector('[data-testid="button-notifications"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('main [data-testid="notifications-page"]'),
+    ).not.toBeNull();
+  });
+
+  it("a student gets the page inside AppShell (student header, bell in header)", async () => {
+    authState = signedIn("student");
+    const { container } = withClient(<NotificationsPage />);
+    expect(await screen.findByTestId("notifications-page")).toBeTruthy();
+    const header = container.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute("data-testid")).not.toBe(
+      "guardian-shell-header",
+    );
+    expect(
+      header?.querySelector('[data-testid="button-notifications"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('main [data-testid="notifications-page"]'),
+    ).not.toBeNull();
+  });
+
+  it("the bell dropdown links to the page (See all)", () => {
+    const source = fs.readFileSync(
+      path.resolve(LAYOUT_DIR, "../notifications/NotificationBell.tsx"),
+      "utf8",
+    );
+    expect(source).toMatch(/href="\/notifications"/);
+  });
+});

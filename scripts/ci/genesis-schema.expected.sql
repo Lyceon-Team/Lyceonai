@@ -2294,6 +2294,32 @@ $$;
 
 
 --
+-- Name: mark_all_notifications_read(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_all_notifications_read(p_recipient_id uuid) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  -- Read implies seen (the same rule mark_notification applies per row). Archived rows are
+  -- left alone: the archive is not the inbox, and "mark all read" is an inbox action.
+  UPDATE public.notification_messages
+     SET read_at = now(),
+         seen_at = coalesce(seen_at, now())
+   WHERE recipient_profile_id = p_recipient_id
+     AND channel = 'in_app'
+     AND archived_at IS NULL
+     AND read_at IS NULL;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+
+--
 -- Name: mark_all_notifications_seen(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2455,20 +2481,22 @@ $$;
 
 
 --
--- Name: notification_feed(uuid, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: notification_feed(uuid, integer, uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid DEFAULT NULL::uuid) RETURNS TABLE(message_id uuid, event_id uuid, event_type text, subject_profile_id uuid, payload jsonb, created_at timestamp with time zone, seen_at timestamp with time zone, read_at timestamp with time zone)
+CREATE FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid DEFAULT NULL::uuid, p_archived boolean DEFAULT false) RETURNS TABLE(message_id uuid, event_id uuid, event_type text, subject_profile_id uuid, payload jsonb, created_at timestamp with time zone, seen_at timestamp with time zone, read_at timestamp with time zone, archived_at timestamp with time zone)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT m.message_id, m.event_id, e.event_type, e.subject_profile_id, e.payload,
-         m.created_at, m.seen_at, m.read_at
+         m.created_at, m.seen_at, m.read_at, m.archived_at
     FROM public.notification_messages m
     JOIN public.notification_events   e ON e.event_id = m.event_id
    WHERE m.recipient_profile_id = p_recipient_id
      AND m.channel = 'in_app'
-     AND m.archived_at IS NULL
+     -- One view or the other, never both: the inbox is the unarchived rows, the archive is
+     -- the archived rows. A row moves between them exactly when archived_at is set.
+     AND ((m.archived_at IS NOT NULL) = p_archived)
      -- Keyset cursor keyed by message id only: the (created_at, message_id) tuple is read back
      -- here at full microsecond precision, so a client that carries timestamps at millisecond
      -- precision (or none) cannot skip or repeat a row. A cursor naming another recipient's
@@ -2514,6 +2542,25 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: notification_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 90;
+$$;
+
+
+--
+-- Name: FUNCTION notification_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.notification_retention_days() IS 'contracts/notifications.contract.md C11.1: the notification retention window in days. THE single definition; the sweep reads it.';
 
 
 --
@@ -3868,6 +3915,84 @@ $$;
 --
 
 COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
+
+
+--
+-- Name: sweep_notification_retention(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_notification_retention(p_batch_size integer) RETURNS TABLE(deleted_events integer, deleted_messages integer, deleted_orphan_delivery_events integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff                          timestamptz;
+  v_deleted_events                  integer;
+  v_deleted_messages                integer;
+  v_deleted_orphan_delivery_events  integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_notification_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- ONE cutoff for both branches, from the ONE window definition.
+  v_cutoff := now() - make_interval(days => public.notification_retention_days());
+
+  -- Branch 1 — the parent path. Expired events go; messages and the delivery events
+  -- attached to them go by FK cascade. Every CTE sees the same snapshot, so
+  -- `doomed_messages` counts the messages the DELETE's cascade is about to remove.
+  WITH doomed AS (
+    SELECT e.event_id
+      FROM public.notification_events e
+     WHERE e.created_at < v_cutoff
+     ORDER BY e.created_at ASC, e.event_id ASC
+     LIMIT p_batch_size
+  ),
+  doomed_messages AS (
+    SELECT count(*)::integer AS n
+      FROM public.notification_messages m
+     WHERE m.event_id IN (SELECT d.event_id FROM doomed d)
+  ),
+  deleted AS (
+    DELETE FROM public.notification_events e
+     WHERE e.event_id IN (SELECT d.event_id FROM doomed d)
+    RETURNING e.event_id
+  )
+  SELECT (SELECT count(*)::integer FROM deleted), (SELECT n FROM doomed_messages)
+    INTO v_deleted_events, v_deleted_messages;
+
+  -- Branch 2 — the orphan path. A delivery event with no message has no parent to cascade
+  -- from; it is aged on its own `received_at` against the SAME cutoff. Bounded on its own.
+  WITH doomed_orphans AS (
+    SELECT d.provider_event_id
+      FROM public.notification_delivery_events d
+     WHERE d.message_id IS NULL
+       AND d.received_at < v_cutoff
+     ORDER BY d.received_at ASC, d.provider_event_id ASC
+     LIMIT p_batch_size
+  ),
+  deleted_orphans AS (
+    DELETE FROM public.notification_delivery_events d
+     WHERE d.provider_event_id IN (SELECT o.provider_event_id FROM doomed_orphans o)
+    RETURNING d.provider_event_id
+  )
+  SELECT count(*)::integer INTO v_deleted_orphan_delivery_events FROM deleted_orphans;
+
+  deleted_events                 := v_deleted_events;
+  deleted_messages               := v_deleted_messages;
+  deleted_orphan_delivery_events := v_deleted_orphan_delivery_events;
+  cutoff                         := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_notification_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_notification_retention(p_batch_size integer) IS 'contracts/notifications.contract.md C11.2: ONE window (notification_retention_days()), two branches in one transaction — (1) notification_events older than the window, oldest first, at most p_batch_size per call, messages and matched delivery events by FK cascade; (2) unmatched delivery events (message_id IS NULL) whose received_at is older than the same window, at most p_batch_size per call. Returns both counts and the cutoff so every run can be logged.';
 
 
 --
@@ -10171,6 +10296,14 @@ GRANT ALL ON FUNCTION public.lookup_mastery_level(p_score numeric, p_constants j
 
 
 --
+-- Name: FUNCTION mark_all_notifications_read(p_recipient_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_all_notifications_read(p_recipient_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_all_notifications_read(p_recipient_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION mark_all_notifications_seen(p_recipient_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10227,11 +10360,19 @@ GRANT ALL ON FUNCTION public.notification_event_id(p_event_type text, p_source_i
 
 
 --
--- Name: FUNCTION notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid, p_archived boolean); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid, p_archived boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_feed(p_recipient_id uuid, p_limit integer, p_before_message_id uuid, p_archived boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION notification_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_retention_days() TO service_role;
 
 
 --
@@ -10706,6 +10847,14 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_notification_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) TO service_role;
 
 
 --
