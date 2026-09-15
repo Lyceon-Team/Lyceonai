@@ -571,6 +571,25 @@ jobs:
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts
 
+      # @spec [Doc-01_V8 §40.5; SCL-083 PROPOSED; contracts/notifications.contract.md C0.6] | @implemented [2026-09-15]
+      # Deletion-completed notice: the address is read BEFORE the RPCs (call order), a failed or
+      # rolled-back deletion sends nothing, a rejected send leaves the deletion committed and the
+      # batch continues, the raw address is in no log line, a second cron pass sends nothing.
+      # Real migrations on the throwaway Postgres; verdict from vitest's JSON report so a skipped
+      # PG suite cannot read as a pass.
+      - name: Deletion-completed notice → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-completed-notice.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-completed.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-completed.json \
+            --file tests/ci/deletion-completed-notice.pg.ci.test.ts
+
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost
