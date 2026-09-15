@@ -276,7 +276,7 @@ import {
   STUDENT_INPUT_CLOSE,
   TUTOR_ANTI_LEAK_SUBSTITUTION as WORKER_ANTI_LEAK_SUBSTITUTION,
   hasAnswerLeak,
-} from "../lib/_tutor-safety-constants.generated";
+} from "../lib/_tutor-safety-constants.generated.js";
 
 /**
  * Maps a successful Vertex generation into the wire-contract OrchestrateResponse

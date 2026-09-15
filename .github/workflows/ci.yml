@@ -115,6 +115,14 @@ jobs:
       - name: Boot probe self-test (proves each failure mode turns it red)
         run: bash scripts/ci/boot-probe.selftest.sh
 
+      # @spec [Codex audit Finding 4] The worker's tsconfig uses NodeNext, which
+      # rejects extensionless relative imports (TS2835). The monorepo root build
+      # does NOT compile apps/workers/, so a broken import passes CI until
+      # Cloud Build fails in production. This step runs the isolated worker
+      # typecheck so extensionless imports are caught here, not in deploy.
+      - name: Worker isolated typecheck (NodeNext — extensionless imports gate)
+        run: cd apps/workers/tutor-orchestrator && pnpm exec tsc -p tsconfig.json --noEmit
+
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
 
