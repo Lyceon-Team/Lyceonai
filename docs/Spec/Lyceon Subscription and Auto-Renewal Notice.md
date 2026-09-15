@@ -136,7 +136,7 @@ The reminder includes:
 
 For subscriptions with a Billing Period shorter than twelve (12) months, including monthly subscriptions and any multi-month subscriptions LYCEON may offer (for example, three-month or six-month plans), we do not send a pre-renewal reminder before every Renewal Date unless required by applicable law in your jurisdiction. The renewal cadence is short and the renewal terms are continuously available to you in your account settings and on each billing receipt. Your next Renewal Date and Renewal Charge amount are always shown in your account settings.
 
-We do send confirmation of each Renewal Charge after it occurs, in the form of a billing receipt sent to the email address on your account.
+We do send confirmation of each Renewal Charge after it occurs, in the form of a billing receipt sent to the Payer's email address, on the same basis as Section 4.4.
 
 ### **4.3 Mid-Cycle Acknowledgment for Long-Term Subscriptions**
 
@@ -161,9 +161,7 @@ We may change the price of subscriptions from time to time. When we change a pri
 * **Material Price Increase** (more than 10% of the prior price, or more than $5.00 per Billing Period, whichever is greater): at least **thirty (30) calendar days'** advance written notice before the new price takes effect  
 * **Non-Material Price Change** (any price change that is not a Material Price Increase, including price decreases, minor adjustments, and fee additions below the Material Price Increase threshold): at least **seven (7) calendar days'** advance written notice
 
-We send price-change notices by email to the email address associated with your LYCEON account, and we display the upcoming price change in your account settings.
-
-Price-change notices go to the Payer's email address, on the same basis as Section 4.4.
+Price-change notices go to the Payer's email address, on the same basis as Section 4.4. We also display the upcoming price change in your account settings.
 
 ### **5.2 What You Can Do When You Receive a Price-Change Notice**
 
@@ -330,7 +328,7 @@ There are no additional steps, retention offers you must decline, or "wait" peri
 
 ### **11.2 Email Cancellation — Alternative Method**
 
-If you prefer, you can cancel by emailing **support@lyceon.ai** from the email address associated with your LYCEON account. Include the email address on your account and a clear statement that you want to cancel your subscription. We will process the cancellation as soon as possible after receiving your email.
+If you prefer, you can cancel by emailing **support@lyceon.ai**. **Either the Payer or the holder of the Student Account may cancel by email**, from the address on either account. Include the email address on the LYCEON account, the Payer's email address if different, and a clear statement that you want to cancel your subscription. We will process the cancellation as soon as possible after receiving your email.
 
 ### **11.3 Cancellation Effect**
 
@@ -361,7 +359,7 @@ Stripe stores your payment method on file for the purpose of processing Renewal 
 You can update your payment method at any time through the Stripe customer portal accessible from your LYCEON account settings. If your payment method expires, is canceled, or is otherwise unable to process a Renewal Charge:
 
 * Stripe and LYCEON may attempt to retry the charge over a short period in accordance with industry-standard payment-retry practices  
-* We will notify you by email at the address associated with your LYCEON account  
+* We will notify the Payer by email, on the same basis as Section 4.4  
 * If the payment method cannot be successfully charged within the retry period, your subscription may be paused or canceled and your access to paid features may be ended pending an updated payment method
 
 If your subscription is canceled due to unsuccessful payment retries, you can resubscribe at any time by signing in and updating your payment method.

@@ -69,6 +69,8 @@ For purposes of this Policy:
 
 **"Used the Service"** means any activity recorded in our usage logs against the Subscription, by either the Student Account or a connected guardian. This includes signing in, beginning or completing a practice question, interacting with LISA, opening any paid feature, or a connected guardian viewing the student's progress, mastery, or calendar data.
 
+This definition applies to Subscriptions where a guardian or third party is the Payer, which became available after this Policy was first published.
+
 Receiving a billing receipt or notification email does not count as Using the Service.
 
 **"Billing Period"** means the period of time for which a subscription charge provides access (for example, one month for a monthly subscription, twelve months for an annual subscription).
