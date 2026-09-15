@@ -11,10 +11,15 @@
  */
 import {
   guardianLinkedPayloadSchema,
+  guardianUnlinkedPayloadSchema,
   type NotificationEventType,
 } from "../../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
 import { guardianLinkedEmail, guardianLinkedInApp } from "./guardian-linked";
+import {
+  guardianUnlinkedEmail,
+  guardianUnlinkedInApp,
+} from "./guardian-unlinked";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -31,6 +36,12 @@ export function renderInApp(
         return err("guardian_linked payload does not match its schema");
       return ok(guardianLinkedInApp(parsed.data, ctx));
     }
+    case "guardian_unlinked": {
+      const parsed = guardianUnlinkedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("guardian_unlinked payload does not match its schema");
+      return ok(guardianUnlinkedInApp(parsed.data, ctx));
+    }
   }
 }
 
@@ -45,6 +56,12 @@ export function renderEmail(
       if (!parsed.success)
         return err("guardian_linked payload does not match its schema");
       return ok(guardianLinkedEmail(parsed.data, ctx));
+    }
+    case "guardian_unlinked": {
+      const parsed = guardianUnlinkedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("guardian_unlinked payload does not match its schema");
+      return ok(guardianUnlinkedEmail(parsed.data, ctx));
     }
   }
 }

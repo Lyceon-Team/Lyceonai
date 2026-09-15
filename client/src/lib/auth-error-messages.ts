@@ -18,6 +18,17 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
     "We couldn't finish signing you in. Please try again — if it keeps happening, contact support.",
   consent_capture_failed:
     "We couldn't complete your sign-in just now. Please try again in a moment.",
+  // Email-link outcomes (AS-5 recovery, AL-3 confirmation). Distinct from the Google codes so an
+  // expired or malformed reset link never reads as "couldn't sign in with Google". Still generic:
+  // none of these confirm that an account exists for any address.
+  recovery_link_expired:
+    "This password reset link has expired. Please request a new one from “Forgot password?”.",
+  recovery_link_invalid:
+    "This password reset link isn't valid. Please request a new one from “Forgot password?”.",
+  email_link_expired:
+    "This email link has expired or was already used. Please sign in to request a new one.",
+  email_link_invalid:
+    "This email link isn't valid. Please sign in to request a new one.",
   // Email/password form codes. The displayed copy is generic + non-enumerable and NEVER leaks the
   // internal reason (e.g. signup_consent_failed is the AS1 fail-closed path — the user just sees a
   // recoverable retry message, not "consent recording failed").

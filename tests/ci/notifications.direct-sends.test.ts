@@ -18,8 +18,11 @@ import path from "node:path";
 import {
   ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX,
   GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX,
+  GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX,
+  guardianLinkInviteIdempotencyKey,
   sendAccountDeletionScheduledEmail,
   sendGuardianConsentRequestEmail,
+  sendGuardianLinkInviteEmail,
 } from "../../server/lib/notifications/direct-sends";
 import { createResendTransport } from "../../server/lib/notifications/transport";
 
@@ -168,11 +171,67 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(requests).toHaveLength(1); // no second request was attempted
   });
 
-  it("both call sites are wired to the senders (R9)", () => {
+  /**
+   * @spec [Doc-01_V8 §36.2, §38.1; contract §0.4, §5.3, §12.3; owner brief 2026-09-15 Part B]
+   * The guardian INVITE: keyed on student + code issue time + a hash of the address (no
+   * `guardian_links` row exists before redemption, so there is no row id to key on), the code
+   * and the prefilled redeem link in the body, the ignore instruction, no progress data.
+   */
+  it("guardian link invite: keyed by student + code issue time + address hash, carries code + prefilled link, no tracking", async () => {
+    const { requests, transport } = fakeResend("ok");
+    const result = await sendGuardianLinkInviteEmail(
+      {
+        studentProfileId: "22222222-2222-4222-8222-222222222222",
+        studentDisplayName: "Sam <Student>",
+        code: "ABC234",
+        codeIssuedAt: "2026-09-15T08:00:00.000Z",
+        expiresAt: "2026-09-16T08:00:00.000Z",
+        guardianEmail: "Parent@Example.test",
+      },
+      { transport, siteUrl: SITE },
+    );
+    expect(result.ok).toBe(true);
+    expect(requests).toHaveLength(1);
+    const req = requests[0]!;
+    const key = String(req.headers["Idempotency-Key"]);
+    expect(key).toBe(
+      guardianLinkInviteIdempotencyKey({
+        studentProfileId: "22222222-2222-4222-8222-222222222222",
+        codeIssuedAt: "2026-09-15T08:00:00.000Z",
+        guardianEmail: "parent@example.test", // normalised: same key as the mixed-case input
+      }),
+    );
+    expect(key.startsWith(`${GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX}:`)).toBe(
+      true,
+    );
+    expect(key).not.toMatch(/@|parent/i); // the address never rides in the key
+    expect(req.body.to).toEqual(["Parent@Example.test"]);
+    expect(Object.keys(req.body).sort()).toEqual([
+      "from",
+      "html",
+      "subject",
+      "text",
+      "to",
+    ]);
+    expect(String(req.body.text)).toContain("\n    ABC234\n"); // standalone, not only in the URL
+    expect(String(req.body.html)).toContain(">ABC234</p>");
+    expect(String(req.body.text)).toContain(`${SITE}/guardian?code=ABC234`);
+    expect(String(req.body.html)).toContain("Sam &lt;Student&gt;");
+    expect(String(req.body.text)).toMatch(/ignore this email/i);
+    expect(String(req.body.text)).toMatch(/sign in/i);
+    expect(String(req.body.text).toLowerCase()).not.toMatch(/score|%|streak/);
+  });
+
+  it("all three call sites are wired to the senders (R9)", () => {
     const root = path.resolve(__dirname, "../..");
     const read = (f: string) => fs.readFileSync(path.join(root, f), "utf8");
     const profile = read("server/routes/profile-routes.ts");
     const deletion = read("server/routes/account-deletion-routes.ts");
+    const students = read("server/routes/student-resources.ts");
+    expect(students).toMatch(
+      /import \{ sendGuardianLinkInviteEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
+    );
+    expect(students).toMatch(/await sendGuardianLinkInviteEmail\(\{/);
     expect(profile).toMatch(
       /import \{ sendGuardianConsentRequestEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );
