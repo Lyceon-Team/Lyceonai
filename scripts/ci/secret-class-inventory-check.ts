@@ -3,12 +3,15 @@
  * @implemented 2026-09-03
  *
  * plain English: CI parity check for infra/secret-class-inventory.yaml.
- * Validates two invariants:
+ * Validates three invariants:
  *   (a) Every required:true manifest entry has ≥1 consumer file that exists
  *   (b) Every process.env.XXX read in server/apps code has a matching
  *       manifest entry (no undocumented env var reads)
+ *   (c) Every canonical_owner value is well-formed (format + existence).
+ *       This is structural only — it cannot verify that a cited section
+ *       semantically owns the key. That is a human-review concern.
  *
- * expected outcome: exits 0 when both invariants hold, exits 1 with a
+ * expected outcome: exits 0 when all invariants hold, exits 1 with a
  * report of violations otherwise.
  *
  * Run: npx tsx scripts/ci/secret-class-inventory-check.ts
@@ -29,6 +32,7 @@ type ManifestEntry = {
   required: boolean;
   consumer: string[];
   store: string;
+  canonical_owner: string;
 };
 
 type ManifestData = {
@@ -43,6 +47,7 @@ type ManifestData = {
 
 const ROOT = path.resolve(import.meta.dirname ?? __dirname, "../..");
 const MANIFEST_PATH = path.join(ROOT, "infra/secret-class-inventory.yaml");
+const SPEC_DIR = path.join(ROOT, "docs/Spec");
 
 /** Directories to scan for process.env reads */
 const SCAN_DIRS = [
@@ -271,6 +276,135 @@ function checkCodeReadsInManifest(
   return violations;
 }
 
+// ── canonical_owner structural checks ─────────────────────────
+
+/**
+ * Accepted canonical_owner format: "Doc-XX §Y", "Doc-XX §Y.Z", "Doc-XX"
+ * (whole document), or the literal "unspecified". XX is two digits
+ * optionally followed by a letter suffix (e.g. 01, 01A, 03B, 06D).
+ * Y and Z are integers.
+ */
+const CANONICAL_OWNER_RE = /^Doc-(\d{2}[A-Z]?)(?:\s+§(\d+(?:\.\d+)?))?$/;
+
+function parseCanonicalOwner(
+  value: string,
+): { docId: string; section: string | null } | null {
+  const m = CANONICAL_OWNER_RE.exec(value);
+  if (!m) return null;
+  return { docId: m[1], section: m[2] ?? null };
+}
+
+/**
+ * Resolve a doc ID (e.g. "03C") to a file in docs/Spec/.
+ *
+ * Two naming conventions exist in the corpus:
+ *   "Lyceon — Document NNX_ Title.md"   (01, 01A, 06B, 06D, …)
+ *   "Doc NNX — Title.md"                (03B, 03C, 05A, …)
+ *
+ * When multiple files match (Doc-03C has a main spec and a runbook),
+ * prefer the main spec: exclude files with "Runbook" or "Operations Runbook"
+ * in the name, then prefer the highest version suffix (V3 > V1 > none).
+ */
+function resolveSpecFile(docId: string): string | null {
+  if (!fs.existsSync(SPEC_DIR)) return null;
+
+  const files = fs.readdirSync(SPEC_DIR);
+  const idWithSpace = docId.replace(/^(\d{2})/, "$1");
+
+  const candidates = files.filter((f) => {
+    if (!f.endsWith(".md")) return false;
+    const docPattern1 = `Document ${idWithSpace}`;
+    const docPattern2 = `Doc ${idWithSpace} `;
+    return (
+      f.includes(docPattern1) ||
+      (f.startsWith("Doc ") && f.includes(`${idWithSpace} `))
+    );
+  });
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return path.join(SPEC_DIR, candidates[0]);
+
+  const nonRunbook = candidates.filter(
+    (f) => !f.includes("Runbook") && !f.includes("Test Matrix"),
+  );
+  const pool = nonRunbook.length > 0 ? nonRunbook : candidates;
+
+  const versioned = pool.sort((a, b) => {
+    const va = a.match(/V(\d+)/);
+    const vb = b.match(/V(\d+)/);
+    return (vb ? parseInt(vb[1], 10) : 0) - (va ? parseInt(va[1], 10) : 0);
+  });
+
+  return path.join(SPEC_DIR, versioned[0]);
+}
+
+/**
+ * Check whether a section number exists as a heading in a spec file.
+ *
+ * Heading conventions in the spec corpus (two styles):
+ *   ## **§N Title**       — with § prefix (Doc-01, Doc-03B top-level, Doc-03C)
+ *   ## **N.M Title**      — without § prefix (Doc-06B, Doc-06D, subsections)
+ * Both ## and ### levels are checked.
+ *
+ * For a citation "§N" (integer): accepts headings numbered N, N.0, N.1, …
+ * For a citation "§N.M" (dotted): accepts that exact number or deeper (N.M.K).
+ */
+function sectionExistsInFile(filePath: string, sectionNum: string): boolean {
+  const content = fs.readFileSync(filePath, "utf-8");
+  const headingRe = /^#{2,3}\s+\*\*§?(\d+(?:\.\d+)*)\s/gm;
+
+  let match;
+  while ((match = headingRe.exec(content)) !== null) {
+    const headingNum = match[1];
+    if (headingNum === sectionNum) return true;
+    if (headingNum.startsWith(sectionNum + ".")) return true;
+  }
+  return false;
+}
+
+function checkCanonicalOwners(entries: ManifestEntry[]): string[] {
+  const violations: string[] = [];
+
+  for (const entry of entries) {
+    const owner = entry.canonical_owner;
+    if (!owner) {
+      violations.push(
+        `OWNER_MISSING: ${entry.id} has no canonical_owner field`,
+      );
+      continue;
+    }
+
+    if (owner === "unspecified") continue;
+
+    const parsed = parseCanonicalOwner(owner);
+    if (!parsed) {
+      violations.push(
+        `OWNER_BAD_FORMAT: ${entry.id} canonical_owner "${owner}" does not match expected format (Doc-XX §Y or "unspecified")`,
+      );
+      continue;
+    }
+
+    const specFile = resolveSpecFile(parsed.docId);
+    if (!specFile) {
+      violations.push(
+        `OWNER_DOC_NOT_FOUND: ${entry.id} canonical_owner "${owner}" — no spec file found for Doc-${parsed.docId}`,
+      );
+      continue;
+    }
+
+    if (parsed.section !== null) {
+      if (!sectionExistsInFile(specFile, parsed.section)) {
+        const fileName = path.basename(specFile);
+        violations.push(
+          `OWNER_SECTION_NOT_FOUND: ${entry.id} canonical_owner "${owner}" — §${parsed.section} not found in ${fileName}`,
+        );
+      }
+    }
+  }
+
+  return violations;
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 function main(): void {
@@ -296,6 +430,18 @@ function main(): void {
   // Check 2: code reads are documented in manifest
   const undocumented = checkCodeReadsInManifest(entries, codeReads);
   violations.push(...undocumented);
+
+  // Check 3: canonical_owner format + existence
+  // eslint-disable-next-line no-console
+  console.log(
+    "secret-class-inventory-check: validating canonical_owner citations...",
+  );
+  const ownerViolations = checkCanonicalOwners(entries);
+  violations.push(...ownerViolations);
+  // eslint-disable-next-line no-console
+  console.log(
+    `  ${entries.length - ownerViolations.length} canonical_owner citations valid`,
+  );
 
   // Report
   if (violations.length === 0) {
