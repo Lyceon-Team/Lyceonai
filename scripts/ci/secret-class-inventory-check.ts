@@ -89,11 +89,37 @@ const KNOWN_NON_CONFIG = new Set([
   "DOCUMENT_AI_LOCATION",
 ]);
 
-// ── YAML parsing (via python3 helper — no js-yaml dependency) ──────
+// ── YAML parsing (via python helper — no js-yaml dependency) ─────────
+
+function findPython(): string {
+  const candidates =
+    process.platform === "win32"
+      ? ["python", "python3", "py"]
+      : ["python3", "python"];
+
+  for (const cmd of candidates) {
+    try {
+      const args = cmd === "py" ? ["-3", "--version"] : ["--version"];
+      execFileSync(cmd, args, { stdio: "ignore" });
+      return cmd;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(
+    `No Python interpreter found (tried: ${candidates.join(", ")}). ` +
+      "Install Python 3 and ensure it is on PATH.",
+  );
+}
 
 function loadManifest(): ManifestData {
   const helperPath = path.join(ROOT, "scripts/ci/_yaml-to-json.py");
-  const jsonStr = execFileSync("python3", [helperPath, MANIFEST_PATH], {
+  const pythonCmd = findPython();
+  const args =
+    pythonCmd === "py"
+      ? ["-3", helperPath, MANIFEST_PATH]
+      : [helperPath, MANIFEST_PATH];
+  const jsonStr = execFileSync(pythonCmd, args, {
     encoding: "utf-8",
     maxBuffer: 10 * 1024 * 1024,
   });
