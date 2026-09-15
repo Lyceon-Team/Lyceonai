@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect } from "wouter";
+import { linkCodeFromSearch } from "@/lib/link-code-prefill";
 import {
   Card,
   CardContent,
@@ -107,7 +108,15 @@ export default function GuardianDashboard() {
   // displays and shares, not by email. The comment that stood here said the opposite and
   // said the code mechanism "appears nowhere in the locked spec corpus" — true when it was
   // written, and superseded by SCL-080, which is why the state below is already `linkCode`.
-  const [linkCode, setLinkCode] = useState("");
+  // Guardian invite by email (2026-09-15): the emailed deep link is `/guardian?code=XXXXXX`.
+  // Prefill only — the guardian still has to be signed in to reach this page (RequireRole)
+  // and still has to submit, so the link changes how the code travels, never what redeeming
+  // requires. Read once at mount; never re-derived in an effect.
+  const [linkCode, setLinkCode] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : linkCodeFromSearch(window.location.search),
+  );
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(

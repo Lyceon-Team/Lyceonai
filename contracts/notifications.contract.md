@@ -44,8 +44,8 @@ Three email lanes exist. This contract governs exactly one.
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` (launch scope after rulings R7/R8; adding a type is a CHECK change plus a row in §2.3).
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked`; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` and `guardian_unlinked` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked` and `guardian_unlinked`; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -74,10 +74,11 @@ Three email lanes exist. This contract governs exactly one.
 | event_type | subject | recipients and channels | emitted by |
 |---|---|---|---|
 | `guardian_linked` | the student | student: `in_app`; guardian: `in_app`, `email` | `create_active_guardian_link_audited` |
+| `guardian_unlinked` | the student | the party who did NOT revoke (`v_target`, derived once inside the function): `in_app`, `email`; the revoker: nothing | `revoke_guardian_link_audited` |
 
-Not event types (see §0.4): the guardian consent request and the deletion-scheduled email are direct sends.
+Not event types (see §0.4): the guardian consent request, the deletion-scheduled email and the guardian link INVITE (the student's current code, sent to an address with no profile row; `sendGuardianLinkInviteEmail`, keyed on student id + code issue time + a hash of the address) are direct sends.
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; or an event row exists whose type is not in this table.
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.
@@ -185,8 +186,8 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 
 ## 8. Payload rule (non-negotiable)
 
-**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else.
-*Violated if:* a `guardian_linked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
+**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written.
+*Violated if:* a `guardian_linked` or `guardian_unlinked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
 
 **C8.2** Nothing addressed to a guardian carries more than aggregate/identity data.
 *Violated if:* an email or in-app body rendered for a guardian recipient contains any of the §38.1 "no" categories.
@@ -259,4 +260,6 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 | C7.2, C7.3, C7.4, C5.4 | valid signature applies; invalid returns 400 and writes nothing; replay is a no-op |
 | C9.1, C9.2, C9.3 | `SET ROLE authenticated` / `anon` with `auth.uid()` fixtures |
 | C0.2, C0.3, C10.2 | grep clauses, run in the same suite |
-| C0.4, C0.5 | `tests/ci/notifications.direct-sends.test.ts` — row-derived keys, sender, links, no tracking, Result on failure, both call sites wired |
+| C0.4, C0.5 | `tests/ci/notifications.direct-sends.test.ts` — row-derived keys, sender, links, no tracking, Result on failure, all three call sites wired |
+| C1.1, C2.2, C2.3, C5.1, C5.2, C8.1 for `guardian_unlinked` | `tests/ci/guardian-unlinked.pg.ci.test.ts` — student revoke → guardian only; guardian revoke → student only; LY003 emits nothing and is 409; non-party student is 404; rollback leaves zero rows; `revocation_reason` absent from every payload and rendered template; ids distinct from `guardian_linked` for the same row |
+| §0.4 invite direct send, §36.2 limits | `tests/ci/guardian-invite.pg.ci.test.ts` — idempotent key on repeated submit; 3/day per address denied; body carries code + prefilled link and no progress data; redeem without auth creates nothing; byte-identical response for an address with and without an account |

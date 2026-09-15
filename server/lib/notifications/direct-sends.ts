@@ -12,10 +12,12 @@
  * committed, so a mail failure is logged (ids and a redacted address only) and returned as a
  * Result, never thrown and never surfaced as a failed request.
  */
+import { createHash } from "node:crypto";
 import { err, type Result } from "../../../packages/shared/src/result";
 import { logger } from "../../logger";
 import { deletionScheduledEmail } from "./templates/deletion-scheduled";
 import { guardianConsentRequestEmail } from "./templates/guardian-consent-request";
+import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
@@ -28,6 +30,30 @@ export const GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX =
   "guardian-consent-request";
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
+export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+
+/**
+ * @spec [contracts/notifications.contract.md §5.3 (every send carries a durable idempotency
+ *        key); SCL-080 (the code is the credential)] | @implemented [2026-09-15]
+ *
+ * plain English: the invite has no row of its own and no `guardian_links` row exists before
+ * redemption, so the key is derived from the durable state the email carries: the student,
+ * the ISSUE TIME of the code being sent, and a hash of the normalised address. A repeated
+ * submit for the same live code and the same address is one email at Resend; a regenerated
+ * code or a different address is a new key. The address itself is hashed, never part of the
+ * key — the key is logged as a provider header and must not carry PII.
+ */
+export function guardianLinkInviteIdempotencyKey(input: {
+  studentProfileId: string;
+  codeIssuedAt: string;
+  guardianEmail: string;
+}): string {
+  const address = createHash("sha256")
+    .update(input.guardianEmail.trim().toLowerCase(), "utf8")
+    .digest("hex")
+    .slice(0, 32);
+  return `${GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX}:${input.studentProfileId}:${input.codeIssuedAt}:${address}`;
+}
 
 type DirectSendDeps = {
   transport?: EmailTransport;
@@ -168,6 +194,93 @@ export async function sendAccountDeletionScheduledEmail(
       {
         deletionRequestId: input.deletionRequestId,
         recipient: redactEmail(input.email),
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
+ * @spec [Doc-01_V8 §36.2, §38.1; contracts/notifications.contract.md §0.4 (direct send: the
+ *        recipient has no profile row), §5.3, §12.3; SCL-080] | @implemented [2026-09-15]
+ *
+ * plain English: the student's CURRENT link code, sent to an address they typed, with a deep
+ * link to the redeem page that prefills the code. It is not a magic link: the recipient must
+ * still sign in (or create an account) and submit the code, exactly as when the code is read
+ * aloud — a forwarded email or a prefetching scanner cannot link anyone. The body names the
+ * student and states what a guardian can see; it carries no progress data (§38.1 applies
+ * before the link exists) and tells an uninvited recipient how to ignore it. Best-effort at
+ * the call site: a mail failure is logged (ids and a redacted address only) and returned as a
+ * Result. Nothing about the message — not the address, not the code — is persisted here.
+ */
+export async function sendGuardianLinkInviteEmail(
+  input: {
+    studentProfileId: string;
+    studentDisplayName: string;
+    code: string;
+    /** ISO issue time of `code` — part of the idempotency key. */
+    codeIssuedAt: string;
+    /** ISO expiry of `code`, computed by the caller from the configured TTL. */
+    expiresAt: string;
+    guardianEmail: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const siteUrl = resolveSiteUrl(deps);
+  if (!siteUrl) {
+    logger.error(
+      "NOTIFICATIONS",
+      "link_invite_email_unconfigured",
+      "PUBLIC_SITE_URL is not set; cannot build the redeem link",
+      { studentProfileId: input.studentProfileId, requestId: input.requestId },
+    );
+    return err({
+      kind: "config_missing",
+      message: "PUBLIC_SITE_URL is not configured",
+    });
+  }
+  const redeemUrl = `${siteUrl}/guardian?code=${encodeURIComponent(input.code)}`;
+  const rendered = guardianLinkInviteEmail({
+    studentDisplayName: input.studentDisplayName,
+    code: input.code,
+    redeemUrl,
+    expiresAt: input.expiresAt,
+  });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: guardianLinkInviteIdempotencyKey({
+      studentProfileId: input.studentProfileId,
+      codeIssuedAt: input.codeIssuedAt,
+      guardianEmail: input.guardianEmail,
+    }),
+    to: input.guardianEmail,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "link_invite_email_sent",
+      "Guardian link invite email accepted",
+      {
+        studentProfileId: input.studentProfileId,
+        providerMessageId: sent.value.providerMessageId,
+        recipient: redactEmail(input.guardianEmail),
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "link_invite_email_failed",
+      "Guardian link invite email not sent",
+      {
+        studentProfileId: input.studentProfileId,
+        recipient: redactEmail(input.guardianEmail),
         kind: sent.error.kind,
         requestId: input.requestId,
       },
