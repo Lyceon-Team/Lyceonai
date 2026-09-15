@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getStripeClient } from "./stripe/client";
 import { logger } from "../logger";
+import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends";
 
 // @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9] account-deletion execution —
 // the cron-driven grace-expiry driver that wires deidentify + anonymize-disposition cascade.
@@ -162,6 +163,52 @@ export async function executeDueDeletions(
   let failureCount = 0;
 
   for (const pending of pendingRequests) {
+    // @spec [SCL-083 PROPOSED; owner brief 2026-09-15 Part A1] | @implemented [2026-09-15]
+    // Step 0: read the recipient address BEFORE any mutation. Step 3 (deidentify_user) replaces
+    // profiles.email with the deleted_<id> placeholder and steps 4+5 delete the row, so this is
+    // the only moment the real address exists. It lives in this local for ONE iteration, is
+    // never persisted, and is only ever logged through redactEmail. Read outside the RPC's
+    // transaction by construction: PostgREST runs each call in its own transaction, and this
+    // SELECT is a separate call that completes before the RPCs begin.
+    let recipientEmail: string | null = null;
+    try {
+      const { data: profileRow, error: profileError } = await admin
+        .from("profiles")
+        .select("email")
+        .eq("id", pending.profile_id)
+        .maybeSingle();
+      if (profileError) {
+        logger.warn(
+          "DELETION",
+          "completion_notice_address_read_failed",
+          "Could not read the address for the completion notice; deletion proceeds, no notice",
+          {
+            userId: pending.profile_id,
+            error: profileError.message,
+            requestId,
+          },
+        );
+      } else {
+        const candidate = (profileRow as { email?: string | null } | null)
+          ?.email;
+        recipientEmail =
+          typeof candidate === "string" && candidate.length > 0
+            ? candidate
+            : null;
+      }
+    } catch (readErr) {
+      logger.warn(
+        "DELETION",
+        "completion_notice_address_read_failed",
+        "Could not read the address for the completion notice; deletion proceeds, no notice",
+        {
+          userId: pending.profile_id,
+          error: readErr instanceof Error ? readErr.message : String(readErr),
+          requestId,
+        },
+      );
+    }
+
     try {
       // Step 1: Stripe pause — prevent post-deletion billing (Q-PR4a-4b)
       await pauseStripeBilling(admin, pending.profile_id, requestId);
@@ -214,6 +261,45 @@ export async function executeDueDeletions(
       }
 
       successCount++;
+
+      // Step 6 (after commit): the completion notice. The atomic RPC has returned 'completed',
+      // so the deletion is durable; a rolled-back deletion never reaches this line. Best-effort
+      // and independently guarded: a mail failure never fails the deletion (already committed)
+      // and never aborts the batch. No retry — see sendAccountDeletionCompletedEmail.
+      if (recipientEmail !== null) {
+        const completedAt =
+          typeof (atomicResult as Record<string, unknown> | null)
+            ?.completion_at === "string"
+            ? String((atomicResult as Record<string, unknown>).completion_at)
+            : new Date().toISOString();
+        try {
+          await sendAccountDeletionCompletedEmail({
+            deletionRequestId: pending.id,
+            email: recipientEmail,
+            completedAt,
+            requestId,
+          });
+        } catch (mailErr) {
+          logger.warn(
+            "DELETION",
+            "completion_notice_failed",
+            "Deletion-completed notice threw; deletion is committed, continuing",
+            {
+              userId: pending.profile_id,
+              error:
+                mailErr instanceof Error ? mailErr.message : String(mailErr),
+              requestId,
+            },
+          );
+        }
+      } else {
+        logger.info(
+          "DELETION",
+          "completion_notice_skipped",
+          "No address available for the completion notice",
+          { userId: pending.profile_id, requestId },
+        );
+      }
     } catch (err) {
       logger.error(
         "DELETION",
