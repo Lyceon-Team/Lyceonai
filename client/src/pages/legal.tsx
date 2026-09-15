@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { legalDocs } from "@/lib/legal";
 import Footer from "@/components/layout/Footer";
+import { SUPPORT_EMAIL } from "@/lib/support-contact";
 
 const docIcons: Record<string, React.ReactNode> = {
   'trust-and-safety': <Shield className="h-6 w-6" />,
@@ -169,10 +170,10 @@ export default function LegalHub() {
                     Questions about trust or safety? We're here to help.
                   </p>
                 </div>
-                <a href="mailto:support@lyceon.ai">
+                <a href={`mailto:${SUPPORT_EMAIL}`}>
                   <Button>
                     <Mail className="h-4 w-4 mr-2" />
-                    support@lyceon.ai
+                    {SUPPORT_EMAIL}
                   </Button>
                 </a>
               </div>
