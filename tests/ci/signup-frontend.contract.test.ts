@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { authError, humanAuthError } from "@/lib/auth-error-messages";
+import { PASSWORD_POLICY, passwordRules } from "@lyceon/shared/password-policy";
 
 const GENERIC_AUTH_ERROR =
   "Something went wrong while signing you in. Please try again.";
@@ -251,5 +252,82 @@ describe("Signup Frontend Contract", () => {
     const alerts = await screen.findAllByTestId("alert-error");
     const expected = humanAuthError("signup_failed") ?? "";
     expect(alerts.some((a) => a.textContent?.includes(expected))).toBe(true);
+  });
+
+  /**
+   * @spec [contracts/auth-standard-flow.contract.md AS-1; Coding Standards §7.2] | @implemented [2026-09-15]
+   * Signup surface wiring of the shared password policy: rules visible before typing, submit gated
+   * on the policy with the reason written next to the button, `new-password` on signup and
+   * `current-password` on sign-in (password managers generate vs fill), and sign-in NOT gated on
+   * the policy (older 6-char accounts must still sign in).
+   */
+  it("signup lists the shared password rules before typing and names why submit is disabled", () => {
+    render(React.createElement(SupabaseAuthForm));
+    fireEvent.click(screen.getByTestId("tab-signup"));
+
+    const expectedLabels = passwordRules(PASSWORD_POLICY)
+      .filter((r) => r.display === "always")
+      .map((r) => r.label);
+    const rendered = Array.from(
+      screen
+        .getByTestId("input-signup-password-requirements")
+        .querySelectorAll("li"),
+    ).map((li) => li.querySelector("span")?.textContent);
+    expect(rendered).toEqual(expectedLabels);
+
+    fireEvent.change(screen.getByTestId("input-signup-email"), {
+      target: { value: "student@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("input-signup-password"), {
+      target: { value: "short1" },
+    });
+    fireEvent.click(screen.getByTestId("checkbox-signup-legal"));
+
+    const button = screen.getByTestId("button-signup") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByTestId("signup-submit-reason").textContent).toMatch(
+      /password that meets every requirement/i,
+    );
+
+    fireEvent.change(screen.getByTestId("input-signup-password"), {
+      target: { value: "longenough1" },
+    });
+    expect(button.disabled).toBe(false);
+    expect(screen.queryByTestId("signup-submit-reason")).toBeNull();
+  });
+
+  it("signup uses autocomplete=new-password; sign-in uses current-password and shows no rule list", () => {
+    render(React.createElement(SupabaseAuthForm));
+
+    const signin = screen.getByTestId(
+      "input-signin-password",
+    ) as HTMLInputElement;
+    expect(signin.getAttribute("autocomplete")).toBe("current-password");
+    expect(
+      screen.queryByTestId("input-signin-password-requirements"),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByTestId("tab-signup"));
+    const signup = screen.getByTestId(
+      "input-signup-password",
+    ) as HTMLInputElement;
+    expect(signup.getAttribute("autocomplete")).toBe("new-password");
+  });
+
+  it("sign-in is NOT gated on the password policy (legacy 6-char accounts still sign in)", async () => {
+    signInMock.mockResolvedValueOnce(undefined);
+    render(React.createElement(SupabaseAuthForm));
+
+    fireEvent.change(screen.getByTestId("input-signin-email"), {
+      target: { value: "student@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("input-signin-password"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByTestId("button-signin"));
+
+    await waitFor(() =>
+      expect(signInMock).toHaveBeenCalledWith("student@example.com", "abc123"),
+    );
   });
 });
