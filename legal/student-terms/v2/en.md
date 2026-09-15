@@ -1,13 +1,4 @@
----
-document: Student Terms of Use
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-20)
----
-
 # **LYCEON Student Terms of Use**
-
-**Version 2.0 · Effective 11 September 2026**
 
 Welcome to LYCEON. These Student Terms of Use ("Terms") govern your access to and use of the LYCEON platform. By accessing or using LYCEON, you agree to these Terms. If you do not agree, you may not use the platform.
 

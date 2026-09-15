@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# @spec [LYCEON legal versioning Phase 1 §6, §9; Coding Standards §14]
+# @implemented 2026-09-15
+#
+# plain English: proves each of the three legal gates actually turns red for
+# the defect it claims to catch, and stays green for the thing that must
+# remain allowed. A gate nobody has watched fail is a decoration.
+#
+# Every case runs in a throwaway git repository built from a copy of legal/
+# and the gate scripts, so the real working tree is never touched and case A
+# can have a base ref that already carries published versions — which
+# origin/stripe does not until this lands.
+#
+# The case that matters most is B. A published en.md is edited AND its
+# content_hash updated in the same commit. A gate that compares the file to
+# the hash beside it is green there; ours is red, because it asks git.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+WS="$(mktemp -d)"
+trap 'rm -rf "$WS"' EXIT
+
+PASS=0
+FAIL=0
+
+setup() {
+  rm -rf "$WS"/*
+  mkdir -p "$WS/scripts/ci"
+  cp "$REPO_ROOT/scripts/ci/legal-immutability-gate.mjs" \
+     "$REPO_ROOT/scripts/ci/legal-manifest-gate.mjs" \
+     "$REPO_ROOT/scripts/ci/legal-xref-gate.mjs" "$WS/scripts/ci/"
+  cp -R "$REPO_ROOT/legal" "$WS/legal"
+  (
+    cd "$WS"
+    git init -q .
+    git config user.email selftest@lyceon.invalid
+    git config user.name selftest
+    git add -A >/dev/null
+    git commit -qm "baseline: legal/ as published"
+    git branch -f selftest-base
+  ) >/dev/null 2>&1
+}
+
+# expect <expected-exit: red|green> <gate script> <case label>
+expect() {
+  local want="$1" gate="$2" label="$3"
+  local out rc
+  out="$(cd "$WS" && LEGAL_BASE_REF=selftest-base node "scripts/ci/$gate" 2>&1)"
+  rc=$?
+  if { [ "$want" = red ] && [ "$rc" -ne 0 ]; } || { [ "$want" = green ] && [ "$rc" -eq 0 ]; }; then
+    echo "  ok   $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL $label — wanted $want, gate exited $rc"
+    echo "$out" | sed 's/^/       | /'
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+rehash() {
+  local slug="$1" ver="$2"
+  local h
+  h="$(sha256sum "$WS/legal/$slug/$ver/en.md" | cut -d' ' -f1)"
+  sed -i "s|^content_hash: .*$|content_hash: sha256:$h|" "$WS/legal/$slug/$ver/meta.yml"
+}
+
+echo "legal gates self-test — each rule observed turning the gate red"
+echo ""
+
+# ── Gate 1: immutability ────────────────────────────────────────────
+echo "GATE 1 — immutability (published versions are read-only)"
+
+setup
+expect green legal-immutability-gate.mjs "(control) untouched tree stays green"
+
+setup
+printf '\nAn edit to a published document.\n' >> "$WS/legal/honor-code/v2/en.md"
+expect red legal-immutability-gate.mjs "(A) published en.md edited"
+
+setup
+printf '\nAn edit to a published document.\n' >> "$WS/legal/honor-code/v2/en.md"
+rehash honor-code v2
+expect red legal-immutability-gate.mjs \
+  "(B) en.md edited AND content_hash updated together — the co-edit"
+
+setup
+rm "$WS/legal/honor-code/v2/en.md"
+expect red legal-immutability-gate.mjs "(C) file deleted from a published version"
+
+setup
+echo "notes" > "$WS/legal/honor-code/v2/scratch.md"
+expect red legal-immutability-gate.mjs "(D) file added to a published version"
+
+setup
+cp -R "$WS/legal/honor-code/v2" "$WS/legal/honor-code/v3"
+sed -i 's|"current": "v2"|"current": "v3"|' "$WS/legal/honor-code/manifest.json"
+expect green legal-immutability-gate.mjs \
+  "(E) NEW version directory added — publishing must stay possible"
+
+setup
+sed -i 's|^content_hash: sha256:.|content_hash: sha256:0|' "$WS/legal/honor-code/v2/meta.yml"
+expect red legal-immutability-gate.mjs "(F) content_hash does not describe its own en.md"
+
+# ── Gate 2: manifest resolution ─────────────────────────────────────
+echo ""
+echo "GATE 2 — manifest resolution"
+
+setup
+expect green legal-manifest-gate.mjs "(control) all nine slugs resolve"
+
+setup
+sed -i 's|"current": "v2"|"current": "v7"|' "$WS/legal/honor-code/manifest.json"
+expect red legal-manifest-gate.mjs "(G) current points at a version that does not exist"
+
+setup
+sed -i '/^effective_date:/d' "$WS/legal/honor-code/v2/meta.yml"
+expect red legal-manifest-gate.mjs "(H) meta.yml missing a required field"
+
+setup
+sed -i 's|^version: .*$|version 2.0|' "$WS/legal/honor-code/v2/meta.yml"
+expect red legal-manifest-gate.mjs "(I) meta.yml line is not \`key: value\`"
+
+setup
+expect green legal-manifest-gate.mjs \
+  "(J) billing-terms current:null is accepted, not a failure"
+
+# ── Gate 3: cross-reference ─────────────────────────────────────────
+echo ""
+echo "GATE 3 — cross-reference"
+
+setup
+expect green legal-xref-gate.mjs "(control) every citation resolves"
+
+setup
+printf '\nSee the **LYCEON Data Processing Terms** for details.\n' \
+  >> "$WS/legal/honor-code/v2/en.md"
+rehash honor-code v2
+expect red legal-xref-gate.mjs "(K) a document is cited that has no slug"
+
+setup
+rm -rf "$WS/legal/billing-terms"
+expect red legal-xref-gate.mjs \
+  "(L) billing-terms slug removed — the real defect this gate exists for"
+
+echo ""
+if [ "$FAIL" -ne 0 ]; then
+  echo "LEGAL GATES SELF-TEST: FAIL ($FAIL of $((PASS + FAIL)) cases)"
+  exit 1
+fi
+echo "LEGAL GATES SELF-TEST: PASS ($PASS cases)"

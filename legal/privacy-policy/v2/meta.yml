@@ -1,0 +1,5 @@
+version: "2.0"
+effective_date: 2026-09-11
+supersedes: "1.0 (2024-12-22)"
+published: true
+content_hash: sha256:7f5ce55c70eb627685e0f761c4349c2d26b9df9384919f7ae70de93c4b20edf7

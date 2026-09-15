@@ -37,6 +37,8 @@
     "route:validate": "node scripts/validate-route-registry.mjs",
     "probe:boot": "node scripts/ci/boot-probe.mjs",
     "probe:boot:selftest": "bash scripts/ci/boot-probe.selftest.sh",
+    "gate:legal": "node scripts/ci/legal-immutability-gate.mjs && node scripts/ci/legal-manifest-gate.mjs && node scripts/ci/legal-xref-gate.mjs",
+    "gate:legal:selftest": "bash scripts/ci/legal-gates.selftest.sh",
     "tutor:schema:proof": "tsx scripts/tutor-schema-proof.ts",
     "tutor:schema:assert": "tsx scripts/tutor-schema-proof.ts --assert-only",
     "audit:ci": "pnpm audit --json > audit-output.json || test -s audit-output.json",

@@ -1,13 +1,4 @@
----
-document: Trust & Safety at LYCEON
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-22)
----
-
 # **Trust & Safety at LYCEON**
-
-**Version 2.0 · Effective 11 September 2026**
 
 *Empowering students to learn with integrity in an AI-driven world.*
 

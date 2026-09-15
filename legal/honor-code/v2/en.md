@@ -1,13 +1,4 @@
----
-document: Honor Code
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-22)
----
-
 # **LYCEON Honor Code**
-
-**Version 2.0 · Effective 11 September 2026**
 
 LYCEON is built to help students learn honestly, think critically, and grow with integrity. By using LYCEON, you agree to follow this Honor Code.
 
