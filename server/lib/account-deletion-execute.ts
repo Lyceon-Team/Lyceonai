@@ -267,11 +267,11 @@ export async function executeDueDeletions(
       // and independently guarded: a mail failure never fails the deletion (already committed)
       // and never aborts the batch. No retry — see sendAccountDeletionCompletedEmail.
       if (recipientEmail !== null) {
-        const completedAt =
-          typeof (atomicResult as Record<string, unknown> | null)
-            ?.completion_at === "string"
-            ? String((atomicResult as Record<string, unknown>).completion_at)
-            : new Date().toISOString();
+        // The date in the notice is the executor's own clock, taken the moment the atomic RPC
+        // reported 'completed'. The row's completion_at is set inside that same transaction but
+        // is not returned by the RPC (it returns the cascade summary) and cannot be read back:
+        // the cascade deletes the request row before the transaction commits.
+        const completedAt = new Date().toISOString();
         try {
           await sendAccountDeletionCompletedEmail({
             deletionRequestId: pending.id,

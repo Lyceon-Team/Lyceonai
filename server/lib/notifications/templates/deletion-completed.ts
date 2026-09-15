@@ -12,7 +12,10 @@
 import { escapeHtml, type EmailRender } from "./shared";
 
 export function deletionCompletedEmail(input: {
-  /** ISO timestamp of the completion, from the request row's `completion_at`. */
+  /**
+   * ISO timestamp taken by the executor when the atomic RPC returned 'completed'. Not the row's
+   * own `completion_at`: that column is unreadable afterwards (the cascade deletes the row).
+   */
   completedAt: string;
 }): EmailRender {
   const when = new Date(input.completedAt);

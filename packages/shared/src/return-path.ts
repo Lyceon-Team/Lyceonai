@@ -57,12 +57,15 @@ export function sanitizeReturnPath(raw: unknown): string | null {
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\\]/.test(value)) return null;
 
-  // Parse against a fixed origin: anything that resolves elsewhere is off-origin.
+  // Parse against a fixed origin: anything that resolves elsewhere is off-origin. A malformed
+  // value is an EXPECTED failure (Coding Standards §3.6): the URL constructor signals it with a
+  // TypeError, which maps to `null`. Anything else is a programming error and is rethrown (§13).
   let parsed: URL;
   try {
     parsed = new URL(value, "https://lyceon.invalid");
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof TypeError) return null;
+    throw err;
   }
   if (parsed.origin !== "https://lyceon.invalid") return null;
   if (parsed.username || parsed.password) return null;
@@ -85,11 +88,6 @@ export function loginPathWithReturn(pathAndSearch: string): string {
 
 /** Read and sanitise the return path from a query string (`?next=…`), or `null`. */
 export function returnPathFromSearch(search: string): string | null {
-  try {
-    return sanitizeReturnPath(
-      new URLSearchParams(search).get(RETURN_PATH_PARAM),
-    );
-  } catch {
-    return null;
-  }
+  // URLSearchParams never throws for a string input; the sanitiser is total.
+  return sanitizeReturnPath(new URLSearchParams(search).get(RETURN_PATH_PARAM));
 }
