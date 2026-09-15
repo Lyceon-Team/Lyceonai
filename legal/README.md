@@ -65,8 +65,13 @@ hash at all.
 A slug may exist with no published version. That is not a defect state — it
 lets a document be cited before it is written, with the manifest gate
 reporting honestly that nothing is published yet rather than the citation
-silently dangling. `billing-terms` is in that state today: cited by four
-documents, not yet committed.
+silently dangling.
+
+`billing-terms` was that example, cited by five documents before it existed.
+It was published on 2026-09-15, so **no slug is at `current: null` today** —
+the mechanism is exercised by a fixture in Phase 2's T4 rather than by a live
+document, which is the right way round: the guarantee has to hold for the next
+document added this way, not only for whichever one happens to be unwritten.
 
 ## Adding a version
 
@@ -118,6 +123,11 @@ rule in `client/src/index.css` makes it print without the site chrome.
 
 Two things, both decided rather than overlooked:
 
+- **`billing-terms`, `refund-policy` and `subscription-auto-renewal-notice` are
+  not on the legal hub.** All three render at their own URLs and all three are
+  published; none has an entry in `client/src/lib/legal.ts`, which needs a
+  short product blurb per document that nobody has written. Reachable by link
+  and by citation, not by browsing.
 - **`docs/Spec/Lyceon Privacy Policy.md`** — an orphan that never corresponded
   to a served document. Kept by owner ruling during Phase 1 rather than
   migrated, because migrating it would assert it was a version of something.
