@@ -4712,8 +4712,9 @@ CREATE TABLE public.legal_acceptances (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     doc_slug text,
     content_hash text,
+    source_reference text,
     CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
-    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
     CONSTRAINT legal_acceptances_content_hash_shape CHECK (((content_hash IS NULL) OR (content_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
@@ -4730,6 +4731,20 @@ COMMENT ON COLUMN public.legal_acceptances.doc_slug IS 'legal/<slug> the consent
 --
 
 COMMENT ON COLUMN public.legal_acceptances.content_hash IS 'sha256:<64 hex> of the exact en.md served at acceptance, copied from that version''s meta.yml. NULL only on rows predating Phase 2, whose text was never retained. Never backfilled — a guessed hash is a false record.';
+
+
+--
+-- Name: COLUMN legal_acceptances.source_reference; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.legal_acceptances.source_reference IS 'Identifier issued by the surface named in consent_source. A Stripe Checkout Session id (cs_...) for stripe_checkout; NULL for surfaces that issue none.';
+
+
+--
+-- Name: CONSTRAINT legal_acceptances_consent_source_check ON legal_acceptances; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acceptances IS 'Where the acceptance was collected. guardian_link_redeem: a guardian accepting Parent / Guardian Terms while redeeming a student link code. stripe_checkout: auto-renewal consent taken in Checkout per Cal. Bus. & Prof. Code § 17602, separate from Terms of Use acceptance at signup. reconsent_prompt: an existing user accepting a newly published version through the blocking modal shown at next sign-in.';
 
 
 --

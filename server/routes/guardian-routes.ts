@@ -33,6 +33,9 @@ import {
 } from "../../packages/shared/src/guardian-link-schema";
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
+import { recordLegalAcceptances } from "../lib/legal-acceptance";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
 import { notificationEventId } from "../lib/notifications/event-id";
@@ -343,6 +346,62 @@ router.post(
         error: {
           message: "That is your own code. Ask your guardian for theirs.",
           code: GUARDIAN_LINK_CODE_REFUSED,
+        },
+        requestId,
+      });
+    }
+
+    // THE ACCEPTANCE IS WRITTEN BEFORE THE LINK, and a failure to write it
+    // refuses the link. §4: no acceptance, no link.
+    //
+    // Order matters and this order is the safe one. Link-then-consent can leave
+    // a guardian holding visibility of a minor's learning data with no record
+    // that they agreed to the terms governing it; consent-then-link can at
+    // worst leave a consent row for a link that was never created, which is a
+    // true statement about what the person did. Given a choice between an
+    // unrecorded link and an unused consent, the unused consent is the one that
+    // cannot hurt anybody.
+    //
+    // `actor_type: 'parent'` — the value the column has always allowed for this
+    // actor. The document is Parent / Guardian Terms; one value, one meaning.
+    const parentTerms = resolveLegalVersion(GUARDIAN_LINK_LEGAL_DOC.slug);
+    try {
+      // `supabaseServer`, the client every other write in this file uses. An
+      // earlier draft reached for `getSupabaseAdmin()` and quietly forked the
+      // client: a second admin handle in one route file, and one the PG-backed
+      // guardian tests do not substitute, so the consent write went nowhere they
+      // could see it. One client per file, the one that is already here.
+      await recordLegalAcceptances(supabaseServer, {
+        userId: guardianId,
+        consentSource: "guardian_link_redeem",
+        userAgent: req.get("user-agent") ?? null,
+        ipAddress: req.ip ?? null,
+        acceptances: [
+          {
+            docKey: GUARDIAN_LINK_LEGAL_DOC.docKey,
+            docSlug: parentTerms.slug,
+            docVersion: parentTerms.version,
+            contentHash: parentTerms.contentHash,
+            actorType: "parent",
+            minor: false,
+          },
+        ],
+      });
+    } catch (consentErr: unknown) {
+      logger.error(
+        "GUARDIAN",
+        "link_redeem",
+        "Link refused: Parent / Guardian Terms consent could not be recorded",
+        {
+          error: consentErr instanceof Error ? consentErr.message : "unknown",
+          requestId,
+        },
+      );
+      return res.status(503).json({
+        error: {
+          message:
+            "We could not record your agreement to the Parent / Guardian Terms. No link was created. Please try again.",
+          code: "CONSENT_NOT_RECORDED",
         },
         requestId,
       });
