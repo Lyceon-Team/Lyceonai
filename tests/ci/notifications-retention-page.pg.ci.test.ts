@@ -311,6 +311,7 @@ describe.skipIf(!PG_AVAILABLE)(
       ).toBeDefined();
       expect(line).toContain('"deletedEvents":0');
       expect(line).toContain('"deletedMessages":0');
+      expect(line).toContain('"deletedOrphanDeliveryEvents":0');
       expect(line).toMatch(/"cutoff":"\d{4}-\d{2}-\d{2}T/);
       expect(line).toContain(
         `"batchSize":${NOTIFICATION_RETENTION_SWEEP_BATCH_SIZE}`,
@@ -500,6 +501,177 @@ describe.skipIf(!PG_AVAILABLE)(
       } while (cursor && pages < 10);
       expect(seen.size).toBe(5);
       expect(pages).toBe(3);
+    });
+
+    // ── Amendment 2026-09-16 — orphaned delivery events (C11.2 branch 2) ────
+
+    /** An unmatched delivery event (no message), received `ageDays` days ago. */
+    async function seedOrphan(ageDays: number, id: string): Promise<string> {
+      await pg.query(
+        `INSERT INTO public.notification_delivery_events
+           (provider_event_id, provider_message_id, message_id, event_type, occurred_at, received_at, outcome)
+         VALUES ($1, $2, NULL, 'email.delivered',
+                 now() - make_interval(days => $3), now() - make_interval(days => $3), 'unmatched')`,
+        [id, `re_${id}`, ageDays],
+      );
+      return id;
+    }
+
+    /** A delivery event attached to the given event's email row, received `ageDays` days ago. */
+    async function seedMatched(
+      eventId: string,
+      ageDays: number,
+      id: string,
+    ): Promise<string> {
+      const emailRow = await pg.query(
+        `SELECT message_id FROM public.notification_messages WHERE event_id = $1 AND channel = 'email'`,
+        [eventId],
+      );
+      await pg.query(
+        `INSERT INTO public.notification_delivery_events
+           (provider_event_id, provider_message_id, message_id, event_type, occurred_at, received_at, outcome, applied_at)
+         VALUES ($1, $2, $3, 'email.delivered',
+                 now() - make_interval(days => $4), now() - make_interval(days => $4), 'applied', now())`,
+        [id, `re_${id}`, emailRow.rows[0]!.message_id, ageDays],
+      );
+      return id;
+    }
+
+    async function deliveryExists(id: string): Promise<boolean> {
+      const r = await pg.query(
+        `SELECT 1 FROM public.notification_delivery_events WHERE provider_event_id = $1`,
+        [id],
+      );
+      return (r.rowCount ?? 0) > 0;
+    }
+
+    it("O1 an orphaned delivery event older than the window is deleted, and the count reports it", async () => {
+      await seedOrphan(91, "evt_orphan_old");
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      const summary = await sweepNotificationRetention();
+      expect(summary.deletedOrphanDeliveryEvents).toBe(1);
+      expect(summary.deletedEvents).toBe(0);
+      expect(await deliveryExists("evt_orphan_old")).toBe(false);
+    });
+
+    it("O2 an orphaned delivery event inside the window survives, including one at 89 days", async () => {
+      await seedOrphan(89, "evt_orphan_89");
+      await seedOrphan(30, "evt_orphan_30");
+      await seedOrphan(0, "evt_orphan_0");
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      const summary = await sweepNotificationRetention();
+      expect(summary.deletedOrphanDeliveryEvents).toBe(0);
+      for (const id of ["evt_orphan_89", "evt_orphan_30", "evt_orphan_0"])
+        expect(await deliveryExists(id)).toBe(true);
+    });
+
+    it("O3 a MATCHED delivery event older than the window is deleted by the CASCADE, not by the orphan branch (the orphan count stays 0)", async () => {
+      const old = await seedEvent(120);
+      await seedMatched(old, 120, "evt_matched_old");
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      const summary = await sweepNotificationRetention();
+      expect(summary.deletedEvents).toBe(1);
+      expect(summary.deletedMessages).toBe(3);
+      // The parent path did the work: the orphan branch reports nothing for this row.
+      expect(summary.deletedOrphanDeliveryEvents).toBe(0);
+      expect(await deliveryExists("evt_matched_old")).toBe(false);
+      expect(await eventExists(old)).toBe(false);
+    });
+
+    it("O4 a matched delivery event whose PARENT is inside the window survives even when its own received_at is older than the cutoff (the child's age never overrides the parent)", async () => {
+      const young = await seedEvent(1);
+      await seedMatched(young, 200, "evt_matched_young_parent");
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      const summary = await sweepNotificationRetention();
+      expect(summary.deletedEvents).toBe(0);
+      expect(summary.deletedOrphanDeliveryEvents).toBe(0);
+      expect(await deliveryExists("evt_matched_young_parent")).toBe(true);
+      expect(await eventExists(young)).toBe(true);
+    });
+
+    it("O5 a zero-deletion run emits the log line with BOTH counts at 0 and the cutoff (asserted on the log)", async () => {
+      await seedEvent(1);
+      await seedOrphan(1, "evt_orphan_young");
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      captured.length = 0;
+      await sweepNotificationRetention({ requestId: "zero-both" });
+      const line = captured.find((l) =>
+        l.includes("retention_sweep_completed"),
+      );
+      expect(
+        line,
+        "no retention_sweep_completed line was logged",
+      ).toBeDefined();
+      expect(line).toContain('"deletedEvents":0');
+      expect(line).toContain('"deletedMessages":0');
+      expect(line).toContain('"deletedOrphanDeliveryEvents":0');
+      expect(line).toMatch(/"cutoff":"\d{4}-\d{2}-\d{2}T/);
+      expect(line).toContain('"requestId":"zero-both"');
+    });
+
+    it("O6 the batch bound is respected on BOTH branches independently (oldest first on each)", async () => {
+      const events = [];
+      for (const age of [200, 150, 120, 100, 95])
+        events.push(await seedEvent(age));
+      const orphans = [];
+      for (const [i, age] of [300, 250, 180, 130, 92].entries())
+        orphans.push(await seedOrphan(age, `evt_orphan_batch_${i}`));
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+
+      const first = await sweepNotificationRetention({ batchSize: 2 });
+      expect(first.deletedEvents).toBe(2);
+      expect(first.deletedMessages).toBe(6);
+      expect(first.deletedOrphanDeliveryEvents).toBe(2);
+      expect(first.batchFull).toBe(true);
+      // Oldest two of each went; the rest remain for the next run.
+      expect(await eventExists(events[0]!)).toBe(false);
+      expect(await eventExists(events[2]!)).toBe(true);
+      expect(await deliveryExists(orphans[0]!)).toBe(false);
+      expect(await deliveryExists(orphans[1]!)).toBe(false);
+      expect(await deliveryExists(orphans[2]!)).toBe(true);
+      expect((await counts()).events).toBe(3);
+      expect((await counts()).delivery).toBe(3);
+
+      // Independence: with the event backlog gone, the orphan branch still gets its own bound.
+      await sweepNotificationRetention({ batchSize: 3 });
+      expect((await counts()).events).toBe(0);
+      expect((await counts()).delivery).toBe(0);
+    });
+
+    it("O7 batchFull is true when ONLY the orphan branch hits its bound (the flag reads both branches)", async () => {
+      for (const [i, age] of [300, 250, 180].entries())
+        await seedOrphan(age, `evt_orphan_only_${i}`);
+      const { sweepNotificationRetention } =
+        await import("../../server/lib/notifications/retention");
+      const first = await sweepNotificationRetention({ batchSize: 2 });
+      expect(first.deletedEvents).toBe(0);
+      expect(first.deletedOrphanDeliveryEvents).toBe(2);
+      expect(first.batchFull).toBe(true);
+      const second = await sweepNotificationRetention({ batchSize: 2 });
+      expect(second.deletedOrphanDeliveryEvents).toBe(1);
+      expect(second.batchFull).toBe(false);
+    });
+
+    it("C11.1 (amended) the sweep body still carries no literal window and reads the ONE definition for both branches", async () => {
+      const sweep = await pg.query(
+        `SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p
+           JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.proname = 'sweep_notification_retention'`,
+      );
+      expect(sweep.rows).toHaveLength(1); // one function, not two
+      const def = String(sweep.rows[0]?.def ?? "");
+      expect(def).not.toMatch(/interval\s*'90|=>\s*90\b|90 days/);
+      expect(
+        def.match(/public\.notification_retention_days\(\)/g),
+      ).toHaveLength(1); // one cutoff
+      expect(def).toMatch(/message_id IS NULL/);
+      expect(def).toMatch(/received_at < v_cutoff/);
     });
   },
 );
