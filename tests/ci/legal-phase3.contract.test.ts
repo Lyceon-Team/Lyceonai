@@ -21,8 +21,11 @@
  *    December 2024 drift — and an absence test that read comments would force
  *    the file to delete the explanation of the defect in order to go green.
  *    (The same trap as `shared/seo/public-meta.ts` and Phase 2's T5.)
- *  - `billing-terms` has `current: null`, so U3 expects `unpublished` for it and
- *    `published` for the other eight. An empty state is not a failure.
+ *  - U3 expects all NINE to publish. `billing-terms` was the corpus's one
+ *    `current: null` slug and was published on 2026-09-15; the branch that
+ *    special-cased it is gone, which makes this assertion strictly stronger
+ *    than it was. The `current: null` state itself is still exercised, in
+ *    Phase 2's T4, against a fixture rather than a real document.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -157,12 +160,6 @@ describe("U3 — every slug still renders from the real legal/ tree", () => {
 
   it.each(slugs)("%s renders its body, version and date", async (slug) => {
     const doc = await loadLegalDocument(slug);
-
-    if (slug === "billing-terms") {
-      // `current: null` — a legitimate empty state, not a failure.
-      expect(doc.state).toBe("unpublished");
-      return;
-    }
 
     expect(doc.state, `${slug} did not publish`).toBe("published");
     if (doc.state !== "published") return;

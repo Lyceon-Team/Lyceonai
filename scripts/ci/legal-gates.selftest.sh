@@ -127,6 +127,22 @@ setup
 expect green legal-manifest-gate.mjs \
   "(J) billing-terms current:null is accepted, not a failure"
 
+setup
+# The defect this case exists for: legal/billing-terms/v2 landed with its body
+# named `Lyceon billing terms` and no meta.yml. The gate reported only the
+# meta.yml, because the locale-body check sat after a `continue`; body purity
+# resolves <dir>/en.md and skips silently when absent. Two gates, one blind
+# spot. The body check now runs before any early exit, so BOTH are reported.
+mv "$WS/legal/honor-code/v2/en.md" "$WS/legal/honor-code/v2/Lyceon honor code"
+expect red legal-manifest-gate.mjs \
+  "(R) a body under the wrong filename — the defect both gates missed"
+
+setup
+mv "$WS/legal/honor-code/v2/en.md" "$WS/legal/honor-code/v2/Lyceon honor code"
+rm "$WS/legal/honor-code/v2/meta.yml"
+expect red legal-manifest-gate.mjs \
+  "(S) missing meta.yml must not hide the missing body behind an early exit"
+
 # ── Gate 3: cross-reference ─────────────────────────────────────────
 echo ""
 echo "GATE 3 — cross-reference"

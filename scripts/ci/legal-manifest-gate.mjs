@@ -30,10 +30,19 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+const REPO_ROOT = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "../..",
+);
 const LEGAL = path.join(REPO_ROOT, "legal");
 
-const REQUIRED_META = ["version", "effective_date", "supersedes", "published", "content_hash"];
+const REQUIRED_META = [
+  "version",
+  "effective_date",
+  "supersedes",
+  "published",
+  "content_hash",
+];
 const REQUIRED_MANIFEST = ["slug", "title", "current", "locales", "aliases"];
 
 let failed = false;
@@ -54,7 +63,10 @@ function parseFlatYaml(text, where) {
     if (line.trim() === "" || line.trimStart().startsWith("#")) return;
     const m = /^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/.exec(line);
     if (!m) {
-      fail(`${where}:${i + 1} is not a flat \`key: value\` line`, `got: ${line}`);
+      fail(
+        `${where}:${i + 1} is not a flat \`key: value\` line`,
+        `got: ${line}`,
+      );
       return;
     }
     out[m[1]] = m[2].trim();
@@ -95,7 +107,11 @@ for (const slug of slugs) {
     fail(`${rel}/manifest.json is not valid JSON`, String(err));
     continue;
   }
-  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+  if (
+    typeof manifest !== "object" ||
+    manifest === null ||
+    Array.isArray(manifest)
+  ) {
     fail(`${rel}/manifest.json is not a JSON object`);
     continue;
   }
@@ -105,7 +121,9 @@ for (const slug of slugs) {
     if (!(field in m)) fail(`${rel}/manifest.json lacks "${field}"`);
   }
   if (m.slug !== slug) {
-    fail(`${rel}/manifest.json slug "${String(m.slug)}" does not match its directory`);
+    fail(
+      `${rel}/manifest.json slug "${String(m.slug)}" does not match its directory`,
+    );
   }
   if (typeof m.title !== "string" || m.title.trim() === "") {
     fail(`${rel}/manifest.json title must be a non-empty string`);
@@ -125,23 +143,60 @@ for (const slug of slugs) {
     .sort();
 
   for (const v of versionDirs) {
+    // Locale bodies are checked FIRST, before any early exit.
+    //
+    // This block used to sit at the end of the loop, after `continue` on a
+    // missing meta.yml — so a version directory with no meta.yml reported
+    // only that, and its missing body went unmentioned. `billing-terms/v2`
+    // landed with its body named `Lyceon billing terms` and nothing said so:
+    // the manifest gate stopped at the meta.yml, and the body-purity gate
+    // resolves `<dir>/en.md` and silently skips when it is absent. Two gates,
+    // one blind spot, and 147 lines carrying an inline version and date sat
+    // in the tree unchecked. The checks are independent, so they run
+    // independently.
+    if (Array.isArray(m.locales)) {
+      for (const locale of m.locales) {
+        const body = path.join(slugDir, v, `${String(locale)}.md`);
+        if (!fs.existsSync(body)) {
+          const present = fs
+            .readdirSync(path.join(slugDir, v))
+            .filter((f) => f !== "meta.yml");
+          fail(
+            `${rel}/${v} declares locale "${String(locale)}" but ${String(locale)}.md is missing`,
+            present.length
+              ? `files present besides meta.yml: ${present.join(", ")}`
+              : "the version directory has no body at all",
+          );
+        }
+      }
+    }
+
     const metaPath = path.join(slugDir, v, "meta.yml");
     if (!fs.existsSync(metaPath)) {
       fail(`${rel}/${v} has no meta.yml`);
       continue;
     }
-    const meta = parseFlatYaml(fs.readFileSync(metaPath, "utf-8"), `${rel}/${v}/meta.yml`);
+    const meta = parseFlatYaml(
+      fs.readFileSync(metaPath, "utf-8"),
+      `${rel}/${v}/meta.yml`,
+    );
     for (const field of REQUIRED_META) {
       if (!(field in meta)) fail(`${rel}/${v}/meta.yml lacks "${field}"`);
     }
-    if (meta.effective_date && !/^\d{4}-\d{2}-\d{2}$/.test(meta.effective_date)) {
+    if (
+      meta.effective_date &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(meta.effective_date)
+    ) {
       fail(
         `${rel}/${v}/meta.yml effective_date is not YYYY-MM-DD`,
         `got: ${meta.effective_date}`,
       );
     }
     if (meta.published && !["true", "false"].includes(meta.published)) {
-      fail(`${rel}/${v}/meta.yml published must be true or false`, `got: ${meta.published}`);
+      fail(
+        `${rel}/${v}/meta.yml published must be true or false`,
+        `got: ${meta.published}`,
+      );
     }
     if (meta.content_hash && !/^sha256:[0-9a-f]{64}$/.test(meta.content_hash)) {
       fail(
@@ -149,19 +204,13 @@ for (const slug of slugs) {
         `got: ${meta.content_hash}`,
       );
     }
-    if (Array.isArray(m.locales)) {
-      for (const locale of m.locales) {
-        const body = path.join(slugDir, v, `${String(locale)}.md`);
-        if (!fs.existsSync(body)) {
-          fail(`${rel}/${v} declares locale "${String(locale)}" but ${String(locale)}.md is missing`);
-        }
-      }
-    }
   }
 
   // The resolution rule itself.
   if (m.current === null) {
-    console.log(`✓ ${slug} — no published version yet (current: null), citations resolve`);
+    console.log(
+      `✓ ${slug} — no published version yet (current: null), citations resolve`,
+    );
     continue;
   }
   if (typeof m.current !== "string" || m.current.trim() === "") {

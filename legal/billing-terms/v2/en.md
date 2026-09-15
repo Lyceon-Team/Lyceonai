@@ -1,10 +1,3 @@
----
-document: Billing Terms
-version: 1.0
-effective_date: 2026-09-11
-supersedes: null
----
-
 # **LYCEON Billing Terms**
 
 These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
@@ -114,7 +107,7 @@ By checking the box at checkout, you confirm that:
 * You understand the entitlement attaches to the student account selected, not to your own account if you are a guardian or third-party payer
 * You have read these Billing Terms, the Subscription and Auto-Renewal Notice, and the Refund Policy
 
-**This consent is separate from your acceptance of the LYCEON Terms of Use**, which you accepted when you created your account.
+This consent is separate from your acceptance of the **LYCEON Student Terms of Use**, which you accepted when you created your account.
 
 We keep a record of this consent — the date and time, the version of these Billing Terms, and the account it belongs to — for no less than three years, or one year after the subscription ends, whichever is longer.
 

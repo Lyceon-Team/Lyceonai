@@ -36,8 +36,14 @@
  *    cross-reference gate resolves it.
  *
  * edge cases:
- *  - `billing-terms` has no entry: it has no blurb and no consent key, and is
- *    not listed on the hub until it is published.
+ *  - THREE published documents have no entry here and so are not listed on the
+ *    hub, though each renders at its own URL: `billing-terms`, `refund-policy`
+ *    and `subscription-auto-renewal-notice`. They have no blurb and no consent
+ *    key. `billing-terms` in particular was published on 2026-09-15, so the
+ *    note that previously stood here — "not listed on the hub until it is
+ *    published" — no longer describes anything: it IS published, and still not
+ *    listed. Listing them needs a `shortDescription` each, which is product
+ *    copy nobody has written. Reported, not silently left implying otherwise.
  *  - There are no lookup helpers here. `getLegalDocBySlug` existed only to gate
  *    the document page on this six-entry list, which 404'd three real
  *    documents; removing that gate left it with no caller. `getLegalDocByKey`

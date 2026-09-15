@@ -277,9 +277,64 @@ describe("T4 — `current: null` is an unpublished state, not an error", () => {
   it("refuses to resolve a consent version for an unpublished slug", () => {
     // Nothing can be consented to before it is published, so there is no
     // version to record — and guessing one would be a false record.
-    expect(() => resolveLegalVersion("billing-terms")).toThrow(
-      /no published version/,
-    );
+    //
+    // This used to point at `billing-terms`, the corpus's one `current: null`
+    // slug. It was published on 2026-09-15, so every one of the nine is now
+    // published and the guarantee has no live example left. It still has to
+    // hold for the NEXT document added at `current: null`, so the fixture is
+    // built here rather than borrowed from the corpus — which is what let the
+    // test rot in the first place.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "legal-registry-"));
+    const legalDir = path.join(root, "legal");
+    // legalRoot() probes for privacy-policy/manifest.json to find the tree.
+    for (const [slug, current] of [
+      ["privacy-policy", "v2"],
+      ["not-yet-written", null],
+    ] as const) {
+      const dir = path.join(legalDir, slug);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "manifest.json"),
+        JSON.stringify({
+          slug,
+          title: slug,
+          current,
+          locales: ["en"],
+          aliases: [],
+        }),
+      );
+    }
+
+    // `legalRoot()` resolves CANDIDATE_ROOTS against process.cwd(), so the
+    // seam is cwd — not chdir, which vitest workers do not support.
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(root);
+    try {
+      __resetLegalRegistryForTests();
+      expect(() => resolveLegalVersion("not-yet-written")).toThrow(
+        /no published version/,
+      );
+    } finally {
+      cwdSpy.mockRestore();
+      __resetLegalRegistryForTests();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a consent version for every slug that IS published", () => {
+    // The other half of the same guarantee, and the one with live examples:
+    // all nine now resolve to a version and a hash.
+    const slugs = fs
+      .readdirSync(REAL_LEGAL, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    expect(slugs).toHaveLength(9);
+    for (const slug of slugs) {
+      const resolved = resolveLegalVersion(slug);
+      expect(resolved.version, `${slug} version`).toMatch(/^\d+\.\d+$/);
+      expect(resolved.contentHash, `${slug} hash`).toMatch(
+        /^sha256:[0-9a-f]{64}$/,
+      );
+    }
   });
 });
 
