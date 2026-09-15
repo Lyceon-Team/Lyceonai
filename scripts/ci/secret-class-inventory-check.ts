@@ -16,13 +16,12 @@
  *
  * Run: npx tsx scripts/ci/secret-class-inventory-check.ts
  *
- * Note: Uses child_process to call python3 for YAML parsing since
- * js-yaml is not in the project's dependencies. No new deps required.
+ * Note: YAML parsing is handled by a minimal TypeScript parser tailored
+ * to this manifest's structure. No Python or external YAML library required.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -94,41 +93,154 @@ const KNOWN_NON_CONFIG = new Set([
   "DOCUMENT_AI_LOCATION",
 ]);
 
-// ── YAML parsing (via python helper — no js-yaml dependency) ─────────
+// ── YAML parsing (minimal, tailored to this manifest's structure) ────
 
-function findPython(): string {
-  const candidates =
-    process.platform === "win32"
-      ? ["python", "python3", "py"]
-      : ["python3", "python"];
+function parseYamlScalar(raw: string): string | boolean | number | null {
+  const v = raw.trim();
+  if (v === "" || v === "null" || v === "~") return null;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  if (v.startsWith('"')) {
+    const end = v.indexOf('"', 1);
+    return end > 0 ? v.slice(1, end) : v.slice(1);
+  }
+  if (v.startsWith("'")) {
+    const end = v.lastIndexOf("'");
+    return end > 0 ? v.slice(1, end) : v.slice(1);
+  }
+  const commentIdx = v.indexOf(" #");
+  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;
+  if (/^-?\d+$/.test(clean)) return parseInt(clean, 10);
+  if (/^-?\d+\.\d+$/.test(clean)) return parseFloat(clean);
+  return clean;
+}
 
-  for (const cmd of candidates) {
-    try {
-      const args = cmd === "py" ? ["-3", "--version"] : ["--version"];
-      execFileSync(cmd, args, { stdio: "ignore" });
-      return cmd;
-    } catch {
+function parseManifestYaml(content: string): ManifestData {
+  const lines = content.split("\n");
+  const result: ManifestData = {
+    schema_version: "",
+    secret_classes: [],
+    runtime_config: [],
+    dead_config: [],
+    supabase_config: [],
+  };
+
+  type Section =
+    | "secret_classes"
+    | "runtime_config"
+    | "dead_config"
+    | "supabase_config";
+  let currentSection: Section | null = null;
+  let entry: Record<string, unknown> | null = null;
+  let listField: string | null = null;
+  let listItems: string[] = [];
+  let skipFolded = false;
+
+  function flushList(): void {
+    if (entry && listField) {
+      entry[listField] = listItems;
+      listField = null;
+      listItems = [];
+    }
+  }
+
+  function flushEntry(): void {
+    flushList();
+    if (entry && currentSection) {
+      result[currentSection].push({
+        id: String(entry.id ?? ""),
+        runtime: String(entry.runtime ?? ""),
+        required: entry.required === true,
+        consumer: Array.isArray(entry.consumer)
+          ? (entry.consumer as string[])
+          : [],
+        store: String(entry.store ?? ""),
+        canonical_owner: String(entry.canonical_owner ?? ""),
+      });
+    }
+    entry = null;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    if (trimmed === "" || trimmed.startsWith("#")) {
+      if (skipFolded && trimmed !== "" && indent <= 4) skipFolded = false;
+      if (!skipFolded && trimmed !== "" && indent <= 4) {
+        // fall through to process non-comment lines that end folded
+      } else {
+        continue;
+      }
+    }
+
+    if (skipFolded) {
+      if (indent > 4) continue;
+      skipFolded = false;
+    }
+
+    if (indent === 0 && trimmed.includes(":")) {
+      flushEntry();
+      const ci = trimmed.indexOf(":");
+      const key = trimmed.slice(0, ci).trim();
+      const val = trimmed.slice(ci + 1).trim();
+      if (key === "schema_version") {
+        result.schema_version = String(parseYamlScalar(val) ?? "");
+      } else if (key in result && key !== "schema_version") {
+        currentSection = key as Section;
+      }
+      continue;
+    }
+
+    if (indent === 2 && trimmed.startsWith("- ")) {
+      flushEntry();
+      entry = {};
+      const rest = trimmed.slice(2);
+      if (rest.includes(":")) {
+        const ci = rest.indexOf(":");
+        const key = rest.slice(0, ci).trim();
+        const val = rest.slice(ci + 1).trim();
+        if (val === ">" || val === "|") {
+          skipFolded = true;
+        } else {
+          entry[key] = parseYamlScalar(val);
+        }
+      }
+      continue;
+    }
+
+    if (indent === 4 && entry && trimmed.includes(":")) {
+      flushList();
+      const ci = trimmed.indexOf(":");
+      const key = trimmed.slice(0, ci).trim();
+      const val = trimmed.slice(ci + 1).trim();
+      if (val === ">" || val === "|") {
+        skipFolded = true;
+      } else if (val === "[]") {
+        entry[key] = [];
+      } else if (val === "") {
+        listField = key;
+        listItems = [];
+      } else {
+        entry[key] = parseYamlScalar(val);
+      }
+      continue;
+    }
+
+    if (indent >= 6 && listField && trimmed.startsWith("- ")) {
+      const itemVal = trimmed.slice(2).trim();
+      listItems.push(String(parseYamlScalar(itemVal) ?? ""));
       continue;
     }
   }
-  throw new Error(
-    `No Python interpreter found (tried: ${candidates.join(", ")}). ` +
-      "Install Python 3 and ensure it is on PATH.",
-  );
+
+  flushEntry();
+  return result;
 }
 
 function loadManifest(): ManifestData {
-  const helperPath = path.join(ROOT, "scripts/ci/_yaml-to-json.py");
-  const pythonCmd = findPython();
-  const args =
-    pythonCmd === "py"
-      ? ["-3", helperPath, MANIFEST_PATH]
-      : [helperPath, MANIFEST_PATH];
-  const jsonStr = execFileSync(pythonCmd, args, {
-    encoding: "utf-8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return JSON.parse(jsonStr) as ManifestData;
+  const content = fs.readFileSync(MANIFEST_PATH, "utf-8");
+  return parseManifestYaml(content);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -224,34 +336,26 @@ function consumerReferencesKey(
 function checkRequiredHaveConsumers(entries: ManifestEntry[]): string[] {
   const violations: string[] = [];
   for (const entry of entries) {
-    if (!entry.required) continue;
     const consumers = entry.consumer ?? [];
-    if (consumers.length === 0) {
+
+    if (entry.required && consumers.length === 0) {
       violations.push(
         `REQUIRED_NO_CONSUMER: ${entry.id} (runtime=${entry.runtime}) is required:true but has no consumer`,
       );
       continue;
     }
 
-    let anyExists = false;
-    let anyReferences = false;
-    const staleConsumers: string[] = [];
-
     for (const c of consumers) {
       const result = consumerReferencesKey(c, entry.id);
-      if (result.exists) anyExists = true;
-      if (result.references) anyReferences = true;
-      if (result.exists && !result.references) staleConsumers.push(c);
-    }
-
-    if (!anyExists) {
-      violations.push(
-        `REQUIRED_MISSING_FILE: ${entry.id} (runtime=${entry.runtime}) consumer files not found: ${consumers.join(", ")}`,
-      );
-    } else if (!anyReferences) {
-      violations.push(
-        `REQUIRED_STALE_CONSUMER: ${entry.id} (runtime=${entry.runtime}) no consumer file:line references the key: ${consumers.join(", ")}`,
-      );
+      if (!result.exists) {
+        violations.push(
+          `CONSUMER_FILE_MISSING: ${entry.id} consumer "${c}" — file not found`,
+        );
+      } else if (!result.references) {
+        violations.push(
+          `CONSUMER_STALE: ${entry.id} consumer "${c}" — key not found in ±5 line window`,
+        );
+      }
     }
   }
   return violations;
