@@ -1,18 +1,25 @@
-# **Lyceon Subscription and Auto-Renewal Notice**
+---
+document: Subscription and Auto-Renewal Notice
+version: 2.0
+effective_date: 2026-09-11
+supersedes: 1.0 (2026-05-31)
+---
 
-**Effective Date:** May 31, 2026 **Last Updated:** May 31, 2026
+# **LYCEON Subscription and Auto-Renewal Notice**
+
+**Version 2.0 · Effective 11 September 2026**
 
 ---
 
 ## **Subscription Notice at a Glance**
 
-This summary provides a plain-English overview of how Lyceon subscriptions and automatic renewal work. It is not a substitute for the full notice below, which governs in case of any inconsistency.
+This summary provides a plain-English overview of how LYCEON subscriptions and automatic renewal work. It is not a substitute for the full notice below, which governs in case of any inconsistency.
 
-**Your Lyceon paid subscription renews automatically.** That means your subscription will continue and your payment method will be charged at the start of each new Billing Period until you cancel. Renewal pricing, frequency, and the next renewal date are shown in your account settings and on your billing receipts.
+**Your LYCEON paid subscription renews automatically.** That means your subscription will continue and your payment method will be charged at the start of each new Billing Period until you cancel. Renewal pricing, frequency, and the next renewal date are shown in your account settings and on your billing receipts.
 
 **You consented to automatic renewal when you subscribed.** When you completed checkout, we presented the renewal terms separately from our general Terms of Use and asked you to affirmatively agree to them. We keep a record of that consent.
 
-**You can cancel anytime.** Sign in to your Lyceon account and use the Stripe customer portal accessible from your account settings to cancel online without contacting support. You can also email **hello@lyceon.ai** if you prefer. When you cancel, you keep access to paid features through the end of your current Billing Period unless you also request a refund within an applicable window.
+**You can cancel anytime.** Sign in to your LYCEON account and use the Stripe customer portal accessible from your account settings to cancel online without contacting support. You can also email **support@lyceon.ai** if you prefer. When you cancel, you keep access to paid features through the end of your current Billing Period unless you also request a refund within an applicable window.
 
 **We send reminders.** For annual subscriptions, we email you 30 to 45 days before each renewal so you have time to cancel if you want to. For monthly subscriptions, your billing receipts and account settings always show your next renewal date.
 
@@ -26,19 +33,19 @@ This summary provides a plain-English overview of how Lyceon subscriptions and a
 
 ## **1\. About This Notice**
 
-This Subscription and Auto-Renewal Notice ("**Notice**") describes the terms under which Lyceon AI ("**Lyceon**," "**we**," "**us**," or "**our**") offers automatically renewing paid subscriptions to the Lyceon platform (the "**Service**").
+This Subscription and Auto-Renewal Notice ("**Notice**") describes the terms under which LYCEON AI ("**LYCEON**," "**we**," "**us**," or "**our**") offers automatically renewing paid subscriptions to the LYCEON platform (the "**Service**").
 
 This Notice applies to:
 
-* Anyone who subscribes to a paid Lyceon plan, whether monthly, annual, or any other recurring term  
+* Anyone who subscribes to a paid LYCEON plan, whether monthly, annual, or any other recurring term  
 * Students who hold paid subscriptions on their own accounts  
-* Parents or legal guardians who hold paid subscriptions for a minor's Lyceon account
+* Parents or legal guardians who hold paid subscriptions for a minor's LYCEON account
 
 This Notice is incorporated by reference into our **Student Terms of Use** and **Parent / Guardian Terms** and is presented to you at checkout when you start a paid subscription. It governs the terms of automatic renewal, the disclosures we make to you at checkout, the consents we obtain from you, the reminders we send, the price-change procedures we follow, and the cancellation methods we provide.
 
-Refund terms are governed by our **Refund Policy**. How we process your personal information in connection with billing and subscription management is described in our **Privacy Policy**.
+What the Payer agrees to at checkout is set out in our **LYCEON Billing Terms**. Refund terms are governed by our **Refund Policy**. How we process your personal information in connection with billing and subscription management is described in our **Privacy Policy**.
 
-In the event of a conflict between this Notice and another Lyceon document with respect to the auto-renewal terms covered by this Notice, this Notice governs unless the other document is specifically required by law to govern.
+In the event of a conflict between this Notice and another LYCEON document with respect to the auto-renewal terms covered by this Notice, this Notice governs unless the other document is specifically required by law to govern.
 
 ---
 
@@ -46,13 +53,17 @@ In the event of a conflict between this Notice and another Lyceon document with 
 
 For purposes of this Notice:
 
-**"Automatic Renewal"** means the arrangement by which your paid Lyceon subscription continues at the end of each Billing Period for a subsequent Billing Period of the same length, with the corresponding Renewal Charge applied to your payment method, until you cancel.
+**"Payer"** means the person who completes checkout and whose payment method is charged. The Payer may be the student, or a parent, guardian, or other third party purchasing on the student's behalf.
+
+**"Student Account"** means the LYCEON account to which a subscription attaches. Paid access always attaches to a Student Account, regardless of who paid.
+
+**"Automatic Renewal"** means the arrangement by which your paid LYCEON subscription continues at the end of each Billing Period for a subsequent Billing Period of the same length, with the corresponding Renewal Charge applied to your payment method, until you cancel.
 
 **"Auto-Renewal Offer Terms"** means the clear and conspicuous disclosures presented to you at checkout that describe how Automatic Renewal works for your subscription, including renewal frequency, renewal price, cancellation method, and how to receive reminder notices.
 
 **"Billing Period"** means the period of time for which a subscription charge provides access — for example, one month for a monthly subscription, or twelve months for an annual subscription.
 
-**"Initial Subscription Charge"** means the first paid subscription charge on your Lyceon account, as defined in our Refund Policy.
+**"Initial Subscription Charge"** means the first paid subscription charge on your LYCEON account, as defined in our Refund Policy.
 
 **"Renewal Charge"** means any subscription charge after your Initial Subscription Charge, as defined in our Refund Policy.
 
@@ -68,7 +79,7 @@ For purposes of this Notice:
 
 ### **3.1 Renewal Terms**
 
-When you start a paid Lyceon subscription, you authorize Lyceon and our payment processor Stripe to charge your payment method:
+When you start a paid LYCEON subscription, you authorize LYCEON and our payment processor Stripe to charge your payment method:
 
 * The Initial Subscription Charge at checkout  
 * A Renewal Charge equal to the then-current subscription price for your plan, on each Renewal Date  
@@ -76,7 +87,11 @@ When you start a paid Lyceon subscription, you authorize Lyceon and our payment 
 
 Your subscription continues automatically at the end of each Billing Period until you cancel. There is no end date — the subscription renews indefinitely until you take action to cancel it.
 
-This Notice applies only to automatically renewing paid subscriptions. If Lyceon offers a non-renewing fixed-term package in the future (for example, a single three-month or six-month plan that does not renew), that package will be governed by the checkout terms presented for that package and will not be subject to the automatic-renewal provisions of this Notice.
+This Notice applies only to automatically renewing paid subscriptions. If LYCEON offers a non-renewing fixed-term package in the future (for example, a single three-month or six-month plan that does not renew), that package will be governed by the checkout terms presented for that package and will not be subject to the automatic-renewal provisions of this Notice.
+
+**What you are buying.** A subscription funds premium access for **one Student Account**, selected at checkout. Paid access attaches to that student. If you are a parent, guardian, or third party, purchasing does not give your own account premium access — you see the student's progress because they are subscribed and connected to you.
+
+To fund more than one student, you purchase a separate subscription for each. Each renews and can be cancelled independently.
 
 ### **3.2 What You See at Checkout**
 
@@ -85,6 +100,7 @@ Before you complete your subscription, we present the Auto-Renewal Offer Terms i
 * That your subscription will continue until you cancel  
 * The frequency of Renewal Charges (monthly, annual, or as applicable)  
 * The amount of each Renewal Charge in your local currency  
+* **Which student account the subscription funds**, where you are purchasing for someone else  
 * The method by which you can cancel  
 * A summary of the reminder notices you will receive  
 * A link to this Notice and to our Refund Policy
@@ -113,12 +129,12 @@ The reminder includes:
 * The amount of the upcoming Renewal Charge  
 * The Renewal Date  
 * A direct link to cancel through the Stripe customer portal  
-* The email address to contact for cancellation assistance (**hello@lyceon.ai**)  
+* The email address to contact for cancellation assistance (**support@lyceon.ai**)  
 * A summary of any price change that will apply to the upcoming Renewal Charge, if applicable under Section 5
 
 ### **4.2 Subscriptions With Billing Periods Shorter Than Twelve Months**
 
-For subscriptions with a Billing Period shorter than twelve (12) months, including monthly subscriptions and any multi-month subscriptions Lyceon may offer (for example, three-month or six-month plans), we do not send a pre-renewal reminder before every Renewal Date unless required by applicable law in your jurisdiction. The renewal cadence is short and the renewal terms are continuously available to you in your account settings and on each billing receipt. Your next Renewal Date and Renewal Charge amount are always shown in your account settings.
+For subscriptions with a Billing Period shorter than twelve (12) months, including monthly subscriptions and any multi-month subscriptions LYCEON may offer (for example, three-month or six-month plans), we do not send a pre-renewal reminder before every Renewal Date unless required by applicable law in your jurisdiction. The renewal cadence is short and the renewal terms are continuously available to you in your account settings and on each billing receipt. Your next Renewal Date and Renewal Charge amount are always shown in your account settings.
 
 We do send confirmation of each Renewal Charge after it occurs, in the form of a billing receipt sent to the email address on your account.
 
@@ -128,9 +144,11 @@ For any subscription with a Billing Period of twelve (12) months or longer, we a
 
 ### **4.4 Where We Send Reminders**
 
-We send reminders to the email address associated with your Lyceon account. You are responsible for keeping your email address current in your account settings. We are not responsible for reminders that you do not receive because the email address on your account is invalid, full, blocked, or filtered to spam by your email provider.
+We send reminder notices to **the Payer's email address** — the address associated with the payment method and held by our payment processor. Where the Payer is a parent, guardian, or third party, this may differ from the student's account email.
 
-If you do not receive a reminder for a subscription with a Billing Period of twelve (12) months or longer and the reminder is required under this Section 4, contact us at **hello@lyceon.ai** and we will work with you to resolve the situation, which may include refund accommodation outside the standard Refund Policy windows where appropriate.
+Reminders concern billing, so they go to the person who will be charged. We also make them available in account settings. Keep the Payer's email address current; if it becomes invalid we may be unable to deliver a required notice.
+
+If you do not receive a reminder for a subscription with a Billing Period of twelve (12) months or longer and the reminder is required under this Section 4, contact us at **support@lyceon.ai** and we will work with you to resolve the situation, which may include refund accommodation outside the standard Refund Policy windows where appropriate.
 
 ---
 
@@ -143,17 +161,19 @@ We may change the price of subscriptions from time to time. When we change a pri
 * **Material Price Increase** (more than 10% of the prior price, or more than $5.00 per Billing Period, whichever is greater): at least **thirty (30) calendar days'** advance written notice before the new price takes effect  
 * **Non-Material Price Change** (any price change that is not a Material Price Increase, including price decreases, minor adjustments, and fee additions below the Material Price Increase threshold): at least **seven (7) calendar days'** advance written notice
 
-We send price-change notices by email to the email address associated with your Lyceon account, and we display the upcoming price change in your account settings.
+We send price-change notices by email to the email address associated with your LYCEON account, and we display the upcoming price change in your account settings.
+
+Price-change notices go to the Payer's email address, on the same basis as Section 4.4.
 
 ### **5.2 What You Can Do When You Receive a Price-Change Notice**
 
 When you receive a price-change notice, you have the following options:
 
 * **Accept the new price** by taking no action — your subscription will renew at the new price on the next Renewal Date after the notice period ends  
-* **Cancel your subscription** at any time before the new price takes effect, through the Stripe customer portal or by emailing **hello@lyceon.ai** — your subscription will continue at the existing price through the end of your current Billing Period, then end without renewal  
-* **Contact us** at **hello@lyceon.ai** with questions or concerns about the price change
+* **Cancel your subscription** at any time before the new price takes effect, through the Stripe customer portal or by emailing **support@lyceon.ai** — your subscription will continue at the existing price through the end of your current Billing Period, then end without renewal  
+* **Contact us** at **support@lyceon.ai** with questions or concerns about the price change
 
-We will not apply the new price to a Renewal Charge that occurs before the notice period has elapsed. Where applicable law requires affirmative consent, additional notice, or specific cancellation rights for a price change, Lyceon follows those requirements before applying the new price, in addition to the notice procedures described in this Section 5\.
+We will not apply the new price to a Renewal Charge that occurs before the notice period has elapsed. Where applicable law requires affirmative consent, additional notice, or specific cancellation rights for a price change, LYCEON follows those requirements before applying the new price, in addition to the notice procedures described in this Section 5\.
 
 ### **5.3 No Notice Required for Lower Prices on New Subscribers**
 
@@ -167,7 +187,7 @@ Changes in applicable taxes, currency conversion rates, or payment-network fees 
 
 ## **6\. California Consumers — Automatic Renewal Law Compliance**
 
-If you reside in California, the California Automatic Renewal Law (California Business and Professions Code § 17600 et seq., as amended by Assembly Bill 2863 effective July 1, 2025\) provides specific protections for automatically renewing subscriptions. This Section 6 describes how Lyceon complies with that law. Nothing in this Section 6 limits any right you may have under California law.
+If you reside in California, the California Automatic Renewal Law (California Business and Professions Code § 17600 et seq., as amended by Assembly Bill 2863 effective July 1, 2025\) provides specific protections for automatically renewing subscriptions. This Section 6 describes how LYCEON complies with that law. Nothing in this Section 6 limits any right you may have under California law.
 
 ### **6.1 Clear and Conspicuous Disclosure**
 
@@ -179,13 +199,13 @@ We obtain your express affirmative consent to the Auto-Renewal Offer Terms separ
 
 ### **6.3 Acknowledgment**
 
-After checkout, we send you a confirmation acknowledgment that includes the Auto-Renewal Offer Terms, your cancellation rights, and information about how to cancel. This acknowledgment is sent to the email address associated with your Lyceon account and is also accessible from your account settings.
+After checkout, we send you a confirmation acknowledgment that includes the Auto-Renewal Offer Terms, your cancellation rights, and information about how to cancel. This acknowledgment is sent to **the Payer's email address** and is also accessible from the paying account's settings.
 
 ### **6.4 Easy Cancellation — "Click to Cancel"**
 
 Because you signed up for your subscription online, you can cancel online through the Stripe customer portal accessible from your account settings, using the same medium in which you subscribed. Cancellation through the customer portal takes effect immediately for the purpose of preventing future Renewal Charges. No additional steps beyond the customer portal are required to cancel. This complies with California Business and Professions Code § 17602(c)–(d).
 
-You may also cancel by emailing **hello@lyceon.ai**. Email cancellation is provided as an alternative and is not required for compliance — the online customer-portal path is the primary cancellation mechanism.
+You may also cancel by emailing **support@lyceon.ai**. Email cancellation is provided as an alternative and is not required for compliance — the online customer-portal path is the primary cancellation mechanism.
 
 ### **6.5 Annual Reminders**
 
@@ -201,23 +221,23 @@ We keep records of your consent to the Auto-Renewal Offer Terms for no less than
 
 ### **6.8 Free-to-Pay Conversions**
 
-Lyceon does not currently offer free trials that automatically convert to paid subscriptions. If we add such offerings in the future, we will comply with the free-to-pay conversion requirements of California Business and Professions Code § 17601(a)(1) and § 17602, including providing the additional disclosures and consents required by the California Automatic Renewal Law for free-to-pay conversions, and will update this Notice accordingly.
+LYCEON does not currently offer free trials that automatically convert to paid subscriptions. If we add such offerings in the future, we will comply with the free-to-pay conversion requirements of California Business and Professions Code § 17601(a)(1) and § 17602, including providing the additional disclosures and consents required by the California Automatic Renewal Law for free-to-pay conversions, and will update this Notice accordingly.
 
 ### **6.9 California Remedies**
 
-If you believe Lyceon has not complied with the California Automatic Renewal Law with respect to your subscription, you may have rights under California law to seek remedies including refunds and other relief. Contact us first at **hello@lyceon.ai** so we have the opportunity to address your concerns directly. You may also contact the California Attorney General's office or seek other remedies available to you under California law.
+If you believe LYCEON has not complied with the California Automatic Renewal Law with respect to your subscription, you may have rights under California law to seek remedies including refunds and other relief. Contact us first at **support@lyceon.ai** so we have the opportunity to address your concerns directly. You may also contact the California Attorney General's office or seek other remedies available to you under California law.
 
 ---
 
 ## **7\. European Union, European Economic Area, and United Kingdom Consumers — Distance-Selling and Withdrawal Rights**
 
-If you reside in the European Union, European Economic Area, or United Kingdom and you contracted with Lyceon as a consumer through a distance-selling arrangement, you have rights under the EU Consumer Rights Directive (Directive 2011/83/EU, as amended by Directive (EU) 2019/2161 — the "Modernisation Directive") and the UK Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013\. Nothing in this Section 7 limits any right you may have under applicable law.
+If you reside in the European Union, European Economic Area, or United Kingdom and you contracted with LYCEON as a consumer through a distance-selling arrangement, you have rights under the EU Consumer Rights Directive (Directive 2011/83/EU, as amended by Directive (EU) 2019/2161 — the "Modernisation Directive") and the UK Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013\. Nothing in this Section 7 limits any right you may have under applicable law.
 
 ### **7.1 Pre-Contractual Information**
 
 Before you complete your subscription, we provide the pre-contractual information required by Articles 6 and 8 of the EU Consumer Rights Directive (or the equivalent UK regulations), including:
 
-* The identity of Lyceon as the trader, our email address, and other contact information  
+* The identity of LYCEON as the trader, our email address, and other contact information  
 * The main characteristics of the Service  
 * The total price of the subscription, including taxes and any additional fees  
 * The duration of the contract and the conditions for terminating the contract, including any minimum duration of obligations  
@@ -239,11 +259,11 @@ Under the EU Consumer Rights Directive as amended by the Modernisation Directive
 
 Where there is doubt about the classification, the rules on the right of withdrawal for digital services apply (as clarified in Recital 30 of the Modernisation Directive). The Court of Justice of the European Union has held that the Article 16(m) exception to the right of withdrawal is to be interpreted strictly (Case C-641/19, *PE Digital*).
 
-The classification that applies to your Lyceon subscription, and the corresponding withdrawal-rights and consent mechanics, are presented to you at checkout in the Required Checkout Disclosure Text. Lyceon's classification of a subscription as a digital service or supply of digital content for withdrawal-right purposes is determined through counsel-approved checkout configuration for the applicable jurisdiction and product offering, and is not selected by individual product or support personnel. Where the digital-content classification applies, the checkout flow captures your prior express consent and acknowledgment in the form required by applicable law, and we send you confirmation of the contract concluded as required by Article 7(2) of the EU Consumer Rights Directive.
+The classification that applies to your LYCEON subscription, and the corresponding withdrawal-rights and consent mechanics, are presented to you at checkout in the Required Checkout Disclosure Text. LYCEON's classification of a subscription as a digital service or supply of digital content for withdrawal-right purposes is determined through counsel-approved checkout configuration for the applicable jurisdiction and product offering, and is not selected by individual product or support personnel. Where the digital-content classification applies, the checkout flow captures your prior express consent and acknowledgment in the form required by applicable law, and we send you confirmation of the contract concluded as required by Article 7(2) of the EU Consumer Rights Directive.
 
 ### **7.4 Exercising Your Withdrawal Right**
 
-To exercise your withdrawal right, send a clear statement of your decision to withdraw to **hello@lyceon.ai** within fourteen (14) calendar days of the date you subscribed. You may use the model withdrawal form provided in Annex I(B) of the EU Consumer Rights Directive (or the equivalent UK form), but you are not required to.
+To exercise your withdrawal right, send a clear statement of your decision to withdraw to **support@lyceon.ai** within fourteen (14) calendar days of the date you subscribed. You may use the model withdrawal form provided in Annex I(B) of the EU Consumer Rights Directive (or the equivalent UK form), but you are not required to.
 
 We will refund all payments received from you for the subscription without undue delay and no later than fourteen (14) calendar days after the day on which we are informed of your decision to withdraw, in accordance with Article 13 of the EU Consumer Rights Directive. Where the digital-content waiver under Article 16(m) applies, no refund is due, but we will explain the basis of our decision when you exercise your withdrawal request.
 
@@ -263,7 +283,7 @@ UK consumers may have access to the UK's alternative-dispute-resolution scheme o
 
 ### **7.7 Online Withdrawal Function**
 
-Where applicable law requires an electronic withdrawal function for distance contracts concluded through an online interface, Lyceon provides the required withdrawal function or an equivalent counsel-approved electronic withdrawal mechanism. This includes, where applicable, the obligations established under Article 11a of the EU Consumer Rights Directive (as inserted by Directive (EU) 2023/2673), which applies from 19 June 2026 and requires online traders to enable consumers to exercise the right of withdrawal through a dedicated online function that is at least as easy to use as the process for concluding the contract.
+Where applicable law requires an electronic withdrawal function for distance contracts concluded through an online interface, LYCEON provides the required withdrawal function or an equivalent counsel-approved electronic withdrawal mechanism. This includes, where applicable, the obligations established under Article 11a of the EU Consumer Rights Directive (as inserted by Directive (EU) 2023/2673), which applies from 19 June 2026 and requires online traders to enable consumers to exercise the right of withdrawal through a dedicated online function that is at least as easy to use as the process for concluding the contract.
 
 The online withdrawal function described in this Section 7.7 is in addition to, not in place of, the email withdrawal path described in Section 7.4 and the model withdrawal form provided in Annex I(B) of the EU Consumer Rights Directive (or equivalent UK form). You may exercise your withdrawal right through any of these methods.
 
@@ -275,7 +295,7 @@ If you reside in Quebec, the Quebec Consumer Protection Act ("**LPC**") may appl
 
 We provide the disclosures, written confirmation, and cancellation mechanisms required by the LPC at checkout and in this Notice. Where the LPC provides rights more favorable to you than this Notice or our Refund Policy, the LPC governs.
 
-To exercise any LPC-based right, contact us at **hello@lyceon.ai**.
+To exercise any LPC-based right, contact us at **support@lyceon.ai**.
 
 ---
 
@@ -299,18 +319,18 @@ We comply with the consumer-protection law of each jurisdiction where we offer t
 
 ### **11.1 Self-Serve Online Cancellation — Primary Method**
 
-You can cancel your Lyceon subscription at any time through the Stripe customer portal accessible from your Lyceon account settings. The cancellation process is:
+You can cancel your LYCEON subscription at any time through the Stripe customer portal accessible from your LYCEON account settings. The cancellation process is:
 
-1. Sign in to your Lyceon account  
+1. Sign in to your LYCEON account  
 2. Open account settings  
 3. Click the link to manage your subscription, which opens the Stripe customer portal  
 4. Follow the cancellation prompts in the Stripe customer portal
 
-There are no additional steps, retention offers you must decline, or "wait" periods imposed by Lyceon between starting the cancellation process and your cancellation taking effect.
+There are no additional steps, retention offers you must decline, or "wait" periods imposed by LYCEON between starting the cancellation process and your cancellation taking effect.
 
 ### **11.2 Email Cancellation — Alternative Method**
 
-If you prefer, you can cancel by emailing **hello@lyceon.ai** from the email address associated with your Lyceon account. Include the email address on your account and a clear statement that you want to cancel your subscription. We will process the cancellation as soon as possible after receiving your email.
+If you prefer, you can cancel by emailing **support@lyceon.ai** from the email address associated with your LYCEON account. Include the email address on your account and a clear statement that you want to cancel your subscription. We will process the cancellation as soon as possible after receiving your email.
 
 ### **11.3 Cancellation Effect**
 
@@ -332,16 +352,16 @@ If you cancel and also request a refund within an applicable refund window (the 
 
 ### **12.1 Stripe**
 
-Lyceon uses **Stripe, Inc.** ("**Stripe**") as our payment processor for all paid subscriptions. When you subscribe, your payment information is collected and processed by Stripe, not by Lyceon directly. Stripe's processing of your payment information is governed by Stripe's privacy policy and terms of service.
+LYCEON uses **Stripe, Inc.** ("**Stripe**") as our payment processor for all paid subscriptions. When you subscribe, your payment information is collected and processed by Stripe, not by LYCEON directly. Stripe's processing of your payment information is governed by Stripe's privacy policy and terms of service.
 
-Stripe stores your payment method on file for the purpose of processing Renewal Charges, applying refunds, and updating your payment method when your card is renewed by your issuing bank. We do not store your full payment card number or other sensitive payment credentials on Lyceon systems. How we process payment-related personal information is described in our **Privacy Policy**.
+Stripe stores your payment method on file for the purpose of processing Renewal Charges, applying refunds, and updating your payment method when your card is renewed by your issuing bank. We do not store your full payment card number or other sensitive payment credentials on LYCEON systems. How we process payment-related personal information is described in our **Privacy Policy**.
 
 ### **12.2 Updating Your Payment Method**
 
-You can update your payment method at any time through the Stripe customer portal accessible from your Lyceon account settings. If your payment method expires, is canceled, or is otherwise unable to process a Renewal Charge:
+You can update your payment method at any time through the Stripe customer portal accessible from your LYCEON account settings. If your payment method expires, is canceled, or is otherwise unable to process a Renewal Charge:
 
-* Stripe and Lyceon may attempt to retry the charge over a short period in accordance with industry-standard payment-retry practices  
-* We will notify you by email at the address associated with your Lyceon account  
+* Stripe and LYCEON may attempt to retry the charge over a short period in accordance with industry-standard payment-retry practices  
+* We will notify you by email at the address associated with your LYCEON account  
 * If the payment method cannot be successfully charged within the retry period, your subscription may be paused or canceled and your access to paid features may be ended pending an updated payment method
 
 If your subscription is canceled due to unsuccessful payment retries, you can resubscribe at any time by signing in and updating your payment method.
@@ -358,11 +378,11 @@ This Section 13 reproduces the substantive disclosure text presented to you at c
 
 ### **13.1 General Auto-Renewal Disclosure**
 
-By starting your Lyceon subscription, you authorize Lyceon and our payment processor Stripe to charge your payment method the price shown above on the date of subscription and at the start of each subsequent Billing Period until you cancel. Your subscription will continue automatically and the corresponding charges will be made until you cancel. You can cancel at any time through the customer portal in your account settings or by emailing hello@lyceon.ai. For annual subscriptions, we send you a reminder by email 30 to 45 days before each renewal date. For price changes affecting your Renewal Charges, we send you advance written notice as described in our Subscription and Auto-Renewal Notice.
+By starting your LYCEON subscription, you authorize LYCEON and our payment processor Stripe to charge your payment method the price shown above on the date of subscription and at the start of each subsequent Billing Period until you cancel. Your subscription will continue automatically and the corresponding charges will be made until you cancel. You can cancel at any time through the customer portal in your account settings or by emailing support@lyceon.ai. For annual subscriptions, we send you a reminder by email 30 to 45 days before each renewal date. For price changes affecting your Renewal Charges, we send you advance written notice as described in our Subscription and Auto-Renewal Notice.
 
 ### **13.2 California-Specific Affirmative-Consent Text**
 
-For California consumers, the checkout flow presents the auto-renewal terms in a clearly marked, separately presented disclosure block in visual proximity to the affirmative-consent checkbox. The affirmative-consent action is captured separately from acceptance of the Lyceon Terms of Use. The full text of the California disclosure block is consistent with Section 13.1 above and includes the additional language:
+For California consumers, the checkout flow presents the auto-renewal terms in a clearly marked, separately presented disclosure block in visual proximity to the affirmative-consent checkbox. The affirmative-consent action is captured separately from acceptance of the LYCEON Terms of Use. The full text of the California disclosure block is consistent with Section 13.1 above and includes the additional language:
 
 I agree to the Auto-Renewal Terms above, including that my subscription will continue and my payment method will be charged at each renewal until I cancel. I understand that I can cancel at any time through the customer portal in my account settings.
 
@@ -370,15 +390,15 @@ I agree to the Auto-Renewal Terms above, including that my subscription will con
 
 For EU, EEA, and UK consumers, the checkout flow presents the pre-contractual information required by Articles 6 and 8 of the EU Consumer Rights Directive (or the equivalent UK regulations), including the right of withdrawal and a copy of or link to the standard withdrawal form (Annex I(B)).
 
-Where Lyceon classifies the subscription as a digital service and the standard 14-day withdrawal right applies, the checkout flow includes:
+Where LYCEON classifies the subscription as a digital service and the standard 14-day withdrawal right applies, the checkout flow includes:
 
-You have the right to withdraw from this contract within 14 days without giving any reason. The withdrawal period expires 14 days from the day of conclusion of the contract. To exercise the right of withdrawal, you must inform Lyceon AI at hello@lyceon.ai of your decision to withdraw from this contract by an unequivocal statement. You may use the model withdrawal form (linked), but it is not obligatory. If you exercise your withdrawal right after you have requested to begin performance during the withdrawal period, you shall pay us an amount that is in proportion to what has been provided to you until you have communicated your withdrawal.
+You have the right to withdraw from this contract within 14 days without giving any reason. The withdrawal period expires 14 days from the day of conclusion of the contract. To exercise the right of withdrawal, you must inform LYCEON AI at support@lyceon.ai of your decision to withdraw from this contract by an unequivocal statement. You may use the model withdrawal form (linked), but it is not obligatory. If you exercise your withdrawal right after you have requested to begin performance during the withdrawal period, you shall pay us an amount that is in proportion to what has been provided to you until you have communicated your withdrawal.
 
-Where Lyceon classifies the subscription as supply of digital content not on a tangible medium and seeks the Article 16(m) waiver of the withdrawal right, the checkout flow additionally presents:
+Where LYCEON classifies the subscription as supply of digital content not on a tangible medium and seeks the Article 16(m) waiver of the withdrawal right, the checkout flow additionally presents:
 
-I expressly consent to Lyceon beginning performance of the contract during the 14-day withdrawal period, and I acknowledge that by giving this consent, I will lose my right of withdrawal once performance has begun.
+I expressly consent to LYCEON beginning performance of the contract during the 14-day withdrawal period, and I acknowledge that by giving this consent, I will lose my right of withdrawal once performance has begun.
 
-The Article 16(m) consent and acknowledgment are captured separately and only where the digital-content classification is the basis for the checkout flow as determined by Lyceon in consultation with applicable law.
+The Article 16(m) consent and acknowledgment are captured separately and only where the digital-content classification is the basis for the checkout flow as determined by LYCEON in consultation with applicable law.
 
 ### **13.4 Variations by Jurisdiction**
 
@@ -392,7 +412,7 @@ We may update this Notice from time to time. When we do, we will update the "Las
 
 Changes to this Notice apply prospectively to subscriptions and Renewal Charges that occur after the Effective Date of the updated Notice. Subscriptions and Renewal Charges that occurred before the Effective Date of an updated Notice continue to be governed by the version of the Notice in effect at the time.
 
-If you do not agree with a change to this Notice, you may cancel your subscription before the change takes effect through the Stripe customer portal or by emailing **hello@lyceon.ai**. Continued use of the Service after the Effective Date of an updated Notice constitutes acceptance of the updated Notice.
+If you do not agree with a change to this Notice, you may cancel your subscription before the change takes effect through the Stripe customer portal or by emailing **support@lyceon.ai**. Continued use of the Service after the Effective Date of an updated Notice constitutes acceptance of the updated Notice.
 
 Nothing in this Section 14 limits your rights under applicable consumer-protection law, which may require additional notice, consent, or cancellation procedures for material changes.
 
@@ -402,9 +422,9 @@ Nothing in this Section 14 limits your rights under applicable consumer-protecti
 
 For subscription and billing questions, cancellation requests, withdrawal-right exercises, price-change inquiries, or questions about this Notice, contact us at:
 
-**Email:** hello@lyceon.ai
+**Email:** support@lyceon.ai
 
-For cancellation, the primary method is the self-serve Stripe customer portal accessible from your Lyceon account settings, as described in Section 11.1.
+For cancellation, the primary method is the self-serve Stripe customer portal accessible from your LYCEON account settings, as described in Section 11.1.
 
 ---
 
