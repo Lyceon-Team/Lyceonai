@@ -224,3 +224,22 @@ Owner brief "Notification Retention Sweep + Notifications Page". Migration `2026
 | MC11 | Archive button label loses the item title (icon-only class) | page | B2 fails |
 
 Push-backs recorded in the PR: the fifth existing cron was added by the notifications rebuild (dispatch sweep), not by the deletion-notice PR; SCL-082 cannot be moved off PROPOSED by an agent and is not closed by the sweep (it is about spec text); C11.2 as written forbade a retention delete and is rewritten to describe the sweep; the feed function and a mark-all-read function were missing and are added in the same migration; unmatched delivery events (`message_id IS NULL`) have no cascade parent and are not swept — owner decision.
+
+### 11.1 Amendment — orphaned delivery events (2026-09-16)
+
+Owner brief "Retention Sweep Amendment: Orphaned Delivery Events". Prod held 10 delivery events, 5 unmatched (`message_id IS NULL`); the sweep manufactures that class once messages age out. Migration `20260916100000_notification_retention_sweep_orphaned_delivery_events.sql` (written, NOT applied) recreates the ONE sweep function in full — DROP by signature is required because the RETURNS TABLE gains `deleted_orphan_delivery_events` — with a second branch in the same transaction under the same cutoff: unmatched delivery events aged on `received_at`, bounded per call (per-branch bound, not a shared budget, so an event backlog cannot starve orphan cleanup). Parent path untouched. Log line carries both counts. Contract C11.2/C11.3 and SCL-082 amended in place (status PROPOSED, SCL-042 untouched). Operator file gains rows 9–11.
+
+**Observed failing once** (local Postgres 16, genesis + all migrations; each mutation applied, the suite run, the file restored):
+
+| # | Mutation | Observed |
+| --- | --- | --- |
+| MO1 | orphan branch predicate `AND false` (branch removed) | O1, O6, C11.1-amended fail; **O3 stays green** — the matched path is the cascade, as required |
+| MO2 | orphan branch ignores the window (`AND true`) | O2, O5 fail (young orphans deleted) |
+| MO3 | orphan count reported as 0 | O1, O6 fail |
+| MO4 | orphan branch loses `LIMIT p_batch_size` | O6 fails (5 orphans on batch 2) |
+| MO5 | orphan branch keyed on `occurred_at` with a skew | C11.1-amended fails (`received_at < v_cutoff` absent) |
+| MO6 | `message_id IS NULL` predicate dropped (matched rows deleted by branch 2) | O4 fails (young parent's child deleted) |
+| MO7 | second cutoff derivation (`now() - interval '90 days'`) in branch 2 | C11.1 and C11.1-amended fail (literal window, two derivations) |
+| MO8 | log line drops the orphan count | O5, A3.4, O1, O2 fail |
+| MO9 | `batchFull` ignores the orphan branch | O7 fails (orphan-only bound not reported) |
+

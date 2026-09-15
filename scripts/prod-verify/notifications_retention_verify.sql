@@ -1,6 +1,7 @@
 -- ===========================================================================
 -- NOTIFICATIONS RETENTION — POST-APPLY VERIFY
--- (after 20260915100000_notification_retention_sweep_and_feed_archive.sql)
+-- (after 20260915100000_notification_retention_sweep_and_feed_archive.sql AND
+--  20260916100000_notification_retention_sweep_orphaned_delivery_events.sql)
 -- ===========================================================================
 -- READ-ONLY. Paste into the Supabase SQL editor and run. Nothing here writes: the sweep is
 -- NOT invoked; only catalog facts and the window constant are read.
@@ -8,10 +9,11 @@
 -- @spec [contracts/notifications.contract.md C11.1 (window = 90, defined once), C11.2 (the
 --        sweep: SECURITY DEFINER, pinned search_path, reads the window function, no literal
 --        window), C3.1 (feed carries p_archived and archived_at), C3.2 (mark-all-read)]
--- @implemented [2026-09-15]
+-- @implemented [2026-09-15, amended 2026-09-16]
 --
 -- plain English: one row per assertion, expected inline, OVERALL last. Rows 1–8 are the
--- objects the migration creates or replaces. Rows 9–10 are the negative control: the same
+-- objects the first migration creates or replaces; rows 9–11 are the orphan branch added by
+-- 20260916100000 (same function, same cutoff, both counts). Rows 12–13 are the negative control: the same
 -- "no literal window in the body" test is run against a temp function that DOES carry the
 -- literal, and must read FAIL there — a check that cannot tell the two apart reads STOP on
 -- its own control.
@@ -71,11 +73,26 @@ a(seq, assertion, expected, observed) AS (
        'present',
        coalesce((SELECT CASE WHEN secdef THEN 'present' ELSE 'NOT definer' END
                    FROM fn WHERE proname = 'mark_all_notifications_read' AND args = 'p_recipient_id uuid'), 'MISSING')),
+  ( 9, 'sweep has the orphan branch: deletes notification_delivery_events WHERE message_id IS NULL on received_at',
+       'present',
+       coalesce((SELECT CASE WHEN position('DELETE FROM public.notification_delivery_events' IN def) > 0
+                              AND position('message_id IS NULL' IN def) > 0
+                              AND position('received_at < v_cutoff' IN def) > 0
+                             THEN 'present' ELSE 'absent' END
+                   FROM fn WHERE proname = 'sweep_notification_retention'), 'MISSING')),
+  (10, 'sweep derives the cutoff exactly ONCE (one window read for both branches)',
+       '1',
+       coalesce((SELECT ((length(def) - length(replace(def, 'public.notification_retention_days()', ''))) / length('public.notification_retention_days()'))::text
+                   FROM fn WHERE proname = 'sweep_notification_retention'), 'MISSING')),
+  (11, 'sweep returns deleted_orphan_delivery_events',
+       'present',
+       coalesce((SELECT CASE WHEN position('deleted_orphan_delivery_events' IN def) > 0 THEN 'present' ELSE 'absent' END
+                   FROM fn WHERE proname = 'sweep_notification_retention'), 'MISSING')),
   -- Negative control: the literal detector must FIRE on a body that carries the literal.
-  ( 9, 'CONTROL: literal detector fires on a body carrying interval ''90 days''',
+  (12, 'CONTROL: literal detector fires on a body carrying interval ''90 days''',
        'literal present',
        pg_temp.window_literal_present(pg_get_functiondef('pg_temp.control_with_literal()'::regprocedure))),
-  (10, 'CONTROL: the control function is not what row 5 tested (different body)',
+  (13, 'CONTROL: the control function is not what row 5 tested (different body)',
        'different',
        CASE WHEN (SELECT def FROM fn WHERE proname = 'sweep_notification_retention')
                  = pg_get_functiondef('pg_temp.control_with_literal()'::regprocedure)
@@ -90,7 +107,7 @@ FROM (
   SELECT 99, 'OVERALL', 'every row PASS',
          count(*) FILTER (WHERE observed <> expected)::text || ' FAIL of ' || count(*)::text,
          CASE WHEN count(*) FILTER (WHERE observed <> expected) = 0
-              THEN 'OK: retention sweep, feed archive view and mark-all-read landed as written'
+              THEN 'OK: retention sweep (both branches), feed archive view and mark-all-read landed as written'
               ELSE 'STOP: ' || count(*) FILTER (WHERE observed <> expected)::text || ' assertion(s) FAIL, read the rows above'
          END AS verdict
   FROM a

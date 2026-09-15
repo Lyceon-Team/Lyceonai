@@ -1,11 +1,14 @@
 /**
  * @spec [contracts/notifications.contract.md §11 — C11.1 (90-day window, defined once in
- *        SQL as `notification_retention_days()`), C11.2 (the sweep: one DELETE on
- *        notification_events, messages and delivery events by FK cascade, bounded per call),
- *        C11.3 (every run logs its outcome, zero-row runs included, with the cutoff);
- *        Doc-06D_V1.0 §9 (a retention rule without a mechanism is retention drift);
- *        lyceon-coding-standards §7.1 (parse at the boundary), §12.1 (ids and counts only),
- *        §13 (no silent catch); owner brief 2026-09-15 Part A] | @implemented [2026-09-15]
+ *        SQL as `notification_retention_days()`), C11.2 (the sweep: ONE function, one
+ *        transaction, two branches under one window — expired events with messages and
+ *        matched delivery events by FK cascade, and unmatched delivery events aged on
+ *        received_at — each bounded per call), C11.3 (every run logs its outcome, zero-row
+ *        runs included, with both counts and the cutoff); Doc-06D_V1.0 §9 (a retention
+ *        rule without a mechanism is retention drift); lyceon-coding-standards §7.1 (parse
+ *        at the boundary), §12.1 (ids and counts only), §13 (no silent catch); owner briefs
+ *        2026-09-15 Part A and 2026-09-16 (orphaned delivery events)]
+ *        | @implemented [2026-09-15, amended 2026-09-16]
  *
  * plain English: the one code path that enforces notification retention. It calls the SQL
  * function that owns the rule and reports what happened. The window lives in SQL and ONLY
@@ -28,10 +31,13 @@ import { logger } from "../../logger";
 export type NotificationRetentionSweepSummary = {
   deletedEvents: number;
   deletedMessages: number;
-  /** ISO timestamp: rows created before this were eligible. */
+  /** Unmatched delivery events (no message) aged out on received_at — the orphan branch. */
+  deletedOrphanDeliveryEvents: number;
+  /** ISO timestamp: rows older than this (events by created_at, orphans by received_at) were eligible. */
   cutoff: string;
+  /** Per-branch bound: at most this many events AND at most this many orphans per call. */
   batchSize: number;
-  /** true when the batch bound was hit, so more rows may remain for the next run. */
+  /** true when either branch hit its bound, so more rows may remain for the next run. */
   batchFull: boolean;
 };
 
@@ -75,12 +81,15 @@ export async function sweepNotificationRetention(
   const summary: NotificationRetentionSweepSummary = {
     deletedEvents: row.deleted_events,
     deletedMessages: row.deleted_messages,
+    deletedOrphanDeliveryEvents: row.deleted_orphan_delivery_events,
     cutoff: row.cutoff,
     batchSize,
-    batchFull: row.deleted_events >= batchSize,
+    batchFull:
+      row.deleted_events >= batchSize ||
+      row.deleted_orphan_delivery_events >= batchSize,
   };
 
-  // C11.3 — on EVERY run, including a run that deleted nothing.
+  // C11.3 — on EVERY run, including a run that deleted nothing on BOTH branches.
   logger.info(
     "NOTIFICATIONS",
     "retention_sweep_completed",

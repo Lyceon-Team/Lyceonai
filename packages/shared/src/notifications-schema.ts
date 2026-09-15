@@ -137,10 +137,12 @@ export type NotificationFeedRow = z.infer<typeof notificationFeedRowSchema>;
 // ── Retention sweep (contract §11) ───────────────────────────────────────────
 
 /**
- * @spec [contracts/notifications.contract.md C11.2] | @implemented [2026-09-15]
- * How many expired events one sweep call may delete. The WINDOW is not here: it has exactly
- * one definition, `public.notification_retention_days()` in SQL, which the sweep reads and
- * the PG suite asserts against C11.1. This is only the per-call bound the cron passes in.
+ * @spec [contracts/notifications.contract.md C11.2] | @implemented [2026-09-15, amended 2026-09-16]
+ * How many rows one sweep call may delete PER BRANCH: at most this many expired events and,
+ * independently, at most this many orphaned delivery events. The WINDOW is not here: it has
+ * exactly one definition, `public.notification_retention_days()` in SQL, which the sweep
+ * reads and the PG suite asserts against C11.1. This is only the per-call bound the cron
+ * passes in.
  */
 export const NOTIFICATION_RETENTION_SWEEP_BATCH_SIZE = 1000;
 
@@ -148,6 +150,8 @@ export const NOTIFICATION_RETENTION_SWEEP_BATCH_SIZE = 1000;
 export const notificationRetentionSweepRowSchema = z.object({
   deleted_events: z.number().int().min(0),
   deleted_messages: z.number().int().min(0),
+  /** Unmatched delivery events (message_id IS NULL) aged out on received_at — C11.2 branch 2. */
+  deleted_orphan_delivery_events: z.number().int().min(0),
   cutoff: timestampSchema,
 });
 export type NotificationRetentionSweepRow = z.infer<

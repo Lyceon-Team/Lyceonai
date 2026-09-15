@@ -82,6 +82,7 @@ describe("notification retention sweep — scheduling and gating", () => {
       sweepMock.mockResolvedValueOnce({
         deletedEvents: 0,
         deletedMessages: 0,
+        deletedOrphanDeliveryEvents: 0,
         cutoff: "2026-06-17T05:00:00.000Z",
         batchSize: 1000,
         batchFull: false,
@@ -94,6 +95,7 @@ describe("notification retention sweep — scheduling and gating", () => {
         ok: true,
         deletedEvents: 0,
         deletedMessages: 0,
+        deletedOrphanDeliveryEvents: 0,
         cutoff: "2026-06-17T05:00:00.000Z",
         batchSize: 1000,
         batchFull: false,

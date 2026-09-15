@@ -3921,24 +3921,27 @@ COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagn
 -- Name: sweep_notification_retention(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.sweep_notification_retention(p_batch_size integer) RETURNS TABLE(deleted_events integer, deleted_messages integer, cutoff timestamp with time zone)
+CREATE FUNCTION public.sweep_notification_retention(p_batch_size integer) RETURNS TABLE(deleted_events integer, deleted_messages integer, deleted_orphan_delivery_events integer, cutoff timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_cutoff            timestamptz;
-  v_deleted_events    integer;
-  v_deleted_messages  integer;
+  v_cutoff                          timestamptz;
+  v_deleted_events                  integer;
+  v_deleted_messages                integer;
+  v_deleted_orphan_delivery_events  integer;
 BEGIN
   IF p_batch_size IS NULL OR p_batch_size < 1 THEN
     RAISE EXCEPTION 'sweep_notification_retention: p_batch_size must be >= 1 (got %)', p_batch_size
       USING ERRCODE = '22023';
   END IF;
 
+  -- ONE cutoff for both branches, from the ONE window definition.
   v_cutoff := now() - make_interval(days => public.notification_retention_days());
 
-  -- Every CTE in one statement sees the same snapshot, so `doomed_messages` counts the
-  -- messages that the DELETE's cascade is about to remove — the cascade is what is proven.
+  -- Branch 1 — the parent path. Expired events go; messages and the delivery events
+  -- attached to them go by FK cascade. Every CTE sees the same snapshot, so
+  -- `doomed_messages` counts the messages the DELETE's cascade is about to remove.
   WITH doomed AS (
     SELECT e.event_id
       FROM public.notification_events e
@@ -3959,9 +3962,27 @@ BEGIN
   SELECT (SELECT count(*)::integer FROM deleted), (SELECT n FROM doomed_messages)
     INTO v_deleted_events, v_deleted_messages;
 
-  deleted_events   := v_deleted_events;
-  deleted_messages := v_deleted_messages;
-  cutoff           := v_cutoff;
+  -- Branch 2 — the orphan path. A delivery event with no message has no parent to cascade
+  -- from; it is aged on its own `received_at` against the SAME cutoff. Bounded on its own.
+  WITH doomed_orphans AS (
+    SELECT d.provider_event_id
+      FROM public.notification_delivery_events d
+     WHERE d.message_id IS NULL
+       AND d.received_at < v_cutoff
+     ORDER BY d.received_at ASC, d.provider_event_id ASC
+     LIMIT p_batch_size
+  ),
+  deleted_orphans AS (
+    DELETE FROM public.notification_delivery_events d
+     WHERE d.provider_event_id IN (SELECT o.provider_event_id FROM doomed_orphans o)
+    RETURNING d.provider_event_id
+  )
+  SELECT count(*)::integer INTO v_deleted_orphan_delivery_events FROM deleted_orphans;
+
+  deleted_events                 := v_deleted_events;
+  deleted_messages               := v_deleted_messages;
+  deleted_orphan_delivery_events := v_deleted_orphan_delivery_events;
+  cutoff                         := v_cutoff;
   RETURN NEXT;
 END;
 $$;
@@ -3971,7 +3992,7 @@ $$;
 -- Name: FUNCTION sweep_notification_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.sweep_notification_retention(p_batch_size integer) IS 'contracts/notifications.contract.md C11.2: deletes notification_events older than notification_retention_days(), oldest first, at most p_batch_size per call; messages and delivery events go by FK cascade. Returns counts and the cutoff so every run can be logged.';
+COMMENT ON FUNCTION public.sweep_notification_retention(p_batch_size integer) IS 'contracts/notifications.contract.md C11.2: ONE window (notification_retention_days()), two branches in one transaction — (1) notification_events older than the window, oldest first, at most p_batch_size per call, messages and matched delivery events by FK cascade; (2) unmatched delivery events (message_id IS NULL) whose received_at is older than the same window, at most p_batch_size per call. Returns both counts and the cutoff so every run can be logged.';
 
 
 --
