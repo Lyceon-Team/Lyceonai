@@ -15,6 +15,7 @@ import {
     UserCheck,
 } from "lucide-react";
 import Footer from "@/components/layout/Footer";
+import { SUPPORT_EMAIL } from "@/lib/support-contact";
 
 /**
  * Trust & Safety Hub — public SEO/AEO landing page at /trust.
@@ -315,13 +316,13 @@ export default function TrustHub() {
                                     <div className="text-center sm:text-left flex-1">
                                         <h3 className="font-semibold text-foreground mb-1">Security contact</h3>
                                         <p className="text-sm text-muted-foreground">
-                                            If you believe you've found a security issue, contact support@lyceon.ai with details.
+                                            If you believe you've found a security issue, contact {SUPPORT_EMAIL} with details.
                                         </p>
                                     </div>
                                     <Button asChild>
-                                        <a href="mailto:support@lyceon.ai" className="inline-flex items-center gap-2">
+                                        <a href={`mailto:${SUPPORT_EMAIL}`} className="inline-flex items-center gap-2">
                                             <Mail className="h-4 w-4" />
-                                            support@lyceon.ai
+                                            {SUPPORT_EMAIL}
                                         </a>
                                     </Button>
                                 </div>
@@ -343,9 +344,9 @@ export default function TrustHub() {
                                     </p>
                                 </div>
                                 <Button asChild>
-                                    <a href="mailto:support@lyceon.ai" className="inline-flex items-center gap-2">
+                                    <a href={`mailto:${SUPPORT_EMAIL}`} className="inline-flex items-center gap-2">
                                         <Mail className="h-4 w-4" />
-                                        support@lyceon.ai
+                                        {SUPPORT_EMAIL}
                                     </a>
                                 </Button>
                             </div>

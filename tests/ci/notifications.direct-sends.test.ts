@@ -16,10 +16,12 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX,
   ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX,
   GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX,
   GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX,
   guardianLinkInviteIdempotencyKey,
+  sendAccountDeletionCompletedEmail,
   sendAccountDeletionScheduledEmail,
   sendGuardianConsentRequestEmail,
   sendGuardianLinkInviteEmail,
@@ -142,6 +144,58 @@ describe("direct sends (R7/R8/R9)", () => {
     ]);
   });
 
+  /**
+   * @spec [SCL-083 PROPOSED; owner brief 2026-09-15 Part A2/A3] the completion notice: keyed by
+   * the account_deletion_requests row id, date only, no link of any kind, no tracking keys.
+   */
+  it("deletion completed: keyed by the account_deletion_requests row id, date only, no links, no tracking", async () => {
+    const { requests, transport } = fakeResend("ok");
+    const result = await sendAccountDeletionCompletedEmail(
+      {
+        deletionRequestId: "33333333-3333-4333-8333-333333333333",
+        email: "gone@example.test",
+        completedAt: "2026-09-17T00:00:00.000Z",
+      },
+      { transport },
+    );
+    expect(result.ok).toBe(true);
+    expect(requests).toHaveLength(1);
+    const req = requests[0]!;
+    expect(req.headers["Idempotency-Key"]).toBe(
+      `${ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX}:33333333-3333-4333-8333-333333333333`,
+    );
+    expect(req.body.to).toEqual(["gone@example.test"]);
+    expect(req.body.from).toBe("notifications@send.example.test");
+    expect(String(req.body.subject)).toMatch(/has been deleted/i);
+    expect(String(req.body.text)).toContain("Thu, 17 Sep 2026 00:00:00 GMT");
+    // No link, no recovery offer, no site URL: recovery is impossible after completion.
+    expect(String(req.body.text)).not.toMatch(/https?:\/\//);
+    expect(String(req.body.html)).not.toMatch(/<a\s|href=|https?:\/\//);
+    expect(String(req.body.text)).toMatch(/can no longer be restored/i);
+    expect(Object.keys(req.body).sort()).toEqual([
+      "from",
+      "html",
+      "subject",
+      "text",
+      "to",
+    ]);
+  });
+
+  it("deletion completed: a provider rejection is a Result, never a throw (no retry by design)", async () => {
+    const { requests, transport } = fakeResend("reject");
+    const result = await sendAccountDeletionCompletedEmail(
+      {
+        deletionRequestId: "33333333-3333-4333-8333-333333333333",
+        email: "gone@example.test",
+        completedAt: "2026-09-17T00:00:00.000Z",
+      },
+      { transport },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("provider_rejected");
+    expect(requests).toHaveLength(1); // exactly one attempt
+  });
+
   it("a provider rejection is a Result, never a throw, and a missing site URL is config_missing with no request", async () => {
     const { requests, transport } = fakeResend("reject");
     const rejected = await sendGuardianConsentRequestEmail(
@@ -222,7 +276,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(String(req.body.text).toLowerCase()).not.toMatch(/score|%|streak/);
   });
 
-  it("all three call sites are wired to the senders (R9)", () => {
+  it("all four call sites are wired to the senders (R9)", () => {
     const root = path.resolve(__dirname, "../..");
     const read = (f: string) => fs.readFileSync(path.join(root, f), "utf8");
     const profile = read("server/routes/profile-routes.ts");
@@ -240,6 +294,12 @@ describe("direct sends (R7/R8/R9)", () => {
       /import \{ sendAccountDeletionScheduledEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );
     expect(deletion).toMatch(/await sendAccountDeletionScheduledEmail\(\{/);
+    // The completion notice is sent by the cron executor, not a route (SCL-083 PROPOSED).
+    const executor = read("server/lib/account-deletion-execute.ts");
+    expect(executor).toMatch(
+      /import \{ sendAccountDeletionCompletedEmail \} from "\.\/notifications\/direct-sends"/,
+    );
+    expect(executor).toMatch(/await sendAccountDeletionCompletedEmail\(\{/);
     // The sender address is never a literal outside the environment.
     for (const f of [
       "server/lib/notifications/direct-sends.ts",

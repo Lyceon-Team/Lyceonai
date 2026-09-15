@@ -246,6 +246,68 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
   });
 
+  // Owner brief 2026-09-15 Part B — the return path is honoured on the OAuth path too, through the
+  // ONE shared sanitiser (packages/shared/src/return-path.ts): path AND query survive.
+  it("honours an allowlisted next with its query for a completed guardian (return path, OAuth path)", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "guardian",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fguardian%3Fcode%3DABC234",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/guardian?code=ABC234");
+  });
+
+  it("the onboarding gate still wins over an allowlisted next", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      guardian_consent: false,
+      role: "guardian",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fguardian%3Fcode%3DABC234",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+  });
+
+  it.each([
+    ["protocol-relative", "%2F%2Fevil.example.com%2Fguardian"],
+    [
+      "absolute with allowlisted path",
+      "https%3A%2F%2Fevil.example.com%2Fguardian",
+    ],
+    ["backslash trick", "%2F%5Cevil.example.com"],
+    ["un-allowlisted route", "%2Fadmin"],
+    ["login itself", "%2Flogin"],
+  ])(
+    "discards an off-origin or un-allowlisted next (%s) and uses the role default",
+    async (_label, encodedNext) => {
+      okExchange();
+      ensureProfileMock.mockResolvedValueOnce({
+        profile_completed_at: "2026-06-17T00:00:00Z",
+        is_under_13: false,
+        guardian_consent: false,
+        role: "guardian",
+      } satisfies ProfileShape);
+
+      const res = await request(makeApp()).get(
+        `/auth/callback?code=valid-code&next=${encodedNext}`,
+      );
+
+      expect(res.headers.location).toBe("https://lyceon.ai/guardian");
+    },
+  );
+
   // AL-3 — native email-confirmation handoff completes via verifyOtp, same DOB gate, no code path.
   it("completes the email-confirmation handoff via verifyOtp and DOB-gates incomplete profiles", async () => {
     verifyOtpMock.mockResolvedValueOnce({
