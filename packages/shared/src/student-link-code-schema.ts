@@ -69,6 +69,19 @@ export const redeemLinkCodeRequestSchema = z.object({
 });
 
 /**
+ * @spec [Doc-01_V8 §36.2 (per-email rate limit), §38.1; 2026-09-15 guardian invite by email]
+ * The invite request body: one address, trimmed and lower-cased so the per-address rate
+ * limit and the idempotency key see one spelling. Nothing else — the code is read from the
+ * student's own row, never from the client.
+ */
+export const inviteGuardianRequestSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email().max(254),
+  })
+  .strict();
+export type InviteGuardianRequest = z.infer<typeof inviteGuardianRequestSchema>;
+
+/**
  * What the student's own code panel is told.
  *
  * `code` is null when none has been issued yet; `expiresAt` is null in exactly the same case,

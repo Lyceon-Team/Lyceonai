@@ -16,11 +16,15 @@ import { z } from "zod";
 // ── Event types, channels, statuses (mirror the SQL CHECKs) ─────────────────
 
 /**
- * Launch scope is one event type (owner rulings R7/R8, 2026-09-03). The consent request and
- * the deletion-scheduled email are direct sends, not events — see
- * server/lib/notifications/direct-sends.ts.
+ * Launch scope was one event type (owner rulings R7/R8, 2026-09-03); `guardian_unlinked`
+ * joined on 2026-09-15 (Doc 01 §36.3 — the party who did not revoke is told). The consent
+ * request, the deletion-scheduled email and the guardian INVITE are direct sends, not events —
+ * see server/lib/notifications/direct-sends.ts.
  */
-export const NOTIFICATION_EVENT_TYPES = ["guardian_linked"] as const;
+export const NOTIFICATION_EVENT_TYPES = [
+  "guardian_linked",
+  "guardian_unlinked",
+] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
 
@@ -55,6 +59,22 @@ export const guardianLinkedPayloadSchema = z
   })
   .strict();
 export type GuardianLinkedPayload = z.infer<typeof guardianLinkedPayloadSchema>;
+
+/**
+ * @spec [contracts/notifications.contract.md §8.1; Doc-01_V8 §36.3, §38.1] | @implemented [2026-09-15]
+ * Identity only: the link id and the two display names. `revocation_reason` is NEVER a
+ * payload key — `.strict()` makes a payload carrying it fail to render rather than leak.
+ */
+export const guardianUnlinkedPayloadSchema = z
+  .object({
+    link_id: z.string().uuid(),
+    student_display_name: z.string(),
+    guardian_display_name: z.string(),
+  })
+  .strict();
+export type GuardianUnlinkedPayload = z.infer<
+  typeof guardianUnlinkedPayloadSchema
+>;
 
 // ── DB rows read through the service client ─────────────────────────────────
 
