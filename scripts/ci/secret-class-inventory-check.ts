@@ -336,34 +336,26 @@ function consumerReferencesKey(
 function checkRequiredHaveConsumers(entries: ManifestEntry[]): string[] {
   const violations: string[] = [];
   for (const entry of entries) {
-    if (!entry.required) continue;
     const consumers = entry.consumer ?? [];
-    if (consumers.length === 0) {
+
+    if (entry.required && consumers.length === 0) {
       violations.push(
         `REQUIRED_NO_CONSUMER: ${entry.id} (runtime=${entry.runtime}) is required:true but has no consumer`,
       );
       continue;
     }
 
-    let anyExists = false;
-    let anyReferences = false;
-    const staleConsumers: string[] = [];
-
     for (const c of consumers) {
       const result = consumerReferencesKey(c, entry.id);
-      if (result.exists) anyExists = true;
-      if (result.references) anyReferences = true;
-      if (result.exists && !result.references) staleConsumers.push(c);
-    }
-
-    if (!anyExists) {
-      violations.push(
-        `REQUIRED_MISSING_FILE: ${entry.id} (runtime=${entry.runtime}) consumer files not found: ${consumers.join(", ")}`,
-      );
-    } else if (!anyReferences) {
-      violations.push(
-        `REQUIRED_STALE_CONSUMER: ${entry.id} (runtime=${entry.runtime}) no consumer file:line references the key: ${consumers.join(", ")}`,
-      );
+      if (!result.exists) {
+        violations.push(
+          `CONSUMER_FILE_MISSING: ${entry.id} consumer "${c}" — file not found`,
+        );
+      } else if (!result.references) {
+        violations.push(
+          `CONSUMER_STALE: ${entry.id} consumer "${c}" — key not found in ±5 line window`,
+        );
+      }
     }
   }
   return violations;
