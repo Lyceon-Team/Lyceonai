@@ -5,7 +5,11 @@ import type { ConsentSource } from "../../shared/legal-consent.js";
 
 export type LegalAcceptanceRecord = {
   docKey: string;
+  /** The `legal/` slug this consent is for; null only for legacy outbox rows. */
+  docSlug: string | null;
   docVersion: string;
+  /** `sha256:<hex>` of the exact en.md served, from that version's meta.yml. */
+  contentHash: string | null;
   actorType: "student" | "parent";
   minor: boolean;
 };
@@ -29,7 +33,9 @@ export async function recordLegalAcceptances(
   const rows = args.acceptances.map((acceptance) => ({
     user_id: args.userId,
     doc_key: acceptance.docKey,
+    doc_slug: acceptance.docSlug,
     doc_version: acceptance.docVersion,
+    content_hash: acceptance.contentHash,
     actor_type: acceptance.actorType,
     minor: acceptance.minor,
     consent_source: args.consentSource,
@@ -53,7 +59,9 @@ const outboxPayloadSchema = z.object({
   acceptances: z.array(
     z.object({
       docKey: z.string(),
+      docSlug: z.string().optional(),
       docVersion: z.string(),
+      contentHash: z.string().optional(),
       actorType: z.enum(["student", "parent"]),
       minor: z.boolean(),
     }),
@@ -173,7 +181,15 @@ export async function drainLegalAcceptanceOutbox(
       try {
         await recordLegalAcceptances(supabaseAdmin, {
           userId,
-          acceptances: parsed.data.acceptances,
+          // A payload written before slug/hash existed drains with them absent
+          // rather than being dropped. It records what actually happened: a
+          // consent whose text we cannot prove. Rows written from here on carry
+          // both.
+          acceptances: parsed.data.acceptances.map((a) => ({
+            ...a,
+            docSlug: a.docSlug ?? null,
+            contentHash: a.contentHash ?? null,
+          })),
           consentSource: parsed.data.consentSource,
           userAgent: parsed.data.userAgent,
           ipAddress: parsed.data.ipAddress,

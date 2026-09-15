@@ -30,7 +30,8 @@ setup() {
   mkdir -p "$WS/scripts/ci"
   cp "$REPO_ROOT/scripts/ci/legal-immutability-gate.mjs" \
      "$REPO_ROOT/scripts/ci/legal-manifest-gate.mjs" \
-     "$REPO_ROOT/scripts/ci/legal-xref-gate.mjs" "$WS/scripts/ci/"
+     "$REPO_ROOT/scripts/ci/legal-xref-gate.mjs" \
+     "$REPO_ROOT/scripts/ci/legal-body-purity-gate.mjs" "$WS/scripts/ci/"
   cp -R "$REPO_ROOT/legal" "$WS/legal"
   (
     cd "$WS"
@@ -143,6 +144,43 @@ setup
 rm -rf "$WS/legal/billing-terms"
 expect red legal-xref-gate.mjs \
   "(L) billing-terms slug removed — the real defect this gate exists for"
+
+# ── Gate 4: body purity and copy fidelity ───────────────────────────
+echo ""
+echo "GATE 4 — body purity (no version or date in a body) + copy fidelity"
+
+setup
+expect green legal-body-purity-gate.mjs "(control) every body clean, no build output to compare"
+
+setup
+printf '\n**Last Updated:** 22 December 2024\n' >> "$WS/legal/honor-code/v2/en.md"
+rehash honor-code v2
+expect red legal-body-purity-gate.mjs "(M) a body reintroduces a \"Last Updated\" line"
+
+setup
+printf '\n**Version 2.0 \xc2\xb7 Effective 11 September 2026**\n' >> "$WS/legal/honor-code/v2/en.md"
+rehash honor-code v2
+expect red legal-body-purity-gate.mjs "(N) a body reintroduces a version line"
+
+setup
+# A body that legitimately cites a date must NOT trip the gate — these are
+# contracts and they name statute dates. A gate that flagged those would be
+# untrue to the documents and would get worked around.
+printf '\nArticle 11a applies from 19 June 2026 and requires a withdrawal function.\n' \
+  >> "$WS/legal/honor-code/v2/en.md"
+rehash honor-code v2
+expect green legal-body-purity-gate.mjs "(O) a date CITED in prose is not a header and stays green"
+
+setup
+mkdir -p "$WS/dist/public/legal"
+cp -R "$WS/legal/." "$WS/dist/public/legal/"
+expect green legal-body-purity-gate.mjs "(P) a faithful build copy passes copy fidelity"
+
+setup
+mkdir -p "$WS/dist/public/legal"
+cp -R "$WS/legal/." "$WS/dist/public/legal/"
+printf '\nEdited only in the deploy copy.\n' >> "$WS/dist/public/legal/honor-code/v2/en.md"
+expect red legal-body-purity-gate.mjs "(Q) the deploy copy forks from the source"
 
 echo ""
 if [ "$FAIL" -ne 0 ]; then

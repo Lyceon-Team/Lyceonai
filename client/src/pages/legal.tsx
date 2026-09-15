@@ -1,5 +1,11 @@
 import { Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,22 +17,33 @@ import {
   UserCheck,
   ExternalLink,
   Mail,
-  ChevronRight
+  ChevronRight,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { legalDocs } from "@/lib/legal";
+import { loadLegalIndex } from "@/lib/legal-content";
 import Footer from "@/components/layout/Footer";
 
 const docIcons: Record<string, React.ReactNode> = {
-  'trust-and-safety': <Shield className="h-6 w-6" />,
-  'community-guidelines': <Users className="h-6 w-6" />,
-  'privacy-policy': <Lock className="h-6 w-6" />,
-  'honor-code': <Award className="h-6 w-6" />,
-  'student-terms': <FileText className="h-6 w-6" />,
-  'parent-guardian-terms': <UserCheck className="h-6 w-6" />,
+  "trust-and-safety": <Shield className="h-6 w-6" />,
+  "community-guidelines": <Users className="h-6 w-6" />,
+  "privacy-policy": <Lock className="h-6 w-6" />,
+  "honor-code": <Award className="h-6 w-6" />,
+  "student-terms": <FileText className="h-6 w-6" />,
+  "parent-guardian-terms": <UserCheck className="h-6 w-6" />,
 };
 
 export default function LegalHub() {
-  const trustDoc = legalDocs.find(d => d.slug === 'trust-and-safety');
+  const trustDoc = legalDocs.find((d) => d.slug === "trust-and-safety");
+
+  // Titles and versions come from legal/, the same place the document page and
+  // the cross-reference gate read them — never from a second list here.
+  const { data: index } = useQuery({
+    queryKey: ["legal-index"],
+    queryFn: () => loadLegalIndex(legalDocs.map((d) => d.slug)),
+    staleTime: 5 * 60 * 1000,
+  });
+  const entryFor = (slug: string) => index?.find((e) => e.slug === slug);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -40,7 +57,8 @@ export default function LegalHub() {
               Legal & Trust
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Empowering students to learn with integrity in a technology-assisted world.
+              Empowering students to learn with integrity in a
+              technology-assisted world.
             </p>
           </div>
 
@@ -52,10 +70,13 @@ export default function LegalHub() {
                     <Shield className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-xl mb-2">Trust & Safety at Lyceon</CardTitle>
+                    <CardTitle className="text-xl mb-2">
+                      Trust & Safety at Lyceon
+                    </CardTitle>
                     <CardDescription className="text-base">
-                      At Lyceon, we believe technology should strengthen learning, not replace it.
-                      We've built the platform with a safety-first, integrity-driven foundation.
+                      At Lyceon, we believe technology should strengthen
+                      learning, not replace it. We've built the platform with a
+                      safety-first, integrity-driven foundation.
                     </CardDescription>
                   </div>
                 </div>
@@ -63,24 +84,42 @@ export default function LegalHub() {
               <CardContent>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                   <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">1</Badge>
+                    <Badge variant="outline" className="mt-1 shrink-0">
+                      1
+                    </Badge>
                     <div>
-                      <p className="font-medium text-sm">Academic Integrity First</p>
-                      <p className="text-xs text-muted-foreground">We help students understand, not bypass learning</p>
+                      <p className="font-medium text-sm">
+                        Academic Integrity First
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        We help students understand, not bypass learning
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">2</Badge>
+                    <Badge variant="outline" className="mt-1 shrink-0">
+                      2
+                    </Badge>
                     <div>
-                      <p className="font-medium text-sm">Privacy & Data Security</p>
-                      <p className="text-xs text-muted-foreground">No data selling, no targeted advertising</p>
+                      <p className="font-medium text-sm">
+                        Privacy & Data Security
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        No data selling, no targeted advertising
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">3</Badge>
+                    <Badge variant="outline" className="mt-1 shrink-0">
+                      3
+                    </Badge>
                     <div>
-                      <p className="font-medium text-sm">Responsible Technology</p>
-                      <p className="text-xs text-muted-foreground">Transparent, supervised, and safety-aware</p>
+                      <p className="font-medium text-sm">
+                        Responsible Technology
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Transparent, supervised, and safety-aware
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -109,52 +148,80 @@ export default function LegalHub() {
           )}
 
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-foreground mb-4">Our Policies</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-4">
+              Our Policies
+            </h2>
             <p className="text-muted-foreground mb-6">
               Review our complete legal documentation below.
             </p>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
-            {legalDocs.filter(d => d.slug !== 'trust-and-safety').map((doc) => (
-              <Card key={doc.slug} className="flex flex-col hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-muted">
-                      {docIcons[doc.slug] || <FileText className="h-5 w-5" />}
+            {legalDocs
+              .filter((d) => d.slug !== "trust-and-safety")
+              .map((doc) => (
+                <Card
+                  key={doc.slug}
+                  className="flex flex-col hover:shadow-md transition-shadow"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 rounded-lg bg-muted">
+                        {docIcons[doc.slug] || <FileText className="h-5 w-5" />}
+                      </div>
+                      {(() => {
+                        const entry = entryFor(doc.slug);
+                        if (entry?.state !== "published") return null;
+                        return (
+                          <Badge
+                            variant="secondary"
+                            className="text-xs"
+                            data-testid={`badge-version-${doc.slug}`}
+                          >
+                            Version {entry.version}
+                          </Badge>
+                        );
+                      })()}
                     </div>
-                    <Badge variant="secondary" className="text-xs">
-                      Updated {doc.lastUpdated}
-                    </Badge>
-                  </div>
-                  <CardTitle className="text-base">{doc.title}</CardTitle>
-                  <CardDescription className="text-sm">
-                    {doc.shortDescription}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 mt-auto">
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline" size="sm" className="flex-1">
-                      <Link href={`/legal/${doc.slug}`}>
-                        <a className="inline-flex items-center gap-1">
-                          Read
-                          <ChevronRight className="h-4 w-4" />
-                        </a>
-                      </Link>
-                    </Button>
-                    <a
-                      href={doc.pdfPath}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="ghost" size="sm">
-                        <ExternalLink className="h-4 w-4" />
+                    <CardTitle className="text-base">
+                      {entryFor(doc.slug)?.state === "error"
+                        ? doc.slug
+                        : ((
+                            entryFor(doc.slug) as { title?: string } | undefined
+                          )?.title ?? "")}
+                    </CardTitle>
+                    <CardDescription className="text-sm">
+                      {doc.shortDescription}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0 mt-auto">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                      >
+                        <Link href={`/legal/${doc.slug}`}>
+                          <a className="inline-flex items-center gap-1">
+                            Read
+                            <ChevronRight className="h-4 w-4" />
+                          </a>
+                        </Link>
                       </Button>
-                    </a>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      <a
+                        href={doc.pdfPath}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button variant="ghost" size="sm">
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </a>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
           </div>
 
           <Card className="bg-muted/30">
@@ -164,7 +231,9 @@ export default function LegalHub() {
                   <Mail className="h-6 w-6 text-primary" />
                 </div>
                 <div className="text-center sm:text-left flex-1">
-                  <h3 className="font-semibold text-foreground mb-1">Contact Trust & Safety</h3>
+                  <h3 className="font-semibold text-foreground mb-1">
+                    Contact Trust & Safety
+                  </h3>
                   <p className="text-sm text-muted-foreground">
                     Questions about trust or safety? We're here to help.
                   </p>
