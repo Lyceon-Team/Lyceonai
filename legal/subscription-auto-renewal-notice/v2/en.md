@@ -1,13 +1,4 @@
----
-document: Subscription and Auto-Renewal Notice
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2026-05-31)
----
-
 # **LYCEON Subscription and Auto-Renewal Notice**
-
-**Version 2.0 · Effective 11 September 2026**
 
 ---
 

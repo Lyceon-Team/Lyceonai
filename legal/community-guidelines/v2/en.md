@@ -1,13 +1,4 @@
----
-document: Community Guidelines
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-22)
----
-
 # **LYCEON Community Guidelines**
-
-**Version 2.0 · Effective 11 September 2026**
 
 LYCEON is a learning environment built on respect, safety, and trust. These Community Guidelines explain how users are expected to behave when using LYCEON.
 

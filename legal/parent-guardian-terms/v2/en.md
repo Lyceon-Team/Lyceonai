@@ -1,13 +1,4 @@
----
-document: Parent / Guardian Terms
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-22)
----
-
 # **LYCEON Parent / Guardian Terms**
-
-**Version 2.0 · Effective 11 September 2026**
 
 These Parent / Guardian Terms ("Parent Terms") apply when a parent or legal guardian ("you") consents to a minor's use of the LYCEON platform, connects an account to a student's account, or pays for a student's subscription.
 

@@ -1,13 +1,4 @@
----
-document: Privacy Policy
-version: 2.0
-effective_date: 2026-09-11
-supersedes: 1.0 (2024-12-22)
----
-
 # **LYCEON Privacy Policy**
-
-**Version 2.0 · Effective 11 September 2026**
 
 LYCEON respects your privacy and is committed to protecting personal data. This Privacy Policy explains how we collect, use, store, share, and protect information when students, parents, and guardians use the LYCEON platform.
 
