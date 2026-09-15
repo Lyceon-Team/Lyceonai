@@ -43,7 +43,15 @@ const REQUIRED_META = [
   "published",
   "content_hash",
 ];
-const REQUIRED_MANIFEST = ["slug", "title", "current", "locales", "aliases"];
+const REQUIRED_MANIFEST = [
+  "slug",
+  "title",
+  "description",
+  "order",
+  "current",
+  "locales",
+  "aliases",
+];
 
 let failed = false;
 const fail = (msg, ...detail) => {
@@ -119,6 +127,16 @@ for (const slug of slugs) {
 
   for (const field of REQUIRED_MANIFEST) {
     if (!(field in m)) fail(`${rel}/manifest.json lacks "${field}"`);
+
+  // `description` is what the hub shows under the title, and `order` is where
+  // it sits. Both live here so a document carries its own presentation and a
+  // new one needs no code change to appear.
+  if (typeof m.description === "string" && m.description.trim() === "") {
+    fail(`${rel}/manifest.json description must not be empty`);
+  }
+  if (m.order !== undefined && !Number.isInteger(m.order)) {
+    fail(`${rel}/manifest.json order must be an integer`, `got: ${String(m.order)}`);
+  }
   }
   if (m.slug !== slug) {
     fail(

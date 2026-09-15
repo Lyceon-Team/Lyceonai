@@ -58,6 +58,10 @@ function writeDoc(
       {
         slug,
         title: `LYCEON ${slug}`,
+        // `description` and `order` became required when the hub started
+        // enumerating legal/ — a document carries its own hub presentation.
+        description: `About ${slug}.`,
+        order: 500,
         current: opts.current,
         locales: ["en"],
         aliases: [],
@@ -298,6 +302,8 @@ describe("T4 — `current: null` is an unpublished state, not an error", () => {
         JSON.stringify({
           slug,
           title: slug,
+          description: `About ${slug}.`,
+          order: 500,
           current,
           locales: ["en"],
           aliases: [],

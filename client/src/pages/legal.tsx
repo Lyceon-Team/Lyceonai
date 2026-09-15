@@ -19,8 +19,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { legalDocs } from "@/lib/legal";
-import { loadLegalIndex } from "@/lib/legal-content";
+import {
+  loadLegalIndex,
+  loadLegalSlugs,
+  type LegalIndexEntry,
+} from "@/lib/legal-content";
 import Footer from "@/components/layout/Footer";
 
 const docIcons: Record<string, React.ReactNode> = {
@@ -33,16 +36,32 @@ const docIcons: Record<string, React.ReactNode> = {
 };
 
 export default function LegalHub() {
-  const trustDoc = legalDocs.find((d) => d.slug === "trust-and-safety");
-
-  // Titles and versions come from legal/, the same place the document page and
-  // the cross-reference gate read them — never from a second list here.
+  // THE HUB ENUMERATES `legal/`. It used to map over a six-entry array in
+  // client/src/lib/legal.ts, which is why three published documents —
+  // billing-terms, refund-policy and subscription-auto-renewal-notice — never
+  // appeared here despite rendering at their own URLs. A reader browsing saw
+  // two thirds of the corpus.
+  //
+  // `index.json` is generated from the directory at build time and answers
+  // only "which documents exist"; title, description and order come from each
+  // manifest. Publishing a tenth document puts it on this page with no code
+  // change, which is the point of the structure.
   const { data: index } = useQuery({
     queryKey: ["legal-index"],
-    queryFn: () => loadLegalIndex(legalDocs.map((d) => d.slug)),
+    queryFn: async () => loadLegalIndex(await loadLegalSlugs()),
     staleTime: 5 * 60 * 1000,
   });
-  const entryFor = (slug: string) => index?.find((e) => e.slug === slug);
+
+  // Only published documents are listed. A slug at `current: null` exists and
+  // resolves citations, but there is nothing yet for a reader to open.
+  const published = (index ?? [])
+    .filter(
+      (e): e is Extract<LegalIndexEntry, { state: "published" }> =>
+        e.state === "published",
+    )
+    .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+
+  const trustDoc = published.find((d) => d.slug === "trust-and-safety");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -70,7 +89,11 @@ export default function LegalHub() {
                   </div>
                   <div className="flex-1">
                     <CardTitle className="text-xl mb-2">
-                      Trust & Safety at Lyceon
+                      {/* From the manifest. Hardcoded here it read "Trust &
+                          Safety at Lyceon" — old branding, against the
+                          corpus's LYCEON, and drifted precisely because it
+                          was a second copy of a document's name. */}
+                      {trustDoc.title}
                     </CardTitle>
                     <CardDescription className="text-base">
                       At Lyceon, we believe technology should strengthen
@@ -146,7 +169,7 @@ export default function LegalHub() {
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
-            {legalDocs
+            {published
               .filter((d) => d.slug !== "trust-and-safety")
               .map((doc) => (
                 <Card
@@ -158,36 +181,17 @@ export default function LegalHub() {
                       <div className="p-2 rounded-lg bg-muted">
                         {docIcons[doc.slug] || <FileText className="h-5 w-5" />}
                       </div>
-                      {(() => {
-                        const entry = entryFor(doc.slug);
-                        if (entry?.state !== "published") return null;
-                        return (
-                          <Badge
-                            variant="secondary"
-                            className="text-xs"
-                            data-testid={`badge-version-${doc.slug}`}
-                          >
-                            Version {entry.version}
-                          </Badge>
-                        );
-                      })()}
+                      <Badge
+                        variant="secondary"
+                        className="text-xs"
+                        data-testid={`badge-version-${doc.slug}`}
+                      >
+                        Version {doc.version}
+                      </Badge>
                     </div>
-                    <CardTitle className="text-base">
-                      {(() => {
-                        // Only `published` and `unpublished` carry a title.
-                        // `error` and `not-found` do not, and falling through
-                        // to "" would render a nameless card — a silent blank
-                        // where the slug at least says which document broke.
-                        const entry = entryFor(doc.slug);
-                        return entry &&
-                          (entry.state === "published" ||
-                            entry.state === "unpublished")
-                          ? entry.title
-                          : doc.slug;
-                      })()}
-                    </CardTitle>
+                    <CardTitle className="text-base">{doc.title}</CardTitle>
                     <CardDescription className="text-sm">
-                      {doc.shortDescription}
+                      {doc.description}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-0 mt-auto">

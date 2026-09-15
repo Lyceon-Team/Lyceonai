@@ -1,6 +1,8 @@
 {
   "slug": "billing-terms",
   "title": "LYCEON Billing Terms",
+  "description": "What you agree to at checkout: what you are buying, the price and Billing Period, who may subscribe, and how to cancel.",
+  "order": 40,
   "current": "v2",
   "locales": [
     "en"

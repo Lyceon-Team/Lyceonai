@@ -1,6 +1,8 @@
 {
   "slug": "parent-guardian-terms",
   "title": "LYCEON Parent / Guardian Terms",
+  "description": "What applies when you consent for a minor, link to a student's account, or pay for their subscription.",
+  "order": 20,
   "current": "v2",
   "locales": [
     "en"

@@ -60,6 +60,20 @@ expect() {
   fi
 }
 
+# The build copy includes a generated index.json; the plugin writes it and the
+# gate checks it. Simulate the same artifact here.
+write_index() {
+  local out="$1"
+  python3 - "$WS/legal" "$out" <<'PY2'
+import json, os, sys
+src, out = sys.argv[1], sys.argv[2]
+slugs = sorted(d for d in os.listdir(src)
+               if os.path.isdir(os.path.join(src, d))
+               and os.path.exists(os.path.join(src, d, "manifest.json")))
+open(out, "w").write(json.dumps({"slugs": slugs}, indent=2) + "\n")
+PY2
+}
+
 rehash() {
   local slug="$1" ver="$2"
   local h
@@ -190,13 +204,33 @@ expect green legal-body-purity-gate.mjs "(O) a date CITED in prose is not a head
 setup
 mkdir -p "$WS/dist/public/legal"
 cp -R "$WS/legal/." "$WS/dist/public/legal/"
+write_index "$WS/dist/public/legal/index.json"
 expect green legal-body-purity-gate.mjs "(P) a faithful build copy passes copy fidelity"
 
 setup
 mkdir -p "$WS/dist/public/legal"
 cp -R "$WS/legal/." "$WS/dist/public/legal/"
+write_index "$WS/dist/public/legal/index.json"
 printf '\nEdited only in the deploy copy.\n' >> "$WS/dist/public/legal/honor-code/v2/en.md"
 expect red legal-body-purity-gate.mjs "(Q) the deploy copy forks from the source"
+
+setup
+# The hub enumerates index.json. Without it the page lists nothing, and no
+# document can report its own absence — so the gate has to.
+mkdir -p "$WS/dist/public/legal"
+cp -R "$WS/legal/." "$WS/dist/public/legal/"
+expect red legal-body-purity-gate.mjs "(T) the build output has no index.json"
+
+setup
+mkdir -p "$WS/dist/public/legal"
+cp -R "$WS/legal/." "$WS/dist/public/legal/"
+write_index "$WS/dist/public/legal/index.json"
+python3 -c "
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['slugs']=[s for s in d['slugs'] if s!='refund-policy']
+open(p,'w').write(json.dumps(d,indent=2)+chr(10))" "$WS/dist/public/legal/index.json"
+expect red legal-body-purity-gate.mjs \
+  "(U) a published document dropped from the index — invisible on the hub"
 
 echo ""
 if [ "$FAIL" -ne 0 ]; then

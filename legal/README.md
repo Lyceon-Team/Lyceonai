@@ -29,6 +29,41 @@ The structure follows the one in `github.com/srcfl/legal`, including its rule:
 *"Once a version folder is published, its files never change — new versions go
 in new folders."*
 
+## The hub enumerates this directory
+
+`/legal` lists every published document, and learns which exist from
+`index.json` — generated from this directory at build time, never committed.
+Static hosting has no directory listing, so that one fact cannot be derived
+client-side; everything else comes from the manifests.
+
+Each `manifest.json` therefore carries two presentation fields alongside its
+identity: `description`, the line shown under the title, and `order`, where the
+document sits on the page. Both travel with the document, so **publishing a
+tenth document puts it on the hub with no code change** — which is the whole
+point of the structure.
+
+Hub order today, chosen so the page reads the way a person meets these
+documents rather than alphabetically:
+
+| Order | Document |
+|---|---|
+| 10 | Student Terms of Use |
+| 20 | Parent / Guardian Terms |
+| 30 | Privacy Policy |
+| 40 | Billing Terms |
+| 50 | Subscription and Auto-Renewal Notice |
+| 60 | Refund Policy |
+| 70 | Honor Code |
+| 80 | Community Guidelines |
+| 90 | Trust & Safety (rendered as its own card above the grid) |
+
+Agreements first, then privacy, then the three billing documents in the order a
+subscription is actually experienced — buy, renew, refund — then conduct. Gaps
+of ten leave room to insert without renumbering.
+
+`current: null` documents are not listed. They exist and resolve citations, but
+there is nothing for a reader to open yet.
+
 ## The rule
 
 **A published version directory is read-only, forever.** Publishing a new
@@ -123,11 +158,6 @@ rule in `client/src/index.css` makes it print without the site chrome.
 
 Two things, both decided rather than overlooked:
 
-- **`billing-terms`, `refund-policy` and `subscription-auto-renewal-notice` are
-  not on the legal hub.** All three render at their own URLs and all three are
-  published; none has an entry in `client/src/lib/legal.ts`, which needs a
-  short product blurb per document that nobody has written. Reachable by link
-  and by citation, not by browsing.
 - **`docs/Spec/Lyceon Privacy Policy.md`** — an orphan that never corresponded
   to a served document. Kept by owner ruling during Phase 1 rather than
   migrated, because migrating it would assert it was a version of something.

@@ -46,6 +46,31 @@ const CONTENT_TYPES: Record<string, string> = {
   ".yml": "text/yaml; charset=utf-8",
 };
 
+/**
+ * The slug list the hub enumerates from.
+ *
+ * `legal/` is served as static files, and static hosting has no directory
+ * listing — so the one thing a client cannot discover for itself is what
+ * exists. This publishes exactly that, and nothing else: no title, no
+ * description, no version. Those live in each manifest, and duplicating them
+ * here would put document metadata in two files. `index.json` answers "which
+ * documents are there", the manifests answer "what is this one".
+ *
+ * Derived and regenerated on every build, never committed. The body-purity
+ * gate checks it against the directory, so it cannot drift from the truth.
+ */
+function buildIndex(sourceDir: string): string {
+  const slugs = fs
+    .readdirSync(sourceDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) =>
+      fs.existsSync(path.join(sourceDir, name, "manifest.json")),
+    )
+    .sort();
+  return `${JSON.stringify({ slugs }, null, 2)}\n`;
+}
+
 export function legalContentPlugin(repoRoot: string): Plugin {
   const sourceDir = path.resolve(repoRoot, "legal");
 
@@ -58,6 +83,15 @@ export function legalContentPlugin(repoRoot: string): Plugin {
         if (!url.startsWith(URL_PREFIX)) return next();
 
         const relative = decodeURIComponent(url.slice(URL_PREFIX.length));
+
+        // index.json is generated, not stored — synthesize it here so dev and
+        // a deployed build answer the same question the same way.
+        if (relative === "index.json") {
+          res.setHeader("Content-Type", CONTENT_TYPES[".json"]);
+          res.end(buildIndex(sourceDir));
+          return;
+        }
+
         const resolved = path.resolve(sourceDir, relative);
 
         // Refuse anything that escapes legal/, and anything that is not a file.
@@ -105,6 +139,8 @@ export function legalContentPlugin(repoRoot: string): Plugin {
         fs.rmSync(to, { recursive: true, force: true });
         fs.cpSync(from, to, { recursive: true });
       }
+
+      fs.writeFileSync(path.join(outDir, "index.json"), buildIndex(sourceDir));
     },
   };
 }

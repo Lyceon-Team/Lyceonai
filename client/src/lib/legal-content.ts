@@ -37,10 +37,16 @@ import { z } from "zod";
 const manifestSchema = z.object({
   slug: z.string().min(1),
   title: z.string().min(1),
+  /** One line for the hub. Lives here so it travels with the document. */
+  description: z.string().min(1),
+  /** Hub display position. Ascending; gaps of 10 leave room to insert. */
+  order: z.number().int(),
   current: z.string().min(1).nullable(),
   locales: z.array(z.string().min(1)).min(1),
   aliases: z.array(z.string()),
 });
+
+const indexSchema = z.object({ slugs: z.array(z.string().min(1)) });
 
 export type LegalManifest = z.infer<typeof manifestSchema>;
 
@@ -63,6 +69,8 @@ export type LegalDocumentContent =
       state: "published";
       slug: string;
       title: string;
+      description: string;
+      order: number;
       version: string;
       effectiveDate: string;
       contentHash: string;
@@ -221,6 +229,8 @@ export async function loadLegalDocument(
       state: "published",
       slug,
       title: manifest.title,
+      description: manifest.description,
+      order: manifest.order,
       version: meta.data.version,
       effectiveDate: meta.data.effective_date,
       contentHash: meta.data.content_hash,
@@ -241,12 +251,32 @@ export type LegalIndexEntry =
       state: "published";
       slug: string;
       title: string;
+      description: string;
+      order: number;
       version: string;
       effectiveDate: string;
     }
   | { state: "unpublished"; slug: string; title: string }
   | { state: "not-found"; slug: string }
   | { state: "error"; slug: string; reason: string };
+
+/**
+ * The slugs that exist, from the generated `legal/index.json`.
+ *
+ * Static hosting has no directory listing, so this is the one fact a client
+ * cannot derive from `legal/` itself. Everything else about a document comes
+ * from its own manifest — this answers only "which documents are there", so a
+ * tenth document appears on the hub with no code change.
+ */
+export async function loadLegalSlugs(): Promise<string[]> {
+  const parsed = indexSchema.safeParse(
+    JSON.parse(await fetchText(`${BASE}/index.json`)),
+  );
+  if (!parsed.success) {
+    throw new Error("legal/index.json is not a valid slug index");
+  }
+  return parsed.data.slugs;
+}
 
 /**
  * Loads the manifest (and meta, when published) for each slug. Used by the
@@ -264,6 +294,8 @@ export async function loadLegalIndex(
           state: "published",
           slug,
           title: doc.title,
+          description: doc.description,
+          order: doc.order,
           version: doc.version,
           effectiveDate: doc.effectiveDate,
         };
