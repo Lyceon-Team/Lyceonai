@@ -49,6 +49,11 @@ import {
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
+import {
+  evaluateSiteUrl,
+  isProductionDeployment,
+  reportGcpCredentialStatusAtStartup,
+} from "./lib/startup-guards";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
@@ -931,77 +936,44 @@ if (isMainModule) {
   // Validate environment variables on startup
   validateEnvironment();
 
-  // Validate GCP credentials at startup (production only).
-  // This makes GCP_SERVICE_ACCOUNT_JSON load-bearing at boot, so the boot
-  // probe can enforce its presence. Without this, a missing credential is
-  // only discovered at request time — which is the drift that let the
-  // ENAMETOOLONG leak run to production.
-  if (process.env.NODE_ENV === "production") {
-    try {
-      const { getGcpCredentials } = require("./lib/gcp-credentials") as {
-        getGcpCredentials: () => { project_id: string };
-      };
-      const creds = getGcpCredentials();
-      console.log(
-        `✅ [GCP] Service account loaded (project: ${creds.project_id})`,
-      );
-    } catch (err: unknown) {
-      // The credential loader's errors are fixed-vocabulary and safe to log.
-      console.error(
-        `❌ [GCP] ${err instanceof Error ? err.message : "credential load failed"}`,
-      );
-      process.exit(1);
-    }
+  // Report GCP credential availability. Does NOT gate boot.
+  //
+  // This used to `process.exit(1)` when GCP_SERVICE_ACCOUNT_JSON was absent
+  // under NODE_ENV=production. Vercel sets NODE_ENV=production for previews
+  // too, so the process died before any route mounted and EVERY api route on
+  // EVERY preview deployment returned 500 FUNCTION_INVOCATION_FAILED.
+  //
+  // The credential is subsystem-scoped — LISA's crisis classifier and the
+  // BigQuery retention archive, nothing else — so its absence is reported and
+  // the two call sites fail at use. See server/lib/startup-guards.ts for the
+  // build-mode vs deployment-target distinction that both guards turned on.
+  reportGcpCredentialStatusAtStartup();
+
+  // Validate PUBLIC_SITE_URL at startup (critical for OAuth).
+  //
+  // STILL FATAL, BUT ONLY WHERE THE REQUIREMENT IS REAL. OAuth genuinely
+  // cannot build a callback without this, so unlike the GCP credential above
+  // it is whole-app and the guard stays. What changed is the question it
+  // asks: `isProductionDeployment()` reads VERCEL_ENV (the deployment target)
+  // rather than NODE_ENV (the build mode), so a Vercel preview — which never
+  // carries a production site URL and has no business being held to one —
+  // warns instead of dying. The decision lives in `evaluateSiteUrl`; the
+  // `process.exit` stays here, at the composition root.
+  const siteUrlVerdict = evaluateSiteUrl({
+    publicSiteUrl: process.env.PUBLIC_SITE_URL,
+    isProductionDeployment: isProductionDeployment(),
+  });
+  if (siteUrlVerdict.kind === "fatal") {
+    for (const line of siteUrlVerdict.lines) console.error(line);
+    process.exit(1);
   }
-
-  // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
-  function validateSiteUrl(): void {
-    const publicSiteUrl = process.env.PUBLIC_SITE_URL;
-    const isProduction = process.env.NODE_ENV === "production";
-
-    if (!publicSiteUrl) {
-      if (isProduction) {
-        console.error(
-          "❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.",
-        );
-        console.error(
-          "   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.",
-        );
-        process.exit(1);
-      } else {
-        console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
-        console.warn(
-          "   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.",
-        );
-      }
-      return;
-    }
-
-    if (publicSiteUrl.endsWith("/")) {
-      console.warn(
-        "⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.",
-      );
-    }
-
-    if (!publicSiteUrl.startsWith("https://") && isProduction) {
-      console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
-      process.exit(1);
-    }
-
-    const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
-    if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
-      console.warn(
-        "⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.",
-      );
-    }
-
-    console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
-    console.log(
-      `✅ [AUTH] Native OAuth landing: ${publicSiteUrl.replace(/\/$/, "")}/auth/callback`,
-    );
+  // Warning lines keep their stream: the previous inline version emitted them
+  // via console.warn, and a startup warning demoted to stdout is a startup
+  // warning nobody greps for.
+  for (const line of siteUrlVerdict.lines) {
+    if (line.startsWith("⚠️")) console.warn(line);
+    else console.log(line);
   }
-
-  validateSiteUrl();
 
   console.log(`[API] Starting Lyceon API server...`);
   console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);

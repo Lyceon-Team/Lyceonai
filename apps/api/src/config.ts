@@ -57,6 +57,15 @@ class ConfigManager {
       
       return parsed;
     } catch (error) {
+      // LATENT: THE SAME DEFECT THAT KILLED EVERY PREVIEW DEPLOYMENT.
+      // This schema requires GCP_PROJECT_ID and GCS_BUCKET_NAME and exits the
+      // process when they are absent — a subsystem credential treated as a
+      // whole-app boot requirement, which is exactly what
+      // `server/index.ts` did with GCP_SERVICE_ACCOUNT_JSON until 2026-09-11.
+      // It is harmless today only because `ConfigManager.load()` has NO CALLER
+      // anywhere in the repo. Wiring it into a boot path without first scoping
+      // these variables (see `server/lib/startup-guards.ts`) reintroduces the
+      // outage. Recorded, deliberately not fixed: code nothing runs.
       if (error instanceof z.ZodError) {
         console.error('❌ [CONFIG] Environment validation failed:');
         error.errors.forEach((err) => {
