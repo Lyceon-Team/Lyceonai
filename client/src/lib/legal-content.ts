@@ -69,12 +69,22 @@ export type LegalDocumentContent =
       sections: LegalSection[];
     }
   | { state: "unpublished"; slug: string; title: string }
+  | { state: "not-found"; slug: string }
   | { state: "error"; slug: string; reason: string };
 
 const BASE = "/legal";
 
+/** Thrown when a legal path 404s, so a routing miss is distinguishable. */
+export class LegalNotFoundError extends Error {
+  constructor(url: string) {
+    super(`${url} responded 404`);
+    this.name = "LegalNotFoundError";
+  }
+}
+
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, { headers: { Accept: "*/*" } });
+  if (res.status === 404) throw new LegalNotFoundError(url);
   if (!res.ok) throw new Error(`${url} responded ${res.status}`);
   return res.text();
 }
@@ -176,6 +186,10 @@ export async function loadLegalDocument(
   try {
     manifest = await loadLegalManifest(slug);
   } catch (err: unknown) {
+    // No manifest at this slug means no such document — a routing miss, which
+    // the page renders as 404. A manifest that exists but cannot be read is a
+    // different thing entirely and must not be disguised as "no such page".
+    if (err instanceof LegalNotFoundError) return { state: "not-found", slug };
     return {
       state: "error",
       slug,
@@ -231,6 +245,7 @@ export type LegalIndexEntry =
       effectiveDate: string;
     }
   | { state: "unpublished"; slug: string; title: string }
+  | { state: "not-found"; slug: string }
   | { state: "error"; slug: string; reason: string };
 
 /**

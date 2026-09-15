@@ -253,9 +253,25 @@ describe("T4 — `current: null` is an unpublished state, not an error", () => {
     expect(doc.title).toContain("billing-terms");
   });
 
-  it("is distinct from the error state a missing manifest produces", async () => {
+  it("is distinct from the state a missing manifest produces", async () => {
+    // Phase 3 split this. A slug with no manifest used to collapse into
+    // `error` alongside a manifest that exists but will not parse, and the
+    // page rendered an error card for both — so three real documents that
+    // simply were not in the six-entry hub registry showed as broken rather
+    // than as 404s. The claim this test was written for is unchanged (an
+    // unpublished document is not a failure); what it names is now exact.
     const doc = await loadLegalDocument("does-not-exist");
-    expect(doc.state).toBe("error");
+    expect(doc.state).toBe("not-found");
+    expect(doc.state).not.toBe("unpublished");
+  });
+
+  it("still separates a routing miss from a document that will not parse", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () => new Response("{ not json", { status: 200 }),
+    );
+    const broken = await loadLegalDocument("billing-terms");
+    expect(broken.state).toBe("error");
   });
 
   it("refuses to resolve a consent version for an unpublished slug", () => {

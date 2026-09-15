@@ -15,7 +15,6 @@ import {
   Award,
   FileText,
   UserCheck,
-  ExternalLink,
   Mail,
   ChevronRight,
 } from "lucide-react";
@@ -132,16 +131,6 @@ export default function LegalHub() {
                       </a>
                     </Link>
                   </Button>
-                  <a
-                    href={trustDoc.pdfPath}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="ghost" size="sm">
-                      <ExternalLink className="h-4 w-4 mr-1" />
-                      View PDF
-                    </Button>
-                  </a>
                 </div>
               </CardContent>
             </Card>
@@ -184,11 +173,18 @@ export default function LegalHub() {
                       })()}
                     </div>
                     <CardTitle className="text-base">
-                      {entryFor(doc.slug)?.state === "error"
-                        ? doc.slug
-                        : ((
-                            entryFor(doc.slug) as { title?: string } | undefined
-                          )?.title ?? "")}
+                      {(() => {
+                        // Only `published` and `unpublished` carry a title.
+                        // `error` and `not-found` do not, and falling through
+                        // to "" would render a nameless card — a silent blank
+                        // where the slug at least says which document broke.
+                        const entry = entryFor(doc.slug);
+                        return entry &&
+                          (entry.state === "published" ||
+                            entry.state === "unpublished")
+                          ? entry.title
+                          : doc.slug;
+                      })()}
                     </CardTitle>
                     <CardDescription className="text-sm">
                       {doc.shortDescription}
@@ -209,15 +205,6 @@ export default function LegalHub() {
                           </a>
                         </Link>
                       </Button>
-                      <a
-                        href={doc.pdfPath}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button variant="ghost" size="sm">
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </a>
                     </div>
                   </CardContent>
                 </Card>

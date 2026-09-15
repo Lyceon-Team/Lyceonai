@@ -3,7 +3,8 @@
  * @implemented 2026-09-15
  *
  * plain English: the app-side registry for legal documents — slug, consent key,
- * blurb, PDF path. It no longer contains a single line of document text.
+ * blurb. It no longer contains a single line of document text, nor a path to a
+ * file that does.
  *
  * expected outcome: one source for every document body. Titles, versions,
  * effective dates and bodies come from `legal/` at runtime via
@@ -17,17 +18,26 @@
  * versions behind `docs/Spec`, and nothing tied it to the `docVersion` recorded
  * against them at signup. Deleting it is the point of this phase.
  *
+ * AND THE SIX PDFs. `client/public/legal/` held the last duplicate of any legal
+ * document text: v1, December 2024, `Lyceon` branding, sitting beside markdown
+ * that is v2.0 effective 2026-09-11. A reader on the v2.0 Privacy Policy who
+ * asked for the downloadable copy got the December 2024 text. They were binary,
+ * so nothing regenerated them from `en.md` and no gate could see they had
+ * drifted. Deleted with their links rather than resynchronised — the markdown
+ * page is the document, and `index.css` makes it print.
+ *
  * trade-offs:
- *  - `shortDescription` and `pdfPath` stay here because they are product
- *    metadata, not document content: no manifest carries them, and they are
- *    not text anybody agrees to.
+ *  - `shortDescription` stays here because it is product metadata, not document
+ *    content: no manifest carries it, and it is not text anybody agrees to.
+ *  - The PDF path is GONE. A path to a deleted file is a dangling citation, and
+ *    an entry still carrying one would invite regenerating the file to satisfy it.
  *  - `title` is deliberately NOT here. It lives in each manifest, so the hub
  *    and the document page name a document from the same place the
  *    cross-reference gate resolves it.
  *
  * edge cases:
- *  - `billing-terms` has no entry: it has no blurb, no PDF and no consent key,
- *    and is not listed on the hub until it is published.
+ *  - `billing-terms` has no entry: it has no blurb and no consent key, and is
+ *    not listed on the hub until it is published.
  */
 import { csrfFetch } from "./csrf";
 
@@ -35,7 +45,6 @@ export type LegalDocRegistryEntry = {
   slug: string;
   docKey: string;
   shortDescription: string;
-  pdfPath: string;
 };
 
 /**
@@ -48,40 +57,34 @@ export const legalDocs: LegalDocRegistryEntry[] = [
     docKey: "trust_and_safety",
     shortDescription:
       "How we approach trust, safety, and responsibility in tutor-supported learning.",
-    pdfPath: "/legal/Trust-and-Safety-at-Lyceon.pdf",
   },
   {
     slug: "community-guidelines",
     docKey: "community_guidelines",
     shortDescription: "How users are expected to behave when using LYCEON.",
-    pdfPath: "/legal/Lyceon-Community-Guidelines.pdf",
   },
   {
     slug: "privacy-policy",
     docKey: "privacy_policy",
     shortDescription:
       "How we collect, use, store, share, and protect information.",
-    pdfPath: "/legal/Lyceon-Privacy-Policy.pdf",
   },
   {
     slug: "honor-code",
     docKey: "honor_code",
     shortDescription:
       "Our commitment to honest learning and academic integrity.",
-    pdfPath: "/legal/Lyceon-Honor-Code.pdf",
   },
   {
     slug: "student-terms",
     docKey: "student_terms",
     shortDescription: "The terms that govern your access to and use of LYCEON.",
-    pdfPath: "/legal/Lyceon-Student-Terms-of-Use.pdf",
   },
   {
     slug: "parent-guardian-terms",
     docKey: "parent_guardian_terms",
     shortDescription:
       "Terms for parents or guardians providing consent for minors.",
-    pdfPath: "/legal/Lyceon-Parent-Guardian-Terms.pdf",
   },
 ];
 
