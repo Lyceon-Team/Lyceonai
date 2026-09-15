@@ -60,7 +60,9 @@ function isEmailOtpType(value: unknown): value is EmailOtpType {
 
 // AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect. The
 // only producer is the native password-recovery link (→ the set-new-password page).
-const SAFE_NEXT_PATHS = new Set<string>(["/update-password"]);
+// The recovery landing path — stated once; SAFE_NEXT_PATHS and the copy classifiers both derive from it.
+const RECOVERY_NEXT = "/update-password";
+const SAFE_NEXT_PATHS = new Set<string>([RECOVERY_NEXT]);
 function parseSafeNext(req: Request): string | null {
   const next = req.query.next;
   return typeof next === "string" && SAFE_NEXT_PATHS.has(next) ? next : null;
@@ -88,8 +90,6 @@ export type CallbackFailureCode =
   | "recovery_link_invalid"
   | "email_link_expired"
   | "email_link_invalid";
-
-const RECOVERY_NEXT = "/update-password";
 
 function hasText(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
