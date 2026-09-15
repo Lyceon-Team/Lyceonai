@@ -190,7 +190,7 @@ jobs:
           git fetch --no-tags --depth=1 origin \
             "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
 
-      - name: Legal versioning gates (immutability, manifest, cross-reference)
+      - name: Legal versioning gates (immutability, manifest, cross-reference, body purity)
         run: pnpm run gate:legal
 
       - name: Legal gates self-test (proves each rule turns them red)

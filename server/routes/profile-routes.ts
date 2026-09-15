@@ -8,6 +8,7 @@ import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { LEGAL_DOCS } from "../../shared/legal-consent.js";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
 import crypto from "crypto";
 import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
@@ -29,14 +30,22 @@ function calculateAge(birthDate: string): number {
   return age;
 }
 
+/**
+ * Whether the user has accepted the CURRENTLY published version of every
+ * required document. The version is resolved from legal/ rather than read from
+ * a constant, so publishing v3 re-prompts without a code change — which is the
+ * behaviour a materially changed contract should have.
+ */
 function hasAllCurrentLegalAcceptances(
   legalRows: Array<{ doc_key: string; doc_version: string }>,
 ): boolean {
-  return REQUIRED_LEGAL_DOCS.every((doc) =>
-    legalRows.some(
-      (row) => row.doc_key === doc.docKey && row.doc_version === doc.docVersion,
-    ),
-  );
+  return REQUIRED_LEGAL_DOCS.every((doc) => {
+    const current = resolveLegalVersion(doc.slug);
+    return legalRows.some(
+      (row) =>
+        row.doc_key === doc.docKey && row.doc_version === current.version,
+    );
+  });
 }
 
 const profileCompletionSchema = z.object({
