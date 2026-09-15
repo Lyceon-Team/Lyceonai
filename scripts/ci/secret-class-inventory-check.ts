@@ -82,6 +82,8 @@ const KNOWN_NON_CONFIG = new Set([
   "USER",
   "PWD",
   "TZ",
+  // Platform-provided env vars (not application config)
+  "VERCEL_ENV",
   // Legacy fallback names that alias to canonical entries in the manifest
   "DOCUMENT_AI_PROCESSOR_ID",
   "DOCUMENT_AI_LOCATION",
@@ -154,6 +156,40 @@ function scanEnvReads(): Map<string, Set<string>> {
 
 // ── Checks ─────────────────────────────────────────────────────────
 
+/**
+ * Check that a consumer citation `file:line` actually references the env var.
+ * Reads a ±5 line window around the cited line and checks for the key name.
+ * Citations without a line number fall back to file-existence only.
+ * Citations with a parenthetical note like "(29+ locations)" skip line check.
+ */
+function consumerReferencesKey(
+  consumer: string,
+  keyId: string,
+): { exists: boolean; references: boolean } {
+  const noteMatch = consumer.match(/^(.+?) \(.+\)$/);
+  const cleaned = noteMatch ? noteMatch[1] : consumer;
+  const lineMatch = cleaned.match(/^(.+):(\d+)$/);
+
+  if (!lineMatch) {
+    const exists = fs.existsSync(path.join(ROOT, cleaned));
+    return { exists, references: exists };
+  }
+
+  const [, filePath, lineNumStr] = lineMatch;
+  const fullPath = path.join(ROOT, filePath);
+  if (!fs.existsSync(fullPath)) return { exists: false, references: false };
+
+  if (noteMatch) return { exists: true, references: true };
+
+  const lineNum = parseInt(lineNumStr, 10);
+  const content = fs.readFileSync(fullPath, "utf-8");
+  const lines = content.split("\n");
+  const start = Math.max(0, lineNum - 6);
+  const end = Math.min(lines.length, lineNum + 5);
+  const window = lines.slice(start, end).join("\n");
+  return { exists: true, references: window.includes(keyId) };
+}
+
 function checkRequiredHaveConsumers(entries: ManifestEntry[]): string[] {
   const violations: string[] = [];
   for (const entry of entries) {
@@ -165,14 +201,25 @@ function checkRequiredHaveConsumers(entries: ManifestEntry[]): string[] {
       );
       continue;
     }
-    // Verify at least one consumer file exists
-    const anyExists = consumers.some((c) => {
-      const filePath = c.replace(/:\d+$/, "").replace(/ \(.+\)$/, "");
-      return fs.existsSync(path.join(ROOT, filePath));
-    });
+
+    let anyExists = false;
+    let anyReferences = false;
+    const staleConsumers: string[] = [];
+
+    for (const c of consumers) {
+      const result = consumerReferencesKey(c, entry.id);
+      if (result.exists) anyExists = true;
+      if (result.references) anyReferences = true;
+      if (result.exists && !result.references) staleConsumers.push(c);
+    }
+
     if (!anyExists) {
       violations.push(
         `REQUIRED_MISSING_FILE: ${entry.id} (runtime=${entry.runtime}) consumer files not found: ${consumers.join(", ")}`,
+      );
+    } else if (!anyReferences) {
+      violations.push(
+        `REQUIRED_STALE_CONSUMER: ${entry.id} (runtime=${entry.runtime}) no consumer file:line references the key: ${consumers.join(", ")}`,
       );
     }
   }
