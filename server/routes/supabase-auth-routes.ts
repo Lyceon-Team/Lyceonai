@@ -12,6 +12,7 @@ import { BUILD } from "../lib/build.js";
 import { clearAuthCookies } from "../lib/auth-cookies.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { z } from "zod";
+import { passwordSchema } from "../../packages/shared/src/password-policy";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
@@ -31,9 +32,11 @@ const authRateLimiter = rateLimit({
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
+// @spec [Coding Standards §7.2] the password rule is the shared policy — the same constant the
+// signup form and the set-new-password page render. Never a local `.min(n)` that can drift.
 const signupSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
   displayName: z.string().trim().min(1).max(120).optional(),
   legalConsent: z.object({
     studentTermsAccepted: z.literal(true),
@@ -769,9 +772,19 @@ router.post(
   doubleCsrfProtection,
   async (req: Request, res: Response) => {
     try {
-      const { password } = req.body;
-      if (!password)
-        return res.status(400).json({ error: "Password is required" });
+      // @spec [Coding Standards §7.1, §7.2] boundary parse against the SHARED password policy —
+      // the same rules the set-new-password page renders. A password the page would refuse is
+      // refused here too (the server is the enforcement; the page is the courtesy). The 400 body
+      // names the unmet rule, never the password.
+      const parsed = z.object({ password: passwordSchema }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error:
+            parsed.error.errors[0]?.message ??
+            "Password does not meet the requirements",
+        });
+      }
+      const { password } = parsed.data;
 
       if (runningAgainstPlaceholder()) return res.json({ success: true });
 

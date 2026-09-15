@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import {
+  PASSWORD_POLICY,
+  evaluatePassword,
+} from "@lyceon/shared/password-policy";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   Card,
@@ -9,18 +13,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
+import { PasswordField } from "@/components/auth/PasswordField";
 
 /**
- * @spec [contracts/auth-standard-flow.contract.md AS-3, AS-5] | @implemented 2026-06-20
+ * @spec [contracts/auth-standard-flow.contract.md AS-3, AS-5; Coding Standards §7.2] |
+ *   @implemented 2026-06-20 | @updated 2026-09-15 (shared password policy, PasswordField)
  * plain English: set-new-password page for the recovery flow (session from the recovery cookie). The
- * error catch routes through resolveAuthErrorMessage (human, recoverable, never a raw string); on
- * success it lands by role. Client-side validation (length, match) is shown directly.
+ * rules come from the ONE shared policy (min length, letter, digit, GoTrue cap) and are visible
+ * before typing with live met/unmet feedback; submit stays disabled until every rule is met and the
+ * confirmation matches, and the reason it is disabled is written next to the button. The error
+ * catch routes through resolveAuthErrorMessage (human, recoverable, never a raw string); on success
+ * it lands by role. Edge case: the `<form>` still guards on submit — the disabled button is UX,
+ * the server's Zod parse is the enforcement.
  */
 export default function UpdatePassword() {
   const [, setLocation] = useLocation();
@@ -31,12 +39,24 @@ export default function UpdatePassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
 
+  const policyValid = evaluatePassword(password, PASSWORD_POLICY).valid;
+  const passwordsMatch =
+    confirmPassword.length > 0 && password === confirmPassword;
+  const disabledReason = isLoading
+    ? null
+    : !policyValid
+      ? "Choose a password that meets every requirement above."
+      : !passwordsMatch
+        ? "Enter the same password in both fields."
+        : null;
+  const canSubmit = !isLoading && disabledReason === null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long");
+    if (!policyValid) {
+      setError("Your new password doesn't meet every requirement yet.");
       return;
     }
 
@@ -71,31 +91,27 @@ export default function UpdatePassword() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
+            <PasswordField
+              id="new-password"
+              testId="input-new-password"
+              label="New Password"
+              value={password}
+              onChange={setPassword}
+              autoComplete="new-password"
+              showRequirements
+              required
+            />
 
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
+            <PasswordField
+              id="confirm-password"
+              testId="input-confirm-password"
+              label="Confirm Password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              autoComplete="new-password"
+              showRequirements={false}
+              required
+            />
 
             {error && (
               <Alert className="border-amber-200 bg-amber-50">
@@ -106,9 +122,27 @@ export default function UpdatePassword() {
               </Alert>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!canSubmit}
+              data-testid="button-update-password"
+              aria-describedby={
+                disabledReason ? "update-password-submit-reason" : undefined
+              }
+            >
               {isLoading ? "Updating..." : "Update Password"}
             </Button>
+            {disabledReason ? (
+              <p
+                id="update-password-submit-reason"
+                data-testid="update-password-submit-reason"
+                aria-live="polite"
+                className="text-sm text-muted-foreground"
+              >
+                {disabledReason}
+              </p>
+            ) : null}
           </form>
         </CardContent>
       </Card>

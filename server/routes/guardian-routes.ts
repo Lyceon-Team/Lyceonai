@@ -491,6 +491,15 @@ router.delete(
           .json({ error: "Failed to unlink student", requestId });
       }
 
+      // §36.3 / contract §6.1 (2026-09-15): the RPC committed the revocation AND its
+      // guardian_unlinked event + messages (addressed to the STUDENT — the party who did not
+      // revoke, derived once inside the function as v_target). Deliver that event's email
+      // now, awaited, exactly as the redeem route does for guardian_linked; the dispatcher
+      // never throws and the daily sweep retries anything left queued.
+      await dispatchQueuedMessages({
+        eventId: notificationEventId("guardian_unlinked", revoked.id),
+      });
+
       logger.info(
         "GUARDIAN",
         "unlink_student",

@@ -3659,8 +3659,10 @@ CREATE FUNCTION public.revoke_guardian_link_audited(p_guardian_id uuid, p_studen
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_after  public.guardian_links;
-  v_target uuid;
+  v_after         public.guardian_links;
+  v_target        uuid;
+  v_student_name  text;
+  v_guardian_name text;
 BEGIN
   UPDATE public.guardian_links
      SET status = 'revoked',
@@ -3676,6 +3678,8 @@ BEGIN
     RAISE EXCEPTION 'link is not active' USING ERRCODE = 'LY003';
   END IF;
 
+  -- THE one derivation of the counterparty: the party who did not revoke. The audit row and
+  -- the notification below both read v_target; nothing derives the recipient a second time.
   v_target := CASE WHEN p_revoked_by = v_after.student_profile_id
                    THEN v_after.guardian_profile_id
                    ELSE v_after.student_profile_id
@@ -3687,6 +3691,29 @@ BEGIN
     'guardian_link_revoked', p_revoked_by, v_target,
     jsonb_build_object('from', 'active', 'to', v_after.status),
     v_after.id, p_request_id
+  );
+
+  -- §36.3 — the other party is told, in THIS transaction (contract §2.2). Recipient: v_target
+  -- only, in_app + email; the revoker gets UI confirmation, never a notification. Subject is
+  -- the student (the account the link is about), as for guardian_linked. Payload: the link id
+  -- and the two display names (contract §8.1; Doc 01 §38.1 — identity only). The reason is
+  -- NEVER here: it would become student-readable under RLS and leave in an email body.
+  SELECT display_name INTO v_student_name
+    FROM public.profiles WHERE id = v_after.student_profile_id;
+  SELECT display_name INTO v_guardian_name
+    FROM public.profiles WHERE id = v_after.guardian_profile_id;
+  PERFORM public.emit_notification_event(
+    public.notification_event_id('guardian_unlinked', v_after.id::text),
+    'guardian_unlinked',
+    v_after.student_profile_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', v_target, 'channels', jsonb_build_array('in_app', 'email'))
+    ),
+    jsonb_build_object(
+      'link_id', v_after.id,
+      'student_display_name', coalesce(v_student_name, ''),
+      'guardian_display_name', coalesce(v_guardian_name, '')
+    )
   );
 
   RETURN v_after;
@@ -5080,7 +5107,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = 'guardian_linked'::text))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text])))
 );
 
 

@@ -77,7 +77,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
   resolveUserIdFromToken: vi.fn(async () => null),
 }));
 
-
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({
     auth: {
@@ -582,5 +581,61 @@ describe("Auth routes — Stage 2 deltas (signin / reset / update-password)", ()
     expect(ssrUpdateUserMock).toHaveBeenCalledWith({
       password: "BrandNewPassword123!",
     });
+  });
+
+  /**
+   * @spec [Coding Standards §7.1, §7.2; contracts/auth-standard-flow.contract.md AS-1, AS-5]
+   * @implemented [2026-09-15]
+   * The server parses passwords against the SHARED policy on both set surfaces. A password the
+   * form would refuse is refused here too — the page is the courtesy, the parse is the enforcement.
+   * The 400 body names the rule, never echoes the password. Would FAIL if either route regressed to
+   * a local `.min(n)` or to a bare truthiness check.
+   */
+  it("update-password refuses a password below the shared policy (server-side, 400, no updateUser call)", async () => {
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "abcdefgh", // 8 chars, no digit → violates the shared policy
+    });
+
+    expect(res.status).toBe(400);
+    expect(ssrUpdateUserMock).not.toHaveBeenCalled();
+    expect(String(res.body.error)).toMatch(/number/i);
+    expect(JSON.stringify(res.body)).not.toContain("abcdefgh");
+  });
+
+  it("update-password accepts a 72-character password and refuses 73 (GoTrue cap, never truncated)", async () => {
+    const app = await loadAuthApp();
+    const seventyTwo = "a1".repeat(36);
+
+    const ok = await postWithCsrf(app, "/api/auth/update-password", {
+      password: seventyTwo,
+    });
+    expect(ok.status).toBe(200);
+    expect(ssrUpdateUserMock).toHaveBeenCalledWith({ password: seventyTwo });
+
+    const tooLong = await postWithCsrf(app, "/api/auth/update-password", {
+      password: seventyTwo + "x",
+    });
+    expect(tooLong.status).toBe(400);
+    expect(ssrUpdateUserMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("signup refuses a password below the shared policy before any Supabase call", async () => {
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "student@example.com",
+      password: "short1",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/at least 8/i);
+    expect(JSON.stringify(res.body)).not.toContain("short1");
   });
 });

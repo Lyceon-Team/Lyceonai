@@ -548,6 +548,29 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-notifications.json \
             --file tests/ci/notifications.pg.ci.test.ts
 
+      # @spec [Doc-01_V8 §36.3 (either party revokes; the other is told), §36.2 (invite limits);
+      #        contracts/notifications.contract.md §2.3 guardian_unlinked row, §13] | @implemented [2026-09-15]
+      # Guardian revoke → guardian_unlinked event (recipient = v_target only, revocation_reason
+      # in no payload and no template) and the guardian INVITE direct send (idempotent key,
+      # both §36.2 buckets on the real ledger, redeem still requires auth, byte-identical
+      # response for known/unknown addresses). Real migrations on the throwaway Postgres;
+      # verdict from vitest's JSON report so a skipped PG suite cannot read as a pass.
+      - name: Guardian unlink event + invite → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/guardian-unlinked.pg.ci.test.ts \
+            tests/ci/guardian-invite.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-unlink-invite.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-unlink-invite.json \
+            --file tests/ci/guardian-unlinked.pg.ci.test.ts \
+            --file tests/ci/guardian-invite.pg.ci.test.ts
+
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost

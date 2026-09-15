@@ -64,8 +64,44 @@ export const STUDENT_LINK_PATHS = {
   linkCodeRegenerate: "/link-code/regenerate",
   /** §36.3 — "either party" ends an active link; this is the student's half. */
   linkRevoke: "/links/:linkId",
+  /**
+   * §36.3 — the student's ACTIVE guardian links, so the "Remove guardian" control has a
+   * link id to address. Identity only (Doc 01 §38.1 in reverse: the student learns who is
+   * linked, nothing about the guardian beyond their display name).
+   */
+  links: "/links",
+  /**
+   * Guardian invite by email (2026-09-15). The CURRENT code travels by email with a deep
+   * link to the redeem page; nothing about redeeming changes. A direct send, not an event.
+   */
+  linkCodeInvite: "/link-code/invite",
 } as const;
 
+/** One active guardian link as the student sees it. Display name and dates only. */
+export const studentGuardianLinkViewSchema = z.object({
+  link_id: z.string().min(1),
+  guardian_display_name: z.string(),
+  linked_at: z.string(),
+});
+export type StudentGuardianLinkView = z.infer<
+  typeof studentGuardianLinkViewSchema
+>;
+export const studentGuardianLinksViewSchema = z.object({
+  links: z.array(studentGuardianLinkViewSchema),
+});
+export type StudentGuardianLinksView = z.infer<
+  typeof studentGuardianLinksViewSchema
+>;
+
+/** Full client-side path for the student's active links, e.g. `/api/students/<id>/links`. */
+export function studentLinksUrl(studentId: string): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/links`;
+}
+
+/** Full client-side path for inviting a guardian by email, e.g. `/api/students/<id>/link-code/invite`. */
+export function studentLinkCodeInviteUrl(studentId: string): string {
+  return `${STUDENT_RESOURCE_MOUNT}/${encodeURIComponent(studentId)}/link-code/invite`;
+}
 
 /** Full client-side path for the student's own code, e.g. `/api/students/<id>/link-code`. */
 export function studentLinkCodeUrl(studentId: string): string {

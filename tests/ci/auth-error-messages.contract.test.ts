@@ -19,6 +19,11 @@ const CODES = [
   "google_oauth_failed",
   "account_exists",
   "consent_capture_failed",
+  // Email-link outcome codes (2026-09-15: distinct per cause, never the Google copy)
+  "recovery_link_expired",
+  "recovery_link_invalid",
+  "email_link_expired",
+  "email_link_invalid",
   // Email/password form codes (Stage 3)
   "signup_failed",
   "signup_consent_failed",
@@ -47,6 +52,28 @@ describe("humanAuthError (AS-3 standard error UX)", () => {
       expect(message).not.toContain("_");
       expect(message?.endsWith(".")).toBe(true);
     }
+  });
+
+  // 2026-09-15: an expired/malformed reset link must read as a RESET-link problem with its own
+  // recovery action, never as the Google copy — and the four link codes are pairwise distinct.
+  it("email-link codes carry distinct, cause-specific copy that is not the Google message", () => {
+    const google = humanAuthError("google_oauth_failed") ?? "";
+    const linkCodes = [
+      "recovery_link_expired",
+      "recovery_link_invalid",
+      "email_link_expired",
+      "email_link_invalid",
+    ];
+    const copies = linkCodes.map((c) => humanAuthError(c) ?? "");
+    for (const copy of copies) {
+      expect(copy).not.toBe(google);
+      expect(copy.toLowerCase()).not.toContain("google");
+    }
+    expect(new Set(copies).size).toBe(linkCodes.length);
+    expect(humanAuthError("recovery_link_expired")).toMatch(/reset link/i);
+    expect(humanAuthError("recovery_link_expired")).toMatch(/expired/i);
+    expect(humanAuthError("recovery_link_invalid")).toMatch(/reset link/i);
+    expect(humanAuthError("recovery_link_invalid")).toMatch(/forgot password/i);
   });
 
   it("never leaks the internal reason for the consent fail-closed path (signup_consent_failed)", () => {
