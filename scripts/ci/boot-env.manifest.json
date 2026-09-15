@@ -20,7 +20,22 @@
     "never connects to anything. Do not put a real secret in this file.",
     "",
     "WHAT THIS CANNOT DO: it cannot verify Vercel actually has these set. See",
-    "the drift note in scripts/ci/boot-probe.mjs."
+    "the drift note in scripts/ci/boot-probe.mjs.",
+    "",
+    "GCP_SERVICE_ACCOUNT_JSON IS DELIBERATELY ABSENT (2026-09-11). It was here",
+    "because server/index.ts exited when it was missing — a startup guard that",
+    "gated on NODE_ENV, which Vercel sets for previews too, so every preview",
+    "deployment died at boot and served 500 on every route. The credential is",
+    "subsystem-scoped: only LISA's crisis classifier and the BigQuery retention",
+    "archive use it. It now fails at USE, so it is no longer load-bearing at",
+    "boot and the necessity check correctly refuses to let it sit in this list.",
+    "",
+    "WHAT REPLACED THE ENFORCEMENT: nothing at boot, by owner ruling, and that",
+    "is the point — a missing tutor credential must not stop checkout. Its",
+    "absence is reported once at startup as a WARN with event",
+    "`credentials_absent` (component GCP), which is the signal to alert on.",
+    "Do not re-add it here to restore a boot check: the necessity property will",
+    "fail, and re-adding the exit it implies would restore the outage."
   ],
   "required": {
     "SUPABASE_URL": "https://boot-probe.invalid",
@@ -31,8 +46,7 @@
     "PUBLIC_SITE_URL": "https://lyceon.ai",
     "RESEND_API_KEY": "boot-probe-not-a-real-key",
     "RESEND_WEBHOOK_SECRET": "whsec_boot-probe-not-a-real-secret",
-    "NOTIFICATION_FROM_EMAIL": "notifications@boot-probe.invalid",
-    "GCP_SERVICE_ACCOUNT_JSON": "{\"type\":\"service_account\",\"project_id\":\"boot-probe\",\"private_key_id\":\"fake\",\"private_key\":\"-----BEGIN BOOT PROBE FAKE-----\\nnotreal\\n-----END BOOT PROBE FAKE-----\\n\",\"client_email\":\"probe@boot-probe.iam.gserviceaccount.com\",\"client_id\":\"000000000000000000000\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\"}"
+    "NOTIFICATION_FROM_EMAIL": "notifications@boot-probe.invalid"
   },
   "harness": {
     "NODE_ENV": "production",
