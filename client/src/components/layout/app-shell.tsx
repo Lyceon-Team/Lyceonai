@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Link, useLocation } from "wouter";
 import {
-  UserCircle,
   Menu,
   GraduationCap,
   LayoutDashboard,
@@ -15,21 +14,13 @@ import {
   Settings,
   LogOut,
   Calendar,
+  type LucideIcon,
 } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import Footer from "./Footer";
+import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
 
 export function AppShell({
   children,
@@ -55,36 +46,13 @@ export function AppShell({
 
 function AppHeader() {
   const [location, navigate] = useLocation();
-  const { user, isLoading: authLoading, signOut } = useSupabaseAuth();
-  const { toast } = useToast();
+  const { user } = useSupabaseAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // Get display name with fallbacks
-  const displayName =
-    user?.display_name || user?.email?.split("@")[0] || "Student";
-  const isLoadingAuth = authLoading;
-
-  // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
-  // plain English: sign-out failures route through resolveAuthErrorMessage (the auth display
-  // chokepoint) so the toast shows a human, recoverable message — never the raw error string.
-  // Use the context signOut which clears Supabase session, backend cookies, and React Query cache
-  const handleSignOut = async () => {
-    setIsSigningOut(true);
-    try {
-      await signOut();
-      toast({ title: "Signed out successfully" });
-      navigate("/login");
-    } catch (error) {
-      console.error("[NAV] Sign out failed:", error);
-      toast({
-        title: "Sign out failed",
-        description: resolveAuthErrorMessage(error),
-      });
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
+  // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20, shared 2026-09-11
+  // plain English: one sign-out path for the mobile sheet and the desktop menu, shared with the
+  // guardian shell through ./HeaderUserMenu so the two headers cannot drift.
+  const { signOut: handleSignOut, isSigningOut } = useHeaderSignOut();
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -102,7 +70,7 @@ function AppHeader() {
   }: {
     href: string;
     label: string;
-    icon: any;
+    icon: LucideIcon;
     mobile?: boolean;
   }) => {
     const isActive =
@@ -207,64 +175,12 @@ function AppHeader() {
               </SheetContent>
             </Sheet>
 
-            {/* Desktop User Dropdown */}
-            {user && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full"
-                    data-testid="button-user-menu"
-                  >
-                    <UserCircle className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  className="w-56 bg-background border-border"
-                >
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      {isLoadingAuth ? (
-                        <p className="text-sm font-medium leading-none text-muted-foreground opacity-70">
-                          Loading...
-                        </p>
-                      ) : (
-                        <>
-                          <p
-                            className="text-sm font-medium leading-none text-foreground"
-                            data-testid="text-user-name"
-                          >
-                            {displayName}
-                          </p>
-                          <p className="text-xs leading-none text-muted-foreground">
-                            {user?.email}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => navigate("/profile")}
-                    data-testid="menu-profile"
-                  >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleSignOut}
-                    disabled={isSigningOut}
-                    data-testid="menu-logout"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    {isSigningOut ? "Signing out..." : "Sign Out"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {/* Desktop User Dropdown — shared with the guardian shell */}
+            <HeaderUserMenu
+              signOut={handleSignOut}
+              isSigningOut={isSigningOut}
+              fallbackName="Student"
+            />
           </div>
         </div>
       </div>
