@@ -53,6 +53,7 @@ This document is the single authoritative registry of:
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
+| `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
