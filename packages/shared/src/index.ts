@@ -14,3 +14,4 @@ export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";
 export * from "./result.js";
 export * from "./notifications-schema.js";
+export * from "./password-policy.js";

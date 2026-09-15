@@ -329,3 +329,152 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(verifyOtpMock).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-3 (human, recoverable copy), AS-5 (recovery);
+ *   auth-login-e2e.contract.md AL-3] | @implemented [2026-09-15]
+ *
+ * plain English: each failure cause on the callback lands on ITS OWN error code, so an expired or
+ * malformed password-reset link never reads "couldn't sign in with Google". One test per branch,
+ * each reached by its own cause, each asserting the exact code — and each asserting the allowlist
+ * guard is unchanged (verifyOtp is never called with an un-narrowed type). Would FAIL if any branch
+ * collapsed back to google_oauth_failed, or if a new code leaked into the wrong branch.
+ */
+describe("Callback failure codes are distinct per cause (AS-3 / AS-5 / AL-3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.PUBLIC_SITE_URL = "https://lyceon.ai";
+    captureLegalMock.mockResolvedValue({ durable: true });
+  });
+
+  afterEach(() => {
+    if (baselineSiteUrl === undefined) delete process.env.PUBLIC_SITE_URL;
+    else process.env.PUBLIC_SITE_URL = baselineSiteUrl;
+  });
+
+  // Branch: verifyOtp refuses a well-formed recovery token (expired / already used).
+  it("recovery token refused by verifyOtp → recovery_link_expired", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: "Token has expired or is invalid" },
+    });
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=stale&type=recovery&next=%2Fupdate-password",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=recovery_link_expired",
+    );
+    expect(verifyOtpMock).toHaveBeenCalledWith({
+      token_hash: "stale",
+      type: "recovery",
+    });
+  });
+
+  // Branch: verifyOtp refuses a NON-recovery email token (signup confirmation) → email copy, not reset copy.
+  it("signup-confirmation token refused by verifyOtp → email_link_expired", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: "Token has expired or is invalid" },
+    });
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=stale&type=signup",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=email_link_expired",
+    );
+  });
+
+  // Branch: recovery type present but token_hash missing (malformed / truncated link). The allowlist
+  // guard rejects; only the copy changes. verifyOtp is never reached.
+  it("type=recovery with no token_hash → recovery_link_invalid, verifyOtp never called", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?type=recovery&next=%2Fupdate-password",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=recovery_link_invalid",
+    );
+    expect(verifyOtpMock).not.toHaveBeenCalled();
+    expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
+  });
+
+  // Branch: token_hash present but `type` is NOT on the allowlist (e.g. a mangled `type=recover`).
+  // The guard still rejects (verifyOtp must not see an un-narrowed type); with no recovery signal
+  // the copy is the generic email-link one.
+  it("token_hash with an un-allowlisted type → email_link_invalid, verifyOtp never called", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=abc&type=recover",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=email_link_invalid",
+    );
+    expect(verifyOtpMock).not.toHaveBeenCalled();
+  });
+
+  // Branch: GoTrue's hosted /verify redirect for a stale link (`error=access_denied&error_code=otp_expired`)
+  // on the recovery redirect (allowlisted next=/update-password) → reset copy.
+  it("GoTrue otp_expired redirect on the recovery next → recovery_link_expired", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?error=access_denied&error_code=otp_expired&next=%2Fupdate-password",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=recovery_link_expired",
+    );
+    expect(verifyOtpMock).not.toHaveBeenCalled();
+  });
+
+  // Branch: the same GoTrue redirect with NO recovery signal → email copy.
+  it("GoTrue otp_expired redirect without recovery next → email_link_expired", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?error=access_denied&error_code=otp_expired",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=email_link_expired",
+    );
+  });
+
+  // Branch: a real Google provider error is UNCHANGED — still google_oauth_failed.
+  it("a Google provider error stays google_oauth_failed", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?error=access_denied&error_description=User+denied+access",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=google_oauth_failed",
+    );
+  });
+
+  // Branch: a failed PKCE code exchange is UNCHANGED — still supabase_exchange, never a link code.
+  it("a failed code exchange stays supabase_exchange", async () => {
+    exchangeCodeForSessionMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: "bad code" },
+    });
+
+    const res = await request(makeApp()).get("/auth/callback?code=bad-code");
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=supabase_exchange",
+    );
+  });
+
+  // Open-redirect guard interplay: an un-allowlisted `next` gives NO recovery signal (it is dropped
+  // by parseSafeNext), so a bare failure stays generic. Proves the classifier reads the allowlisted
+  // value, not the raw query.
+  it("an un-allowlisted next contributes no recovery signal to the copy", async () => {
+    const res = await request(makeApp()).get(
+      "/auth/callback?error=access_denied&next=https://evil.example.com/update-password",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=google_oauth_failed",
+    );
+  });
+});

@@ -23,7 +23,7 @@ Three email lanes exist. This contract governs exactly one.
 | Auth email (password reset, email change, confirmation) | Supabase Auth via its SMTP integration (Resend) | none — no send code, no templates |
 | Billing email (receipts, dunning, trial ending) | Stripe | none |
 | **Product notifications** (in-app + email from one event) | **this contract** | `notification_events`, `notification_messages`, `notification_delivery_events`, `server/lib/notifications/*`, `server/routes/notifications.ts`, `server/routes/resend-webhook.ts` |
-| **Direct transactional sends** (guardian consent request; deletion-scheduled recovery link) | **this contract, §0.4** — same transport, NOT events (owner rulings R7/R8, 2026-09-03) | `server/lib/notifications/direct-sends.ts` and its two call sites |
+| **Direct transactional sends** (guardian consent request; deletion-scheduled recovery link; guardian link invite) | **this contract, §0.4** — same transport, NOT events (owner rulings R7/R8, 2026-09-03; invite 2026-09-15) | `server/lib/notifications/direct-sends.ts` and its three call sites |
 
 **C0.1** No code under `server/lib/notifications/` or `server/routes/notifications.ts` sends auth or billing mail.
 *Violated if:* a template or transport call in those paths references password reset, email change, confirmation, receipts, invoices, or trial state.
@@ -34,18 +34,18 @@ Three email lanes exist. This contract governs exactly one.
 **C0.3** `contact@lyceon.ai` does not appear in any file under `server/`, `apps/`, `packages/`, `client/`, or `supabase/`.
 *Violated if:* `grep -rn "contact@lyceon.ai" server apps packages client supabase` returns anything.
 
-**C0.4** Two transactional emails are direct sends, not notification events, by owner ruling (2026-09-03): the guardian consent request (R7 — the recipient has no account by definition; every message row is addressed to a profile) and the deletion-scheduled recovery email (R8 — it carries a credential that can never sit in a persisted, recipient-readable payload). Each is sent at its request site through `server/lib/notifications/direct-sends.ts` → `transport.ts`, from `NOTIFICATION_FROM_EMAIL`, with `Idempotency-Key` derived from the durable request row id: `guardian-consent-request:<guardian_consent_requests.id>` and `account-deletion-scheduled:<account_deletion_requests.id>`. Nothing about either message (address, body, token) is persisted by this lane.
-*Violated if:* a `notification_events` row exists with either type; the consent route or the deletion route no longer calls its sender (`tests/ci/notifications.direct-sends.test.ts` greps both call sites); a captured send lacks the row-derived key; or a token or address appears in any notification table.
+**C0.4** Three transactional emails are direct sends, not notification events: the guardian consent request (R7, 2026-09-03 — the recipient has no account by definition; every message row is addressed to a profile), the deletion-scheduled recovery email (R8 — it carries a credential that can never sit in a persisted, recipient-readable payload), and the guardian link invite (2026-09-15 — the recipient has no profile row, same ruling as R7). Each is sent at its request site through `server/lib/notifications/direct-sends.ts` → `transport.ts`, from `NOTIFICATION_FROM_EMAIL`, with a deterministic `Idempotency-Key` derived from durable state. For the two request-row sends that is the row id: `guardian-consent-request:<guardian_consent_requests.id>` and `account-deletion-scheduled:<account_deletion_requests.id>`. The invite has no row of its own and no `guardian_links` row exists before redemption, so its key is derived from the durable state the email carries: `guardian-link-invite:<student_profile_id>:<profiles.student_link_code_issued_at ISO>:<sha256(normalised address)[0:32]>` — one email per (live code, address); a regenerated code or another address is a new key; the address never appears in the key. Nothing about any of the three messages (address, body, token, code) is persisted by this lane.
+*Violated if:* a `notification_events` row exists with any of the three types; the consent route, the deletion route or the invite route no longer calls its sender (`tests/ci/notifications.direct-sends.test.ts` greps all three call sites); a captured send lacks its state-derived key, or an invite key contains an `@`; or a token, code or address appears in any notification table.
 
-**C0.5** Both direct sends are best-effort after their mutation has committed: a transport failure is a `Result`, logged with ids and a redacted address, and never fails the request that produced it.
-*Violated if:* a consent-request PATCH or a deletion request returns 5xx because mail failed, or the sender throws.
+**C0.5** All three direct senders return a `Result`, never throw, and log only ids and a redacted address. The two request-row sends are best-effort after their mutation has committed: a transport failure never fails the request that produced it. The invite has no mutation to protect — the email IS the request — so a transport failure is reported as 503 with a body that is identical for every address (see §2.3 note and `tests/ci/guardian-invite.pg.ci.test.ts` B4.5).
+*Violated if:* a consent-request PATCH or a deletion request returns 5xx because mail failed, any of the three senders throws, or the invite route's response differs between an address with an account and one without.
 
 ---
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` (launch scope after rulings R7/R8; adding a type is a CHECK change plus a row in §2.3).
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked`; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` and `guardian_unlinked` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked` and `guardian_unlinked`; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -74,10 +74,11 @@ Three email lanes exist. This contract governs exactly one.
 | event_type | subject | recipients and channels | emitted by |
 |---|---|---|---|
 | `guardian_linked` | the student | student: `in_app`; guardian: `in_app`, `email` | `create_active_guardian_link_audited` |
+| `guardian_unlinked` | the student | the party who did NOT revoke (`v_target`, derived once inside the function): `in_app`, `email`; the revoker: nothing | `revoke_guardian_link_audited` |
 
-Not event types (see §0.4): the guardian consent request and the deletion-scheduled email are direct sends.
+Not event types (see §0.4): the guardian consent request, the deletion-scheduled email and the guardian link INVITE (the student's current code, sent to an address with no profile row; `sendGuardianLinkInviteEmail`, keyed on student id + code issue time + a hash of the address) are direct sends.
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; or an event row exists whose type is not in this table.
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.
@@ -185,8 +186,8 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 
 ## 8. Payload rule (non-negotiable)
 
-**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else.
-*Violated if:* a `guardian_linked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
+**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written.
+*Violated if:* a `guardian_linked` or `guardian_unlinked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
 
 **C8.2** Nothing addressed to a guardian carries more than aggregate/identity data.
 *Violated if:* an email or in-app body rendered for a guardian recipient contains any of the §38.1 "no" categories.
@@ -259,4 +260,6 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 | C7.2, C7.3, C7.4, C5.4 | valid signature applies; invalid returns 400 and writes nothing; replay is a no-op |
 | C9.1, C9.2, C9.3 | `SET ROLE authenticated` / `anon` with `auth.uid()` fixtures |
 | C0.2, C0.3, C10.2 | grep clauses, run in the same suite |
-| C0.4, C0.5 | `tests/ci/notifications.direct-sends.test.ts` — row-derived keys, sender, links, no tracking, Result on failure, both call sites wired |
+| C0.4, C0.5 | `tests/ci/notifications.direct-sends.test.ts` — row-derived keys, sender, links, no tracking, Result on failure, all three call sites wired |
+| C1.1, C2.2, C2.3, C5.1, C5.2, C8.1 for `guardian_unlinked` | `tests/ci/guardian-unlinked.pg.ci.test.ts` — student revoke → guardian only; guardian revoke → student only; LY003 emits nothing and is 409; non-party student is 404; rollback leaves zero rows; `revocation_reason` absent from every payload and rendered template; ids distinct from `guardian_linked` for the same row |
+| §0.4 invite direct send, §36.2 limits | `tests/ci/guardian-invite.pg.ci.test.ts` — idempotent key on repeated submit; 3/day per address denied; body carries code + prefilled link and no progress data; redeem without auth creates nothing; byte-identical response for an address with and without an account |

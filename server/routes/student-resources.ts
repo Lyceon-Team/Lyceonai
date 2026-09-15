@@ -30,13 +30,25 @@ import {
   isLinkCodeLive,
   type MasterySection,
 } from "../../packages/shared/src/index";
-import { getGuardianLinkById, revokeGuardianLink } from "../lib/account";
+import {
+  getActiveGuardianLinksForStudent,
+  getGuardianLinkById,
+  revokeGuardianLink,
+} from "../lib/account";
 import {
   issueStudentLinkCode,
   readStudentLinkCode,
 } from "../lib/student-link-code";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
-import { studentLinkCodeRegenerationRateLimit } from "../middleware/guardian-link-rate-limit";
+import {
+  applyGuardianInviteRateLimit,
+  studentLinkCodeRegenerationRateLimit,
+} from "../middleware/guardian-link-rate-limit";
+import { inviteGuardianRequestSchema } from "../../packages/shared/src/student-link-code-schema";
+import { sendGuardianLinkInviteEmail } from "../lib/notifications/direct-sends";
+import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
+import { notificationEventId } from "../lib/notifications/event-id";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   GUARDIAN_LINK_ERROR,
   guardianLinkRevokeSchema,
@@ -537,6 +549,231 @@ router.post(
 );
 
 /**
+ * GET /api/students/:studentId/links — the student's ACTIVE guardian links.
+ *
+ * @spec [Doc-01_V8 §36.3 Revocation ("Student profile → Remove guardian → confirmation"),
+ *   §35 (a student may hold links to more than one guardian); owner ruling 2026-08-27 Q3
+ *   (subject-scoped mount, `via === 'self'`)] | @implemented [2026-09-15]
+ *
+ * plain English: the list the "Remove guardian" control is drawn from. Without it the
+ * student-side revoke route (below, addressed by link id) had no caller: the profile panel
+ * promised removal and could not name a link. Expected outcome: link id, the guardian's
+ * display name and when the link went active — identity only, nothing about the guardian's
+ * account beyond a name. Edge case: `via === 'guardian'` is a 404, not a 403 — a guardian
+ * reading a student's OTHER guardians is on the wrong route and learns nothing.
+ */
+router.get(
+  `/:studentId${STUDENT_LINK_PATHS.links}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+    if (subject.via !== "self") return sendNotFound(res, requestId);
+
+    let links;
+    try {
+      links = await getActiveGuardianLinksForStudent(subject.studentId);
+    } catch (readError: unknown) {
+      logger.error("STUDENT_RESOURCES", "links_read", "Failed to read links", {
+        requestId,
+        reason: readError instanceof Error ? readError.message : "unknown",
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+
+    const guardianIds = links.map((l) => l.guardian_profile_id);
+    const names = new Map<string, string>();
+    if (guardianIds.length > 0) {
+      const { data, error } = await supabaseServer
+        .from("profiles")
+        .select("id, display_name")
+        .in("id", guardianIds);
+      if (error) {
+        logger.error(
+          "STUDENT_RESOURCES",
+          "links_read",
+          "Failed to read guardian names",
+          { requestId, reason: error.message },
+        );
+        return res
+          .status(500)
+          .json({ error: "Internal server error", requestId });
+      }
+      for (const row of (data ?? []) as ReadonlyArray<{
+        id: string;
+        display_name: string | null;
+      }>) {
+        names.set(row.id, row.display_name ?? "");
+      }
+    }
+
+    return res.json({
+      data: {
+        links: links.map((l) => ({
+          link_id: l.id,
+          guardian_display_name: names.get(l.guardian_profile_id) ?? "",
+          linked_at: l.accepted_at ?? l.created_at,
+        })),
+      },
+      requestId,
+    });
+  },
+);
+
+/**
+ * POST /api/students/:studentId/link-code/invite — send the student's CURRENT code by email.
+ *
+ * @spec [Doc-01_V8 §36.2 Rate limiting (per-guardian 10/day, per-email 3/day, via Doc 01A
+ *   `RateLimitLedger`), §38.1 (nothing beyond identity before or after the link exists);
+ *   contracts/notifications.contract.md §0.4 (direct send — the recipient has no profile
+ *   row); SCL-080 (the code is the credential and keeps its lifecycle)]
+ *   | @implemented [2026-09-15]
+ *
+ * plain English: instead of reading the code aloud, the student types an email address and
+ * the address receives the same code plus a link to the redeem page with the code prefilled.
+ * Nothing about REDEEMING changes: the guardian must still sign in (or create an account)
+ * and submit the code, so a forwarded email or a prefetching mail scanner cannot link
+ * anyone. Expected outcome: 202 with the same body whether or not the address belongs to an
+ * account — the address is never looked up, so there is nothing to enumerate. Trade-offs:
+ * (a) the idempotency key is derived from the student id, the code's issue time and a hash
+ * of the address, because no `guardian_links` row exists before redemption — a repeated
+ * submit for the same live code and address is one email at Resend; (b) the limits are the
+ * two §36.2 already seeds (`guardian_link_attempts_daily` 10/day per student,
+ * `guardian_link_email_attempts` 3/day per (student, address)) — a student typing arbitrary
+ * addresses makes Lyceon a sender of unsolicited mail, so the per-address bucket is the one
+ * that matters and it is consumed, not rebuilt. Edge case: an expired code is re-issued
+ * first (as the GET does), so the email never carries a code that is already dead.
+ */
+router.post(
+  `/:studentId${STUDENT_LINK_PATHS.linkCodeInvite}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+    if (subject.via !== "self") return sendNotFound(res, requestId);
+
+    const parsed = inviteGuardianRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: {
+          message: "Enter a valid email address.",
+          code: "INVITE_EMAIL_INVALID",
+        },
+        requestId,
+      });
+    }
+    const guardianEmail = parsed.data.email;
+
+    const ttlSeconds = await getStudentLinkCodeTtlSeconds();
+    if (ttlSeconds === null) {
+      return res.status(503).json({
+        error: {
+          message: "Link codes are not configured.",
+          code: "LINK_CODE_UNCONFIGURED",
+        },
+        requestId,
+      });
+    }
+
+    // §36.2 — both controls, before anything is read or sent. Writes the 429 itself.
+    const denied = await applyGuardianInviteRateLimit(
+      res,
+      subject.studentId,
+      guardianEmail,
+      requestId,
+    );
+    if (denied) return;
+
+    const current = await readStudentLinkCode(subject.studentId);
+    if (current === null) {
+      return res.status(503).json({
+        error: {
+          message: "Could not read your link code.",
+          code: "LINK_CODE_UNAVAILABLE",
+        },
+        requestId,
+      });
+    }
+    let code: string;
+    let issuedAt: string;
+    if (
+      current.code &&
+      isLinkCodeLive(current.issuedAt, new Date(), ttlSeconds)
+    ) {
+      code = current.code;
+      issuedAt = current.issuedAt!.toISOString();
+    } else {
+      const issued = await issueStudentLinkCode(subject.studentId);
+      if (!issued) {
+        return res.status(503).json({
+          error: {
+            message: "Could not issue a link code.",
+            code: "LINK_CODE_UNAVAILABLE",
+          },
+          requestId,
+        });
+      }
+      code = issued.code;
+      issuedAt = new Date(issued.issuedAt).toISOString();
+    }
+    const expiresAt = new Date(
+      new Date(issuedAt).getTime() + ttlSeconds * 1000,
+    ).toISOString();
+
+    const { data: profileRow, error: profileError } = await supabaseServer
+      .from("profiles")
+      .select("display_name")
+      .eq("id", subject.studentId)
+      .maybeSingle();
+    if (profileError) {
+      logger.error(
+        "STUDENT_RESOURCES",
+        "link_invite",
+        "Failed to read the student's display name",
+        { requestId, reason: profileError.message },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+    const studentDisplayName =
+      (profileRow as { display_name?: string | null } | null)?.display_name ??
+      "";
+
+    const sent = await sendGuardianLinkInviteEmail({
+      studentProfileId: subject.studentId,
+      studentDisplayName,
+      code,
+      codeIssuedAt: issuedAt,
+      expiresAt,
+      guardianEmail,
+      requestId,
+    });
+    if (!sent.ok) {
+      // Same body for every address: the failure is the provider's, never the recipient's.
+      return res.status(503).json({
+        error: {
+          message: "Could not send the invite right now. Please try again.",
+          code: "INVITE_UNAVAILABLE",
+        },
+        requestId,
+      });
+    }
+
+    // Identical for an address with an account and one without — nothing here depends on
+    // the recipient. Never the address back, never a provider id.
+    return res.status(202).json({
+      data: { accepted: true, expiresAt },
+      requestId,
+    });
+  },
+);
+
+/**
  * DELETE /api/students/:studentId/links/:linkId — §36.3's student half.
  *
  * @spec [Doc-01_V8 §36.3 Revocation — "either party" may revoke; owner rulings 2026-08-27
@@ -646,6 +883,14 @@ router.delete(
         .status(500)
         .json({ error: "Internal server error", requestId });
     }
+
+    // §36.3 / contract §6.1 (2026-09-15): the RPC committed the revocation AND its
+    // guardian_unlinked event + messages (addressed to the GUARDIAN — the party who did not
+    // revoke, derived once inside the function as v_target). Deliver that event's email now,
+    // awaited; the dispatcher never throws and the daily sweep retries anything left queued.
+    await dispatchQueuedMessages({
+      eventId: notificationEventId("guardian_unlinked", revoked.id),
+    });
 
     logger.info("STUDENT_RESOURCES", "link_revoke", "Student revoked link", {
       studentId: subject.studentId,

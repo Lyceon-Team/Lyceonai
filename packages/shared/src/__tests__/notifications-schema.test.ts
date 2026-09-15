@@ -13,8 +13,11 @@ import {
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
-  it("names exactly the one launch event type (R7/R8)", () => {
-    expect([...NOTIFICATION_EVENT_TYPES]).toEqual(["guardian_linked"]);
+  it("names exactly the two event types (R7/R8 launch scope + guardian_unlinked, 2026-09-15)", () => {
+    expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
+      "guardian_linked",
+      "guardian_unlinked",
+    ]);
   });
 
   it("guardian_linked payload is link_id + student_display_name and nothing else (C8.1)", () => {

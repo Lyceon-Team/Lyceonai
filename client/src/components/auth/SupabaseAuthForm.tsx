@@ -17,6 +17,11 @@ import { AlertCircle, Mail, Lock, User } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
+import { PasswordField } from "@/components/auth/PasswordField";
+import {
+  PASSWORD_POLICY,
+  evaluatePassword,
+} from "@lyceon/shared/password-policy";
 
 type AuthMode = "signin" | "signup" | "reset";
 
@@ -43,9 +48,24 @@ export function SupabaseAuthForm() {
     message: string;
   } | null>(null);
 
-  const canSubmitSignup = useMemo(() => {
-    return Boolean(signupLegalAccepted && email && password);
-  }, [signupLegalAccepted, email, password]);
+  // AS-1 + shared password policy: the signup button is disabled until every precondition holds,
+  // and the FIRST unmet one is written next to the button — a disabled control never goes
+  // unexplained. Sign-in is deliberately NOT gated on the policy (older 6-char accounts).
+  const signupPasswordValid = useMemo(
+    () => evaluatePassword(password, PASSWORD_POLICY).valid,
+    [password],
+  );
+  const signupDisabledReason = useMemo(() => {
+    if (!email) return "Enter your email address to continue.";
+    if (!signupPasswordValid) {
+      return "Choose a password that meets every requirement above.";
+    }
+    if (!signupLegalAccepted) {
+      return "Accept the Terms and Privacy Policy to create your account.";
+    }
+    return null;
+  }, [email, signupPasswordValid, signupLegalAccepted]);
+  const canSubmitSignup = signupDisabledReason === null;
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,9 +286,17 @@ export function SupabaseAuthForm() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="signin-password">Password</Label>
+                  <PasswordField
+                    id="signin-password"
+                    testId="input-signin-password"
+                    label="Password"
+                    value={password}
+                    onChange={setPassword}
+                    autoComplete="current-password"
+                    showRequirements={false}
+                    leadingIcon={<Lock className="h-4 w-4" />}
+                    required
+                    labelAccessory={
                       <Button
                         variant="link"
                         className="p-0 h-auto text-xs text-muted-foreground font-normal"
@@ -280,21 +308,8 @@ export function SupabaseAuthForm() {
                       >
                         Forgot password?
                       </Button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signin-password"
-                        data-testid="input-signin-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
+                    }
+                  />
 
                   {error && (
                     <Alert
@@ -355,23 +370,17 @@ export function SupabaseAuthForm() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        data-testid="input-signup-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10"
-                        required
-                        minLength={6}
-                      />
-                    </div>
-                  </div>
+                  <PasswordField
+                    id="signup-password"
+                    testId="input-signup-password"
+                    label="Password"
+                    value={password}
+                    onChange={setPassword}
+                    autoComplete="new-password"
+                    showRequirements
+                    leadingIcon={<Lock className="h-4 w-4" />}
+                    required
+                  />
 
                   <div className="flex items-center space-x-2">
                     <Checkbox
@@ -430,9 +439,22 @@ export function SupabaseAuthForm() {
                     className="w-full"
                     disabled={isLoading || !canSubmitSignup}
                     data-testid="button-signup"
+                    aria-describedby={
+                      signupDisabledReason ? "signup-submit-reason" : undefined
+                    }
                   >
                     {isLoading ? "Creating account..." : "Sign Up"}
                   </Button>
+                  {signupDisabledReason ? (
+                    <p
+                      id="signup-submit-reason"
+                      data-testid="signup-submit-reason"
+                      aria-live="polite"
+                      className="text-sm text-muted-foreground"
+                    >
+                      {signupDisabledReason}
+                    </p>
+                  ) : null}
                 </form>
               </TabsContent>
             </Tabs>
