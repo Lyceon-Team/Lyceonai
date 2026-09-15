@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
+import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
 import { PageCard } from "@/components/common/page-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -646,6 +647,11 @@ export default function UserProfile() {
                 enter one — so this is student-only. */}
             {currentRole === "student" && user?.id && (
               <StudentLinkCodePanel studentId={user.id} />
+            )}
+            {/* §36.3: "Student profile → Remove guardian → confirmation". The surface the
+                link-code panel's copy and the guardian_linked notification both promise. */}
+            {currentRole === "student" && user?.id && (
+              <StudentGuardiansPanel studentId={user.id} />
             )}
 
             <Card>

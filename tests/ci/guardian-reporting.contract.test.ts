@@ -259,6 +259,23 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../../server/lib/account", () => accountMocks);
+
+// 2026-09-15: the revoke route dispatches the guardian_unlinked event's email inline after the
+// RPC (the RPC emitted the event in its own transaction). The dispatcher reads real
+// notification tables, which this fake query layer does not model, so it is substituted here
+// and ASSERTED on — the route must name exactly that event. The real dispatch is proven in
+// tests/ci/guardian-unlinked.pg.ci.test.ts against Postgres.
+const dispatchQueuedMessagesMock = vi.fn(async () => ({
+  selected: 0,
+  sent: 0,
+  failed: 0,
+  deferred: 0,
+  selectFailed: false,
+}));
+vi.mock("../../server/lib/notifications/dispatch", () => ({
+  dispatchQueuedMessages: (...args: unknown[]) =>
+    dispatchQueuedMessagesMock(...(args as [])),
+}));
 /**
  * The per-student entitlement probe, mocked rather than left to fail.
  *
@@ -733,6 +750,15 @@ describe("Guardian reporting runtime contract", () => {
       "guardian-1",
       undefined,
     );
+    // §36.3 / contract §6.1: the other party's email for THIS revocation goes out inline.
+    const { notificationEventId } =
+      await import("../../server/lib/notifications/event-id");
+    expect(dispatchQueuedMessagesMock).toHaveBeenCalledWith({
+      eventId: notificationEventId(
+        "guardian_unlinked",
+        "11111111-1111-1111-1111-111111111111",
+      ),
+    });
 
     // No second, best-effort revoke row from this layer. See the docblock.
     const unlinkSuccess = guardianAuditInserts.find(

@@ -20,12 +20,21 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Copy, Check, RefreshCw, KeyRound } from "lucide-react";
 import { csrfFetch } from "@/lib/csrf";
-import { parseApiErrorFromResponse, toUserFacingMessage } from "@/lib/api-error";
+import {
+  parseApiErrorFromResponse,
+  toUserFacingMessage,
+} from "@/lib/api-error";
 /**
  * Module-specific imports, NOT the `@lyceon/shared` barrel. The barrel re-exports `env.ts`,
  * whose Zod schema names `CSRF_SECRET`; importing it from a client component drags that
@@ -35,11 +44,16 @@ import { parseApiErrorFromResponse, toUserFacingMessage } from "@/lib/api-error"
 import {
   studentLinkCodeUrl,
   studentLinkCodeRegenerateUrl,
+  studentLinkCodeInviteUrl,
 } from "../../../../packages/shared/src/student-resources";
 import {
   studentLinkCodeViewSchema,
+  inviteGuardianRequestSchema,
   type StudentLinkCodeView,
 } from "../../../../packages/shared/src/student-link-code-schema";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Mail } from "lucide-react";
 
 export const STUDENT_LINK_CODE_QUERY_KEY = ["student-link-code"] as const;
 
@@ -54,7 +68,8 @@ async function readCode(studentId: string): Promise<StudentLinkCodeView> {
   const res = await csrfFetch(studentLinkCodeUrl(studentId), {
     credentials: "include",
   });
-  if (!res.ok) throw await parseApiErrorFromResponse(res, "Could not load your link code");
+  if (!res.ok)
+    throw await parseApiErrorFromResponse(res, "Could not load your link code");
   const payload = (await res.json()) as { data?: unknown };
   // Parsed, not cast: a renamed field fails here with a named path rather than rendering
   // `undefined` into the one string the student is about to read out loud.
@@ -76,7 +91,11 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
         method: "POST",
         credentials: "include",
       });
-      if (!res.ok) throw await parseApiErrorFromResponse(res, "Could not regenerate your code");
+      if (!res.ok)
+        throw await parseApiErrorFromResponse(
+          res,
+          "Could not regenerate your code",
+        );
       const payload = (await res.json()) as { data?: unknown };
       return studentLinkCodeViewSchema.parse(payload?.data);
     },
@@ -88,6 +107,31 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
 
   const hours = hoursUntil(data?.expiresAt ?? null, new Date());
 
+  // Guardian invite by email (2026-09-15). An ADDITION to the code, never a replacement: the
+  // code stays on screen so the verbal path keeps working. The server never says whether the
+  // address has an account, so neither does this — "sent" is all it can honestly report.
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSent, setInviteSent] = useState(false);
+  const inviteParse = inviteGuardianRequestSchema.safeParse({
+    email: inviteEmail,
+  });
+  const invite = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await csrfFetch(studentLinkCodeInviteUrl(studentId), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok)
+        throw await parseApiErrorFromResponse(res, "Could not send the invite");
+    },
+    onSuccess: () => {
+      setInviteSent(true);
+      setInviteEmail("");
+    },
+  });
+
   return (
     <Card data-testid="student-link-code-panel">
       <CardHeader>
@@ -96,12 +140,15 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
           Your guardian link code
         </CardTitle>
         <CardDescription>
-          Share this code with a parent or guardian so they can follow your progress.
+          Share this code with a parent or guardian so they can follow your
+          progress.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {isLoading && <p className="text-sm text-muted-foreground">Loading your code...</p>}
+        {isLoading && (
+          <p className="text-sm text-muted-foreground">Loading your code...</p>
+        )}
 
         {error && (
           <Alert>
@@ -129,7 +176,11 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
                   setCopied(true);
                 }}
               >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
                 <span className="ml-2">{copied ? "Copied" : "Copy"}</span>
               </Button>
               <Button
@@ -147,17 +198,76 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
             </div>
 
             {hours !== null && (
-              <p className="text-sm text-muted-foreground" data-testid="student-link-code-expiry">
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="student-link-code-expiry"
+              >
                 {hours === 0 ? "Expires shortly" : `Expires in ${hours}h`}
               </p>
             )}
 
             {/* The consequence, stated where the sharing happens. */}
-            <p className="text-sm text-muted-foreground" data-testid="student-link-code-consequence">
-              Anyone who enters this code becomes your guardian and can see your progress
-              reports. They cannot see your tutor conversations, and you can remove them at
-              any time. The code stops working once it has been used.
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="student-link-code-consequence"
+            >
+              Anyone who enters this code becomes your guardian and can see your
+              progress reports. They cannot see your tutor conversations, and
+              you can remove them at any time. The code stops working once it
+              has been used.
             </p>
+
+            <form
+              className="space-y-2 border-t pt-4"
+              data-testid="student-link-invite-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setInviteSent(false);
+                if (inviteParse.success) invite.mutate(inviteParse.data.email);
+              }}
+            >
+              <Label htmlFor="student-link-invite-email">
+                Or send this code by email
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="student-link-invite-email"
+                  data-testid="student-link-invite-email"
+                  type="email"
+                  autoComplete="off"
+                  placeholder="guardian@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  data-testid="student-link-invite-submit"
+                  disabled={!inviteParse.success || invite.isPending}
+                >
+                  <Mail className="h-4 w-4" />
+                  <span className="ml-2">
+                    {invite.isPending ? "Sending..." : "Send invite"}
+                  </span>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                They will get this code and a link to enter it. They still have
+                to sign in to Lyceon before anything is shared.
+              </p>
+              {inviteSent && (
+                <p className="text-sm" data-testid="student-link-invite-sent">
+                  Invite sent. It carries this code and expires with it.
+                </p>
+              )}
+              {invite.error && (
+                <Alert>
+                  <AlertDescription data-testid="student-link-invite-error">
+                    {toUserFacingMessage(invite.error).message}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </form>
           </>
         )}
       </CardContent>
