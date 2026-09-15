@@ -53,12 +53,9 @@ import {
   ApiError,
   FinishReason,
   GoogleGenAI,
-  HarmBlockThreshold,
-  HarmCategory,
   type Content,
   type GenerateContentConfig,
   type ModelArmorConfig,
-  type SafetySetting,
 } from "@google/genai";
 import { GoogleAuth } from "google-auth-library";
 import { z } from "zod";
@@ -121,28 +118,6 @@ const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const TEMPERATURE = 0.3;
 const TOP_P = 0.95;
 const TOP_K = 40;
-
-/** Safety settings per Doc 03C V3 §5.7. Sexually-explicit is tighter
- * (BLOCK_LOW_AND_ABOVE) given the minor audience; other categories at
- * BLOCK_MEDIUM_AND_ABOVE to avoid over-triggering on legitimate SAT content. */
-const SAFETY_SETTINGS: SafetySetting[] = [
-  {
-    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-  },
-];
 
 /** finishReason values that indicate the model's own output was safety-blocked. */
 const SAFETY_BLOCKED_FINISH_REASONS: ReadonlySet<FinishReason> = new Set([
@@ -297,7 +272,9 @@ function buildInputModelArmorConfig(
   requestTemplateId?: string | null,
 ): Result<ModelArmorConfig, VertexErrorCode> {
   const rawTemplateId = (
-    requestTemplateId ?? process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID ?? ""
+    requestTemplateId ??
+    process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID ??
+    ""
   ).trim();
   if (!rawTemplateId) {
     return {
@@ -532,7 +509,6 @@ async function invokeVertexOnce(
     topP: TOP_P,
     topK: TOP_K,
     maxOutputTokens: limits.maxOutputTokens,
-    safetySettings: SAFETY_SETTINGS,
     modelArmorConfig: armorInputConfig,
     abortSignal: controller.signal,
   };
