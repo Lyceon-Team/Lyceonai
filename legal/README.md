@@ -84,5 +84,51 @@ No code change and no route change. `v2/` stays where it is, forever.
 | `legal-immutability-gate.mjs` | any change to a published version directory |
 | `legal-manifest-gate.mjs` | a manifest naming a version that does not exist; a malformed or incomplete `meta.yml` |
 | `legal-xref-gate.mjs` | a document cited by name that has no slug |
+| `legal-body-purity-gate.mjs` | a version or date header inside a body; a build copy under `dist/public/legal` that has forked from its source |
 
-`legal-gates.selftest.sh` plants each defect and observes the gate turn red.
+`legal-gates.selftest.sh` plants each defect and observes the gate turn red —
+21 cases, including the ones that must stay **green**: a date *cited in prose*
+(these are contracts and they name statute dates), and publishing a new version
+directory.
+
+## Docs-as-code is complete for legal text
+
+This is the end state the three phases set out to reach, and the reason the
+structure looks the way it does:
+
+| Property | How it holds |
+|---|---|
+| **One source per document** | `legal/<slug>/<version>/en.md`, and nowhere else |
+| **Published versions are immutable** | the immutability gate, measured against git history rather than a self-referential hash |
+| **Stable paths** | `manifest.json` names the current version; publishing moves one line and adds a directory, with no code or route change |
+| **Consent is provable** | every acceptance row carries slug, version and the `content_hash` of the exact bytes served |
+| **Four gates enforce it** | and each one has been watched turning red for the defect it claims to catch |
+
+What was removed to get here, in order. `docs/Spec` held eight canonical copies
+(Phase 2). `client/src/lib/legal.ts` held 1,037 lines of body text, two versions
+behind them, which is what users actually read (Phase 2). `client/public/legal/`
+held six PDFs — v1, December 2024, `Lyceon` branding — linked as "View PDF" and
+"Download" from the hub and every document page (Phase 3). The PDFs were the
+last of them and the worst: binary, so nothing could regenerate them from
+`en.md` and no gate could see that they had drifted. They are deleted rather
+than resynchronised. The markdown page is the document, and a `@media print`
+rule in `client/src/index.css` makes it print without the site chrome.
+
+### What deliberately remains outside this structure
+
+Two things, both decided rather than overlooked:
+
+- **`docs/Spec/Lyceon Privacy Policy.md`** — an orphan that never corresponded
+  to a served document. Kept by owner ruling during Phase 1 rather than
+  migrated, because migrating it would assert it was a version of something.
+- **24 legacy consent rows** — 12 users × two documents each, `privacy_policy`
+  stamped `doc_version` `2024-12-22` and `student_terms` `2024-12-20`, both
+  referencing December 2024 text that no longer exists anywhere in the
+  repository. They are **not** backfilled. Stamping them with a v2.0 hash would
+  assert those users accepted text they never saw; `NULL` in `doc_slug` and
+  `content_hash` says "we did not retain this", which is true. Those users are
+  re-prompted at next sign-in, which is the correct outcome, not a regression.
+
+The honest reading of the second point: consent records from before this
+structure existed cannot be made provable after the fact. Everything recorded
+from here on can.

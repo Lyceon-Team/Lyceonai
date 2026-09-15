@@ -22,8 +22,17 @@
  * edge cases:
  *  - `current: null` (billing-terms today) renders a "not yet published" state,
  *    not a 404 and not a 500.
- *  - A slug with no registry entry still 404s, as before — that is a routing
- *    miss rather than a publication state.
+ *  - A slug with no manifest in `legal/` 404s — a routing miss rather than a
+ *    publication state, and distinct from a manifest that exists but will not
+ *    parse, which is an error card.
+ *
+ * WHAT GATED THIS BEFORE. The page used to 404 any slug absent from
+ * `client/src/lib/legal.ts`, a six-entry list built for the hub and for consent
+ * keys. Three of the nine migrated documents are not in it — `refund-policy`,
+ * `subscription-auto-renewal-notice` and `billing-terms` — so all three 404'd
+ * in the browser while every loader-level test passed, because the tests called
+ * the loader and the gate sat above it. Publication is a property of `legal/`,
+ * so `legal/` decides; the registry now only feeds the hub and consent.
  */
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
@@ -37,8 +46,6 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ChevronLeft,
-  Download,
-  ExternalLink,
   Search,
   Menu,
   X,
@@ -46,7 +53,6 @@ import {
   FileClock,
   AlertTriangle,
 } from "lucide-react";
-import { getLegalDocBySlug } from "@/lib/legal";
 import { loadLegalDocument } from "@/lib/legal-content";
 import Footer from "@/components/layout/Footer";
 import NotFound from "./not-found";
@@ -64,7 +70,6 @@ function formatEffectiveDate(iso: string): string {
 
 export default function LegalDocPage() {
   const { slug } = useParams<{ slug: string }>();
-  const registryEntry = getLegalDocBySlug(slug || "");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<string>("");
   const [tocOpen, setTocOpen] = useState(false);
@@ -119,12 +124,8 @@ export default function LegalDocPage() {
     setTocOpen(false);
   };
 
-  if (!registryEntry) {
-    return <NotFound />;
-  }
-
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="legal-document min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -139,22 +140,6 @@ export default function LegalDocPage() {
             </Button>
 
             <div className="flex items-center gap-2">
-              <a
-                href={registryEntry.pdfPath}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button variant="outline" size="sm" className="gap-2">
-                  <ExternalLink className="h-4 w-4" />
-                  <span className="hidden sm:inline">View PDF</span>
-                </Button>
-              </a>
-              <a href={registryEntry.pdfPath} download>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Download</span>
-                </Button>
-              </a>
               {content?.state === "published" && (
                 <Button
                   variant="outline"
@@ -206,6 +191,11 @@ export default function LegalDocPage() {
         </CardContent>
       </Card>,
     );
+  }
+
+  if (content.state === "not-found") {
+    // No manifest at this slug — a routing miss, not a broken document.
+    return <NotFound />;
   }
 
   if (content.state === "error") {

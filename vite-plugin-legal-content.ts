@@ -84,11 +84,20 @@ export function legalContentPlugin(repoRoot: string): Plugin {
       if (!fs.existsSync(sourceDir)) return;
       const outDir = path.resolve(repoRoot, "dist/public/legal");
 
-      // Copy INTO the directory, never over it. `client/public/legal/` already
-      // ships six PDFs at this exact path, and Vite has copied them here by
-      // the time this runs — an `rm -rf` of the target would delete every
-      // "Download PDF" link on the legal pages. Slug directories cannot
-      // collide with those filenames, so an additive copy is safe.
+      // Copy INTO the directory, never over it.
+      //
+      // This was additive because `client/public/legal/` shipped six PDFs at
+      // this exact path, which Vite's publicDir copy had already placed here by
+      // the time this ran; an `rm -rf` of the target would have deleted every
+      // "Download PDF" link on the legal pages. Those PDFs are now deleted, and
+      // `client/public/legal/` no longer exists, so this plugin is the only
+      // writer of `dist/public/legal` and the directory is wholly owned by the
+      // build.
+      //
+      // It stays additive anyway. `build.emptyOutDir` already clears
+      // `dist/public` at the start of every build, so a destructive copy would
+      // buy nothing Vite has not done — while giving this code the power to
+      // delete something it did not create. Keeping the weaker power is free.
       fs.mkdirSync(outDir, { recursive: true });
       for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
         const from = path.join(sourceDir, entry.name);
