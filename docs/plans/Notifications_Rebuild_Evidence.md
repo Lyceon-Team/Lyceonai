@@ -191,3 +191,36 @@ Standing rule: prod verification runs from a committed `.sql` file with a verdic
 | `ALTER TABLE … DISABLE TRIGGER notification_messages_recipient_guard`      | 16  | `… DISABLED` vs `… enabled` → FAIL                                                          | `STOP: 1 assertion(s) FAIL`      |
 | `CREATE TABLE public.notification_outbox` (outbox-drop file)               | 1   | `STILL PRESENT` → FAIL                                                                      | `STOP: 1 assertion(s) FAIL`      |
 | none (restored)                                                            | all | 22 PASS, control row 22 observed `FAIL` as required                                         | `OK: Migration A landed as written …` |
+
+## 11. Phase 2 — retention sweep + notifications page (2026-09-15)
+
+Owner brief "Notification Retention Sweep + Notifications Page". Migration `20260915100000_notification_retention_sweep_and_feed_archive.sql` (written, NOT applied — Karl applies): `notification_retention_days()` (the one definition of the window, 90), `sweep_notification_retention(p_batch_size)` (one DELETE on `notification_events`, cascade takes messages and delivery events, oldest first, bounded, returns counts + cutoff), `notification_feed` re-created with `p_archived` and `archived_at`, `mark_all_notifications_read`. Server: `server/lib/notifications/retention.ts` (logs `retention_sweep_completed` on EVERY run), `GET /api/internal/notification-retention-sweep` (CRON_SECRET), `vercel.json` cron `0 5 * * *`, feed `?archived=`, `POST /mark-all-read`. Client: `/notifications` page in both shells, bell "See all", one shared `@/lib/notificationsApi`. Contract C3.1/C3.2/C11.2/C11.3; SCL-082 amended in place (status stays PROPOSED — owner's to set). Operator file `scripts/prod-verify/notifications_retention_verify.sql` (10 rows + OVERALL, two negative-control rows; runs clean in the console gate; observed `OK … 0 FAIL of 10` on the harness database).
+
+**Observed failing once** (local Postgres 16, genesis + all migrations; each mutation applied, the named suite run, the file restored — nothing below is in the tree):
+
+| # | Mutation | Suite | Observed |
+| --- | --- | --- | --- |
+| MS1 | `notification_retention_days()` → 30 | PG | C11.1, A3.2 (89-day row deleted), A3.3 fail |
+| MS2 | `LIMIT p_batch_size` removed from the sweep | PG | A3.5 fails (5 deleted with batch 2) |
+| MS3 | `deleted_messages` reported as 0 | PG | A3.1, A3.3, A3.5 fail |
+| MS4 | `retention.ts` logs only when `deletedEvents > 0` | PG | A3.4 fails (no `retention_sweep_completed` line on a zero run) |
+| MS5 | feed ignores `p_archived` (always inbox) | PG | B3.1, B3.3, archive pagination fail |
+| MS6 | `mark_all_notifications_read` touches archived rows | PG | §3.2 fails |
+| MS7 | `mark_all_notifications_read` without the recipient predicate | PG | §3.2, B3.4 fail |
+| MS8 | `archived` parsed as `v.length > 0` (`"false"` reads true) | PG | B3.1 (explicit `archived=false`), B3.3 fail |
+| MS9 | cutoff = `now()` (deletes inside the window) | PG | C11.1, A3.1, A3.2, A3.3, A3.5 fail |
+| MR1 | cron route without `cronAuthorized` | sweep contract | "without the secret: 404" fails (200, sweep called) |
+| MR2 | `vercel.json` entry removed | sweep contract | "vercel.json carries the cron entry" fails |
+| MC1 | page never calls mark-all-seen | page | B3.2 fails |
+| MC2 | page calls mark-all-READ on arrival | page | B3.2 and both read cases fail |
+| MC3 | Archive control PATCHes `{read:true}` | page | B3.3 fails |
+| MC4 | page always renders `AppShell` | shells gate 3 | guardian-shell case fails |
+| MC5 | route not registered in `App.tsx` | shells gate 3 | route case fails |
+| MC6 | bell "See all" points elsewhere | shells gate 3 | bell-link case fails |
+| MC7 | heading focus dropped | page | B2 fails |
+| MC8 | archived tab fetches the inbox | page | B3.1, B3.3 fail |
+| MC9 | "Mark all as read" posts mark-all-seen | page | mark-all-read case fails |
+| MC10 | body truncated to 8 chars | page | B3.1 fails (full body asserted) |
+| MC11 | Archive button label loses the item title (icon-only class) | page | B2 fails |
+
+Push-backs recorded in the PR: the fifth existing cron was added by the notifications rebuild (dispatch sweep), not by the deletion-notice PR; SCL-082 cannot be moved off PROPOSED by an agent and is not closed by the sweep (it is about spec text); C11.2 as written forbade a retention delete and is rewritten to describe the sweep; the feed function and a mark-all-read function were missing and are added in the same migration; unmatched delivery events (`message_id IS NULL`) have no cascade parent and are not swept — owner decision.

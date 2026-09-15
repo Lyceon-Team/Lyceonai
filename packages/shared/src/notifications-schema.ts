@@ -130,8 +130,29 @@ export const notificationFeedRowSchema = z.object({
   created_at: timestampSchema,
   seen_at: nullableTimestampSchema,
   read_at: nullableTimestampSchema,
+  archived_at: nullableTimestampSchema,
 });
 export type NotificationFeedRow = z.infer<typeof notificationFeedRowSchema>;
+
+// ── Retention sweep (contract §11) ───────────────────────────────────────────
+
+/**
+ * @spec [contracts/notifications.contract.md C11.2] | @implemented [2026-09-15]
+ * How many expired events one sweep call may delete. The WINDOW is not here: it has exactly
+ * one definition, `public.notification_retention_days()` in SQL, which the sweep reads and
+ * the PG suite asserts against C11.1. This is only the per-call bound the cron passes in.
+ */
+export const NOTIFICATION_RETENTION_SWEEP_BATCH_SIZE = 1000;
+
+/** Row shape returned by `public.sweep_notification_retention(p_batch_size)`. */
+export const notificationRetentionSweepRowSchema = z.object({
+  deleted_events: z.number().int().min(0),
+  deleted_messages: z.number().int().min(0),
+  cutoff: timestampSchema,
+});
+export type NotificationRetentionSweepRow = z.infer<
+  typeof notificationRetentionSweepRowSchema
+>;
 
 /** The dispatcher's recipient lookup: `profiles(id, email)`. */
 export const notificationRecipientRowSchema = z.object({
@@ -157,6 +178,11 @@ export type NotificationFeedCursor = z.infer<
   typeof notificationFeedCursorSchema
 >;
 
+/**
+ * `archived` selects the view: the inbox (unarchived rows, the default) or the archive.
+ * Spelled out as the two literals rather than `z.coerce.boolean()`, which would read the
+ * string "false" as true.
+ */
 export const notificationFeedQuerySchema = z.object({
   limit: z.coerce
     .number()
@@ -165,6 +191,10 @@ export const notificationFeedQuerySchema = z.object({
     .max(NOTIFICATION_FEED_MAX_LIMIT)
     .default(NOTIFICATION_FEED_DEFAULT_LIMIT),
   cursor: z.string().min(1).optional(),
+  archived: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export const notificationFeedItemSchema = z.object({
@@ -177,6 +207,7 @@ export const notificationFeedItemSchema = z.object({
   createdAt: z.string(),
   seenAt: z.string().nullable(),
   readAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
 });
 export type NotificationFeedItem = z.infer<typeof notificationFeedItemSchema>;
 
@@ -213,6 +244,21 @@ export type NotificationPatchBody = z.infer<typeof notificationPatchBodySchema>;
 export const notificationMarkAllSeenResponseSchema = z.object({
   marked: z.number().int().min(0),
 });
+
+/** POST /mark-all-read — the read counterpart; read implies seen (contract §3.2). */
+export const notificationMarkAllReadResponseSchema = z.object({
+  marked: z.number().int().min(0),
+});
+
+export const notificationPatchResponseSchema = z.object({
+  messageId: z.string().uuid(),
+  seenAt: z.string().nullable(),
+  readAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+});
+export type NotificationPatchResponse = z.infer<
+  typeof notificationPatchResponseSchema
+>;
 
 // ── Resend webhook (contract §7.4) ───────────────────────────────────────────
 
