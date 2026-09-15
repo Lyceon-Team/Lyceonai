@@ -38,6 +38,11 @@
  * edge cases:
  *  - `billing-terms` has no entry: it has no blurb and no consent key, and is
  *    not listed on the hub until it is published.
+ *  - There are no lookup helpers here. `getLegalDocBySlug` existed only to gate
+ *    the document page on this six-entry list, which 404'd three real
+ *    documents; removing that gate left it with no caller. `getLegalDocByKey`
+ *    had no caller before Phase 2 either. `legalDocs` is consumed directly by
+ *    the hub, which is the one surface this list is for.
  */
 import { csrfFetch } from "./csrf";
 
@@ -87,18 +92,6 @@ export const legalDocs: LegalDocRegistryEntry[] = [
       "Terms for parents or guardians providing consent for minors.",
   },
 ];
-
-export function getLegalDocBySlug(
-  slug: string,
-): LegalDocRegistryEntry | undefined {
-  return legalDocs.find((doc) => doc.slug === slug);
-}
-
-export function getLegalDocByKey(
-  docKey: string,
-): LegalDocRegistryEntry | undefined {
-  return legalDocs.find((doc) => doc.docKey === docKey);
-}
 
 export interface LegalAcceptance {
   docKey: string;

@@ -121,10 +121,11 @@ Two things, both decided rather than overlooked:
 - **`docs/Spec/Lyceon Privacy Policy.md`** — an orphan that never corresponded
   to a served document. Kept by owner ruling during Phase 1 rather than
   migrated, because migrating it would assert it was a version of something.
-- **24 legacy consent rows** stamped `doc_version` `2024-12-20` / `2024-12-22`,
+- **24 legacy consent rows** — 12 users × two documents each, `privacy_policy`
+  stamped `doc_version` `2024-12-22` and `student_terms` `2024-12-20`, both
   referencing December 2024 text that no longer exists anywhere in the
   repository. They are **not** backfilled. Stamping them with a v2.0 hash would
-  assert those 12 users accepted text they never saw; `NULL` in `doc_slug` and
+  assert those users accepted text they never saw; `NULL` in `doc_slug` and
   `content_hash` says "we did not retain this", which is true. Those users are
   re-prompted at next sign-in, which is the correct outcome, not a regression.
 
