@@ -201,31 +201,50 @@ describe("C2 — signup records Student Terms and Privacy Policy", () => {
   });
 
   it("does not require Parent Terms or Billing Terms of a plain student", () => {
-    const slugs = requiredLegalDocsForUse().map((d) => d.slug);
+    const slugs = requiredLegalDocsForUse({
+      hasActiveGuardianLink: false,
+      hasEverPaid: false,
+    }).map((d) => d.slug);
     expect(slugs).toEqual(["student-terms", "privacy-policy"]);
   });
 
-  it("asks the same two of everyone — no role logic at all", () => {
-    // This asserted the opposite: Parent Terms added for a linked guardian.
-    // Owner ruling 2026-09-16 — Parent Terms is accepted as part of REDEEMING A
-    // CODE and captured there, so repeating it from a periodic prompt chased a
-    // consent already held. Taking no arguments is the strongest form of "no
-    // role logic": there is nothing to pass.
-    expect(requiredLegalDocsForUse.length).toBe(0);
-    expect(requiredLegalDocsForUse().map((d) => d.slug)).toEqual([
+  it("asks the same set of two accounts with the same facts", () => {
+    // REWRITTEN TWICE, NOT DELETED, AND THE HISTORY IS THE POINT. It first
+    // asserted Parent Terms for a linked GUARDIAN (role logic). It then
+    // asserted the function took no arguments at all. The rule now: whatever a
+    // user has not given, prompt for it — derived from facts, never from role.
+    //
+    // What survives all three is the claim worth keeping: the set is a function
+    // of the account's facts and of nothing else.
+    const facts = { hasActiveGuardianLink: false, hasEverPaid: false } as const;
+    expect(requiredLegalDocsForUse(facts).map((d) => d.slug)).toEqual([
       "student-terms",
       "privacy-policy",
     ]);
+    expect(requiredLegalDocsForUse({ ...facts }).map((d) => d.slug)).toEqual(
+      requiredLegalDocsForUse(facts).map((d) => d.slug),
+    );
   });
 
-  it("never mentions Billing Terms or Parent Terms in the prompt set", () => {
-    // Both are captured where they are GIVEN — Stripe's checkbox at checkout,
-    // and redeeming a code — each part of an action the person chose to take.
-    // Repeating either from a periodic prompt would chase a consent already
-    // held, against a version already recorded.
-    const slugs = requiredLegalDocsForUse().map((d) => d.slug);
-    expect(slugs).not.toContain("billing-terms");
-    expect(slugs).not.toContain("parent-guardian-terms");
+  it("mentions Billing Terms and Parent Terms only when the facts say so", () => {
+    // They are still captured where they are GIVEN — Stripe's checkbox at
+    // checkout, and redeeming a code. The prompt is the BACKSTOP for people who
+    // passed through those surfaces before the capture existed, which in
+    // production is a guardian holding two active links and no Parent Terms
+    // acceptance in any version.
+    const none = requiredLegalDocsForUse({
+      hasActiveGuardianLink: false,
+      hasEverPaid: false,
+    }).map((d) => d.slug);
+    expect(none).not.toContain("billing-terms");
+    expect(none).not.toContain("parent-guardian-terms");
+
+    const both = requiredLegalDocsForUse({
+      hasActiveGuardianLink: true,
+      hasEverPaid: true,
+    }).map((d) => d.slug);
+    expect(both).toContain("parent-guardian-terms");
+    expect(both).toContain("billing-terms");
   });
 });
 

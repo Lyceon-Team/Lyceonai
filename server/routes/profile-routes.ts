@@ -9,8 +9,10 @@ import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   requiredLegalDocsForUse,
+  type LegalAccountFacts,
   type OutstandingLegalDoc,
 } from "../../shared/legal-consent.js";
+import { loadLegalAccountFacts } from "../lib/legal-account-facts";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
@@ -39,14 +41,17 @@ function calculateAge(birthDate: string): number {
  * changed contract should have, and the property the whole structure exists to
  * deliver.
  *
- * The required SET is a function of context, not a fixed list: Parent Terms
- * applies to a guardian who actually holds a link, and to nobody else.
+ * The required SET is derived from the account's own facts, not from a fixed
+ * list and not from a role: Parent Terms applies to an account that actually
+ * holds a link, Billing Terms to one that has ever paid. Owner ruling
+ * 2026-09-16 — whatever a user has not given, prompt for it.
  */
 function outstandingLegalDocs(
   legalRows: Array<{ doc_key: string; doc_version: string }>,
+  facts: LegalAccountFacts,
 ): OutstandingLegalDoc[] {
   const outstanding: OutstandingLegalDoc[] = [];
-  for (const doc of requiredLegalDocsForUse()) {
+  for (const doc of requiredLegalDocsForUse(facts)) {
     // NEVER THROWS INTO THE PROFILE RESPONSE. This exact call threw
     // `legal/ not found. Looked in: legal, dist/public/legal relative to
     // /var/task` on every request from 2026-09-16T01:22:07Z, and because the
@@ -123,7 +128,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at",
+        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
       )
       .eq("id", user.id)
       .single();
@@ -155,11 +160,14 @@ router.get("/", async (req: Request, res: Response) => {
 
     const legalAcceptances = legalRows ?? [];
 
-    // The guardian_links count that used to be read here is gone with the
-    // role-aware required-document logic: every account owes Student Terms and
-    // Privacy Policy and nothing else, so a link changes nothing. One fewer
-    // query on the hottest authenticated path.
-    const outstandingLegal = outstandingLegalDocs(legalAcceptances);
+    // THE ACCOUNT'S OWN FACTS, not its role. `stripe_customer_id` rode along
+    // in the profile select above, so the only added cost on this path is the
+    // link read — one query, and one that never throws into the response.
+    const legalFacts = await loadLegalAccountFacts(
+      user.id,
+      profileRow.stripe_customer_id ?? null,
+    );
+    const outstandingLegal = outstandingLegalDocs(legalAcceptances, legalFacts);
 
     // UNDER-13 IS NOT A CONSENT GATE. It is the Terms' own condition — a student
     // under 13 cannot use LYCEON until a guardian connects — and it is the basis
