@@ -109,6 +109,7 @@ export type VertexErrorCode =
   | "vertex_400_invalid_request"
   | "vertex_403_auth"
   | "vertex_422_safety_blocked"
+  | "vertex_max_tokens_truncated"
   | "vertex_model_armor_unconfigured"
   | "vertex_unknown";
 
@@ -229,12 +230,12 @@ export function resolveProviderModel(alias: ModelAlias): string {
   if (alias === "pro_class") {
     return (
       (process.env.VERTEX_MODEL_PRO_CLASS_ALIAS ?? "").trim() ||
-      "gemini-2.5-pro"
+      "gemini-3.5-flash"
     );
   }
   return (
     (process.env.VERTEX_MODEL_FLASH_CLASS_ALIAS ?? "").trim() ||
-    "gemini-2.5-flash"
+    "gemini-3.5-flash"
   );
 }
 
@@ -531,6 +532,7 @@ async function invokeVertexOnce(
     topP: TOP_P,
     topK: TOP_K,
     maxOutputTokens: limits.maxOutputTokens,
+    thinkingConfig: { thinkingBudget: 1024 },
     safetySettings: SAFETY_SETTINGS,
     abortSignal: controller.signal,
   };
@@ -553,6 +555,24 @@ async function invokeVertexOnce(
         ok: false,
         errorCode: "vertex_422_safety_blocked",
         details: { finishReason },
+      };
+    }
+
+    if (finishReason === FinishReason.MAX_TOKENS) {
+      logEvent(
+        "error",
+        "vertex_client",
+        "vertex_max_tokens_truncated",
+        "Vertex response truncated at maxOutputTokens — model hit token budget",
+        { providerModel, finishReason },
+      );
+      return {
+        ok: false,
+        errorCode: "vertex_max_tokens_truncated",
+        details: {
+          finishReason,
+          truncatedLength: (response.text ?? "").length,
+        },
       };
     }
 
