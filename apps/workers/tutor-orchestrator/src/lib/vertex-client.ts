@@ -3,14 +3,14 @@
  * @implemented 2026-08-09
  *
  * plain English: Vertex AI client for the tutor orchestrator worker. Handles model
- * invocation with Model Armor integration: inline modelArmorConfig on generateContent
- * for input scanning, standalone Sanitize API for output scanning. Template IDs loaded
- * from environment variables (originally from runtime config, passed through at deploy;
- * see trade-offs).
+ * invocation with safetySettings on generateContent. Model Armor integration code
+ * (inline modelArmorConfig, standalone Sanitize API) is retained but not called —
+ * deferred pending Google-side TEMPLATE_NOT_FOUND resolution. Template ID plumbing
+ * preserved for re-enablement.
  *
- * expected outcome: generateTutorResponse() sends a request to Vertex AI with Model
- * Armor input scanning enabled, then runs the response through the Model Armor
- * Sanitize API for output scanning.
+ * expected outcome: generateTutorResponse() sends a request to Vertex AI with
+ * safetySettings (four harm categories, thresholds mirroring the Model Armor
+ * templates). Model Armor input and output scanning are bypassed.
  *
  * trade-offs:
  *  - Model Armor template IDs come from env vars (MODEL_ARMOR_INPUT_TEMPLATE_ID,
@@ -53,9 +53,12 @@ import {
   ApiError,
   FinishReason,
   GoogleGenAI,
+  HarmBlockThreshold,
+  HarmCategory,
   type Content,
   type GenerateContentConfig,
   type ModelArmorConfig,
+  type SafetySetting,
 } from "@google/genai";
 import { GoogleAuth } from "google-auth-library";
 import { z } from "zod";
@@ -118,6 +121,26 @@ const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const TEMPERATURE = 0.3;
 const TOP_P = 0.95;
 const TOP_K = 40;
+
+// Thresholds mirror the Model Armor templates; if Model Armor is re-enabled, these values and the templates must be reconciled.
+const SAFETY_SETTINGS: SafetySetting[] = [
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  },
+];
 
 /** finishReason values that indicate the model's own output was safety-blocked. */
 const SAFETY_BLOCKED_FINISH_REASONS: ReadonlySet<FinishReason> = new Set([
@@ -268,7 +291,7 @@ function getGoogleAuth(): GoogleAuth {
  *
  * @spec [Doc-03B_V4.1 §12B.8, Doc-03C_V3 §5]
  */
-function buildInputModelArmorConfig(
+function _buildInputModelArmorConfig(
   requestTemplateId?: string | null,
 ): Result<ModelArmorConfig, VertexErrorCode> {
   const rawTemplateId = (
@@ -488,7 +511,6 @@ async function invokeVertexOnce(
   messages: VertexMessage[],
   systemInstruction: string,
   limits: VertexGenerationLimits,
-  armorInputConfig: ModelArmorConfig,
 ): Promise<SingleInvocationResult> {
   const client = getGenAiClient();
   const contents: Content[] = messages.map((message) => ({
@@ -509,7 +531,7 @@ async function invokeVertexOnce(
     topP: TOP_P,
     topK: TOP_K,
     maxOutputTokens: limits.maxOutputTokens,
-    modelArmorConfig: armorInputConfig,
+    safetySettings: SAFETY_SETTINGS,
     abortSignal: controller.signal,
   };
 
@@ -564,7 +586,6 @@ async function invokeWithRetry(
   messages: VertexMessage[],
   systemInstruction: string,
   limits: VertexGenerationLimits,
-  armorInputConfig: ModelArmorConfig,
 ): Promise<
   Result<{ text: string; finishReason: string | null }, VertexErrorCode>
 > {
@@ -595,7 +616,6 @@ async function invokeWithRetry(
       messages,
       systemInstruction,
       limits,
-      armorInputConfig,
     );
     if (result.ok) {
       return result;
@@ -639,27 +659,19 @@ export async function generateTutorResponse(
   messages: VertexMessage[],
   systemInstruction: string,
   config: VertexGenerationLimits,
-  modelArmorIds?: ModelArmorTemplateIds,
+  _modelArmorIds?: ModelArmorTemplateIds,
 ): Promise<Result<VertexResponse, VertexErrorCode>> {
-  const armorInputConfig = buildInputModelArmorConfig(
-    modelArmorIds?.inputTemplateId,
-  );
-  if (!armorInputConfig.ok) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_input_unconfigured",
-      "Model Armor input template is not configured; refusing to call Vertex unarmored",
-    );
-    return armorInputConfig;
-  }
+  // Model Armor deferred: Google-side TEMPLATE_NOT_FOUND blocks both the
+  // inline modelArmorConfig and the standalone Sanitize API. safetySettings
+  // (SAFETY_SETTINGS constant) replaces the inline config on generateContent;
+  // the standalone sanitizeOutput call is also bypassed. When Model Armor is
+  // re-enabled, restore both paths and remove safetySettings.
 
   const primary = await invokeWithRetry(
     modelAlias,
     messages,
     systemInstruction,
     config,
-    armorInputConfig.value,
   );
 
   let generation: { text: string; finishReason: string | null };
@@ -684,7 +696,6 @@ export async function generateTutorResponse(
       messages,
       systemInstruction,
       config,
-      armorInputConfig.value,
     );
     if (!fallback.ok) {
       return fallback;
@@ -696,30 +707,14 @@ export async function generateTutorResponse(
     return primary;
   }
 
-  const outputTemplateId = (
-    modelArmorIds?.outputTemplateId ??
-    process.env.MODEL_ARMOR_OUTPUT_TEMPLATE_ID ??
-    ""
-  ).trim();
-  const sanitized = await sanitizeOutput(generation.text, outputTemplateId);
-  if (!sanitized.ok) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_output_unconfigured",
-      "Model Armor output scan failed or is unconfigured; refusing to return unscanned text",
-    );
-    return sanitized;
-  }
-
   return {
     ok: true,
     value: {
-      text: sanitized.value.sanitizedText,
+      text: generation.text,
       modelAliasUsed,
       providerModel: resolveProviderModel(modelAliasUsed),
       fallbackApplied,
-      armorOutputBlocked: sanitized.value.blocked,
+      armorOutputBlocked: false,
       finishReason: generation.finishReason,
     },
   };
