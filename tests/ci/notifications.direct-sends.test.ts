@@ -103,6 +103,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(Object.keys(req.body).sort()).toEqual([
       "from",
       "html",
+      "reply_to",
       "subject",
       "text",
       "to",
@@ -138,6 +139,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(Object.keys(req.body).sort()).toEqual([
       "from",
       "html",
+      "reply_to",
       "subject",
       "text",
       "to",
@@ -175,6 +177,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(Object.keys(req.body).sort()).toEqual([
       "from",
       "html",
+      "reply_to",
       "subject",
       "text",
       "to",
@@ -263,6 +266,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(Object.keys(req.body).sort()).toEqual([
       "from",
       "html",
+      "reply_to",
       "subject",
       "text",
       "to",
