@@ -627,6 +627,37 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-completed.json \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts
 
+      # @spec [SCL-085/086/088 PROPOSED; plan v4 §1 (two universes, three rules); owner brief
+      #        2026-09-16 "Deletion Vertical" C3 tests 1-7 + B3] | @implemented [2026-09-16]
+      # Evidence bundle: structural (no timestamp / uuid / outside-FK on the evidence side),
+      # cross-universe xmin, rank (execution order ORDER BY profile_id — fails if the ORDER BY is
+      # removed), guardian pre-clear in its own transaction, cancelled outcome, rolled-back cascade
+      # reconciled both ways, no free text crosses, Stripe cancel arguments, Stripe failure →
+      # failed_manual with the deletion still completing, billing record structural.
+      - name: Deletion evidence bundle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-evidence-bundle.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-evidence.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-evidence.json \
+            --file tests/ci/deletion-evidence-bundle.pg.ci.test.ts
+
+      # The proof above is only worth its red proof: plant one mutation per assertion (drop the
+      # ORDER BY, share a transaction, add a timestamp column, disable the reconciler, cancel
+      # with proration, ...) and require the NAMED test to turn red each time.
+      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
+
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost
