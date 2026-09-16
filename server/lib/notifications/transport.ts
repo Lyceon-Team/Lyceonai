@@ -14,6 +14,10 @@
  * absent — that path does not exist here: no key means a `config_missing` failure and a
  * warn line carrying only the message id.
  *
+ * Reply-To: every send carries `reply_to` = SUPPORT_EMAIL from packages/shared (owner brief
+ * 2026-09-16 Part A). The sender is send-only; replies belong with support. There is no
+ * per-caller override on purpose — one header, one place, no drift.
+ *
  * Tracking: the request body carries no tags and no option that enables open or click
  * tracking (contract §12.3).
  *
@@ -22,6 +26,7 @@
  */
 import { notificationEnvSchema } from "../../../packages/shared/src/env";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
+import { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
 import { logger } from "../../logger";
 
 export const RESEND_API_BASE_URL = "https://api.resend.com";
@@ -102,6 +107,11 @@ export function createResendTransport(
         body: JSON.stringify({
           from,
           to: [input.to],
+          // @spec [owner brief 2026-09-16 Part A; contracts/notifications.contract.md §12]
+          // | @implemented [2026-09-16] — NOTIFICATION_FROM_EMAIL is a send-only address with
+          // no inbox; a reply must land with a person. Every send inherits Reply-To here, from
+          // the ONE shared constant, so no caller can drift and none needs to override it.
+          reply_to: SUPPORT_EMAIL,
           subject: input.subject,
           html: input.html,
           text: input.text,

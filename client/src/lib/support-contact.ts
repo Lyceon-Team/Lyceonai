@@ -1,1 +1,4 @@
-export { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
+export {
+  SUPPORT_EMAIL,
+  PRIVACY_EMAIL,
+} from "../../../packages/shared/src/support-contact";
