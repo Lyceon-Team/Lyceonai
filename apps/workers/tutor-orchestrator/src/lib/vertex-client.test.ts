@@ -46,7 +46,7 @@ describe("vertex-client generateContent config", () => {
     process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID = "lyceon-lisa-input-v1";
     process.env.MODEL_ARMOR_OUTPUT_TEMPLATE_ID = "lyceon-lisa-output-v1";
     process.env.VERTEX_PROJECT_ID = "test-project";
-    process.env.VERTEX_LOCATION = "us-central1";
+    process.env.VERTEX_LOCATION = "global";
   });
 
   it("sends safetySettings and does NOT send modelArmorConfig", async () => {
