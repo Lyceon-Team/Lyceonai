@@ -31,6 +31,29 @@ Worked examples, from the 2026-08-31 audit:
 A prior framing — "spec-silent means plan entry" — was wrong and is superseded.
 Entries written under it were re-audited on 2026-08-31.
 
+## STATUS VALUES
+
+Owner ruling 2026-09-16. Three values, and no others:
+
+  - PROPOSED — the spec should change; it has not been changed yet.
+  - RULING    — a decision was recorded and NO amendment is needed. The
+                outcome is "the document already says the right thing", or
+                "this is not a spec matter after all". SCL-060 is the example.
+  - APPLIED   — the amendment named in the entry has been MADE in docs/Spec/.
+                The entry keeps its Change/WAS/IS lines as written and records
+                what landed and where; an entry is only APPLIED once the text
+                is actually in the document, not once it is authorised.
+
+APPLIED is about the AMENDMENT, not about bookkeeping around it. An entry whose
+spec text has landed is APPLIED even if something adjacent is still owed — a
+change record in the document's own §14, a follow-on decision — provided the
+entry says plainly what is outstanding. An entry whose spec text has NOT landed
+is PROPOSED, however firmly it has been authorised: authorisation is not
+application.
+
+Do not invent a fourth value; if none of these three fits, say so and ask the
+owner rather than coining one.
+
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
 
 Never take an SCL number from a prompt, plan, brief, or any instruction —
@@ -2682,7 +2705,7 @@ Why this surfaced now: the owner brief of 2026-09-15 ("Deletion Completion Notic
 Owner action: amend Doc 01 V8 §40.5 with the sentence above (or place the rule where the owner prefers); confirm that Doc 07E §9.2 remains the inactivity pre-deletion notice only.
 Build artifact: `server/lib/account-deletion-execute.ts` (read-before-mutate + post-commit send), `server/lib/notifications/direct-sends.ts` (`sendAccountDeletionCompletedEmail`), `server/lib/notifications/templates/deletion-completed.ts`, `contracts/notifications.contract.md` C0.4/C0.5/C0.6, `tests/ci/deletion-completed-notice.pg.ci.test.ts` (real Postgres, run in CI by the "Deletion-completed notice → real PG proof" step).
 
-SCL-084 | 2026-09-16 | Doc 10 §2.4 and §9.4 scope Parent / Guardian Terms to minor users (13-17); the re-consent prompt now asks any account holding an active guardian link, whatever the linked student's age | PROPOSED
+SCL-084 | 2026-09-16 | Doc 10 §2.4 and §9.4 scope Parent / Guardian Terms to minor users (13-17); the re-consent prompt now asks any account holding an active guardian link, whatever the linked student's age | APPLIED
 Id: `SCL-084` re-derived at the moment of use, 2026-09-16, across every remote branch after `git fetch --all --prune` (`git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md` on every branch) and the head branches of the five open PRs (#761, #760, #759, #728, #655). Highest allocated anywhere is `SCL-083`. No collision.
 Change: amend Doc 10 §2.4 (age-threshold taxonomy, operational rules) and §9.4 (Parent / Guardian Terms) so the obligation attaches to the GUARDIAN RELATIONSHIP rather than to the linked student's age. Proposed §2.4 rule, replacing "All minor users (13-17) -> Parent / Guardian Terms apply": `Parent / Guardian Terms apply to any account holding an active guardian link, whatever the linked student's age. For minor users (13-17) they are additionally a mandatory signup clickwrap per §9.15.` The guardian-visibility clause and the §9.15 clickwrap requirement for minors are unchanged.
 WAS: Doc 10 §2.4 states `All minor users (13-17) -> Parent / Guardian Terms apply; guardian-visibility model per Doc 01 V6.0`, and §9.4 opens `Mandatory clickwrap when the user is a minor.` Both tie the document to the linked student being a minor. Doc 01 §31 and §35-§37 place no age condition on a guardian link — §31 "Guardian pays for linked student" works for an adult student — so the spec as written leaves a guardian of an adult student outside Parent / Guardian Terms entirely.
@@ -2693,6 +2716,6 @@ Why this surfaced now: the owner directive of 2026-09-16 ("Prompt for whatever c
 Owner action: DONE, in part — the owner authorised the amendment explicitly on 2026-09-16 ("BUILD DIRECTIVE — Amend Doc 10 per SCL-084") and the substantive edits to Doc 10 §2.4 and §9.4 are applied on branch `claude/doc10-parent-terms-link-scope`. Remaining: the `CR-10-04` entry in Doc 10 §14 Change Records, which could not be written — see Not yet applied below.
 Applied: Doc 10 §2.4 — the "Lyceon student minor" taxonomy row no longer reads as scoping the Terms to minors; the operational rule "All minor users (13-17) -> Parent / Guardian Terms apply" is replaced by "Any account holding an active guardian link -> Parent / Guardian Terms apply, whatever the linked student's age", with the relationship defined per Doc 01 §36.1 and the age-specific obligations preserved as age-specific; the closing paragraph records that the Terms are referenced by the taxonomy but not derived from it. Doc 10 §9.4 — "What it is" now covers any linked guardian and separates the consent function (minors, per §9.15) from the visibility-and-responsibility function (adult students); "Why Lyceon needs it" separates the standing obligation from the minor signup clickwrap. §9.15, Doc 01 §37, §10.2 and §11.7 are untouched and remain true under the wider rule.
 Not yet applied: `CR-10-04` in Doc 10 §14. Writes to `docs/Spec/` are denied by this environment's permission settings — the guard that enforces the READ-ONLY rule in CLAUDE.md. The substantive edits landed through a shell write before that guard was hit; the change record did not, and the block was not worked around. The amendment is therefore recorded HERE and not yet in the document's own change log. Owner action: authorise the `docs/Spec/` write so `CR-10-04` can be appended, or apply it by hand.
-Status note: this register has no status token for an applied change — the only values in use are PROPOSED (30 entries) and RULING (1, SCL-060, which recorded that no amendment was needed). SCL-084 is the first entry whose amendment has actually been made. The status token is left as written rather than inventing a new one; the owner should name the convention, and every future applied entry can then use it.
+Status note: SCL-084 is the first entry in this register whose amendment has actually been made, and the register had no token for that state. The owner named it on 2026-09-16 — `APPLIED`, defined in the STATUS VALUES section of this file's header alongside PROPOSED and RULING — and this entry is the first to carry it.
 Deferred conflict, surfaced by this amendment and NOT resolved by it: `legal/parent-guardian-terms/v2/en.md` §1 states "You are the parent or legal guardian of that student" and the preamble scopes the document to consenting to "a minor's use". A guardian linked to an adult student cannot truthfully make that representation, so the published document now contradicts the amended Doc 10. That file is a sealed published version under the legal immutability gate; correcting it means publishing a new version, which is a separate owner decision and was explicitly out of scope for this amendment.
 Build artifact: `shared/legal-consent.ts` (`LegalAccountFacts`, `requiredLegalDocsForUse`, `actorTypeForDoc`), `server/lib/legal-account-facts.ts`, `server/routes/profile-routes.ts`, `server/routes/legal-routes.ts`, `tests/ci/consent-outstanding-set.contract.test.ts` (O1/O2 pin the condition and the four production states).
