@@ -91,17 +91,18 @@ CREATE TABLE IF NOT EXISTS public.deletion_consent_evidence (
   PRIMARY KEY (log_id, doc_key, doc_version, actor_type)
 );
 COMMENT ON TABLE public.deletion_consent_evidence IS
-  'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. Composite key on purpose: a serial would reproduce copy order.';
+  'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. ip_address is the /24 (IPv4) or /48 (IPv6) network and user_agent is browser family/OS family — Doc 01 §5.1 redaction, inherited (SCL-085 amendment, owner ruling 2026-09-16). Composite key on purpose: a serial would reproduce copy order.';
 
 CREATE TABLE IF NOT EXISTS public.deletion_billing_record (
-  log_id                 uuid PRIMARY KEY REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE,
-  stripe_customer_id     text,
-  stripe_subscription_id text,
-  cancelled_on           date NOT NULL,
-  final_status           text NOT NULL CHECK (final_status IN ('cancelled','item_removed','none_active','failed_manual'))
+  log_id                      uuid PRIMARY KEY REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE,
+  stripe_customer_id          text,
+  stripe_subscription_id      text,
+  stripe_subscription_item_id text,
+  cancelled_on                date NOT NULL,
+  final_status                text NOT NULL CHECK (final_status IN ('cancelled','item_removed','none_active','failed_manual'))
 );
 COMMENT ON TABLE public.deletion_billing_record IS
-  'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. Legal-obligation basis, 7-year tier.';
+  'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086; SCL-089 alert-and-retry). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. The item id is kept so a failed_manual teardown can be retried after the entitlement row is gone. Legal-obligation basis, 7-year tier.';
 
 ALTER TABLE public.deletion_request_log      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
@@ -837,6 +838,71 @@ $$;
 -- PART 6 — T1 and T3 (evidence side, set-based, batched per executor run) and the reconciler
 -- ===========================================================================
 
+-- @spec [Doc-01_V8 §5.1 "PII redaction" (IP truncated to /24 IPv4 or /48 IPv6; user agent to
+--        browser family + OS family); SCL-085 as amended 2026-09-16 (owner ruling: consent
+--        evidence inherits the audit_logs redaction)] The ONE definition of each reduction, used
+--        by the consent copy below. Unparseable input yields NULL rather than raw text — a
+--        redactor that falls back to the value it was meant to redact is not a redactor.
+CREATE OR REPLACE FUNCTION public.redact_evidence_ip(p_ip text)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v inet;
+BEGIN
+  IF p_ip IS NULL OR btrim(p_ip) = '' THEN
+    RETURN NULL;
+  END IF;
+  BEGIN
+    v := btrim(p_ip)::inet;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  -- an IPv4-mapped IPv6 address (::ffff:a.b.c.d, what Node reports behind a proxy) is IPv4
+  IF family(v) = 6 AND host(v) LIKE '::ffff:%' THEN
+    BEGIN
+      v := substr(host(v), 8)::inet;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN NULL;
+    END;
+  END IF;
+  IF family(v) = 4 THEN
+    RETURN text(network(set_masklen(v, 24)));
+  END IF;
+  RETURN text(network(set_masklen(v, 48)));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.redact_evidence_user_agent(p_ua text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_ua IS NULL OR btrim(p_ua) = '' THEN NULL
+    ELSE
+      (CASE
+         WHEN p_ua ~* 'Edg/'            THEN 'Edge'
+         WHEN p_ua ~* 'OPR/|Opera'      THEN 'Opera'
+         WHEN p_ua ~* 'Firefox/|FxiOS/' THEN 'Firefox'
+         WHEN p_ua ~* 'Chrome/|CriOS/'  THEN 'Chrome'
+         WHEN p_ua ~* 'Safari/'         THEN 'Safari'
+         ELSE 'Other'
+       END)
+      || '/' ||
+      (CASE
+         WHEN p_ua ~* 'Windows'             THEN 'Windows'
+         WHEN p_ua ~* 'Android'             THEN 'Android'
+         WHEN p_ua ~* 'iPhone|iPad|iPod'    THEN 'iOS'
+         WHEN p_ua ~* 'Mac OS X|Macintosh'  THEN 'macOS'
+         WHEN p_ua ~* 'CrOS'                THEN 'ChromeOS'
+         WHEN p_ua ~* 'Linux'               THEN 'Linux'
+         ELSE 'Other'
+       END)
+  END
+$$;
+
 -- @spec [plan v4 §3.4 T1; §3.5 consent copy] Marks the given log rows 'executing' and copies
 -- the subjects' legal acceptances beside them. ONE statement each, ordered by the random
 -- log_id: a per-row loop in executor order would give the evidence rows an insertion order
@@ -862,7 +928,8 @@ BEGIN
   SELECT adr.log_id,
          (la.accepted_at AT TIME ZONE 'utc')::date,
          la.doc_key, la.doc_version, la.actor_type, la.minor, la.consent_source,
-         la.ip_address, la.user_agent
+         public.redact_evidence_ip(la.ip_address),
+         public.redact_evidence_user_agent(la.user_agent)
     FROM public.account_deletion_requests adr
     JOIN public.legal_acceptances la ON la.user_id = adr.profile_id
    WHERE adr.log_id = ANY (p_log_ids)
@@ -886,7 +953,7 @@ GRANT EXECUTE ON FUNCTION public.mark_deletion_log_executing(uuid[]) TO service_
 -- @spec [plan v4 §3.4 T3; §3.7 billing record; SCL-086] Completes the given log rows and
 -- writes the billing record for those that had a Stripe customer or subscription. Input:
 -- a JSON array (as text, so every transport passes it the same way) of
--- {log_id, stripe_customer_id, stripe_subscription_id, final_status}.
+-- {log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, final_status}.
 -- Batched per executor run, set-based. The UPDATE is driven by a scalar array filter over
 -- the log table, NOT by a join from the input: a join would let the planner visit rows in
 -- input order, which is execution order, and stamp that order into the evidence side's
@@ -912,9 +979,11 @@ BEGIN
   END IF;
 
   CREATE TEMP TABLE _completions ON COMMIT DROP AS
-    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.final_status
+    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id,
+           c.stripe_subscription_item_id, c.final_status
       FROM jsonb_to_recordset(v_json)
-        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text, final_status text);
+        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text,
+             stripe_subscription_item_id text, final_status text);
 
   SELECT array_agg(c.log_id ORDER BY c.log_id) INTO v_ids FROM _completions c;
 
@@ -925,8 +994,8 @@ BEGIN
   GET DIAGNOSTICS v_completed = ROW_COUNT;
 
   INSERT INTO public.deletion_billing_record
-    (log_id, stripe_customer_id, stripe_subscription_id, cancelled_on, final_status)
-  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, v_today, c.final_status
+    (log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, cancelled_on, final_status)
+  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.stripe_subscription_item_id, v_today, c.final_status
     FROM _completions c
     JOIN public.deletion_request_log l ON l.log_id = c.log_id
    WHERE c.final_status IS NOT NULL
@@ -940,6 +1009,34 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.complete_deletion_log(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.complete_deletion_log(text) TO service_role;
+
+-- @spec [SCL-089 as amended 2026-09-16: alert-and-retry on billing] The retry sweep resolves a
+-- billing record that was written failed_manual once the teardown has succeeded on a later
+-- pass. Evidence side only; cancelled_on becomes the date the teardown actually happened.
+CREATE OR REPLACE FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_final_status NOT IN ('cancelled', 'item_removed', 'none_active') THEN
+    RAISE EXCEPTION 'resolve_deletion_billing_record: % is not a resolved status', p_final_status
+      USING ERRCODE = '22023';
+  END IF;
+  UPDATE public.deletion_billing_record
+     SET final_status = p_final_status,
+         cancelled_on = (now() AT TIME ZONE 'utc')::date
+   WHERE log_id = p_log_id
+     AND final_status = 'failed_manual';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.resolve_deletion_billing_record(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.resolve_deletion_billing_record(uuid, text) TO service_role;
 
 -- @spec [plan v4 §3.4 "reconciliation replaces atomicity"] A log row left 'executing' means
 -- the executor did not reach T3 for it: the cascade rolled back (request row still pending)

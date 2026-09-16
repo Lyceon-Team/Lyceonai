@@ -14,7 +14,7 @@
 # leave a mutation on disk.
 #
 # Needs a Postgres reachable through PG* env (the suite bootstraps its own database from
-# supabase/migrations). Runs the suite thirteen times; each run is ~2s on the CI service container.
+# supabase/migrations). Runs the suite fifteen times; each run is ~2s on the CI service container.
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -115,14 +115,22 @@ plant M9 "$MIG" 's.replace("SET status = '"'"'cancelled'"'"', responded_on = (no
 expect_red M9 "C3.5 cancelled"
 
 echo "==> (M10) put actor_id on the billing record (the reverse map Doc 05E §3 Rule 2 forbids)"
-plant M10 "$MIG" 's.replace("  cancelled_on           date NOT NULL,\n", "  cancelled_on           date NOT NULL,\n  actor_id               uuid,\n", 1)'
+plant M10 "$MIG" 's.replace("  cancelled_on                date NOT NULL,\n", "  cancelled_on                date NOT NULL,\n  actor_id                    uuid,\n", 1)'
 expect_red M10 "B3.3 billing record structural"
 
 echo "==> (M11) drop the ledger rewrite's table lock (concurrent cascade row could be lost)"
 plant M11 "$MIG" 's.replace("  LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE;\n", "", 1)'
 expect_red M11 "C3.2 cross-universe xmin"
 
-echo "==> (12) restored: baseline must be green again"
+echo "==> (M12) swap the item-count branch: a build that always removes items"
+plant M12 "$EXEC" 's.replace("} else if (sub.items.data.length <= 1) {", "} else if (sub.items.data.length < 1) {")'
+expect_red M12 "B3.5 single-item subscription"
+
+echo "==> (M13) copy the raw IP into the consent evidence (drop the §5.1 redaction)"
+plant M13 "$MIG" 's.replace("         public.redact_evidence_ip(la.ip_address),\n", "         la.ip_address,\n", 1)'
+expect_red M13 "C3.8 consent evidence"
+
+echo "==> (14) restored: baseline must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: suite not green after restore"; fails=1; else echo "  ok   green after restore"; fi
 

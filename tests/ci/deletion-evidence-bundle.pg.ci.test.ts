@@ -77,6 +77,7 @@ const stripeState = {
   owned: [] as Array<{ id: string; status: string }>,
   retrieve: null as StripeSub | null,
   cancelThrows: false,
+  itemDelThrows: false,
 };
 vi.mock("../../server/lib/stripe/client", () => ({
   getStripeClient: () => {
@@ -101,6 +102,7 @@ vi.mock("../../server/lib/stripe/client", () => ({
       subscriptionItems: {
         del: async (id: string, params: unknown) => {
           stripeState.calls.push({ method: "subscriptionItems.del", args: [id, params] });
+          if (stripeState.itemDelThrows) throw new Error("stripe: item delete unavailable");
           return { id, deleted: true };
         },
       },
@@ -108,11 +110,21 @@ vi.mock("../../server/lib/stripe/client", () => ({
   },
 }));
 
-// ── Silent logger; a fake Resend that accepts every send ─────────────────────
+// ── Logger recorder (the PAGE is an error-severity event with a stable name); fake Resend ──
+const logged: Array<{ level: string; component: string; event: string }> = [];
 vi.mock("../../server/logger", () => {
-  const noop = () => undefined;
-  return { logger: { info: noop, warn: noop, error: noop, debug: noop } };
+  const rec =
+    (level: string) =>
+    (component: string, event: string): void => {
+      logged.push({ level, component, event });
+    };
+  return {
+    logger: { info: rec("info"), warn: rec("warn"), error: rec("error"), debug: rec("debug") },
+  };
 });
+function pages(event: string): number {
+  return logged.filter((l) => l.level === "error" && l.component === "DELETION" && l.event === event).length;
+}
 async function fakeFetch(): Promise<Response> {
   return new Response(JSON.stringify({ id: "re_1" }), {
     status: 200,
@@ -171,9 +183,36 @@ async function seedConsent(profileId: string): Promise<void> {
   await pg.query(
     `INSERT INTO public.legal_acceptances
        (user_id, doc_key, doc_version, actor_type, minor, consent_source, ip_address, user_agent, accepted_at)
-     VALUES ($1, 'student-terms', 'v2', 'student', true, 'email_signup_form', '203.0.113.7', 'UA/1.0', now() - interval '30 days')`,
+     VALUES ($1, 'student-terms', 'v2', 'student', true, 'email_signup_form', '203.0.113.7',
+             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+             now() - interval '30 days')`,
     [profileId],
   );
+}
+async function seedEntitlement(profileId: string, subscriptionId: string, itemId: string): Promise<void> {
+  await pg.query(
+    `INSERT INTO public.entitlements (profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id)
+     VALUES ($1, 'premium', 'active', $2, $3)`,
+    [profileId, subscriptionId, itemId],
+  );
+}
+/** The whole row plus its transaction id, so "never touched" is asserted directly, not by absence of error. */
+async function entitlementSnapshot(profileId: string): Promise<Record<string, unknown> | null> {
+  const r = await pg.query(
+    `SELECT xmin::text AS x, profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id
+       FROM public.entitlements WHERE profile_id = $1`,
+    [profileId],
+  );
+  return (r.rows[0] as Record<string, unknown> | undefined) ?? null;
+}
+async function billingRow(logId: string): Promise<Record<string, unknown> | null> {
+  const r = await pg.query(
+    `SELECT stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, final_status,
+            cancelled_on::text AS cancelled_on
+       FROM public.deletion_billing_record WHERE log_id = $1`,
+    [logId],
+  );
+  return (r.rows[0] as Record<string, unknown> | undefined) ?? null;
 }
 /** Request via the real RPC (T0 writes the log row), then make it due. */
 async function requestAndMakeDue(profileId: string): Promise<{ requestId: string; logId: string }> {
@@ -238,6 +277,8 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     stripeState.owned = [];
     stripeState.retrieve = null;
     stripeState.cancelThrows = false;
+    stripeState.itemDelThrows = false;
+    logged.length = 0;
     // child → parent; evidence tables cascade from the log
     await pg.query(`DELETE FROM public.deletion_request_log`);
     await pg.query(`DELETE FROM public.auth_runtime_config WHERE key LIKE 'evidence_ci_%'`);
@@ -532,6 +573,36 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     expect(hashHit.rows[0]?.n).toBe(0);
   });
 
+  // ── C3.8 ────────────────────────────────────────────────────────────────────
+  it("C3.8 consent evidence inherits Doc 01 §5.1 redaction: IP to /24, user agent to browser/OS family, raw values absent", async () => {
+    const u = USERS[1];
+    await seedUser(u.id, u.email);
+    await seedConsent(u.id);
+    const { logId } = await requestAndMakeDue(u.id);
+    const summary = await runExecutor();
+    expect(summary).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    const rows = await pg.query(
+      `SELECT ip_address, user_agent, doc_key, doc_version, actor_type, minor, consent_source, accepted_on::text AS accepted_on
+         FROM public.deletion_consent_evidence WHERE log_id = $1`,
+      [logId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]).toMatchObject({
+      ip_address: "203.0.113.0/24",
+      user_agent: "Chrome/Windows",
+      doc_key: "student-terms",
+      doc_version: "v2",
+      actor_type: "student",
+      minor: true,
+      consent_source: "email_signup_form",
+    });
+    const raw = await pg.query(
+      `SELECT count(*)::int AS n FROM public.deletion_consent_evidence
+        WHERE ip_address = '203.0.113.7' OR user_agent LIKE '%128.0.0.0%'`,
+    );
+    expect(raw.rows[0]?.n).toBe(0);
+  });
+
   // ── B3 ──────────────────────────────────────────────────────────────────────
   it("B3.1 Stripe: the person's own subscription is cancelled with { prorate: false } and the billing record survives keyed to the log", async () => {
     const u = USERS[3];
@@ -585,7 +656,8 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
         WHERE table_schema = 'public' AND table_name = 'deletion_billing_record' ORDER BY ordinal_position`,
     );
     expect(cols.rows.map((c) => c.column_name)).toEqual([
-      "log_id", "stripe_customer_id", "stripe_subscription_id", "cancelled_on", "final_status",
+      "log_id", "stripe_customer_id", "stripe_subscription_id", "stripe_subscription_item_id",
+      "cancelled_on", "final_status",
     ]);
     expect(cols.rows.filter((c) => c.data_type === "uuid").map((c) => c.column_name)).toEqual(["log_id"]);
     const u = USERS[5];
@@ -595,5 +667,111 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     expect(stripeState.constructed).toBe(0);
     const billing = await pg.query(`SELECT 1 FROM public.deletion_billing_record WHERE log_id = $1`, [logId]);
     expect(billing.rowCount).toBe(0);
+  });
+
+  // ── B3.4 – B3.7: per-student entitlement on a payer-scoped subscription (owner ruling 2026-09-16 item 3)
+  it("B3.4 multi-item subscription: only this student's item is removed, the subscription survives, the sibling's entitlement row is never touched", async () => {
+    const me = USERS[0];
+    const sibling = USERS[1];
+    await seedUser(me.id, me.email);
+    await seedUser(sibling.id, sibling.email);
+    await seedEntitlement(me.id, "sub_family", "si_me");
+    await seedEntitlement(sibling.id, "sub_family", "si_sibling");
+    stripeState.retrieve = { id: "sub_family", status: "active", items: { data: [{ id: "si_sibling" }, { id: "si_me" }] } };
+    const before = await entitlementSnapshot(sibling.id);
+    const { logId } = await requestAndMakeDue(me.id);
+
+    const summary = await runExecutor();
+    expect(summary).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(stripeState.calls).toEqual([
+      { method: "subscriptions.retrieve", args: ["sub_family"] },
+      { method: "subscriptionItems.del", args: ["si_me", { proration_behavior: "none" }] },
+    ]);
+    expect(await entitlementSnapshot(me.id)).toBeNull(); // PS-1: the deleting student's row is gone
+    expect(await entitlementSnapshot(sibling.id)).toEqual(before); // same row, same xmin: never written
+    expect(await billingRow(logId)).toMatchObject({
+      stripe_subscription_id: "sub_family",
+      stripe_subscription_item_id: "si_me",
+      final_status: "item_removed",
+    });
+  });
+
+  it("B3.5 single-item subscription: the subscription is cancelled with { prorate: false }, not an item removal; a sibling on ANOTHER subscription is never touched", async () => {
+    const me = USERS[2];
+    const sibling = USERS[3];
+    await seedUser(me.id, me.email);
+    await seedUser(sibling.id, sibling.email);
+    await seedEntitlement(me.id, "sub_solo", "si_solo");
+    await seedEntitlement(sibling.id, "sub_other", "si_other");
+    stripeState.retrieve = { id: "sub_solo", status: "active", items: { data: [{ id: "si_solo" }] } };
+    const before = await entitlementSnapshot(sibling.id);
+    const { logId } = await requestAndMakeDue(me.id);
+
+    const summary = await runExecutor();
+    expect(summary).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(stripeState.calls).toEqual([
+      { method: "subscriptions.retrieve", args: ["sub_solo"] },
+      { method: "subscriptions.cancel", args: ["sub_solo", { prorate: false }] },
+    ]);
+    expect(stripeState.calls.some((c) => c.method === "subscriptionItems.del")).toBe(false);
+    expect(await entitlementSnapshot(sibling.id)).toEqual(before);
+    expect(await billingRow(logId)).toMatchObject({
+      stripe_subscription_id: "sub_solo",
+      stripe_subscription_item_id: "si_solo",
+      final_status: "cancelled",
+    });
+  });
+
+  it("B3.6 Stripe failure on the item-removal path: failed_manual, the page fires, the deletion completes, and the next pass retries to item_removed", async () => {
+    const me = USERS[4];
+    await seedUser(me.id, me.email);
+    await seedEntitlement(me.id, "sub_family2", "si_me2");
+    stripeState.retrieve = { id: "sub_family2", status: "active", items: { data: [{ id: "si_other2" }, { id: "si_me2" }] } };
+    stripeState.itemDelThrows = true;
+    const { logId } = await requestAndMakeDue(me.id);
+
+    const first = await runExecutor();
+    expect(first).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(await profileExists(me.id)).toBe(false);
+    expect(pages("billing_teardown_failed_manual")).toBe(1);
+    expect(await billingRow(logId)).toMatchObject({ final_status: "failed_manual", stripe_subscription_item_id: "si_me2" });
+
+    // the retry sweep runs at the end of every pass, from the billing record alone
+    stripeState.itemDelThrows = false;
+    stripeState.calls = [];
+    const second = await runExecutor();
+    expect(second).toEqual({ executedCount: 0, skippedCount: 0, failedCount: 0 });
+    expect(stripeState.calls).toEqual([
+      { method: "subscriptions.retrieve", args: ["sub_family2"] },
+      { method: "subscriptionItems.del", args: ["si_me2", { proration_behavior: "none" }] },
+    ]);
+    const resolved = await billingRow(logId);
+    expect(resolved?.final_status).toBe("item_removed");
+    expect(String(resolved?.cancelled_on)).toContain(await todayUtc());
+  });
+
+  it("B3.7 Stripe failure on the cancel path: failed_manual, the page fires, the deletion completes, the retry resolves to cancelled, and a still-failing retry pages again", async () => {
+    const me = USERS[5];
+    await seedUser(me.id, me.email);
+    await seedEntitlement(me.id, "sub_solo2", "si_solo2");
+    stripeState.retrieve = { id: "sub_solo2", status: "active", items: { data: [{ id: "si_solo2" }] } };
+    stripeState.cancelThrows = true;
+    const { logId } = await requestAndMakeDue(me.id);
+
+    const first = await runExecutor();
+    expect(first).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(await profileExists(me.id)).toBe(false);
+    expect(pages("billing_teardown_failed_manual")).toBe(1);
+    expect((await billingRow(logId))?.final_status).toBe("failed_manual");
+
+    // still down on the next pass: pages again, record unchanged
+    await runExecutor();
+    expect(pages("billing_teardown_retry_failed")).toBe(1);
+    expect((await billingRow(logId))?.final_status).toBe("failed_manual");
+
+    // back up: resolved
+    stripeState.cancelThrows = false;
+    await runExecutor();
+    expect((await billingRow(logId))?.final_status).toBe("cancelled");
   });
 });

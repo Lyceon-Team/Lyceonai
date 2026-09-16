@@ -1046,9 +1046,11 @@ BEGIN
   END IF;
 
   CREATE TEMP TABLE _completions ON COMMIT DROP AS
-    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.final_status
+    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id,
+           c.stripe_subscription_item_id, c.final_status
       FROM jsonb_to_recordset(v_json)
-        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text, final_status text);
+        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text,
+             stripe_subscription_item_id text, final_status text);
 
   SELECT array_agg(c.log_id ORDER BY c.log_id) INTO v_ids FROM _completions c;
 
@@ -1059,8 +1061,8 @@ BEGIN
   GET DIAGNOSTICS v_completed = ROW_COUNT;
 
   INSERT INTO public.deletion_billing_record
-    (log_id, stripe_customer_id, stripe_subscription_id, cancelled_on, final_status)
-  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, v_today, c.final_status
+    (log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, cancelled_on, final_status)
+  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.stripe_subscription_item_id, v_today, c.final_status
     FROM _completions c
     JOIN public.deletion_request_log l ON l.log_id = c.log_id
    WHERE c.final_status IS NOT NULL
@@ -2470,7 +2472,8 @@ BEGIN
   SELECT adr.log_id,
          (la.accepted_at AT TIME ZONE 'utc')::date,
          la.doc_key, la.doc_version, la.actor_type, la.minor, la.consent_source,
-         la.ip_address, la.user_agent
+         public.redact_evidence_ip(la.ip_address),
+         public.redact_evidence_user_agent(la.user_agent)
     FROM public.account_deletion_requests adr
     JOIN public.legal_acceptances la ON la.user_id = adr.profile_id
    WHERE adr.log_id = ANY (p_log_ids)
@@ -3245,6 +3248,72 @@ $$;
 
 
 --
+-- Name: redact_evidence_ip(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_ip(p_ip text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+  v inet;
+BEGIN
+  IF p_ip IS NULL OR btrim(p_ip) = '' THEN
+    RETURN NULL;
+  END IF;
+  BEGIN
+    v := btrim(p_ip)::inet;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  -- an IPv4-mapped IPv6 address (::ffff:a.b.c.d, what Node reports behind a proxy) is IPv4
+  IF family(v) = 6 AND host(v) LIKE '::ffff:%' THEN
+    BEGIN
+      v := substr(host(v), 8)::inet;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN NULL;
+    END;
+  END IF;
+  IF family(v) = 4 THEN
+    RETURN text(network(set_masklen(v, 24)));
+  END IF;
+  RETURN text(network(set_masklen(v, 48)));
+END;
+$$;
+
+
+--
+-- Name: redact_evidence_user_agent(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_user_agent(p_ua text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT CASE
+    WHEN p_ua IS NULL OR btrim(p_ua) = '' THEN NULL
+    ELSE
+      (CASE
+         WHEN p_ua ~* 'Edg/'            THEN 'Edge'
+         WHEN p_ua ~* 'OPR/|Opera'      THEN 'Opera'
+         WHEN p_ua ~* 'Firefox/|FxiOS/' THEN 'Firefox'
+         WHEN p_ua ~* 'Chrome/|CriOS/'  THEN 'Chrome'
+         WHEN p_ua ~* 'Safari/'         THEN 'Safari'
+         ELSE 'Other'
+       END)
+      || '/' ||
+      (CASE
+         WHEN p_ua ~* 'Windows'             THEN 'Windows'
+         WHEN p_ua ~* 'Android'             THEN 'Android'
+         WHEN p_ua ~* 'iPhone|iPad|iPod'    THEN 'iOS'
+         WHEN p_ua ~* 'Mac OS X|Macintosh'  THEN 'macOS'
+         WHEN p_ua ~* 'CrOS'                THEN 'ChromeOS'
+         WHEN p_ua ~* 'Linux'               THEN 'Linux'
+         ELSE 'Other'
+       END)
+  END
+$$;
+
+
+--
 -- Name: student_domain_kpi; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3917,6 +3986,32 @@ BEGIN
      'pending', p_recovery_token_hash, v_sched, v_log_id);
 
   RETURN QUERY SELECT v_now, v_sched;
+END;
+$$;
+
+
+--
+-- Name: resolve_deletion_billing_record(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_final_status NOT IN ('cancelled', 'item_removed', 'none_active') THEN
+    RAISE EXCEPTION 'resolve_deletion_billing_record: % is not a resolved status', p_final_status
+      USING ERRCODE = '22023';
+  END IF;
+  UPDATE public.deletion_billing_record
+     SET final_status = p_final_status,
+         cancelled_on = (now() AT TIME ZONE 'utc')::date
+   WHERE log_id = p_log_id
+     AND final_status = 'failed_manual';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
 END;
 $$;
 
@@ -4819,6 +4914,7 @@ CREATE TABLE public.deletion_billing_record (
     log_id uuid NOT NULL,
     stripe_customer_id text,
     stripe_subscription_id text,
+    stripe_subscription_item_id text,
     cancelled_on date NOT NULL,
     final_status text NOT NULL,
     CONSTRAINT deletion_billing_record_final_status_check CHECK ((final_status = ANY (ARRAY['cancelled'::text, 'item_removed'::text, 'none_active'::text, 'failed_manual'::text])))
@@ -4829,7 +4925,7 @@ CREATE TABLE public.deletion_billing_record (
 -- Name: TABLE deletion_billing_record; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.deletion_billing_record IS 'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. Legal-obligation basis, 7-year tier.';
+COMMENT ON TABLE public.deletion_billing_record IS 'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086; SCL-089 alert-and-retry). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. The item id is kept so a failed_manual teardown can be retried after the entitlement row is gone. Legal-obligation basis, 7-year tier.';
 
 
 --
@@ -4853,7 +4949,7 @@ CREATE TABLE public.deletion_consent_evidence (
 -- Name: TABLE deletion_consent_evidence; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.deletion_consent_evidence IS 'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. Composite key on purpose: a serial would reproduce copy order.';
+COMMENT ON TABLE public.deletion_consent_evidence IS 'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. ip_address is the /24 (IPv4) or /48 (IPv6) network and user_agent is browser family/OS family — Doc 01 §5.1 redaction, inherited (SCL-085 amendment, owner ruling 2026-09-16). Composite key on purpose: a serial would reproduce copy order.';
 
 
 --
@@ -11307,6 +11403,14 @@ GRANT ALL ON FUNCTION public.refresh_skill_kpi(p_student_id uuid, p_section text
 
 REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) TO service_role;
+
+
+--
+-- Name: FUNCTION resolve_deletion_billing_record(p_log_id uuid, p_final_status text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) TO service_role;
 
 
 --

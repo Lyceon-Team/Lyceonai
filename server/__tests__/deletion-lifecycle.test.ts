@@ -897,6 +897,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
           log_id: "log-1",
           stripe_customer_id: null,
           stripe_subscription_id: "sub_abc",
+          stripe_subscription_item_id: null,
           final_status: "failed_manual",
         },
       ]),
@@ -938,8 +939,8 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     expect(t3Idx).toBeGreaterThan(names.lastIndexOf("complete_and_anonymize_account"));
     expect(rpcCalls[t3Idx]!.args).toEqual({
       p_completions: JSON.stringify([
-        { log_id: "log-1", stripe_customer_id: null, stripe_subscription_id: null, final_status: null },
-        { log_id: "log-3", stripe_customer_id: null, stripe_subscription_id: null, final_status: null },
+        { log_id: "log-1", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
+        { log_id: "log-3", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
       ]),
     });
     expect(names.slice(-2)).toEqual([

@@ -38,6 +38,7 @@ type LogCompletion = {
   log_id: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_subscription_item_id: string | null;
   final_status: BillingFinalStatus | null;
 };
 
@@ -50,8 +51,90 @@ type BillingFinalStatus =
 type BillingOutcome = {
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  stripeSubscriptionItemId: string | null;
   finalStatus: BillingFinalStatus | null;
 };
+
+/** Everything the Stripe teardown needs; the same shape at T+7 and on a later retry. */
+type StripeTeardownTarget = {
+  customerId: string | null;
+  subscriptionId: string | null;
+  itemId: string | null;
+  /** Only known at T+7 (the profile is gone on a retry); used to find an unkeyed item by metadata. */
+  studentProfileId: string | null;
+};
+
+// @spec [Doc-01 §40.2.1 `stripe.subscriptions.cancel(…, { prorate: false })`; SCL-086; SCL-045
+// (one guardian subscription, one item per student); owner ruling 2026-09-16 item 3: entitlement is
+// per student, the payer is not deleted, siblings on the same subscription are unaffected, and the
+// item count is read from STRIPE at teardown time, never inferred from our tables]
+// plain English: the one Stripe teardown, shared by the T+7 executor and the failed_manual retry.
+//   (a) Subscriptions the person PAYS for — every non-cancelled subscription on their own Stripe
+//       customer — are cancelled outright, no proration, no final invoice (a self-paying student,
+//       or a guardian who pays for others; the students' entitlements then go via the
+//       customer.subscription.deleted webhook as for any cancellation).
+//   (b) A subscription someone ELSE pays for that carries this student: the subscription is
+//       retrieved and its item count decides —
+//         several items → remove only this student's item (the siblings' plan survives);
+//         one item      → Stripe refuses to delete a subscription's last item, so the
+//                         subscription is cancelled with { prorate: false }.
+// Throws on any Stripe failure; the callers decide what a failure means (record + page + proceed).
+async function teardownStripe(
+  target: StripeTeardownTarget,
+): Promise<{ finalStatus: BillingFinalStatus; cancelledSubscriptions: number }> {
+  const stripe = getStripeClient();
+  const cancelledIds = new Set<string>();
+
+  // (a) everything this person pays for
+  if (target.customerId) {
+    const owned = await stripe.subscriptions.list({
+      customer: target.customerId,
+      status: "all",
+      limit: 100,
+    });
+    for (const sub of owned.data) {
+      if (sub.status === "canceled" || sub.status === "incomplete_expired") {
+        continue;
+      }
+      await stripe.subscriptions.cancel(sub.id, { prorate: false });
+      cancelledIds.add(sub.id);
+    }
+  }
+
+  // (b) a subscription someone else pays for that carries this student
+  let finalStatus: BillingFinalStatus =
+    cancelledIds.size > 0 ? "cancelled" : "none_active";
+  if (target.subscriptionId && !cancelledIds.has(target.subscriptionId)) {
+    const sub = await stripe.subscriptions.retrieve(target.subscriptionId);
+    if (sub.status === "canceled" || sub.status === "incomplete_expired") {
+      // already gone on Stripe's side; nothing to do
+    } else if (sub.items.data.length <= 1) {
+      // the last item: Stripe cannot remove it, so the subscription ends
+      await stripe.subscriptions.cancel(sub.id, { prorate: false });
+      cancelledIds.add(sub.id);
+      finalStatus = "cancelled";
+    } else {
+      const itemId =
+        target.itemId ??
+        (target.studentProfileId
+          ? (sub.items.data.find(
+              (it) => it.metadata?.student_profile_id === target.studentProfileId,
+            )?.id ?? null)
+          : null);
+      if (!itemId) {
+        throw new Error(
+          `guardian-paid subscription ${sub.id} carries several items and none is keyed to this student — remove the item by hand`,
+        );
+      }
+      await stripe.subscriptionItems.del(itemId, {
+        proration_behavior: "none",
+      });
+      finalStatus = "item_removed";
+    }
+  }
+
+  return { finalStatus, cancelledSubscriptions: cancelledIds.size };
+}
 
 export function buildDeletedEmail(userId: string): string {
   return `deleted_${userId}@deleted.lyceon.ai`;
@@ -126,20 +209,12 @@ async function setStripeCancellationStatus(
 // @spec [Doc-01 §40.2.1 `stripe.subscriptions.cancel(…, { prorate: false })`; §40.3 as amended by
 // SCL-086 (PROPOSED): cancel at T+7, not pause; SCL-045 one guardian subscription, one item per
 // student] | @implemented [2026-09-16]
-// plain English: stops every billing relationship Stripe holds with the person being deleted.
-//   (a) Subscriptions the person PAYS for — every non-cancelled subscription on their Stripe
-//       customer — are cancelled outright, no proration, no final invoice. This covers a
-//       self-paying student and a guardian who pays for others (their students' entitlements
-//       are then removed by the customer.subscription.deleted webhook, as for any cancellation).
-//   (b) A subscription someone ELSE pays for that carries this student as an item (guardian-paid):
-//       only this student's item is removed; if it is the subscription's last item, Stripe cannot
-//       delete it, so the subscription is cancelled instead. Nothing else on the guardian's plan
-//       is touched.
-// Never throws: the deletion is the legally meaningful act, so a Stripe failure records
-// `failed_manual` (on the request row now, in deletion_billing_record at T3) and the deletion
-// proceeds. Returns the ids to write into the billing record. `getStripeClient()` is only
-// constructed when there is something to act on — a person with no customer and no subscription
-// never touches Stripe.
+// plain English: the T+7 wrapper around teardownStripe. Reads the student's entitlement (the
+// subscription and item ids), advances stripe_cancellation_status, and NEVER throws: the deletion
+// is the legally meaningful act, so a Stripe failure records `failed_manual` (on the request row
+// now, in deletion_billing_record at T3), PAGES, and the deletion proceeds; the retry sweep
+// re-attempts on later passes (SCL-089 as amended). `getStripeClient()` is only constructed when
+// there is something to act on — a person with no customer and no subscription never touches Stripe.
 async function cancelStripeBilling(
   admin: DeletionAdminClient,
   profileId: string,
@@ -188,6 +263,7 @@ async function cancelStripeBilling(
     return {
       stripeCustomerId,
       stripeSubscriptionId: null,
+      stripeSubscriptionItemId: null,
       finalStatus: "failed_manual",
     };
   }
@@ -202,6 +278,7 @@ async function cancelStripeBilling(
     return {
       stripeCustomerId: null,
       stripeSubscriptionId: null,
+      stripeSubscriptionItemId: null,
       finalStatus: null,
     };
   }
@@ -214,56 +291,12 @@ async function cancelStripeBilling(
   );
 
   try {
-    const stripe = getStripeClient();
-    const cancelledIds = new Set<string>();
-
-    // (a) everything this person pays for
-    if (stripeCustomerId) {
-      const owned = await stripe.subscriptions.list({
-        customer: stripeCustomerId,
-        status: "all",
-        limit: 100,
-      });
-      for (const sub of owned.data) {
-        if (sub.status === "canceled" || sub.status === "incomplete_expired") {
-          continue;
-        }
-        await stripe.subscriptions.cancel(sub.id, { prorate: false });
-        cancelledIds.add(sub.id);
-      }
-    }
-
-    // (b) a subscription someone else pays for that carries this student
-    let finalStatus: BillingFinalStatus = cancelledIds.size > 0
-      ? "cancelled"
-      : "none_active";
-    if (entitlementSubId && !cancelledIds.has(entitlementSubId)) {
-      const sub = await stripe.subscriptions.retrieve(entitlementSubId);
-      if (sub.status === "canceled" || sub.status === "incomplete_expired") {
-        // already gone on Stripe's side; nothing to do
-      } else if (sub.items.data.length <= 1) {
-        await stripe.subscriptions.cancel(sub.id, { prorate: false });
-        cancelledIds.add(sub.id);
-        finalStatus = "cancelled";
-      } else {
-        const itemId =
-          entitlementItemId ??
-          sub.items.data.find(
-            (it) => it.metadata?.student_profile_id === profileId,
-          )?.id ??
-          null;
-        if (!itemId) {
-          throw new Error(
-            `guardian-paid subscription ${sub.id} carries several items and none is keyed to this student — remove the item by hand`,
-          );
-        }
-        await stripe.subscriptionItems.del(itemId, {
-          proration_behavior: "none",
-        });
-        finalStatus = "item_removed";
-      }
-    }
-
+    const result = await teardownStripe({
+      customerId: stripeCustomerId,
+      subscriptionId: entitlementSubId,
+      itemId: entitlementItemId,
+      studentProfileId: profileId,
+    });
     await setStripeCancellationStatus(
       admin,
       requestRowId,
@@ -276,22 +309,36 @@ async function cancelStripeBilling(
       "Stripe billing stopped for deletion",
       {
         userId: profileId,
-        finalStatus,
-        cancelledSubscriptions: cancelledIds.size,
+        finalStatus: result.finalStatus,
+        cancelledSubscriptions: result.cancelledSubscriptions,
         requestId,
       },
     );
     return {
       stripeCustomerId,
       stripeSubscriptionId: entitlementSubId,
-      finalStatus,
+      stripeSubscriptionItemId: entitlementItemId,
+      finalStatus: result.finalStatus,
     };
   } catch (err) {
+    // THE PAGE (SCL-089 as amended 2026-09-16: block on storage, alert-and-retry on billing).
+    // A surviving subscription is a surviving identity link, so this is an error-severity event
+    // with a stable name for the Cloud Monitoring log-based alert policy (Doc 01A §18 alert
+    // routing; same mechanism as CRISIS_SLA sla_breach_detected). The deletion proceeds — the
+    // legal clock does not stop for a vendor's uptime — and the retry sweep at the end of every
+    // executor pass re-attempts the teardown from deletion_billing_record until it succeeds.
     logger.error(
       "DELETION",
-      "stripe_cancel_failed",
-      "Stripe cancellation failed; recording failed_manual and continuing with the deletion",
-      { userId: profileId, error: errorMessage(err), requestId },
+      "billing_teardown_failed_manual",
+      "Stripe teardown failed at T+7; recorded failed_manual, deletion proceeds, retry sweep will re-attempt",
+      err,
+      {
+        userId: profileId,
+        requestRowId,
+        hasCustomer: stripeCustomerId !== null,
+        hasSubscription: entitlementSubId !== null,
+        requestId,
+      },
     );
     await setStripeCancellationStatus(
       admin,
@@ -302,9 +349,87 @@ async function cancelStripeBilling(
     return {
       stripeCustomerId,
       stripeSubscriptionId: entitlementSubId,
+      stripeSubscriptionItemId: entitlementItemId,
       finalStatus: "failed_manual",
     };
   }
+}
+
+// @spec [SCL-089 as amended 2026-09-16: alert-and-retry on billing] Re-attempts every teardown
+// that was recorded failed_manual, from the billing record alone (the profile and entitlement
+// rows are gone; the record keeps the customer, subscription and item ids for exactly this).
+// Evidence side only: on success the record is resolved through resolve_deletion_billing_record;
+// on failure the page fires again and the row stays for the next pass. Never throws.
+async function retryFailedBillingTeardowns(
+  admin: DeletionAdminClient,
+  requestId?: string,
+): Promise<void> {
+  let rows: Array<Record<string, unknown>>;
+  try {
+    const { data, error } = await admin
+      .from("deletion_billing_record")
+      .select(
+        "log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id",
+      )
+      .eq("final_status", "failed_manual");
+    if (error) {
+      throw new Error(error.message);
+    }
+    rows = (data ?? []) as Array<Record<string, unknown>>;
+  } catch (err) {
+    logger.warn(
+      "DELETION",
+      "billing_retry_sweep_read_failed",
+      "Could not read failed_manual billing records; retry sweep skipped this pass",
+      { error: errorMessage(err), requestId },
+    );
+    return;
+  }
+  if (rows.length === 0) return;
+
+  let resolved = 0;
+  for (const row of rows) {
+    const logId = typeof row.log_id === "string" ? row.log_id : null;
+    if (!logId) continue;
+    const text = (v: unknown): string | null =>
+      typeof v === "string" && v.length > 0 ? v : null;
+    try {
+      const result = await teardownStripe({
+        customerId: text(row.stripe_customer_id),
+        subscriptionId: text(row.stripe_subscription_id),
+        itemId: text(row.stripe_subscription_item_id),
+        studentProfileId: null,
+      });
+      const { error } = await admin.rpc("resolve_deletion_billing_record", {
+        p_log_id: logId,
+        p_final_status: result.finalStatus,
+      });
+      if (error) {
+        throw new Error(`resolve_deletion_billing_record failed: ${error.message}`);
+      }
+      resolved += 1;
+      logger.info(
+        "DELETION",
+        "billing_teardown_retried",
+        "A failed_manual Stripe teardown succeeded on retry",
+        { finalStatus: result.finalStatus, requestId },
+      );
+    } catch (err) {
+      logger.error(
+        "DELETION",
+        "billing_teardown_retry_failed",
+        "Stripe teardown still failing on retry; record stays failed_manual",
+        err,
+        { requestId },
+      );
+    }
+  }
+  logger.info(
+    "DELETION",
+    "billing_retry_sweep_complete",
+    "Retried failed_manual Stripe teardowns",
+    { attempted: rows.length, resolved, requestId },
+  );
 }
 
 // @spec [Q-PR4a-2(c)] Fail-fast: if Supabase Storage objects exist for this user, the driver
@@ -344,9 +469,10 @@ async function assertNoStorageObjects(
 /**
  * Evidence-side housekeeping that runs at the end of EVERY pass, whether or not anything was
  * due: the reconciler resolves log rows a crashed earlier pass left 'executing', and the ledger
- * rewrite strips insertion order from anonymized_actors. Each is its own transaction and
- * touches one universe only. Failures are logged, never thrown: the deletions of this pass are
- * already committed.
+ * rewrite strips insertion order from anonymized_actors. (The billing retry sweep runs at the
+ * START of a pass instead, so a teardown that failed in this pass is retried on the next one
+ * and pages once per pass, not twice.) Each is its own transaction and touches one universe
+ * only. Failures are logged, never thrown: the deletions of this pass are already committed.
  */
 async function runEvidenceHousekeeping(
   admin: DeletionAdminClient,
@@ -417,6 +543,10 @@ export async function executeDueDeletions(
   failedCount: number;
 }> {
   const nowIso = new Date().toISOString();
+
+  // SCL-089 alert-and-retry: re-attempt earlier passes' failed_manual Stripe teardowns first.
+  // Evidence side + Stripe only; never throws; a failure pages again and the record waits.
+  await retryFailedBillingTeardowns(admin, requestId);
 
   const { data: pendingRows, error: fetchError } = await admin
     .from("account_deletion_requests")
@@ -608,6 +738,7 @@ export async function executeDueDeletions(
           log_id: pending.log_id,
           stripe_customer_id: billing.stripeCustomerId,
           stripe_subscription_id: billing.stripeSubscriptionId,
+          stripe_subscription_item_id: billing.stripeSubscriptionItemId,
           final_status: billing.finalStatus,
         });
       }
