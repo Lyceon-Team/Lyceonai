@@ -6,6 +6,7 @@ import {
 } from "../middleware/supabase-auth";
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { requiredLegalDocsForUse } from "../../shared/legal-consent.js";
 import { logger } from "../logger";
 
@@ -34,8 +35,8 @@ legalRouter.post("/accept", (_req: Request, res: Response) => {
  * asserting what it was shown. The server recomputes both from `legal/` and
  * from this user's own rows.
  *
- * expected outcome: after a 200, `requiredConsentsComplete` is true and the
- * modal does not reappear. Nothing is written for a user who is already
+ * expected outcome: after a 200 the outstanding set is empty and the prompt
+ * does not reappear. Nothing is written for a user who is already
  * current, and the response says so rather than pretending work happened.
  *
  * trade-offs / edge cases:
@@ -65,11 +66,6 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
       .eq("id", userId)
       .maybeSingle();
 
-    const { count: guardianLinkCount } = await admin
-      .from("guardian_links")
-      .select("id", { count: "exact", head: true })
-      .eq("guardian_id", userId);
-
     const { data: existing, error: readErr } = await admin
       .from("legal_acceptances")
       .select("doc_key, doc_version")
@@ -81,15 +77,36 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
     }
 
     const rows = existing ?? [];
-    const outstanding = requiredLegalDocsForUse({
-      role: profile?.role ?? null,
-      hasGuardianLink: (guardianLinkCount ?? 0) > 0,
-    }).filter((doc) => {
-      const current = resolveLegalVersion(doc.slug);
-      return !rows.some(
+    // A CONSENT LOOKUP NEVER FAILS THE REQUEST. This filter used to call
+    // resolveLegalVersion bare, so an unresolvable document 500'd the accept
+    // action — the same defect that took /api/profile down, one route over. A
+    // document we cannot resolve is logged and skipped: we will not write a row
+    // we cannot stamp with a real version and hash, and the prompt asks again.
+    const outstanding: Array<{
+      docKey: string;
+      current: ResolvedLegalVersion;
+    }> = [];
+    for (const doc of requiredLegalDocsForUse()) {
+      let current: ResolvedLegalVersion;
+      try {
+        current = resolveLegalVersion(doc.slug);
+      } catch (resolveErr: unknown) {
+        logger.error(
+          "LEGAL",
+          "legal_resolution_failed",
+          "Could not resolve a document during re-accept; skipping it",
+          {
+            slug: doc.slug,
+            error: resolveErr instanceof Error ? resolveErr.message : "unknown",
+          },
+        );
+        continue;
+      }
+      const alreadyHeld = rows.some(
         (r) => r.doc_key === doc.docKey && r.doc_version === current.version,
       );
-    });
+      if (!alreadyHeld) outstanding.push({ docKey: doc.docKey, current });
+    }
 
     if (outstanding.length === 0) {
       return res.json({ success: true, recorded: 0 });
@@ -100,10 +117,12 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
       consentSource: "reconsent_prompt",
       userAgent: req.get("user-agent") ?? null,
       ipAddress: req.ip ?? null,
-      acceptances: outstanding.map((doc) => {
-        const current = resolveLegalVersion(doc.slug);
+      // RESOLVED ONCE, ABOVE. This used to call resolveLegalVersion again here —
+      // a second throw site on the same request, surviving only because the
+      // registry caches. Carrying the value forward removes the site entirely.
+      acceptances: outstanding.map(({ docKey, current }) => {
         return {
-          docKey: doc.docKey,
+          docKey,
           docSlug: current.slug,
           docVersion: current.version,
           contentHash: current.contentHash,

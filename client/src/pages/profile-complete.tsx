@@ -9,6 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { GuardianConnectRequired } from "@/components/auth/GuardianConnectRequired";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,9 +43,10 @@ interface ProfileHydrationResponse {
     display_name?: string | null;
     role?: ProfileRole;
     guardianConsentRequired?: boolean;
-    requiredConsentsComplete?: boolean;
     requiredProfileComplete?: boolean;
     profileCompletedAt?: string | null;
+    /** The student's own connection code, shown on the under-13 screen. */
+    studentLinkCode?: string | null;
   } | null;
 }
 
@@ -279,15 +281,23 @@ export default function ProfileComplete() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {/*
+            THE UNDER-13 SCREEN, not a notice above a form they cannot use.
+            This was a one-paragraph Alert saying verification "is still
+            required" and telling them to submit the form again — a wall with an
+            apology. Owner ruling 2026-09-16: it must hand over the means. The
+            code is here and copyable, the guardian email is here, and where to
+            find both again is written down.
+          */}
           {profile?.guardianConsentRequired && (
-            <Alert data-testid="alert-guardian-consent-pending">
-              <ShieldAlert className="h-4 w-4" />
-              <AlertDescription>
-                Guardian verification is still required for this account.
-                Submitting this form again will resend a verification request if
-                needed.
-              </AlertDescription>
-            </Alert>
+            <GuardianConnectRequired
+              studentLinkCode={profile?.studentLinkCode ?? null}
+              guardianEmail={guardianEmail}
+              onGuardianEmailChange={setGuardianEmail}
+              onSend={() => completionMutation.mutate()}
+              sending={completionMutation.isPending}
+              sent={completionMutation.isSuccess}
+            />
           )}
 
           {errorMessage && (

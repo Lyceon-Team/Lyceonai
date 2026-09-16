@@ -69,31 +69,24 @@ export const GUARDIAN_LINK_LEGAL_DOC = LEGAL_DOCS.parentGuardianTerms;
 export const CHECKOUT_LEGAL_DOC = LEGAL_DOCS.billingTerms;
 
 /**
- * What a person must currently hold to keep USING the product — the set the
- * blocking re-consent modal enforces.
+ * What a person must hold for the re-consent PROMPT to mention. Not a gate —
+ * nothing anywhere withholds access on the strength of this list.
  *
- * BILLING TERMS IS DELIBERATELY NOT HERE, and this is the one judgement in this
- * file worth arguing with. It is transactional: required at checkout, captured
- * at checkout, and re-consented at the next one. Locking someone out of their
- * study plan because a billing document was revised would punish them for a
- * subscription they may have already cancelled. §17602 asks for consent before
- * a charge, not before a login.
+ * TWO DOCUMENTS, EVERY ACCOUNT, NO ROLE LOGIC. Owner ruling 2026-09-16.
+ * This used to take `{ role, hasGuardianLink }` and add Parent / Guardian Terms
+ * for a linked guardian. That was modelling the wrong thing: Parent Terms is
+ * accepted as part of REDEEMING A CODE — an action the guardian chose to take —
+ * and it is captured there, at that moment, with that version and hash. Asking
+ * for it again from a periodic prompt made a completed transaction look like an
+ * outstanding debt, and made this function need to know about links.
  *
- * Parent Terms IS here, but only for a guardian who actually holds a link.
- * A guardian account with no student has nothing to consent about yet.
+ * Billing Terms is likewise Stripe's own checkbox at checkout, and never here.
+ *
+ * So: Student Terms and Privacy Policy, for everybody, forever. When one of them
+ * gets a new version, everyone is prompted; they can dismiss it; nothing stops.
  */
-export function requiredLegalDocsForUse(context: {
-  role: string | null | undefined;
-  hasGuardianLink: boolean;
-}): readonly LegalDocRef[] {
-  const base: LegalDocRef[] = [
-    LEGAL_DOCS.studentTerms,
-    LEGAL_DOCS.privacyPolicy,
-  ];
-  if (context.role === "guardian" && context.hasGuardianLink) {
-    base.push(LEGAL_DOCS.parentGuardianTerms);
-  }
-  return base;
+export function requiredLegalDocsForUse(): readonly LegalDocRef[] {
+  return REQUIRED_SIGNUP_LEGAL_DOCS;
 }
 
 /**

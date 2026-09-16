@@ -41,7 +41,6 @@ export interface SupabaseProfile {
   last_login_at: string | null;
   // Onboarding and status flags
   profile_completed_at?: string | null;
-  requiredConsentsComplete?: boolean;
   requiredProfileComplete?: boolean;
   guardianConsentRequired?: boolean;
   // §40 account-deletion lifecycle (server-authority — sourced from /api/profile, never a client env

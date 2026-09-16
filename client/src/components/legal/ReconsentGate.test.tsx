@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * @spec [LYCEON consent capture §6; owner ruling 2026-09-16 — the re-consent
- *        prompt is non-blocking for guardians; Coding Standards §14]
+ *        prompt never blocks any role; Coding Standards §14]
  * @implemented 2026-09-16
  *
  * plain English: the five claims the non-blocking ruling rests on, each written
@@ -10,7 +10,7 @@
  * green.
  *
  *   R1  a guardian with an outstanding document sees the prompt AND can dismiss it
- *   R2  after dismissing, the dashboard behind it is fully usable
+ *   R2  after dismissing, the app behind it is fully usable — any role
  *   R3  the prompt returns at the next sign-in
  *   R4  accepting posts to the server, which resolves slug/version/hash itself
  *   R5  dismissing writes nothing — no request, no storage claiming consent
@@ -210,22 +210,28 @@ describe("R2 — after dismissing, the dashboard is fully usable", () => {
     expect(screen.getByTestId("student-name").textContent).toBe(STUDENT_ID);
   });
 
-  it("walls a STUDENT with the same outstanding document", async () => {
-    // The counterpart, and the reason R2 is not vacuous: if the gate blocked
-    // nobody, every assertion above would pass while the ruling had been
-    // applied to everyone. Students are unchanged — the modal REPLACES the
-    // product, so the dashboard is not in the tree at all.
-    // The allow-list has to match the role, or RequireRole redirects on ROLE
-    // before the consent gate runs and the test proves nothing.
+  it("does NOT wall a student — the ruling now covers every role", async () => {
+    // This asserted the opposite, and it was right at the time: a student got
+    // the modal INSTEAD of the app. Owner ruling 2026-09-16 removed the wall for
+    // everyone, so the assertion is inverted rather than deleted. If the
+    // blocking branch ever returns, this is the test that says so.
     authState.isGuardian = false;
     await renderGate(OUTSTANDING, ["student"]);
 
     const modal = await screen.findByTestId("reconsent-modal");
-    expect(modal.getAttribute("data-dismissible")).toBe("false");
-    expect(screen.queryByTestId("guardian-dashboard")).toBeNull();
-    expect(screen.queryByTestId("reconsent-not-now")).toBeNull();
-    expect(screen.queryByTestId("reconsent-dismiss")).toBeNull();
-    expect(screen.getByTestId("reconsent-sign-out")).toBeTruthy();
+    expect(modal.getAttribute("data-dismissible")).toBe("true");
+    // The app is mounted behind it, and usable.
+    expect(screen.getByTestId("guardian-dashboard")).toBeTruthy();
+    expect(screen.getByTestId("reconsent-not-now")).toBeTruthy();
+    expect(screen.getByTestId("reconsent-dismiss")).toBeTruthy();
+    // Sign out was the blocked person's only exit. Nobody is blocked.
+    expect(screen.queryByTestId("reconsent-sign-out")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("reconsent-not-now"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("reconsent-modal")).toBeNull(),
+    );
+    expect(screen.getByTestId("guardian-dashboard")).toBeTruthy();
   });
 });
 

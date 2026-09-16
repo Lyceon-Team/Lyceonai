@@ -180,53 +180,52 @@ describe("C2 — signup records Student Terms and Privacy Policy", () => {
     expect(code).toContain("resolveLegalVersion(");
     expect(code).toContain("LEGAL_DOCS.studentTerms.slug");
     expect(code).toContain("LEGAL_DOCS.privacyPolicy.slug");
-    for (const field of [
-      "docSlug: studentTermsVersion.slug",
-      "docVersion: studentTermsVersion.version",
-      "contentHash: studentTermsVersion.contentHash",
-      "docSlug: privacyPolicyVersion.slug",
-      "docVersion: privacyPolicyVersion.version",
-      "contentHash: privacyPolicyVersion.contentHash",
-    ]) {
-      expect(code, `${relative} is missing ${field}`).toContain(field);
+    // Both routes now guard the resolve and carry the result in a local, but
+    // they spell that local differently. Asserting the SHAPE — every field fed
+    // from a resolved value, never a literal — is what the claim actually is;
+    // pinning one route's variable name was incidental and broke when the
+    // fail-open restructure renamed it.
+    for (const field of ["docSlug:", "docVersion:", "contentHash:"]) {
+      const sites = [...code.matchAll(new RegExp(`${field}\\s*(\\S+)`, "g"))];
+      expect(sites.length, `${relative} has no ${field}`).toBeGreaterThan(0);
+      for (const [, value] of sites) {
+        // Fed from a resolved object — never a quoted literal.
+        expect(value, `${relative} passes a literal to ${field}`).not.toMatch(
+          /^["'`]/,
+        );
+        expect(value, `${relative} ${field} is not resolved`).toMatch(
+          /\.(slug|version|contentHash)\b/,
+        );
+      }
     }
   });
 
   it("does not require Parent Terms or Billing Terms of a plain student", () => {
-    const slugs = requiredLegalDocsForUse({
-      role: "student",
-      hasGuardianLink: false,
-    }).map((d) => d.slug);
+    const slugs = requiredLegalDocsForUse().map((d) => d.slug);
     expect(slugs).toEqual(["student-terms", "privacy-policy"]);
   });
 
-  it("requires Parent Terms of a guardian who holds a link, and only then", () => {
-    const linked = requiredLegalDocsForUse({
-      role: "guardian",
-      hasGuardianLink: true,
-    }).map((d) => d.slug);
-    expect(linked).toContain("parent-guardian-terms");
-
-    const unlinked = requiredLegalDocsForUse({
-      role: "guardian",
-      hasGuardianLink: false,
-    }).map((d) => d.slug);
-    expect(unlinked).not.toContain("parent-guardian-terms");
+  it("asks the same two of everyone — no role logic at all", () => {
+    // This asserted the opposite: Parent Terms added for a linked guardian.
+    // Owner ruling 2026-09-16 — Parent Terms is accepted as part of REDEEMING A
+    // CODE and captured there, so repeating it from a periodic prompt chased a
+    // consent already held. Taking no arguments is the strongest form of "no
+    // role logic": there is nothing to pass.
+    expect(requiredLegalDocsForUse.length).toBe(0);
+    expect(requiredLegalDocsForUse().map((d) => d.slug)).toEqual([
+      "student-terms",
+      "privacy-policy",
+    ]);
   });
 
-  it("never blocks USE of the product on Billing Terms", () => {
-    // Transactional, not a condition of entry. Locking somebody out of their
-    // study plan over a revised billing document would punish them for a
-    // subscription they may have already cancelled.
-    for (const context of [
-      { role: "student", hasGuardianLink: false },
-      { role: "guardian", hasGuardianLink: true },
-      { role: "admin", hasGuardianLink: false },
-    ]) {
-      expect(requiredLegalDocsForUse(context).map((d) => d.slug)).not.toContain(
-        "billing-terms",
-      );
-    }
+  it("never mentions Billing Terms or Parent Terms in the prompt set", () => {
+    // Both are captured where they are GIVEN — Stripe's checkbox at checkout,
+    // and redeeming a code — each part of an action the person chose to take.
+    // Repeating either from a periodic prompt would chase a consent already
+    // held, against a version already recorded.
+    const slugs = requiredLegalDocsForUse().map((d) => d.slug);
+    expect(slugs).not.toContain("billing-terms");
+    expect(slugs).not.toContain("parent-guardian-terms");
   });
 });
 
@@ -259,7 +258,12 @@ describe("C3 — no acceptance, no link", () => {
     ).toBe(true);
   });
 
-  it("writes the acceptance BEFORE the link, and refuses the link if it fails", () => {
+  it("attempts the acceptance BEFORE the link, but never refuses the link", () => {
+    // Order is unchanged and still deliberate: attempting consent first means
+    // the ordinary case records it before any link exists. What changed is the
+    // FAILURE branch. This returned 503 CONSENT_NOT_RECORDED and created no
+    // link, so a version lookup failure cost a guardian their connection — the
+    // same defect that took /api/profile down, one route over.
     const code = readCode("server/routes/guardian-routes.ts");
     const consentAt = code.indexOf("recordLegalAcceptances(");
     const linkAt = code.indexOf("createActiveGuardianLink(");
@@ -267,9 +271,19 @@ describe("C3 — no acceptance, no link", () => {
     expect(linkAt, "link creation not found").toBeGreaterThan(-1);
     expect(
       consentAt,
-      "the link is created before the consent is recorded",
+      "the link is created before the consent is attempted",
     ).toBeLessThan(linkAt);
-    expect(code).toContain("CONSENT_NOT_RECORDED");
+
+    // Never again: no refusal code, and no early return between the two.
+    expect(code, "the link is still refused").not.toContain(
+      "CONSENT_NOT_RECORDED",
+    );
+    const between = code.slice(consentAt, linkAt);
+    expect(
+      between,
+      "an early return sits between consent and link",
+    ).not.toMatch(/return res\.status\(/);
+    expect(between).toContain("logger.error(");
   });
 
   it("records it against the guardian as `parent`, the value that exists", () => {
@@ -351,48 +365,42 @@ describe("C5 — the re-consent prompt blocks everyone except a guardian", () =>
   // dismissible path is now pinned by its own behavioural suite
   // (client/src/components/legal/ReconsentGate.test.tsx), which drives the real
   // gate rather than reading its source.
-  it("replaces the product for a non-guardian, rather than floating over it", () => {
-    // An overlay with the application mounted underneath is blocking to a mouse
-    // and no obstacle to a keyboard. On the non-guardian branch the guard
-    // returns the modal INSTEAD of children, so there is nothing to tab into.
-    expect(guard).toContain("if (!isGuardian) {");
-    const blockingBranch = guard.slice(
-      guard.indexOf("if (!isGuardian) {"),
-      guard.indexOf("if (!reconsentDismissed)"),
+  it("withholds `children` from NOBODY, in any role", () => {
+    // This asserted the opposite: that a non-guardian got the modal INSTEAD of
+    // children. Owner ruling 2026-09-16 removed the wall for every role, so the
+    // assertion is inverted rather than deleted — the guard must have no branch
+    // that returns a modal in place of the app.
+    expect(guard, "a role still selects a blocking branch").not.toContain(
+      "if (!isGuardian) {",
     );
-    expect(blockingBranch).toMatch(/return \(?\s*<ReconsentModal/);
-    expect(blockingBranch, "children render behind the wall").not.toContain(
-      "{children}",
+    expect(guard).not.toMatch(/return <ReconsentModal/);
+    expect(guard).not.toContain("onSignOut");
+
+    // `children` render on the ONE return path, unconditionally.
+    const returns = guard.match(/return \(/g) ?? [];
+    const tail = guard.slice(guard.lastIndexOf("return ("));
+    expect(tail).toContain("{children}");
+    expect(returns.length, "more than one JSX return survives").toBeGreaterThan(
+      0,
     );
-    // And it is NOT handed the dismissible mode.
-    expect(blockingBranch).not.toContain("dismissible");
+    // The prompt is a sibling of children, never a replacement.
+    expect(tail).toMatch(/\{children\}[\s\S]*ReconsentModal/);
   });
 
-  it("gives the blocking mode no close affordance", () => {
-    // Every close path in the component is gated on `dismissible`. A bare
-    // `onClose`, or an Escape handler that did not check the mode, would be a
-    // silent way out of a prompt that is supposed to have none.
-    expect(modal, "has an ungated onClose").not.toMatch(/onClose/);
-    expect(modal, "has an onOpenChange").not.toMatch(/onOpenChange/);
-
-    // Escape: bound, but only in the dismissible mode. The early return is the
-    // guard, so assert it sits above the listener.
-    const escapeEffect = modal.slice(modal.indexOf('e.key === "Escape"') - 400);
+  it("has no `dismissible` flag, because it is always dismissible", () => {
+    // A flag that is always one value is a second thing to get wrong, and the
+    // wall it selected is the defect this removes.
+    expect(modal, "the dismissible prop survives").not.toMatch(
+      /dismissible\??:\s*boolean/,
+    );
+    expect(guard).not.toMatch(/dismissible(?!=)/);
+    // Every close path is now unconditional.
     expect(modal).toContain('e.key === "Escape"');
-    expect(escapeEffect).toContain("if (!dismissible || !onDismiss) return;");
-
-    // The X button and "Not now" are both behind `dismissible &&`.
-    for (const marker of ["reconsent-dismiss", "reconsent-not-now"]) {
-      const at = modal.indexOf(marker);
-      expect(at, `${marker} not found`).toBeGreaterThan(-1);
-      expect(
-        modal.slice(Math.max(0, at - 500), at),
-        `${marker} is not gated on dismissible`,
-      ).toContain("dismissible");
-    }
-
-    expect(modal).toContain("reconsent-accept");
-    expect(modal).toContain("reconsent-sign-out");
+    expect(modal).not.toContain("if (!dismissible");
+    expect(modal).toContain("reconsent-dismiss");
+    expect(modal).toContain("reconsent-not-now");
+    // Signing out was the blocked person's only exit. Nobody is blocked.
+    expect(modal).not.toContain("reconsent-sign-out");
   });
 
   it("never offers a `don't show again` in either mode", () => {
