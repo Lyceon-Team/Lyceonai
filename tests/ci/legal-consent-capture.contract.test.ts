@@ -106,9 +106,9 @@ describe("C1 — every record resolves slug, version and hash at write time", ()
 
   it("agrees with meta.yml, so the recorded version is the served one", () => {
     for (const doc of Object.values(LEGAL_DOCS)) {
-      const manifest = JSON.parse(
-        read(`legal/${doc.slug}/manifest.json`),
-      ) as { current: string };
+      const manifest = JSON.parse(read(`legal/${doc.slug}/manifest.json`)) as {
+        current: string;
+      };
       const meta = read(`legal/${doc.slug}/${manifest.current}/meta.yml`);
       const resolved = resolveLegalVersion(doc.slug);
       expect(meta, `${doc.slug} version`).toContain(
@@ -223,9 +223,9 @@ describe("C2 — signup records Student Terms and Privacy Policy", () => {
       { role: "guardian", hasGuardianLink: true },
       { role: "admin", hasGuardianLink: false },
     ]) {
-      expect(
-        requiredLegalDocsForUse(context).map((d) => d.slug),
-      ).not.toContain("billing-terms");
+      expect(requiredLegalDocsForUse(context).map((d) => d.slug)).not.toContain(
+        "billing-terms",
+      );
     }
   });
 });
@@ -324,7 +324,9 @@ describe("C4 — checkout collects consent and the webhook records it", () => {
     // Declaration order is not call order; assert on the CALL, which is the one
     // preceded by `await` inside the dispatcher.
     expect(webhook).toMatch(/await recordCheckoutConsent\(/);
-    expect(webhook).toMatch(/catch \(err: unknown\)[\s\S]{0,400}fulfilment continues/);
+    expect(webhook).toMatch(
+      /catch \(err: unknown\)[\s\S]{0,400}fulfilment continues/,
+    );
   });
 
   it("does not call a self-paying student a parent", () => {
@@ -338,34 +340,74 @@ describe("C4 — checkout collects consent and the webhook records it", () => {
 
 // ── C5 ──────────────────────────────────────────────────────────────────
 
-describe("C5 — the re-consent prompt blocks and cannot be dismissed", () => {
+describe("C5 — the re-consent prompt blocks everyone except a guardian", () => {
   const modal = readCode("client/src/components/legal/ReconsentModal.tsx");
   const guard = readCode("client/src/components/auth/RequireRole.tsx");
 
-  it("replaces the product rather than floating over it", () => {
+  // OWNER RULING, 2026-09-16: a guardian gets a prompt, not a wall. These two
+  // assertions used to read "nobody can dismiss it, ever", and they went red
+  // when that stopped being true. Narrowed to the population the invariant still
+  // covers rather than deleted — a student's prompt is still a wall, and the
+  // dismissible path is now pinned by its own behavioural suite
+  // (client/src/components/legal/ReconsentGate.test.tsx), which drives the real
+  // gate rather than reading its source.
+  it("replaces the product for a non-guardian, rather than floating over it", () => {
     // An overlay with the application mounted underneath is blocking to a mouse
-    // and no obstacle to a keyboard. The guard returns the modal INSTEAD of
-    // children, so there is nothing behind it to tab into.
-    expect(guard).toMatch(
-      /return <ReconsentModal documents=\{outstandingLegal\}/,
+    // and no obstacle to a keyboard. On the non-guardian branch the guard
+    // returns the modal INSTEAD of children, so there is nothing to tab into.
+    expect(guard).toContain("if (!isGuardian) {");
+    const blockingBranch = guard.slice(
+      guard.indexOf("if (!isGuardian) {"),
+      guard.indexOf("if (!reconsentDismissed)"),
     );
-    const modalAt = guard.indexOf("<ReconsentModal");
-    const childrenAt = guard.lastIndexOf("{children}");
-    expect(modalAt).toBeGreaterThan(-1);
-    expect(childrenAt).toBeGreaterThan(-1);
-    // The children return is the LAST one: unreachable while docs are outstanding.
-    expect(modalAt).toBeLessThan(childrenAt);
+    expect(blockingBranch).toMatch(/return \(?\s*<ReconsentModal/);
+    expect(blockingBranch, "children render behind the wall").not.toContain(
+      "{children}",
+    );
+    // And it is NOT handed the dismissible mode.
+    expect(blockingBranch).not.toContain("dismissible");
   });
 
-  it("offers no close affordance of any kind", () => {
-    expect(modal, "has an onClose").not.toMatch(/onClose/);
-    expect(modal, "has an onDismiss").not.toMatch(/onDismiss/);
+  it("gives the blocking mode no close affordance", () => {
+    // Every close path in the component is gated on `dismissible`. A bare
+    // `onClose`, or an Escape handler that did not check the mode, would be a
+    // silent way out of a prompt that is supposed to have none.
+    expect(modal, "has an ungated onClose").not.toMatch(/onClose/);
     expect(modal, "has an onOpenChange").not.toMatch(/onOpenChange/);
-    expect(modal, "handles Escape").not.toMatch(/Escape/);
-    expect(modal, "renders an X").not.toMatch(/<X\b/);
-    // The two honest exits, and only these two.
+
+    // Escape: bound, but only in the dismissible mode. The early return is the
+    // guard, so assert it sits above the listener.
+    const escapeEffect = modal.slice(modal.indexOf('e.key === "Escape"') - 400);
+    expect(modal).toContain('e.key === "Escape"');
+    expect(escapeEffect).toContain("if (!dismissible || !onDismiss) return;");
+
+    // The X button and "Not now" are both behind `dismissible &&`.
+    for (const marker of ["reconsent-dismiss", "reconsent-not-now"]) {
+      const at = modal.indexOf(marker);
+      expect(at, `${marker} not found`).toBeGreaterThan(-1);
+      expect(
+        modal.slice(Math.max(0, at - 500), at),
+        `${marker} is not gated on dismissible`,
+      ).toContain("dismissible");
+    }
+
     expect(modal).toContain("reconsent-accept");
     expect(modal).toContain("reconsent-sign-out");
+  });
+
+  it("never offers a `don't show again` in either mode", () => {
+    // The one affordance ruled out explicitly: it would suppress the prompt for
+    // good while recording nothing.
+    for (const phrase of [/don'?t show/i, /never show/i, /remind me later/i]) {
+      expect(modal, `prompt offers ${phrase}`).not.toMatch(phrase);
+    }
+    const dismissal = readCode(
+      "client/src/components/legal/reconsent-dismissal.ts",
+    );
+    expect(dismissal).toContain("sessionStorage");
+    expect(dismissal, "dismissal reaches localStorage").not.toMatch(
+      /localStorage/,
+    );
   });
 
   it("stops sending an existing user to the onboarding form", () => {
@@ -411,14 +453,12 @@ describe("C6 — re-consent writes fresh rows and never edits old ones", () => {
     // delete.
     for (const relative of WRITE_PATHS) {
       const code = readCode(relative);
-      expect(
-        code,
-        `${relative} updates legal_acceptances`,
-      ).not.toMatch(/from\("legal_acceptances"\)[\s\S]{0,120}\.update\(/);
-      expect(
-        code,
-        `${relative} deletes from legal_acceptances`,
-      ).not.toMatch(/from\("legal_acceptances"\)[\s\S]{0,120}\.delete\(/);
+      expect(code, `${relative} updates legal_acceptances`).not.toMatch(
+        /from\("legal_acceptances"\)[\s\S]{0,120}\.update\(/,
+      );
+      expect(code, `${relative} deletes from legal_acceptances`).not.toMatch(
+        /from\("legal_acceptances"\)[\s\S]{0,120}\.delete\(/,
+      );
     }
   });
 
@@ -509,7 +549,9 @@ describe("C7 — no duplicated contract text, no hashless acceptance", () => {
 
   it("will not compile an acceptance without a slug or a hash", () => {
     const lib = read("server/lib/legal-acceptance.ts");
-    const type = /export type LegalAcceptanceRecord = \{[\s\S]*?\n\};/.exec(lib);
+    const type = /export type LegalAcceptanceRecord = \{[\s\S]*?\n\};/.exec(
+      lib,
+    );
     expect(type, "LegalAcceptanceRecord not found").not.toBeNull();
     const body = stripComments(type?.[0] ?? "");
     expect(body).toMatch(/docSlug:\s*string;/);
