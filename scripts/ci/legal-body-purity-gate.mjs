@@ -135,6 +135,50 @@ if (!fs.existsSync(BUILD_COPY)) {
     }
     console.log(`✓ dist/public/legal/${rel} — byte-identical to source`);
   }
+
+  // The generated slug index. It is the one thing the hub cannot derive from
+  // legal/ itself — static hosting has no directory listing — so if it drifts
+  // from the directory, a published document silently stops being listed. That
+  // is invisible from the document's own side, which is exactly why it is
+  // checked here rather than trusted.
+  const indexPath = path.join(BUILD_COPY, "index.json");
+  if (!fs.existsSync(indexPath)) {
+    failed = true;
+    console.error("✗ dist/public/legal/index.json is MISSING from the build output");
+    console.error("    The hub enumerates it; without it the page lists nothing.");
+  } else {
+    const onDisk = fs
+      .readdirSync(LEGAL, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .filter((n) => fs.existsSync(path.join(LEGAL, n, "manifest.json")))
+      .sort();
+    /** @type {unknown} */
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
+    } catch {
+      parsed = null;
+    }
+    const listed =
+      parsed && typeof parsed === "object" && Array.isArray(parsed.slugs)
+        ? [...parsed.slugs].sort()
+        : null;
+
+    if (listed === null) {
+      failed = true;
+      console.error("✗ dist/public/legal/index.json is not {\"slugs\": [...]}");
+    } else if (listed.join("\u0000") !== onDisk.join("\u0000")) {
+      failed = true;
+      console.error("✗ dist/public/legal/index.json does NOT match legal/");
+      const missing = onDisk.filter((s) => !listed.includes(s));
+      const extra = listed.filter((s) => !onDisk.includes(s));
+      if (missing.length) console.error(`    absent from the index: ${missing.join(", ")}`);
+      if (extra.length) console.error(`    listed but not on disk: ${extra.join(", ")}`);
+    } else {
+      console.log(`✓ dist/public/legal/index.json — lists all ${listed.length} slugs`);
+    }
+  }
 }
 
 console.log("");

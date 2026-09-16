@@ -32,7 +32,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { loadLegalDocument } from "../../client/src/lib/legal-content";
-import { legalDocs } from "../../client/src/lib/legal";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const REAL_LEGAL = path.join(REPO_ROOT, "legal");
@@ -125,7 +124,9 @@ describe("U2 — no legal page renders a PDF affordance", () => {
     // Removing an affordance must not remove the route to the document. The
     // hub keeps a wouter Link per slug; that is the surviving way in.
     expect(hub).toMatch(/\/legal\/\$\{doc\.slug\}/);
-    expect(legalDocs.length).toBe(6);
+    // `legalDocs.length === 6` stood here. The six-entry array is gone: the
+    // hub enumerates legal/ now, so the count it must show is "all published",
+    // which tests/ci/legal-hub.contract.test.ts asserts against the directory.
   });
 });
 
@@ -221,7 +222,7 @@ describe("U4 — every document in legal/ is reachable, not just the six on the 
   });
 
   it("does not gate the document page on the hub registry", () => {
-    // The page used to 404 any slug missing from the six-entry `legalDocs`
+    // The page used to 404 any slug missing from the six-entry registry
     // list, which meant refund-policy, subscription-auto-renewal-notice and
     // billing-terms all 404'd in a browser while every loader-level test
     // passed — the gate sat ABOVE the loader the tests called. Publication is
@@ -232,9 +233,11 @@ describe("U4 — every document in legal/ is reachable, not just the six on the 
   });
 
   it.each(["refund-policy", "subscription-auto-renewal-notice"])(
-    "%s publishes even though it has no hub entry",
+    "%s publishes and is reachable",
     async (slug) => {
-      expect(legalDocs.some((d) => d.slug === slug)).toBe(false);
+      // These two, and billing-terms, were unreachable from the hub until it
+      // stopped reading a six-entry array. They publish; the hub test proves
+      // they are now listed.
       const doc = await loadLegalDocument(slug);
       expect(doc.state).toBe("published");
     },

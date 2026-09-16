@@ -1,6 +1,8 @@
 {
   "slug": "honor-code",
   "title": "LYCEON Honor Code",
+  "description": "Our commitment to honest learning and academic integrity.",
+  "order": 70,
   "current": "v2",
   "locales": [
     "en"
