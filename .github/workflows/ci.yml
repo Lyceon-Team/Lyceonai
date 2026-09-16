@@ -204,6 +204,14 @@ jobs:
       - name: Legal gates self-test (proves each rule turns them red)
         run: pnpm run gate:legal:selftest
 
+      # 2026-09-16 incident: the SERVER started resolving legal metadata from
+      # `legal/` at request time, the Vercel function has no such tree, and every
+      # consent lookup threw — /api/profile 500 and sign-in down. The renderer's
+      # path had a gate; the server's did not. This asserts the generated
+      # registry is current AND that the built function bundle really carries it.
+      - name: Legal registry reaches every runtime (incident 2026-09-16)
+        run: pnpm run gate:legal-registry
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the

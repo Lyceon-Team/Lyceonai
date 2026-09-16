@@ -25,6 +25,7 @@ import {
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 
 const router = Router();
@@ -241,59 +242,100 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         // Version and hash come from legal/ at write time, so the row records the
         // exact text that was served. resolveLegalVersion throws rather than
         // guessing — a consent stamped with a wrong version is a false record.
-        const studentTermsVersion = resolveLegalVersion(
-          LEGAL_DOCS.studentTerms.slug,
-        );
-        const privacyPolicyVersion = resolveLegalVersion(
-          LEGAL_DOCS.privacyPolicy.slug,
-        );
-        const capture = await captureLegalAcceptances(admin, {
-          userId: user.id,
-          consentSource,
-          userAgent: req.get("user-agent") ?? null,
-          ipAddress: req.ip ?? null,
-          acceptances: [
-            {
-              docKey: LEGAL_DOCS.studentTerms.docKey,
-              docSlug: studentTermsVersion.slug,
-              docVersion: studentTermsVersion.version,
-              contentHash: studentTermsVersion.contentHash,
-              actorType: "student",
-              minor,
-            },
-            {
-              docKey: LEGAL_DOCS.privacyPolicy.docKey,
-              docSlug: privacyPolicyVersion.slug,
-              docVersion: privacyPolicyVersion.version,
-              contentHash: privacyPolicyVersion.contentHash,
-              actorType: "student",
-              minor,
-            },
-          ],
-        });
-
-        if (!capture.durable) {
+        //
+        // AN UNRESOLVABLE DOCUMENT NO LONGER COSTS A SIGN-IN. These two calls
+        // threw `legal/ not found ... relative to /var/task` in the Vercel
+        // function on 2026-09-16, the throw escaped to the finalize catch, and
+        // every Google sign-in ended at /login?error=post_auth_finalize. The
+        // session was preserved — the handler is careful about that — but the
+        // person was shown a failed login, which is the same outage from their
+        // side. Resolution failure now skips the CAPTURE and lets the sign-in
+        // complete; the re-consent prompt asks again on the next hydration.
+        //
+        // NOTHING PARTIAL IS WRITTEN. We do not fall back to a guessed version:
+        // a row that cannot name the bytes served is the false record this
+        // programme exists to prevent, so the choice is a real row or no row.
+        // NULL, not an early return. A bare `return` here would leave the
+        // handler without ever redirecting and hang the request — the resolution
+        // failure must skip the CAPTURE, not the sign-in it is part of.
+        let resolved: {
+          studentTerms: ResolvedLegalVersion;
+          privacyPolicy: ResolvedLegalVersion;
+        } | null = null;
+        try {
+          resolved = {
+            studentTerms: resolveLegalVersion(LEGAL_DOCS.studentTerms.slug),
+            privacyPolicy: resolveLegalVersion(LEGAL_DOCS.privacyPolicy.slug),
+          };
+        } catch (resolveErr: unknown) {
           logger.error(
             "OAUTH",
-            "consent_capture_failed",
-            "Could not durably capture consent (both stores failed); failing closed",
-            { userId: user.id, requestId: req.requestId },
+            "legal_resolution_failed",
+            "Could not resolve signup documents; completing sign-in without a consent row. The re-consent prompt will ask again.",
+            {
+              userId: user.id,
+              error:
+                resolveErr instanceof Error ? resolveErr.message : "unknown",
+              requestId: req.requestId,
+            },
           );
-          await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
-            logger.warn(
-              "OAUTH",
-              "signout_cleanup_failed",
-              "Best-effort signOut after consent-capture failure failed",
+        }
+
+        if (resolved !== null) {
+          const studentTermsVersion = resolved.studentTerms;
+          const privacyPolicyVersion = resolved.privacyPolicy;
+          const capture = await captureLegalAcceptances(admin, {
+            userId: user.id,
+            consentSource,
+            userAgent: req.get("user-agent") ?? null,
+            ipAddress: req.ip ?? null,
+            acceptances: [
               {
-                requestId: req.requestId,
-                error:
-                  signOutErr instanceof Error
-                    ? signOutErr.message
-                    : String(signOutErr),
+                docKey: LEGAL_DOCS.studentTerms.docKey,
+                docSlug: studentTermsVersion.slug,
+                docVersion: studentTermsVersion.version,
+                contentHash: studentTermsVersion.contentHash,
+                actorType: "student",
+                minor,
               },
-            ),
-          );
-          return res.redirect(`${siteUrl}/login?error=consent_capture_failed`);
+              {
+                docKey: LEGAL_DOCS.privacyPolicy.docKey,
+                docSlug: privacyPolicyVersion.slug,
+                docVersion: privacyPolicyVersion.version,
+                contentHash: privacyPolicyVersion.contentHash,
+                actorType: "student",
+                minor,
+              },
+            ],
+          });
+
+          if (!capture.durable) {
+            logger.error(
+              "OAUTH",
+              "consent_capture_failed",
+              "Could not durably capture consent (both stores failed); failing closed",
+              { userId: user.id, requestId: req.requestId },
+            );
+            await supabase.auth
+              .signOut({ scope: "local" })
+              .catch((signOutErr) =>
+                logger.warn(
+                  "OAUTH",
+                  "signout_cleanup_failed",
+                  "Best-effort signOut after consent-capture failure failed",
+                  {
+                    requestId: req.requestId,
+                    error:
+                      signOutErr instanceof Error
+                        ? signOutErr.message
+                        : String(signOutErr),
+                  },
+                ),
+              );
+            return res.redirect(
+              `${siteUrl}/login?error=consent_capture_failed`,
+            );
+          }
         }
       }
 

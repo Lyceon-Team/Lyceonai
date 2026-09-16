@@ -1,13 +1,13 @@
 /**
  * @spec [Doc-03C_V3 §5.2, §5.7; Doc-03B_V4.1 §12B.8]
- * @implemented 2026-09-15
+ * @implemented 2026-09-16
  *
- * Vertex client contract tests: Model Armor is the sole content-safety
- * enforcement on the generateContent path. safetySettings must never be
- * sent alongside modelArmorConfig (Vertex rejects the combination with
- * INVALID_ARGUMENT).
+ * Vertex client contract tests: safetySettings replaces inline modelArmorConfig
+ * while Model Armor is deferred (Google-side TEMPLATE_NOT_FOUND). The two must
+ * not coexist (Vertex rejects the combination with INVALID_ARGUMENT).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { HarmBlockThreshold, HarmCategory } from "@google/genai";
 
 // ── Mock @google/genai before the module under test is imported ─────────
 
@@ -49,7 +49,7 @@ describe("vertex-client generateContent config", () => {
     process.env.VERTEX_LOCATION = "us-central1";
   });
 
-  it("sends modelArmorConfig and does NOT send safetySettings", async () => {
+  it("sends safetySettings and does NOT send modelArmorConfig", async () => {
     mockGenerateContent.mockResolvedValue({
       candidates: [
         {
@@ -60,41 +60,41 @@ describe("vertex-client generateContent config", () => {
       text: "mock response",
     });
 
-    // Mock the output sanitize fetch (standalone Model Armor Sanitize API)
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        sanitizationResult: { filterMatchState: "NO_MATCH_FOUND" },
-      }),
-    }) as unknown as typeof fetch;
+    await generateTutorResponse(
+      "flash_class",
+      [{ role: "user", text: "What is 2+2?" }],
+      "You are a tutor.",
+      { maxOutputTokens: 1024, timeoutMs: 10000 },
+    );
 
-    try {
-      await generateTutorResponse(
-        "flash_class",
-        [{ role: "user", text: "What is 2+2?" }],
-        "You are a tutor.",
-        { maxOutputTokens: 1024, timeoutMs: 10000 },
-        {
-          inputTemplateId: "lyceon-lisa-input-v1",
-          outputTemplateId: "lyceon-lisa-output-v1",
-        },
-      );
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
 
-      expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+    const callArgs = mockGenerateContent.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
+    const config = callArgs.config as Record<string, unknown>;
 
-      const callArgs = mockGenerateContent.mock.calls[0][0];
-      const config = callArgs.config;
+    expect(config).not.toHaveProperty("modelArmorConfig");
 
-      expect(config).toHaveProperty("modelArmorConfig");
-      expect(config.modelArmorConfig).toEqual({
-        promptTemplateName:
-          "projects/test-project/locations/us-central1/templates/lyceon-lisa-input-v1",
-      });
-
-      expect(config).not.toHaveProperty("safetySettings");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    expect(config).toHaveProperty("safetySettings");
+    expect(config.safetySettings).toEqual([
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      },
+    ]);
   });
 });

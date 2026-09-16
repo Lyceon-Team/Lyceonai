@@ -118,7 +118,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         updated_at: backendUser.updated_at,
         // Map additional onboarding status flags
         profile_completed_at: backendUser.profileCompletedAt,
-        requiredConsentsComplete: backendUser.requiredConsentsComplete,
         requiredProfileComplete: backendUser.requiredProfileComplete,
         guardianConsentRequired: backendUser.guardianConsentRequired,
         // §40 server-authority flags + grace-window state (top-level on the /api/profile response).
