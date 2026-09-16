@@ -343,6 +343,14 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     // the ledger was rewritten: one xmin for all rows, no insertion order
     const ledgerXmins = new Set(await xmins(`SELECT xmin::text AS x FROM public.anonymized_actors`));
     expect(ledgerXmins.size).toBe(1);
+    // and the rewrite holds the table against a concurrent cascade insert (a row committed
+    // between its snapshot and its DELETE would otherwise be lost)
+    const def = await pg.query(
+      `SELECT pg_get_functiondef('public.rewrite_anonymized_actors()'::regprocedure) AS d`,
+    );
+    expect(String(def.rows[0]?.d)).toContain(
+      "LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE",
+    );
   });
 
   // ── C3.3 ────────────────────────────────────────────────────────────────────

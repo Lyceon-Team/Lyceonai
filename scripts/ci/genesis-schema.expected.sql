@@ -4045,6 +4045,11 @@ CREATE FUNCTION public.rewrite_anonymized_actors() RETURNS integer
 DECLARE
   v_count integer;
 BEGIN
+  -- Concurrency (spec-auditor finding C on PR #769): a cascade committing between the
+  -- snapshot and the DELETE would have its ledger row destroyed and never re-inserted —
+  -- the only proof that an actor_id was anonymized. ACCESS EXCLUSIVE makes a concurrent
+  -- cascade's INSERT wait for this transaction to commit; the function is milliseconds.
+  LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE;
   CREATE TEMP TABLE _ledger ON COMMIT DROP AS
     SELECT actor_id FROM public.anonymized_actors;
   DELETE FROM public.anonymized_actors;

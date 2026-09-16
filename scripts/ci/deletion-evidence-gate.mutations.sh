@@ -14,7 +14,7 @@
 # leave a mutation on disk.
 #
 # Needs a Postgres reachable through PG* env (the suite bootstraps its own database from
-# supabase/migrations). Runs the suite twelve times; each run is ~2s on the CI service container.
+# supabase/migrations). Runs the suite thirteen times; each run is ~2s on the CI service container.
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -118,7 +118,11 @@ echo "==> (M10) put actor_id on the billing record (the reverse map Doc 05E §3 
 plant M10 "$MIG" 's.replace("  cancelled_on           date NOT NULL,\n", "  cancelled_on           date NOT NULL,\n  actor_id               uuid,\n", 1)'
 expect_red M10 "B3.3 billing record structural"
 
-echo "==> (11) restored: baseline must be green again"
+echo "==> (M11) drop the ledger rewrite's table lock (concurrent cascade row could be lost)"
+plant M11 "$MIG" 's.replace("  LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE;\n", "", 1)'
+expect_red M11 "C3.2 cross-universe xmin"
+
+echo "==> (12) restored: baseline must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: suite not green after restore"; fails=1; else echo "  ok   green after restore"; fi
 

@@ -483,9 +483,9 @@ export async function executeDueDeletions(
     // Step 0: read the recipient address (and the Stripe customer id, for step 1 and the billing
     // record) BEFORE any mutation. Step 3 (deidentify_user) replaces profiles.email with the
     // deleted_<id> placeholder and NULLs stripe_customer_id, and steps 4+5 delete the row, so this
-    // is the only moment they exist. They live in these locals for ONE iteration, are never
-    // persisted by this module (the billing record is written by SQL at T3), and the address is
-    // only ever logged through redactEmail.
+    // is the only moment they exist. They live in these locals for ONE iteration and are never
+    // persisted or logged by this module (the billing record is written by SQL at T3; the
+    // address goes only to sendAccountDeletionCompletedEmail, which redacts it before logging).
     let recipientEmail: string | null = null;
     let stripeCustomerId: string | null = null;
     try {
