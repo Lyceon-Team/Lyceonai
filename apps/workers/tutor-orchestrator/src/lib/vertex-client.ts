@@ -109,6 +109,7 @@ export type VertexErrorCode =
   | "vertex_400_invalid_request"
   | "vertex_403_auth"
   | "vertex_422_safety_blocked"
+  | "vertex_max_tokens_truncated"
   | "vertex_model_armor_unconfigured"
   | "vertex_unknown";
 
@@ -553,6 +554,24 @@ async function invokeVertexOnce(
         ok: false,
         errorCode: "vertex_422_safety_blocked",
         details: { finishReason },
+      };
+    }
+
+    if (finishReason === FinishReason.MAX_TOKENS) {
+      logEvent(
+        "error",
+        "vertex_client",
+        "vertex_max_tokens_truncated",
+        "Vertex response truncated at maxOutputTokens — model hit token budget",
+        { providerModel, finishReason },
+      );
+      return {
+        ok: false,
+        errorCode: "vertex_max_tokens_truncated",
+        details: {
+          finishReason,
+          truncatedLength: (response.text ?? "").length,
+        },
       };
     }
 
