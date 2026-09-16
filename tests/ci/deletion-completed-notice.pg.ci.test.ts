@@ -251,6 +251,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(Object.keys(req.body).sort()).toEqual([
         "from",
         "html",
+        "reply_to",
         "subject",
         "text",
         "to",

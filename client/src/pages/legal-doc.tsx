@@ -54,6 +54,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { loadLegalDocument } from "@/lib/legal-content";
+import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import Footer from "@/components/layout/Footer";
 import NotFound from "./not-found";
 
@@ -209,8 +210,7 @@ export default function LegalDocPage() {
             This document could not be loaded
           </h1>
           <p className="text-muted-foreground">
-            Please try again, or contact support@lyceon.ai if it keeps
-            happening.
+            Please try again, or contact {SUPPORT_EMAIL} if it keeps happening.
           </p>
         </CardContent>
       </Card>,
