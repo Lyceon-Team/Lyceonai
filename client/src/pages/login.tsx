@@ -26,9 +26,16 @@ export default function Login() {
       hasRedirected.current = true;
 
       // Determine destination based on onboarding status
+      // A SECOND COPY OF THE GATE LIVED HERE, and it outlived the first.
+      // `user.requiredConsentsComplete === false` sent anyone with an
+      // outstanding document to /profile/complete straight after sign-in — so
+      // removing the wall in RequireRole alone would have left this one standing
+      // and the behaviour unchanged for exactly the people it was meant to free.
+      // No legal document appears here now. What remains is an incomplete
+      // account, and the under-13 rule, which is a condition of the Terms rather
+      // than a consent state.
       const needsOnboarding =
         user.guardianConsentRequired === true ||
-        user.requiredConsentsComplete === false ||
         user.requiredProfileComplete === false ||
         !user.profile_completed_at;
 

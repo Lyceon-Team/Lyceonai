@@ -351,26 +351,25 @@ router.post(
       });
     }
 
-    // THE ACCEPTANCE IS WRITTEN BEFORE THE LINK, and a failure to write it
-    // refuses the link. §4: no acceptance, no link.
+    // THE ACCEPTANCE IS STILL WRITTEN FIRST, BUT IT NO LONGER REFUSES THE LINK.
+    // Owner ruling 2026-09-16: never refuse the user over a consent we failed to
+    // record. This returned 503 CONSENT_NOT_RECORDED and created no link, so a
+    // version lookup failure cost a guardian their connection — the same defect
+    // that took /api/profile down, one route over.
     //
-    // Order matters and this order is the safe one. Link-then-consent can leave
-    // a guardian holding visibility of a minor's learning data with no record
-    // that they agreed to the terms governing it; consent-then-link can at
-    // worst leave a consent row for a link that was never created, which is a
-    // true statement about what the person did. Given a choice between an
-    // unrecorded link and an unused consent, the unused consent is the one that
-    // cannot hurt anybody.
+    // Order still matters and this order is still the safe one: attempting the
+    // consent first means the ordinary case records it before any link exists.
+    // What changed is the failure branch. A guardian who redeems a valid code
+    // gets their link; an unrecorded acceptance is logged at ERROR and collected
+    // by the prompt, which is the mechanism that exists for exactly this.
+    //
+    // NOTHING PARTIAL IS WRITTEN. If the version cannot be resolved we record no
+    // row at all rather than one stamped with a guess.
     //
     // `actor_type: 'parent'` — the value the column has always allowed for this
     // actor. The document is Parent / Guardian Terms; one value, one meaning.
-    const parentTerms = resolveLegalVersion(GUARDIAN_LINK_LEGAL_DOC.slug);
     try {
-      // `supabaseServer`, the client every other write in this file uses. An
-      // earlier draft reached for `getSupabaseAdmin()` and quietly forked the
-      // client: a second admin handle in one route file, and one the PG-backed
-      // guardian tests do not substitute, so the consent write went nowhere they
-      // could see it. One client per file, the one that is already here.
+      const parentTerms = resolveLegalVersion(GUARDIAN_LINK_LEGAL_DOC.slug);
       await recordLegalAcceptances(supabaseServer, {
         userId: guardianId,
         consentSource: "guardian_link_redeem",
@@ -391,20 +390,12 @@ router.post(
       logger.error(
         "GUARDIAN",
         "link_redeem",
-        "Link refused: Parent / Guardian Terms consent could not be recorded",
+        "Parent / Guardian Terms consent could not be recorded; the link proceeds and the prompt will ask again",
         {
           error: consentErr instanceof Error ? consentErr.message : "unknown",
           requestId,
         },
       );
-      return res.status(503).json({
-        error: {
-          message:
-            "We could not record your agreement to the Parent / Guardian Terms. No link was created. Please try again.",
-          code: "CONSENT_NOT_RECORDED",
-        },
-        requestId,
-      });
     }
 
     try {
