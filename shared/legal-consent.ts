@@ -69,24 +69,61 @@ export const GUARDIAN_LINK_LEGAL_DOC = LEGAL_DOCS.parentGuardianTerms;
 export const CHECKOUT_LEGAL_DOC = LEGAL_DOCS.billingTerms;
 
 /**
- * What a person must hold for the re-consent PROMPT to mention. Not a gate —
- * nothing anywhere withholds access on the strength of this list.
+ * The account facts the outstanding set is derived FROM. Not a role, not a
+ * category — two things that are either true of this account or not.
  *
- * TWO DOCUMENTS, EVERY ACCOUNT, NO ROLE LOGIC. Owner ruling 2026-09-16.
- * This used to take `{ role, hasGuardianLink }` and add Parent / Guardian Terms
- * for a linked guardian. That was modelling the wrong thing: Parent Terms is
- * accepted as part of REDEEMING A CODE — an action the guardian chose to take —
- * and it is captured there, at that moment, with that version and hash. Asking
- * for it again from a periodic prompt made a completed transaction look like an
- * outstanding debt, and made this function need to know about links.
+ * `hasActiveGuardianLink` is "this account is the guardian on at least one
+ * active link". The student on the other side of that link does not owe Parent
+ * Terms; the document governs the guardian's obligations, not the student's.
  *
- * Billing Terms is likewise Stripe's own checkbox at checkout, and never here.
- *
- * So: Student Terms and Privacy Policy, for everybody, forever. When one of them
- * gets a new version, everyone is prompted; they can dismiss it; nothing stops.
+ * `hasEverPaid` is "this account has been the PAYER in a Checkout Session we
+ * created" — see `loadLegalAccountFacts` for why that is the fact we can
+ * actually establish, and what it over-includes.
  */
-export function requiredLegalDocsForUse(): readonly LegalDocRef[] {
-  return REQUIRED_SIGNUP_LEGAL_DOCS;
+export type LegalAccountFacts = {
+  readonly hasActiveGuardianLink: boolean;
+  readonly hasEverPaid: boolean;
+};
+
+/**
+ * What this account has not agreed to, derived from the account's own facts.
+ * Not a gate — nothing anywhere withholds access on the strength of this list.
+ *
+ * WHATEVER A USER HAS NOT GIVEN, PROMPT FOR IT. Owner ruling 2026-09-16. One
+ * rule, every user:
+ *
+ *   Student Terms    always — every account uses the platform
+ *   Privacy Policy   always — every account
+ *   Parent Terms     the account holds an active guardian link
+ *   Billing Terms    the account has ever paid
+ *
+ * WHY THIS IS NOT THE ROLE LOGIC THAT WAS RULED OUT. The version this replaces
+ * took `{ role, hasGuardianLink }` and branched on ROLE: an account whose
+ * `profiles.role` said "guardian" owed Parent Terms whether or not it was
+ * linked to anyone, and a linked account whose role said "student" did not.
+ * That asked a category. This asks a fact: a guardian owes Parent Terms
+ * BECAUSE THEY ARE LINKED, and stops owing it if every link is revoked. No
+ * role appears here, in any form — `LegalAccountFacts` has nowhere to put one.
+ *
+ * WHY NOT "CAPTURED AT THE ACTION, SO NEVER ASK AGAIN". That was the previous
+ * ruling and it left a hole this one closes: capture at redemption and at
+ * checkout only covers people who went through those surfaces AFTER the capture
+ * existed. In production one guardian holds two active links and no Parent
+ * Terms acceptance at all — they linked before that capture was built, and
+ * before this change there was no surface anywhere that would ever ask them.
+ * A document nobody can be asked for is a document nobody holds.
+ *
+ * ORDER IS STABLE AND DELIBERATE: the two universal documents first, then the
+ * conditional ones. The prompt renders in this order, so a guardian sees the
+ * same first two rows every other account sees.
+ */
+export function requiredLegalDocsForUse(
+  facts: LegalAccountFacts,
+): readonly LegalDocRef[] {
+  const docs: LegalDocRef[] = [...REQUIRED_SIGNUP_LEGAL_DOCS];
+  if (facts.hasActiveGuardianLink) docs.push(LEGAL_DOCS.parentGuardianTerms);
+  if (facts.hasEverPaid) docs.push(LEGAL_DOCS.billingTerms);
+  return docs;
 }
 
 /**

@@ -8,6 +8,7 @@ import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { requiredLegalDocsForUse } from "../../shared/legal-consent.js";
+import { loadLegalAccountFacts } from "../lib/legal-account-facts";
 import { logger } from "../logger";
 
 export const legalRouter = Router();
@@ -62,9 +63,18 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
 
     const { data: profile } = await admin
       .from("profiles")
-      .select("role")
+      .select("role, stripe_customer_id")
       .eq("id", userId)
       .maybeSingle();
+
+    // THE SAME FACTS THE PROMPT WAS BUILT FROM, from the same helper. If this
+    // route derived the set differently, a document could be offered and then
+    // refused — the prompt would reappear immediately after a successful accept
+    // and nothing in either route would look wrong.
+    const facts = await loadLegalAccountFacts(
+      userId,
+      profile?.stripe_customer_id ?? null,
+    );
 
     const { data: existing, error: readErr } = await admin
       .from("legal_acceptances")
@@ -86,7 +96,7 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
       docKey: string;
       current: ResolvedLegalVersion;
     }> = [];
-    for (const doc of requiredLegalDocsForUse()) {
+    for (const doc of requiredLegalDocsForUse(facts)) {
       let current: ResolvedLegalVersion;
       try {
         current = resolveLegalVersion(doc.slug);
