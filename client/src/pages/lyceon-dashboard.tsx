@@ -12,20 +12,12 @@ import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   ArrowRight,
-  Calendar,
   FileText,
   Loader2,
   MessageCircle,
   Play,
   Target,
-  TrendingUp,
 } from "lucide-react";
-import {
-  getCalendarMonth,
-  getCalendarProfile,
-  type StudyPlanDay,
-  type StudyProfile,
-} from "@/lib/calendarApi";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
@@ -114,36 +106,6 @@ export default function LyceonDashboard() {
   const { user, isGuardian } = useSupabaseAuth();
   const [, setLocation] = useLocation();
 
-  const { data: profileData, error: profileError } =
-    useQuery<StudyProfile | null>({
-      queryKey: ["calendar-profile"],
-      queryFn: getCalendarProfile,
-      enabled: !!user,
-      staleTime: 60000,
-    });
-
-  const userTimezone = profileData?.timezone || "America/Chicago";
-  const nowInUserTz = DateTime.now().setZone(userTimezone);
-  const todayISO = nowInUserTz.toISODate()!;
-  const nextWeekISO = nowInUserTz.plus({ days: 7 }).toISODate()!;
-
-  const {
-    data: calendarData,
-    isLoading: calendarLoading,
-    error: calendarError,
-  } = useQuery({
-    queryKey: ["calendar-month", userTimezone],
-    queryFn: async () => {
-      const start =
-        nowInUserTz.startOf("month").toISODate() ?? nowInUserTz.toISODate()!;
-      const end =
-        nowInUserTz.endOf("month").toISODate() ?? nowInUserTz.toISODate()!;
-      return getCalendarMonth(start, end);
-    },
-    enabled: !!user,
-    refetchInterval: 60000,
-  });
-
   const {
     data: kpiData,
     isLoading: kpiLoading,
@@ -188,22 +150,6 @@ export default function LyceonDashboard() {
     }
   };
 
-  const todayPlan: StudyPlanDay | undefined = useMemo(
-    () => calendarData?.days?.find((day) => day.day_date === todayISO),
-    [calendarData?.days, todayISO],
-  );
-
-  const upcomingMilestones = useMemo(
-    () =>
-      (calendarData?.days ?? []).filter(
-        (day) =>
-          day.day_date >= todayISO &&
-          day.day_date <= nextWeekISO &&
-          day.planned_minutes > 0,
-      ).length,
-    [calendarData?.days, nextWeekISO, todayISO],
-  );
-
   const metricById = useMemo(
     () =>
       new Map((kpiData?.metrics ?? []).map((metric) => [metric.id, metric])),
@@ -219,29 +165,14 @@ export default function LyceonDashboard() {
     metricById.get("week_accuracy")?.explanation?.whyThisChanged ??
     "Current 7-day window.";
 
-  const baselineScore = profileData?.baseline_score ?? null;
-  const targetScore = profileData?.target_score ?? null;
-  const examDate = profileData?.exam_date
-    ? DateTime.fromISO(profileData.exam_date).setZone(userTimezone)
-    : null;
-  const streakCurrent = calendarData?.streak?.current ?? 0;
-
   const getGreeting = () => {
-    const hour = nowInUserTz.hour;
+    const hour = DateTime.local().hour;
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
   };
 
-  const nextMilestone = (() => {
-    if (todayPlan && todayPlan.planned_minutes > 0) {
-      return `Complete today's ${todayPlan.planned_minutes}-minute study plan.`;
-    }
-    if (examDate?.isValid) {
-      return `Stay on track for your ${examDate.toFormat("MMM d")} SAT date.`;
-    }
-    return "Complete one focused SAT practice block today.";
-  })();
+  const nextMilestone = "Complete one focused SAT practice block today.";
 
   /**
    * Routed through the ONE destination resolver rather than hardcoding
@@ -270,7 +201,7 @@ export default function LyceonDashboard() {
           </p>
         </div>
 
-        {(profileError || calendarError || kpiError) && (
+        {kpiError && (
           <RecoveryNotice
             className="mb-6"
             title="We couldn’t load part of your dashboard."
@@ -332,19 +263,6 @@ export default function LyceonDashboard() {
                       {weekAccuracyChange}
                     </p>
                   </div>
-                </div>
-
-                <div className="pt-6 border-t border-border/50 flex flex-wrap gap-3">
-                  <Button asChild data-testid="button-dashboard-view-details">
-                    <Link href="/calendar">View Details</Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="secondary"
-                    data-testid="button-dashboard-set-goal"
-                  >
-                    <Link href="/calendar">Set Goal</Link>
-                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -481,9 +399,7 @@ export default function LyceonDashboard() {
                 Practice
               </h2>
               <p className="text-sm text-muted-foreground">
-                {todayPlan?.planned_minutes
-                  ? `${todayPlan.planned_minutes} minutes planned today`
-                  : "Start a focused SAT block"}
+                Start a focused SAT block
               </p>
             </a>
           </Link>
@@ -514,22 +430,6 @@ export default function LyceonDashboard() {
                 {weekQuestions > 0
                   ? "Analyze misses from your recent attempts."
                   : "Complete practice first to populate your error queue."}
-              </p>
-            </a>
-          </Link>
-
-          <Link href="/calendar">
-            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-                <Calendar className="h-5 w-5" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight mb-1">
-                Study Plan
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {calendarLoading
-                  ? "Loading schedule..."
-                  : `${upcomingMilestones} planned study day${upcomingMilestones === 1 ? "" : "s"} in the next 7 days`}
               </p>
             </a>
           </Link>
@@ -591,27 +491,6 @@ export default function LyceonDashboard() {
                   />
                 </div>
               )}
-
-              <div className="pt-4 border-t border-border/50 grid sm:grid-cols-3 gap-3 text-sm">
-                <div className="rounded-lg bg-muted/35 p-3">
-                  <p className="text-muted-foreground">Current Baseline</p>
-                  <p className="font-semibold text-lg mt-1">
-                    {baselineScore ?? "-"}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-muted/35 p-3">
-                  <p className="text-muted-foreground">Target Score</p>
-                  <p className="font-semibold text-lg mt-1">
-                    {targetScore ?? "-"}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-muted/35 p-3">
-                  <p className="text-muted-foreground">Current Streak</p>
-                  <p className="font-semibold text-lg mt-1">
-                    {streakCurrent} day{streakCurrent === 1 ? "" : "s"}
-                  </p>
-                </div>
-              </div>
             </CardContent>
           </Card>
 
@@ -636,16 +515,8 @@ export default function LyceonDashboard() {
               <div className="rounded-lg bg-muted/45 p-4 space-y-2">
                 <p className="text-sm font-medium">Current live signals</p>
                 <p className="text-sm text-muted-foreground">
-                  {streakCurrent}-day current practice streak.
-                </p>
-                <p className="text-sm text-muted-foreground">
                   {weekQuestions} questions solved this week
                   {weekQuestions > 0 ? ` at ${weekAccuracy}% accuracy` : "."}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {examDate?.isValid
-                    ? `Exam date set for ${examDate.toFormat("MMM d, yyyy")}.`
-                    : "Exam date not set yet."}
                 </p>
               </div>
 
@@ -663,12 +534,6 @@ export default function LyceonDashboard() {
                   <Link href="/chat">
                     <MessageCircle className="h-4 w-4 mr-2" />
                     Ask Lisa
-                  </Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/calendar">
-                    <TrendingUp className="h-4 w-4 mr-2" />
-                    Open Study Plan
                   </Link>
                 </Button>
               </div>
