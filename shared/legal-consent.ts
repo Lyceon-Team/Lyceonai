@@ -127,6 +127,35 @@ export function requiredLegalDocsForUse(
 }
 
 /**
+ * In what capacity a person accepts a given document.
+ *
+ * WHY THIS IS PER-DOCUMENT AND NOT PER-ACCOUNT. `actor_type` is part of the
+ * uniqueness key on `legal_acceptances`, and it records the capacity the person
+ * was acting in — which is a property of the DOCUMENT, not of what their
+ * profile row calls them. Student Terms and the Privacy Policy govern somebody's
+ * use of the platform, so they are accepted as a user, and every other write
+ * site in the codebase already stamps them `student` unconditionally
+ * (`supabase-auth-routes.ts`, `oauth-callback-routes.ts`). Parent Terms is the
+ * one accepted as a parent (`guardian-routes.ts`). Billing Terms follows payer
+ * capacity, the same rule the Stripe webhook applies.
+ *
+ * The re-consent route used to derive one capacity for every document from
+ * `profiles.role`, which recorded a guardian's acceptance of the PLATFORM'S OWN
+ * terms as if it were made in a parental capacity. That was narrow while the
+ * prompt only ever carried two documents; it is not narrow now.
+ */
+export function actorTypeForDoc(
+  docKey: string,
+  facts: LegalAccountFacts,
+): "student" | "parent" {
+  if (docKey === LEGAL_DOCS.parentGuardianTerms.docKey) return "parent";
+  if (docKey === LEGAL_DOCS.billingTerms.docKey) {
+    return facts.hasActiveGuardianLink ? "parent" : "student";
+  }
+  return "student";
+}
+
+/**
  * Where an acceptance was collected. Mirrors the `consent_source` CHECK on
  * `public.legal_acceptances` — a value absent there is refused by the database,
  * not by the application, so the two must be widened together.

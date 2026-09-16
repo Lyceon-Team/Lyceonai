@@ -1,5 +1,6 @@
 /**
- * @spec [LYCEON consent capture §6; owner ruling 2026-09-16 — "whatever consents
+ * @spec [Doc 10 §2.4 age-threshold taxonomy, §9.4 Parent / Guardian Terms; Doc 01 §35-§37 guardian linkage;
+ *        owner ruling 2026-09-16 — "whatever consents
  *        a user has not given, prompt for them at sign-in"; Coding Standards §2
  *        layering, §13]
  * @implemented 2026-09-16

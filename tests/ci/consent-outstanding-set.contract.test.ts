@@ -1,5 +1,6 @@
 /**
- * @spec [LYCEON consent capture §6; owner ruling 2026-09-16 — "whatever consents
+ * @spec [Doc 10 §2.4 age-threshold taxonomy, §9.4 Parent / Guardian Terms; Doc 01 §35-§37 guardian linkage;
+ *        owner ruling 2026-09-16 — "whatever consents
  *        a user has not given, prompt for them at sign-in"; Coding Standards §14]
  * @implemented 2026-09-16
  *
@@ -25,7 +26,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  actorTypeForDoc,
   requiredLegalDocsForUse,
+  LEGAL_DOCS,
   type LegalAccountFacts,
 } from "../../shared/legal-consent";
 import { resolveLegalVersion } from "../../server/lib/legal-registry";
@@ -230,6 +233,67 @@ describe("O3 — one derivation, both routes", () => {
         );
       }
     }
+  });
+
+  it("records the capacity of the DOCUMENT, not of the account's role", () => {
+    // `actor_type` is part of the uniqueness key on legal_acceptances, so a
+    // wrong value is a wrong row. Re-accept used to derive ONE capacity from
+    // `profiles.role` and apply it to every document, which recorded a
+    // guardian's acceptance of the platform's own Student Terms as `parent` —
+    // disagreeing with what signup writes for that same account and document.
+    const linkedPayer: LegalAccountFacts = {
+      hasActiveGuardianLink: true,
+      hasEverPaid: true,
+    };
+    expect(actorTypeForDoc(LEGAL_DOCS.studentTerms.docKey, linkedPayer)).toBe(
+      "student",
+    );
+    expect(actorTypeForDoc(LEGAL_DOCS.privacyPolicy.docKey, linkedPayer)).toBe(
+      "student",
+    );
+    expect(
+      actorTypeForDoc(LEGAL_DOCS.parentGuardianTerms.docKey, linkedPayer),
+    ).toBe("parent");
+    // Billing Terms follows payer capacity — the same rule the Stripe webhook
+    // applies (`guardianPayerId ? "parent" : "student"`).
+    expect(actorTypeForDoc(LEGAL_DOCS.billingTerms.docKey, linkedPayer)).toBe(
+      "parent",
+    );
+    expect(actorTypeForDoc(LEGAL_DOCS.billingTerms.docKey, NOTHING)).toBe(
+      "student",
+    );
+  });
+
+  it("re-accept reads no role, and derives capacity per document", () => {
+    const route = readCode("server/routes/legal-routes.ts");
+    const reaccept = route.slice(route.indexOf('legalRouter.post("/reaccept"'));
+    expect(reaccept).toContain("actorTypeForDoc(docKey, facts)");
+    // The dead `role` read went with the branch that needed it.
+    expect(reaccept).not.toMatch(/profile\??\.role/);
+    expect(reaccept).not.toMatch(/"role[,"]/);
+  });
+
+  it("agrees with what signup writes for the same two documents", () => {
+    // Signup stamps both universal documents `student` unconditionally. If
+    // re-accept disagreed, the same account would hold rows for the same
+    // document under two capacities — and the uniqueness key would let it.
+    for (const relative of [
+      "server/routes/supabase-auth-routes.ts",
+      "server/routes/oauth-callback-routes.ts",
+    ]) {
+      const code = readCode(relative);
+      const stamps = [...code.matchAll(/actorType:\s*([^,\n]+)/g)].map((m) =>
+        (m[1] ?? "").trim(),
+      );
+      expect(stamps.length, `${relative} stamps nothing`).toBeGreaterThan(0);
+      for (const stamp of stamps) expect(stamp).toBe('"student"');
+    }
+    expect(actorTypeForDoc(LEGAL_DOCS.studentTerms.docKey, NOTHING)).toBe(
+      "student",
+    );
+    expect(actorTypeForDoc(LEGAL_DOCS.privacyPolicy.docKey, NOTHING)).toBe(
+      "student",
+    );
   });
 
   it("reads stripe_customer_id in a select both routes already make", () => {
