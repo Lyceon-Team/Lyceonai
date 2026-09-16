@@ -7,7 +7,11 @@ import {
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
-import { requiredLegalDocsForUse } from "../../shared/legal-consent.js";
+import {
+  actorTypeForDoc,
+  requiredLegalDocsForUse,
+} from "../../shared/legal-consent.js";
+import { loadLegalAccountFacts } from "../lib/legal-account-facts";
 import { logger } from "../logger";
 
 export const legalRouter = Router();
@@ -26,7 +30,7 @@ legalRouter.post("/accept", (_req: Request, res: Response) => {
 /**
  * POST /api/legal/reaccept — the blocking re-consent modal's one action.
  *
- * @spec [LYCEON consent capture §6]
+ * @spec [Doc 10 §2.4 age-threshold taxonomy, §9.4 Parent / Guardian Terms; Doc 01 §35-§37 guardian linkage]
  * @implemented 2026-09-16
  *
  * plain English: writes a fresh acceptance for every required document this
@@ -60,11 +64,23 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
   try {
     const admin = getSupabaseAdmin();
 
+    // `role` used to be read here to pick one actor_type for every document.
+    // It is gone with that branch: capacity is a property of the DOCUMENT now,
+    // so nothing on this path needs to know what the account calls itself.
     const { data: profile } = await admin
       .from("profiles")
-      .select("role")
+      .select("stripe_customer_id")
       .eq("id", userId)
       .maybeSingle();
+
+    // THE SAME FACTS THE PROMPT WAS BUILT FROM, from the same helper. If this
+    // route derived the set differently, a document could be offered and then
+    // refused — the prompt would reappear immediately after a successful accept
+    // and nothing in either route would look wrong.
+    const facts = await loadLegalAccountFacts(
+      userId,
+      profile?.stripe_customer_id ?? null,
+    );
 
     const { data: existing, error: readErr } = await admin
       .from("legal_acceptances")
@@ -86,7 +102,7 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
       docKey: string;
       current: ResolvedLegalVersion;
     }> = [];
-    for (const doc of requiredLegalDocsForUse()) {
+    for (const doc of requiredLegalDocsForUse(facts)) {
       let current: ResolvedLegalVersion;
       try {
         current = resolveLegalVersion(doc.slug);
@@ -126,10 +142,14 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
           docSlug: current.slug,
           docVersion: current.version,
           contentHash: current.contentHash,
-          actorType:
-            profile?.role === "guardian"
-              ? ("parent" as const)
-              : ("student" as const),
+          // PER DOCUMENT, NOT PER ACCOUNT. This read `profile.role === "guardian"`
+          // and applied one capacity to every document, so a guardian's
+          // acceptance of Student Terms and the Privacy Policy — the platform's
+          // own terms, which they accept as a user — was recorded as `parent`.
+          // `actor_type` is part of the uniqueness key, so that is a wrong row,
+          // not a cosmetic label, and it disagreed with what signup writes for
+          // the same account and the same document.
+          actorType: actorTypeForDoc(docKey, facts),
           minor: false,
         };
       }),

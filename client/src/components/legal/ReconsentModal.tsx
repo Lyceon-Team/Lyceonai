@@ -51,6 +51,30 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, FileText, X } from "lucide-react";
 import type { OutstandingLegalDoc } from "@shared/legal-consent";
 
+/**
+ * A true sentence for each of the three cases. The headline used to say "One of
+ * the documents you agreed to has a new version" unconditionally, which is a
+ * false statement to somebody who has never accepted the document at all — and
+ * since the outstanding set became fact-derived (a linked guardian owes Parent
+ * Terms whether or not they ever saw it) that is now the COMMON case, not an
+ * edge one. It also said "to continue", which reads as a gate; nothing here
+ * gates anything.
+ */
+function ledeFor(documents: OutstandingLegalDoc[]): string {
+  const seenBefore = documents.filter((d) => d.acceptedVersion !== null).length;
+  if (seenBefore === 0) {
+    return documents.length === 1
+      ? "There's a document we don't have your agreement to yet."
+      : "There are documents we don't have your agreement to yet.";
+  }
+  if (seenBefore === documents.length) {
+    return documents.length === 1
+      ? "A document you agreed to has a new version."
+      : "Documents you agreed to have new versions.";
+  }
+  return "Some of these are new to you, and some have new versions.";
+}
+
 function formatEffectiveDate(iso: string): string {
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return iso;
@@ -136,12 +160,13 @@ export function ReconsentModal({
           id="reconsent-title"
           className="text-xl font-semibold text-foreground"
         >
-          We&rsquo;ve updated our terms
+          Please review our terms
         </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {documents.length === 1
-            ? "One of the documents you agreed to has a new version. Please review it to continue."
-            : "Some of the documents you agreed to have new versions. Please review them to continue."}
+        <p
+          className="mt-2 text-sm text-muted-foreground"
+          data-testid="reconsent-lede"
+        >
+          {ledeFor(documents)}
         </p>
 
         <ul className="mt-5 space-y-3">

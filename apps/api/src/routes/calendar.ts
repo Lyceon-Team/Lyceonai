@@ -16,6 +16,7 @@ import {
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
+import { logger } from "../../../../server/logger";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
@@ -1109,6 +1110,16 @@ calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) 
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load profile";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "load_profile",
+      "Failed to load profile",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1141,7 +1152,16 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
       .single();
 
     if (error) {
-      return res.status(500).json({ error: `Failed to save profile: ${error.message}`, requestId: req.requestId });
+      const message = `Failed to save profile: ${error.message}`;
+      logger.error(
+        "CALENDAR",
+        "save_profile",
+        "Failed to save profile",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     return res.json({
@@ -1151,6 +1171,16 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to save profile";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "save_profile",
+      "Failed to save profile",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1193,6 +1223,16 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load month";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "load_month",
+      "Failed to load month",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1267,6 +1307,16 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "generate_plan",
+      "Failed to generate plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1375,6 +1425,16 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to refresh plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "refresh_plan",
+      "Failed to refresh plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1453,6 +1513,16 @@ calendarRouter.post("/regenerate", async (req: AuthenticatedRequest, res: Respon
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to regenerate plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "regenerate_plan",
+      "Failed to regenerate plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1517,6 +1587,16 @@ calendarRouter.post("/day/:dayDate/regenerate", async (req: AuthenticatedRequest
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to regenerate day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "regenerate_day",
+      "Failed to regenerate day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1580,6 +1660,16 @@ calendarRouter.post("/day/:dayDate/reset-to-auto", async (req: AuthenticatedRequ
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reset day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "reset_day",
+      "Failed to reset day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1717,7 +1807,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       .select("id")
       .single();
     if (dayError || !dayRow?.id) {
-      return res.status(500).json({ error: `Failed to save day: ${dayError?.message ?? "missing day id"}`, requestId: req.requestId });
+      const message = `Failed to save day: ${dayError?.message ?? "missing day id"}`;
+      logger.error(
+        "CALENDAR",
+        "save_day",
+        "Failed to save day",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     const { error: deleteError } = await supabaseServer
@@ -1726,7 +1825,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       .eq("user_id", user.id)
       .eq("day_date", dayDate);
     if (deleteError) {
-      return res.status(500).json({ error: `Failed to replace day tasks: ${deleteError.message}`, requestId: req.requestId });
+      const message = `Failed to replace day tasks: ${deleteError.message}`;
+      logger.error(
+        "CALENDAR",
+        "replace_day_tasks",
+        "Failed to replace day tasks",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     if (normalizedManualTasks.length > 0) {
@@ -1764,7 +1872,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       });
       const { error: insertError } = await supabaseServer.from("student_study_plan_tasks").insert(rows);
       if (insertError) {
-        return res.status(500).json({ error: `Failed to save day tasks: ${insertError.message}`, requestId: req.requestId });
+        const message = `Failed to save day tasks: ${insertError.message}`;
+        logger.error(
+          "CALENDAR",
+          "save_day_tasks",
+          "Failed to save day tasks",
+          { error: message },
+          undefined,
+          { userId: user.id, requestId: req.requestId },
+        );
+        return res.status(500).json({ error: message, requestId: req.requestId });
       }
     }
 
@@ -1787,6 +1904,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to edit day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "edit_day",
+      "Failed to edit day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1837,7 +1964,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       .eq("id", taskId)
       .eq("user_id", user.id);
     if (updateTaskError) {
-      return res.status(500).json({ error: `Failed to update task: ${updateTaskError.message}`, requestId: req.requestId });
+      const message = `Failed to update task: ${updateTaskError.message}`;
+      logger.error(
+        "CALENDAR",
+        "update_task",
+        "Failed to update task",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     const dayRows = await loadDaysByRange(user.id, dayDate, dayDate);
@@ -1857,7 +1993,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       .eq("id", day.id)
       .eq("user_id", user.id);
     if (dayUpdateError) {
-      return res.status(500).json({ error: `Failed to update day status: ${dayUpdateError.message}`, requestId: req.requestId });
+      const message = `Failed to update day status: ${dayUpdateError.message}`;
+      logger.error(
+        "CALENDAR",
+        "update_day_status",
+        "Failed to update day status",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     if (status === "completed" && previousStatus !== "completed") {
@@ -1877,6 +2022,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update task";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "update_task",
+      "Failed to update task",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });

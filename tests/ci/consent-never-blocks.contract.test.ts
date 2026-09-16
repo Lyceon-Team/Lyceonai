@@ -125,13 +125,26 @@ describe("N1 — nothing withholds access for an outstanding document", () => {
   });
 
   it("asks the same two documents of every role", () => {
-    // Role-aware requirement logic is what let a guardian owe a different set.
-    // No arguments means no role logic, structurally.
-    expect(requiredLegalDocsForUse.length).toBe(0);
-    expect(requiredLegalDocsForUse().map((d) => d.slug)).toEqual([
+    // REWRITTEN, NOT DELETED. This asserted `requiredLegalDocsForUse.length === 0`
+    // — that the function took no arguments at all — which was the 2026-09-16
+    // form of "no role logic". The set is fact-derived now (owner ruling, same
+    // day, later): a linked guardian owes Parent Terms because of the LINK.
+    //
+    // The claim this test defends is unchanged and still worth defending: no
+    // ROLE may decide the set. So it asserts the thing that actually matters —
+    // identical facts produce an identical set whatever the account calls
+    // itself, and the parameter type cannot carry a role.
+    const facts = { hasActiveGuardianLink: false, hasEverPaid: false } as const;
+    expect(requiredLegalDocsForUse(facts).map((d) => d.slug)).toEqual([
       "student-terms",
       "privacy-policy",
     ]);
+    const shared = readCode("shared/legal-consent.ts");
+    const type = shared.slice(
+      shared.indexOf("export type LegalAccountFacts"),
+      shared.indexOf("export function requiredLegalDocsForUse"),
+    );
+    expect(type).not.toMatch(/\brole\b/);
   });
 
   it("keeps no `dismissible` flag — the prompt is always dismissible", () => {
