@@ -36,9 +36,9 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
   "parent-guardian-terms": {
     slug: "parent-guardian-terms",
     title: "LYCEON Parent / Guardian Terms",
-    version: "2.0",
-    effectiveDate: "2026-09-11",
-    contentHash: "sha256:201b274a47647bbbd68ac01a1436ee5bdcee43c25ab52c336b5f4802b7395593",
+    version: "3.0",
+    effectiveDate: "2026-09-16",
+    contentHash: "sha256:5a75e4e78e571c682afe9f681cfcb1d221a7f4bf475fc893ea8d36076fe17afb",
   },
   "privacy-policy": {
     slug: "privacy-policy",
