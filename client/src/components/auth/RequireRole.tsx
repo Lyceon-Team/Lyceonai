@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -6,6 +6,10 @@ import { csrfFetch } from "@/lib/csrf";
 import { loginPathWithReturn } from "@lyceon/shared/return-path";
 import { ReconsentModal } from "@/components/legal/ReconsentModal";
 import { outstandingLegalSchema } from "@shared/legal-consent";
+import {
+  dismissReconsent,
+  isReconsentDismissed,
+} from "@/components/legal/reconsent-dismissal";
 
 type UserRole = "student" | "guardian" | "admin";
 
@@ -29,6 +33,14 @@ interface AuthUserResponse {
 export function RequireRole({ allow, children }: RequireRoleProps) {
   const { user, authLoading, isAdmin, isGuardian, signOut } = useSupabaseAuth();
   const [location] = useLocation();
+
+  // Was the guardian re-consent prompt waved away? Two sources, deliberately.
+  // State answers within this mount, so dismissing hides it at once. Storage
+  // answers across mounts — wouter remounts RequireRole on every navigation, so
+  // without it one dismissal would last exactly until the next click. Reading
+  // storage during render is a read, not an effect; deriving this with
+  // `useEffect` would be the derived-state anti-pattern (Coding Standards §11.4).
+  const [dismissedThisMount, setDismissedThisMount] = useState(false);
 
   // Fetch profile completion status from canonical /api/profile endpoint
   const { data: authData, isLoading: profileLoading } =
@@ -133,15 +145,54 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   );
   const outstandingLegal = outstanding.success ? outstanding.data : [];
 
-  // THE CHILDREN ARE NOT RENDERED BEHIND IT, DELIBERATELY. An overlay with the
-  // application still mounted underneath is blocking to a mouse and no obstacle
-  // at all to a keyboard: tab past the dialog and the product is right there.
-  // "Cannot be dismissed" has to mean "there is nothing behind it", or the
-  // invariant is a visual effect. Admins are exempt because they are exempt from
-  // the onboarding gate above, and locking the only account that can investigate
-  // a bad publish out of the admin surface is the wrong failure mode.
+  // WHO GETS A WALL AND WHO GETS A PROMPT. Owner ruling, 2026-09-16.
+  //
+  // A GUARDIAN IS PROMPTED, NOT BLOCKED. They are already linked, already hold a
+  // previous version, and may be paying for the subscription. A version bump is
+  // continued use under an agreement they have, with notice — not use with no
+  // agreement at all. Locking them out of a dashboard they paid for, over a
+  // revision, punishes them for our editing schedule.
+  //
+  // KEYED ON ROLE, NOT ON DOCUMENT, and that is a real consequence worth seeing:
+  // `requiredLegalDocsForUse` gives EVERY account Student Terms and Privacy
+  // Policy, and adds Parent / Guardian Terms only for a linked guardian. So a
+  // guardian who owes a new Privacy Policy can also dismiss, while a student
+  // owing that same Privacy Policy cannot. That follows from the ruling's own
+  // words — "they keep full access to their dashboard whether or not they
+  // accept" — which a per-document rule would contradict. Reported for review.
+  //
+  // EVERYONE ELSE IS STILL WALLED, and the children are still not rendered
+  // behind it: an overlay with the application mounted underneath blocks a mouse
+  // and not a keyboard, so "cannot be dismissed" has to mean "there is nothing
+  // behind it" or the invariant is a visual effect. Admins stay exempt, as they
+  // are from the onboarding gate above — locking the only account that can
+  // investigate a bad publish out of the admin surface is the wrong failure mode.
   if (!isAdmin && !isProfileCompletePage && outstandingLegal.length > 0) {
-    return <ReconsentModal documents={outstandingLegal} onSignOut={signOut} />;
+    if (!isGuardian) {
+      return (
+        <ReconsentModal documents={outstandingLegal} onSignOut={signOut} />
+      );
+    }
+    // Dismissed for this tab-session: the dashboard renders with no prompt. The
+    // dismissal recorded nothing, and `clearReconsentDismissal` on sign-out
+    // means the next sign-in is prompted again.
+    const reconsentDismissed =
+      dismissedThisMount || isReconsentDismissed(user.id);
+    if (!reconsentDismissed) {
+      return (
+        <>
+          {children}
+          <ReconsentModal
+            documents={outstandingLegal}
+            dismissible
+            onDismiss={() => {
+              dismissReconsent(user.id);
+              setDismissedThisMount(true);
+            }}
+          />
+        </>
+      );
+    }
   }
 
   return <>{children}</>;

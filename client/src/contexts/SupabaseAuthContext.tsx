@@ -10,6 +10,7 @@ import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
+import { clearReconsentDismissal } from "@/components/legal/reconsent-dismissal";
 // CSRF handshake utilities
 import type { ConsentSource } from "@shared/legal-consent";
 import {
@@ -68,6 +69,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const clearAuthState = () => {
     clearCsrfToken();
     setUser(null);
+    // The guardian re-consent prompt is dismissible for a tab-session, and a
+    // sign-out ends that session. Without this, signing out and back in within
+    // the same tab would inherit the dismissal and skip a prompt that is
+    // supposed to return until it is accepted. sessionStorage alone does not
+    // cover it — it survives sign-out and dies only with the tab.
+    clearReconsentDismissal();
   };
 
   // Fetch user profile from backend
