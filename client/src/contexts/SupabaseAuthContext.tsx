@@ -12,6 +12,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 // CSRF handshake utilities
 import type { ConsentSource } from "@shared/legal-consent";
+import {
+  RETURN_PATH_PARAM,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 export type SignupOutcome = "authenticated" | "verification_required";
 
@@ -325,6 +329,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const consentSource =
         legalConsent.consentSource ?? "google_continue_pre_oauth";
       const callbackParams = new URLSearchParams({ consentSource });
+      // @spec [AS-5; owner brief 2026-09-15 Part B] the login page's `?next=` (written by
+      // RequireRole) rides along to the server callback, which re-sanitises it with the SAME
+      // shared module before honouring it after the onboarding gate. Off-origin → dropped here.
+      const returnPath = returnPathFromSearch(window.location.search);
+      if (returnPath) callbackParams.set(RETURN_PATH_PARAM, returnPath);
       const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
 
       const supabase = getSupabaseBrowserClient();

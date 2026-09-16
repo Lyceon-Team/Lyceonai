@@ -1,2 +1,1 @@
-export const SUPPORT_EMAIL = 'support@lyceon.ai';
-
+export { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";

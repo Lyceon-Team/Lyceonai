@@ -65,6 +65,41 @@ describe("RequireRole declarative onboarding gate", () => {
       isAdmin: false,
       isGuardian: false,
     };
+    window.history.replaceState({}, "", "/dashboard");
+    render(React.createElement(RequireRole, { allow: ["student"] }, child));
+    // /dashboard is allowlisted, so the redirect carries it as the return path.
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/login?next=%2Fdashboard",
+    );
+  });
+
+  /**
+   * @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] — the guardian deep link
+   * `/guardian?code=…` survives the login redirect: path AND query are carried; an
+   * un-allowlisted or off-origin location collapses to plain /login.
+   */
+  it("carries the intended path AND query into the login redirect (guardian deep link)", () => {
+    authState = {
+      user: null,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    window.history.replaceState({}, "", "/guardian?code=ABC234");
+    render(React.createElement(RequireRole, { allow: ["guardian"] }, child));
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/login?next=%2Fguardian%3Fcode%3DABC234",
+    );
+  });
+
+  it("does not carry an un-allowlisted location (plain /login)", () => {
+    authState = {
+      user: null,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    window.history.replaceState({}, "", "/not-a-route?x=1");
     render(React.createElement(RequireRole, { allow: ["student"] }, child));
     expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
       "/login",

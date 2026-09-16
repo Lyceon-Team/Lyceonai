@@ -196,6 +196,66 @@ const NON_PERSON_ID_KEY_EXACT = new Set([
  */
 const ERROR_PROSE_KEYS = new Set(["message", "stack", "details", "hint"]);
 
+/**
+ * CONTENT-BASED SECRET SCAN — the structural chokepoint.
+ *
+ * @spec [Charter §6; Doc 01A §14] | @implemented [2026-09-15 — Codex audit Finding 1]
+ *
+ * plain English: key-based and type-based redaction failed on 2026-09-02 when a
+ * GCP private key reached production logs inside a plain-object vendor error
+ * (not an Error instance). The key was `message` — not in any sensitive-key
+ * list — and the carrier was a plain object — invisible to the `instanceof
+ * Error` branch. Content scanning closes both gaps: any string at any depth
+ * that LOOKS like a secret is redacted regardless of its key name or the
+ * carrier's prototype.
+ *
+ * Patterns are deliberately broad. A false positive loses one log field for
+ * one line; a false negative leaks a secret permanently. The trade-off is
+ * correct.
+ *
+ * THE HONEST LIMIT: this scans strings. Binary data or a pre-encoded buffer
+ * that is NOT yet stringified will not match. That is acceptable: such values
+ * are not JSON-serialisable and cannot reach the JSON sink.
+ */
+const SECRET_CONTENT_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  // PEM private key material
+  { pattern: /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY/, label: "pem_private_key" },
+  // JSON "private_key" field value (GCP service account shape)
+  { pattern: /"private_key"\s*:\s*"/, label: "private_key_field" },
+  // GCP API keys
+  { pattern: /AIza[0-9A-Za-z_-]{35}/, label: "gcp_api_key" },
+  // Stripe/OpenAI-style secret keys
+  {
+    pattern: /sk[-_](?:live|test|proj)[-_][0-9A-Za-z]{20,}/,
+    label: "sk_secret_key",
+  },
+  // GCP OAuth2 access tokens
+  { pattern: /ya29\.[0-9A-Za-z_-]{20,}/, label: "gcp_access_token" },
+  // Bearer token in a string value (not a header key — header keys are already caught)
+  { pattern: /Bearer\s+[A-Za-z0-9._~+/=-]{20,}/, label: "bearer_token" },
+  // Long base64-ish runs that look like keys/secrets (≥80 chars of base64 alphabet)
+  // Threshold 80 avoids false positives on short hashes while catching typical
+  // 256-bit+ key material. Anchored to avoid matching inside normal prose.
+  { pattern: /[A-Za-z0-9+/=_-]{80,}/, label: "long_base64_blob" },
+];
+
+/**
+ * Returns true when a string value contains content that looks like secret
+ * material. Exported for testing only.
+ */
+export function containsSecretContent(value: string): boolean {
+  return SECRET_CONTENT_PATTERNS.some(({ pattern }) => pattern.test(value));
+}
+
+/**
+ * Scan a string value and redact if it contains secret-shaped content.
+ * Returns the original string if safe, `[REDACTED]` if it looks like a secret.
+ */
+function scanStringValue(value: string): string {
+  if (containsSecretContent(value)) return REDACTION_STRING;
+  return value;
+}
+
 function isNonPersonIdKey(key: string): boolean {
   return NON_PERSON_ID_KEY_EXACT.has(key.toLowerCase());
 }
@@ -283,7 +343,9 @@ function sanitiseEntry(
   // Returned directly rather than via cloneValue, because the walker's own
   // value-shaped check would otherwise digest the very uuid this preserves.
   if (isNonPersonIdKey(key)) {
-    return typeof value === "string" ? value : cloneValue(value);
+    return typeof value === "string"
+      ? scanStringValue(value)
+      : cloneValue(value);
   }
   if (isIdentifierKey(key) && typeof value === "string") return digestId(value);
   if (isIdentifierValue(value)) return digestId(value);
@@ -296,6 +358,7 @@ export function redactSensitive<T>(input: T): T {
   const clone = (value: any): any => {
     if (value === null || value === undefined) return value;
     if (isIdentifierValue(value)) return digestId(value);
+    if (typeof value === "string") return scanStringValue(value);
     if (typeof value !== "object") return value;
     if (value instanceof Date) return value;
     if (seen.has(value)) return seen.get(value);

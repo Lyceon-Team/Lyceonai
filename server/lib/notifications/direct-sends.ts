@@ -1,20 +1,25 @@
 /**
  * @spec [contracts/notifications.contract.md §0.4 direct sends; Doc-01_V8 §37.2 (consent
- *        request email), §40.2.1 Phase 4 (deletion-scheduled email); owner rulings R7/R8/R9
- *        2026-09-03; Doc-01A_V1.0 §14 PII redaction] | @implemented [2026-09-03]
+ *        request email), §40.2.1 Phase 4 (deletion-scheduled email), §36.2 (guardian invite),
+ *        §40.5 (deletion completed — SCL-083 PROPOSED); owner rulings R7/R8/R9 2026-09-03;
+ *        Doc-01A_V1.0 §14 PII redaction] | @implemented [2026-09-03, extended 2026-09-15]
  *
- * plain English: the two transactional emails that are NOT notification events and never
- * will be — one addresses a person with no account (the guardian named in a consent request),
- * the other carries a credential (the recovery token). Both go through the one Resend
- * transport with an idempotency key derived from the durable request row's id, so a retried
- * request cannot produce a second email and nothing about either message is persisted here.
- * Both are best-effort at their call sites: the request row / the deletion are already
+ * plain English: the four transactional emails that are NOT notification events and never
+ * will be — two address a person with no profile row (the guardian named in a consent request;
+ * the guardian invited by a student), one carries a credential (the recovery token), and one
+ * is addressed to a person whose profile row no longer exists by the time it is sent (the
+ * deletion-completed notice: its recipient is a local read taken before the scrub). All go
+ * through the one Resend transport with an idempotency key derived from durable state, so a
+ * retried request cannot produce a second email and nothing about any message is persisted
+ * here. All are best-effort at their call sites: the request row / the deletion are already
  * committed, so a mail failure is logged (ids and a redacted address only) and returned as a
- * Result, never thrown and never surfaced as a failed request.
+ * Result, never thrown and never surfaced as a failed request. The completed notice has NO
+ * retry by design — a retry would need the address persisted, and it must not be.
  */
 import { createHash } from "node:crypto";
 import { err, type Result } from "../../../packages/shared/src/result";
 import { logger } from "../../logger";
+import { deletionCompletedEmail } from "./templates/deletion-completed";
 import { deletionScheduledEmail } from "./templates/deletion-scheduled";
 import { guardianConsentRequestEmail } from "./templates/guardian-consent-request";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
@@ -31,6 +36,8 @@ export const GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX =
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+export const ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX =
+  "account-deletion-completed";
 
 /**
  * @spec [contracts/notifications.contract.md §5.3 (every send carries a durable idempotency
@@ -281,6 +288,68 @@ export async function sendGuardianLinkInviteEmail(
       {
         studentProfileId: input.studentProfileId,
         recipient: redactEmail(input.guardianEmail),
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
+ * @spec [Doc-01_V8 §40.5 Hard delete at T+7; SCL-083 (PROPOSED — the completion notice is not
+ *        in any locked document); contracts/notifications.contract.md §0.4 (direct send, C0.6
+ *        best-effort-no-retry); Doc-01A_V1.0 §14 redaction] | @implemented [2026-09-15]
+ *
+ * plain English: the email that tells a person their account and data are gone. It is a DIRECT
+ * send, never an event: `complete_and_anonymize_account` deletes the `profiles` row and every
+ * notification row cascades from it, so an event emitted there would delete itself. It is sent
+ * AFTER the deletion transaction has committed (a rolled-back deletion never produces it) to an
+ * address the caller read BEFORE the row was scrubbed — the address exists only in memory for
+ * one loop iteration and is never persisted or logged un-redacted. Keyed on the
+ * `account_deletion_requests` row id, so a cron re-run over an already-completed row cannot
+ * mail twice (and the executor skips such rows before reaching here anyway). There is NO retry
+ * by design: retrying would mean storing the address after anonymisation, which defeats the
+ * deletion. A failure is logged with the redacted address and returned as a Result.
+ */
+export async function sendAccountDeletionCompletedEmail(
+  input: {
+    deletionRequestId: string;
+    email: string;
+    completedAt: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const rendered = deletionCompletedEmail({ completedAt: input.completedAt });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: `${ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX}:${input.deletionRequestId}`,
+    to: input.email,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "deletion_completed_email_sent",
+      "Deletion-completed email accepted",
+      {
+        deletionRequestId: input.deletionRequestId,
+        providerMessageId: sent.value.providerMessageId,
+        recipient: redactEmail(input.email),
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "deletion_completed_email_failed",
+      "Deletion-completed email not sent (best-effort, no retry by design)",
+      {
+        deletionRequestId: input.deletionRequestId,
+        recipient: redactEmail(input.email),
         kind: sent.error.kind,
         requestId: input.requestId,
       },

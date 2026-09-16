@@ -88,6 +88,26 @@ for the recovery flow.
 **Proof:** callback test — `type=recovery` (+ `next`) establishes a session and routes to the
 set-password page (not `/dashboard`); a reset flow test asserts request → completion → updated.
 
+**AS-5 scope extension (owner brief 2026-09-15 Part B — login return path).** `next` is no longer
+produced only by the recovery link. `RequireRole` captures the destination a signed-out user was
+trying to reach — path AND query, e.g. `/guardian?code=ABC234` — into `/login?next=…`; the login
+page restores it after an email/password sign-in and `signInWithGoogle` forwards it to
+`/auth/callback` for the OAuth path. The rule that makes this safe is unchanged in kind and now
+lives in exactly one place, `packages/shared/src/return-path.ts` (`sanitizeReturnPath`), consumed
+by the client and by the server callback's `parseSafeNext` (which replaced its exact-match
+`SAFE_NEXT_PATHS` set): the value must be a same-origin relative path whose first segment is on
+the route allowlist (`RETURN_PATH_ALLOWLIST`, every entry an App.tsx route; `/login` is never on
+it); absolute URLs, `//host`, backslash tricks, credentials, control characters and un-allowlisted
+routes all yield `null`, which every consumer turns into the role default. The onboarding gate
+still wins over a `next`. `/update-password` remains on the allowlist, so the recovery flow above
+is a special case of this rule, not a second mechanism.
+**Proof:** `packages/shared/src/__tests__/return-path.test.ts` (accept/reject matrix);
+`client/src/components/auth/RequireRole.redirects.contract.test.tsx` (capture with query;
+un-allowlisted → plain `/login`); `client/src/pages/login.landing-matrix.contract.test.tsx`
+(restore; absolute and protocol-relative discarded; onboarding wins);
+`tests/ci/oauth-callback.contract.test.ts` (callback honours `/guardian?code=…`, discards
+off-origin and un-allowlisted values, onboarding wins).
+
 ### AS-6 — Native-only (no custom auth logic)
 
 Only native primitives establish/verify/reset sessions: `signUp`, `signInWithPassword`,

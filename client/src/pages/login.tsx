@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { humanAuthError } from "@/lib/auth-error-messages";
+import { returnPathFromSearch } from "@lyceon/shared/return-path";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -32,6 +33,16 @@ export default function Login() {
         !user.profile_completed_at;
 
       let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
+
+      // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
+      // A return path captured by RequireRole (`/login?next=…`) wins over the role default —
+      // but only after it passes the ONE shared sanitiser (same-origin, relative, allowlisted),
+      // and never ahead of onboarding: an incomplete account still goes to /profile/complete.
+      const returnPath =
+        typeof window !== "undefined"
+          ? returnPathFromSearch(window.location.search)
+          : null;
+      if (returnPath) destination = returnPath;
 
       // Admins bypass onboarding requirements
       if (user.role !== "admin" && needsOnboarding) {

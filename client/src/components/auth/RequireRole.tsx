@@ -1,12 +1,13 @@
-import { ReactNode } from 'react';
-import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import { Redirect, useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { csrfFetch } from '@/lib/csrf';
-import { ReconsentModal } from '@/components/legal/ReconsentModal';
-import { outstandingLegalSchema } from '@shared/legal-consent';
+import { ReactNode } from "react";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { Redirect, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { csrfFetch } from "@/lib/csrf";
+import { loginPathWithReturn } from "@lyceon/shared/return-path";
+import { ReconsentModal } from "@/components/legal/ReconsentModal";
+import { outstandingLegalSchema } from "@shared/legal-consent";
 
-type UserRole = 'student' | 'guardian' | 'admin';
+type UserRole = "student" | "guardian" | "admin";
 
 interface RequireRoleProps {
   allow: UserRole[];
@@ -30,24 +31,27 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   const [location] = useLocation();
 
   // Fetch profile completion status from canonical /api/profile endpoint
-  const { data: authData, isLoading: profileLoading } = useQuery<AuthUserResponse>({
-    queryKey: ['/api/profile'],
-    retry: false,
-    enabled: !!user, // only fetch when user is authenticated
-    queryFn: async () => {
-      const response = await csrfFetch('/api/profile', { credentials: 'include' });
+  const { data: authData, isLoading: profileLoading } =
+    useQuery<AuthUserResponse>({
+      queryKey: ["/api/profile"],
+      retry: false,
+      enabled: !!user, // only fetch when user is authenticated
+      queryFn: async () => {
+        const response = await csrfFetch("/api/profile", {
+          credentials: "include",
+        });
 
-      if (response.status === 401 || response.status === 403) {
-        return { authenticated: false, user: null };
-      }
+        if (response.status === 401 || response.status === 403) {
+          return { authenticated: false, user: null };
+        }
 
-      if (!response.ok) {
-        throw new Error(`Profile hydration failed: ${response.status}`);
-      }
+        if (!response.ok) {
+          throw new Error(`Profile hydration failed: ${response.status}`);
+        }
 
-      return response.json();
-    },
-  });
+        return response.json();
+      },
+    });
 
   if (authLoading || (user && profileLoading)) {
     return (
@@ -61,14 +65,26 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   }
 
   if (!user) {
-    return <Redirect to="/login" replace />;
+    // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
+    // Carry the intended destination — path AND query — into the login redirect so the guardian
+    // deep link (`/guardian?code=…`) survives sign-in. The value is sanitised by the ONE shared
+    // return-path module before it is written and again where it is read; an off-origin or
+    // un-allowlisted destination collapses to plain /login.
+    const intended =
+      typeof window === "undefined"
+        ? location
+        : `${window.location.pathname}${window.location.search}`;
+    return <Redirect to={loginPathWithReturn(intended)} replace />;
   }
 
-  const userRole: UserRole = isAdmin ? 'admin' : isGuardian ? 'guardian' : 'student';
+  const userRole: UserRole = isAdmin
+    ? "admin"
+    : isGuardian
+      ? "guardian"
+      : "student";
 
   const isAllowed =
-    allow.includes(userRole) ||
-    (isAdmin && allow.includes('admin'));
+    allow.includes(userRole) || (isAdmin && allow.includes("admin"));
 
   if (!isAllowed) {
     if (isGuardian) {
@@ -82,7 +98,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
 
   // Enforce profile completion (includes terms acceptance) for non-admin users.
   // Skip this check if we're already on /profile/complete to avoid redirect loops.
-  const isProfileCompletePage = location === '/profile/complete';
+  const isProfileCompletePage = location === "/profile/complete";
   const profileCompletedAt = authData?.user?.profileCompletedAt;
   const requiredProfileComplete = authData?.user?.requiredProfileComplete;
   const guardianConsentRequired = authData?.user?.guardianConsentRequired;
@@ -132,5 +148,3 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
 }
 
 export default RequireRole;
-
-
