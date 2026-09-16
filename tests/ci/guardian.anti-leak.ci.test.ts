@@ -227,24 +227,6 @@ const examMocks = {
   })),
 };
 
-const calendarMocks = {
-  buildCalendarMonthView: vi.fn(async () => ({
-    days: [
-      {
-        day_date: "2026-08-01",
-        planned_minutes: 45,
-        completed_minutes: 30,
-        status: "in_progress",
-        attempt_count: 4,
-        accuracy: 75,
-        avg_seconds_per_question: 42,
-        ...INTERNAL_COLUMNS,
-      },
-    ],
-    streak: { current: 3, longest: 5 },
-  })),
-};
-
 vi.mock("../../server/lib/account", () => accountMocks);
 vi.mock("../../apps/api/src/services/mastery-read", async () => {
   const actual = await vi.importActual<
@@ -265,10 +247,6 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   return { ...actual, ...kpiMocks };
 });
 vi.mock("../../apps/api/src/services/fullLengthExam", () => examMocks);
-vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
-  ...calendarMocks,
-  isCalendarCountedEventType: () => true,
-}));
 vi.mock("../../server/services/kpi-access", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/kpi-access")
@@ -332,9 +310,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
                 ...INTERNAL_COLUMNS,
               },
             ]
-          : table === "student_study_profile"
-            ? [{ user_id: STUDENT_ID, timezone: "America/Chicago" }]
-            : [];
+          : [];
       // The fake HONOURS `.select(...)`, projecting to the named columns. Without that,
       // a route that regressed to `.select("*")` would look identical to one naming a safe
       // column list — the check would pass on both, which is no check at all.

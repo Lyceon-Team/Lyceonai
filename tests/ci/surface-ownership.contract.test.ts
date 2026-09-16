@@ -9,7 +9,6 @@
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
  *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
- *   - Calendar month view           → buildCalendarMonthView (getMonthPayload alias in calendar route)
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
 
@@ -185,24 +184,6 @@ describe("Full-length report: single canonical builder", () => {
 //   never appears in the body. A recursive key-walk cannot see that; only reading the query
 //   can. The route, its view, its service and its tests are gone.
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Surface 4: Calendar month view — getMonthPayload MUST be the buildCalendarMonthView
-//            alias and NOT any inline forked assembler.
-// ---------------------------------------------------------------------------
-describe("Calendar month view: getMonthPayload is buildCalendarMonthView alias", async () => {
-  it("calendar route exports getMonthPayload as the buildCalendarMonthView function", async () => {
-    // We import both the route alias and the service builder and confirm they're
-    // the exact same function reference (no forking).
-    const calendarRoute = await import("../../apps/api/src/routes/calendar");
-    const calendarService =
-      await import("../../apps/api/src/services/calendar-month-view");
-
-    expect(calendarRoute.getMonthPayload).toBe(
-      calendarService.buildCalendarMonthView,
-    );
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Surface 5: KPI summary/progress view — getRecencyKpis calls
