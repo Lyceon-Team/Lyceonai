@@ -294,7 +294,7 @@ describe.skipIf(!PG_AVAILABLE)(
       const anon = await buildUnauthenticatedGuardianApp();
       const res = await request(anon)
         .post("/api/guardian/link/redeem")
-        .send({ code });
+        .send({ code, acceptParentGuardianTerms: true });
       expect(res.status).toBe(401);
       const links = await pg.query(
         `SELECT count(*)::int AS c FROM public.guardian_links`,

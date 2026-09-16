@@ -60,6 +60,9 @@ import {
 } from "./subscription-item";
 import { classifyError } from "../redact";
 import { dispositionFor } from "./event-surface";
+import { recordLegalAcceptances } from "../legal-acceptance";
+import { resolveLegalVersion } from "../legal-registry.js";
+import { CHECKOUT_LEGAL_DOC } from "../../../shared/legal-consent.js";
 import {
   disputeEventSchema,
   dispositionForClosedDispute,
@@ -288,6 +291,17 @@ const checkoutSessionSchema = subjectSchema.extend({
       payer_profile_id: profileIdSchema.optional(),
       payer_relationship: z.string().optional(),
     })
+    .passthrough()
+    .nullish(),
+  /**
+   * SCL-044: what the payer actually did with the terms-of-service checkbox.
+   * Stripe reports `"accepted"` once they tick it; the field is absent on a
+   * session created before `consent_collection` was enabled. Read rather than
+   * assumed — a consent record written because we ASKED for consent, without
+   * checking it was given, records nothing.
+   */
+  consent: z
+    .object({ terms_of_service: z.string().nullish() })
     .passthrough()
     .nullish(),
   mode: z.string().nullish(),
@@ -1525,6 +1539,102 @@ async function propagateSubjectToBareItem(
  * IT IS CALLED ONLY WITH SETTLED MONEY. The caller decides that; see
  * `isSettled` and the two dispatch arms.
  */
+/**
+ * SCL-044 — the acceptance record for auto-renewal consent taken in Checkout.
+ *
+ * @spec [LYCEON consent capture §5; Cal. Bus. & Prof. Code § 17602]
+ * @implemented 2026-09-16
+ *
+ * plain English: when a payer ticks the terms-of-service box in Checkout,
+ * Stripe reports `consent.terms_of_service === "accepted"`. This writes the
+ * matching row — slug, current version and content hash resolved from `legal/`
+ * at this moment, plus the Session id so the consent can be tied back to the
+ * transaction it was taken during.
+ *
+ * WHOSE RECORD. The payer's. On the unaccompanied path payer and student are
+ * the same profile and `client_reference_id` names them; on the guardian path
+ * `metadata.payer_profile_id` names the guardian, who is the party agreeing to
+ * be charged. Third-party payers do not arise: billing-routes.ts serves only a
+ * session started by the authenticated caller, so a payer always has a profile
+ * and `legal_acceptances.user_id` (NOT NULL) is always satisfiable.
+ *
+ * NEVER THROWS. Called after the money is captured. A consent row that failed
+ * to write is recoverable — Stripe holds the same fact on the session — whereas
+ * an exception here would abort fulfilment and leave a paid customer without
+ * what they bought.
+ */
+async function recordCheckoutConsent(
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventId: string,
+): Promise<void> {
+  const accepted = session.consent?.terms_of_service === "accepted";
+  // WHICH FIELD NAMED THE PAYER ALSO SAYS WHO THEY ARE. `payer_profile_id` is
+  // set only by the guardian checkout route, so its presence means a guardian
+  // is agreeing to be charged for somebody else — `actor_type: 'parent'`. Its
+  // absence means the unaccompanied path, where payer and student are one
+  // profile and the honest value is 'student'. Stamping every checkout row
+  // 'parent' would assert a guardian relationship for people who have none.
+  const guardianPayerId = session.metadata?.payer_profile_id ?? null;
+  const payerProfileId = guardianPayerId ?? session.client_reference_id ?? null;
+  const actorType = guardianPayerId ? ("parent" as const) : ("student" as const);
+
+  if (!accepted || !payerProfileId) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      accepted
+        ? "Terms accepted but no payer profile on the session; no consent row written."
+        : "Session carries no terms-of-service acceptance; no consent row written.",
+      { eventId, sessionRef: digestId(session.id) },
+    );
+    return;
+  }
+
+  try {
+    const billingTerms = resolveLegalVersion(CHECKOUT_LEGAL_DOC.slug);
+    await recordLegalAcceptances(supabaseServer, {
+      userId: payerProfileId,
+      consentSource: "stripe_checkout",
+      // A webhook is a server-to-server call: the payer's user agent and IP are
+      // not ours to invent, and Stripe's would describe Stripe.
+      userAgent: null,
+      ipAddress: null,
+      sourceReference: session.id,
+      acceptances: [
+        {
+          docKey: CHECKOUT_LEGAL_DOC.docKey,
+          docSlug: billingTerms.slug,
+          docVersion: billingTerms.version,
+          contentHash: billingTerms.contentHash,
+          actorType,
+          minor: false,
+        },
+      ],
+    });
+    logger.info(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      "Billing Terms acceptance recorded for the payer.",
+      {
+        eventId,
+        sessionRef: digestId(session.id),
+        docVersion: billingTerms.version,
+      },
+    );
+  } catch (err: unknown) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      "Could not record the Billing Terms acceptance; fulfilment continues.",
+      {
+        eventId,
+        sessionRef: digestId(session.id),
+        error: err instanceof Error ? err.message : "unknown",
+      },
+    );
+  }
+}
+
 async function fulfilCheckoutSession(
   session: z.infer<typeof checkoutSessionSchema>,
   eventType: string,
@@ -2419,6 +2529,15 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
      * refund, which is the same collapse of an error into a legitimate value
      * in the opposite direction.
      */
+    // SCL-044 — record the auto-renewal consent this session collected.
+    //
+    // BEFORE fulfilment, and deliberately NOT fatal to it. The money is already
+    // captured at this point: throwing here would leave a paid customer without
+    // the entitlement they bought, to punish a bookkeeping failure. A missing
+    // consent row is recoverable from Stripe, which holds the same fact; an
+    // unfulfilled paid session is a support ticket.
+    await recordCheckoutConsent(session, event.id);
+
     try {
       await fulfilCheckoutSession(session, event.type, event.id);
     } catch (err: unknown) {

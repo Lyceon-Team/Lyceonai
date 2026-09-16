@@ -66,6 +66,17 @@ export const studentLinkCodeEntrySchema = z
 /** The redeem request body. */
 export const redeemLinkCodeRequestSchema = z.object({
   code: studentLinkCodeEntrySchema,
+  /**
+   * The guardian's acceptance of the Parent / Guardian Terms. Required, and
+   * required to be `true` — `z.literal(true)` refuses `false` rather than
+   * recording a negative consent, because there is no such thing: a guardian
+   * who declines does not get a link.
+   *
+   * The VERSION is not here and must never be. The client saying which version
+   * it accepted is the client asserting what it was shown; the server resolves
+   * the current version from `legal/` at write time.
+   */
+  acceptParentGuardianTerms: z.literal(true),
 });
 
 /**

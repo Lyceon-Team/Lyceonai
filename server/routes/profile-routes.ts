@@ -7,17 +7,15 @@ import {
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
-import { LEGAL_DOCS } from "../../shared/legal-consent.js";
+import {
+  requiredLegalDocsForUse,
+  type OutstandingLegalDoc,
+} from "../../shared/legal-consent.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import crypto from "crypto";
 import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
 const router = Router();
-
-const REQUIRED_LEGAL_DOCS = [
-  LEGAL_DOCS.studentTerms,
-  LEGAL_DOCS.privacyPolicy,
-] as const;
 
 function calculateAge(birthDate: string): number {
   const today = new Date();
@@ -30,22 +28,45 @@ function calculateAge(birthDate: string): number {
   return age;
 }
 
+
 /**
- * Whether the user has accepted the CURRENTLY published version of every
- * required document. The version is resolved from legal/ rather than read from
- * a constant, so publishing v3 re-prompts without a code change — which is the
- * behaviour a materially changed contract should have.
+ * Which required documents this person does NOT hold at the currently published
+ * version. Empty means nothing is outstanding.
+ *
+ * The version is resolved from `legal/` rather than read from a constant, so
+ * publishing v3 re-prompts with no code change — the behaviour a materially
+ * changed contract should have, and the property the whole structure exists to
+ * deliver.
+ *
+ * The required SET is a function of context, not a fixed list: Parent Terms
+ * applies to a guardian who actually holds a link, and to nobody else.
  */
-function hasAllCurrentLegalAcceptances(
+function outstandingLegalDocs(
   legalRows: Array<{ doc_key: string; doc_version: string }>,
-): boolean {
-  return REQUIRED_LEGAL_DOCS.every((doc) => {
+  context: { role: string | null | undefined; hasGuardianLink: boolean },
+): OutstandingLegalDoc[] {
+  const outstanding: OutstandingLegalDoc[] = [];
+  for (const doc of requiredLegalDocsForUse(context)) {
     const current = resolveLegalVersion(doc.slug);
-    return legalRows.some(
-      (row) =>
-        row.doc_key === doc.docKey && row.doc_version === current.version,
-    );
-  });
+    const accepted = legalRows.filter((row) => row.doc_key === doc.docKey);
+    if (accepted.some((row) => row.doc_version === current.version)) continue;
+    outstanding.push({
+      slug: doc.slug,
+      docKey: doc.docKey,
+      title: current.title,
+      version: current.version,
+      effectiveDate: current.effectiveDate,
+      // Most recent by string order is good enough: versions are "N.M" and the
+      // legacy rows are ISO dates, both of which sort sensibly among themselves.
+      // `.at(-1)` is ES2022; this tsconfig targets lower. Index arithmetic
+      // reads the same and compiles.
+      acceptedVersion: (() => {
+        const sorted = accepted.map((r) => r.doc_version).sort();
+        return sorted.length > 0 ? sorted[sorted.length - 1] : null;
+      })(),
+    });
+  }
+  return outstanding;
 }
 
 const profileCompletionSchema = z.object({
@@ -107,8 +128,20 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const legalAcceptances = legalRows ?? [];
-    const requiredLegalAccepted =
-      hasAllCurrentLegalAcceptances(legalAcceptances);
+
+    // Parent Terms is required of a guardian who holds a link, so whether they
+    // hold one is part of the question. Counted server-side; the client is
+    // never asked what it is.
+    const { count: guardianLinkCount } = await supabase
+      .from("guardian_links")
+      .select("id", { count: "exact", head: true })
+      .eq("guardian_id", user.id);
+
+    const outstandingLegal = outstandingLegalDocs(legalAcceptances, {
+      role: profileRow.role,
+      hasGuardianLink: (guardianLinkCount ?? 0) > 0,
+    });
+    const requiredLegalAccepted = outstandingLegal.length === 0;
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !profileRow.guardian_consent
     );
@@ -165,6 +198,10 @@ router.get("/", async (req: Request, res: Response) => {
         requiredConsentsComplete,
         requiredProfileComplete,
         guardianConsentRequired,
+        // What the blocking re-consent modal renders. Server-derived: which
+        // documents this person owes, their current version and title from
+        // legal/, and what they last accepted. The client is told, never asked.
+        outstandingLegal,
       },
     });
   } catch (error: any) {
