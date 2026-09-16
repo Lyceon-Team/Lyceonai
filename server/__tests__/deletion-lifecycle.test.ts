@@ -17,11 +17,32 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as authMiddleware from "../middleware/supabase-auth";
 
-const stripePauseMock = vi.hoisted(() => vi.fn(async () => ({})));
+// @spec [SCL-086 PROPOSED: cancel at T+7, not pause] the four Stripe calls the executor may make.
+const stripeMocks = vi.hoisted(() => ({
+  list: vi.fn(async (): Promise<{ data: Array<{ id: string; status: string }> }> => ({ data: [] })),
+  cancel: vi.fn(async () => ({})),
+  retrieve: vi.fn(
+    async (): Promise<{
+      id: string;
+      status: string;
+      items: { data: Array<{ id: string; metadata?: Record<string, string> }> };
+    }> => ({ id: "sub_abc", status: "active", items: { data: [{ id: "si_1" }] } }),
+  ),
+  itemDel: vi.fn(async () => ({})),
+  clientConstructed: vi.fn(),
+}));
 vi.mock("../lib/stripe/client.js", () => ({
-  getStripeClient: vi.fn(() => ({
-    subscriptions: { update: stripePauseMock },
-  })),
+  getStripeClient: vi.fn(() => {
+    stripeMocks.clientConstructed();
+    return {
+      subscriptions: {
+        list: stripeMocks.list,
+        cancel: stripeMocks.cancel,
+        retrieve: stripeMocks.retrieve,
+      },
+      subscriptionItems: { del: stripeMocks.itemDel },
+    };
+  }),
 }));
 
 type FakeAdmin = Parameters<typeof performRecovery>[0];
@@ -425,7 +446,12 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
   type RpcCall = { fn: string; args: Record<string, unknown> };
 
   function buildFakeAdmin(opts?: {
-    pendingRequests?: Array<{ id: string; profile_id: string }>;
+    pendingRequests?: Array<{
+      id: string;
+      profile_id: string;
+      log_id?: string | null;
+    }>;
+    profile?: { email?: string | null; stripe_customer_id?: string | null };
     fetchError?: { message: string };
     rpcErrors?: Record<string, { message: string }>;
     rpcReturns?: Record<string, unknown>;
@@ -445,9 +471,13 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
           return {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
-                lte: vi.fn(async () => ({
-                  data: opts?.fetchError ? null : (opts?.pendingRequests ?? []),
-                  error: opts?.fetchError ?? null,
+                lte: vi.fn(() => ({
+                  order: vi.fn(async () => ({
+                    data: opts?.fetchError
+                      ? null
+                      : (opts?.pendingRequests ?? []),
+                    error: opts?.fetchError ?? null,
+                  })),
                 })),
               })),
             })),
@@ -467,6 +497,18 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
               eq: vi.fn(() => ({
                 maybeSingle: vi.fn(async () => ({
                   data: opts?.entitlement ?? null,
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+        if (table === "profiles") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({
+                  data: opts?.profile ?? null,
                   error: null,
                 })),
               })),
@@ -517,7 +559,17 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    stripePauseMock.mockReset();
+    stripeMocks.list.mockReset().mockImplementation(async () => ({ data: [] }));
+    stripeMocks.cancel.mockReset().mockImplementation(async () => ({}));
+    stripeMocks.retrieve
+      .mockReset()
+      .mockImplementation(async () => ({
+        id: "sub_abc",
+        status: "active",
+        items: { data: [{ id: "si_1" }] },
+      }));
+    stripeMocks.itemDel.mockReset().mockImplementation(async () => ({}));
+    stripeMocks.clientConstructed.mockReset();
   });
 
   it("calls the atomic complete_and_anonymize RPC — anonymize-by-construction in SQL", async () => {
@@ -589,14 +641,20 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
           return {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
-                lte: vi.fn(async () => ({
-                  data: [{ id: "req-1", profile_id: "p-1" }],
-                  error: null,
+                lte: vi.fn(() => ({
+                  order: vi.fn(async () => ({
+                    data: [{ id: "req-1", profile_id: "p-1" }],
+                    error: null,
+                  })),
                 })),
               })),
             })),
-            update: vi.fn(() => {
-              callOrder.push("mark_completed");
+            update: vi.fn((data: Record<string, unknown>) => {
+              // The only request-row writes the driver may make are the transient Stripe
+              // states; mark-completed happens inside the atomic RPC, never here.
+              callOrder.push(
+                `request_update:${String(data.stripe_cancellation_status ?? Object.keys(data).join(","))}`,
+              );
               return { eq: vi.fn(async () => ({ error: null })) };
             }),
           };
@@ -631,19 +689,32 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       },
     } as unknown as Parameters<typeof executeDueDeletions>[0];
 
-    stripePauseMock.mockImplementation(async () => {
-      callOrder.push("stripe_pause");
+    stripeMocks.retrieve.mockImplementation(async () => {
+      callOrder.push("stripe_retrieve");
+      return { id: "sub_123", status: "active", items: { data: [{ id: "si_1" }] } };
+    });
+    stripeMocks.cancel.mockImplementation(async () => {
+      callOrder.push("stripe_cancel");
       return {};
     });
 
     await executeDueDeletions(admin, "test-req");
 
+    // Plan v4 §3.4: T1 (mark executing) has no log ids here (request rows predate the evidence
+    // bundle), so the per-request sequence is Stripe → storage → T1.5 preclear → deidentify →
+    // T2, then the evidence housekeeping (reconcile + ledger rewrite) closes the pass.
     expect(callOrder).toEqual([
       "stripe_lookup",
-      "stripe_pause",
+      "request_update:in_progress",
+      "stripe_retrieve",
+      "stripe_cancel",
+      "request_update:completed",
       "storage_check",
+      "rpc:preclear_account_deletion_links",
       "rpc:deidentify_user",
       "rpc:complete_and_anonymize_account",
+      "rpc:reconcile_deletion_log",
+      "rpc:rewrite_anonymized_actors",
     ]);
   });
 
@@ -722,8 +793,9 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     });
   });
 
-  it("pauses Stripe subscription before deidentify when subscription exists", async () => {
-    const { admin, rpcCalls } = buildFakeAdmin({
+  // @spec [SCL-086 PROPOSED; Doc-01 §40.2.1 `stripe.subscriptions.cancel(…, { prorate: false })`]
+  it("cancels a single-item subscription (no proration) before deidentify, and advances stripe_cancellation_status in_progress → completed", async () => {
+    const { admin, rpcCalls, updateCalls } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
       entitlement: { stripe_subscription_id: "sub_abc" },
       rpcReturns: {
@@ -731,14 +803,108 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       },
     });
     await executeDueDeletions(admin, "test-req");
-    expect(stripePauseMock).toHaveBeenCalledWith("sub_abc", {
-      pause_collection: { behavior: "void" },
+    expect(stripeMocks.retrieve).toHaveBeenCalledWith("sub_abc");
+    expect(stripeMocks.cancel).toHaveBeenCalledWith("sub_abc", {
+      prorate: false,
     });
+    expect(stripeMocks.itemDel).not.toHaveBeenCalled();
     const deidentifyIdx = rpcCalls.findIndex((c) => c.fn === "deidentify_user");
     expect(deidentifyIdx).toBeGreaterThan(-1);
+    expect(
+      updateCalls
+        .filter((c) => c.table === "account_deletion_requests")
+        .map((c) => c.data.stripe_cancellation_status),
+    ).toEqual(["in_progress", "completed"]);
   });
 
-  it("skips Stripe pause when no subscription exists (no-op)", async () => {
+  it("guardian-paid student: removes only this student's item from a multi-item subscription", async () => {
+    stripeMocks.retrieve.mockImplementation(async () => ({
+      id: "sub_guardian",
+      status: "active",
+      items: { data: [{ id: "si_other" }, { id: "si_me" }] },
+    }));
+    const { admin } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      entitlement: {
+        stripe_subscription_id: "sub_guardian",
+        stripe_subscription_item_id: "si_me",
+      },
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
+    });
+    await executeDueDeletions(admin, "test-req");
+    expect(stripeMocks.itemDel).toHaveBeenCalledWith("si_me", {
+      proration_behavior: "none",
+    });
+    expect(stripeMocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels every non-cancelled subscription on the person's own Stripe customer (a guardian who pays for others)", async () => {
+    stripeMocks.list.mockImplementation(async () => ({
+      data: [
+        { id: "sub_live", status: "active" },
+        { id: "sub_old", status: "canceled" },
+        { id: "sub_trial", status: "trialing" },
+      ],
+    }));
+    const { admin } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "g-1" }],
+      profile: { email: "g@example.test", stripe_customer_id: "cus_g" },
+      entitlement: { stripe_subscription_id: null },
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
+    });
+    await executeDueDeletions(admin, "test-req");
+    expect(stripeMocks.list).toHaveBeenCalledWith({
+      customer: "cus_g",
+      status: "all",
+      limit: 100,
+    });
+    expect(stripeMocks.cancel.mock.calls.map((c) => c[0])).toEqual([
+      "sub_live",
+      "sub_trial",
+    ]);
+  });
+
+  it("a Stripe failure records failed_manual and the deletion still completes", async () => {
+    stripeMocks.cancel.mockImplementation(async () => {
+      throw new Error("stripe down");
+    });
+    const { admin, updateCalls, rpcCalls } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1", log_id: "log-1" }],
+      entitlement: { stripe_subscription_id: "sub_abc" },
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
+    });
+    const result = await executeDueDeletions(admin, "test-req");
+    expect(result).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
+    expect(
+      updateCalls
+        .filter((c) => c.table === "account_deletion_requests")
+        .map((c) => c.data.stripe_cancellation_status),
+    ).toEqual(["in_progress", "failed_manual"]);
+    const t3 = rpcCalls.find((c) => c.fn === "complete_deletion_log");
+    expect(t3?.args).toEqual({
+      p_completions: JSON.stringify([
+        {
+          log_id: "log-1",
+          stripe_customer_id: null,
+          stripe_subscription_id: "sub_abc",
+          stripe_subscription_item_id: null,
+          final_status: "failed_manual",
+        },
+      ]),
+    });
+  });
+
+  it("never constructs the Stripe client when there is no customer and no subscription", async () => {
     const { admin } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
       entitlement: { stripe_subscription_id: null },
@@ -747,7 +913,73 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       },
     });
     await executeDueDeletions(admin, "test-req");
-    expect(stripePauseMock).not.toHaveBeenCalled();
+    expect(stripeMocks.clientConstructed).not.toHaveBeenCalled();
+    expect(stripeMocks.cancel).not.toHaveBeenCalled();
+  });
+
+  // @spec [plan v4 §3.4 three transactions] T1 is ONE call for the whole pass and precedes every
+  // identity-side call; T3 is ONE call after them; housekeeping closes the pass.
+  it("T1 marks every due log id in one call before any deletion; T3 completes the successes in one call", async () => {
+    const { admin, rpcCalls } = buildFakeAdmin({
+      pendingRequests: [
+        { id: "req-1", profile_id: "p-1", log_id: "log-1" },
+        { id: "req-2", profile_id: "p-2", log_id: null },
+        { id: "req-3", profile_id: "p-3", log_id: "log-3" },
+      ],
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
+    });
+    await executeDueDeletions(admin, "test-req");
+    const names = rpcCalls.map((c) => c.fn);
+    expect(names[0]).toBe("mark_deletion_log_executing");
+    expect(rpcCalls[0]!.args).toEqual({ p_log_ids: ["log-1", "log-3"] });
+    expect(names.filter((n) => n === "mark_deletion_log_executing")).toHaveLength(1);
+    const t3Idx = names.indexOf("complete_deletion_log");
+    expect(t3Idx).toBeGreaterThan(names.lastIndexOf("complete_and_anonymize_account"));
+    expect(rpcCalls[t3Idx]!.args).toEqual({
+      p_completions: JSON.stringify([
+        { log_id: "log-1", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
+        { log_id: "log-3", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
+      ]),
+    });
+    expect(names.slice(-2)).toEqual([
+      "reconcile_deletion_log",
+      "rewrite_anonymized_actors",
+    ]);
+    // Every identity-side call sits strictly between T1 and T3.
+    for (const n of ["preclear_account_deletion_links", "deidentify_user", "complete_and_anonymize_account"]) {
+      expect(names.indexOf(n)).toBeGreaterThan(0);
+      expect(names.lastIndexOf(n)).toBeLessThan(t3Idx);
+    }
+  });
+
+  it("if T1 fails, nothing is deleted this pass (no evidence mark → no deletion)", async () => {
+    const { admin, rpcCalls } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1", log_id: "log-1" }],
+      rpcErrors: { mark_deletion_log_executing: { message: "evidence unavailable" } },
+    });
+    await expect(executeDueDeletions(admin, "test-req")).rejects.toThrow(
+      "evidence unavailable",
+    );
+    expect(rpcCalls.map((c) => c.fn)).toEqual(["mark_deletion_log_executing"]);
+  });
+
+  it("a failed cascade leaves its log id out of T3 (the reconciler resolves it)", async () => {
+    const { admin, rpcCalls } = buildFakeAdmin({
+      pendingRequests: [
+        { id: "req-1", profile_id: "p-1", log_id: "log-1" },
+        { id: "req-2", profile_id: "p-2", log_id: "log-2" },
+      ],
+      rpcErrors: { deidentify_user: { message: "boom" } },
+    });
+    const result = await executeDueDeletions(admin, "test-req");
+    expect(result.failedCount).toBe(2);
+    expect(rpcCalls.find((c) => c.fn === "complete_deletion_log")).toBeUndefined();
+    expect(rpcCalls.map((c) => c.fn).slice(-2)).toEqual([
+      "reconcile_deletion_log",
+      "rewrite_anonymized_actors",
+    ]);
   });
 
   it("classifies RPC status 'completed' as executedCount", async () => {
