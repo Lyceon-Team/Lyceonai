@@ -213,10 +213,18 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
           { attempt, error: err instanceof Error ? err.message : String(err) },
         );
       } else {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isModelNotFound = /NOT_FOUND|404|models\/.*not found/i.test(
+          errMsg,
+        );
         logger.error(
           "TUTOR_CRISIS",
-          "classifier_retry_exhausted",
-          "Layer 2 crisis classifier failed after retry; Layer 1 result stands, force-enqueuing to review queue",
+          isModelNotFound
+            ? "classifier_model_not_found"
+            : "classifier_retry_exhausted",
+          isModelNotFound
+            ? "Layer 2 crisis classifier model not found at configured endpoint — check VERTEX_CLASSIFIER_CLASS_MODEL and VERTEX_CLASSIFIER_LOCATION"
+            : "Layer 2 crisis classifier failed after retry; Layer 1 result stands, force-enqueuing to review queue",
           err instanceof Error ? err : undefined,
         );
         // Return non-crisis — Layer 1 result stands per SCL-023
@@ -248,7 +256,8 @@ async function invokeClassifier(
     );
   }
 
-  const location = process.env.VERTEX_LOCATION ?? "us-central1";
+  const location =
+    (process.env.VERTEX_CLASSIFIER_LOCATION ?? "").trim() || "global";
 
   // Explicit credential injection — ADC is removed from the BFF path.
   // The credential and the project it authenticates against cannot disagree,
