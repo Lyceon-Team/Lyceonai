@@ -14,6 +14,7 @@ import {
 } from "../lib/stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
+import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -342,6 +343,42 @@ router.get(
         err,
       );
       res.status(500).json({ error: "notification_dispatch_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/notification-retention-sweep
+ * @spec [contracts/notifications.contract.md §11 (C11.1 window, C11.2 sweep, C11.3 logged
+ *        on every run); Doc-06D_V1.0 §9 (retention drift); owner brief 2026-09-15 Part A]
+ *        | @implemented [2026-09-15]
+ *
+ * plain English: the retention mechanism for the notification tables. Deletes events older
+ * than `notification_retention_days()` (one definition, in SQL), bounded per call; messages
+ * and delivery events go by FK cascade. The lib logs the outcome on EVERY run, zero rows
+ * included, with the cutoff — a run that deleted nothing and a run that never happened must
+ * be distinguishable from the logs alone, because cron registration cannot be verified from
+ * tooling. Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every
+ * other endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
+ */
+router.get(
+  "/notification-retention-sweep",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await sweepNotificationRetention();
+      res.json({ ok: true, ...summary });
+    } catch (err) {
+      logger.error(
+        "NOTIFICATIONS",
+        "retention_sweep_job_error",
+        "Scheduled notification retention sweep failed",
+        err,
+      );
+      res.status(500).json({ error: "notification_retention_sweep_failed" });
     }
   },
 );

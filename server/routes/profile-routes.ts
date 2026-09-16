@@ -12,6 +12,8 @@ import {
   type OutstandingLegalDoc,
 } from "../../shared/legal-consent.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
+import { logger } from "../logger";
 import crypto from "crypto";
 import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
@@ -28,7 +30,6 @@ function calculateAge(birthDate: string): number {
   return age;
 }
 
-
 /**
  * Which required documents this person does NOT hold at the currently published
  * version. Empty means nothing is outstanding.
@@ -43,11 +44,36 @@ function calculateAge(birthDate: string): number {
  */
 function outstandingLegalDocs(
   legalRows: Array<{ doc_key: string; doc_version: string }>,
-  context: { role: string | null | undefined; hasGuardianLink: boolean },
 ): OutstandingLegalDoc[] {
   const outstanding: OutstandingLegalDoc[] = [];
-  for (const doc of requiredLegalDocsForUse(context)) {
-    const current = resolveLegalVersion(doc.slug);
+  for (const doc of requiredLegalDocsForUse()) {
+    // NEVER THROWS INTO THE PROFILE RESPONSE. This exact call threw
+    // `legal/ not found. Looked in: legal, dist/public/legal relative to
+    // /var/task` on every request from 2026-09-16T01:22:07Z, and because the
+    // throw reached the handler it turned a consent LOOKUP into a total sign-in
+    // outage: /api/profile 500, /auth/callback post_auth_finalize_failed.
+    //
+    // Absence is not ambiguity. Not knowing what somebody owes is not a reason
+    // to refuse them their account — consent is a prompt, never a gate, in every
+    // role. A document we cannot resolve is logged at ERROR and omitted, so the
+    // worst case is a prompt that does not appear yet, not a person who cannot
+    // sign in. The generated registry means this should now be unreachable;
+    // it stays because "should be unreachable" is what was believed last time.
+    let current: ResolvedLegalVersion;
+    try {
+      current = resolveLegalVersion(doc.slug);
+    } catch (err: unknown) {
+      logger.error(
+        "PROFILE",
+        "legal_resolution_failed",
+        "Could not resolve a required legal document; omitting it from the outstanding set",
+        {
+          slug: doc.slug,
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      );
+      continue;
+    }
     const accepted = legalRows.filter((row) => row.doc_key === doc.docKey);
     if (accepted.some((row) => row.doc_version === current.version)) continue;
     outstanding.push({
@@ -129,24 +155,19 @@ router.get("/", async (req: Request, res: Response) => {
 
     const legalAcceptances = legalRows ?? [];
 
-    // Parent Terms is required of a guardian who holds a link, so whether they
-    // hold one is part of the question. Counted server-side; the client is
-    // never asked what it is.
-    const { count: guardianLinkCount } = await supabase
-      .from("guardian_links")
-      .select("id", { count: "exact", head: true })
-      .eq("guardian_id", user.id);
+    // The guardian_links count that used to be read here is gone with the
+    // role-aware required-document logic: every account owes Student Terms and
+    // Privacy Policy and nothing else, so a link changes nothing. One fewer
+    // query on the hottest authenticated path.
+    const outstandingLegal = outstandingLegalDocs(legalAcceptances);
 
-    const outstandingLegal = outstandingLegalDocs(legalAcceptances, {
-      role: profileRow.role,
-      hasGuardianLink: (guardianLinkCount ?? 0) > 0,
-    });
-    const requiredLegalAccepted = outstandingLegal.length === 0;
+    // UNDER-13 IS NOT A CONSENT GATE. It is the Terms' own condition — a student
+    // under 13 cannot use LYCEON until a guardian connects — and it is the basis
+    // of the under-13 position. It stays, and it routes to a screen that helps
+    // them get connected rather than a wall.
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !profileRow.guardian_consent
     );
-    const requiredConsentsComplete =
-      requiredLegalAccepted && !guardianConsentRequired;
     const requiredProfileComplete = !!profileRow.profile_completed_at;
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
@@ -195,7 +216,6 @@ router.get("/", async (req: Request, res: Response) => {
         studentLinkCode: profileRow.student_link_code,
         student_link_code: profileRow.student_link_code,
         profileCompletedAt: profileRow.profile_completed_at ?? null,
-        requiredConsentsComplete,
         requiredProfileComplete,
         guardianConsentRequired,
         // What the blocking re-consent modal renders. Server-derived: which

@@ -49,13 +49,11 @@ const metaSchema = z.object({
   content_hash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
 });
 
-export type ResolvedLegalVersion = {
-  slug: string;
-  title: string;
-  version: string;
-  effectiveDate: string;
-  contentHash: string;
-};
+// Re-exported so every existing importer keeps working; the definition moved to
+// its own module so the GENERATED table can reference it without a cycle.
+export type { ResolvedLegalVersion } from "./legal-registry-types.js";
+import type { ResolvedLegalVersion } from "./legal-registry-types.js";
+import { GENERATED_LEGAL_REGISTRY } from "./legal-registry.generated.js";
 
 const CANDIDATE_ROOTS = ["legal", path.join("dist", "public", "legal")];
 
@@ -100,11 +98,58 @@ function parseFlatYaml(text: string, where: string): Record<string, string> {
  * The currently published version of a slug.
  * @throws when the slug is unknown, unpublished, or malformed.
  */
+/**
+ * THE FILESYSTEM IS TRIED FIRST, THE BUNDLED TABLE SECOND, AND THAT ORDER IS
+ * DELIBERATE.
+ *
+ * On a checkout — local dev, CI, the tests that point `process.cwd()` at a
+ * fixture tree — `legal/` is the truth, and reading it keeps every existing
+ * suite honest about the real corpus. In the Vercel function there is no
+ * checkout: `api/index.ts` imports an esbuild bundle, nothing traces
+ * `legal/**` as a dependency, and `process.cwd()` is `/var/task`. That threw
+ * `legal/ not found` on every call and took `/api/profile`, `/auth/callback`
+ * and email signup down together on 2026-09-16.
+ *
+ * Reversing the order would be worse: the table is a build artifact, and
+ * preferring it would let a stale one mask an edit to `legal/` that every gate
+ * would still call correct.
+ */
 export function resolveLegalVersion(slug: string): ResolvedLegalVersion {
   const cached = resolvedCache.get(slug);
   if (cached) return cached;
 
-  const root = legalRoot();
+  const fromDisk = resolveFromDisk(slug);
+  if (fromDisk !== null) {
+    resolvedCache.set(slug, fromDisk);
+    return fromDisk;
+  }
+
+  const generated = GENERATED_LEGAL_REGISTRY[slug];
+  if (generated !== undefined) {
+    resolvedCache.set(slug, generated);
+    return generated;
+  }
+
+  throw new Error(
+    `legal/${slug} could not be resolved: not on disk (cwd ${process.cwd()}) and not in the bundled registry`,
+  );
+}
+
+/**
+ * Resolve from `legal/` on disk, or null when the tree is not reachable at all.
+ *
+ * NULL MEANS "NO TREE", NEVER "BAD DOCUMENT". A tree that exists but holds a
+ * malformed manifest, an unpublished version or a missing meta.yml still
+ * THROWS — falling through to the bundled table there would hide a real defect
+ * behind a build artifact. Only the absence of the tree itself is recoverable.
+ */
+function resolveFromDisk(slug: string): ResolvedLegalVersion | null {
+  let root: string;
+  try {
+    root = legalRoot();
+  } catch {
+    return null;
+  }
   const manifestPath = path.join(root, slug, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`legal/${slug}/manifest.json does not exist`);
@@ -141,13 +186,11 @@ export function resolveLegalVersion(slug: string): ResolvedLegalVersion {
     throw new Error(`legal/${slug}/${version} is not published`);
   }
 
-  const resolved: ResolvedLegalVersion = {
+  return {
     slug,
     title: manifest.data.title,
     version: meta.data.version,
     effectiveDate: meta.data.effective_date,
     contentHash: meta.data.content_hash,
   };
-  resolvedCache.set(slug, resolved);
-  return resolved;
 }
