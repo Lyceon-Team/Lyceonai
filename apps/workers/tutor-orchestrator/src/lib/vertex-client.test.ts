@@ -7,7 +7,7 @@
  * not coexist (Vertex rejects the combination with INVALID_ARGUMENT).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { HarmBlockThreshold, HarmCategory } from "@google/genai";
+import { FinishReason, HarmBlockThreshold, HarmCategory } from "@google/genai";
 
 // ── Mock @google/genai before the module under test is imported ─────────
 
@@ -77,6 +77,9 @@ describe("vertex-client generateContent config", () => {
 
     expect(config).not.toHaveProperty("modelArmorConfig");
 
+    expect(config).toHaveProperty("thinkingConfig");
+    expect(config.thinkingConfig).toEqual({ thinkingBudget: 1024 });
+
     expect(config).toHaveProperty("safetySettings");
     expect(config.safetySettings).toEqual([
       {
@@ -96,5 +99,53 @@ describe("vertex-client generateContent config", () => {
         threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
       },
     ]);
+  });
+
+  it("returns vertex_max_tokens_truncated error when finishReason is MAX_TOKENS", async () => {
+    mockGenerateContent.mockResolvedValue({
+      candidates: [
+        {
+          finishReason: FinishReason.MAX_TOKENS,
+          content: { parts: [{ text: "This response was cut off mid-sen" }] },
+        },
+      ],
+      text: "This response was cut off mid-sen",
+    });
+
+    const result = await generateTutorResponse(
+      "pro_class",
+      [{ role: "user", text: "Explain the quadratic formula step by step." }],
+      "You are a tutor.",
+      { maxOutputTokens: 1024, timeoutMs: 10000 },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorCode).toBe("vertex_max_tokens_truncated");
+    }
+  });
+
+  it("returns success when finishReason is STOP", async () => {
+    mockGenerateContent.mockResolvedValue({
+      candidates: [
+        {
+          finishReason: FinishReason.STOP,
+          content: { parts: [{ text: "The answer is 4." }] },
+        },
+      ],
+      text: "The answer is 4.",
+    });
+
+    const result = await generateTutorResponse(
+      "flash_class",
+      [{ role: "user", text: "What is 2+2?" }],
+      "You are a tutor.",
+      { maxOutputTokens: 1024, timeoutMs: 10000 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.text).toBe("The answer is 4.");
+    }
   });
 });
