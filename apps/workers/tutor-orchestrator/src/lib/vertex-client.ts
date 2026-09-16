@@ -230,12 +230,12 @@ export function resolveProviderModel(alias: ModelAlias): string {
   if (alias === "pro_class") {
     return (
       (process.env.VERTEX_MODEL_PRO_CLASS_ALIAS ?? "").trim() ||
-      "gemini-2.5-pro"
+      "gemini-3.5-flash"
     );
   }
   return (
     (process.env.VERTEX_MODEL_FLASH_CLASS_ALIAS ?? "").trim() ||
-    "gemini-2.5-flash"
+    "gemini-3.5-flash"
   );
 }
 
@@ -532,6 +532,7 @@ async function invokeVertexOnce(
     topP: TOP_P,
     topK: TOP_K,
     maxOutputTokens: limits.maxOutputTokens,
+    thinkingConfig: { thinkingBudget: 1024 },
     safetySettings: SAFETY_SETTINGS,
     abortSignal: controller.signal,
   };

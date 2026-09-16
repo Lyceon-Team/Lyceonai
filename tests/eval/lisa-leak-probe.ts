@@ -57,7 +57,7 @@ import { GoogleGenAI, type Content } from "@google/genai";
 // ── Config ──────────────────────────────────────────────────────────────
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim() ?? "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash";
 
 // ── Types ───────────────────────────────────────────────────────────────
 

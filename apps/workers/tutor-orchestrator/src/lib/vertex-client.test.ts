@@ -77,6 +77,9 @@ describe("vertex-client generateContent config", () => {
 
     expect(config).not.toHaveProperty("modelArmorConfig");
 
+    expect(config).toHaveProperty("thinkingConfig");
+    expect(config.thinkingConfig).toEqual({ thinkingBudget: 1024 });
+
     expect(config).toHaveProperty("safetySettings");
     expect(config.safetySettings).toEqual([
       {
