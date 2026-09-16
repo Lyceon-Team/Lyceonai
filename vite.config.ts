@@ -1,12 +1,14 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { legalContentPlugin } from "./vite-plugin-legal-content";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
   plugins: [
     react(),
+    legalContentPlugin(import.meta.dirname),
     // runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== "production" &&
       process.env.REPL_ID !== undefined

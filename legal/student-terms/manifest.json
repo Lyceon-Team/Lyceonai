@@ -1,0 +1,13 @@
+{
+  "slug": "student-terms",
+  "title": "LYCEON Student Terms of Use",
+  "description": "The terms that govern your access to and use of LYCEON.",
+  "order": 10,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Student Terms of Use"
+  ]
+}

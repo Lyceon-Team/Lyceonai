@@ -187,7 +187,7 @@ async function redeem(app: express.Express): Promise<request.Response> {
   session.role = "guardian";
   return request(app)
     .post("/api/guardian/link/redeem")
-    .send({ code: await currentCode() });
+    .send({ code: await currentCode(), acceptParentGuardianTerms: true });
 }
 
 async function counts(): Promise<{ events: number; messages: number }> {

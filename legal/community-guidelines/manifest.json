@@ -1,0 +1,13 @@
+{
+  "slug": "community-guidelines",
+  "title": "LYCEON Community Guidelines",
+  "description": "How users are expected to behave when using LYCEON.",
+  "order": 80,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Community Guidelines"
+  ]
+}

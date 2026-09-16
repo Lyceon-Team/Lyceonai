@@ -16,10 +16,14 @@
  *
  * What this does NOT serve:
  *  - Third-party-paid checkout. The payer is always the authenticated caller.
- *  - Consent capture (`consent_collection` / `custom_text`) is deliberately NOT
- *    built. Owner ruling: consent is Phase C.2, gated on the billing terms page,
- *    carried as a launch gate on SCL-044. The Dashboard Terms-of-Service URL is
- *    NOT to be set as a workaround.
+ *  - Consent capture (`consent_collection` / `custom_text`) IS built, as of
+ *    2026-09-16. The earlier note here said it was "deliberately NOT built …
+ *    gated on the billing terms page", with the Dashboard Terms-of-Service URL
+ *    "NOT to be set as a workaround". Both conditions are now met rather than
+ *    worked around: `legal/billing-terms/v2` is published and renders at
+ *    /legal/billing-terms, and the owner has pointed the Dashboard URL at it.
+ *    The acceptance RECORD is written by the webhook, not here — this file
+ *    starts a session, it does not learn whether anyone completed one.
  *
  * ORDER ON THE GUARDIAN PATH: BRANCH FIRST, THEN GATE. Whether a purchase is a
  * first purchase or an add-item is decided BEFORE the country gate runs, because
@@ -592,6 +596,28 @@ router.post(
         // profile id, and a guardian session has no single subject — setting it
         // to the guardian would make the payer look like the entitled student.
         ...(isGuardian ? {} : { client_reference_id: studentProfileId }),
+        /**
+         * SCL-044 — auto-renewal consent, taken in Checkout.
+         *
+         * Cal. Bus. & Prof. Code § 17602 requires consent to automatic renewal
+         * that is SEPARATE from general acceptance of the terms of use. Terms of
+         * Use is accepted at signup: a different moment and a different act.
+         * So this checkbox captures auto-renewal consent alone, and ONE control
+         * is not a shortcut — a second box asking again for something already
+         * agreed to elsewhere would dilute the one that matters.
+         *
+         * The document behind the link is the Dashboard's Terms-of-Service URL,
+         * set to /legal/billing-terms. Stripe renders the link; no contract text
+         * is reproduced here, and `custom_text` carries only the payer
+         * affirmation, which is not part of any document.
+         */
+        consent_collection: { terms_of_service: "required" },
+        custom_text: {
+          terms_of_service_acceptance: {
+            message:
+              "I am 18 or older and authorised to use this payment method. I agree to the LYCEON Billing Terms, and I understand this subscription renews automatically until I cancel.",
+          },
+        },
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
       };

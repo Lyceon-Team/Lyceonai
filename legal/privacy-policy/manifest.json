@@ -1,0 +1,13 @@
+{
+  "slug": "privacy-policy",
+  "title": "LYCEON Privacy Policy",
+  "description": "How we collect, use, store, share, and protect information.",
+  "order": 30,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Privacy Policy"
+  ]
+}

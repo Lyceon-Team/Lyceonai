@@ -4,6 +4,8 @@ import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { csrfFetch } from "@/lib/csrf";
 import { loginPathWithReturn } from "@lyceon/shared/return-path";
+import { ReconsentModal } from "@/components/legal/ReconsentModal";
+import { outstandingLegalSchema } from "@shared/legal-consent";
 
 type UserRole = "student" | "guardian" | "admin";
 
@@ -19,12 +21,13 @@ interface AuthUserResponse {
     requiredProfileComplete?: boolean;
     requiredConsentsComplete?: boolean;
     guardianConsentRequired?: boolean;
+    outstandingLegal?: unknown;
     [key: string]: any;
   } | null;
 }
 
 export function RequireRole({ allow, children }: RequireRoleProps) {
-  const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
+  const { user, authLoading, isAdmin, isGuardian, signOut } = useSupabaseAuth();
   const [location] = useLocation();
 
   // Fetch profile completion status from canonical /api/profile endpoint
@@ -98,16 +101,47 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   const isProfileCompletePage = location === "/profile/complete";
   const profileCompletedAt = authData?.user?.profileCompletedAt;
   const requiredProfileComplete = authData?.user?.requiredProfileComplete;
-  const requiredConsentsComplete = authData?.user?.requiredConsentsComplete;
   const guardianConsentRequired = authData?.user?.guardianConsentRequired;
+
+  // ONBOARDING vs RE-CONSENT ARE DIFFERENT STATES AND USED TO SHARE ONE BRANCH.
+  // `requiredConsentsComplete === false` sat in this list, so publishing a new
+  // version of Student Terms would have thrown every existing user — profile
+  // filled in, date of birth given, guardian consent on file — back to
+  // /profile/complete to re-do all of it. That page exists to collect a profile
+  // nobody has yet. A person who has one owes an agreement, not a form.
+  //
+  // The flag is not simply dropped: it is `requiredLegalAccepted &&
+  // !guardianConsentRequired`, and both halves are still enforced —
+  // guardianConsentRequired on the line below, requiredLegalAccepted by
+  // outstandingLegal further down. No state stops being guarded.
   const needsOnboarding =
     guardianConsentRequired === true ||
-    requiredConsentsComplete === false ||
     requiredProfileComplete === false ||
     !profileCompletedAt;
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     return <Redirect to="/profile/complete" replace />;
+  }
+
+  // @spec [LYCEON consent capture §6]
+  //
+  // Parsed, not trusted: this is a wire payload, and the shared schema is the
+  // same one the server's own type is inferred from. A malformed entry becomes
+  // an empty list rather than a modal rendering `undefined` at someone.
+  const outstanding = outstandingLegalSchema.safeParse(
+    authData?.user?.outstandingLegal ?? [],
+  );
+  const outstandingLegal = outstanding.success ? outstanding.data : [];
+
+  // THE CHILDREN ARE NOT RENDERED BEHIND IT, DELIBERATELY. An overlay with the
+  // application still mounted underneath is blocking to a mouse and no obstacle
+  // at all to a keyboard: tab past the dialog and the product is right there.
+  // "Cannot be dismissed" has to mean "there is nothing behind it", or the
+  // invariant is a visual effect. Admins are exempt because they are exempt from
+  // the onboarding gate above, and locking the only account that can investigate
+  // a bad publish out of the admin surface is the wrong failure mode.
+  if (!isAdmin && !isProfileCompletePage && outstandingLegal.length > 0) {
+    return <ReconsentModal documents={outstandingLegal} onSignOut={signOut} />;
   }
 
   return <>{children}</>;

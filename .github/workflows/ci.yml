@@ -181,6 +181,29 @@ jobs:
       - name: Guardian schema-truth self-test (proves each rule turns it red)
         run: bash scripts/ci/guardian-schema-truth-gate.selftest.sh
 
+      # A published legal version directory is the evidence of what somebody
+      # agreed to — ARL § 17602(a)(4) requires producing that exact text three
+      # years later. Editing one destroys the evidence while the consent record
+      # still names it. The gate asks git, not the content_hash sitting beside
+      # the file: an author who edits en.md and updates the hash in the same
+      # commit defeats a self-referential check, and that is the shape the
+      # mistake actually takes. Case (B) of the self-test is exactly that.
+      # The immutability gate compares against the base branch, and the
+      # default checkout is shallow with no remote-tracking ref for it. Fetch
+      # exactly the one commit it needs. If this fetch fails the gate exits 2
+      # and says so — it will not pass without a comparison point.
+      - name: Fetch base ref for the legal immutability gate
+        run: |
+          BASE="${{ github.base_ref || 'stripe' }}"
+          git fetch --no-tags --depth=1 origin \
+            "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+
+      - name: Legal versioning gates (immutability, manifest, cross-reference, body purity)
+        run: pnpm run gate:legal
+
+      - name: Legal gates self-test (proves each rule turns them red)
+        run: pnpm run gate:legal:selftest
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the
