@@ -25,6 +25,7 @@ import {
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 
 const router = Router();
 
@@ -59,14 +60,15 @@ function isEmailOtpType(value: unknown): value is EmailOtpType {
   );
 }
 
-// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect. The
-// only producer is the native password-recovery link (→ the set-new-password page).
-// The recovery landing path — stated once; SAFE_NEXT_PATHS and the copy classifiers both derive from it.
+// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect.
+// Producers: the native password-recovery link (→ /update-password) and, since 2026-09-15, the
+// login page forwarding a RequireRole-captured return path (e.g. /guardian?code=…) through the
+// Google sign-in. ONE sanitiser decides for both this callback and the client
+// (packages/shared/src/return-path.ts): same-origin, relative, allowlisted — or null.
+// The recovery landing path — stated once; the copy classifiers derive from it.
 const RECOVERY_NEXT = "/update-password";
-const SAFE_NEXT_PATHS = new Set<string>([RECOVERY_NEXT]);
 function parseSafeNext(req: Request): string | null {
-  const next = req.query.next;
-  return typeof next === "string" && SAFE_NEXT_PATHS.has(next) ? next : null;
+  return sanitizeReturnPath(req.query.next);
 }
 
 /**
