@@ -1150,7 +1150,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sourceSessionItemId: effectiveScope.source_session_item_id,
       sourceQuestionRowId: effectiveScope.source_question_row_id,
       recentMessages,
-      runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
+      runtimeLimits: { maxOutputTokens: 2048, timeoutMs: 30_000 },
       correctAnswer: correctAnswerResult.value,
       isPostSubmit,
     });
