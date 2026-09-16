@@ -112,6 +112,7 @@ export default function GuardianDashboard() {
   // Prefill only — the guardian still has to be signed in to reach this page (RequireRole)
   // and still has to submit, so the link changes how the code travels, never what redeeming
   // requires. Read once at mount; never re-derived in an effect.
+  const [acceptedParentTerms, setAcceptedParentTerms] = useState(false);
   const [linkCode, setLinkCode] = useState(() =>
     typeof window === "undefined"
       ? ""
@@ -227,7 +228,10 @@ export default function GuardianDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ code }),
+        // The version is deliberately NOT sent. The server resolves the
+        // current Parent / Guardian Terms from legal/ at write time; a client
+        // that named a version would be asserting what it was shown.
+        body: JSON.stringify({ code, acceptParentGuardianTerms: true }),
       });
       const data = await res.json();
       if (!res.ok)
@@ -241,6 +245,7 @@ export default function GuardianDashboard() {
       // must not imply there is.
       setLinkSuccess("Linked. Their progress is available now.");
       setLinkCode("");
+      setAcceptedParentTerms(false);
       setLinkError(null);
       setIsRateLimited(false);
       setLastUpdated(new Date());
@@ -293,6 +298,12 @@ export default function GuardianDashboard() {
     const normalised = linkCode.replace(/\s+/g, "").toUpperCase();
     if (normalised.length === 0) {
       setLinkError("Enter the code your student gave you");
+      return;
+    }
+    if (!acceptedParentTerms) {
+      setLinkError(
+        "Please agree to the Parent / Guardian Terms to link a student",
+      );
       return;
     }
     // Normalised here AND on the server. The server's parse is the one that decides; this
@@ -535,13 +546,44 @@ export default function GuardianDashboard() {
                     type="submit"
                     data-testid="guardian-link-code-submit"
                     disabled={
-                      linkMutation.isPending || linkCode.trim().length === 0
+                      linkMutation.isPending ||
+                      linkCode.trim().length === 0 ||
+                      !acceptedParentTerms
                     }
                     className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
                   >
                     {linkMutation.isPending ? "Linking..." : "Link student"}
                   </Button>
                 </form>
+                {/*
+                  Linking gives a guardian visibility of a minor's learning
+                  data, so the Parent / Guardian Terms are accepted here rather
+                  than assumed from signup. The label LINKS to the document and
+                  reproduces none of it: the title comes from the manifest by
+                  way of the page it opens, and a summary here would be a second
+                  copy of a contract.
+                */}
+                <label className="mt-4 flex items-start gap-2 text-sm text-[#0F2E48]/80">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={acceptedParentTerms}
+                    onChange={(e) => setAcceptedParentTerms(e.target.checked)}
+                    data-testid="guardian-accept-parent-terms"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <a
+                      href="/legal/parent-guardian-terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      LYCEON Parent / Guardian Terms
+                    </a>
+                    .
+                  </span>
+                </label>
                 {linkError && (
                   <Alert
                     className={`mt-4 ${isRateLimited ? "bg-amber-50 border-amber-200" : "border-border/70 bg-card/70"}`}

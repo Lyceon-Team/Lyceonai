@@ -16,6 +16,7 @@ import { passwordSchema } from "../../packages/shared/src/password-policy";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
 
 const router = Router();
 
@@ -182,6 +183,15 @@ router.post(
       // a precondition, never silently dropped (AS1-OUTBOX-DROP-001). signUp on the SSR client already
       // wrote the session cookie eagerly, so the fail-closed branch below signs out to clear it: no
       // session may survive a consent-capture failure.
+      // Version and hash come from legal/ at write time, so the row records the
+      // exact text that was served. resolveLegalVersion throws rather than
+      // guessing — a consent stamped with a wrong version is a false record.
+      const studentTermsVersion = resolveLegalVersion(
+        LEGAL_DOCS.studentTerms.slug,
+      );
+      const privacyPolicyVersion = resolveLegalVersion(
+        LEGAL_DOCS.privacyPolicy.slug,
+      );
       const capture = await captureLegalAcceptances(admin, {
         userId: authData.user.id,
         consentSource,
@@ -190,13 +200,17 @@ router.post(
         acceptances: [
           {
             docKey: LEGAL_DOCS.studentTerms.docKey,
-            docVersion: LEGAL_DOCS.studentTerms.docVersion,
+            docSlug: studentTermsVersion.slug,
+            docVersion: studentTermsVersion.version,
+            contentHash: studentTermsVersion.contentHash,
             actorType: "student",
             minor: false,
           },
           {
             docKey: LEGAL_DOCS.privacyPolicy.docKey,
-            docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
+            docSlug: privacyPolicyVersion.slug,
+            docVersion: privacyPolicyVersion.version,
+            contentHash: privacyPolicyVersion.contentHash,
             actorType: "student",
             minor: false,
           },

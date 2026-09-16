@@ -167,7 +167,7 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     const code = await currentCode();
     const res = await request(await buildApp())
       .post("/api/guardian/link/redeem")
-      .send({ code });
+      .send({ code, acceptParentGuardianTerms: true });
 
     expect(res.status).toBe(201);
     const row = await pg.query(
@@ -186,10 +186,10 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     const code = await currentCode();
     const app = await buildApp();
 
-    expect((await request(app).post("/api/guardian/link/redeem").send({ code })).status).toBe(201);
+    expect((await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true })).status).toBe(201);
 
     session.id = GUARDIAN_B;
-    const second = await request(app).post("/api/guardian/link/redeem").send({ code });
+    const second = await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
     expect(second.status).toBe(400);
     expect(second.body.error.code).toBe("GUARDIAN_LINK_CODE_REFUSED");
     expect(await activeLinks()).toBe(1);
@@ -204,8 +204,8 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     const appA = await buildApp();
 
     const [a, b] = await Promise.all([
-      request(appA).post("/api/guardian/link/redeem").send({ code }),
-      request(appA).post("/api/guardian/link/redeem").send({ code }),
+      request(appA).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true }),
+      request(appA).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true }),
     ]);
 
     const statuses = [a.status, b.status].sort();
@@ -218,12 +218,12 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     const app = await buildApp();
     const never = await request(app)
       .post("/api/guardian/link/redeem")
-      .send({ code: "ZZZZZZ" });
+      .send({ code: "ZZZZZZ", acceptParentGuardianTerms: true });
 
     const code = await currentCode();
-    await request(app).post("/api/guardian/link/redeem").send({ code });
+    await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
     session.id = GUARDIAN_B;
-    const spent = await request(app).post("/api/guardian/link/redeem").send({ code });
+    const spent = await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
 
     expect(never.status).toBe(spent.status);
     expect(never.body.error.code).toBe(spent.body.error.code);
@@ -233,11 +233,11 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
   /** EDGE CASE 2 — already linked is a 409, and writes nothing further. */
   it("409s a guardian already linked to that student, and writes no second row", async () => {
     const app = await buildApp();
-    await request(app).post("/api/guardian/link/redeem").send({ code: await currentCode() });
+    await request(app).post("/api/guardian/link/redeem").send({ code: await currentCode(), acceptParentGuardianTerms: true });
 
     const again = await request(app)
       .post("/api/guardian/link/redeem")
-      .send({ code: await currentCode() });
+      .send({ code: await currentCode(), acceptParentGuardianTerms: true });
 
     expect(again.status).toBe(409);
     expect(await activeLinks()).toBe(1);
@@ -251,7 +251,7 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
 
     const res = await request(await buildApp())
       .post("/api/guardian/link/redeem")
-      .send({ code });
+      .send({ code, acceptParentGuardianTerms: true });
 
     expect(res.status).toBe(400);
     expect(await activeLinks()).toBe(0);
@@ -263,7 +263,7 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
     for (let round = 0; round < 3; round += 1) {
       const res = await request(app)
         .post("/api/guardian/link/redeem")
-        .send({ code: await currentCode() });
+        .send({ code: await currentCode(), acceptParentGuardianTerms: true });
       expect(res.status).toBe(201);
       await pg.query(
         `UPDATE public.guardian_links SET status='revoked' WHERE status='active'`,

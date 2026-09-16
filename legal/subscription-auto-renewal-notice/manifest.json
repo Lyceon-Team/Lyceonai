@@ -1,0 +1,14 @@
+{
+  "slug": "subscription-auto-renewal-notice",
+  "title": "LYCEON Subscription and Auto-Renewal Notice",
+  "description": "How automatic renewal works, the reminders we send before each charge, price changes, and how to cancel.",
+  "order": 50,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Subscription and Auto-Renewal Notice",
+    "Subscription / Auto-Renewal Notice"
+  ]
+}

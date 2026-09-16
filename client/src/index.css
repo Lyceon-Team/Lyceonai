@@ -259,3 +259,78 @@
 .border-brand-navy {
   border-color: rgba(15, 46, 72, 0.12);
 }
+
+/*
+ * @spec [LYCEON legal versioning Phase 3 §4; Coding Standards §11]
+ * @implemented 2026-09-15
+ *
+ * plain English: makes a legal document page print as the document. The six
+ * PDFs under client/public/legal/ were deleted because they were a second,
+ * drifted copy of text the markdown already holds — and the ruling that
+ * replaced them ("the markdown page is the document; browsers print") is only
+ * true if the page actually prints. Without this block Ctrl-P emitted the
+ * sticky header, the table-of-contents sidebar, the search box and the site
+ * footer across a two-column layout.
+ *
+ * expected outcome: printing /legal/:slug yields the title, version, effective
+ * date and every section body, single column, black on white, with no site
+ * chrome and no section split across a page break.
+ *
+ * trade-offs:
+ *  - Scoped to `.legal-document`, set on the page root in legal-doc.tsx, rather
+ *    than applied globally. Other pages were never audited for print and this
+ *    change is not the place to start.
+ *  - Search filtering is deliberately NOT reset for print: what is on screen is
+ *    what prints, which is the least surprising behaviour.
+ *
+ * edge cases:
+ *  - The unpublished and error cards print too, and should — a printed page
+ *    saying a document is not yet published is honest; a blank sheet is not.
+ */
+@media print {
+  .legal-document > header,
+  .legal-document aside,
+  .legal-document footer {
+    display: none !important;
+  }
+
+  .legal-document,
+  .legal-document main,
+  .legal-document [class*="max-w-"] {
+    min-height: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Collapse the 280px TOC column the sidebar used to occupy. */
+  .legal-document .lg\:grid,
+  .legal-document [class*="grid-cols-"] {
+    display: block !important;
+  }
+
+  /* Cards are a screen affordance; in print they are just section containers. */
+  .legal-document article [data-section-id] {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 1.25rem;
+  }
+
+  .legal-document h1,
+  .legal-document h2,
+  .legal-document h3 {
+    color: #000 !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .legal-document a {
+    color: #000 !important;
+    text-decoration: underline;
+  }
+}

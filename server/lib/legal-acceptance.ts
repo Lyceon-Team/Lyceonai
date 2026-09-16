@@ -3,9 +3,24 @@ import { z } from "zod";
 import { logger } from "../logger.js";
 import type { ConsentSource } from "../../shared/legal-consent.js";
 
+/**
+ * NEITHER SLUG NOR HASH IS NULLABLE, AND THAT IS THE POINT.
+ *
+ * "No acceptance without a hash" is a rule the type system can hold, so it
+ * holds it here rather than in a test that runs after the fact. Both were
+ * `string | null` while the columns were rolling out; every caller now resolves
+ * them from `legal/` at write time, so a `null` would have to be written
+ * deliberately. A row that cannot name the bytes the person was shown is not
+ * evidence of anything, and the 24 pre-existing rows that carry neither are
+ * exactly why this program was started.
+ */
 export type LegalAcceptanceRecord = {
   docKey: string;
+  /** The `legal/` slug this consent is for. */
+  docSlug: string;
   docVersion: string;
+  /** `sha256:<hex>` of the exact en.md served, from that version's meta.yml. */
+  contentHash: string;
   actorType: "student" | "parent";
   minor: boolean;
 };
@@ -16,6 +31,12 @@ type RecordLegalAcceptancesArgs = {
   consentSource: ConsentSource;
   userAgent?: string | null;
   ipAddress?: string | null;
+  /**
+   * Identifier issued by the collecting surface — a Stripe Checkout Session id
+   * for `stripe_checkout`. Ties §17602 consent back to the transaction it was
+   * taken during. NULL for surfaces that issue nothing.
+   */
+  sourceReference?: string | null;
 };
 
 export async function recordLegalAcceptances(
@@ -29,12 +50,15 @@ export async function recordLegalAcceptances(
   const rows = args.acceptances.map((acceptance) => ({
     user_id: args.userId,
     doc_key: acceptance.docKey,
+    doc_slug: acceptance.docSlug,
     doc_version: acceptance.docVersion,
+    content_hash: acceptance.contentHash,
     actor_type: acceptance.actorType,
     minor: acceptance.minor,
     consent_source: args.consentSource,
     user_agent: args.userAgent ?? null,
     ip_address: args.ipAddress ?? null,
+    source_reference: args.sourceReference ?? null,
     accepted_at: new Date().toISOString(),
   }));
 
@@ -49,11 +73,24 @@ export async function recordLegalAcceptances(
 
 const OUTBOX_TABLE = "legal_acceptance_outbox";
 
+/**
+ * SLUG AND HASH ARE REQUIRED HERE NOW.
+ *
+ * They were `.optional()` for rollout safety: when #737 added them, the columns
+ * did not yet exist in production, so an older instance could still enqueue the
+ * old shape and a strict schema would have discarded those rows as
+ * `invalid_payload` — losing a real consent to a deploy ordering. The columns
+ * are applied, and the outbox holds zero rows (verified 2026-09-16), so there
+ * is no old shape left to be tolerant of. A drained row that cannot say which
+ * bytes were served is exactly the record this program exists to prevent.
+ */
 const outboxPayloadSchema = z.object({
   acceptances: z.array(
     z.object({
-      docKey: z.string(),
-      docVersion: z.string(),
+      docKey: z.string().min(1),
+      docSlug: z.string().min(1),
+      docVersion: z.string().min(1),
+      contentHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
       actorType: z.enum(["student", "parent"]),
       minor: z.boolean(),
     }),
@@ -62,9 +99,13 @@ const outboxPayloadSchema = z.object({
     "email_signup_form",
     "google_continue_pre_oauth",
     "google_continue_click",
+    "guardian_link_redeem",
+    "stripe_checkout",
+    "reconsent_prompt",
   ]),
   userAgent: z.string().nullable(),
   ipAddress: z.string().nullable(),
+  sourceReference: z.string().nullable().optional(),
 });
 
 export type LegalCaptureResult = { durable: boolean };
@@ -173,10 +214,14 @@ export async function drainLegalAcceptanceOutbox(
       try {
         await recordLegalAcceptances(supabaseAdmin, {
           userId,
+          // The schema above requires slug and hash, so anything reaching here
+          // carries both. The `?? null` that used to sit on this map existed
+          // only for payloads enqueued before the columns did; there are none.
           acceptances: parsed.data.acceptances,
           consentSource: parsed.data.consentSource,
           userAgent: parsed.data.userAgent,
           ipAddress: parsed.data.ipAddress,
+          sourceReference: parsed.data.sourceReference ?? null,
         });
         await supabaseAdmin
           .from(OUTBOX_TABLE)
