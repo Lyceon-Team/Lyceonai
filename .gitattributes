@@ -1,0 +1,27 @@
+# Line endings are pinned repo-wide so a file's bytes are the same on every
+# checkout, on every platform.
+#
+# This is not cosmetic. legal/<slug>/<version>/meta.yml carries a SHA-256 of
+# the exact bytes of its en.md, and a consent record is meant to be provable
+# by rehashing that file years later. Without this line Git's autocrlf can
+# rewrite \n to \r\n on a Windows checkout, so the identical commit hashes
+# differently depending on who cloned it — and a hash nobody can reproduce is
+# worse than no hash at all.
+#
+# Binary files are excluded below so they are never touched.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.gz binary
+*.wasm binary

@@ -10,8 +10,13 @@ import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
+import { clearReconsentDismissal } from "@/components/legal/reconsent-dismissal";
 // CSRF handshake utilities
 import type { ConsentSource } from "@shared/legal-consent";
+import {
+  RETURN_PATH_PARAM,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 export type SignupOutcome = "authenticated" | "verification_required";
 
@@ -64,6 +69,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const clearAuthState = () => {
     clearCsrfToken();
     setUser(null);
+    // The guardian re-consent prompt is dismissible for a tab-session, and a
+    // sign-out ends that session. Without this, signing out and back in within
+    // the same tab would inherit the dismissal and skip a prompt that is
+    // supposed to return until it is accepted. sessionStorage alone does not
+    // cover it — it survives sign-out and dies only with the tab.
+    clearReconsentDismissal();
   };
 
   // Fetch user profile from backend
@@ -107,7 +118,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         updated_at: backendUser.updated_at,
         // Map additional onboarding status flags
         profile_completed_at: backendUser.profileCompletedAt,
-        requiredConsentsComplete: backendUser.requiredConsentsComplete,
         requiredProfileComplete: backendUser.requiredProfileComplete,
         guardianConsentRequired: backendUser.guardianConsentRequired,
         // §40 server-authority flags + grace-window state (top-level on the /api/profile response).
@@ -325,6 +335,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const consentSource =
         legalConsent.consentSource ?? "google_continue_pre_oauth";
       const callbackParams = new URLSearchParams({ consentSource });
+      // @spec [AS-5; owner brief 2026-09-15 Part B] the login page's `?next=` (written by
+      // RequireRole) rides along to the server callback, which re-sanitises it with the SAME
+      // shared module before honouring it after the onboarding gate. Off-origin → dropped here.
+      const returnPath = returnPathFromSearch(window.location.search);
+      if (returnPath) callbackParams.set(RETURN_PATH_PARAM, returnPath);
       const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
 
       const supabase = getSupabaseBrowserClient();

@@ -33,6 +33,9 @@ import {
 } from "../../packages/shared/src/guardian-link-schema";
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
+import { recordLegalAcceptances } from "../lib/legal-acceptance";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
 import { notificationEventId } from "../lib/notifications/event-id";
@@ -346,6 +349,53 @@ router.post(
         },
         requestId,
       });
+    }
+
+    // THE ACCEPTANCE IS STILL WRITTEN FIRST, BUT IT NO LONGER REFUSES THE LINK.
+    // Owner ruling 2026-09-16: never refuse the user over a consent we failed to
+    // record. This returned 503 CONSENT_NOT_RECORDED and created no link, so a
+    // version lookup failure cost a guardian their connection — the same defect
+    // that took /api/profile down, one route over.
+    //
+    // Order still matters and this order is still the safe one: attempting the
+    // consent first means the ordinary case records it before any link exists.
+    // What changed is the failure branch. A guardian who redeems a valid code
+    // gets their link; an unrecorded acceptance is logged at ERROR and collected
+    // by the prompt, which is the mechanism that exists for exactly this.
+    //
+    // NOTHING PARTIAL IS WRITTEN. If the version cannot be resolved we record no
+    // row at all rather than one stamped with a guess.
+    //
+    // `actor_type: 'parent'` — the value the column has always allowed for this
+    // actor. The document is Parent / Guardian Terms; one value, one meaning.
+    try {
+      const parentTerms = resolveLegalVersion(GUARDIAN_LINK_LEGAL_DOC.slug);
+      await recordLegalAcceptances(supabaseServer, {
+        userId: guardianId,
+        consentSource: "guardian_link_redeem",
+        userAgent: req.get("user-agent") ?? null,
+        ipAddress: req.ip ?? null,
+        acceptances: [
+          {
+            docKey: GUARDIAN_LINK_LEGAL_DOC.docKey,
+            docSlug: parentTerms.slug,
+            docVersion: parentTerms.version,
+            contentHash: parentTerms.contentHash,
+            actorType: "parent",
+            minor: false,
+          },
+        ],
+      });
+    } catch (consentErr: unknown) {
+      logger.error(
+        "GUARDIAN",
+        "link_redeem",
+        "Parent / Guardian Terms consent could not be recorded; the link proceeds and the prompt will ask again",
+        {
+          error: consentErr instanceof Error ? consentErr.message : "unknown",
+          requestId,
+        },
+      );
     }
 
     try {

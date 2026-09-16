@@ -33,7 +33,19 @@ describe("guardian link-code wiring (SCL-080)", () => {
     expect(src).toContain('"/api/guardian/link/redeem"');
     // The submitted value travels as `code`, in the same call — two separate substring
     // checks would pass with the field sitting in a dead variable elsewhere.
-    expect(src).toMatch(/link\/redeem[^;]*JSON\.stringify\(\{ code \}\)/s);
+    // The acceptance of the Parent / Guardian Terms travels in that SAME body:
+    // the server refuses a redeem without it (§4, no acceptance no link), so a
+    // call that omitted it would 400 rather than link.
+    // Comments are stripped first. `[^;]*` means "before the statement ends",
+    // and a semicolon inside a nearby COMMENT ends nothing — it just made this
+    // assertion fail the moment the call gained an explanatory note. The
+    // property under test is about code, so it reads code.
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(
+      /link\/redeem[^;]*JSON\.stringify\(\{ code, acceptParentGuardianTerms: true \}\)/s,
+    );
   });
 
   /**

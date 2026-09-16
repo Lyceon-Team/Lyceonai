@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { render } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Login from "./login";
 
 /**
@@ -126,5 +126,89 @@ describe("Login landing matrix (imperative navigate)", () => {
     authState = { user: null, isAuthenticated: false, authLoading: false };
     render(React.createElement(Login));
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B2] the return path written by
+   * RequireRole is honoured after auth (B2.1), an off-origin value is discarded for the role
+   * default (B2.2 — observed failing when the sanitiser was bypassed), onboarding still wins,
+   * and a signed-in visit with no `next` is unchanged (B2.3).
+   */
+  describe("return path (?next=)", () => {
+    afterEach(() => {
+      window.history.replaceState({}, "", "/login");
+    });
+
+    it("B2.1 completed guardian + next=/guardian?code=ABC234 → lands on /guardian with the code", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=%2Fguardian%3Fcode%3DABC234",
+      );
+      authState = {
+        user: completeGuardian,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/guardian?code=ABC234");
+    });
+
+    it("B2.2 a crafted absolute URL in next is discarded → role default", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=" +
+          encodeURIComponent("https://evil.example.com/guardian"),
+      );
+      authState = {
+        user: completeGuardian,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/guardian");
+    });
+
+    it("B2.2b a protocol-relative host in next is discarded → role default", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=" + encodeURIComponent("//evil.example.com/guardian"),
+      );
+      authState = {
+        user: completeStudent,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/dashboard");
+    });
+
+    it("onboarding still wins over a return path", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=%2Fguardian%3Fcode%3DABC234",
+      );
+      authState = {
+        user: { ...completeGuardian, guardianConsentRequired: true },
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/profile/complete");
+    });
+
+    it("B2.3 no next → unchanged role landing", () => {
+      window.history.replaceState({}, "", "/login");
+      authState = {
+        user: completeGuardian,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/guardian");
+    });
   });
 });

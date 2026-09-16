@@ -152,7 +152,7 @@ async function link(app: express.Express): Promise<string> {
   session.role = "guardian";
   const res = await request(app)
     .post("/api/guardian/link/redeem")
-    .send({ code: await currentCode() });
+    .send({ code: await currentCode(), acceptParentGuardianTerms: true });
   expect(res.status).toBe(201);
   // The link's own event is not under test here; clear it so counts below are ours.
   fakeResend.requests = [];

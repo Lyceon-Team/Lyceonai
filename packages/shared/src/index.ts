@@ -15,3 +15,5 @@ export * from "./student-link-code-schema.js";
 export * from "./result.js";
 export * from "./notifications-schema.js";
 export * from "./password-policy.js";
+export * from "./return-path.js";
+export * from "./support-contact.js";

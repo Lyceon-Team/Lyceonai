@@ -23,6 +23,10 @@
     {
       "path": "/api/internal/notification-dispatch-sweep",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/internal/notification-retention-sweep",
+      "schedule": "0 5 * * *"
     }
   ],
   "routes": [

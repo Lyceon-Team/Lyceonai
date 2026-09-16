@@ -1,4 +1,5 @@
 import { PUBLIC_META } from "../shared/seo/public-meta";
+import { SUPPORT_EMAIL, PRIVACY_EMAIL } from "./lib/support-contact";
 
 export interface PublicPageSeo {
   title: string;
@@ -888,7 +889,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   <section style="margin-bottom: 3rem;">
     <h2 style="font-size: 1.5rem; color: #0F2E48; margin-bottom: 1rem;">Contact</h2>
     <p style="color: #555; line-height: 1.6;">
-      Questions about our policies? Contact us at <a href="mailto:legal@lyceon.ai" style="color: #0F2E48;">legal@lyceon.ai</a>.
+      Questions about our policies? Contact us at <a href="mailto:${SUPPORT_EMAIL}" style="color: #0F2E48;">${SUPPORT_EMAIL}</a>.
     </p>
   </section>
   ${footerHtml}
@@ -944,12 +945,12 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       <p style="margin-bottom: 1rem;">
         You have the right to access, correct, or delete your personal information. You can also request a copy 
         of your data or opt out of certain data collection. Contact us at 
-        <a href="mailto:privacy@lyceon.ai" style="color: #0F2E48;">privacy@lyceon.ai</a> to exercise these rights.
+        <a href="mailto:${PRIVACY_EMAIL}" style="color: #0F2E48;">${PRIVACY_EMAIL}</a> to exercise these rights.
       </p>
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Contact Us</h2>
       <p style="margin-bottom: 1rem;">
-        Questions about this Privacy Policy? Email us at <a href="mailto:privacy@lyceon.ai" style="color: #0F2E48;">privacy@lyceon.ai</a>.
+        Questions about this Privacy Policy? Email us at <a href="mailto:${PRIVACY_EMAIL}" style="color: #0F2E48;">${PRIVACY_EMAIL}</a>.
       </p>
     </section>
   </article>
@@ -1021,7 +1022,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Contact</h2>
       <p style="margin-bottom: 1rem;">
-        Questions? Contact us at <a href="mailto:legal@lyceon.ai" style="color: #0F2E48;">legal@lyceon.ai</a>.
+        Questions? Contact us at <a href="mailto:${SUPPORT_EMAIL}" style="color: #0F2E48;">${SUPPORT_EMAIL}</a>.
       </p>
     </section>
   </article>

@@ -16,6 +16,8 @@ import { passwordSchema } from "../../packages/shared/src/password-policy";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 
 const router = Router();
 
@@ -182,55 +184,81 @@ router.post(
       // a precondition, never silently dropped (AS1-OUTBOX-DROP-001). signUp on the SSR client already
       // wrote the session cookie eagerly, so the fail-closed branch below signs out to clear it: no
       // session may survive a consent-capture failure.
-      const capture = await captureLegalAcceptances(admin, {
-        userId: authData.user.id,
-        consentSource,
-        userAgent: req.get("user-agent") ?? null,
-        ipAddress: req.ip ?? null,
-        acceptances: [
+      // FAIL OPEN, BOTH WAYS. Owner ruling 2026-09-16: never refuse the user.
+      //
+      // A version lookup that fails here used to throw out of the handler and
+      // 500 the signup — the same defect that took /api/profile down, one route
+      // over. And a capture that could not be made durable used to sign the
+      // person out and return 503, so an outbox outage cost us the account.
+      //
+      // Neither is worth an account. Record the consent when we can stamp it
+      // with a real version and hash; otherwise record nothing and let the
+      // re-consent prompt catch it at the next hydration. What we will NOT do is
+      // write a row we cannot vouch for — a guessed version is a false record,
+      // and a false record is worse than a missing one we know how to collect.
+      let resolved: {
+        studentTerms: ResolvedLegalVersion;
+        privacyPolicy: ResolvedLegalVersion;
+      } | null = null;
+      try {
+        resolved = {
+          studentTerms: resolveLegalVersion(LEGAL_DOCS.studentTerms.slug),
+          privacyPolicy: resolveLegalVersion(LEGAL_DOCS.privacyPolicy.slug),
+        };
+      } catch (resolveErr: unknown) {
+        logger.error(
+          "AUTH",
+          "legal_resolution_failed",
+          "Could not resolve signup documents; completing signup without a consent row. The prompt will ask again.",
           {
-            docKey: LEGAL_DOCS.studentTerms.docKey,
-            docVersion: LEGAL_DOCS.studentTerms.docVersion,
-            actorType: "student",
-            minor: false,
+            userId: authData.user.id,
+            error: resolveErr instanceof Error ? resolveErr.message : "unknown",
+            requestId: req.requestId,
           },
-          {
-            docKey: LEGAL_DOCS.privacyPolicy.docKey,
-            docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
-            actorType: "student",
-            minor: false,
-          },
-        ],
-      });
+        );
+      }
+
+      const capture =
+        resolved === null
+          ? { durable: false as const }
+          : await captureLegalAcceptances(admin, {
+              userId: authData.user.id,
+              consentSource,
+              userAgent: req.get("user-agent") ?? null,
+              ipAddress: req.ip ?? null,
+              acceptances: [
+                {
+                  docKey: LEGAL_DOCS.studentTerms.docKey,
+                  docSlug: resolved.studentTerms.slug,
+                  docVersion: resolved.studentTerms.version,
+                  contentHash: resolved.studentTerms.contentHash,
+                  actorType: "student",
+                  minor: false,
+                },
+                {
+                  docKey: LEGAL_DOCS.privacyPolicy.docKey,
+                  docSlug: resolved.privacyPolicy.slug,
+                  docVersion: resolved.privacyPolicy.version,
+                  contentHash: resolved.privacyPolicy.contentHash,
+                  actorType: "student",
+                  minor: false,
+                },
+              ],
+            });
 
       if (!capture.durable) {
+        // WAS: signOut + 503, under AS1-OUTBOX-DROP-001 ("consent is a
+        // precondition for a valid session"). Overruled 2026-09-16. The account
+        // stands, the session stands, and the outstanding document is collected
+        // by the prompt — which is exactly the mechanism that exists for it.
+        // Logged at ERROR because an uncaptured consent is still a defect to
+        // chase, just not one the user pays for.
         logger.error(
           "AUTH",
           "consent_capture_failed",
-          "Could not durably capture consent during signup (both stores failed); failing closed",
+          "Could not durably capture consent during signup; the account stands and the prompt will ask again",
           { userId: authData.user.id, requestId: req.requestId },
         );
-        // AS1-OUTBOX-DROP-001: signUp wrote the session cookie EAGERLY (autoconfirm) before this gate,
-        // so clear it — no session may survive a consent-capture failure. Same discipline as the OAuth
-        // callback's durable:false → signOut. No-op when confirm-email-ON returned no session.
-        await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
-          logger.warn(
-            "AUTH",
-            "signout_cleanup_failed",
-            "Best-effort signOut clearing the eager signup cookie after consent failure failed",
-            {
-              requestId: req.requestId,
-              error:
-                signOutErr instanceof Error
-                  ? signOutErr.message
-                  : String(signOutErr),
-            },
-          ),
-        );
-        return res.status(503).json({
-          error:
-            "We couldn't complete your sign-up just now. Please try again.",
-        });
       }
 
       const hasCanonicalSession = !!authData.session;

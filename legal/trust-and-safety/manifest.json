@@ -1,0 +1,13 @@
+{
+  "slug": "trust-and-safety",
+  "title": "Trust & Safety at LYCEON",
+  "description": "How we approach trust, safety, and responsibility in tutor-supported learning.",
+  "order": 90,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Trust & Safety"
+  ]
+}

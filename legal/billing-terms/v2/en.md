@@ -1,0 +1,140 @@
+# **LYCEON Billing Terms**
+
+These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
+
+They summarise how billing works. The **LYCEON Subscription and Auto-Renewal Notice** and the **LYCEON Refund Policy** govern in full, and this page links to both.
+
+---
+
+## **At a Glance**
+
+**Your subscription continues until you cancel.** We charge the amount shown at checkout at the start of each Billing Period until you cancel.
+
+**You are paying for one student's access.** Entitlement attaches to the student account you select at checkout. If you are a parent or guardian, paying does not give your own account premium access — you see your linked student's progress because *they* are subscribed.
+
+**You can cancel at any time**, online, from your account settings. Cancelling stops future charges and you keep paid access until the end of the period you have already paid for.
+
+**First subscription: 7-day satisfaction guarantee.** Full refund, no questions about whether you used it.
+
+**Renewal you forgot about: 3-day grace window** if the Service has not been used since the charge.
+
+**If you are in the EU, EEA or UK**, you have a statutory 14-day withdrawal right that takes precedence.
+
+---
+
+## **1. What You Are Buying**
+
+A LYCEON premium subscription for **one student account**.
+
+Premium unlocks unlimited practice, the LISA tutor, full-length SAT exams with review and score reports, the complete mastery breakdown and study calendar, and expanded guardian visibility for anyone linked to that student.
+
+**The entitlement belongs to the student, not to the payer.** A parent, guardian, or other third party may pay, and the paid access attaches to the student account selected at checkout. A guardian linked to a subscribed student sees that student's progress data for as long as the student's subscription is active.
+
+To subscribe for more than one student, you subscribe for each separately. Each student's access is independent.
+
+---
+
+## **2. Price and Billing Period**
+
+**The price and Billing Period are shown at checkout before you pay**, in your local currency, and are the amounts you are agreeing to when you consent to these Billing Terms.
+
+LYCEON offers monthly, quarterly and annual Billing Periods. All three deliver the same premium access; they differ only in billing frequency and commitment.
+
+**Your subscription renews automatically** at the end of each Billing Period, at the same price, charged to the payment method you provided, until you cancel.
+
+We do not charge you for anything other than the price disclosed at checkout, or a price change made with advance notice under Section 5 of the Subscription and Auto-Renewal Notice. We do not enrol you in additional paid services without separate disclosure and separate consent.
+
+---
+
+## **3. Who May Subscribe**
+
+**The person completing checkout must be at least 18 years old** and authorised to use the payment method provided.
+
+If the student is under 18, a parent or legal guardian who connects to their account agrees to the **LYCEON Parent / Guardian Terms**.
+
+LYCEON subscriptions are currently available to payers with a billing address in the United States, Canada, the United Kingdom, Australia, New Zealand, Ireland and Singapore. If your billing address is outside these countries, we cannot provide a paid subscription, and any charge taken in error will be refunded.
+
+---
+
+## **4. Cancelling**
+
+**Cancel online, at any time, from your account settings**, through the customer portal. No phone call, no email, no retention conversation — the same medium in which you subscribed.
+
+When you cancel:
+
+* No further Renewal Charges occur
+* You keep paid access until the end of the Billing Period you have already paid for
+* The account reverts to the free tier; data and progress remain
+
+You may also cancel by emailing **support@lyceon.ai**. This is an alternative, not a requirement — the online portal is the primary cancellation path.
+
+---
+
+## **5. Refunds**
+
+Governed in full by the **LYCEON Refund Policy**. In summary:
+
+| Situation | What you get |
+|---|---|
+| First subscription, within 7 days | Full refund, whether or not the Service was used |
+| Renewal charge, within 3 days, unused since the charge | Full refund |
+| Renewal charge outside that window | Reviewed case by case — contact us |
+| EU / EEA / UK | Statutory 14-day withdrawal right, whichever is more favourable |
+
+**When a refund is issued, the subscription is cancelled and the student's paid access ends.** Free-tier access remains on the same account.
+
+Either the Payer or the holder of the student account may request a refund, by emailing **support@lyceon.ai** with the account email and the charge concerned.
+
+---
+
+## **6. Reminders We Send You**
+
+* **Annual subscriptions:** a reminder before each renewal, and a mid-cycle acknowledgment
+* **Shorter Billing Periods:** reminders as described in Section 4.2 of the Subscription and Auto-Renewal Notice
+* **After you subscribe:** a confirmation containing these Billing Terms, your cancellation rights, and how to cancel
+* **Before any price increase:** at least 30 days' advance written notice, with the option to cancel before it takes effect
+
+Reminders go to the email address associated with the payment method — the Payer's address, which may differ from the student's account email.
+
+---
+
+## **7. Your Consent**
+
+By checking the box at checkout, you confirm that:
+
+* You are at least 18 and authorised to use the payment method
+* You agree your subscription renews automatically at the price and interval shown, until you cancel
+* You understand the entitlement attaches to the student account selected, not to your own account if you are a guardian or third-party payer
+* You have read these Billing Terms, the Subscription and Auto-Renewal Notice, and the Refund Policy
+
+This consent is separate from your acceptance of the **LYCEON Student Terms of Use**, which you accepted when you created your account.
+
+We keep a record of this consent — the date and time, the version of these Billing Terms, and the account it belongs to — for no less than three years, or one year after the subscription ends, whichever is longer.
+
+---
+
+## **8. Related Documents**
+
+* **LYCEON Subscription and Auto-Renewal Notice** — renewal mechanics, reminders, price changes, and your rights by region
+* **LYCEON Refund Policy** — refund windows, how to request, what happens after
+* **LYCEON Student Terms of Use** — using the platform
+* **LYCEON Parent / Guardian Terms** — for guardians connected to a student account
+* **LYCEON Privacy Policy** — how we handle your data
+
+---
+
+## **9. Changes to These Terms**
+
+Each version of this document carries a version number and effective date. When we make changes, we publish a new version with a new effective date, and the previous version remains available.
+
+For changes that affect an existing subscription, we give at least 30 days' advance notice as described in Section 5 of the Subscription and Auto-Renewal Notice. Continued subscription after a change takes effect constitutes acceptance.
+
+The version you agreed to at checkout governs your subscription until you receive notice of a change.
+
+---
+
+## **10. Contact**
+
+**support@lyceon.ai**
+
+LYCEON AI
