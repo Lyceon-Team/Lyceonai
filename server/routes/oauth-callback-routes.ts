@@ -24,6 +24,7 @@ import {
 } from "../lib/profile-bootstrap.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
 import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 
 const router = Router();
@@ -237,6 +238,15 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         // direct write AND the durable outbox fail — a rare infra outage) do we fail closed: consent
         // is a precondition for a valid session, so we sign out and surface a recoverable error
         // rather than silently dropping it (AS1-OUTBOX-DROP-001).
+        // Version and hash come from legal/ at write time, so the row records the
+        // exact text that was served. resolveLegalVersion throws rather than
+        // guessing — a consent stamped with a wrong version is a false record.
+        const studentTermsVersion = resolveLegalVersion(
+          LEGAL_DOCS.studentTerms.slug,
+        );
+        const privacyPolicyVersion = resolveLegalVersion(
+          LEGAL_DOCS.privacyPolicy.slug,
+        );
         const capture = await captureLegalAcceptances(admin, {
           userId: user.id,
           consentSource,
@@ -245,13 +255,17 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
           acceptances: [
             {
               docKey: LEGAL_DOCS.studentTerms.docKey,
-              docVersion: LEGAL_DOCS.studentTerms.docVersion,
+              docSlug: studentTermsVersion.slug,
+              docVersion: studentTermsVersion.version,
+              contentHash: studentTermsVersion.contentHash,
               actorType: "student",
               minor,
             },
             {
               docKey: LEGAL_DOCS.privacyPolicy.docKey,
-              docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
+              docSlug: privacyPolicyVersion.slug,
+              docVersion: privacyPolicyVersion.version,
+              contentHash: privacyPolicyVersion.contentHash,
               actorType: "student",
               minor,
             },
