@@ -12,6 +12,8 @@ import {
   type OutstandingLegalDoc,
 } from "../../shared/legal-consent.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
+import { logger } from "../logger";
 import crypto from "crypto";
 import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
@@ -27,7 +29,6 @@ function calculateAge(birthDate: string): number {
   }
   return age;
 }
-
 
 /**
  * Which required documents this person does NOT hold at the currently published
@@ -47,7 +48,33 @@ function outstandingLegalDocs(
 ): OutstandingLegalDoc[] {
   const outstanding: OutstandingLegalDoc[] = [];
   for (const doc of requiredLegalDocsForUse(context)) {
-    const current = resolveLegalVersion(doc.slug);
+    // NEVER THROWS INTO THE PROFILE RESPONSE. This exact call threw
+    // `legal/ not found. Looked in: legal, dist/public/legal relative to
+    // /var/task` on every request from 2026-09-16T01:22:07Z, and because the
+    // throw reached the handler it turned a consent LOOKUP into a total sign-in
+    // outage: /api/profile 500, /auth/callback post_auth_finalize_failed.
+    //
+    // Absence is not ambiguity. Not knowing what somebody owes is not a reason
+    // to refuse them their account — consent is a prompt, never a gate, in every
+    // role. A document we cannot resolve is logged at ERROR and omitted, so the
+    // worst case is a prompt that does not appear yet, not a person who cannot
+    // sign in. The generated registry means this should now be unreachable;
+    // it stays because "should be unreachable" is what was believed last time.
+    let current: ResolvedLegalVersion;
+    try {
+      current = resolveLegalVersion(doc.slug);
+    } catch (err: unknown) {
+      logger.error(
+        "PROFILE",
+        "legal_resolution_failed",
+        "Could not resolve a required legal document; omitting it from the outstanding set",
+        {
+          slug: doc.slug,
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      );
+      continue;
+    }
     const accepted = legalRows.filter((row) => row.doc_key === doc.docKey);
     if (accepted.some((row) => row.doc_version === current.version)) continue;
     outstanding.push({
