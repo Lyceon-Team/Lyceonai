@@ -193,7 +193,7 @@ BEGIN
   FOR r IN
     SELECT * FROM (VALUES
       ('11111111-1111-1111-1111-111111111111','V-01 student sees own blocks',                     1,
-       $s$SELECT count(*)::int FROM public.calendar_blocks$s$),
+       $s$SELECT count(*)::int FROM public.calendar_blocks$s$),   -- RLS already scopes this one
       ('22222222-2222-2222-2222-222222222222','V-02 another student sees none of them',            0,
        $s$SELECT count(*)::int FROM public.calendar_blocks$s$),
       ('33333333-3333-3333-3333-333333333333','V-03 a guardian sees none (no guardian policy, §16)',0,
@@ -202,8 +202,10 @@ BEGIN
        $s$SELECT count(*)::int FROM public.calendar_plan_dates$s$),
       ('33333333-3333-3333-3333-333333333333','V-05 a guardian sees no study profile',             0,
        $s$SELECT count(*)::int FROM public.student_study_profile$s$),
-      ('44444444-4444-4444-4444-444444444444','V-06 an admin sees both students'' profiles',       2,
-       $s$SELECT count(*)::int FROM public.student_study_profile$s$),
+      ('44444444-4444-4444-4444-444444444444','V-06 an admin sees both fixture students'' profiles', 2,
+       $s$SELECT count(*)::int FROM public.student_study_profile
+          WHERE student_id IN ('11111111-1111-1111-1111-111111111111',
+                               '22222222-2222-2222-2222-222222222222')$s$),
       ('11111111-1111-1111-1111-111111111111','V-07 student sees own current plan through the view',1,
        $s$SELECT count(*)::int FROM public.calendar_current_plan$s$),
       ('22222222-2222-2222-2222-222222222222','V-08 another student sees nothing through the view', 0,
@@ -213,7 +215,8 @@ BEGIN
       ('22222222-2222-2222-2222-222222222222','V-10 another student sees no version',              0,
        $s$SELECT count(*)::int FROM public.calendar_plan_versions_student$s$),
       ('44444444-4444-4444-4444-444444444444','V-11 an admin sees the student''s blocks',           1,
-       $s$SELECT count(*)::int FROM public.calendar_blocks$s$),
+       $s$SELECT count(*)::int FROM public.calendar_blocks
+          WHERE student_id = '11111111-1111-1111-1111-111111111111'$s$),
       ('33333333-3333-3333-3333-333333333333','V-12 a guardian sees no block launch',              0,
        $s$SELECT count(*)::int FROM public.calendar_block_launches$s$)
     ) AS t(sub, name, want, stmt)

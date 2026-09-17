@@ -12,7 +12,12 @@
  * and the PL/pgSQL RPCs, and fails on any byte difference or any suite
  * violation.
  *
- * It checks five things:
+ * It checks six things:
+ *   0. The oracle exists in exactly one state. docs/Spec/ carries reader copies
+ *      of the reference and the fixtures; scripts/ci/ carries the ones CI runs.
+ *      Two copies of an oracle that can drift apart is not an oracle, and
+ *      docs/Spec/ is read-only to Claude Code, so a divergence could only be
+ *      fixed by the owner — which is exactly why it must fail loudly.
  *   1. calendar_runtime_config carries exactly the oracle's constants, so a
  *      config edit that diverges from the formula fails CI instead of silently
  *      changing every student's plan.
@@ -30,6 +35,7 @@
  *   tsx scripts/ci/calendar-parity.ts [--suite-n 3000] [--suite-seed 1]
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // pg ships no types and @types/pg is not a dependency here; scripts/ci/types/pg.d.ts
@@ -79,6 +85,20 @@ type PlanDay = { date: string; blocks: PlanBlock[] };
 type Plan = { generator: string; days: PlanDay[] };
 type ValidatorResult = { result: string; violations?: JsonValue };
 type ParityRow = { idx: string; det: Plan; fb: Plan; vdet: ValidatorResult; vfb: ValidatorResult };
+
+/**
+ * The oracle must be one artifact. If docs/Spec/ carries a reader copy, it has
+ * to be byte-identical to the file CI actually executes — otherwise the
+ * canonical corpus and the gate can disagree about what the formula is, and the
+ * corpus is the one that wins arguments.
+ *
+ * Absent copies are fine: this asserts identity where a copy exists, it does not
+ * require one.
+ */
+const ORACLE_COPIES: ReadonlyArray<readonly [string, string]> = [
+  ['docs/Spec/calendar_formula_reference.py', 'scripts/ci/reference/calendar_formula_reference.py'],
+  ['docs/Spec/calendar_formula_fixtures.json', 'scripts/ci/fixtures/calendar_formula_fixtures.json'],
+];
 
 const failures: string[] = [];
 let comparisons = 0;
@@ -172,7 +192,37 @@ function sameExplanations(a: Record<string, string>, b: Record<string, string>):
   return ka.every((k) => a[k] === b[k]);
 }
 
+function checkOracleCopies(): void {
+  const before = failures.length;
+  let checked = 0;
+  for (const [specPath, ciPath] of ORACLE_COPIES) {
+    const spec = path.join(ROOT, specPath);
+    const ci = path.join(ROOT, ciPath);
+    if (!existsSync(spec)) continue;
+    if (!existsSync(ci)) {
+      fail(`${ciPath} is missing, but ${specPath} exists — CI has no oracle to run`);
+      continue;
+    }
+    checked += 1;
+    if (!readFileSync(spec).equals(readFileSync(ci))) {
+      fail(
+        `${specPath} and ${ciPath} have diverged. The oracle must be one artifact; ` +
+          `docs/Spec is the canonical corpus and is read-only to Claude Code, so this one is the owner's to reconcile.`,
+      );
+    }
+  }
+  const added = failures.length - before;
+  console.log(
+    added > 0
+      ? `    FAIL ${added} docs/Spec reader copy/copies have diverged from the files CI runs`
+      : checked === 0
+        ? '    OK no docs/Spec reader copy of the oracle to cross-check'
+        : `    OK ${checked} docs/Spec reader copy/copies are byte-identical to the files CI runs`,
+  );
+}
+
 async function checkConstants(client: PgClient): Promise<void> {
+  const before = failures.length;
   const expected = JSON.parse(emit(['constants'])) as Record<string, JsonValue>;
   const { rows } = await client.query<{ key: string; value: JsonValue }>(
     'SELECT key, value FROM public.calendar_runtime_config',
@@ -188,7 +238,12 @@ async function checkConstants(client: PgClient): Promise<void> {
       fail(`calendar_runtime_config.${key} = ${got}, oracle has ${JSON.stringify(want)}`);
     }
   }
-  console.log(`    OK calendar_runtime_config matches the oracle on all ${Object.keys(expected).length} formula constants`);
+  const added = failures.length - before;
+  console.log(
+    added === 0
+      ? `    OK calendar_runtime_config matches the oracle on all ${Object.keys(expected).length} formula constants`
+      : `    FAIL calendar_runtime_config diverges from the oracle on ${added} of ${Object.keys(expected).length} formula constants`,
+  );
 }
 
 async function runCases(client: PgClient, label: string, cases: ParityCase[]): Promise<void> {
@@ -325,6 +380,9 @@ async function main(): Promise<void> {
       }
       console.log(`    OK server major is ${major}, as required`);
     }
+
+    console.log('==> the oracle exists in exactly one state');
+    checkOracleCopies();
 
     console.log('==> calendar_runtime_config vs the oracle constants');
     await checkConstants(client);
