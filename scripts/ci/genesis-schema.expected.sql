@@ -4488,7 +4488,6 @@ CREATE TABLE public.crisis_review_cases (
     conversation_id uuid NOT NULL,
     student_id uuid NOT NULL,
     source text NOT NULL,
-    category text DEFAULT 'crisis'::text NOT NULL,
     signature_id uuid,
     model_confidence numeric,
     status text DEFAULT 'open'::text NOT NULL,
@@ -4499,6 +4498,7 @@ CREATE TABLE public.crisis_review_cases (
     sla_deadline timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    category text DEFAULT 'crisis'::text NOT NULL,
     CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
@@ -7172,6 +7172,13 @@ CREATE INDEX idx_crisis_audit_log_reviewer ON public.crisis_review_audit_log USI
 
 
 --
+-- Name: idx_crisis_review_cases_category_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_category_active ON public.crisis_review_cases USING btree (category) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
+
+
+--
 -- Name: idx_crisis_review_cases_conversation_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7183,13 +7190,6 @@ CREATE UNIQUE INDEX idx_crisis_review_cases_conversation_active ON public.crisis
 --
 
 CREATE INDEX idx_crisis_review_cases_sla_breach ON public.crisis_review_cases USING btree (sla_deadline) WHERE (status = 'open'::text);
-
-
---
--- Name: idx_crisis_review_cases_category_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_crisis_review_cases_category_active ON public.crisis_review_cases USING btree (category) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
 
 
 --

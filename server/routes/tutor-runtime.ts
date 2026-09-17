@@ -865,6 +865,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       crisisResult = {
         crisis: true,
         source: "infrastructure_failure",
+        category: "crisis",
         signatureId: null,
         modelConfidence: null,
         forceReview: true,
