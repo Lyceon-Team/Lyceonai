@@ -281,7 +281,7 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     logged.length = 0;
     // child → parent; evidence tables cascade from the log
     await pg.query(`DELETE FROM public.deletion_request_log`);
-    await pg.query(`DELETE FROM public.auth_runtime_config WHERE key LIKE 'evidence_ci_%'`);
+    await pg.query(`DROP TABLE IF EXISTS public._evidence_ci_block`);
     await pg.query(`DELETE FROM public.account_deletion_requests`);
     await pg.query(`DELETE FROM public.practice_sessions`);
     await pg.query(`DELETE FROM public.legal_acceptances`);
@@ -492,9 +492,21 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     const x = USERS[0];
     await seedUser(x.id, x.email);
     const { logId: logX } = await requestAndMakeDue(x.id);
+    // A foreign key that REFUSES the delete, so T2 raises and rolls back. This used to be an
+    // `auth_runtime_config` row caught by the cascade's operator-FK preflight; that preflight is
+    // gone (2026-09-17, "Declarative FK Actions"): those 36 edges are now ON DELETE SET NULL and
+    // no longer block anybody. The assertion here was never about operator config — it is about
+    // what the executor and the reconciler do when T2 rolls back — so the vehicle is now a
+    // purpose-built RESTRICT edge owned by this test, which cannot stop biting when a schema
+    // decision elsewhere changes.
+    await pg.query(`
+      CREATE TABLE public._evidence_ci_block (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_profile_id uuid NOT NULL
+          REFERENCES public.profiles(id) ON DELETE RESTRICT
+      )`);
     await pg.query(
-      `INSERT INTO public.auth_runtime_config (key, value, value_type, owner, description, updated_by_profile_id)
-       VALUES ('evidence_ci_block', '1'::jsonb, 'integer', 'ci', 'blocks the cascade preflight', $1)`,
+      `INSERT INTO public._evidence_ci_block (owner_profile_id) VALUES ($1)`,
       [x.id],
     );
     const first = await runExecutor();
@@ -507,7 +519,7 @@ describe.skipIf(!PG_AVAILABLE)("deletion evidence bundle — real Postgres", () 
     // the reconciler ran at the end of the pass: executing → pending
     expect((await logRow(logX))?.status).toBe("pending");
 
-    await pg.query(`DELETE FROM public.auth_runtime_config WHERE key = 'evidence_ci_block'`);
+    await pg.query(`DROP TABLE public._evidence_ci_block`);
     const second = await runExecutor();
     expect(second).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
     expect(await profileExists(x.id)).toBe(false);

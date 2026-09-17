@@ -678,6 +678,43 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phases.json \
             --file tests/ci/deletion-phases-235.pg.ci.test.ts
 
+      # @spec [Doc 03 §14.2; Doc 05E §3 Rule 4 + §5; Doc 01 V8 §40.5; owner brief 2026-09-17
+      #        "Declarative FK Actions, Not an Enumerated Cascade" steps 3-4]
+      #        | @implemented [2026-09-17]
+      # The cascade used to enumerate table names by hand and nine foreign keys into `profiles`
+      # were never added to it, so `DELETE FROM profiles` raised for anyone who had used the
+      # tutor. The migration fixes those nine. THIS is what stops the tenth: the guard reads
+      # `pg_constraint`, not a list, so a table added tomorrow is in scope the moment it has a
+      # foreign key — whether or not anybody remembered the guard file. It also checks the
+      # allowlist in both directions and refuses an edge handled both declaratively and
+      # procedurally.
+      - name: FK delete-action guard (catalog-driven, on a genesis fresh-apply)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/fk-delete-action-guard.sh
+
+      # The behaviour behind the guard, on real Postgres: the seven tutor tables go with the
+      # profile, a config row survives its attributor with a NULL, an activity row survives with
+      # the identity severed and `actor_id` intact, and a brand-new unclassified foreign key
+      # turns the guard red.
+      - name: Declarative FK delete actions → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-fk-actions.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-fk.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-fk.json \
+            --file tests/ci/deletion-fk-actions.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost
