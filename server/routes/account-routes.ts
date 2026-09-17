@@ -7,13 +7,10 @@ import {
   getDailyUsage,
 } from "../lib/account";
 import { logger } from "../logger";
-import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { defaultSuppressionTransport } from "../lib/notifications/transport";
+import { recordEmailReconsent } from "../services/email-reconsent-audit";
 
 const router = Router();
-
-/** The audit action recorded when somebody lifts their own do-not-contact request. */
-export const EMAIL_RECONSENT_ACTION = "email_suppression_cleared" as const;
 
 router.get(
   "/status",
@@ -228,37 +225,14 @@ router.post(
     }
 
     // THE RE-CONSENT RECORD. Written after the removal succeeded, so the log never claims a
-    // consent that did not take effect. Metadata only — no address, which the logger would
-    // digest anyway and which `audit_logs` has no business holding for a live account.
-    const { error: auditError } = await supabaseServer.from("audit_logs").insert({
-      actor_profile_id: userId,
-      target_profile_id: userId,
-      action: EMAIL_RECONSENT_ACTION,
-      context: {
-        source: "account_settings",
-        previous_origin: "manual",
-        request_id: requestId ?? null,
-      },
+    // consent that did not take effect. It pages on failure rather than failing the response:
+    // the suppression IS lifted by now, and telling the caller otherwise would invite a second
+    // click on something that already worked.
+    await recordEmailReconsent({
+      profileId: userId,
+      previousOrigin: "manual",
+      ...(requestId !== undefined ? { requestId } : {}),
     });
-    if (auditError) {
-      // The suppression IS lifted; refusing the response now would tell the caller it failed
-      // and invite a second click. Page instead: a consent change we cannot evidence is the
-      // problem, and it is ours, not theirs.
-      logger.error(
-        "ACCOUNT",
-        "email_reconsent_audit_failed",
-        "Suppression cleared but the re-consent audit row did not write",
-        undefined,
-        { userId, code: auditError.code, message: auditError.message, requestId },
-      );
-    } else {
-      logger.info(
-        "ACCOUNT",
-        "email_reconsent_recorded",
-        "Subject lifted their own do-not-contact request",
-        { userId, requestId },
-      );
-    }
 
     return res.json({ ok: true, cleared: true, requestId });
   },

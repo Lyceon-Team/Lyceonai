@@ -27,7 +27,7 @@ MIG3="supabase/migrations/20260917100000_deletion_audit_actions.sql"
 MIG2="supabase/migrations/20260917110000_deletion_suppression_outcome.sql"
 MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
 DISPATCH="server/lib/notifications/dispatch.ts"
-ROUTES="server/routes/account-routes.ts"
+RECONSENT="server/services/email-reconsent-audit.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -36,7 +36,7 @@ cp "$MIG3" "$BACKUP/mig3.sql"
 cp "$MIG2" "$BACKUP/mig2.sql"
 cp "$MIG5" "$BACKUP/mig5.sql"
 cp "$DISPATCH" "$BACKUP/dispatch.ts"
-cp "$ROUTES" "$BACKUP/routes.ts"
+cp "$RECONSENT" "$BACKUP/reconsent.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -47,7 +47,7 @@ restore() {
   cp "$BACKUP/mig2.sql" "$MIG2"
   cp "$BACKUP/mig5.sql" "$MIG5"
   cp "$BACKUP/dispatch.ts" "$DISPATCH"
-  cp "$BACKUP/routes.ts" "$ROUTES"
+  cp "$BACKUP/reconsent.ts" "$RECONSENT"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -228,7 +228,7 @@ plant M24 "$EXEC" 's.replace("""    if (row.suppression_status === "applied") re
 expect_red M24 "P2.4 the retry sweep re-attempts"
 
 echo "==> (M25) clearing a suppression stops recording the re-consent"
-plant M25 "$ROUTES" 's.replace("      action: EMAIL_RECONSENT_ACTION,", "      action: \"unrecorded\",", 1)'
+plant M25 "$RECONSENT" 's.replace("    action: EMAIL_RECONSENT_ACTION,", "    action: \"unrecorded\",", 1)'
 expect_red M25 "P2.5 clearing from account settings"
 
 echo "==> (26) restored: BOTH suites must be green again"

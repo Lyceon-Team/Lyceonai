@@ -24,6 +24,7 @@
  * trade-offs: REST via fetch rather than the Resend SDK — no dependency change. `fetchImpl`
  * and `baseUrl` are injectable so the PG suite can capture requests without network.
  */
+import { z } from "zod";
 import { notificationEnvSchema } from "../../../packages/shared/src/env";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
 import { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
@@ -291,14 +292,37 @@ export function defaultEmailTransport(): EmailTransport {
 //   remove  DELETE /suppressions/{idOrEmail}                 → { object, id, deleted }
 // `origin` is 'bounce' | 'complaint' | 'manual'; ours are always 'manual'.
 
-/** Why an address is suppressed. Only `manual` entries are ours to lift — see §11A.5. */
-export type SuppressionOrigin = "bounce" | "complaint" | "manual";
+// @spec [lyceon-coding-standards §7.1 parse at every boundary (third-party payloads), §7.2
+// schema first and infer the type from it] — the same shape as the Stripe boundary schemas in
+// server/lib/stripe/*: the vendor payload is parsed where that vendor boundary lives, and the
+// TypeScript type is inferred rather than declared beside it.
+//
+// `origin` is load-bearing, not decoration: the account surface may lift a `manual` entry and
+// must refuse a `bounce` or a `complaint`. A hand-narrowed string would let an unrecognised
+// value through as "not manual" or, worse, be widened later by someone who did not know why the
+// enum was closed. `.passthrough()` because Resend may add fields and a new field is not a
+// reason to fail a read.
+export const resendSuppressionSchema = z
+  .object({
+    id: z.string().min(1),
+    email: z.string().min(1),
+    origin: z.enum(["bounce", "complaint", "manual"]),
+  })
+  .passthrough();
 
-export type SuppressionEntry = {
-  id: string;
-  email: string;
-  origin: SuppressionOrigin;
-};
+export type SuppressionEntry = z.infer<typeof resendSuppressionSchema>;
+
+/** `POST /suppressions` → `{ object, id }`. */
+const resendSuppressionAddSchema = z
+  .object({ id: z.string().min(1) })
+  .passthrough();
+
+/** `DELETE /suppressions/{idOrEmail}` → `{ object, id, deleted }`. */
+const resendSuppressionRemoveSchema = z
+  .object({ deleted: z.boolean() })
+  .passthrough();
+/** Why an address is suppressed. Only `manual` entries are ours to lift — see §11A.6. */
+export type SuppressionOrigin = SuppressionEntry["origin"];
 
 /** Same failure shape as a send, so one caller can record either without branching on kind. */
 export type SuppressionFailure = EmailSendFailure;
@@ -321,29 +345,6 @@ export type SuppressionTransport = {
 /** Lowercased and trimmed, so `A@Example.com ` and `a@example.com` are one address. */
 export function normaliseAddress(address: string): string {
   return address.trim().toLowerCase();
-}
-
-const SUPPRESSION_ORIGINS: readonly SuppressionOrigin[] = [
-  "bounce",
-  "complaint",
-  "manual",
-];
-
-function parseSuppressionEntry(payload: unknown): SuppressionEntry | null {
-  if (!payload || typeof payload !== "object") return null;
-  const row = payload as Record<string, unknown>;
-  const id = row.id;
-  const email = row.email;
-  const origin = row.origin;
-  if (typeof id !== "string" || id.length === 0) return null;
-  if (typeof email !== "string" || email.length === 0) return null;
-  if (
-    typeof origin !== "string" ||
-    !SUPPRESSION_ORIGINS.includes(origin as SuppressionOrigin)
-  ) {
-    return null;
-  }
-  return { id, email, origin: origin as SuppressionOrigin };
 }
 
 export function createResendSuppressionTransport(
@@ -370,12 +371,8 @@ export function createResendSuppressionTransport(
         );
         return response;
       }
-      const body = response.value;
-      const id =
-        body && typeof body === "object" && "id" in body
-          ? (body as { id?: unknown }).id
-          : undefined;
-      if (typeof id !== "string" || id.length === 0) {
+      const added = resendSuppressionAddSchema.safeParse(response.value);
+      if (!added.success) {
         return err({
           kind: "malformed_response",
           message: "2xx without a suppression id",
@@ -387,7 +384,7 @@ export function createResendSuppressionTransport(
         "Address added to the Resend suppression list",
         { recipient: redactEmail(normalised) },
       );
-      return ok({ id });
+      return ok({ id: added.data.id });
     },
 
     async get(address) {
@@ -401,14 +398,16 @@ export function createResendSuppressionTransport(
         if (response.error.status === 404) return ok(null);
         return response;
       }
-      const entry = parseSuppressionEntry(response.value);
-      if (entry === null) {
+      const entry = resendSuppressionSchema.safeParse(response.value);
+      if (!entry.success) {
         return err({
           kind: "malformed_response",
-          message: "2xx without a well-formed suppression entry",
+          message: `2xx without a well-formed suppression entry: ${entry.error.issues
+            .map((i) => `${i.path.join(".")} ${i.message}`)
+            .join("; ")}`,
         });
       }
-      return ok(entry);
+      return ok(entry.data);
     },
 
     async remove(address) {
@@ -431,18 +430,16 @@ export function createResendSuppressionTransport(
         );
         return response;
       }
-      const body = response.value;
-      const deleted =
-        body && typeof body === "object" && "deleted" in body
-          ? (body as { deleted?: unknown }).deleted
-          : undefined;
+      const removed = resendSuppressionRemoveSchema.safeParse(response.value);
       logger.info(
         "NOTIFICATIONS",
         "suppression_removed",
         "Address removed from the Resend suppression list",
         { recipient: redactEmail(normalised) },
       );
-      return ok({ deleted: deleted === true });
+      // A 2xx whose body we cannot read still means the provider accepted the removal; the
+      // flag only reports whether an entry was actually there to remove.
+      return ok({ deleted: removed.success && removed.data.deleted });
     },
   };
 }
