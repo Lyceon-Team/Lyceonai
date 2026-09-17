@@ -207,4 +207,110 @@ BEGIN
 END;
 $view$;
 
+-- ---------------------------------------------------------------------------
+-- Config gates. The VALUES are cross-checked against the parity oracle's own
+-- constants by scripts/ci/calendar-parity.ts, so they are not restated here;
+-- these gates cover completeness, typing and self-consistency.
+-- ---------------------------------------------------------------------------
+DO $config$
+DECLARE
+  v_missing text;
+  v_extra   text;
+  v_bad     text;
+  v_expected text[] := ARRAY[
+    'horizon_days','review_share_max_bp','review_block_max','exam_review_default_count',
+    'weight_by_level','null_level_weight','post_exam_emphasis_days','post_exam_multiplier',
+    'min_domain_questions','max_domains_per_block','granularity',
+    'full_length_every_n_occurrences','full_length_min_gap_days','final_exam_lead_days',
+    'max_full_length_per_horizon','taper_days','taper_ratio_bp','recent_planned_window_days',
+    'canonical_domain_order','enabled_block_types'];
+BEGIN
+  SELECT string_agg(k, ', ') INTO v_missing
+  FROM unnest(v_expected) k
+  WHERE NOT EXISTS (SELECT 1 FROM public.calendar_runtime_config c WHERE c.key = k);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 formula sheet §4 key(s) missing: %', v_missing;
+  END IF;
+
+  SELECT string_agg(c.key, ', ') INTO v_extra
+  FROM public.calendar_runtime_config c WHERE NOT (c.key = ANY (v_expected));
+  IF v_extra IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 key(s) not in formula sheet §4: %', v_extra;
+  END IF;
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys';
+
+  -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
+  SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
+  FROM public.calendar_runtime_config WHERE value_type = 'float';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-02 float-typed calendar config key(s): %', v_bad;
+  END IF;
+  RAISE NOTICE '    OK C-02 no float-typed key exists (ratios are basis points)';
+
+  -- Every integer key sits inside its own declared bounds.
+  SELECT string_agg(key || '=' || value::text || ' not in [' || min_value::text || ',' || max_value::text || ']', ', ')
+    INTO v_bad
+  FROM public.calendar_runtime_config
+  WHERE value_type = 'integer' AND min_value IS NOT NULL AND max_value IS NOT NULL
+    AND NOT ((value::text)::bigint BETWEEN (min_value::text)::bigint AND (max_value::text)::bigint);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-03 launch value outside its bounds: %', v_bad;
+  END IF;
+  RAISE NOTICE '    OK C-03 every integer launch value sits inside its declared bounds';
+
+  -- weight_by_level covers exactly mastery levels 0-4 (sheet §8 item 8; prod CHECK is 0..4).
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(
+        (SELECT value FROM public.calendar_runtime_config WHERE key = 'weight_by_level')) k)
+     <> ARRAY['0','1','2','3','4'] THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-04 weight_by_level is not keyed 0..4';
+  END IF;
+  RAISE NOTICE '    OK C-04 weight_by_level is keyed to the live mastery levels 0..4';
+
+  -- Every level carries a floor of at least 1, so a strong domain never falls
+  -- out of rotation (sheet §2 step 3).
+  IF EXISTS (SELECT 1 FROM jsonb_each(
+        (SELECT value FROM public.calendar_runtime_config WHERE key = 'weight_by_level')) e
+      WHERE (e.value::text)::bigint < 1) THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-05 a weight_by_level entry is below 1';
+  END IF;
+  RAISE NOTICE '    OK C-05 every mastery level keeps a weight floor of 1';
+
+  -- canonical_domain_order is exactly the canonical eight, and every entry is a
+  -- real (section, domain) pair as 20260816010000_canonical_domain_checks.sql
+  -- defines them.
+  SELECT string_agg(d, ', ') INTO v_bad
+  FROM jsonb_array_elements_text(
+    (SELECT value FROM public.calendar_runtime_config WHERE key = 'canonical_domain_order')) d
+  WHERE NOT public.calendar_scope_is_valid(
+    'practice',
+    CASE WHEN d IN ('Algebra','Advanced Math','Problem Solving and Data Analysis',
+                    'Geometry and Trigonometry') THEN 'M' ELSE 'RW' END,
+    jsonb_build_object('level','domain','mix',
+      jsonb_build_array(jsonb_build_object('domain', d, 'count', 5, 'explanation_key','weak'))));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-06 non-canonical domain(s) in canonical_domain_order: %', v_bad;
+  END IF;
+  IF (SELECT jsonb_array_length(value) FROM public.calendar_runtime_config
+      WHERE key = 'canonical_domain_order') <> 8 THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-06 canonical_domain_order is not eight entries';
+  END IF;
+  RAISE NOTICE '    OK C-06 canonical_domain_order is the canonical eight, Math then Reading & Writing';
+
+  -- Launch value: practice only (sheet §8 item 12 / V-03).
+  IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
+     <> '["practice"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 enabled_block_types is not the launch value ["practice"]';
+  END IF;
+  RAISE NOTICE '    OK C-07 enabled_block_types is the launch value ["practice"]';
+
+  -- The config history trigger pair is wired exactly as the other thirteen
+  -- *_runtime_config tables (sheet §8 item 9).
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'calendar_runtime_config_notify')
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'calendar_runtime_config_history_no_mutate') THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-08 the config notify / history-no-mutate trigger pair is not wired';
+  END IF;
+  RAISE NOTICE '    OK C-08 calendar_runtime_config has the standard notify + append-only history triggers';
+END;
+$config$;
+
 ROLLBACK;

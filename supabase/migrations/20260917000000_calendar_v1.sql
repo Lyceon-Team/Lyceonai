@@ -657,4 +657,91 @@ GRANT SELECT (plan_version_id, student_id, version_no, generator, generator_vers
 
 -- anon gets nothing anywhere: the REVOKE above is the whole story.
 
+-- ----------------------------------------------------------------------------
+-- 16. calendar_runtime_config rows (formula sheet §4; §21 per sheet §8 item 8)
+--
+-- Every plan-shaping number the generator uses lives here. The generator reads
+-- NONE of them directly: calendar_build_plan_input freezes them into the
+-- snapshot's `constants` and calendar_compute_plan reads only the snapshot
+-- (INV-08-06). That is what lets a stored snapshot replay months later and
+-- reproduce the same plan after config has moved.
+--
+-- Ratios are basis points because the whole formula is integer arithmetic
+-- (sheet §2: "Every quantity is an integer ... No floats anywhere"). There is
+-- deliberately no 'float' value_type row in this table.
+--
+-- Deliberately NOT keys (sheet §8 item 8): strength_level_floor,
+-- max_domain_gap_days, missed_domain_bonus, final_month_days,
+-- full_length_interval_days_final. Doc 05F §21 listed them; the formula has no
+-- use for any of them.
+--
+-- Read from their owners and never duplicated here (sheet §4):
+--   practice_runtime_config.target_seconds_per_question
+--   review_runtime_config review_estimated_seconds_per_item  (SCL-08-F)
+--   exam_runtime_config durations                            (Doc 02B §41 / 04A)
+-- ----------------------------------------------------------------------------
+INSERT INTO public.calendar_runtime_config
+  (key, value, value_type, min_value, max_value, owner, description) VALUES
+
+  ('horizon_days', '14', 'integer', '7', '28', 'product',
+   'Doc 05F formula sheet §2: days planned per generation.'),
+
+  ('review_share_max_bp', '5000', 'integer', '0', '10000', 'product',
+   'Doc 05F formula sheet §2 step 4: review takes at most this share of a day, in basis points (5000 = 50%). Ruling §3 — tutor-guided review is slower per item by design.'),
+
+  ('review_block_max', '30', 'integer', '1', '100', 'product',
+   'Doc 05F formula sheet §2 step 4: ceiling on one ordinary review block, in items.'),
+
+  ('exam_review_default_count', '20', 'integer', '5', '60', 'product',
+   'Doc 05F formula sheet §2 step 4: placeholder size for a placed-but-not-yet-taken exam. The post_exam regeneration replaces it with the real missed count.'),
+
+  ('weight_by_level', '{"0":5,"1":4,"2":3,"3":2,"4":1}', 'object', NULL, NULL, 'product',
+   'Doc 05F formula sheet §2 step 3 / §4: need weight per mastery level over the LIVE domain, levels 0-4 (public.mastery_levels: L0 Foundations weakest .. L4 Strong). L0 leads; L4 keeps a floor of 1 so strengths stay in rotation. Sheet §8 item 8: re-keyed from Doc 05F §21, whose 1-5 was wrong against the prod CHECK of 0..4.'),
+
+  ('null_level_weight', '3', 'integer', '1', '5', 'product',
+   'Doc 05F formula sheet §2 step 3: weight for an unmeasured (NULL) domain. Sits between Developing and Proficient. Ruling R-08-26 — unknown mastery is neutral, never inferred.'),
+
+  ('post_exam_emphasis_days', '7', 'integer', '0', '30', 'product',
+   'Doc 05F formula sheet §2 step 3: days after a completed exam during which its weak domains are emphasised. Window matches Doc 02B §19.'),
+
+  ('post_exam_multiplier', '2', 'integer', '1', '5', 'product',
+   'Doc 05F formula sheet §2 step 3: weight multiplier applied to those domains inside the emphasis window.'),
+
+  ('min_domain_questions', '5', 'integer', '5', '20', 'product',
+   'Doc 05F formula sheet §2 step 5: a domain that appears in a mix gets at least this many questions.'),
+
+  ('max_domains_per_block', '4', 'integer', '1', '8', 'product',
+   'Doc 05F formula sheet §2 step 5: once a block holds this many distinct domains, further granules stay within them. Interleaving (Rohrer 2007/2015) with a cap that keeps a session legible.'),
+
+  ('granularity', '5', 'integer', '5', '5', 'product',
+   'Doc 05F formula sheet §2 step 5: allocation granule, in questions. Every practice count is a multiple of this. Locked at 5 — bounds are equal on purpose.'),
+
+  ('full_length_every_n_occurrences', '2', 'integer', '1', '6', 'product',
+   'Doc 05F formula sheet §2 step 2: cadence, counted in occurrences of full_length_weekday from the first on/after setup. College Board: space practice tests at least two weeks apart.'),
+
+  ('full_length_min_gap_days', '7', 'integer', '1', '21', 'product',
+   'Doc 05F formula sheet §2 step 2: minimum days between two full-lengths and from the last completed one.'),
+
+  ('final_exam_lead_days', '7', 'integer', '3', '21', 'product',
+   'Doc 05F formula sheet §2 step 2: the final rehearsal sits at least this far before the target date, and nothing else is placed inside that window.'),
+
+  ('max_full_length_per_horizon', '2', 'integer', '0', '4', 'product',
+   'Doc 05F formula sheet §2 step 2 / validator V-11: cap on full-lengths placed in one horizon.'),
+
+  ('taper_days', '3', 'integer', '0', '7', 'product',
+   'Doc 05F formula sheet §2 step 1: days before the target over which the daily budget is reduced. Ruling §3 — rest before the test.'),
+
+  ('taper_ratio_bp', '5000', 'integer', '0', '10000', 'product',
+   'Doc 05F formula sheet §2 step 1: budget retained during the taper, in basis points (5000 = 50%).'),
+
+  ('recent_planned_window_days', '28', 'integer', '14', '56', 'product',
+   'Doc 05F formula sheet §4 / §5: how far back recent_planned_by_domain reaches. The deficit rule measures a domain against what it has had over this window plus today.'),
+
+  ('canonical_domain_order', '["Algebra","Advanced Math","Problem Solving and Data Analysis","Geometry and Trigonometry","Information and Ideas","Craft and Structure","Expression of Ideas","Standard English Conventions"]',
+   'array', NULL, NULL, 'product',
+   'Doc 05F formula sheet §2 step 5 / §4: TIE-BREAK ONLY. Two domains with an equal deficit are separated by this order and nothing else. The strings are the canonical eight enforced by 20260816010000_canonical_domain_checks.sql — Math first, then Reading & Writing.'),
+
+  ('enabled_block_types', '["practice"]', 'array', NULL, NULL, 'product',
+   'Doc 05F §21 as amended by formula sheet §8 item 12 / validator V-03: launch value is practice only. Review and full-length are rebuild verticals; their adapters ship as fail-open stubs with contract tests, and this flag gains a member when each engine lands (G-08-02, G-08-03).');
+
 COMMIT;
