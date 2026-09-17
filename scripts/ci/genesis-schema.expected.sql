@@ -626,13 +626,13 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  -- §8.2 local dates: every date in a plan is the student's local date, and the
-  -- profile's timezone is what makes "today" mean anything.
+  -- §8.2 local dates: every date in a plan is the student’s local date, and the
+  -- profile’s timezone is what makes "today" mean anything.
   v_today  := (now() AT TIME ZONE v_profile.timezone)::date;
   v_window := public.calendar_require_int(v_constants, 'recent_planned_window_days');
   v_review := public.calendar_require_int(v_constants, 'review_estimated_seconds_per_item');
 
-  -- Doc 02B §41 owns practice timing; it is referenced, never restated (§20 audit rule).
+  -- Doc 02B §41 owns practice timing. It is referenced, never restated (§20 audit rule).
   SELECT public.calendar_require_int(jsonb_build_object('target_seconds_per_question', value),
                                      'target_seconds_per_question')
     INTO v_practice
@@ -710,7 +710,7 @@ BEGIN
 
     -- The deficit rule measures a domain against what it has had over the
     -- window plus today (sheet §2 step 5). Only domain-level practice blocks
-    -- can be attributed; a cold-start section block names no domain, and
+    -- can be attributed. A cold-start section block names no domain, and
     -- guessing how to split it would be inventing history.
     'recent_planned_by_domain', COALESCE((
       SELECT jsonb_agg(jsonb_build_object('domain', q.domain, 'count', q.n) ORDER BY q.domain)
@@ -769,7 +769,7 @@ $$;
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1 / formula sheet §5. The only calendar function that reads canonical tables; freezes them into the snapshot so the generator reads nothing else (INV-08-06). Raises on a missing profile or missing constants — essential inputs are never invented.';
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1 / formula sheet §5. The only calendar function that reads canonical tables, and freezes them into the snapshot so the generator reads nothing else (INV-08-06). Raises on a missing profile or missing constants — essential inputs are never invented.';
 
 
 --
@@ -969,7 +969,7 @@ BEGIN
   ----------------------------------------------------------------------------
   -- Domain arrays, in canonical order. `mastery` carries the section for each
   -- domain, so the M/RW split is read from the snapshot rather than restated
-  -- here; canonical_domain_order supplies only the order.
+  -- here, and canonical_domain_order supplies only the order.
   ----------------------------------------------------------------------------
   FOR v_i IN 0 .. 7 LOOP
     d_dom := d_dom || (v_order ->> v_i);
@@ -1089,7 +1089,7 @@ BEGIN
 
     v_blocks := '[]'::jsonb;
 
-    -- Step 4 — review. Exam review takes the whole budget if it needs it;
+    -- Step 4 — review. Exam review takes the whole budget if it needs it,
     -- otherwise ordinary review is capped by its share of the day.
     IF v_pending_active THEN
       v_size := least(v_pending_size, v_budget / e_review_secs);
@@ -1163,9 +1163,9 @@ BEGIN
         END IF;
 
         -- Level 2 — within each section, each granule goes to the domain
-        -- furthest behind its share; once the block holds max_domains_per_block
+        -- furthest behind its share. Once the block holds max_domains_per_block
         -- distinct domains, later granules stay inside them. Math first, so the
-        -- R&W deficits already see Math's allocations for the day.
+        -- R&W deficits already see Math’s allocations for the day.
         FOR v_s IN 1 .. 2 LOOP
           v_secname := CASE WHEN v_s = 1 THEN 'M' ELSE 'RW' END;
           v_sec_q := v_sec_units[v_s] * k_granularity;
@@ -1322,9 +1322,9 @@ BEGIN
   FROM jsonb_array_elements(COALESCE(p_input -> 'review_due_by_date', '[]'::jsonb)) r;
 
   -- Unlike deterministic_v1, a missing OR ZERO missed count falls back to the
-  -- placeholder size rather than leaving the debt standing. The fallback's whole
-  -- job is to produce a usable day from partial inputs; deterministic_v1 has the
-  -- real number or it waits. Both behaviours are the reference's.
+  -- placeholder size rather than leaving the debt standing. The fallback’s whole
+  -- job is to produce a usable day from partial inputs, and deterministic_v1 has the
+  -- real number or it waits. Both behaviours are the reference’s.
   IF x_last IS NOT NULL AND COALESCE(x_reviewed, true) IS NOT true THEN
     v_pending_active := true;
     v_pending_size   := CASE WHEN COALESCE(x_missed, 0) = 0 THEN k_exam_review_dflt ELSE x_missed END;
@@ -1420,7 +1420,7 @@ $$;
 -- Name: FUNCTION calendar_compute_plan_fallback(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) IS 'Doc 05F formula sheet §5A. The fail-open backup: profile-only inputs, no mastery, no per-date review queue, no plan history. Same output shape and validator as deterministic_v1; every practice block carries explanation_key = fallback.';
+COMMENT ON FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) IS 'Doc 05F formula sheet §5A. The fail-open backup: profile-only inputs, no mastery, no per-date review queue, no plan history. Same output shape and validator as deterministic_v1, and every practice block carries explanation_key = fallback.';
 
 
 --
@@ -1472,7 +1472,7 @@ BEGIN
 
   v_input := public.calendar_build_plan_input(p_student_id, ARRAY[v_today]);
 
-  -- Today's current members and override flag, carried unchanged (§12.6).
+  -- Today’s current members and override flag, carried unchanged (§12.6).
   SELECT COALESCE(jsonb_agg(jsonb_build_object('kind','carried','block_id', cp.block_id::text)
                             ORDER BY cp.display_ordinal), '[]'::jsonb),
          bool_or(cp.is_user_override)
@@ -1603,7 +1603,7 @@ $$;
 -- Name: FUNCTION calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date; started blocks injected if omitted; validated in student_edit mode; persisted with is_user_override = true. No budget check (R-08-19).';
+COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date. Started blocks injected if omitted, validated in student_edit mode, persisted with is_user_override = true. No budget check (R-08-19).';
 
 
 --
@@ -1905,7 +1905,7 @@ $$;
 -- Name: FUNCTION calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) IS 'Doc 05F §10.2. Generator days -> PlanOutput dates/members, filtered to enabled_block_types (§21 / sheet §8 item 12). Created members only; carried members are merged by calendar_persist_version from §12.2 protected state.';
+COMMENT ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) IS 'Doc 05F §10.2. Generator days -> PlanOutput dates/members, filtered to enabled_block_types (§21 / sheet §8 item 12). Created members only. Carried members are merged by calendar_persist_version from §12.2 protected state.';
 
 
 --
@@ -2095,7 +2095,7 @@ BEGIN
   FROM jsonb_array_elements_text(COALESCE(p_input -> 'enabled_block_types', '[]'::jsonb)) t;
 
   -- generated_for.dates is the horizon the builder froze. When it is absent the
-  -- generator's own days are the horizon, which is the case for a plain
+  -- generator’s own days are the horizon, which is the case for a plain
   -- generate-and-validate round trip.
   SELECT COALESCE(array_agg(t::date), '{}') INTO v_gen_dates
   FROM jsonb_array_elements_text(COALESCE(p_input #> '{generated_for,dates}', '[]'::jsonb)) t;
@@ -2194,8 +2194,8 @@ BEGIN
         END IF;
         -------------------------------------------------------------- V-04
         -- review_block_max bounds ORDINARY review. An exam-review block is
-        -- sized by the exam and may take the whole budget (sheet §2 step 4);
-        -- sheet §8 item 6 puts its sizing under V-10, and V-05 still caps it
+        -- sized by the exam and may take the whole budget (sheet §2 step 4).
+        -- Sheet §8 item 6 puts its sizing under V-10, and V-05 still caps it
         -- at the day.
         IF public.calendar_require_int(v_b, 'target_count') < 1
            OR (v_b ->> 'explanation_key' = 'review_due'
@@ -2320,7 +2320,7 @@ BEGIN
   -- Display order IS the member array order (§10.2), so contiguity from 1 is
   -- automatic within one date. What is not automatic is a date appearing twice
   -- in `dates`: the two member lists would both start at ordinal 1 and collide
-  -- on calendar_plan_block_memberships' UNIQUE (plan_version_id,
+  -- on calendar_plan_block_memberships’ UNIQUE (plan_version_id,
   -- scheduled_date, display_ordinal). Catching it here turns an opaque 23505
   -- inside the writer into a named rejection.
   FOR v_rec IN
@@ -2364,7 +2364,7 @@ $$;
 -- Name: FUNCTION calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6. Pure; returns a rejection as data rather than raising, because calendar_persist_version has to record it and fall back. V-07 is retired: sheet §8 item 3 removed skill_codes.';
+COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6. Pure. Returns a rejection as data rather than raising, because calendar_persist_version has to record it and fall back. V-07 is retired: sheet §8 item 3 removed skill_codes.';
 
 
 --
@@ -7084,7 +7084,7 @@ CREATE TABLE public.calendar_plan_versions (
 -- Name: TABLE calendar_plan_versions; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.calendar_plan_versions IS 'Doc 05F §7.2, append-only. generator IN (deterministic_v1, fallback_v1) per formula sheet §8 item 1; when fallback_v1 ran, validator_detail carries the reason.';
+COMMENT ON TABLE public.calendar_plan_versions IS 'Doc 05F §7.2, append-only. generator IN (deterministic_v1, fallback_v1) per formula sheet §8 item 1. When fallback_v1 ran, validator_detail carries the reason.';
 
 
 --
@@ -7158,7 +7158,7 @@ CREATE TABLE public.calendar_mutation_ledger (
 -- Name: TABLE calendar_mutation_ledger; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.calendar_mutation_ledger IS 'Doc 05F §7.8. A replayed key returns the stored response and writes nothing. Retired when Doc 01A Part IV IdempotencyService ships (G-08-04); the client contract does not change.';
+COMMENT ON TABLE public.calendar_mutation_ledger IS 'Doc 05F §7.8. A replayed key returns the stored response and writes nothing. Retired when Doc 01A Part IV IdempotencyService ships (G-08-04), and the client contract does not change.';
 
 
 --
@@ -8840,7 +8840,7 @@ CREATE TABLE public.student_study_profile (
 -- Name: TABLE student_study_profile; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask bit i = Postgres DOW i (0 = Sunday); full_length_weekday uses the same convention (sheet §6 mask convention). timezone is IANA, validated at the route against pg_timezone_names.';
+COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask bit i = Postgres DOW i (0 = Sunday), and full_length_weekday uses the same convention (sheet §6 mask convention). timezone is IANA, validated at the route against pg_timezone_names.';
 
 
 --
