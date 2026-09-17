@@ -17,3 +17,6 @@ export * from "./notifications-schema.js";
 export * from "./password-policy.js";
 export * from "./return-path.js";
 export * from "./support-contact.js";
+
+// Doc 05F Study Calendar — shared layer (schemas, allocator, read model).
+export * from "./calendar/index.js";
