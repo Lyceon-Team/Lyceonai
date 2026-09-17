@@ -48,7 +48,6 @@ const requireGuardianAccess = requireGuardianRole({
 
 type GuardianAccessEventType =
   | "guardian_dashboard_viewed"
-  | "guardian_calendar_viewed"
   | "guardian_report_viewed"
   | "guardian_access_denied";
 
