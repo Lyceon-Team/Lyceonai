@@ -57,16 +57,24 @@ export const STRUCTURAL_PREFIXES =
 
 export const ASSERTION_PATTERNS: ReadonlyArray<RegExp> = [
   /(?:the\s+)?answer\s+is\s*$/i,
+  /(?:the\s+)?answer\s+(?:\w+\s+){1,4}is\s*$/i,
   /(?:equals?|=)\s*$/i,
   /(?:you\s+)?get\s*$/i,
   /comes?\s+(?:out\s+)?to\s*$/i,
-  /(?:that\s+)?gives?\s*$/i,
+  /works?\s+(?:out\s+)?to\s*$/i,
+  /(?:that\s+)?gives?\s+(?:you|us)?\s*$/i,
   /result\s+is\s*$/i,
   /value\s+(?:is|of)\s*$/i,
+  /value\s+(?:\w+\s+){1,3}(?:is|to)\s*$/i,
   /simplif(?:y|ies)\s+to\s*$/i,
   /reduces?\s+to\s*$/i,
   /solution\s+is\s*$/i,
   /(?:it|that)(?:'s|\s+is)\s*$/i,
+  /lands?\s+on\s*$/i,
+];
+
+export const POST_VALUE_ASSERTION_PATTERNS: ReadonlyArray<RegExp> = [
+  /^\s+is\s+(?:what|the\s+(?:answer|correct|right))/i,
 ];
 
 // ── Generic Phrase Patterns (null-correctAnswer fallback) ────────────
@@ -120,9 +128,11 @@ export function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
  *   1. Assertion-context: if a disclosure phrase ("the answer is", "you
  *      get", "equals", etc.) directly precedes the value → leak.
  *   2. Structural-prefix exclusion: if the value is directly preceded by
- *      a structural label ("step", "question", "part", "#") → not a leak.
- *   3. Bare occurrence: value at word boundary with no assertion and no
- *      structural prefix → leak (fail-closed for grid-in).
+ *      a structural label ("step", "question", "part", "#") → skip.
+ *
+ * A bare occurrence with no assertion context is NOT a leak. Pattern
+ * matching cannot decide whether a bare number is the answer or problem
+ * data; that decision belongs to Phase B (judge-based detection).
  *
  * The structural prefix check uses $ anchor so only an IMMEDIATELY
  * preceding prefix suppresses, not one buried earlier in the window.
@@ -135,21 +145,26 @@ export function hasGridInValueInText(text: string, value: string): boolean {
   while ((match = pattern.exec(text)) !== null) {
     const beforeMatch = text.slice(Math.max(0, match.index - 30), match.index);
 
-    // Pass 1: assertion context → always a leak, even if a structural
-    // prefix also appears in the window.
+    // Pass 1: pre-value assertion context → always a leak.
     for (const ap of ASSERTION_PATTERNS) {
       if (ap.test(beforeMatch)) {
         return true;
       }
     }
 
-    // Pass 2: structural prefix immediately before the value → not a leak.
-    if (STRUCTURAL_PREFIXES.test(beforeMatch)) {
-      continue;
+    // Pass 1b: post-value assertion context ("N is what you're after").
+    const afterMatch = text.slice(
+      match.index + match[0].length,
+      match.index + match[0].length + 30,
+    );
+    for (const pap of POST_VALUE_ASSERTION_PATTERNS) {
+      if (pap.test(afterMatch)) {
+        return true;
+      }
     }
 
-    // Pass 3: bare occurrence, no structural prefix → leak (fail-closed).
-    return true;
+    // Pass 2: structural prefix immediately before the value → skip.
+    // (Bare occurrences with no signal also skip — not a leak.)
   }
   return false;
 }
@@ -157,10 +172,21 @@ export function hasGridInValueInText(text: string, value: string): boolean {
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
- * Checks whether `text` contains the correct-answer value using the same
- * matching logic (MCQ patterns / grid-in word-boundary + fraction-decimal
- * equivalence) as hasAnswerLeak. Reused for both the main leak scan and
- * the echo-exemption pre-check.
+ * Pure word-boundary containment check: does `value` appear in `text` at a
+ * word boundary? No assertion-context requirement — used for echo-exemption
+ * (did the student say this number?) where any mention counts.
+ */
+function valueAtWordBoundary(text: string, value: string): boolean {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`);
+  return pattern.test(text);
+}
+
+/**
+ * Checks whether `text` contains the correct-answer value at a word
+ * boundary, including fraction/decimal equivalence. Used for the
+ * echo-exemption pre-check ("did the student say this value?") where
+ * any mention counts — no assertion context required.
  *
  * Returns true if the answer value appears in the text.
  */
@@ -171,25 +197,20 @@ export function answerValueAppearsIn(
   const trimmed = correctAnswer.trim();
   if (trimmed.length === 0) return false;
 
-  // MCQ: single letter A-D — check for the value at a word boundary.
-  // Uses a simpler check than buildMcqPatterns (which checks disclosure
-  // phrases): we only need "did the student SAY this letter."
+  // MCQ: single letter A-D
   if (/^[A-Da-d]$/.test(trimmed)) {
-    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, "i");
-    return pattern.test(text);
+    return valueAtWordBoundary(text, trimmed);
   }
 
-  // Grid-in: numeric value — literal match
-  if (hasGridInValueInText(text, trimmed)) {
+  // Grid-in: literal match at word boundary
+  if (valueAtWordBoundary(text, trimmed)) {
     return true;
   }
 
   // Grid-in: fraction/decimal equivalence
   const asDecimal = fractionToDecimal(trimmed);
   if (asDecimal !== null) {
-    const decimalStr = String(asDecimal);
-    if (hasGridInValueInText(text, decimalStr)) {
+    if (valueAtWordBoundary(text, String(asDecimal))) {
       return true;
     }
   } else {
@@ -201,13 +222,7 @@ export function answerValueAppearsIn(
         const num = Number(frMatch[1]);
         const den = Number(frMatch[2]);
         if (den !== 0 && num / den === numericValue) {
-          const before = text.slice(
-            Math.max(0, frMatch.index - 20),
-            frMatch.index,
-          );
-          if (!STRUCTURAL_PREFIXES.test(before.trim())) {
-            return true;
-          }
+          return true;
         }
       }
     }

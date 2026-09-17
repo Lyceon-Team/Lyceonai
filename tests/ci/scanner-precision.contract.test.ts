@@ -5,13 +5,13 @@
  * plain English: Adversarial precision/recall corpus for hasGridInValueInText
  * and hasAnswerLeak. Tests seven answer values (4, 5, 10, 17, B, 3.5, 1/2)
  * against genuine leaks in varied phrasing, legitimate tutoring prose, and
- * structural-label references. Reports before/after rates per value.
+ * structural-label references. Reports per-value precision/recall.
  *
- * trade-offs: Short single-digit numbers (4, 5, 10) have inherently higher
- * false-positive rates on bare occurrences because the scanner is fail-closed
- * for grid-in. Assertion-context detection catches direct reveals; structural
- * prefixes suppress labels. The residual FP cases are bare numeric references
- * in prose — acceptable per §3 (prefer recall over precision for anti-leak).
+ * Detection strategy: assertion-context patterns catch disclosures ("the
+ * answer is N", "you get N", "equals N"); structural prefixes suppress
+ * labels ("step 4", "question 10"). Bare occurrences with no assertion
+ * signal are NOT flagged — a bare number is not a leak. Ambiguous cases
+ * are deferred to Phase B (judge-based detection).
  */
 import { describe, it, expect, afterAll } from "vitest";
 
@@ -42,7 +42,7 @@ const CORPORA: ValueCorpus[] = [
     value: "4",
     isMcq: false,
     entries: [
-      // Genuine leaks
+      // Genuine leaks — varied assertion phrasings (§7 rebuild)
       {
         text: "The answer is 4.",
         expectedLeak: true,
@@ -103,6 +103,60 @@ const CORPORA: ValueCorpus[] = [
         category: "genuine_leak",
         description: "extended assertion",
       },
+      {
+        text: "That comes out to 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'comes out to'",
+      },
+      {
+        text: "The result is 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'result is'",
+      },
+      {
+        text: "It reduces to 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'reduces to'",
+      },
+      {
+        text: "That's 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "contracted assertion (that's)",
+      },
+      {
+        text: "It's 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "contracted assertion (it's)",
+      },
+      {
+        text: "x = 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "equation with equals sign",
+      },
+      {
+        text: "We land on 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'land on'",
+      },
+      {
+        text: "That works out to 4.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'works out to'",
+      },
+      {
+        text: "4 is what you're looking for.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "post-value assertion (N is what)",
+      },
       // Legitimate prose
       {
         text: "Let's think about this step by step. What do you notice about the first part?",
@@ -136,15 +190,34 @@ const CORPORA: ValueCorpus[] = [
       },
       {
         text: "There are 4 marbles in the bag.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in problem data (FP accepted)",
+        description: "bare number in problem data — not a leak",
       },
       {
         text: "You have 4 chances remaining.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in prose (FP accepted)",
+        description: "bare number in prose — not a leak",
+      },
+      {
+        text: "Add 4 to both sides of the equation.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "instructional reference to number — not a leak",
+      },
+      {
+        text: "Notice the 4 in the numerator.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "referring to problem data — not a leak",
+      },
+      {
+        text: "The coefficient is 4, so factor that out.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description:
+          "coefficient reference — not a leak (value of is assertion only for answer-context)",
       },
     ],
   },
@@ -215,10 +288,52 @@ const CORPORA: ValueCorpus[] = [
         description: "part label",
       },
       {
-        text: "Divide by 5 to simplify.",
+        text: "That comes out to 5.",
         expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'comes out to'",
+      },
+      {
+        text: "It's 5.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "contracted assertion (it's)",
+      },
+      {
+        text: "That's 5.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "contracted assertion (that's)",
+      },
+      {
+        text: "The value of x is 5.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "value of assertion",
+      },
+      {
+        text: "x = 5.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "equation with equals sign",
+      },
+      {
+        text: "Divide by 5 to simplify.",
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in arithmetic (FP accepted)",
+        description: "bare number in arithmetic — not a leak",
+      },
+      {
+        text: "There are 5 terms in the expression.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "bare number in problem data — not a leak",
+      },
+      {
+        text: "Multiply both sides by 5.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "instructional reference — not a leak",
       },
     ],
   },
@@ -278,15 +393,51 @@ const CORPORA: ValueCorpus[] = [
       },
       {
         text: "A group of 10 students took the test.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in prose (FP accepted)",
+        description: "bare number in prose — not a leak",
       },
       {
         text: "10% of the total is allocated here.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number with percent (FP accepted)",
+        description: "bare number with percent — not a leak",
+      },
+      {
+        text: "That reduces to 10.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'reduces to'",
+      },
+      {
+        text: "It's 10.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "contracted assertion (it's)",
+      },
+      {
+        text: "The result is 10.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'result is'",
+      },
+      {
+        text: "x = 10.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "equation with equals sign",
+      },
+      {
+        text: "The hypotenuse is 10.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "noun + 'is' — not an assertion pattern (no 'it/that')",
+      },
+      {
+        text: "Add 10 to the left side.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "instructional reference — not a leak",
       },
       {
         text: "Now multiply that by 3 to check. What do you get?",
@@ -325,6 +476,30 @@ const CORPORA: ValueCorpus[] = [
         category: "genuine_leak",
         description: "assertion with 'it's'",
       },
+      {
+        text: "That comes out to 17.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'comes out to'",
+      },
+      {
+        text: "It simplifies to 17.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'simplifies to'",
+      },
+      {
+        text: "The value is 17.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "assertion with 'value is'",
+      },
+      {
+        text: "x = 17.",
+        expectedLeak: true,
+        category: "genuine_leak",
+        description: "equation with equals sign",
+      },
       // Legitimate prose
       {
         text: "In step 17, simplify.",
@@ -334,15 +509,21 @@ const CORPORA: ValueCorpus[] = [
       },
       {
         text: "The student scored 17 on the quiz.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in prose (FP accepted)",
+        description: "bare number in prose — not a leak",
       },
       {
         text: "There are 17 items in the data set.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare number in problem data (FP accepted)",
+        description: "bare number in problem data — not a leak",
+      },
+      {
+        text: "Subtract 17 from both sides.",
+        expectedLeak: false,
+        category: "legitimate_prose",
+        description: "instructional reference — not a leak",
       },
       {
         text: "Let's think about this carefully.",
@@ -464,9 +645,9 @@ const CORPORA: ValueCorpus[] = [
       },
       {
         text: "Multiply 3.5 by 2.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare decimal in arithmetic (FP accepted)",
+        description: "bare decimal in arithmetic — not a leak",
       },
       {
         text: "Let's work through this together.",
@@ -514,9 +695,9 @@ const CORPORA: ValueCorpus[] = [
       },
       {
         text: "Multiply both sides by 1/2.",
-        expectedLeak: true,
+        expectedLeak: false,
         category: "legitimate_prose",
-        description: "bare fraction in instruction (FP accepted)",
+        description: "bare fraction in instruction — not a leak",
       },
     ],
   },
