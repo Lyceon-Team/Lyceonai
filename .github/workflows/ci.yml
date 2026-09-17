@@ -550,6 +550,27 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
 
+      - name: Calendar write-RPC gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-writer-gates.sql
+
+      # Real concurrent sessions, not a single-session script: the FOR UPDATE on
+      # the study profile that makes version_no = MAX+1 safe (INV-08-17) is
+      # invisible unless somebody else is holding it. This is also where the
+      # idempotency ledger's check-then-insert is proved atomic.
+      - name: Calendar concurrency gate (INV-08-17, INV-08-09)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+        run: bash scripts/ci/calendar-concurrency-gate.sh
+
       - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
         env:
           PGHOST: localhost
