@@ -1992,7 +1992,6 @@ CREATE FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_pri
 DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
-  v_op_ref   record;
   v_actor_id  uuid;
 BEGIN
   -- ========================================================================
@@ -2032,66 +2031,6 @@ BEGIN
         p_profile_id;
     END IF;
   END IF;
-
-  -- ========================================================================
-  -- OPERATOR-FK PREFLIGHT GUARD (fail-closed, before ANY destructive step)
-  -- ========================================================================
-  -- 36 operator-identity FK edges (updated_by_profile_id / changed_by_profile_id
-  -- across 18 *_config + 18 *_config_history governance tables). Operator
-  -- attribution is governance data — must BLOCK deletion until consciously
-  -- reassigned. The guard refuses cascade with a clear error BEFORE any rows
-  -- are deleted. LYCEON-MIGRATION-REVIEWED
-  FOR v_op_ref IN
-    SELECT * FROM (VALUES
-      ('abuse_score_runtime_config'::text,              'updated_by_profile_id'::text),
-      ('abuse_score_runtime_config_history',            'changed_by_profile_id'),
-      ('account_deletion_runtime_config',               'updated_by_profile_id'),
-      ('account_deletion_runtime_config_history',       'changed_by_profile_id'),
-      ('auth_mfa_config',                               'updated_by_profile_id'),
-      ('auth_mfa_config_history',                       'changed_by_profile_id'),
-      ('auth_runtime_config',                           'updated_by_profile_id'),
-      ('auth_runtime_config_history',                   'changed_by_profile_id'),
-      ('caching_runtime_config',                        'updated_by_profile_id'),
-      ('caching_runtime_config_history',                'changed_by_profile_id'),
-      ('consent_runtime_config',                        'updated_by_profile_id'),
-      ('consent_runtime_config_history',                'changed_by_profile_id'),
-      ('entitlement_runtime_config',                    'updated_by_profile_id'),
-      ('entitlement_runtime_config_history',            'changed_by_profile_id'),
-      ('exam_runtime_config',                           'updated_by_profile_id'),
-      ('exam_runtime_config_history',                   'changed_by_profile_id'),
-      ('full_length_adaptive_config',                   'updated_by_profile_id'),
-      ('full_length_adaptive_config_history',           'changed_by_profile_id'),
-      ('idempotency_runtime_config',                    'updated_by_profile_id'),
-      ('idempotency_runtime_config_history',            'changed_by_profile_id'),
-      ('internal_service_auth_config',                  'updated_by_profile_id'),
-      ('internal_service_auth_config_history',          'changed_by_profile_id'),
-      ('mastery_constants',                             'updated_by_profile_id'),
-      ('mastery_constants_history',                     'changed_by_profile_id'),
-      ('mobile_auth_config',                            'updated_by_profile_id'),
-      ('mobile_auth_config_history',                    'changed_by_profile_id'),
-      ('observability_runtime_config',                  'updated_by_profile_id'),
-      ('observability_runtime_config_history',          'changed_by_profile_id'),
-      ('practice_runtime_config',                       'updated_by_profile_id'),
-      ('practice_runtime_config_history',               'changed_by_profile_id'),
-      ('rate_limit_runtime_config',                     'updated_by_profile_id'),
-      ('rate_limit_runtime_config_history',             'changed_by_profile_id'),
-      ('review_runtime_config',                         'updated_by_profile_id'),
-      ('review_runtime_config_history',                 'changed_by_profile_id'),
-      ('tutor_context_runtime_config',                  'updated_by_profile_id'),
-      ('tutor_context_runtime_config_history',          'changed_by_profile_id')
-    ) AS t(tbl, col)
-  LOOP
-    EXECUTE format(
-      'SELECT count(*) FROM public.%I WHERE %I = $1',
-      v_op_ref.tbl, v_op_ref.col
-    ) INTO v_count USING p_profile_id;
-    IF v_count > 0 THEN
-      RAISE EXCEPTION 'PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES: '
-        'profile % is referenced as an operator in %.% '
-        '— reassign config attributions before deletion',
-        p_profile_id, v_op_ref.tbl, v_op_ref.col;
-    END IF;
-  END LOOP;
 
   -- ========================================================================
   -- PRE-CLEAR: RESTRICT + NO ACTION FKs that block profile deletion
@@ -2220,10 +2159,6 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('student_skill_mastery', v_count);
 
-  -- L1-11. review_schedule (Q3 ruling: L1 — identity-linked SM-2 state, not event data)
-  DELETE FROM public.review_schedule WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('review_schedule', v_count);
 
   -- L1-12. student_kpi_rollups_current (SCL-004: was missing from L1 in both modes)
   DELETE FROM public.student_kpi_rollups_current WHERE student_id = p_profile_id;
@@ -2342,35 +2277,28 @@ BEGIN
 
     -- L2-01. practice_session_items (identity + fingerprint)
     UPDATE public.practice_session_items
-       SET user_id = NULL, client_attempt_id = NULL
+       SET client_attempt_id = NULL
      WHERE user_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('practice_session_items', v_count);
 
     -- L2-02. practice_sessions (identity + fingerprint)
     UPDATE public.practice_sessions
-       SET user_id = NULL, client_instance_id = NULL
+       SET client_instance_id = NULL
      WHERE user_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('practice_sessions', v_count);
 
     -- L2-03. review_error_attempts (identity + fingerprint)
     UPDATE public.review_error_attempts
-       SET student_id = NULL, client_attempt_id = NULL
+       SET client_attempt_id = NULL
      WHERE student_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
 
-    -- L2-04. review_session_items (identity only — no fingerprint columns)
-    UPDATE public.review_session_items
-       SET student_id = NULL
-     WHERE student_id = p_profile_id;
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('review_session_items', v_count);
-
     -- L2-05. review_sessions (identity + fingerprint)
     UPDATE public.review_sessions
-       SET student_id = NULL, client_instance_id = NULL
+       SET client_instance_id = NULL
      WHERE student_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('review_sessions', v_count);
@@ -2425,7 +2353,8 @@ BEGIN
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
-  -- Operator-FK edges (36 config/history) were preflight-guarded above.
+  -- Operator-FK edges (36 config/history) are ON DELETE SET NULL — Postgres severs
+  -- the attribution as the profile row goes; no enumeration here.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
   -- from those tables blocks this DELETE (FKs are NO ACTION, nullable).
 
@@ -8905,7 +8834,7 @@ ALTER TABLE ONLY public.abuse_score_incidents
 --
 
 ALTER TABLE ONLY public.abuse_score_runtime_config_history
-    ADD CONSTRAINT abuse_score_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT abuse_score_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8913,7 +8842,7 @@ ALTER TABLE ONLY public.abuse_score_runtime_config_history
 --
 
 ALTER TABLE ONLY public.abuse_score_runtime_config
-    ADD CONSTRAINT abuse_score_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT abuse_score_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8945,7 +8874,7 @@ ALTER TABLE ONLY public.account_deletion_requests
 --
 
 ALTER TABLE ONLY public.account_deletion_runtime_config_history
-    ADD CONSTRAINT account_deletion_runtime_config_hist_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT account_deletion_runtime_config_hist_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8953,7 +8882,7 @@ ALTER TABLE ONLY public.account_deletion_runtime_config_history
 --
 
 ALTER TABLE ONLY public.account_deletion_runtime_config
-    ADD CONSTRAINT account_deletion_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT account_deletion_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8961,7 +8890,7 @@ ALTER TABLE ONLY public.account_deletion_runtime_config
 --
 
 ALTER TABLE ONLY public.auth_mfa_config_history
-    ADD CONSTRAINT auth_mfa_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_mfa_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8969,7 +8898,7 @@ ALTER TABLE ONLY public.auth_mfa_config_history
 --
 
 ALTER TABLE ONLY public.auth_mfa_config
-    ADD CONSTRAINT auth_mfa_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_mfa_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8977,7 +8906,7 @@ ALTER TABLE ONLY public.auth_mfa_config
 --
 
 ALTER TABLE ONLY public.auth_runtime_config_history
-    ADD CONSTRAINT auth_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8985,7 +8914,7 @@ ALTER TABLE ONLY public.auth_runtime_config_history
 --
 
 ALTER TABLE ONLY public.auth_runtime_config
-    ADD CONSTRAINT auth_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8993,7 +8922,7 @@ ALTER TABLE ONLY public.auth_runtime_config
 --
 
 ALTER TABLE ONLY public.caching_runtime_config_history
-    ADD CONSTRAINT caching_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT caching_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9001,7 +8930,7 @@ ALTER TABLE ONLY public.caching_runtime_config_history
 --
 
 ALTER TABLE ONLY public.caching_runtime_config
-    ADD CONSTRAINT caching_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT caching_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9009,7 +8938,7 @@ ALTER TABLE ONLY public.caching_runtime_config
 --
 
 ALTER TABLE ONLY public.consent_runtime_config_history
-    ADD CONSTRAINT consent_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT consent_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9017,7 +8946,7 @@ ALTER TABLE ONLY public.consent_runtime_config_history
 --
 
 ALTER TABLE ONLY public.consent_runtime_config
-    ADD CONSTRAINT consent_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT consent_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9089,7 +9018,7 @@ ALTER TABLE ONLY public.distractor_taxonomy_v1
 --
 
 ALTER TABLE ONLY public.entitlement_runtime_config_history
-    ADD CONSTRAINT entitlement_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT entitlement_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9097,7 +9026,7 @@ ALTER TABLE ONLY public.entitlement_runtime_config_history
 --
 
 ALTER TABLE ONLY public.entitlement_runtime_config
-    ADD CONSTRAINT entitlement_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT entitlement_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9113,7 +9042,7 @@ ALTER TABLE ONLY public.entitlements
 --
 
 ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9121,7 +9050,7 @@ ALTER TABLE ONLY public.exam_runtime_config_history
 --
 
 ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9129,7 +9058,7 @@ ALTER TABLE ONLY public.exam_runtime_config
 --
 
 ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9137,7 +9066,7 @@ ALTER TABLE ONLY public.full_length_adaptive_config_history
 --
 
 ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9193,7 +9122,7 @@ ALTER TABLE ONLY public.guardian_links
 --
 
 ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9201,7 +9130,7 @@ ALTER TABLE ONLY public.idempotency_runtime_config_history
 --
 
 ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9209,7 +9138,7 @@ ALTER TABLE ONLY public.idempotency_runtime_config
 --
 
 ALTER TABLE ONLY public.internal_service_auth_config_history
-    ADD CONSTRAINT internal_service_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT internal_service_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9217,7 +9146,7 @@ ALTER TABLE ONLY public.internal_service_auth_config_history
 --
 
 ALTER TABLE ONLY public.internal_service_auth_config
-    ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9233,7 +9162,7 @@ ALTER TABLE ONLY public.legal_acceptances
 --
 
 ALTER TABLE ONLY public.mastery_constants_history
-    ADD CONSTRAINT mastery_constants_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mastery_constants_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9241,7 +9170,7 @@ ALTER TABLE ONLY public.mastery_constants_history
 --
 
 ALTER TABLE ONLY public.mastery_constants
-    ADD CONSTRAINT mastery_constants_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mastery_constants_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9249,7 +9178,7 @@ ALTER TABLE ONLY public.mastery_constants
 --
 
 ALTER TABLE ONLY public.mobile_auth_config_history
-    ADD CONSTRAINT mobile_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mobile_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9257,7 +9186,7 @@ ALTER TABLE ONLY public.mobile_auth_config_history
 --
 
 ALTER TABLE ONLY public.mobile_auth_config
-    ADD CONSTRAINT mobile_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mobile_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9297,7 +9226,7 @@ ALTER TABLE ONLY public.notification_messages
 --
 
 ALTER TABLE ONLY public.observability_runtime_config_history
-    ADD CONSTRAINT observability_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT observability_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9305,7 +9234,7 @@ ALTER TABLE ONLY public.observability_runtime_config_history
 --
 
 ALTER TABLE ONLY public.observability_runtime_config
-    ADD CONSTRAINT observability_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT observability_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9313,7 +9242,7 @@ ALTER TABLE ONLY public.observability_runtime_config
 --
 
 ALTER TABLE ONLY public.practice_runtime_config_history
-    ADD CONSTRAINT practice_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9321,7 +9250,7 @@ ALTER TABLE ONLY public.practice_runtime_config_history
 --
 
 ALTER TABLE ONLY public.practice_runtime_config
-    ADD CONSTRAINT practice_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9345,7 +9274,7 @@ ALTER TABLE ONLY public.practice_session_items
 --
 
 ALTER TABLE ONLY public.practice_session_items
-    ADD CONSTRAINT practice_session_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_session_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9353,7 +9282,7 @@ ALTER TABLE ONLY public.practice_session_items
 --
 
 ALTER TABLE ONLY public.practice_sessions
-    ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9385,7 +9314,7 @@ ALTER TABLE ONLY public.rate_limit_ledger
 --
 
 ALTER TABLE ONLY public.rate_limit_runtime_config_history
-    ADD CONSTRAINT rate_limit_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT rate_limit_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9393,7 +9322,7 @@ ALTER TABLE ONLY public.rate_limit_runtime_config_history
 --
 
 ALTER TABLE ONLY public.rate_limit_runtime_config
-    ADD CONSTRAINT rate_limit_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT rate_limit_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9417,7 +9346,7 @@ ALTER TABLE ONLY public.review_error_attempts
 --
 
 ALTER TABLE ONLY public.review_error_attempts
-    ADD CONSTRAINT review_error_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_error_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9425,7 +9354,7 @@ ALTER TABLE ONLY public.review_error_attempts
 --
 
 ALTER TABLE ONLY public.review_runtime_config_history
-    ADD CONSTRAINT review_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9433,7 +9362,7 @@ ALTER TABLE ONLY public.review_runtime_config_history
 --
 
 ALTER TABLE ONLY public.review_runtime_config
-    ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9449,7 +9378,7 @@ ALTER TABLE ONLY public.review_schedule
 --
 
 ALTER TABLE ONLY public.review_schedule
-    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9473,7 +9402,7 @@ ALTER TABLE ONLY public.review_session_items
 --
 
 ALTER TABLE ONLY public.review_session_items
-    ADD CONSTRAINT review_session_items_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_session_items_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9481,7 +9410,7 @@ ALTER TABLE ONLY public.review_session_items
 --
 
 ALTER TABLE ONLY public.review_sessions
-    ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9497,7 +9426,7 @@ ALTER TABLE ONLY public.tutor_context_resolution_log
 --
 
 ALTER TABLE ONLY public.tutor_context_runtime_config_history
-    ADD CONSTRAINT tutor_context_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT tutor_context_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9505,7 +9434,7 @@ ALTER TABLE ONLY public.tutor_context_runtime_config_history
 --
 
 ALTER TABLE ONLY public.tutor_context_runtime_config
-    ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9521,7 +9450,7 @@ ALTER TABLE ONLY public.tutor_conversations
 --
 
 ALTER TABLE ONLY public.tutor_conversations
-    ADD CONSTRAINT tutor_conversations_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_conversations_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9545,7 +9474,7 @@ ALTER TABLE ONLY public.tutor_injection_log
 --
 
 ALTER TABLE ONLY public.tutor_injection_log
-    ADD CONSTRAINT tutor_injection_log_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_injection_log_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9569,7 +9498,7 @@ ALTER TABLE ONLY public.tutor_instruction_assignments
 --
 
 ALTER TABLE ONLY public.tutor_instruction_assignments
-    ADD CONSTRAINT tutor_instruction_assignments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_instruction_assignments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9593,7 +9522,7 @@ ALTER TABLE ONLY public.tutor_instruction_exposures
 --
 
 ALTER TABLE ONLY public.tutor_instruction_exposures
-    ADD CONSTRAINT tutor_instruction_exposures_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_instruction_exposures_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9601,7 +9530,7 @@ ALTER TABLE ONLY public.tutor_instruction_exposures
 --
 
 ALTER TABLE ONLY public.tutor_memory_summaries
-    ADD CONSTRAINT tutor_memory_summaries_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_memory_summaries_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9625,7 +9554,7 @@ ALTER TABLE ONLY public.tutor_messages
 --
 
 ALTER TABLE ONLY public.tutor_messages
-    ADD CONSTRAINT tutor_messages_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_messages_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -9657,7 +9586,7 @@ ALTER TABLE ONLY public.tutor_question_links
 --
 
 ALTER TABLE ONLY public.tutor_question_links
-    ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --

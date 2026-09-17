@@ -320,38 +320,29 @@ BEGIN
   RAISE NOTICE '(G) OK  unknown privacy mode raises correctly';
 
   -- ==================================================================
-  -- (I) OPERATOR-FK PREFLIGHT GUARD: config references block cascade
+  -- (I) OPERATOR ATTRIBUTION: config references no longer BLOCK the cascade
   -- ==================================================================
-  -- Seed TARGET as an operator in mastery_constants, run cascade, assert
-  -- PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES raised and NOTHING deleted
-  -- (fail-closed proof). Then clear the ref so (B) cascade proceeds.
+  -- REVERSED 2026-09-17 ("Declarative FK Actions, Not an Enumerated Cascade").
+  -- This section used to assert that an operator-config reference RAISED
+  -- PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES and deleted nothing. The 36
+  -- operator-attribution edges are now ON DELETE SET NULL, the preflight loop is
+  -- gone, and the row keeps its value, its timestamp and its history entry while
+  -- losing the name. Blocking erasure to preserve an attributor's name is not a
+  -- trade this platform can make; "blocks forever with no terminal state" was the
+  -- defect the redesign exists to end.
+  --
+  -- So the attribution is seeded here and deliberately LEFT IN PLACE: the cascade
+  -- in (B) must now succeed with it present, and (I2) below asserts the severance
+  -- rather than the block.
   UPDATE public.mastery_constants SET updated_by_profile_id = v_target
    WHERE key = 'POSITION_HALF_LIFE';
 
-  BEGIN
-    v_blocked := false;
-    SELECT (public.execute_account_deletion_cascade(v_target, 'hard_delete')) INTO v_result;
-    RAISE EXCEPTION '(I) cascade did NOT raise for profile with operator config references';
-  EXCEPTION WHEN OTHERS THEN
-    v_blocked := true;
-    IF SQLERRM NOT LIKE '%PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES%' THEN
-      RAISE EXCEPTION '(I) wrong error message: %', SQLERRM;
-    END IF;
-  END;
-  IF NOT v_blocked THEN
-    RAISE EXCEPTION '(I) operator-FK guard should have blocked cascade';
-  END IF;
-
-  SELECT count(*) INTO v_count FROM public.student_skill_mastery WHERE student_id = v_target;
-  IF v_count = 0 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET student_skill_mastery deleted despite guard'; END IF;
-
-  SELECT count(*) INTO v_count FROM public.profiles WHERE id = v_target;
-  IF v_count <> 1 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET profile missing despite guard'; END IF;
-
-  UPDATE public.mastery_constants SET updated_by_profile_id = NULL
+  SELECT count(*) INTO v_count FROM public.mastery_constants
    WHERE updated_by_profile_id = v_target;
-
-  RAISE NOTICE '(I) OK  operator-FK preflight guard fires and is fail-closed (TARGET intact); cleared for cascade';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '(I) seed failed: expected 1 mastery_constants row attributed to TARGET, saw %', v_count;
+  END IF;
+  RAISE NOTICE '(I) OK  operator attribution seeded and LEFT IN PLACE; the cascade must now proceed';
 
   -- ==================================================================
   -- (B) EXECUTE CASCADE on TARGET
@@ -362,6 +353,24 @@ BEGIN
     RAISE EXCEPTION '(B) cascade returned status=%, expected completed. Full: %', v_result->>'status', v_result;
   END IF;
   RAISE NOTICE '(B) OK  cascade returned completed: %', v_result;
+
+  -- ==================================================================
+  -- (I2) POST-CASCADE: the governance row SURVIVES with a NULL attributor
+  -- ==================================================================
+  -- The other half of the reversal. SET NULL is the anonymization primitive
+  -- (Doc 05E §3 Rule 4 / §5): the record stays, the identity link is severed.
+  SELECT count(*) INTO v_count FROM public.mastery_constants
+   WHERE key = 'POSITION_HALF_LIFE';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '(I2) mastery_constants row was DELETED by the cascade; SET NULL must keep it (saw %)', v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.mastery_constants
+   WHERE updated_by_profile_id = v_target;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION '(I2) attribution to the deleted profile survived the cascade: % row(s)', v_count;
+  END IF;
+  RAISE NOTICE '(I2) OK  governance row survives with a NULL attributor';
 
   -- ==================================================================
   -- (C) POST-CASCADE: TARGET has 0 rows in ALL in-scope tables
@@ -803,5 +812,5 @@ BEGIN
   DELETE FROM public.profiles WHERE id = v_control;
   DELETE FROM auth.users WHERE id = v_control;
 
-  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: hard-delete + anonymize + exact-target + control-untouched + idempotent + guards + operator-FK-guard + no-path-back proven (zero residue; storage purge deferred to PR-4 API layer)';
+  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: hard-delete + anonymize + exact-target + control-untouched + idempotent + guards + operator-attribution-severance + no-path-back proven (zero residue; storage purge deferred to PR-4 API layer)';
 END $$;
