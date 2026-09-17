@@ -933,6 +933,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisResult.source,
         crisisResult.signatureId,
         crisisResult.modelConfidence,
+        crisisResult.category,
       );
 
       const { data: profileRow } = await supabaseServer
@@ -942,6 +943,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .maybeSingle();
       const crisisContent = getCrisisResponse(
         (profileRow?.country_code as string | null) ?? "US",
+        crisisResult.category,
       );
 
       const { data: crisisMessageRow, error: crisisMessageError } =
