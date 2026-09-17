@@ -223,21 +223,25 @@ DECLARE
     'min_domain_questions','max_domains_per_block','granularity',
     'full_length_every_n_occurrences','full_length_min_gap_days','final_exam_lead_days',
     'max_full_length_per_horizon','taper_days','taper_ratio_bp','recent_planned_window_days',
-    'canonical_domain_order','enabled_block_types'];
+    'canonical_domain_order','enabled_block_types',
+    -- Doc 05F §21 / SCL-08-F: calendar-owned until Doc 02B claims a review
+    -- timing constant. Not in sheet §4's table, which lists it as read from an
+    -- owner that does not have it.
+    'review_estimated_seconds_per_item'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
   WHERE NOT EXISTS (SELECT 1 FROM public.calendar_runtime_config c WHERE c.key = k);
   IF v_missing IS NOT NULL THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 formula sheet §4 key(s) missing: %', v_missing;
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 expected calendar_runtime_config key(s) missing: %', v_missing;
   END IF;
 
   SELECT string_agg(c.key, ', ') INTO v_extra
   FROM public.calendar_runtime_config c WHERE NOT (c.key = ANY (v_expected));
   IF v_extra IS NOT NULL THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 key(s) not in formula sheet §4: %', v_extra;
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys';
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys plus review_estimated_seconds_per_item (SCL-08-F)';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad

@@ -682,9 +682,25 @@ GRANT SELECT (plan_version_id, student_id, version_no, generator, generator_vers
 -- use for any of them.
 --
 -- Read from their owners and never duplicated here (sheet §4):
---   practice_runtime_config.target_seconds_per_question
---   review_runtime_config review_estimated_seconds_per_item  (SCL-08-F)
---   exam_runtime_config durations                            (Doc 02B §41 / 04A)
+--   practice_runtime_config.target_seconds_per_question  (Doc 02B §41; prod = 90)
+--   exam_runtime_config durations                        (Doc 02B §41 / 04A)
+--
+-- DEVIATION D-4 (recorded in the PR): sheet §4 lists
+-- `review_estimated_seconds_per_item` alongside those, as a value read from its
+-- owner. It has no owner yet. review_runtime_config holds seven SM-2 keys and
+-- no timing constant (verified against the applied pipeline), and Doc 05F §21
+-- and SCL-08-F both say it is CALENDAR-OWNED until Doc 02B claims one. So it is
+-- seeded here, with §21's value and bounds, and moves to Doc 02B when SCL-08-F
+-- lands. Without it neither generator can size a review block or a day's
+-- budget, so the alternatives were to invent 120 — exactly the defaulting §6
+-- forbids — or to ship a calendar that cannot generate.
+--
+-- Doc 05F §21 also lists route and scheduling constants that sheet §4 does not
+-- carry: weekly_job_interval_minutes (§12.5), daily_minutes_min/_max and
+-- daily_minutes_presets and target_exam_date_max_days (§8.1). Nothing in THIS
+-- migration reads them — they belong to the routes and the weekly job — so they
+-- are deliberately not seeded here rather than landing config no code reads.
+-- They are reported in the PR as §21 keys still to land.
 -- ----------------------------------------------------------------------------
 INSERT INTO public.calendar_runtime_config
   (key, value, value_type, min_value, max_value, owner, description) VALUES
@@ -739,6 +755,9 @@ INSERT INTO public.calendar_runtime_config
 
   ('taper_ratio_bp', '5000', 'integer', '0', '10000', 'product',
    'Doc 05F formula sheet §2 step 1: budget retained during the taper, in basis points (5000 = 50%).'),
+
+  ('review_estimated_seconds_per_item', '120', 'integer', '30', '600', 'product',
+   'Doc 05F §21 / §9.3, SCL-08-F: seconds to budget per review item. CALENDAR-OWNED until Doc 02B claims a review timing constant — review_runtime_config holds SM-2 parameters only and no timing key. Snapshotted into engine_planning.review_seconds_per_unit by calendar_build_plan_input.'),
 
   ('recent_planned_window_days', '28', 'integer', '14', '56', 'product',
    'Doc 05F formula sheet §4 / §5: how far back recent_planned_by_domain reaches. The deficit rule measures a domain against what it has had over this window plus today.'),
