@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/internal/execute-deletions",
-      "schedule": "0 3 * * *"
+      "schedule": "0 2 * * *"
     },
     {
       "path": "/api/internal/stale-session-sweep",

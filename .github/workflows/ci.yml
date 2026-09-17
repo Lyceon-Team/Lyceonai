@@ -650,6 +650,30 @@ jobs:
       # The proof above is only worth its red proof: plant one mutation per assertion (drop the
       # ORDER BY, share a transaction, add a timestamp column, disable the reconciler, cancel
       # with proration, ...) and require the NAMED test to turn red each time.
+      # @spec [Doc-01_V8 §5 / §5.1 / App A.5 / App E; SCL-085 / SCL-087 (PROPOSED); SCL-090
+      #        (PROPOSED as ruled 2026-09-17); owner brief 2026-09-17 "Deletion Vertical: Phases
+      #        2, 3, 5" and its follow-up "Replace Bespoke Suppression With Resend's"]
+      #        | @implemented [2026-09-17]
+      # Phases 2/3/5: the audit_logs guard refuses UPDATE/DELETE for service_role and the single
+      # exempt function is the only body that may open the gate; the three deletion actions are
+      # written, with profile_hard_deleted proven to share no transaction with the pseudonymous
+      # side; the completion notice reaches the provider BEFORE the suppression call, the call is
+      # made only when it was asked for, a failure pages and is retried, and the subject can lift
+      # it from account settings; the 24-month strip strips rather than deletes, leaves a 729-day
+      # row alone, and says so when it changed nothing.
+      - name: Deletion phases 2/3/5 → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-phases-235.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phases.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phases.json \
+            --file tests/ci/deletion-phases-235.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost

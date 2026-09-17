@@ -14,7 +14,7 @@
 # leave a mutation on disk.
 #
 # Needs a Postgres reachable through PG* env (the suite bootstraps its own database from
-# supabase/migrations). Runs the suite fifteen times; each run is ~2s on the CI service container.
+# supabase/migrations). Runs the two suites twenty-six times between them; each run is ~2s on the CI service container.
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -23,11 +23,32 @@ cd "$ROOT"
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 EXEC="server/lib/account-deletion-execute.ts"
 MIG="supabase/migrations/20260917000000_deletion_evidence_bundle.sql"
+MIG3="supabase/migrations/20260917100000_deletion_audit_actions.sql"
+MIG2="supabase/migrations/20260917110000_deletion_suppression_outcome.sql"
+MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
+DISPATCH="server/lib/notifications/dispatch.ts"
+RECONSENT="server/services/email-reconsent-audit.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
 cp "$MIG"  "$BACKUP/mig.sql"
-restore() { cp "$BACKUP/exec.ts" "$EXEC"; cp "$BACKUP/mig.sql" "$MIG"; }
+cp "$MIG3" "$BACKUP/mig3.sql"
+cp "$MIG2" "$BACKUP/mig2.sql"
+cp "$MIG5" "$BACKUP/mig5.sql"
+cp "$DISPATCH" "$BACKUP/dispatch.ts"
+cp "$RECONSENT" "$BACKUP/reconsent.ts"
+# ONE restore covering every file any mutation below may touch, hoisted here so the trap is
+# armed before the first plant. A per-block restore() would leave a mutation on disk if a later
+# block redefined it.
+restore() {
+  cp "$BACKUP/exec.ts" "$EXEC"
+  cp "$BACKUP/mig.sql" "$MIG"
+  cp "$BACKUP/mig3.sql" "$MIG3"
+  cp "$BACKUP/mig2.sql" "$MIG2"
+  cp "$BACKUP/mig5.sql" "$MIG5"
+  cp "$BACKUP/dispatch.ts" "$DISPATCH"
+  cp "$BACKUP/reconsent.ts" "$RECONSENT"
+}
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
 
@@ -111,7 +132,11 @@ plant M8 "$MIG" 's.replace("  GET DIAGNOSTICS v_marked = ROW_COUNT;\n", "  GET D
 expect_red M8 "C3.7 no free text"
 
 echo "==> (M9) cancel / restore stop closing the log row"
-plant M9 "$MIG" 's.replace("SET status = '"'"'cancelled'"'"', responded_on = (now() AT TIME ZONE '"'"'utc'"'"')::date", "SET status = status")'
+# Targets MIG3: migration 20260917100000 REPLACES cancel_account_deletion and
+# restore_account_deletion to add their audit rows, so it — not 20260917000000 — is where those
+# bodies now live. This mutation silently stopped biting when Phase 3 landed and the gate read
+# green while proving nothing; this harness is what caught it (2026-09-17).
+plant M9 "$MIG3" 's.replace("SET status = \x27cancelled\x27, responded_on = (now() AT TIME ZONE \x27utc\x27)::date", "SET status = status")'
 expect_red M9 "C3.5 cancelled"
 
 echo "==> (M10) put actor_id on the billing record (the reverse map Doc 05E §3 Rule 2 forbids)"
@@ -130,9 +155,88 @@ echo "==> (M13) copy the raw IP into the consent evidence (drop the §5.1 redact
 plant M13 "$MIG" 's.replace("         public.redact_evidence_ip(la.ip_address),\n", "         la.ip_address,\n", 1)'
 expect_red M13 "C3.8 consent evidence"
 
-echo "==> (14) restored: baseline must be green again"
+# ===========================================================================
+# PHASES 2 / 3 / 5 — same harness, second suite (owner brief 2026-09-17)
+# ===========================================================================
+# run_suite and expect_red read $SUITE at call time, so pointing it at the phases suite reuses
+# the whole harness rather than forking a second copy of it. Every file these mutations touch is
+# backed up and restored by the single hoisted restore() above.
+SUITE="tests/ci/deletion-phases-235.pg.ci.test.ts"
+
+echo "==> (0b) the phases suite must be green before planting"
+base2="$(run_suite)"
+if printf '%s\n' "$base2" | grep -q "^failed"; then
+  echo "  FAIL: phases suite is not green before planting"
+  printf '%s\n' "$base2" | sed 's/^/       | /'
+  exit 1
+fi
+echo "  ok   phases baseline green ($(printf '%s\n' "$base2" | grep -c '^passed') tests)"
+
+# THE ONE THAT MATTERS. The brief's §3: "Ordering is the whole design." A build that suppresses
+# before the completion notice passes every other test in this file, and loses the one message
+# confirming the deletion to the person who asked for it.
+echo "==> (M14) the suppression call happens BEFORE the completion notice"
+plant M14 "$EXEC" 's.replace("""        const completedAt = new Date().toISOString();
+        try {""", """        const completedAt = new Date().toISOString();
+        if (pending.log_id !== null) { await applyRequestedSuppression(admin, pending.log_id, recipientEmail, requestId); }
+        try {""", 1)'
+expect_red M14 "P2.1 the completion notice reaches the provider BEFORE"
+
+echo "==> (M15) the address is suppressed although suppression_requested is false"
+plant M15 "$EXEC" 's.replace("  if (!requested) return;", "  if (false) return;", 1)'
+expect_red M15 "P2.2 the suppression call is made only when"
+
+echo "==> (M16) the audit_logs guard silently swallows the mutation instead of refusing"
+plant M16 "$MIG3" 's.replace("  RAISE EXCEPTION \x27Table % is append-only; UPDATE and DELETE are not permitted\x27, TG_TABLE_NAME;", "  RETURN NULL;", 1)'
+expect_red M16 "P3.1 audit_logs refuses"
+
+echo "==> (M17) profile_hard_deleted written WITH the deleted profile ids"
+plant M17 "$MIG3" 's.replace("  SELECT NULL, NULL, \x27profile_hard_deleted\x27, NULL,", "  SELECT c.profile_id, c.profile_id, \x27profile_hard_deleted\x27, NULL,", 1)'
+expect_red M17 "P3.5 profile_hard_deleted"
+
+echo "==> (M18) the evidence sweep DELETES the row instead of stripping it"
+plant M18 "$MIG5" 's.replace("  UPDATE public.deletion_request_log\n     SET subject_email = NULL, requester_email = NULL\n   WHERE log_id = ANY (v_ids);", "  DELETE FROM public.deletion_request_log WHERE log_id = ANY (v_ids);", 1)'
+expect_red M18 "P5.1 a terminal row past 24 months"
+
+echo "==> (M19) the evidence window is read as days instead of months"
+plant M19 "$MIG5" 's.replace("make_interval(months => public.deletion_evidence_retention_months())", "make_interval(days => public.deletion_evidence_retention_months())", 1)'
+expect_red M19 "P5.2 a row inside the window"
+
+echo "==> (M20) a failed suppression is not recorded, so nothing is left to retry"
+plant M20 "$EXEC" 's.replace("""  await recordSuppressionOutcome(admin, logId, "failed_manual", requestId);
+}
+
+/** The one writer""", """}
+
+/** The one writer""", 1)'
+expect_red M20 "P2.3 a suppression failure records"
+
+echo "==> (M21) a sweep run that changed nothing stops saying so"
+plant M21 "$EXEC" 's.replace("\"evidence_sweep_complete\",", "\"evidence_sweep_quiet\",", 1)'
+expect_red M21 "P5.4 both sweeps log a run"
+
+echo "==> (M22) the audit purge hardcodes 365 instead of reading the configured window"
+plant M22 "$MIG3" 's.replace("  RETURN v_days;", "  RETURN 365;", 1)'
+expect_red M22 "P5.5 the audit purge runs only through"
+
+echo "==> (M23) the retry sweep never runs"
+plant M23 "$EXEC" 's.replace("  await retryFailedSuppressions(admin, requestId);", "", 1)'
+expect_red M23 "P2.4 the retry sweep re-attempts"
+
+echo "==> (M24) the retry sweep re-suppresses an address that was already applied"
+plant M24 "$EXEC" 's.replace("""    if (row.suppression_status === "applied") return false;""", "", 1)'
+expect_red M24 "P2.4 the retry sweep re-attempts"
+
+echo "==> (M25) clearing a suppression stops recording the re-consent"
+plant M25 "$RECONSENT" 's.replace("    action: EMAIL_RECONSENT_ACTION,", "    action: \"unrecorded\",", 1)'
+expect_red M25 "P2.5 clearing from account settings"
+
+echo "==> (26) restored: BOTH suites must be green again"
 again="$(run_suite)"
-if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: suite not green after restore"; fails=1; else echo "  ok   green after restore"; fi
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phases suite not green after restore"; fails=1; else echo "  ok   phases suite green after restore"; fi
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: evidence suite not green after restore"; fails=1; else echo "  ok   evidence suite green after restore"; fi
 
 if [ "$fails" -ne 0 ]; then echo "DELETION EVIDENCE GATE SELF-TEST: FAIL"; exit 1; fi
 echo "DELETION EVIDENCE GATE SELF-TEST: PASS"

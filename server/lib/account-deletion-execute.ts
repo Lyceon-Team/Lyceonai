@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getStripeClient } from "./stripe/client";
 import { logger } from "../logger";
 import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends";
+import { defaultSuppressionTransport } from "./notifications/transport";
 
 // @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9; SCL-085/086/088 PROPOSED;
 // owner brief 2026-09-16 "Deletion Vertical" Parts B + C; plan v4 §3.4] account-deletion
@@ -27,6 +28,14 @@ import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends"
 
 type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
 
+/**
+ * Per-call bound on each retention sweep (owner brief 2026-09-17 §5.4), matching the
+ * notification sweep's shape: finite work per pass, oldest first, and what is left over is
+ * simply swept on the next daily run. Nothing here is time-critical — a backlog drains over
+ * days without anyone noticing, whereas an unbounded delete on the audit table would not.
+ */
+const DELETION_SWEEP_BATCH_SIZE = 500;
+
 type DueRequest = {
   id: string;
   profile_id: string;
@@ -36,6 +45,13 @@ type DueRequest = {
 /** What T3 writes for one completed deletion (mirrors complete_deletion_log's jsonb element). */
 type LogCompletion = {
   log_id: string;
+  /**
+   * The deleted profile's uuid — a DEAD key by the time T3 runs (the cascade removed the row).
+   * T3 uses it to find that profile's audit_logs rows and erase the ids from them (Doc 01 §5.1),
+   * and never stores it: the PG suite asserts structurally that no evidence table carries a uuid
+   * column other than log_id.
+   */
+  profile_id: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   stripe_subscription_item_id: string | null;
@@ -432,6 +448,169 @@ async function retryFailedBillingTeardowns(
   );
 }
 
+// @spec [owner follow-up 2026-09-17 "Replace Bespoke Suppression With Resend's" §3; SCL-090
+// PROPOSED as ruled 2026-09-17; contracts/notifications.contract.md §11A]
+// | @implemented [2026-09-17]
+// Honour a do-not-contact request by adding the address to Resend's team suppression list — the
+// same list Resend already applies to every send, including the mail Supabase Auth sends through
+// it. NEVER THROWS: called after the deletion has committed, so a vendor failure records
+// `failed_manual`, pages, and waits for the retry sweep. The `suppression_requested` read is what
+// decides; a coding error cannot manufacture a suppression, because the SQL writer also carries
+// `AND suppression_requested = true`.
+async function applyRequestedSuppression(
+  admin: DeletionAdminClient,
+  logId: string,
+  address: string,
+  requestId?: string,
+): Promise<void> {
+  let requested: boolean;
+  try {
+    const { data, error } = await admin
+      .from("deletion_request_log")
+      .select("suppression_requested")
+      .eq("log_id", logId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const row = data as { suppression_requested?: boolean | null } | null;
+    requested = row?.suppression_requested === true;
+  } catch (err) {
+    // We cannot tell whether they asked. Record `failed_manual` anyway: the SQL writer only
+    // touches rows where `suppression_requested` is true, so this is a no-op for everybody who
+    // did not ask, and for anybody who did it is what puts the row in front of the retry sweep.
+    logger.error(
+      "DELETION",
+      "suppression_failed_manual",
+      "Could not read suppression_requested; recorded failed_manual so the retry sweep re-attempts",
+      err,
+      { requestId },
+    );
+    await recordSuppressionOutcome(admin, logId, "failed_manual", requestId);
+    return;
+  }
+
+  if (!requested) return;
+
+  const result = await defaultSuppressionTransport().add(address);
+  if (result.ok) {
+    await recordSuppressionOutcome(admin, logId, "applied", requestId);
+    logger.info(
+      "DELETION",
+      "suppression_applied",
+      "Do-not-contact request honoured on the provider suppression list",
+      { requestId },
+    );
+    return;
+  }
+
+  // THE PAGE. Same severity, same shape and same reasoning as
+  // `billing_teardown_failed_manual`: an unhonoured do-not-contact request is a promise we are
+  // currently breaking, so it is an error-severity event with a stable name for the Cloud
+  // Monitoring log-based alert policy. The deletion itself stands.
+  logger.error(
+    "DELETION",
+    "suppression_failed_manual",
+    "Resend did not accept the do-not-contact request; recorded failed_manual, deletion stands, retry sweep will re-attempt",
+    undefined,
+    { kind: result.error.kind, status: result.error.status, requestId },
+  );
+  await recordSuppressionOutcome(admin, logId, "failed_manual", requestId);
+}
+
+/** The one writer, wrapped so a bookkeeping failure cannot throw into a committed deletion. */
+async function recordSuppressionOutcome(
+  admin: DeletionAdminClient,
+  logId: string,
+  status: "applied" | "failed_manual",
+  requestId?: string,
+): Promise<void> {
+  try {
+    const { error } = await admin.rpc("record_deletion_suppression_outcome", {
+      p_log_id: logId,
+      p_status: status,
+    });
+    if (error) throw new Error(error.message);
+  } catch (err) {
+    logger.error(
+      "DELETION",
+      "suppression_outcome_write_failed",
+      "Could not record the suppression outcome; the row stays unresolved and the retry sweep re-attempts",
+      err,
+      { status, requestId },
+    );
+  }
+}
+
+// @spec [SCL-089 as amended 2026-09-16, applied to the suppression call] Re-attempts every
+// do-not-contact request that has not reached 'applied', from the evidence row alone — the
+// profile is gone and `subject_email` is the only address left. Rows that DID reach 'applied'
+// are never touched, which is what stops a subject who has since re-consented (their Resend
+// entry removed, this column still 'applied') from being silently re-suppressed tonight.
+// Never throws.
+async function retryFailedSuppressions(
+  admin: DeletionAdminClient,
+  requestId?: string,
+): Promise<void> {
+  let rows: Array<Record<string, unknown>>;
+  try {
+    // `suppression_status IS DISTINCT FROM 'applied'` is filtered below rather than in the
+    // query: PostgREST's `not.eq` drops NULLs, and NULL is exactly the row this sweep exists to
+    // rescue — the one whose outcome write never landed.
+    const { data, error } = await admin
+      .from("deletion_request_log")
+      .select("log_id, subject_email, suppression_status")
+      .eq("suppression_requested", true)
+      .eq("status", "completed");
+    if (error) throw new Error(error.message);
+    rows = (data ?? []) as Array<Record<string, unknown>>;
+  } catch (err) {
+    logger.warn(
+      "DELETION",
+      "suppression_retry_sweep_read_failed",
+      "Could not read unresolved do-not-contact requests; retry sweep skipped this pass",
+      { error: errorMessage(err), requestId },
+    );
+    return;
+  }
+
+  const pendingRows = rows.filter((row) => {
+    if (row.suppression_status === "applied") return false;
+    return typeof row.log_id === "string" && typeof row.subject_email === "string";
+  });
+  if (pendingRows.length === 0) return;
+
+  let resolved = 0;
+  for (const row of pendingRows) {
+    const logId = String(row.log_id);
+    const address = String(row.subject_email);
+    const result = await defaultSuppressionTransport().add(address);
+    if (result.ok) {
+      await recordSuppressionOutcome(admin, logId, "applied", requestId);
+      resolved += 1;
+      logger.info(
+        "DELETION",
+        "suppression_retried",
+        "An unhonoured do-not-contact request was accepted on retry",
+        { requestId },
+      );
+    } else {
+      logger.error(
+        "DELETION",
+        "suppression_retry_failed",
+        "Resend still rejecting the do-not-contact request; the row stays unresolved",
+        undefined,
+        { kind: result.error.kind, status: result.error.status, requestId },
+      );
+      await recordSuppressionOutcome(admin, logId, "failed_manual", requestId);
+    }
+  }
+  logger.info(
+    "DELETION",
+    "suppression_retry_sweep_complete",
+    "Retried unhonoured do-not-contact requests",
+    { attempted: pendingRows.length, resolved, requestId },
+  );
+}
+
 // @spec [Q-PR4a-2(c)] Fail-fast: if Supabase Storage objects exist for this user, the driver
 // MUST NOT proceed — storage purge logic must be added first. Today zero buckets/uploads exist;
 // this assertion catches a future addition that forgets to update the driver.
@@ -468,8 +647,9 @@ async function assertNoStorageObjects(
 
 /**
  * Evidence-side housekeeping that runs at the end of EVERY pass, whether or not anything was
- * due: the reconciler resolves log rows a crashed earlier pass left 'executing', and the ledger
- * rewrite strips insertion order from anonymized_actors. (The billing retry sweep runs at the
+ * due: the reconciler resolves log rows a crashed earlier pass left 'executing', the two
+ * retention sweeps run (the 24-month evidence identity strip and the audit-log purge), and the
+ * ledger rewrite strips insertion order from anonymized_actors. (The billing retry sweep runs at the
  * START of a pass instead, so a teardown that failed in this pass is retried on the next one
  * and pages once per pass, not twice.) Each is its own transaction and touches one universe
  * only. Failures are logged, never thrown: the deletions of this pass are already committed.
@@ -495,6 +675,79 @@ async function runEvidenceHousekeeping(
       "log_reconciled",
       "Deletion request log reconciled",
       { result: reconciled ?? null, requestId },
+    );
+  }
+
+  // @spec [SCL-085 PROPOSED (24-month identity strip); Doc-01_V8 §5.1 (audit purge after
+  // anonymization_retention_days); SCL-087 PROPOSED (the purge runs through the ONE exempt
+  // function); owner brief 2026-09-17 §5.4/§5.5] | @implemented [2026-09-17]
+  //
+  // BOTH SWEEPS LOG UNCONDITIONALLY, INCLUDING A RUN THAT CHANGED NOTHING. Each function
+  // returns its counts AND the cutoff it used, so "the sweep ran and found nothing due" and
+  // "the sweep never ran" are different lines in the log rather than the same silence. That is
+  // the whole reason a retention mechanism can be trusted from logs alone.
+  const { data: evidenceSwept, error: evidenceSweepError } = await admin.rpc(
+    "sweep_deletion_evidence",
+    { p_batch_size: DELETION_SWEEP_BATCH_SIZE },
+  );
+  if (evidenceSweepError) {
+    logger.error(
+      "DELETION",
+      "evidence_sweep_failed",
+      "sweep_deletion_evidence failed; identity stays on expired evidence rows until the next pass",
+      evidenceSweepError,
+      { batchSize: DELETION_SWEEP_BATCH_SIZE, requestId },
+    );
+  } else {
+    const row = (Array.isArray(evidenceSwept) ? evidenceSwept[0] : evidenceSwept) as
+      | {
+          stripped_log_rows?: number;
+          stripped_consent_rows?: number;
+          cutoff?: string;
+        }
+      | null;
+    logger.info(
+      "DELETION",
+      "evidence_sweep_complete",
+      "24-month evidence identity strip ran",
+      {
+        strippedLogRows: row?.stripped_log_rows ?? 0,
+        strippedConsentRows: row?.stripped_consent_rows ?? 0,
+        cutoff: row?.cutoff ?? null,
+        batchSize: DELETION_SWEEP_BATCH_SIZE,
+        requestId,
+      },
+    );
+  }
+
+  const { data: auditPurged, error: auditPurgeError } = await admin.rpc(
+    "apply_audit_logs_retention",
+    {
+      p_action: "purge_expired",
+      p_profile_id: null,
+      p_batch_size: DELETION_SWEEP_BATCH_SIZE,
+    },
+  );
+  if (auditPurgeError) {
+    logger.error(
+      "DELETION",
+      "audit_purge_failed",
+      "apply_audit_logs_retention(purge_expired) failed; expired audit rows remain until the next pass",
+      auditPurgeError,
+      { batchSize: DELETION_SWEEP_BATCH_SIZE, requestId },
+    );
+  } else {
+    const purged = (auditPurged ?? {}) as { rows?: number; cutoff?: string };
+    logger.info(
+      "DELETION",
+      "audit_purge_complete",
+      "audit_logs retention purge ran",
+      {
+        purgedRows: purged.rows ?? 0,
+        cutoff: purged.cutoff ?? null,
+        batchSize: DELETION_SWEEP_BATCH_SIZE,
+        requestId,
+      },
     );
   }
 
@@ -531,6 +784,9 @@ async function runEvidenceHousekeeping(
 //          cascade RAISE → status rolls back to 'pending' → retried next pass; the log row stays
 //          'executing' and the reconciler reverts it to 'pending'.
 //     6. completion notice (after commit, best-effort)
+//     7. do-not-contact suppression at Resend — AFTER 6, because Resend's list would otherwise
+//        swallow the notice; failure pages and records failed_manual (retried at the top of a
+//        later pass)
 //   T3 complete_deletion_log (all successes, with the billing record fields)
 //   reconcile_deletion_log + rewrite_anonymized_actors.
 // Failure at any per-request step: log, skip to next request (stays 'pending', retries next pass).
@@ -547,6 +803,8 @@ export async function executeDueDeletions(
   // SCL-089 alert-and-retry: re-attempt earlier passes' failed_manual Stripe teardowns first.
   // Evidence side + Stripe only; never throws; a failure pages again and the record waits.
   await retryFailedBillingTeardowns(admin, requestId);
+  // Same posture, same placement, for a do-not-contact request whose call to Resend failed.
+  await retryFailedSuppressions(admin, requestId);
 
   const { data: pendingRows, error: fetchError } = await admin
     .from("account_deletion_requests")
@@ -736,6 +994,7 @@ export async function executeDueDeletions(
       if (pending.log_id) {
         completions.push({
           log_id: pending.log_id,
+          profile_id: pending.profile_id,
           stripe_customer_id: billing.stripeCustomerId,
           stripe_subscription_id: billing.stripeSubscriptionId,
           stripe_subscription_item_id: billing.stripeSubscriptionItemId,
@@ -778,6 +1037,30 @@ export async function executeDueDeletions(
           "completion_notice_skipped",
           "No address available for the completion notice",
           { userId: pending.profile_id, requestId },
+        );
+      }
+
+      // Step 7 (after the notice, and the order is the whole design): the do-not-contact
+      // request, honoured by adding the address to Resend's team suppression list.
+      //
+      // WHY IT MUST COME AFTER STEP 6. Resend applies its suppression list to EVERY send the
+      // team makes — transactional REST sends and broadcasts alike, and SMTP relay too. The
+      // completion notice is a transactional REST send. Suppressing first would therefore have
+      // Resend swallow the one message that confirms we did what the person asked. There is no
+      // bypass to build and none to configure; the ordering IS the mechanism, which is why
+      // tests/ci/deletion-phases-235.pg.ci.test.ts P2.1 asserts the sequence of HTTP requests
+      // rather than merely that both happened.
+      //
+      // NEVER FAILS THE DELETION. The deletion is committed by now, and the legal act is the
+      // erasure, not the mailing-list bookkeeping. A failure records `failed_manual` and pages,
+      // exactly as a failed Stripe teardown does (SCL-089 as amended), and the retry sweep at
+      // the top of every pass re-attempts it until Resend accepts.
+      if (pending.log_id !== null && recipientEmail !== null) {
+        await applyRequestedSuppression(
+          admin,
+          pending.log_id,
+          recipientEmail,
+          requestId,
         );
       }
     } catch (err) {
