@@ -173,6 +173,7 @@ function sameExplanations(a: Record<string, string>, b: Record<string, string>):
 }
 
 async function checkConstants(client: PgClient): Promise<void> {
+  const before = failures.length;
   const expected = JSON.parse(emit(['constants'])) as Record<string, JsonValue>;
   const { rows } = await client.query<{ key: string; value: JsonValue }>(
     'SELECT key, value FROM public.calendar_runtime_config',
@@ -188,7 +189,12 @@ async function checkConstants(client: PgClient): Promise<void> {
       fail(`calendar_runtime_config.${key} = ${got}, oracle has ${JSON.stringify(want)}`);
     }
   }
-  console.log(`    OK calendar_runtime_config matches the oracle on all ${Object.keys(expected).length} formula constants`);
+  const added = failures.length - before;
+  console.log(
+    added === 0
+      ? `    OK calendar_runtime_config matches the oracle on all ${Object.keys(expected).length} formula constants`
+      : `    FAIL calendar_runtime_config diverges from the oracle on ${added} of ${Object.keys(expected).length} formula constants`,
+  );
 }
 
 async function runCases(client: PgClient, label: string, cases: ParityCase[]): Promise<void> {
