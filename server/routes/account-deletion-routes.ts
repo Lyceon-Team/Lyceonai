@@ -7,6 +7,10 @@ import {
 } from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { logger } from "../logger";
+import {
+  DELETION_GRACE_DAYS_DEFAULT,
+  getDeletionGraceDays,
+} from "../lib/account-deletion-runtime-config";
 import { sendAccountDeletionScheduledEmail } from "../lib/notifications/direct-sends";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 // buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
@@ -21,26 +25,35 @@ const router = Router();
 // scheduled_hard_delete_at <= now()). The prior deployed code used a 24h grace that both
 // contradicted the spec window AND never inserted (it omitted the NOT-NULL schedule/actor columns,
 // so the right-to-erasure path never worked in prod — GAP-HY-13).
-export const DELETION_GRACE_DAYS = 7;
-const DELETION_GRACE_MS = DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
+// @spec [Doc-01_V8 App A.5 grace_period_days; owner brief 2026-09-17 §5.3] | @implemented [2026-09-17]
+// The window is operator-tunable from `account_deletion_runtime_config` (see
+// server/lib/account-deletion-runtime-config.ts). This constant is no longer the rule — it is
+// the App A.5 default the reader falls back to, re-exported here so existing importers and the
+// pure helpers below keep one name for it.
+export const DELETION_GRACE_DAYS = DELETION_GRACE_DAYS_DEFAULT;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function isGraceWindowExpired(
   requestedAt: string,
   now: Date = new Date(),
+  graceDays: number = DELETION_GRACE_DAYS,
 ): boolean {
   const requestedAtMs = new Date(requestedAt).getTime();
   if (Number.isNaN(requestedAtMs)) {
     return true;
   }
-  return now.getTime() > requestedAtMs + DELETION_GRACE_MS;
+  return now.getTime() > requestedAtMs + graceDays * DAY_MS;
 }
 
 // @spec [Doc-01 §40.2 / §40.2.1 + §5] self-serve deletion-request row. actor_profile_id = the
 // requesting user (§5: actor "may be the profile itself for self-service"); scheduled_hard_delete_at
 // = requested_at + 7 days (§40.2); stripe_cancellation_status starts 'pending' (§40.2.1). The two
 // NOT-NULL columns (scheduled_hard_delete_at, actor_profile_id) the old insert omitted are required.
-export function scheduledHardDeleteAt(requestedAt: Date = new Date()): string {
-  return new Date(requestedAt.getTime() + DELETION_GRACE_MS).toISOString();
+export function scheduledHardDeleteAt(
+  requestedAt: Date = new Date(),
+  graceDays: number = DELETION_GRACE_DAYS,
+): string {
+  return new Date(requestedAt.getTime() + graceDays * DAY_MS).toISOString();
 }
 
 export function buildDeletionRequestInsert(
@@ -164,6 +177,7 @@ export async function performInAppCancel(
 export async function performDeletionRequestV2(
   admin: DeletionAdminClient,
   profileId: string,
+  graceDays: number = DELETION_GRACE_DAYS,
 ): Promise<
   | {
       requestedAt: string;
@@ -178,7 +192,7 @@ export async function performDeletionRequestV2(
     p_profile_id: profileId,
     p_actor_id: profileId, // self-serve: actor = the requesting user (§5)
     p_recovery_token_hash: tokenHash,
-    p_grace_days: DELETION_GRACE_DAYS,
+    p_grace_days: graceDays,
   });
   if (error) {
     return { error: error.message };
@@ -234,7 +248,10 @@ router.post(
 
       // §40.2.1/§40.3/§40.4 V2 path (flag-gated; live only once the staged migration is applied).
       if (isDeletionLifecycleV2Enabled()) {
-        const result = await performDeletionRequestV2(admin, userId);
+        // One read per request, used for the RPC and for every figure in the response, so the
+        // window the person is told about is the window their row was actually scheduled on.
+        const graceDays = await getDeletionGraceDays();
+        const result = await performDeletionRequestV2(admin, userId, graceDays);
         if ("error" in result) {
           logger.error(
             "DELETION",
@@ -296,7 +313,7 @@ router.post(
         );
         return res.json({
           ok: true,
-          graceWindowDays: DELETION_GRACE_DAYS,
+          graceWindowDays: graceDays,
           requestedAt: result.requestedAt,
           scheduledHardDeleteAt: result.scheduledHardDeleteAt,
           requestId,
@@ -419,12 +436,18 @@ router.post(
           .json({ error: "No pending deletion request found", requestId });
       }
 
-      if (isGraceWindowExpired(pending.requested_at)) {
+      // @spec [owner brief 2026-09-17 §5.3] | @implemented [2026-09-17]
+      // The configured window, not the constant: the RPC deliberately does NOT enforce the
+      // grace window (it says so in its own comment), this route is its only caller and the
+      // sole enforcement point, so judging by a stale 7 would refuse a cancel on a request
+      // that is not yet due under a longer configured window.
+      const cancelGraceDays = await getDeletionGraceDays();
+      if (isGraceWindowExpired(pending.requested_at, new Date(), cancelGraceDays)) {
         return res.status(409).json({
           error: "Deletion grace window has expired",
           code: "GRACE_WINDOW_EXPIRED",
           requestedAt: pending.requested_at,
-          graceWindowDays: DELETION_GRACE_DAYS,
+          graceWindowDays: cancelGraceDays,
           requestId,
         });
       }
