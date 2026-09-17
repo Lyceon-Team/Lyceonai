@@ -1909,6 +1909,156 @@ COMMENT ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_ver
 
 
 --
+-- Name: calendar_regenerate_day(uuid, date, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored     jsonb;
+  v_input      jsonb;
+  v_plan       jsonb;
+  v_output     jsonb;
+  v_generator  text := 'deterministic_v1';
+  v_reason     jsonb;
+  v_res        jsonb;
+  v_result     jsonb;
+  v_today      date;
+  v_tz         text;
+  v_enabled    text[];
+  v_degraded   text[];
+  v_horizon    integer;
+  v_dates      date[];
+BEGIN
+  IF p_trigger NOT IN ('day_regenerate', 'day_reset') THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: trigger ''%'' is not a day-scoped trigger', p_trigger
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: student % has no study profile; nothing is generated and the prior plan stands', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN RETURN v_stored; END IF;
+  END IF;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+
+  -- §12.2: a past date is never owned and never regenerated.
+  IF p_date < v_today THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: % is in the past and cannot be regenerated', p_date
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT public.calendar_require_int(jsonb_object_agg(key, value), 'horizon_days')
+    INTO v_horizon FROM public.calendar_runtime_config;
+
+  -- Outside the horizon the generator never emits the date at all, so the
+  -- version would own nothing and the route would report a success that changed
+  -- no plan. Refuse instead of writing an empty version.
+  IF p_date > v_today + (v_horizon - 1) THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: % is beyond the % day horizon and is not planned yet', p_date, v_horizon
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT array_agg(d ORDER BY d) INTO v_dates
+  FROM generate_series(v_today, v_today + (v_horizon - 1), interval '1 day') g(d);
+
+  v_input := public.calendar_build_plan_input(p_student_id, v_dates);
+
+  SELECT COALESCE(array_agg(t), '{}') INTO v_enabled
+  FROM jsonb_array_elements_text(v_input -> 'enabled_block_types') t;
+  SELECT COALESCE(array_agg(t), '{}') INTO v_degraded
+  FROM jsonb_array_elements_text(COALESCE(v_input -> 'degraded', '[]'::jsonb)) t;
+
+  -- Sheet §5A, the same ladder calendar_persist_version runs. A day the student
+  -- asked for is never left blank: a degraded read, a raise or a rejection all
+  -- fall through to fallback_v1 on the same snapshot, with the reason recorded.
+  IF 'mastery' = ANY (v_degraded) OR 'review_queue' = ANY (v_degraded) THEN
+    v_generator := 'fallback_v1';
+    v_reason := jsonb_build_object('reason','degraded_input','degraded', v_input -> 'degraded');
+  ELSE
+    BEGIN
+      v_plan := public.calendar_compute_plan(v_input);
+    EXCEPTION WHEN OTHERS THEN
+      v_generator := 'fallback_v1';
+      v_reason := jsonb_build_object('reason','primary_raised','sqlstate', SQLSTATE, 'message', SQLERRM);
+    END;
+
+    IF v_generator = 'deterministic_v1' THEN
+      v_output := public.calendar_carry_started(v_input,
+                    public.calendar_regenerate_day_only(
+                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled),
+                      p_date));
+      v_res := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+      IF v_res ->> 'result' <> 'accepted' THEN
+        v_generator := 'fallback_v1';
+        v_reason := jsonb_build_object('reason','primary_rejected','violations', v_res -> 'violations');
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_generator = 'fallback_v1' THEN
+    v_plan := public.calendar_compute_plan_fallback(v_input);
+    v_output := public.calendar_carry_started(v_input,
+                  public.calendar_regenerate_day_only(
+                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled),
+                    p_date));
+  END IF;
+
+  v_result := public.calendar_write_version(p_student_id, p_trigger, 'student',
+                v_generator, p_generator_version, v_input, v_output, 'day_regenerate', v_reason);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_regenerate_day',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student’s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
+
+
+--
+-- Name: calendar_regenerate_day_only(jsonb, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_set(p_output, '{dates}', COALESCE((
+    SELECT jsonb_agg(d)
+    FROM jsonb_array_elements(p_output -> 'dates') d
+    WHERE (d ->> 'scheduled_date')::date = p_date
+  ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day_only(p_output jsonb, p_date date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) IS 'Doc 05F §12.1: keeps one date of a horizon plan so a day-scoped version owns exactly that date. calendar_compute_plan always emits the full horizon and ignores generated_for.dates, so narrowing happens on the output, after generation, never by shrinking the snapshot.';
+
+
+--
 -- Name: calendar_require_int(jsonb, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2073,7 +2223,7 @@ DECLARE
   v_sum        integer;
   v_txt        text;
 BEGIN
-  IF p_mode NOT IN ('generated','student_edit','do_it_now','rollback') THEN
+  IF p_mode NOT IN ('generated','day_regenerate','student_edit','do_it_now','rollback') THEN
     RAISE EXCEPTION 'calendar_validate_plan: unknown mode ''%''', p_mode USING ERRCODE = '22023';
   END IF;
 
@@ -2175,7 +2325,7 @@ BEGIN
         v_created_fl := v_created_fl + 1;
         v_fl_total := v_fl_total + 1;
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated'
+        IF p_mode IN ('generated','day_regenerate')
            AND (p_wd IS NULL OR EXTRACT(DOW FROM v_date)::integer <> p_wd) THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a full_length was created off the student''s full-length weekday');
@@ -2188,7 +2338,7 @@ BEGIN
 
       ELSIF v_b ->> 'block_type' = 'review' THEN
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+        IF p_mode IN ('generated','day_regenerate') AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a review block was created on a non-study day');
         END IF;
@@ -2227,7 +2377,7 @@ BEGIN
 
       ELSIF v_b ->> 'block_type' = 'practice' THEN
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+        IF p_mode IN ('generated','day_regenerate') AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a practice block was created on a non-study day');
         END IF;
@@ -2272,7 +2422,7 @@ BEGIN
       END IF;
 
       ---------------------------------------------------------------- V-09
-      IF p_mode = 'generated' THEN
+      IF p_mode IN ('generated','day_regenerate') THEN
         IF NOT (v_b ->> 'explanation_key' = ANY (c_block_keys)) THEN
           v_viol := v_viol || jsonb_build_object('rule','V-09','date',v_date::text,
                       'detail','block explanation_key ' || COALESCE(v_b ->> 'explanation_key','<null>')
@@ -2291,7 +2441,7 @@ BEGIN
     END LOOP;
 
     ------------------------------------------------------------------ V-05
-    IF p_mode = 'generated' THEN
+    IF p_mode IN ('generated','day_regenerate') THEN
       IF v_has_created_fl AND v_count > 1 THEN
         v_viol := v_viol || jsonb_build_object('rule','V-05','date',v_date::text,
                     'detail','an exam date carries other created blocks');
@@ -2364,7 +2514,7 @@ $$;
 -- Name: FUNCTION calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6. Pure. Returns a rejection as data rather than raising, because calendar_persist_version has to record it and fall back. V-07 is retired: sheet §8 item 3 removed skill_codes.';
+COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6 and by the day_regenerate mode (2026-09-17). Pure. Returns a rejection as data rather than raising. Mode day_regenerate is mode generated minus V-14: the day-scoped student triggers exist to clear the student’s own override, which is the one thing V-14 forbids a generated version from doing. V-07 is retired: sheet §8 item 3 removed skill_codes.';
 
 
 --
@@ -13635,6 +13785,21 @@ REVOKE ALL ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) FROM PU
 --
 
 REVOKE ALL ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day_only(p_output jsonb, p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) FROM PUBLIC;
 
 
 --

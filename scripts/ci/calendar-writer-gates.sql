@@ -23,14 +23,16 @@ AS $$ SELECT nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub'
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-1111-1111-1111-111111111111', 'writer-a@example.test', '{}'::jsonb),
-  ('22222222-2222-2222-2222-222222222222', 'writer-b@example.test', '{}'::jsonb);
+  ('22222222-2222-2222-2222-222222222222', 'writer-b@example.test', '{}'::jsonb),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'writer-c@example.test', '{}'::jsonb);
 
 -- A student who studies Mon-Fri (mask 62 = bits 1..5), 60 minutes, exams on
 -- Saturday, with two measured domains so the weighted branch runs.
 INSERT INTO public.student_study_profile
   (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
 VALUES ('11111111-1111-1111-1111-111111111111', 'America/Chicago', 62, 60, 6, 1400, now()),
-       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 1400, now());
+       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 1400, now()),
+       ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'America/Chicago', 62, 60, 6, 1400, now());
 
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -330,6 +332,7 @@ BEGIN
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.proname IN
     ('calendar_persist_version','calendar_edit_day','calendar_do_it_now',
+     'calendar_regenerate_day',
      'calendar_link_launch','calendar_build_plan_input','calendar_viewer_is_admin')
     AND NOT (p.prosecdef AND array_to_string(p.proconfig, ',') LIKE '%search_path=public, pg_temp%');
   IF v_n > 0 THEN
@@ -343,6 +346,7 @@ BEGIN
   WHERE n.nspname = 'public' AND p.proname IN
     ('calendar_compute_plan','calendar_compute_plan_fallback','calendar_validate_plan',
      'calendar_place_full_lengths','calendar_plan_to_output','calendar_carry_started',
+     'calendar_regenerate_day_only',
      'calendar_scope_is_valid','calendar_require_int')
     AND p.provolatile <> 'i';
   IF v_n > 0 THEN
@@ -351,5 +355,150 @@ BEGIN
   RAISE NOTICE '    OK Z-21 every pure calendar function is IMMUTABLE';
 END;
 $exec$;
+
+-- ----------------------------------------------------------------------------
+-- Z-22 .. Z-27 — calendar_regenerate_day (Doc 05F §12.1, §15)
+--
+-- The writer behind POST /api/calendar/days/:date/regenerate and /reset. Doc 05F
+-- §12.1 lists both triggers and §15 gives each a route, but 20260917130000
+-- named no writer for either. These gates prove the one that landed in
+-- 20260917140000 does what those two routes need, and in particular that its
+-- validator mode is load-bearing rather than cosmetic.
+-- ----------------------------------------------------------------------------
+DO $regen$
+DECLARE
+  S3 CONSTANT uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_today   date;
+  v_d1      date;
+  v_d2      date;
+  v_r1      jsonb;
+  v_r2      jsonb;
+  v_input   jsonb;
+  v_output  jsonb;
+  v_gen     jsonb;
+  v_day     jsonb;
+  v_n       integer;
+  v_ovr     boolean;
+  v_blocks  integer;
+  v_sqlst   text;
+BEGIN
+  v_today := (now() AT TIME ZONE 'America/Chicago')::date;
+
+  -- The first two study days (mask 62 = Mon..Fri) on or after today.
+  SELECT min(d), min(d) FILTER (WHERE d > (SELECT min(d2) FROM generate_series(v_today, v_today + 13, interval '1 day') g2(d2)
+                                           WHERE ((62 >> (EXTRACT(DOW FROM d2)::integer)) & 1) = 1))
+  INTO v_d1, v_d2
+  FROM generate_series(v_today, v_today + 13, interval '1 day') g(d)
+  WHERE ((62 >> (EXTRACT(DOW FROM d)::integer)) & 1) = 1;
+
+  ------------------------------------------------------------------- Z-22
+  BEGIN
+    PERFORM public.calendar_regenerate_day(S3, v_d1, 'weekly', 'v1');
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-22 a horizon-scoped trigger was accepted by a day-scoped writer';
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    RAISE NOTICE '    OK Z-22 calendar_regenerate_day refuses a horizon-scoped trigger';
+  END;
+
+  ------------------------------------------------------------------- Z-23
+  BEGIN
+    PERFORM public.calendar_regenerate_day(S3, v_today - 1, 'day_regenerate', 'v1');
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-23 a past date was regenerated';
+  EXCEPTION WHEN SQLSTATE '23514' THEN
+    RAISE NOTICE '    OK Z-23 calendar_regenerate_day refuses a past date (§12.2)';
+  END;
+
+  -- Setup, then the student clears two days by hand. Both are now overridden.
+  PERFORM public.calendar_persist_version(S3, 'setup', 'student', 'v1');
+  PERFORM public.calendar_edit_day(S3, v_d1, '[]'::jsonb, 'v1');
+  PERFORM public.calendar_edit_day(S3, v_d2, '[]'::jsonb, 'v1');
+
+  SELECT DISTINCT is_user_override INTO v_ovr
+  FROM public.calendar_current_plan WHERE student_id = S3 AND scheduled_date = v_d1;
+  IF v_ovr IS NOT TRUE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-24 setup is wrong, % is not overridden before the test', v_d1;
+  END IF;
+
+  ------------------------------------------------------------------- Z-25
+  -- The negative control, and the reason mode day_regenerate exists at all.
+  -- Same snapshot, same output, two modes: generated is REJECTED by V-14
+  -- because the date is overridden, day_regenerate is ACCEPTED. Run on v_d2,
+  -- which is still overridden, so the comparison is real.
+  -- Built exactly the way calendar_regenerate_day builds it: the generator sees
+  -- the whole horizon, and the output is narrowed to the one date afterwards.
+  -- calendar_compute_plan ignores generated_for.dates and always emits the
+  -- horizon, so a one-date snapshot would fail V-01 rather than V-14 and this
+  -- control would prove nothing.
+  v_input  := public.calendar_build_plan_input(S3,
+                ARRAY(SELECT d::date FROM generate_series(v_today, v_today + 13, interval '1 day') g(d)));
+  v_gen    := public.calendar_compute_plan(v_input);
+  v_output := public.calendar_carry_started(v_input,
+                public.calendar_regenerate_day_only(
+                  public.calendar_plan_to_output(v_gen, 'v1',
+                    ARRAY(SELECT jsonb_array_elements_text(v_input -> 'enabled_block_types'))),
+                  v_d2));
+
+  v_r1 := public.calendar_validate_plan('generated',      v_input, v_output);
+  v_r2 := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+
+  IF v_r1 ->> 'result' <> 'rejected'
+     OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_r1 -> 'violations') x
+                    WHERE x ->> 'rule' = 'V-14') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-25 mode generated did NOT reject an overridden date on V-14, so mode day_regenerate is not doing any work: %', v_r1;
+  END IF;
+  IF v_r2 ->> 'result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-25 mode day_regenerate rejected the same plan mode generated only refused on V-14: %', v_r2;
+  END IF;
+  RAISE NOTICE '    OK Z-25 generated rejects an overridden date on V-14, day_regenerate accepts the same plan';
+
+  ------------------------------------------------------------------- Z-24
+  v_r1 := public.calendar_regenerate_day(S3, v_d1, 'day_regenerate', 'v1');
+  IF v_r1 ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-24 regenerating an overridden day was rejected: %', v_r1;
+  END IF;
+
+  SELECT DISTINCT is_user_override INTO v_ovr
+  FROM public.calendar_current_plan WHERE student_id = S3 AND scheduled_date = v_d1;
+  SELECT count(*) INTO v_blocks
+  FROM public.calendar_current_plan
+  WHERE student_id = S3 AND scheduled_date = v_d1 AND block_id IS NOT NULL;
+
+  IF v_ovr IS NOT FALSE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-24 the override did not clear on %', v_d1;
+  END IF;
+  IF v_blocks < 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-24 a regenerated study day carries no blocks — the fail-open promise is broken';
+  END IF;
+  RAISE NOTICE '    OK Z-24 an overridden day regenerates, the override clears and the day carries % block(s)', v_blocks;
+
+  ------------------------------------------------------------------- Z-26
+  SELECT count(*) INTO v_n FROM public.calendar_plan_versions WHERE student_id = S3;
+  v_r1 := public.calendar_regenerate_day(S3, v_d2, 'day_reset', 'v1',
+            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  v_r2 := public.calendar_regenerate_day(S3, v_d2, 'day_reset', 'v1',
+            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  IF v_r1 IS DISTINCT FROM v_r2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-26 a replayed idempotency key returned a different response: % vs %', v_r1, v_r2;
+  END IF;
+  SELECT count(*) - v_n INTO v_n FROM public.calendar_plan_versions WHERE student_id = S3;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-26 a replayed key wrote % versions, expected exactly 1', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-26 a replayed idempotency key returns the stored response and writes nothing';
+
+  ------------------------------------------------------------------- Z-27
+  SELECT count(DISTINCT scheduled_date) INTO v_n
+  FROM public.calendar_plan_dates
+  WHERE plan_version_id = (v_r1 ->> 'plan_version_id')::uuid;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-27 a day-scoped version owns % dates, expected exactly 1', v_n;
+  END IF;
+  SELECT trigger INTO v_sqlst FROM public.calendar_plan_versions
+  WHERE plan_version_id = (v_r1 ->> 'plan_version_id')::uuid;
+  IF v_sqlst <> 'day_reset' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-27 the recorded trigger is %, expected day_reset', v_sqlst;
+  END IF;
+  RAISE NOTICE '    OK Z-27 a day-scoped version owns exactly one date and records the trigger the route named';
+END;
+$regen$;
 
 ROLLBACK;

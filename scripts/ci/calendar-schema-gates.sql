@@ -227,7 +227,14 @@ DECLARE
     -- Doc 05F §21 / SCL-08-F: calendar-owned until Doc 02B claims a review
     -- timing constant. Not in sheet §4's table, which lists it as read from an
     -- owner that does not have it.
-    'review_estimated_seconds_per_item'];
+    'review_estimated_seconds_per_item',
+    -- Doc 05F §8.1 and §12.5, seeded by 20260917140000. These are ROUTE and JOB
+    -- constants, not formula constants: the generator never reads one, which is
+    -- why sheet §4 does not list them and why the parity gate does not
+    -- cross-check them against the oracle. They bound the settings sheet and
+    -- pace the weekly job.
+    'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
+    'target_exam_date_max_days','weekly_job_interval_minutes'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
@@ -241,7 +248,7 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys plus review_estimated_seconds_per_item (SCL-08-F)';
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 5 route/job keys of Doc 05F §8.1/§12.5';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
