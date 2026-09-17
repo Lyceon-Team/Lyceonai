@@ -69,3 +69,9 @@ brag-output/**/*.mp4
 brag-output/**/*.jpg
 brag-output/**/*.png
 brag-output/composition/
+
+# Supabase CLI local link state (machine-specific; never commit)
+supabase/.temp/
+
+# Scanner test scratch dir (transient fixture)
+tests/ci/lib/__scanner_test_tmp__/
