@@ -5998,7 +5998,12 @@ CREATE TABLE public.tutor_injection_signatures (
     action text NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
     added_by text,
-    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text]))),
+    category text,
+    version text,
+    source text,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text, 'stop_and_review'::text, 'stop_and_safeguarding_review'::text]))),
+    CONSTRAINT tutor_injection_signatures_category_check CHECK ((category = ANY (ARRAY['suicide'::text, 'self_harm'::text, 'abuse'::text]))),
     CONSTRAINT tutor_injection_signatures_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
 );
 
@@ -7547,6 +7552,13 @@ CREATE INDEX idx_tutor_injection_log_signature ON public.tutor_injection_log USI
 --
 
 CREATE INDEX idx_tutor_injection_log_student_recent ON public.tutor_injection_log USING btree (student_id, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_signatures_category_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_signatures_category_enabled ON public.tutor_injection_signatures USING btree (category) WHERE (enabled = true);
 
 
 --
