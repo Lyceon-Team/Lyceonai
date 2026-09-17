@@ -313,4 +313,169 @@ BEGIN
 END;
 $config$;
 
+-- ---------------------------------------------------------------------------
+-- Validator gates. calendar-parity.ts proves the validator ACCEPTS every plan
+-- both generators produce; a validator that accepted everything would pass that
+-- just as well. These prove each rule actually fires, by taking a plan the
+-- generator produced and breaking one thing at a time.
+-- ---------------------------------------------------------------------------
+DO $validator$
+DECLARE
+  v_snap    jsonb;
+  v_plan    jsonb;
+  v_out     jsonb;
+  v_res     jsonb;
+  g         RECORD;
+  v_rules   text;
+BEGIN
+  v_snap := jsonb_build_object(
+    'today', '2026-09-21',
+    'profile', jsonb_build_object('setup_date','2026-09-21','study_days_mask',62,
+                                  'daily_minutes',60,'target_exam_date',NULL,'full_length_weekday',6),
+    'mastery', (SELECT jsonb_agg(jsonb_build_object(
+                  'section', CASE WHEN d IN ('Algebra','Advanced Math','Problem Solving and Data Analysis',
+                                             'Geometry and Trigonometry') THEN 'M' ELSE 'RW' END,
+                  'domain', d, 'mastery_level', 2) ORDER BY ord)
+                FROM jsonb_array_elements_text(
+                  (SELECT value FROM public.calendar_runtime_config WHERE key='canonical_domain_order')
+                ) WITH ORDINALITY AS t(d, ord)),
+    'review_due_by_date', '[]'::jsonb,
+    'exams', jsonb_build_object('last_completed_local_date', NULL, 'days_since_exam', NULL,
+                                'missed_count', NULL, 'reviewed', true, 'weak_domains', '[]'::jsonb),
+    'recent_planned_by_domain', '[]'::jsonb,
+    'enabled_block_types', jsonb_build_array('practice','review','full_length'),
+    'engine_planning', jsonb_build_object('practice_seconds_per_unit',90,'review_seconds_per_unit',120),
+    'constants', (SELECT jsonb_object_agg(key, value) FROM public.calendar_runtime_config));
+
+  v_plan := public.calendar_compute_plan(v_snap);
+  v_out  := public.calendar_plan_to_output(v_plan, 'gate', ARRAY['practice','review','full_length']);
+
+  IF public.calendar_validate_plan('generated', v_snap, v_out) ->> 'result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-00 the validator rejected an unmodified generated plan: %',
+      public.calendar_validate_plan('generated', v_snap, v_out);
+  END IF;
+  RAISE NOTICE '    OK W-00 the validator accepts an unmodified generated plan';
+
+  FOR g IN
+    SELECT * FROM (VALUES
+      ('W-01 a date before today',                       'V-01',
+       jsonb_set(v_out, '{dates,0,scheduled_date}', '"2026-09-01"'), NULL::jsonb),
+
+      ('W-02 a practice block on a non-study day',       'V-02',
+       jsonb_set(v_out, '{dates,6,members}', v_out #> '{dates,0,members}'), NULL::jsonb),
+
+      -- The converter filters disabled types out, so a disabled type can only
+      -- reach the validator from somewhere else: a student edit asking for one,
+      -- or an output built before the flag narrowed. Narrow the SNAPSHOT.
+      ('W-03 a block type that is not enabled',          'V-03',
+       v_out, jsonb_set(v_snap, '{enabled_block_types}', '["review"]'::jsonb)),
+
+      ('W-04 a domain count that is not a multiple of granularity', 'V-04',
+       jsonb_set(v_out, '{dates,0,members,0,block,scope,mix,0,count}', '7'), NULL::jsonb),
+
+      ('W-05 two practice blocks in the same section',   'V-04',
+       jsonb_set(v_out, '{dates,0,members,1,block,section}',
+                 v_out #> '{dates,0,members,0,block,section}'), NULL::jsonb),
+
+      ('W-06 a Math domain inside an R&W block',         'V-06',
+       jsonb_set(v_out, '{dates,0,members,0,block,section}', '"RW"'), NULL::jsonb),
+
+      ('W-07 an explanation key outside the sheet §6 set', 'V-09',
+       jsonb_set(v_out, '{dates,0,members,0,block,explanation_key}', '"weak_domain"'), NULL::jsonb),
+
+      ('W-08 a per-domain key outside the sheet §6 set', 'V-09',
+       jsonb_set(v_out, '{dates,0,members,0,block,scope,mix,0,explanation_key}', '"maintain_strength"'), NULL::jsonb),
+
+      ('W-09 a day planned past its budget',             'V-05',
+       jsonb_set(jsonb_set(v_out, '{dates,0,members,0,block,target_count}', '500'),
+                 '{dates,0,members,0,block,scope,mix,0,count}', '500'), NULL::jsonb),
+
+      ('W-10 the same date twice in the output',         'V-08',
+       jsonb_set(v_out, '{dates}', (v_out -> 'dates') || jsonb_build_array(v_out #> '{dates,0}')), NULL::jsonb),
+
+      ('W-11 a carried block that is not the student''s', 'V-13',
+       jsonb_set(v_out, '{dates,0,members}',
+                 jsonb_build_array(jsonb_build_object('kind','carried','block_id','deadbeef'))), NULL::jsonb),
+
+      ('W-12 a started block that was not carried',      'V-12',
+       v_out, jsonb_set(v_snap, '{started_blocks_by_date}',
+                jsonb_build_array(jsonb_build_object(
+                  'scheduled_date', v_out #>> '{dates,0,scheduled_date}',
+                  'block_id','11111111-1111-1111-1111-111111111111'))))
+    ) AS t(name, rule, output, snap_override)
+  LOOP
+    v_res := public.calendar_validate_plan('generated', COALESCE(g.snap_override, v_snap), g.output);
+
+    IF v_res ->> 'result' <> 'rejected' THEN
+      RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: % — the validator ACCEPTED it; expected %', g.name, g.rule;
+    END IF;
+    SELECT string_agg(DISTINCT x ->> 'rule', ',') INTO v_rules
+    FROM jsonb_array_elements(v_res -> 'violations') x;
+    IF position(g.rule in v_rules) = 0 THEN
+      RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: % — rejected, but for % rather than %', g.name, v_rules, g.rule;
+    END IF;
+    RAISE NOTICE '    OK % — rejected by %', g.name, g.rule;
+  END LOOP;
+
+  -- V-10: ordinary review may not outrun what is actually due.
+  v_res := public.calendar_validate_plan('generated',
+             jsonb_set(v_snap, '{review_due_by_date}',
+               jsonb_build_array(jsonb_build_object('date', v_out #>> '{dates,0,scheduled_date}', 'due_count', 2))),
+             jsonb_set(v_out, '{dates,0,members}',
+               jsonb_build_array(jsonb_build_object('kind','created','block', jsonb_build_object(
+                 'block_type','review','section', NULL, 'scope', jsonb_build_object('mode','queue'),
+                 'target_count', 25, 'explanation_key','review_due')))));
+  IF v_res ->> 'result' <> 'rejected'
+     OR position('V-10' in (SELECT string_agg(x ->> 'rule', ',') FROM jsonb_array_elements(v_res -> 'violations') x)) = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-16 review outran the queue without tripping V-10: %', v_res;
+  END IF;
+  RAISE NOTICE '    OK W-16 ordinary review may not outrun what is due — rejected by V-10';
+
+  -- V-11: the horizon cap on full-lengths.
+  v_res := public.calendar_validate_plan('generated', v_snap,
+             jsonb_set(v_out, '{dates}', (
+               SELECT jsonb_agg(CASE WHEN ord <= 3 THEN jsonb_set(d, '{members}',
+                        jsonb_build_array(jsonb_build_object('kind','created','block', jsonb_build_object(
+                          'block_type','full_length','section', NULL,
+                          'scope', jsonb_build_object('form_id', NULL),
+                          'target_count', 1, 'explanation_key','exam_cadence'))))
+                                ELSE d END ORDER BY ord)
+               FROM jsonb_array_elements(v_out -> 'dates') WITH ORDINALITY AS t(d, ord))));
+  IF v_res ->> 'result' <> 'rejected'
+     OR position('V-11' in (SELECT string_agg(x ->> 'rule', ',') FROM jsonb_array_elements(v_res -> 'violations') x)) = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-17 three full-lengths in one horizon did not trip V-11: %', v_res;
+  END IF;
+  RAISE NOTICE '    OK W-17 more full-lengths than max_full_length_per_horizon — rejected by V-11';
+
+  -- V-14: a non-student mode may not take over a date the student overrode.
+  v_res := public.calendar_validate_plan('generated',
+             jsonb_set(v_snap, '{current_overrides}', jsonb_build_array(jsonb_build_object(
+               'scheduled_date', v_out #>> '{dates,0,scheduled_date}', 'is_user_override', true))),
+             v_out);
+  IF v_res ->> 'result' <> 'rejected'
+     OR position('V-14' in (SELECT string_agg(x ->> 'rule', ',') FROM jsonb_array_elements(v_res -> 'violations') x)) = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-13 a generated plan took over an overridden date without tripping V-14';
+  END IF;
+  RAISE NOTICE '    OK W-13 a generated plan may not take over an overridden date — rejected by V-14';
+
+  -- ...and the same plan in student_edit mode is fine, so V-14 is about the mode.
+  IF public.calendar_validate_plan('student_edit',
+       jsonb_set(v_snap, '{current_overrides}', jsonb_build_array(jsonb_build_object(
+         'scheduled_date', v_out #>> '{dates,0,scheduled_date}', 'is_user_override', true))),
+       v_out) ->> 'result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-14 student_edit was blocked from a date the student overrode';
+  END IF;
+  RAISE NOTICE '    OK W-14 student_edit may own a date the student overrode';
+
+  -- An unknown mode is a programming error, not a rejection.
+  BEGIN
+    PERFORM public.calendar_validate_plan('sideways', v_snap, v_out);
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: W-15 an unknown validator mode was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'CALENDAR_SCHEMA_GATE_FAILED%' THEN RAISE; END IF;
+    RAISE NOTICE '    OK W-15 an unknown validator mode raises — %', SQLERRM;
+  END;
+END;
+$validator$;
+
 ROLLBACK;
