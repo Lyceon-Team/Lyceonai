@@ -7,16 +7,19 @@ import {
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
-import { LEGAL_DOCS } from "../../shared/legal-consent.js";
+import {
+  requiredLegalDocsForUse,
+  type LegalAccountFacts,
+  type OutstandingLegalDoc,
+} from "../../shared/legal-consent.js";
+import { loadLegalAccountFacts } from "../lib/legal-account-facts";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
+import { logger } from "../logger";
 import crypto from "crypto";
-import { sendEmail } from "../lib/email.js";
+import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
 
 const router = Router();
-
-const REQUIRED_LEGAL_DOCS = [
-  LEGAL_DOCS.studentTerms,
-  LEGAL_DOCS.privacyPolicy,
-] as const;
 
 function calculateAge(birthDate: string): number {
   const today = new Date();
@@ -29,14 +32,72 @@ function calculateAge(birthDate: string): number {
   return age;
 }
 
-function hasAllCurrentLegalAcceptances(
+/**
+ * Which required documents this person does NOT hold at the currently published
+ * version. Empty means nothing is outstanding.
+ *
+ * The version is resolved from `legal/` rather than read from a constant, so
+ * publishing v3 re-prompts with no code change — the behaviour a materially
+ * changed contract should have, and the property the whole structure exists to
+ * deliver.
+ *
+ * The required SET is derived from the account's own facts, not from a fixed
+ * list and not from a role: Parent Terms applies to an account that actually
+ * holds a link, Billing Terms to one that has ever paid. Owner ruling
+ * 2026-09-16 — whatever a user has not given, prompt for it.
+ */
+function outstandingLegalDocs(
   legalRows: Array<{ doc_key: string; doc_version: string }>,
-): boolean {
-  return REQUIRED_LEGAL_DOCS.every((doc) =>
-    legalRows.some(
-      (row) => row.doc_key === doc.docKey && row.doc_version === doc.docVersion,
-    ),
-  );
+  facts: LegalAccountFacts,
+): OutstandingLegalDoc[] {
+  const outstanding: OutstandingLegalDoc[] = [];
+  for (const doc of requiredLegalDocsForUse(facts)) {
+    // NEVER THROWS INTO THE PROFILE RESPONSE. This exact call threw
+    // `legal/ not found. Looked in: legal, dist/public/legal relative to
+    // /var/task` on every request from 2026-09-16T01:22:07Z, and because the
+    // throw reached the handler it turned a consent LOOKUP into a total sign-in
+    // outage: /api/profile 500, /auth/callback post_auth_finalize_failed.
+    //
+    // Absence is not ambiguity. Not knowing what somebody owes is not a reason
+    // to refuse them their account — consent is a prompt, never a gate, in every
+    // role. A document we cannot resolve is logged at ERROR and omitted, so the
+    // worst case is a prompt that does not appear yet, not a person who cannot
+    // sign in. The generated registry means this should now be unreachable;
+    // it stays because "should be unreachable" is what was believed last time.
+    let current: ResolvedLegalVersion;
+    try {
+      current = resolveLegalVersion(doc.slug);
+    } catch (err: unknown) {
+      logger.error(
+        "PROFILE",
+        "legal_resolution_failed",
+        "Could not resolve a required legal document; omitting it from the outstanding set",
+        {
+          slug: doc.slug,
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      );
+      continue;
+    }
+    const accepted = legalRows.filter((row) => row.doc_key === doc.docKey);
+    if (accepted.some((row) => row.doc_version === current.version)) continue;
+    outstanding.push({
+      slug: doc.slug,
+      docKey: doc.docKey,
+      title: current.title,
+      version: current.version,
+      effectiveDate: current.effectiveDate,
+      // Most recent by string order is good enough: versions are "N.M" and the
+      // legacy rows are ISO dates, both of which sort sensibly among themselves.
+      // `.at(-1)` is ES2022; this tsconfig targets lower. Index arithmetic
+      // reads the same and compiles.
+      acceptedVersion: (() => {
+        const sorted = accepted.map((r) => r.doc_version).sort();
+        return sorted.length > 0 ? sorted[sorted.length - 1] : null;
+      })(),
+    });
+  }
+  return outstanding;
 }
 
 const profileCompletionSchema = z.object({
@@ -67,7 +128,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at",
+        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
       )
       .eq("id", user.id)
       .single();
@@ -98,13 +159,23 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const legalAcceptances = legalRows ?? [];
-    const requiredLegalAccepted =
-      hasAllCurrentLegalAcceptances(legalAcceptances);
+
+    // THE ACCOUNT'S OWN FACTS, not its role. `stripe_customer_id` rode along
+    // in the profile select above, so the only added cost on this path is the
+    // link read — one query, and one that never throws into the response.
+    const legalFacts = await loadLegalAccountFacts(
+      user.id,
+      profileRow.stripe_customer_id ?? null,
+    );
+    const outstandingLegal = outstandingLegalDocs(legalAcceptances, legalFacts);
+
+    // UNDER-13 IS NOT A CONSENT GATE. It is the Terms' own condition — a student
+    // under 13 cannot use LYCEON until a guardian connects — and it is the basis
+    // of the under-13 position. It stays, and it routes to a screen that helps
+    // them get connected rather than a wall.
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !profileRow.guardian_consent
     );
-    const requiredConsentsComplete =
-      requiredLegalAccepted && !guardianConsentRequired;
     const requiredProfileComplete = !!profileRow.profile_completed_at;
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
@@ -153,9 +224,12 @@ router.get("/", async (req: Request, res: Response) => {
         studentLinkCode: profileRow.student_link_code,
         student_link_code: profileRow.student_link_code,
         profileCompletedAt: profileRow.profile_completed_at ?? null,
-        requiredConsentsComplete,
         requiredProfileComplete,
         guardianConsentRequired,
+        // What the blocking re-consent modal renders. Server-derived: which
+        // documents this person owes, their current version and title from
+        // legal/, and what they last accepted. The client is told, never asked.
+        outstandingLegal,
       },
     });
   } catch (error: any) {
@@ -314,21 +388,19 @@ router.patch("/", async (req: Request, res: Response) => {
         guardianConsentRequestId = requestId;
       }
 
-      const siteUrl =
-        process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get("host")}`;
-      const verificationLink = `${siteUrl}/guardian/verify-consent?requestId=${guardianConsentRequestId}`;
-
-      await sendEmail({
-        to: guardianEmail!,
-        subject: `Guardian consent required for ${data.displayName}`,
-        html: `
-          <h1>Guardian Consent Required</h1>
-          <p>${data.displayName} has entered profile details on Lyceon.</p>
-          <p>To continue, complete verified guardian consent at:</p>
-          <p><a href="${verificationLink}">${verificationLink}</a></p>
-          <p>This link expires in 14 days.</p>
-        `,
-      });
+      // Doc 01 §37.2 steps 1–3 / ruling R7+R9: the request row is the durable record; the
+      // email is a direct send keyed by that row's id, so a repeated PATCH cannot mail twice.
+      // Best-effort: a mail failure is logged inside the sender and never fails the profile
+      // update — the guardian can be re-mailed from the same row.
+      const consentRequestId: string | null = guardianConsentRequestId;
+      if (consentRequestId) {
+        await sendGuardianConsentRequestEmail({
+          consentRequestId,
+          guardianEmail: guardianEmail!,
+          studentDisplayName: data.displayName,
+          requestId: req.requestId,
+        });
+      }
     }
 
     // Finalize profile fields with server-authoritative role and under-13 state.

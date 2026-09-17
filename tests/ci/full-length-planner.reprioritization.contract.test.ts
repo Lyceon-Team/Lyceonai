@@ -356,7 +356,7 @@ describe("Full-length planner reprioritization", () => {
           student_id: "student-1",
           section: "M",
           domain: "Algebra",
-          skill: "math.linear_equations",
+          skill: "Linear Equations in One Variable",
           mastery_score: 0.3,
           last_event_occurred_at: "2026-03-30T00:00:00.000Z",
         },
@@ -364,7 +364,7 @@ describe("Full-length planner reprioritization", () => {
           student_id: "student-1",
           section: "RW",
           domain: "Information and Ideas",
-          skill: "rw.command_of_evidence",
+          skill: "Command of Evidence",
           mastery_score: 0.6,
           last_event_occurred_at: "2026-03-29T00:00:00.000Z",
         },
@@ -397,10 +397,10 @@ describe("Full-length planner reprioritization", () => {
           day_date: tomorrow,
           ordinal: 1,
           task_type: "practice",
-          section: "MATH",
+          section: "M",
           duration_minutes: 25,
-          source_skill_code: "math.linear_equations",
-          source_domain: "algebra",
+          source_skill_code: "Linear Equations in One Variable",
+          source_domain: "Algebra",
           source_subskill: null,
           source_reason: {},
           status: "planned",
@@ -430,16 +430,16 @@ describe("Full-length planner reprioritization", () => {
       completedAt: new Date("2026-04-02T12:00:00.000Z"),
       skillDiagnostics: [
         {
-          section: "MATH",
-          domain: "algebra",
-          skill: "MATH.LINEAR_EQUATIONS",
+          section: "M",
+          domain: "Algebra",
+          skill: "Linear Equations in One Variable",
           accuracy: 0.2,
           performanceBand: "needs_focus",
         },
         {
           section: "RW",
-          domain: "information_and_ideas",
-          skill: "rw.command_of_evidence",
+          domain: "Information and Ideas",
+          skill: "Command of Evidence",
           accuracy: 0.4,
           performanceBand: "needs_focus",
         },
@@ -465,7 +465,9 @@ describe("Full-length planner reprioritization", () => {
         task.task_type === "focused_drill" && task.metadata?.reprioritized,
     );
     expect(reprioritized).toBeDefined();
-    expect(reprioritized?.source_skill_code).toBe("math.linear_equations");
+    expect(reprioritized?.source_skill_code).toBe(
+      "Linear Equations in One Variable",
+    );
     expect(reprioritized?.metadata?.exam_session_id).toBe("exam-1");
     expect(reprioritized?.source_reason?.source).toBe("full_length_exam");
 
@@ -477,9 +479,9 @@ describe("Full-length planner reprioritization", () => {
       completedAt: new Date("2026-04-02T12:00:00.000Z"),
       skillDiagnostics: [
         {
-          section: "MATH",
-          domain: "algebra",
-          skill: "MATH.LINEAR_EQUATIONS",
+          section: "M",
+          domain: "Algebra",
+          skill: "Linear Equations in One Variable",
           accuracy: 0.2,
           performanceBand: "needs_focus",
         },
@@ -539,7 +541,7 @@ describe("Full-length planner reprioritization", () => {
           student_id: "student-2",
           section: "M",
           domain: "Problem Solving and Data Analysis",
-          skill: "math.problem_solving",
+          skill: "Percentages",
           mastery_score: 0.4,
           last_event_occurred_at: "2026-03-31T00:00:00.000Z",
         },
@@ -566,10 +568,10 @@ describe("Full-length planner reprioritization", () => {
           day_date: nextDay,
           ordinal: 1,
           task_type: "practice",
-          section: "MATH",
+          section: "M",
           duration_minutes: 15,
-          source_skill_code: "math.problem_solving",
-          source_domain: "problem_solving",
+          source_skill_code: "Percentages",
+          source_domain: "Problem Solving and Data Analysis",
           source_subskill: null,
           source_reason: {},
           status: "planned",
@@ -627,9 +629,9 @@ describe("Full-length planner reprioritization", () => {
       completedAt: new Date("2026-04-02T12:00:00.000Z"),
       skillDiagnostics: [
         {
-          section: "MATH",
-          domain: "problem_solving",
-          skill: "math.problem_solving",
+          section: "M",
+          domain: "Problem Solving and Data Analysis",
+          skill: "Percentages",
           accuracy: 0.2,
           performanceBand: "needs_focus",
         },
@@ -659,9 +661,9 @@ describe("Full-length planner reprioritization", () => {
       completedAt: new Date("2026-04-02T12:00:00.000Z"),
       skillDiagnostics: [
         {
-          section: "MATH",
-          domain: "problem_solving",
-          skill: "math.problem_solving",
+          section: "M",
+          domain: "Problem Solving and Data Analysis",
+          skill: "Percentages",
           accuracy: 0.2,
           performanceBand: "needs_focus",
         },

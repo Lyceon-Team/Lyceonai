@@ -19,6 +19,11 @@ const accountMocks = {
   // gone green on the 500 and hidden the gap.
   getGuardianLinkById: vi.fn(),
   getAnyGuardianLinkForPair: vi.fn(),
+  // Read per linked student so the roster can report `entitlement_lapsed`
+  // beside `has_active_entitlement`. Defaults to `null` — "no entitlement row"
+  // — via the `mockResolvedValue` in the setup below, which is the ordinary
+  // state of a student nobody has paid for.
+  getEntitlementForProfile: vi.fn(),
 };
 
 /** The shape `getAnyGuardianLinkForPair` returns; only the fields these routes read. */
@@ -148,7 +153,7 @@ const seed = {
       planned_minutes: 45,
       completed_minutes: 30,
       status: "in_progress",
-      focus: [{ section: "Math", weight: 1 }],
+      focus: [{ section: "M", weight: 1 }],
       tasks: [{ type: "practice" }],
       is_user_override: true,
       plan_version: 3,
@@ -254,6 +259,41 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../../server/lib/account", () => accountMocks);
+
+// 2026-09-15: the revoke route dispatches the guardian_unlinked event's email inline after the
+// RPC (the RPC emitted the event in its own transaction). The dispatcher reads real
+// notification tables, which this fake query layer does not model, so it is substituted here
+// and ASSERTED on — the route must name exactly that event. The real dispatch is proven in
+// tests/ci/guardian-unlinked.pg.ci.test.ts against Postgres.
+const dispatchQueuedMessagesMock = vi.fn(async () => ({
+  selected: 0,
+  sent: 0,
+  failed: 0,
+  deferred: 0,
+  selectFailed: false,
+}));
+vi.mock("../../server/lib/notifications/dispatch", () => ({
+  dispatchQueuedMessages: (...args: unknown[]) =>
+    dispatchQueuedMessagesMock(...(args as [])),
+}));
+/**
+ * The per-student entitlement probe, mocked rather than left to fail.
+ *
+ * Before this, no mock existed and the real service reached a `supabaseServer`
+ * stub with no `.rpc`, so EVERY student degraded through the probe's catch to
+ * "unfunded, not lapsed". The roster assertions passed on the degraded path and
+ * could not have distinguished it from the real one — which is the definition
+ * of a test that cannot fail for the reason it claims to check.
+ */
+const entitlementMocks = {
+  isEntitlementActiveForProfile: vi.fn(),
+};
+vi.mock("../../server/services/entitlement-service", () => ({
+  EntitlementService: {
+    isEntitlementActiveForProfile:
+      entitlementMocks.isEntitlementActiveForProfile,
+  },
+}));
 vi.mock("../../server/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -339,6 +379,8 @@ describe("Guardian reporting runtime contract", () => {
     guardianAuditInserts.length = 0;
     profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    accountMocks.getEntitlementForProfile.mockResolvedValue(null);
+    entitlementMocks.isEntitlementActiveForProfile.mockResolvedValue(false);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
       // WS-GL Phase B: the real column is `student_profile_id`; `linked_at` does not
       // exist on this table (`created_at` does).
@@ -456,7 +498,7 @@ describe("Guardian reporting runtime contract", () => {
           attempt_count: 1,
           accuracy: 100,
           avg_seconds_per_question: 120,
-          focus: [{ section: "Math" }],
+          focus: [{ section: "M" }],
           tasks: [{ type: "practice" }],
           plan_version: 3,
           is_user_override: true,
@@ -491,6 +533,60 @@ describe("Guardian reporting runtime contract", () => {
       details: expect.objectContaining({
         linked_student_count: 1,
       }),
+    });
+  });
+
+  /**
+   * `entitlement_lapsed` separates the two states that both leave
+   * `has_active_entitlement` false, and which need OPPOSITE controls.
+   *
+   * @spec [owner ruling 2026-09-03 — "a lapsed subscriber with a Customer goes
+   *        to the portal, not to checkout"]
+   *
+   * Without this field the purchase card offers checkout to a student whose
+   * subscription merely lapsed, and `evaluateSubjectPurchaseEligibility` lets
+   * it through — `canceled` is not in the platform predicate — so the guardian
+   * is sold a SECOND subscription instead of reactivating the first.
+   */
+  it.each([
+    ["canceled", true],
+    ["unpaid", true],
+    ["incomplete_expired", true],
+    // Never completed a first payment: there is nothing to reactivate, so
+    // checkout is the right control and this must stay false.
+    ["incomplete", false],
+  ])(
+    "reports entitlement_lapsed=%s -> %s on the roster",
+    async (status, expected) => {
+      accountMocks.getEntitlementForProfile.mockResolvedValue({
+        tier: "premium",
+        status,
+      });
+      const router = (await import("../../server/routes/guardian-routes"))
+        .default;
+      const app = buildApp("guardian");
+      app.use("/api/guardian", router);
+
+      const response = await request(app).get("/api/guardian/students");
+
+      expect(response.status).toBe(200);
+      expect(response.body.students[0].has_active_entitlement).toBe(false);
+      expect(response.body.students[0].entitlement_lapsed).toBe(expected);
+    },
+  );
+
+  it("reports a student with no entitlement row as neither funded nor lapsed", async () => {
+    const router = (await import("../../server/routes/guardian-routes"))
+      .default;
+    const app = buildApp("guardian");
+    app.use("/api/guardian", router);
+
+    const response = await request(app).get("/api/guardian/students");
+
+    expect(response.status).toBe(200);
+    expect(response.body.students[0]).toMatchObject({
+      has_active_entitlement: false,
+      entitlement_lapsed: false,
     });
   });
 
@@ -654,6 +750,15 @@ describe("Guardian reporting runtime contract", () => {
       "guardian-1",
       undefined,
     );
+    // §36.3 / contract §6.1: the other party's email for THIS revocation goes out inline.
+    const { notificationEventId } =
+      await import("../../server/lib/notifications/event-id");
+    expect(dispatchQueuedMessagesMock).toHaveBeenCalledWith({
+      eventId: notificationEventId(
+        "guardian_unlinked",
+        "11111111-1111-1111-1111-111111111111",
+      ),
+    });
 
     // No second, best-effort revoke row from this layer. See the docblock.
     const unlinkSuccess = guardianAuditInserts.find(
@@ -738,7 +843,5 @@ describe("Guardian reporting runtime contract", () => {
       expect(response.body.error.code).toBe(GUARDIAN_LINK_ERROR.NOT_ACTIVE);
       expect(accountMocks.revokeGuardianLink).not.toHaveBeenCalled();
     });
-
-
   });
 });

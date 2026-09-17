@@ -57,7 +57,7 @@ This rule overrides any instruction to the contrary.
 4. **Route handler** — thin, fixed order: auth → entitlement → Zod parse → domain → serialize.
 5. **Tests** — anti-leak, idempotency, and denial tests for the new behavior.
 6. **Observability** — structured, redacted logs (no content leakage).
-7. **Notification emission** — emit to `notification_outbox` if this feature produces a notifiable event: same transaction as the state change, deterministic `event_id` (insert-once), `recipient_kind` per the guardian-trust model. Emission only — the dispatcher/delivery/UI/preferences are end-stage. See `contracts/notification-outbox.contract.md` + `docs/SpecAudit/notification-triggers.md`.
+7. **Notification emission** — if this feature produces a notifiable event, emit it INSIDE the SQL function that performs the mutation via `public.emit_notification_event(...)` with a deterministic `event_id` from `public.notification_event_id(event_type, source_id)` (insert-once) and the recipient/channel rule for that event type. One event row fans out to one `notification_messages` row per (recipient, channel). See `contracts/notifications.contract.md` §2/§5/§8; adding an event type is a CHECK change plus a contract row.
 
 Annotate every implementation:
 `@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`

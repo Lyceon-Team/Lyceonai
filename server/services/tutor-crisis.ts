@@ -30,6 +30,7 @@
  *    resolution authority). Default fallback is US (988).
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { getGcpCredentials } from "../lib/gcp-credentials";
 import { logger } from "../logger";
 import { createCrisisReviewCase } from "./crisis-review-queue";
 import { notifyCrisisEvent } from "./crisis-notification";
@@ -212,10 +213,18 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
           { attempt, error: err instanceof Error ? err.message : String(err) },
         );
       } else {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isModelNotFound = /NOT_FOUND|404|models\/.*not found/i.test(
+          errMsg,
+        );
         logger.error(
           "TUTOR_CRISIS",
-          "classifier_retry_exhausted",
-          "Layer 2 crisis classifier failed after retry; Layer 1 result stands, force-enqueuing to review queue",
+          isModelNotFound
+            ? "classifier_model_not_found"
+            : "classifier_retry_exhausted",
+          isModelNotFound
+            ? "Layer 2 crisis classifier model not found at configured endpoint — check VERTEX_CLASSIFIER_CLASS_MODEL and VERTEX_CLASSIFIER_LOCATION"
+            : "Layer 2 crisis classifier failed after retry; Layer 1 result stands, force-enqueuing to review queue",
           err instanceof Error ? err : undefined,
         );
         // Return non-crisis — Layer 1 result stands per SCL-023
@@ -247,14 +256,13 @@ async function invokeClassifier(
     );
   }
 
-  const projectId = process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
-  const location = process.env.VERTEX_LOCATION ?? "us-central1";
+  const location =
+    (process.env.VERTEX_CLASSIFIER_LOCATION ?? "").trim() || "global";
 
-  if (!projectId) {
-    throw new Error(
-      "VERTEX_PROJECT_ID / GCP_PROJECT_ID env var not set; crisis classifier cannot run",
-    );
-  }
+  // Explicit credential injection — ADC is removed from the BFF path.
+  // The credential and the project it authenticates against cannot disagree,
+  // so project_id comes from the credential, not from a separate env var.
+  const creds = getGcpCredentials();
 
   // Dynamic import — @google/genai is a root dependency. If unavailable at
   // runtime the throw is caught by classifyCrisis's retry logic and Layer 1
@@ -262,8 +270,9 @@ async function invokeClassifier(
   const { GoogleGenAI } = await import("@google/genai");
   const client = new GoogleGenAI({
     vertexai: true,
-    project: projectId,
+    project: creds.project_id,
     location,
+    googleAuthOptions: { credentials: creds },
   });
 
   const response = await client.models.generateContent({
@@ -330,6 +339,18 @@ async function invokeClassifier(
  * @spec [Doc-03_V3 §21, SCL-023, INV-03-16]
  */
 export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
+  // TEMPORARY DIAGNOSTIC — remove once GCP_PROJECT_ID issue is resolved
+  logger.warn("TUTOR_CRISIS", "env_diagnostic", "ENV DIAGNOSTIC", {
+    matchingKeys: Object.keys(process.env)
+      .filter((k) => /PROJECT|VERTEX|GCP|MODEL_ARMOR/i.test(k))
+      .sort(),
+    gcpProjectIdType: typeof process.env.GCP_PROJECT_ID,
+    gcpProjectIdLength: process.env.GCP_PROJECT_ID?.length ?? -1,
+    vertexProjectIdLength: process.env.VERTEX_PROJECT_ID?.length ?? -1,
+    classifierModelLength:
+      process.env.VERTEX_CLASSIFIER_CLASS_MODEL?.length ?? -1,
+  });
+
   // Run both layers in parallel per SCL-023
   const [signatureResult, classifierResult] = await Promise.all([
     checkCrisisSignatures(text),

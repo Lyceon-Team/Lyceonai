@@ -2,13 +2,21 @@ import { Router, type Response } from "express";
 import { DateTime } from "luxon";
 import { supabaseServer } from "../lib/supabase-server";
 import {
+  normalizeSectionCode,
+  type CanonicalSectionCode,
+} from "../../../../shared/question-bank-contract";
+import {
+  sectionCodeFromLabel,
+  sectionDisplayLabel,
+} from "../../../../shared/section-display";
+import {
   type AuthenticatedRequest,
   type SupabaseUser,
   requireRequestAuthContext,
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
-import { publishCalendarEventNotificationBestEffort } from "../../../../server/services/notification-authority";
+import { logger } from "../../../../server/logger";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
@@ -34,7 +42,7 @@ type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed"
 type CalendarEventType = "plan_generated" | "day_edited" | "plan_refreshed" | "block_completed" | "override_applied";
 type GenerationSource = "auto" | "user" | "refresh" | "regenerate" | "generate";
 type TaskTarget = {
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   skill_code: string | null;
   domain: string | null;
   subskill: string | null;
@@ -114,7 +122,7 @@ type PlanTaskRow = {
   day_date: string;
   ordinal: number;
   task_type: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   duration_minutes: number;
   source_skill_code: string | null;
   source_domain: string | null;
@@ -260,15 +268,18 @@ function normalizeBlockedWindows(value: unknown): BlockedWindow[] {
   return windows;
 }
 
-function normalizeSection(value: unknown): "MATH" | "RW" | null {
-  const normalized = typeof value === "string" ? value.toLowerCase().trim() : "";
-  if (!normalized) return null;
-  if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
-  if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
-  return null;
+// @spec [Doc-04B_V4.3 §11.2] | @implemented [2026-09-02]
+// plain English: accepts either a section code (from a client that holds one) or a
+// rendered label (from an older payload, or from the task blobs this route persists as
+// display text). Both directions live in the two shared modules; this function no
+// longer carries its own substring-sniffing copy, and no longer produces a spelling the
+// database has never accepted.
+function normalizeSection(value: unknown): CanonicalSectionCode | null {
+  if (typeof value !== "string") return null;
+  return normalizeSectionCode(value) ?? sectionCodeFromLabel(value);
 }
 
-function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+function normalizeTaskType(value: unknown, section: CanonicalSectionCode | null, mode: unknown): TaskType {
   const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
   const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
 
@@ -278,11 +289,11 @@ function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: 
   if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
   if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
   if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
-  if (section === "MATH" || section === "RW") return "practice";
+  if (section !== null) return "practice";
   return "practice";
 }
 
-function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType: TaskType): TaskTarget {
+function normalizeTaskTarget(task: any, section: CanonicalSectionCode | null, taskType: TaskType): TaskTarget {
   const target = task?.target && typeof task.target === "object" ? (task.target as Record<string, unknown>) : null;
   const reviewSessionId =
     typeof task?.override_target_session_id === "string"
@@ -311,7 +322,7 @@ function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType:
           : "practice_target";
 
   return {
-    section: section ?? (typeof target?.section === "string" && target.section.includes("Writing") ? "RW" : typeof target?.section === "string" && target.section.includes("Math") ? "MATH" : null),
+    section: section ?? normalizeSection(target?.section),
     skill_code:
       typeof task?.source_skill_code === "string"
         ? task.source_skill_code
@@ -338,7 +349,7 @@ function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType:
 
 function serializeTaskSummary(args: {
   taskType: TaskType;
-  section: "MATH" | "RW" | null;
+  section: CanonicalSectionCode | null;
   durationMinutes: number;
   status?: TaskStatus;
   ordinal?: number;
@@ -467,11 +478,6 @@ async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: s
     // best effort only
   }
 
-  await publishCalendarEventNotificationBestEffort({
-    userId: args.userId,
-    eventType: args.eventType,
-    details: args.details,
-  });
 }
 
 async function ensurePremiumAccess(
@@ -688,10 +694,11 @@ function ensureIsoDateInput(value: unknown): string | null {
 // Do NOT merge these into the service — the write path operates on planner types,
 // not on the serialized view shape.
 
-function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
-  if (section === "MATH") return "Math";
-  if (section === "RW") return "Reading & Writing";
-  return null;
+// Third of the three private copies of the display mapping. All three now delegate.
+// The name is kept because it is the response field's historical contract: this route
+// serializes a LABEL to the client, and the label is now produced in one place.
+function taskSectionToLegacy(section: CanonicalSectionCode | null): string | null {
+  return sectionDisplayLabel(section);
 }
 
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
@@ -894,7 +901,7 @@ async function persistGeneratedDays(params: {
       planned_minutes: day.plannedMinutes,
       completed_minutes: existing?.completed_minutes ?? 0,
       focus: day.focus.map((focus) => ({
-        section: focus.section === "MATH" ? "Math" : "Reading & Writing",
+        section: sectionDisplayLabel(focus.section),
         weight: focus.weight,
         competencies: focus.skill_codes,
       })),
@@ -1103,6 +1110,16 @@ calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) 
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load profile";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "load_profile",
+      "Failed to load profile",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1135,7 +1152,16 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
       .single();
 
     if (error) {
-      return res.status(500).json({ error: `Failed to save profile: ${error.message}`, requestId: req.requestId });
+      const message = `Failed to save profile: ${error.message}`;
+      logger.error(
+        "CALENDAR",
+        "save_profile",
+        "Failed to save profile",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     return res.json({
@@ -1145,6 +1171,16 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to save profile";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "save_profile",
+      "Failed to save profile",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1187,6 +1223,16 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load month";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "load_month",
+      "Failed to load month",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1261,6 +1307,16 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "generate_plan",
+      "Failed to generate plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1369,6 +1425,16 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to refresh plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "refresh_plan",
+      "Failed to refresh plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1447,6 +1513,16 @@ calendarRouter.post("/regenerate", async (req: AuthenticatedRequest, res: Respon
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to regenerate plan";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "regenerate_plan",
+      "Failed to regenerate plan",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1511,6 +1587,16 @@ calendarRouter.post("/day/:dayDate/regenerate", async (req: AuthenticatedRequest
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to regenerate day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "regenerate_day",
+      "Failed to regenerate day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1574,6 +1660,16 @@ calendarRouter.post("/day/:dayDate/reset-to-auto", async (req: AuthenticatedRequ
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reset day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "reset_day",
+      "Failed to reset day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1643,7 +1739,7 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
         return {
           type: task.taskType,
           task_type: task.taskType,
-          section: task.section === "MATH" ? "Math" : task.section === "RW" ? "Reading & Writing" : null,
+          section: sectionDisplayLabel(task.section),
           target: {
             section: task.target.section,
             skill_code: task.target.skill_code,
@@ -1711,7 +1807,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       .select("id")
       .single();
     if (dayError || !dayRow?.id) {
-      return res.status(500).json({ error: `Failed to save day: ${dayError?.message ?? "missing day id"}`, requestId: req.requestId });
+      const message = `Failed to save day: ${dayError?.message ?? "missing day id"}`;
+      logger.error(
+        "CALENDAR",
+        "save_day",
+        "Failed to save day",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     const { error: deleteError } = await supabaseServer
@@ -1720,7 +1825,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       .eq("user_id", user.id)
       .eq("day_date", dayDate);
     if (deleteError) {
-      return res.status(500).json({ error: `Failed to replace day tasks: ${deleteError.message}`, requestId: req.requestId });
+      const message = `Failed to replace day tasks: ${deleteError.message}`;
+      logger.error(
+        "CALENDAR",
+        "replace_day_tasks",
+        "Failed to replace day tasks",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     if (normalizedManualTasks.length > 0) {
@@ -1758,7 +1872,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       });
       const { error: insertError } = await supabaseServer.from("student_study_plan_tasks").insert(rows);
       if (insertError) {
-        return res.status(500).json({ error: `Failed to save day tasks: ${insertError.message}`, requestId: req.requestId });
+        const message = `Failed to save day tasks: ${insertError.message}`;
+        logger.error(
+          "CALENDAR",
+          "save_day_tasks",
+          "Failed to save day tasks",
+          { error: message },
+          undefined,
+          { userId: user.id, requestId: req.requestId },
+        );
+        return res.status(500).json({ error: message, requestId: req.requestId });
       }
     }
 
@@ -1781,6 +1904,16 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to edit day";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "edit_day",
+      "Failed to edit day",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -1831,7 +1964,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       .eq("id", taskId)
       .eq("user_id", user.id);
     if (updateTaskError) {
-      return res.status(500).json({ error: `Failed to update task: ${updateTaskError.message}`, requestId: req.requestId });
+      const message = `Failed to update task: ${updateTaskError.message}`;
+      logger.error(
+        "CALENDAR",
+        "update_task",
+        "Failed to update task",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     const dayRows = await loadDaysByRange(user.id, dayDate, dayDate);
@@ -1851,7 +1993,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       .eq("id", day.id)
       .eq("user_id", user.id);
     if (dayUpdateError) {
-      return res.status(500).json({ error: `Failed to update day status: ${dayUpdateError.message}`, requestId: req.requestId });
+      const message = `Failed to update day status: ${dayUpdateError.message}`;
+      logger.error(
+        "CALENDAR",
+        "update_day_status",
+        "Failed to update day status",
+        { error: message },
+        undefined,
+        { userId: user.id, requestId: req.requestId },
+      );
+      return res.status(500).json({ error: message, requestId: req.requestId });
     }
 
     if (status === "completed" && previousStatus !== "completed") {
@@ -1871,6 +2022,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update task";
+    // The message goes to the CLIENT and, before this, nowhere else — so a
+    // production 500 here left no trace in the runtime log at all.
+    logger.error(
+      "CALENDAR",
+      "update_task",
+      "Failed to update task",
+      { error: message },
+      undefined,
+      { userId: user.id, requestId: req.requestId },
+    );
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });

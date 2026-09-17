@@ -73,9 +73,28 @@ const digitalSatFaqs = [
       "Lisa provides step-by-step guidance tied to SAT-style question context. Lisa is designed to support reasoning and review, not to bypass learning.",
   },
   {
+    /*
+      CORRECTED 2026-09-03 (owner ruling). The previous answer read "Free
+      includes daily limits (10 practice questions and 5 tutor messages)" — the
+      exact two claims corrected in `client/src/pages/home.tsx` in #713, left
+      behind here. It understated the practice allowance by a factor of four and
+      advertised a PREMIUM feature as free: `server/routes/tutor-runtime.ts:190`
+      denies every non-entitled profile with `entitlement_required`, so free
+      gets zero tutor messages, not five.
+
+      THIS COPY IS THE ONE SEARCH ENGINES QUOTE. It feeds the FAQ structured
+      data, so a wrong claim here outlives a wrong claim on the page itself.
+      Fixing the page and leaving this is how the divergence survived the first
+      pass; the two must be changed together.
+
+      The numbers must match the free card in `home.tsx`
+      (`FREE_DAILY_PRACTICE_QUESTIONS`, currently 40, from
+      `practice_runtime_config.daily_quota_free` per Doc 02B "Quota Contract").
+      `client/src/pages/home.seo-parity.test.ts` fails if they drift apart.
+    */
     question: "What is free vs paid?",
     answer:
-      "Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.",
+      "Free includes 40 practice questions per day, a worked explanation after every question you answer, and the full diagnostic test with your overall score estimate. The interactive tutor, full-length SAT exams, the complete mastery breakdown and the study calendar are on paid plans, along with expanded guardian visibility.",
   },
 ];
 

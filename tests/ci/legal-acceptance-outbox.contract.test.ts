@@ -77,13 +77,19 @@ function makeAdmin(opts: AdminOpts) {
   };
 }
 
+// Slug and hash are REQUIRED in the outbox payload as of the consent-capture
+// pass: a drained row that cannot name the bytes the person was shown is not a
+// record of anything. This fixture used to carry neither — the drain tests went
+// red the moment the schema tightened, which is the schema doing its job.
 const ARGS = {
   userId: "user-1",
   consentSource: "email_signup_form" as const,
   acceptances: [
     {
       docKey: "student_terms",
-      docVersion: "2024-12-20",
+      docSlug: "student-terms",
+      docVersion: "2.0",
+      contentHash: `sha256:${"a".repeat(64)}`,
       actorType: "student" as const,
       minor: false,
     },

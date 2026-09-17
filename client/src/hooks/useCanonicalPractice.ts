@@ -9,7 +9,16 @@ import { isSubmittableAnswer } from "@/lib/practice-submission";
 
 const inflightEnsureSession = new Map<string, Promise<string>>();
 
-export type PracticeSectionParam = "math" | "reading_writing" | "random";
+import type { CanonicalSectionCode } from "@shared/question-bank-contract";
+
+/**
+ * @spec [Doc-05B §4.2] | @implemented [2026-09-02]
+ * The section a practice session is started for, as the code the database stores.
+ * `"random"` is not a section — it is the absence of a section filter — and is the one
+ * member here that is not a section value. The former "math" | "reading_writing"
+ * spelling existed only between this hook and the route that immediately converted it.
+ */
+export type PracticeSectionParam = CanonicalSectionCode | "random";
 
 export type PracticeOption = {
   id: string;

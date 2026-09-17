@@ -18,6 +18,7 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
 import UpdatePassword from "@/pages/update-password";
+import NotificationsPage from "@/pages/notifications";
 
 const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
@@ -223,9 +224,16 @@ function Router() {
             </RequireRole>
           )}
         />
-        <Route path="/reset-password" component={UpdatePassword} />
         {/* §40.4 deletion recovery — public (token-gated, no session needed) */}
         <Route path="/account/recover" component={AccountRecover} />
+        <Route
+          path="/notifications"
+          component={() => (
+            <RequireRole allow={["student", "guardian", "admin"]}>
+              <NotificationsPage />
+            </RequireRole>
+          )}
+        />
 
         {/* Guardian routes - require guardian or admin role */}
         <Route

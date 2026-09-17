@@ -1,5 +1,3 @@
-export * from "./types.js";
-export * from "./validate.js";
 export * from "./mastery-levels.js";
 export * from "./projection-confidence.js";
 export * from "./mastery-emission.js";
@@ -14,3 +12,8 @@ export * from "./guardian-subject.js";
 export * from "./rule4-columns.js";
 export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";
+export * from "./result.js";
+export * from "./notifications-schema.js";
+export * from "./password-policy.js";
+export * from "./return-path.js";
+export * from "./support-contact.js";

@@ -16,10 +16,14 @@
  *
  * What this does NOT serve:
  *  - Third-party-paid checkout. The payer is always the authenticated caller.
- *  - Consent capture (`consent_collection` / `custom_text`) is deliberately NOT
- *    built. Owner ruling: consent is Phase C.2, gated on the billing terms page,
- *    carried as a launch gate on SCL-044. The Dashboard Terms-of-Service URL is
- *    NOT to be set as a workaround.
+ *  - Consent capture (`consent_collection` / `custom_text`) IS built, as of
+ *    2026-09-16. The earlier note here said it was "deliberately NOT built …
+ *    gated on the billing terms page", with the Dashboard Terms-of-Service URL
+ *    "NOT to be set as a workaround". Both conditions are now met rather than
+ *    worked around: `legal/billing-terms/v2` is published and renders at
+ *    /legal/billing-terms, and the owner has pointed the Dashboard URL at it.
+ *    The acceptance RECORD is written by the webhook, not here — this file
+ *    starts a session, it does not learn whether anyone completed one.
  *
  * ORDER ON THE GUARDIAN PATH: BRANCH FIRST, THEN GATE. Whether a purchase is a
  * first purchase or an add-item is decided BEFORE the country gate runs, because
@@ -64,6 +68,14 @@ import {
   resolveGuardianPurchaseSubject,
   subscriptionAlreadyFundsStudent,
 } from "../lib/stripe/guardian-checkout";
+import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
+import { resolveEntitlementDisplay } from "../lib/entitlement-display";
+import { EntitlementService } from "../services/entitlement-service";
+import {
+  checkoutIdempotencyKey,
+  subscriptionItemIdempotencyKey,
+  isStripeIdempotencyConflict,
+} from "../lib/stripe/purchase-idempotency";
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
@@ -143,6 +155,38 @@ router.post(
     const isGuardian = role === "guardian";
 
     try {
+      /**
+       * ONE RULE, BOTH ROUTES — the self-pay half.
+       *
+       * @spec [Doc 01 V8 §20; SCL-029] | @implemented [2026-09-02]
+       *
+       * Runs BEFORE `getStripeClient()` and before the Customer is created, so
+       * a student who already has a subscription causes no Stripe object of any
+       * kind to come into existence. The guardian half runs at its own earliest
+       * point — immediately after `resolveGuardianPurchaseSubject`, since the
+       * subject there is not known until the links are read.
+       *
+       * The subject on this path is the authenticated caller; nothing in the
+       * body selects it.
+       */
+      if (!isGuardian) {
+        const eligibility =
+          await evaluateSubjectPurchaseEligibility(studentProfileId);
+        if (!eligibility.ok) {
+          logger.info("BILLING", "checkout", "Self-pay purchase refused", {
+            requestId,
+            studentProfileId,
+            code: eligibility.code,
+          });
+          return res
+            .status(eligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409)
+            .json({
+              error: { message: eligibility.reason, code: eligibility.code },
+              requestId,
+            });
+        }
+      }
+
       const priceId = getPriceId(plan);
       const stripe = getStripeClient();
 
@@ -173,6 +217,13 @@ router.post(
 
       let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
       let sessionMetadata: Record<string, string>;
+      /**
+       * The STUDENT this purchase funds, in scope for the idempotency key at
+       * the Checkout call below. `selectedStudentId` is block-scoped to the
+       * guardian branch and `studentProfileId` is the payer on that branch, so
+       * neither alone is the subject at the call site. Assigned on both paths.
+       */
+      let subjectStudentId: string;
 
       /**
        * §4.8 GUARDIAN-PAID PURCHASE — PER STUDENT. The production call site.
@@ -222,6 +273,40 @@ router.post(
             });
         }
         const selectedStudentId = subject.studentProfileId;
+
+        /**
+         * ONE RULE, BOTH ROUTES — the guardian half. Same function, same code,
+         * asked about the SELECTED STUDENT rather than the guardian: a guardian
+         * with premium access derived from child A must still be able to buy
+         * for child B.
+         *
+         * This runs before `subscriptions.list` and before either write branch,
+         * so a refusal creates no Stripe object. It does NOT replace
+         * `subscriptionAlreadyFundsStudent` below — that answers a different
+         * question of a different source (does this guardian's own subscription
+         * already carry an item for this student), and it stays because it
+         * closes the window before the webhook has written the row.
+         */
+        const guardianEligibility =
+          await evaluateSubjectPurchaseEligibility(selectedStudentId);
+        if (!guardianEligibility.ok) {
+          logger.info("BILLING", "checkout", "Guardian purchase refused", {
+            requestId,
+            payerProfileId,
+            code: guardianEligibility.code,
+          });
+          return res
+            .status(
+              guardianEligibility.code === "ENTITLEMENT_UNREADABLE" ? 503 : 409,
+            )
+            .json({
+              error: {
+                message: guardianEligibility.reason,
+                code: guardianEligibility.code,
+              },
+              requestId,
+            });
+        }
 
         /**
          * BRANCH FIRST, THEN GATE. The order is the fix.
@@ -331,14 +416,60 @@ router.post(
           // depend on Checkout propagating `line_items[].metadata` — the one
           // mechanism §4.8's plan could never verify. Only a guardian's FIRST
           // purchase goes through Checkout at all.
-          const item = await stripe.subscriptionItems.create({
-            subscription: currentSubscription.id,
-            price: priceId,
-            quantity: 1,
-            // proration_behavior deliberately omitted: Stripe's default
-            // `create_prorations` is exactly the wanted behaviour.
-            metadata: { student_profile_id: selectedStudentId },
-          });
+          /**
+           * IDEMPOTENT ADD-ITEM. A repeated key inside the window returns the
+           * ORIGINAL item rather than adding a second one, so a double-submit
+           * cannot bill the guardian twice for one student.
+           * `subscriptionAlreadyFundsStudent` above catches the case where the
+           * item is already visible on the retrieved subscription; this catches
+           * the one where two requests are in flight together and neither has
+           * seen the other's item yet.
+           */
+          let item: Stripe.SubscriptionItem;
+          try {
+            item = await stripe.subscriptionItems.create(
+              {
+                subscription: currentSubscription.id,
+                price: priceId,
+                quantity: 1,
+                // proration_behavior deliberately omitted: Stripe's default
+                // `create_prorations` is exactly the wanted behaviour.
+                metadata: { student_profile_id: selectedStudentId },
+              },
+              {
+                idempotencyKey: subscriptionItemIdempotencyKey({
+                  subjectProfileId: selectedStudentId,
+                  subscriptionId: currentSubscription.id,
+                  priceId,
+                  nowMs: Date.now(),
+                }),
+              },
+            );
+          } catch (err: unknown) {
+            if (!isStripeIdempotencyConflict(err)) throw err;
+            // The key was used inside this window with different parameters —
+            // a concurrent attempt for the same student on the same
+            // subscription. NEVER retry without the key: that is the second
+            // charge this exists to prevent.
+            logger.warn(
+              "BILLING",
+              "checkout",
+              "Add-item refused: an attempt for this student is already in flight",
+              {
+                requestId,
+                payerProfileId,
+                studentProfileId: selectedStudentId,
+              },
+            );
+            return res.status(409).json({
+              error: {
+                message:
+                  "A purchase for this student is already being processed. Please wait a moment and refresh.",
+                code: "PURCHASE_IN_FLIGHT",
+              },
+              requestId,
+            });
+          }
 
           logger.info(
             "BILLING",
@@ -381,6 +512,7 @@ router.post(
           payer_relationship: "guardian",
           plan,
         };
+        subjectStudentId = selectedStudentId;
       } else {
         if (parsed.data.student_profile_id) {
           // Rejected, not ignored: a student who thinks they bought for someone
@@ -400,22 +532,139 @@ router.post(
           payer_relationship: "self",
           plan,
         };
+        subjectStudentId = studentProfileId;
       }
 
-      const session = await stripe.checkout.sessions.create({
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: "subscription",
         line_items: lineItems,
-        success_url: `${siteBaseUrl()}/dashboard?checkout=success`,
-        cancel_url: `${siteBaseUrl()}/dashboard?checkout=cancel`,
+        /**
+         * SAVE THE BILLING ADDRESS ONTO THE CUSTOMER — ONE FACT, ONE SOURCE.
+         *
+         * @spec [INV-03-08; Charter §7 "one fact, one source"]
+         * @implemented [2026-09-02]
+         *
+         * plain English: tell Stripe to copy the address the payer types during
+         * Checkout onto the Customer. Expected outcome: the grant gate, which
+         * reads `Customer.address.country`, has something to read.
+         *
+         * WHAT WENT WRONG WITHOUT IT. Stripe collects the billing address per
+         * PAYMENT METHOD and does not write it back to the Customer unless
+         * asked. So `Customer.address` stayed `null` on every customer we have,
+         * while the session carried a complete address. Two gates then read the
+         * same fact from two sources and disagreed on the same purchase:
+         * `fulfilCheckoutSession` passed guardian `c6d3fc60` on
+         * `session.customer_details.address.country = "US"`, and
+         * `assertCountryEligibleForGrant` denied the same purchase seconds
+         * later on `Customer.address = null` -> verdict `unknown` ->
+         * `hold_for_operator`. Charge taken, subscription live, nothing
+         * refunded, no entitlement. Every grant behaved this way from
+         * 2026-08-28, when the Customer-level gate landed, until this change.
+         *
+         * WHY NOT POINT THE GRANT GATE AT THE SESSION INSTEAD. Renewals have no
+         * session. The Customer is the correct source precisely because it is
+         * the one that still exists at `customer.subscription.updated`; it was
+         * simply never populated. Fixing the read would have fixed checkout and
+         * left every renewal denying.
+         *
+         * `customer_update` requires `customer` to be set, which it is on every
+         * path through this route (see `customerId` above).
+         * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-customer_update-address
+         *
+         * IT DOES NOT BACKFILL. Customers that already exist with a null
+         * address keep it until their next Checkout; that is an owner action,
+         * not a code path.
+         */
+        customer_update: { address: "auto" },
+        /**
+         * RETURN THE PAYER TO A PAGE THEIR ROLE CAN LOAD.
+         *
+         * @revised [2026-09-02]
+         *
+         * `/dashboard` is `RequireRole allow={["student","admin"]}`
+         * (`client/src/App.tsx`), so a guardian who completed checkout landed
+         * on a role denial: the money moved, the entitlement landed, and the
+         * payer was shown a wall. It also made `SubscriptionPaywall`'s
+         * `?checkout=success` polling unreachable for guardians, since that
+         * component only ever wraps `/guardian`.
+         */
+        success_url: `${siteBaseUrl()}${isGuardian ? "/guardian" : "/dashboard"}?checkout=success`,
+        cancel_url: `${siteBaseUrl()}${isGuardian ? "/guardian" : "/dashboard"}?checkout=cancel`,
         // SCL-043: the authoritative payer-to-student mapping on the
         // unaccompanied path. Deliberately UNSET for a guardian: it takes one
         // profile id, and a guardian session has no single subject — setting it
         // to the guardian would make the payer look like the entitled student.
         ...(isGuardian ? {} : { client_reference_id: studentProfileId }),
+        /**
+         * SCL-044 — auto-renewal consent, taken in Checkout.
+         *
+         * Cal. Bus. & Prof. Code § 17602 requires consent to automatic renewal
+         * that is SEPARATE from general acceptance of the terms of use. Terms of
+         * Use is accepted at signup: a different moment and a different act.
+         * So this checkbox captures auto-renewal consent alone, and ONE control
+         * is not a shortcut — a second box asking again for something already
+         * agreed to elsewhere would dilute the one that matters.
+         *
+         * The document behind the link is the Dashboard's Terms-of-Service URL,
+         * set to /legal/billing-terms. Stripe renders the link; no contract text
+         * is reproduced here, and `custom_text` carries only the payer
+         * affirmation, which is not part of any document.
+         */
+        consent_collection: { terms_of_service: "required" },
+        custom_text: {
+          terms_of_service_acceptance: {
+            message:
+              "I am 18 or older and authorised to use this payment method. I agree to the LYCEON Billing Terms, and I understand this subscription renews automatically until I cancel.",
+          },
+        },
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
-      });
+      };
+
+      /**
+       * IDEMPOTENT SESSION CREATION — the in-flight half of the double-purchase
+       * defence.
+       *
+       * The durable guard above closes the SETTLED case. Between this call
+       * returning and `checkout.session.completed` writing the entitlement row,
+       * `entitlement_active()` is still false and a second submit would sail
+       * through it. A repeated key inside the window returns the ORIGINAL
+       * session instead of creating a second one.
+       *
+       * The key is keyed on the STUDENT, not the payer, so student S
+       * self-paying and guardian G buying for S inside one window collide
+       * deliberately — see `checkoutIdempotencyKey`. Stripe answers that with
+       * `idempotency_error`, which is a REFUSAL and is surfaced as one.
+       */
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await stripe.checkout.sessions.create(sessionParams, {
+          idempotencyKey: checkoutIdempotencyKey({
+            subjectProfileId: subjectStudentId,
+            priceId,
+            nowMs: Date.now(),
+          }),
+        });
+      } catch (err: unknown) {
+        if (!isStripeIdempotencyConflict(err)) throw err;
+        // NEVER fall through to a second create without the key: that is the
+        // second subscription this exists to prevent.
+        logger.warn(
+          "BILLING",
+          "checkout",
+          "Checkout refused: an attempt for this student is already in flight",
+          { requestId, payerProfileId },
+        );
+        return res.status(409).json({
+          error: {
+            message:
+              "A purchase for this student is already being processed. Please wait a moment and refresh.",
+            code: "PURCHASE_IN_FLIGHT",
+          },
+          requestId,
+        });
+      }
 
       // Charter §6: on the unaccompanied path the student IS the payer, so the
       // profile id and the Checkout Session id are both payer identifiers.
@@ -486,12 +735,32 @@ router.get(
     if (role === "guardian") {
       try {
         const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
+        /**
+         * ONE RESOLVER, BOTH BRANCHES (owner ruling 2026-09-03).
+         *
+         * This branch used to answer from `access.hasPremiumAccess` alone —
+         * the SQL predicate, no product check — while the self-pay branch below
+         * applied `tier === "premium"` on top of a TS mirror of that predicate.
+         * One route, two arms, two answers for one student. Both now call
+         * `resolveEntitlementDisplay` and nothing else, and the fold supplies
+         * the same two facts the self-pay branch supplies.
+         *
+         * `access.hasPremiumAccess` is itself computed by that function inside
+         * the fold, so the two cannot disagree here either.
+         */
+        const display = resolveEntitlementDisplay({
+          standingGood: access.studentStandingGood,
+          tier: access.studentEntitlementTier,
+          status: access.studentEntitlementStatus,
+        });
+        const hasBillingAccount =
+          (await getProfileStripeCustomerId(userId)) !== null;
         return res.json({
-          plan: access.hasPremiumAccess ? "premium" : "free",
+          plan: display.effectiveAccess ? "premium" : "free",
           stripeStatus: access.studentEntitlementStatus,
           currentPeriodEnd: null,
           stripeSubscriptionId: null,
-          effectiveAccess: access.hasPremiumAccess,
+          effectiveAccess: display.effectiveAccess,
           /**
            * Whether this guardian is linked to any student at all, straight from §31.3's
            * fold — the same call that decided `effectiveAccess`, so the two cannot disagree.
@@ -506,10 +775,33 @@ router.get(
            * condition those four were reaching for, with a writer.
            */
           hasActiveLink: access.hasActiveLink,
-          needsPaymentUpdate:
-            access.studentEntitlementStatus === "past_due" ||
-            access.studentEntitlementStatus === "unpaid",
-          isPaid: access.hasPremiumAccess,
+          needsPaymentUpdate: display.needsPaymentUpdate,
+          /**
+           * Did a subscription exist for the conferring student and stop
+           * granting access? The client offers the PORTAL rather than checkout
+           * when it did — see `hasBillingAccount` below for why that pair of
+           * facts is what the fourth CTA state needs.
+           */
+          lapsed: display.lapsed,
+          /**
+           * Does this profile already have a Stripe Customer?
+           *
+           * @spec [owner ruling 2026-09-03 — "a lapsed subscriber with a
+           *        Customer goes to the portal, not to checkout"]
+           *
+           * A BOOLEAN, NEVER THE ID. The client's only question is whether the
+           * portal is reachable at all; the customer id answers that and is a
+           * vendor identifier the browser has no use for. Sending it would be a
+           * gratuitous widening of what a compromised client can read.
+           *
+           * Why it matters commercially: none of `canceled`, `unpaid` or
+           * `incomplete_expired` is in the platform predicate, so
+           * `evaluateSubjectPurchaseEligibility` permits a fresh checkout for a
+           * lapsed subscriber — selling a SECOND subscription to someone who
+           * can reactivate the first in the portal for less.
+           */
+          hasBillingAccount,
+          isPaid: display.effectiveAccess,
           // The guardian's access is DERIVED, and saying so is the difference
           // between a correct answer and a coincidentally equal one.
           source: "guardian_linked_student",
@@ -530,27 +822,50 @@ router.get(
     }
 
     try {
-      const entitlement = await getEntitlementForProfile(userId);
+      const [entitlement, standing, customerId] = await Promise.all([
+        getEntitlementForProfile(userId),
+        EntitlementService.evaluateEntitlementActive(userId),
+        getProfileStripeCustomerId(userId),
+      ]);
+
+      /**
+       * THE TS MIRROR OF THE SQL PREDICATE IS GONE.
+       *
+       * What stood here was `new Set(["active","past_due","trialing"])` with a
+       * comment conceding it was a mirror "for display only". A mirror is a
+       * second definition however it is labelled, and SCL-029 widening the
+       * predicate to include `trialing` had already caught it out once. The
+       * standing-good half now comes from `entitlement_active()` itself, and
+       * `resolveEntitlementDisplay` applies the product check — the same two
+       * inputs, through the same function, as the guardian branch above.
+       */
+      if (!standing.ok) {
+        throw new Error("entitlement_active() was unreadable");
+      }
 
       const tier = entitlement?.tier ?? "free";
-      const status = entitlement?.status ?? "inactive";
+      // `"missing"` where the guardian branch says `"missing"`. This read
+      // `"inactive"` — a value in no genesis status enum and in no other
+      // response on this route, which is exactly the kind of private vocabulary
+      // that makes one endpoint's two branches read as two endpoints.
+      const status = entitlement?.status ?? "missing";
       const currentPeriodEnd = entitlement?.current_period_end ?? null;
-
-      // The entitled set is {active, past_due, trialing} — the canonical SQL
-      // predicate's set (SCL-029). Mirrored here for display only; the gate
-      // itself calls entitlement_active().
-      const entitledStatuses = new Set(["active", "past_due", "trialing"]);
-      const effectiveAccess =
-        tier === "premium" && entitledStatuses.has(status);
+      const display = resolveEntitlementDisplay({
+        standingGood: standing.active,
+        tier,
+        status,
+      });
 
       return res.json({
         plan: tier,
         stripeStatus: status,
         currentPeriodEnd,
         stripeSubscriptionId: entitlement?.stripe_subscription_id ?? null,
-        effectiveAccess,
-        needsPaymentUpdate: status === "past_due" || status === "unpaid",
-        isPaid: effectiveAccess,
+        effectiveAccess: display.effectiveAccess,
+        needsPaymentUpdate: display.needsPaymentUpdate,
+        lapsed: display.lapsed,
+        hasBillingAccount: customerId !== null,
+        isPaid: display.effectiveAccess,
         requestId,
       });
     } catch (err: unknown) {
@@ -613,9 +928,22 @@ router.post(
         });
       }
 
+      /**
+       * ROLE-AWARE, like `success_url`/`cancel_url` already were.
+       *
+       * @spec [Doc 01 V8 §31.4] | @implemented [2026-09-03]
+       *
+       * This read `${siteBaseUrl()}/dashboard` for BOTH roles while the two
+       * checkout URLs one block up had already been made role-aware. `/dashboard`
+       * is `RequireRole allow={["student","admin"]}` (`client/src/App.tsx`), so a
+       * guardian returning from the Stripe portal landed on a route their role is
+       * bounced from and was redirected to `/guardian` by `RequireRole` — the
+       * same defect class as the original `success_url`, left unfixed one block
+       * away from its own fix.
+       */
       const session = await getStripeClient().billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${siteBaseUrl()}/dashboard`,
+        return_url: `${siteBaseUrl()}${role === "guardian" ? "/guardian" : "/dashboard"}`,
       });
 
       return res.json({ url: session.url, requestId });

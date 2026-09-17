@@ -46,6 +46,22 @@ vi.mock("../../server/logger", () => ({
   },
 }));
 
+// Mock GCP credentials — Layer 2 tests mock the GoogleGenAI constructor
+// separately; the credential loader just needs to return a valid shape
+// so invokeClassifier can reach the constructor.
+vi.mock("../../server/lib/gcp-credentials", () => ({
+  getGcpCredentials: () => ({
+    type: "service_account",
+    project_id: "test-project",
+    private_key_id: "fake",
+    private_key: "-----BEGIN FAKE-----\nnotreal\n-----END FAKE-----\n",
+    client_email: "test@test.iam.gserviceaccount.com",
+    client_id: "000000000000000000000",
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+  }),
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -146,14 +162,14 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
     // Set required env vars for Layer 2
     process.env.VERTEX_CLASSIFIER_CLASS_MODEL = "gemini-crisis-v1";
     process.env.VERTEX_PROJECT_ID = "test-project";
-    process.env.VERTEX_LOCATION = "us-central1";
+    process.env.VERTEX_CLASSIFIER_LOCATION = "global";
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env.VERTEX_CLASSIFIER_CLASS_MODEL;
     delete process.env.VERTEX_PROJECT_ID;
-    delete process.env.VERTEX_LOCATION;
+    delete process.env.VERTEX_CLASSIFIER_LOCATION;
   });
 
   it("CASE_A: empty signatures + Layer 2 fails → crisis=true, source=classifier_degraded_no_floor", async () => {
@@ -335,5 +351,101 @@ describe("B1.5 — new source values accepted by CHECK constraint", () => {
     expect(sql).toContain("'classifier_degraded_no_floor'");
     expect(sql).toContain("'infrastructure_failure'");
     expect(sql).toContain("crisis_review_cases_source_check");
+  });
+
+  it("classifier uses VERTEX_CLASSIFIER_LOCATION (global) when both env vars are set", async () => {
+    process.env.VERTEX_CLASSIFIER_LOCATION = "global";
+    process.env.VERTEX_CLASSIFIER_CLASS_MODEL = "gemini-3.1-flash-lite";
+
+    let capturedLocation: string | undefined;
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === "tutor_injection_signatures") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+      if (table === "tutor_context_runtime_config") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { value: "classifier_class" },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    vi.doMock("@google/genai", () => ({
+      GoogleGenAI: class {
+        constructor(opts: Record<string, unknown>) {
+          capturedLocation = opts.location as string;
+        }
+        models = {
+          generateContent: vi.fn().mockResolvedValue({
+            text: JSON.stringify({ isCrisis: false, confidence: 0.95 }),
+          }),
+        };
+      },
+    }));
+
+    const { runCrisisClassifier } =
+      await import("../../server/services/tutor-crisis");
+    await runCrisisClassifier("What is 2+2?");
+
+    expect(capturedLocation).toBe("global");
+  });
+
+  it("classifier defaults to global when VERTEX_CLASSIFIER_LOCATION is absent", async () => {
+    delete process.env.VERTEX_CLASSIFIER_LOCATION;
+    process.env.VERTEX_CLASSIFIER_CLASS_MODEL = "gemini-3.1-flash-lite";
+
+    let capturedLocation: string | undefined;
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === "tutor_injection_signatures") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+      if (table === "tutor_context_runtime_config") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { value: "classifier_class" },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    vi.doMock("@google/genai", () => ({
+      GoogleGenAI: class {
+        constructor(opts: Record<string, unknown>) {
+          capturedLocation = opts.location as string;
+        }
+        models = {
+          generateContent: vi.fn().mockResolvedValue({
+            text: JSON.stringify({ isCrisis: false, confidence: 0.95 }),
+          }),
+        };
+      },
+    }));
+
+    const { runCrisisClassifier } =
+      await import("../../server/services/tutor-crisis");
+    await runCrisisClassifier("What is 2+2?");
+
+    expect(capturedLocation).toBe("global");
   });
 });

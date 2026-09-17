@@ -27,6 +27,7 @@
  * as a `guardian_link_attempts_daily` consumer by name.
  */
 
+import { createHash } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
@@ -35,6 +36,7 @@ import {
   rateLimitDenialBody,
   rateLimitDenialHeaders,
   RateLimitUnavailableError,
+  rollback,
   type LedgerClient,
   type RateLimitResult,
 } from "../../packages/shared/src/services/rate-limit-ledger";
@@ -149,3 +151,94 @@ export const studentLinkCodeRegenerationRateLimit = singleBucketRateLimit(
   STUDENT_LINK_CODE_REGENERATION_BUCKET,
   "student_link_code_regeneration",
 );
+
+/**
+ * §36.2's two buckets, applied to the guardian INVITE by email (2026-09-15). Both are seeded
+ * by SCL-080's D-9: 10 attempts per student per day, and 3 per (student, address) per day.
+ * The per-address bucket key is the family name plus a hash of the normalised address, so
+ * `readBucketDefinition`'s family fallback resolves its limit and the ledger never stores
+ * an email address.
+ */
+export const GUARDIAN_LINK_INVITE_DAILY_BUCKET = "guardian_link_attempts_daily";
+export const GUARDIAN_LINK_INVITE_EMAIL_BUCKET = "guardian_link_email_attempts";
+
+export function guardianInviteEmailBucketKey(email: string): string {
+  const digest = createHash("sha256")
+    .update(email.trim().toLowerCase(), "utf8")
+    .digest("hex")
+    .slice(0, 16);
+  return `${GUARDIAN_LINK_INVITE_EMAIL_BUCKET}:${digest}`;
+}
+
+/**
+ * @spec [Doc-01_V8 §36.2 (per-guardian 10/day; per-email 3/day — "prevents spam linking to
+ *        an email"); Doc-01A_V1.0 §39–§47 (RateLimitLedger; §45 rollback; §44 429 shape)]
+ *        | @implemented [2026-09-15]
+ *
+ * plain English: count one invite against BOTH controls before any email is sent. Not an
+ * Express middleware because the per-address bucket needs the PARSED address, which only the
+ * handler has after its Zod parse — so the handler calls this and returns if it wrote the
+ * 429. Expected outcome: when the daily bucket allows and the per-address bucket denies, the
+ * daily increment is rolled back (§45) so a denial on one control does not consume quota on
+ * the other. Fails CLOSED on an unreadable ledger (503), like every limiter on this surface.
+ * Returns true when the response has been written and the caller must stop.
+ */
+export async function applyGuardianInviteRateLimit(
+  res: Response,
+  profileId: string,
+  email: string,
+  requestId: string | undefined,
+): Promise<boolean> {
+  const client = supabaseServer as unknown as LedgerClient;
+  const emailBucketKey = guardianInviteEmailBucketKey(email);
+  try {
+    const daily = await checkAndIncrement(client, {
+      profileId,
+      bucketKey: GUARDIAN_LINK_INVITE_DAILY_BUCKET,
+    });
+    if (!daily.allowed) {
+      deny(res, GUARDIAN_LINK_INVITE_DAILY_BUCKET, daily, requestId);
+      return true;
+    }
+    const perEmail = await checkAndIncrement(client, {
+      profileId,
+      bucketKey: emailBucketKey,
+    });
+    if (!perEmail.allowed) {
+      const rolled = await rollback(client, {
+        profileId,
+        bucketKey: GUARDIAN_LINK_INVITE_DAILY_BUCKET,
+      });
+      if (!rolled.ok) {
+        logger.warn(
+          "RATE_LIMIT",
+          "guardian_link_invite",
+          "Daily bucket rollback failed after per-address denial",
+          { requestId, reason: rolled.error ?? "unknown" },
+        );
+      }
+      // The family name in the body, never the hashed key.
+      deny(res, GUARDIAN_LINK_INVITE_EMAIL_BUCKET, perEmail, requestId);
+      return true;
+    }
+    applyHeaders(res, perEmail.remaining < daily.remaining ? perEmail : daily);
+    return false;
+  } catch (err: unknown) {
+    const unavailable = err instanceof RateLimitUnavailableError;
+    logger.error(
+      "RATE_LIMIT",
+      "guardian_link_invite",
+      "Rate limit check failed — blocking request",
+      {
+        requestId,
+        reason: err instanceof Error ? err.message : "unknown",
+      },
+    );
+    res.status(unavailable ? 503 : 500).json({
+      error:
+        "Rate limit check failed. Please contact support if this persists.",
+      requestId,
+    });
+    return true;
+  }
+}

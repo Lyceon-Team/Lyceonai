@@ -24,6 +24,9 @@ import {
 } from "../lib/profile-bootstrap.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
+import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 
 const router = Router();
 
@@ -58,12 +61,78 @@ function isEmailOtpType(value: unknown): value is EmailOtpType {
   );
 }
 
-// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect. The
-// only producer is the native password-recovery link (→ the set-new-password page).
-const SAFE_NEXT_PATHS = new Set<string>(["/update-password"]);
+// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect.
+// Producers: the native password-recovery link (→ /update-password) and, since 2026-09-15, the
+// login page forwarding a RequireRole-captured return path (e.g. /guardian?code=…) through the
+// Google sign-in. ONE sanitiser decides for both this callback and the client
+// (packages/shared/src/return-path.ts): same-origin, relative, allowlisted — or null.
+// The recovery landing path — stated once; the copy classifiers derive from it.
+const RECOVERY_NEXT = "/update-password";
 function parseSafeNext(req: Request): string | null {
-  const next = req.query.next;
-  return typeof next === "string" && SAFE_NEXT_PATHS.has(next) ? next : null;
+  return sanitizeReturnPath(req.query.next);
+}
+
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-3 (human, recoverable error copy), AS-5
+ *   (recovery), auth-login-e2e.contract.md AL-3 (email-link handoff)] | @implemented [2026-09-15]
+ *
+ * plain English: picks WHICH `?error=<code>` the user lands on when the callback cannot proceed.
+ * Before this, an expired or malformed password-reset link and a real Google failure both read
+ * "We couldn't sign you in with Google". These three pure classifiers only choose copy — nothing
+ * here is trusted for verification: the `isEmailOtpType` allowlist above still decides what reaches
+ * verifyOtp, and `next` is the allowlisted value from `parseSafeNext`. Expected outcome: a
+ * recovery-intent failure (type=recovery, or the allowlisted next=/update-password that only the
+ * recovery email produces) says "reset link"; any other email-link failure says "email link"; a
+ * failure with no email-link signal at all keeps the Google copy. Trade-off: `error_code` is
+ * GoTrue's own redirect parameter (`otp_expired` when a hosted `/verify` link is stale) — matched
+ * as a plain string for copy selection, never acted on. Edge case: every code is generic and
+ * non-enumerating; none confirms an account exists for any address.
+ */
+export type CallbackFailureCode =
+  | "google_oauth_failed"
+  | "recovery_link_expired"
+  | "recovery_link_invalid"
+  | "email_link_expired"
+  | "email_link_invalid";
+
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+/** `?error=` came back from the provider/GoTrue (no credential to verify). */
+export function classifyProviderError(
+  errorCode: unknown,
+  safeNext: string | null,
+): CallbackFailureCode {
+  const recoveryIntent = safeNext === RECOVERY_NEXT;
+  if (errorCode === "otp_expired") {
+    return recoveryIntent ? "recovery_link_expired" : "email_link_expired";
+  }
+  return recoveryIntent ? "recovery_link_invalid" : "google_oauth_failed";
+}
+
+/** The allowlist guard rejected: no usable `code` and no (token_hash + allowlisted type) pair. */
+export function classifyNoCredential(
+  type: unknown,
+  tokenHash: unknown,
+  safeNext: string | null,
+): CallbackFailureCode {
+  if (type === "recovery" || safeNext === RECOVERY_NEXT) {
+    return "recovery_link_invalid";
+  }
+  if (hasText(type) || hasText(tokenHash)) {
+    return "email_link_invalid";
+  }
+  return "google_oauth_failed";
+}
+
+/** verifyOtp itself refused a well-formed token (expired, already used, or never issued). */
+export function classifyOtpFailure(
+  otpType: EmailOtpType,
+): "recovery_link_expired" | "email_link_expired" {
+  return otpType === "recovery"
+    ? "recovery_link_expired"
+    : "email_link_expired";
 }
 
 /**
@@ -80,14 +149,23 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       .send("Server configuration error: PUBLIC_SITE_URL is missing");
   }
 
-  const { code, token_hash: tokenHash, type, error: providerError } = req.query;
+  const {
+    code,
+    token_hash: tokenHash,
+    type,
+    error: providerError,
+    error_code: providerErrorCode,
+  } = req.query;
   const safeNext = parseSafeNext(req);
 
   if (providerError) {
+    const failure = classifyProviderError(providerErrorCode, safeNext);
     logger.warn("OAUTH", "provider_error", "OAuth provider returned an error", {
       error: providerError,
+      errorCode: providerErrorCode,
+      failure,
     });
-    return res.redirect(`${siteUrl}/login?error=google_oauth_failed`);
+    return res.redirect(`${siteUrl}/login?error=${failure}`);
   }
 
   const hasCode = typeof code === "string" && code.length > 0;
@@ -101,12 +179,14 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       : null;
 
   if (!hasCode && otp === null) {
+    const failure = classifyNoCredential(type, tokenHash, safeNext);
     logger.warn(
       "OAUTH",
       "no_credential",
       "No authorization code or email-confirmation token on callback",
+      { failure },
     );
-    return res.redirect(`${siteUrl}/login?error=google_oauth_failed`);
+    return res.redirect(`${siteUrl}/login?error=${failure}`);
   }
 
   try {
@@ -128,13 +208,17 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       !result.data.session ||
       !result.data.user
     ) {
+      // AS-5: a refused email token (expired, already used) is named as such; the PKCE code
+      // exchange keeps its own code — the causes and the recovery action differ.
+      const failure =
+        otp !== null ? classifyOtpFailure(otp.type) : "supabase_exchange";
       logger.error(
         "OAUTH",
         "exchange_failed",
         "Failed to establish a session from the callback",
-        { error: result?.error?.message },
+        { error: result?.error?.message, failure },
       );
-      return res.redirect(`${siteUrl}/login?error=supabase_exchange`);
+      return res.redirect(`${siteUrl}/login?error=${failure}`);
     }
 
     const user = result.data.user;
@@ -155,49 +239,103 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         // direct write AND the durable outbox fail — a rare infra outage) do we fail closed: consent
         // is a precondition for a valid session, so we sign out and surface a recoverable error
         // rather than silently dropping it (AS1-OUTBOX-DROP-001).
-        const capture = await captureLegalAcceptances(admin, {
-          userId: user.id,
-          consentSource,
-          userAgent: req.get("user-agent") ?? null,
-          ipAddress: req.ip ?? null,
-          acceptances: [
-            {
-              docKey: LEGAL_DOCS.studentTerms.docKey,
-              docVersion: LEGAL_DOCS.studentTerms.docVersion,
-              actorType: "student",
-              minor,
-            },
-            {
-              docKey: LEGAL_DOCS.privacyPolicy.docKey,
-              docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
-              actorType: "student",
-              minor,
-            },
-          ],
-        });
-
-        if (!capture.durable) {
+        // Version and hash come from legal/ at write time, so the row records the
+        // exact text that was served. resolveLegalVersion throws rather than
+        // guessing — a consent stamped with a wrong version is a false record.
+        //
+        // AN UNRESOLVABLE DOCUMENT NO LONGER COSTS A SIGN-IN. These two calls
+        // threw `legal/ not found ... relative to /var/task` in the Vercel
+        // function on 2026-09-16, the throw escaped to the finalize catch, and
+        // every Google sign-in ended at /login?error=post_auth_finalize. The
+        // session was preserved — the handler is careful about that — but the
+        // person was shown a failed login, which is the same outage from their
+        // side. Resolution failure now skips the CAPTURE and lets the sign-in
+        // complete; the re-consent prompt asks again on the next hydration.
+        //
+        // NOTHING PARTIAL IS WRITTEN. We do not fall back to a guessed version:
+        // a row that cannot name the bytes served is the false record this
+        // programme exists to prevent, so the choice is a real row or no row.
+        // NULL, not an early return. A bare `return` here would leave the
+        // handler without ever redirecting and hang the request — the resolution
+        // failure must skip the CAPTURE, not the sign-in it is part of.
+        let resolved: {
+          studentTerms: ResolvedLegalVersion;
+          privacyPolicy: ResolvedLegalVersion;
+        } | null = null;
+        try {
+          resolved = {
+            studentTerms: resolveLegalVersion(LEGAL_DOCS.studentTerms.slug),
+            privacyPolicy: resolveLegalVersion(LEGAL_DOCS.privacyPolicy.slug),
+          };
+        } catch (resolveErr: unknown) {
           logger.error(
             "OAUTH",
-            "consent_capture_failed",
-            "Could not durably capture consent (both stores failed); failing closed",
-            { userId: user.id, requestId: req.requestId },
+            "legal_resolution_failed",
+            "Could not resolve signup documents; completing sign-in without a consent row. The re-consent prompt will ask again.",
+            {
+              userId: user.id,
+              error:
+                resolveErr instanceof Error ? resolveErr.message : "unknown",
+              requestId: req.requestId,
+            },
           );
-          await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
-            logger.warn(
-              "OAUTH",
-              "signout_cleanup_failed",
-              "Best-effort signOut after consent-capture failure failed",
+        }
+
+        if (resolved !== null) {
+          const studentTermsVersion = resolved.studentTerms;
+          const privacyPolicyVersion = resolved.privacyPolicy;
+          const capture = await captureLegalAcceptances(admin, {
+            userId: user.id,
+            consentSource,
+            userAgent: req.get("user-agent") ?? null,
+            ipAddress: req.ip ?? null,
+            acceptances: [
               {
-                requestId: req.requestId,
-                error:
-                  signOutErr instanceof Error
-                    ? signOutErr.message
-                    : String(signOutErr),
+                docKey: LEGAL_DOCS.studentTerms.docKey,
+                docSlug: studentTermsVersion.slug,
+                docVersion: studentTermsVersion.version,
+                contentHash: studentTermsVersion.contentHash,
+                actorType: "student",
+                minor,
               },
-            ),
-          );
-          return res.redirect(`${siteUrl}/login?error=consent_capture_failed`);
+              {
+                docKey: LEGAL_DOCS.privacyPolicy.docKey,
+                docSlug: privacyPolicyVersion.slug,
+                docVersion: privacyPolicyVersion.version,
+                contentHash: privacyPolicyVersion.contentHash,
+                actorType: "student",
+                minor,
+              },
+            ],
+          });
+
+          if (!capture.durable) {
+            logger.error(
+              "OAUTH",
+              "consent_capture_failed",
+              "Could not durably capture consent (both stores failed); failing closed",
+              { userId: user.id, requestId: req.requestId },
+            );
+            await supabase.auth
+              .signOut({ scope: "local" })
+              .catch((signOutErr) =>
+                logger.warn(
+                  "OAUTH",
+                  "signout_cleanup_failed",
+                  "Best-effort signOut after consent-capture failure failed",
+                  {
+                    requestId: req.requestId,
+                    error:
+                      signOutErr instanceof Error
+                        ? signOutErr.message
+                        : String(signOutErr),
+                  },
+                ),
+              );
+            return res.redirect(
+              `${siteUrl}/login?error=consent_capture_failed`,
+            );
+          }
         }
       }
 

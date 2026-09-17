@@ -56,8 +56,13 @@ import {
 import {
   resolveEntitlementItem,
   stripeSubscriptionItemSchema,
+  type StripeSubscriptionItem,
 } from "./subscription-item";
+import { classifyError } from "../redact";
 import { dispositionFor } from "./event-surface";
+import { recordLegalAcceptances } from "../legal-acceptance";
+import { resolveLegalVersion } from "../legal-registry.js";
+import { CHECKOUT_LEGAL_DOC } from "../../../shared/legal-consent.js";
 import {
   disputeEventSchema,
   dispositionForClosedDispute,
@@ -65,6 +70,7 @@ import {
 } from "./dispute";
 import { refundEventSchema, decideRefundRevocation } from "./refund";
 import type { RemediationStatus } from "./country-denial-remediation";
+import { isRemediationStatus } from "./country-denial-remediation";
 import {
   CountryDenialError,
   planForDenial,
@@ -241,6 +247,7 @@ export type WebhookOutcome =
         | "already_processed"
         | "ignored"
         | "held"
+        | "unresolvable_subject"
         | RemediationStatus;
     }
   | {
@@ -284,6 +291,17 @@ const checkoutSessionSchema = subjectSchema.extend({
       payer_profile_id: profileIdSchema.optional(),
       payer_relationship: z.string().optional(),
     })
+    .passthrough()
+    .nullish(),
+  /**
+   * SCL-044: what the payer actually did with the terms-of-service checkbox.
+   * Stripe reports `"accepted"` once they tick it; the field is absent on a
+   * session created before `consent_collection` was enabled. Read rather than
+   * assumed — a consent record written because we ASKED for consent, without
+   * checking it was given, records nothing.
+   */
+  consent: z
+    .object({ terms_of_service: z.string().nullish() })
     .passthrough()
     .nullish(),
   mode: z.string().nullish(),
@@ -439,6 +457,47 @@ export class StripePayloadShapeError extends Error {
 }
 
 /**
+ * Thrown when a well-formed payload names nobody this system can entitle.
+ *
+ * @spec [OWNER RULING 2026-09-01 as extended 2026-09-02 — a denial or an
+ *        unresolvable subject is a DECISION and decisions settle at 200]
+ * @implemented [2026-09-02]
+ *
+ * NOT a subclass of `StripePayloadShapeError`, for the same reason
+ * `CountryDenialError` is not: the payload shape is fine. Stripe sent exactly
+ * what it was asked for; the object simply carries metadata this system does
+ * not recognise as naming a student. No redelivery adds that metadata, so a
+ * retry cannot change the answer — and the retry is the harm.
+ *
+ * WHAT IT COST BEFORE. Subscription `sub_1U4bqZDPtjyWEVqEEZXzvbnh` predates
+ * SCL-043 and carries `{profile_id, payer_user_id, payer_role, plan}` where the
+ * current shape carries `student_profile_id`. Cancelling it in the Customer
+ * Portal emitted `customer.subscription.updated`; `resolveStudentProfileId`
+ * found no key it recognised, threw a shape error, the route turned it into a
+ * 500, and Stripe has been retrying an event no redelivery could ever satisfy.
+ *
+ * DELIBERATELY NOT FIXED BY MAKING THE LEGACY METADATA RESOLVABLE. Adding
+ * `student_profile_id` to that subscription would resolve it to student
+ * `3f18cbe2` — and since `upsertEntitlement` keys on `profile_id` alone with
+ * `onConflict`, the ORPHAN's cancellation would then overwrite that student's
+ * good `active` entitlement from `sub_1U8pin…` with `canceled`/`free`. Making
+ * the event resolvable converts harmless noise into a live revocation. The
+ * last-writer-wins hazard behind that is reported separately; it is not this
+ * change's to fix.
+ */
+export class UnresolvableSubjectError extends Error {
+  constructor(
+    eventType: string,
+    readonly detail: string,
+  ) {
+    super(
+      `Stripe ${eventType} names no student this system can entitle: ${detail}`,
+    );
+    this.name = "UnresolvableSubjectError";
+  }
+}
+
+/**
  * Generic over the SCHEMA rather than over its output type. Inferring `T` from
  * `z.ZodType<T>` produces a fresh anonymous type at each call site, so two
  * calls against the same schema yield types TypeScript reports as "two
@@ -489,7 +548,10 @@ function resolveStudentProfileId(
 
   const parsed = profileIdSchema.safeParse(candidate);
   if (!parsed.success) {
-    throw new StripePayloadShapeError(
+    // A DECISION, NOT A SHAPE FAILURE. The payload parsed; it simply names
+    // nobody. The caller decides what to do about that — the lifecycle arm
+    // settles, because no redelivery will add the metadata.
+    throw new UnresolvableSubjectError(
       eventType,
       "no valid student_profile_id in metadata or client_reference_id",
     );
@@ -1331,6 +1393,135 @@ async function writeEntitlementsForAllItems(
 }
 
 /**
+ * Write the session's subject onto the SubscriptionItem Checkout left bare.
+ *
+ * @spec [SCL-045 one SubscriptionItem per student; Charter §6 metadata
+ *        identifies, it does not authorise] | @implemented [2026-09-02]
+ *
+ * plain English: Stripe Checkout does not copy `line_items[].metadata` onto the
+ * SubscriptionItem it creates, so a guardian's first purchase produces an item
+ * with `metadata: {}`. This writes the student the session named onto that item,
+ * so both purchase paths — Checkout and `subscriptionItems.create` — leave the
+ * same item-level shape behind. Expected outcome: every item on a guardian
+ * subscription names its own student, from the first purchase onwards.
+ *
+ * VERIFIED, NOT ASSUMED. `sub_1UB8p5DPtjyWEVqErGBHVFQF` in live Stripe carries
+ * the full subject on the subscription and `metadata: {}` on item
+ * `si_VBVqCKx5JSjVkF`. That question had been carried as an open verification
+ * since Phase 3; the answer is that Checkout does not propagate it.
+ *
+ * WHY IT MATTERS, AND WHAT IT IS NOT FOR. It is NOT what makes the first
+ * purchase work — `writeEntitlementsForAllItems`'s single-student fallback
+ * already resolves a lone bare item from subscription metadata, and already
+ * writes `stripe_subscription_item_id` from the item's own id. The defect it
+ * closes appears at the SECOND student: once a guardian adds one, the
+ * subscription has two items, the fallback is correctly restricted to the
+ * one-item case, and the first student's bare item stops resolving — so their
+ * entitlement is never refreshed again on renewal. Filling the item in at
+ * purchase time is what keeps that from arising.
+ *
+ * IT GRANTS NOTHING. The value written comes from OUR session metadata, set
+ * server-side at session creation, and the writer still re-resolves every item
+ * subject against the payer's active `guardian_links` afterwards. Authorisation
+ * stays in exactly one place; this only makes the identifier durable. Writing it
+ * before that check is deliberate — checking here too would be a second copy of
+ * the §6 rule, which is the pattern this vertical keeps removing.
+ *
+ * IT REFUSES TO GUESS. Only when EXACTLY ONE item lacks a subject is anything
+ * written: with several bare items the session's single student names one of
+ * them at most, and choosing would be the guess `writeEntitlementsForAllItems`
+ * exists to refuse. Items that already carry metadata are never overwritten,
+ * which also makes a replayed event a no-op on its second pass.
+ */
+async function propagateSubjectToBareItem(
+  subscription: RetrievedSubscription,
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventType: string,
+  eventId: string,
+): Promise<RetrievedSubscription> {
+  const studentProfileId = session.metadata?.student_profile_id;
+  if (!studentProfileId) return subscription;
+
+  const items = subscription.items?.data ?? [];
+  const bare = items.filter((i) => !i.metadata?.student_profile_id);
+  if (bare.length !== 1) return subscription;
+
+  const target = bare[0];
+  if (!target) return subscription;
+
+  /**
+   * A FAILED BOOKKEEPING WRITE MUST NOT TAKE DOWN THE MONEY PATH.
+   *
+   * This is the one place in this function that can fail for reasons of its
+   * own, and letting it throw would make the grant depend on it: Stripe would
+   * retry, and a persistent API failure would leave a payer who has been
+   * charged with no entitlement for the whole retry window. That is precisely
+   * the shape this change exists to close — a secondary derivation taking down
+   * a purchase that had already succeeded — and rebuilding it here, one layer
+   * over, would be the same mistake with a different name.
+   *
+   * So the grant proceeds on the unmodified subscription: the single-student
+   * fallback still resolves the subject, and the entitlement is written. What
+   * is lost is durability, not this purchase — and it is logged at ERROR
+   * naming the item, because nothing retries it and an operator setting the
+   * metadata by hand is the remedy.
+   *
+   * NOT a silent catch: it is caught, named, and reported. Nothing else in this
+   * function is caught, so a shape failure from `parseOrFail` on a SUCCESSFUL
+   * response still propagates — that would mean Stripe answered something this
+   * handler does not understand, which a retry can legitimately fix.
+   */
+  let updated: StripeSubscriptionItem;
+  try {
+    updated = parseOrFail(
+      stripeSubscriptionItemSchema,
+      await getStripeClient().subscriptionItems.update(target.id, {
+        // Merged, not replaced: Stripe's metadata update is per key, and an
+        // item may carry keys this handler does not read.
+        metadata: {
+          ...(target.metadata ?? {}),
+          student_profile_id: studentProfileId,
+        },
+      }),
+      eventType,
+    );
+  } catch (err: unknown) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Could not write the student onto the SubscriptionItem. The entitlement is still granted from subscription metadata, but this item will stop resolving once a second student is added to this subscription — set its `student_profile_id` by hand.",
+      {
+        eventId,
+        subscriptionRef: digestId(subscription.id),
+        itemRef: digestId(target.id),
+        ...classifyError(err),
+      },
+    );
+    return subscription;
+  }
+
+  logger.info(
+    "STRIPE_WEBHOOK",
+    eventType,
+    "Wrote the session's student onto the SubscriptionItem Checkout left bare (Checkout does not propagate line_items metadata)",
+    {
+      eventId,
+      subscriptionRef: digestId(subscription.id),
+      itemRef: digestId(target.id),
+      studentProfileRef: digestId(studentProfileId),
+    },
+  );
+
+  return {
+    ...subscription,
+    items: {
+      ...(subscription.items ?? { data: [] }),
+      data: items.map((i) => (i.id === target.id ? updated : i)),
+    },
+  };
+}
+
+/**
  * FULFILMENT — the one path both settlement events share.
  *
  * @spec [SCL-071 entitlement is written on payment SETTLEMENT, not on Checkout
@@ -1348,6 +1539,102 @@ async function writeEntitlementsForAllItems(
  * IT IS CALLED ONLY WITH SETTLED MONEY. The caller decides that; see
  * `isSettled` and the two dispatch arms.
  */
+/**
+ * SCL-044 — the acceptance record for auto-renewal consent taken in Checkout.
+ *
+ * @spec [LYCEON consent capture §5; Cal. Bus. & Prof. Code § 17602]
+ * @implemented 2026-09-16
+ *
+ * plain English: when a payer ticks the terms-of-service box in Checkout,
+ * Stripe reports `consent.terms_of_service === "accepted"`. This writes the
+ * matching row — slug, current version and content hash resolved from `legal/`
+ * at this moment, plus the Session id so the consent can be tied back to the
+ * transaction it was taken during.
+ *
+ * WHOSE RECORD. The payer's. On the unaccompanied path payer and student are
+ * the same profile and `client_reference_id` names them; on the guardian path
+ * `metadata.payer_profile_id` names the guardian, who is the party agreeing to
+ * be charged. Third-party payers do not arise: billing-routes.ts serves only a
+ * session started by the authenticated caller, so a payer always has a profile
+ * and `legal_acceptances.user_id` (NOT NULL) is always satisfiable.
+ *
+ * NEVER THROWS. Called after the money is captured. A consent row that failed
+ * to write is recoverable — Stripe holds the same fact on the session — whereas
+ * an exception here would abort fulfilment and leave a paid customer without
+ * what they bought.
+ */
+async function recordCheckoutConsent(
+  session: z.infer<typeof checkoutSessionSchema>,
+  eventId: string,
+): Promise<void> {
+  const accepted = session.consent?.terms_of_service === "accepted";
+  // WHICH FIELD NAMED THE PAYER ALSO SAYS WHO THEY ARE. `payer_profile_id` is
+  // set only by the guardian checkout route, so its presence means a guardian
+  // is agreeing to be charged for somebody else — `actor_type: 'parent'`. Its
+  // absence means the unaccompanied path, where payer and student are one
+  // profile and the honest value is 'student'. Stamping every checkout row
+  // 'parent' would assert a guardian relationship for people who have none.
+  const guardianPayerId = session.metadata?.payer_profile_id ?? null;
+  const payerProfileId = guardianPayerId ?? session.client_reference_id ?? null;
+  const actorType = guardianPayerId ? ("parent" as const) : ("student" as const);
+
+  if (!accepted || !payerProfileId) {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      accepted
+        ? "Terms accepted but no payer profile on the session; no consent row written."
+        : "Session carries no terms-of-service acceptance; no consent row written.",
+      { eventId, sessionRef: digestId(session.id) },
+    );
+    return;
+  }
+
+  try {
+    const billingTerms = resolveLegalVersion(CHECKOUT_LEGAL_DOC.slug);
+    await recordLegalAcceptances(supabaseServer, {
+      userId: payerProfileId,
+      consentSource: "stripe_checkout",
+      // A webhook is a server-to-server call: the payer's user agent and IP are
+      // not ours to invent, and Stripe's would describe Stripe.
+      userAgent: null,
+      ipAddress: null,
+      sourceReference: session.id,
+      acceptances: [
+        {
+          docKey: CHECKOUT_LEGAL_DOC.docKey,
+          docSlug: billingTerms.slug,
+          docVersion: billingTerms.version,
+          contentHash: billingTerms.contentHash,
+          actorType,
+          minor: false,
+        },
+      ],
+    });
+    logger.info(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      "Billing Terms acceptance recorded for the payer.",
+      {
+        eventId,
+        sessionRef: digestId(session.id),
+        docVersion: billingTerms.version,
+      },
+    );
+  } catch (err: unknown) {
+    logger.error(
+      "STRIPE_WEBHOOK",
+      "checkout_consent",
+      "Could not record the Billing Terms acceptance; fulfilment continues.",
+      {
+        eventId,
+        sessionRef: digestId(session.id),
+        error: err instanceof Error ? err.message : "unknown",
+      },
+    );
+  }
+}
+
 async function fulfilCheckoutSession(
   session: z.infer<typeof checkoutSessionSchema>,
   eventType: string,
@@ -1466,7 +1753,15 @@ async function fulfilCheckoutSession(
       await getStripeClient().subscriptions.retrieve(subscriptionId),
       eventType,
     );
-    await writeEntitlementsForAllItems(retrieved, eventType, eventId);
+    // Checkout leaves the item bare; fill it in so both purchase paths converge
+    // on the same item-level shape before the one writer reads it.
+    const propagated = await propagateSubjectToBareItem(
+      retrieved,
+      session,
+      eventType,
+      eventId,
+    );
+    await writeEntitlementsForAllItems(propagated, eventType, eventId);
     return;
   }
 
@@ -1721,7 +2016,11 @@ async function handleCustomerDeleted(event: Stripe.Event): Promise<void> {
  * whole point of the change this file exists for — a denial is a decision, and
  * decisions settle.
  */
-type DispatchStatus = "processed" | "held" | RemediationStatus;
+type DispatchStatus =
+  | "processed"
+  | "held"
+  | "unresolvable_subject"
+  | RemediationStatus;
 
 /**
  * Cancel, refund, and let the event SETTLE — the terminal state for a payer we
@@ -1793,7 +2092,13 @@ async function remediateCountryDenial(
   // operator actually triages on. Without it, "does anyone still owe this
   // customer money?" is answered by knowing which of six log codes to grep —
   // which is the same "you can tell them apart" claim that did not hold.
-  if (status !== "processed" && status !== "held") {
+  // POSITIVE MEMBERSHIP, not an exclusion list. This used to read
+  // `status !== "processed" && status !== "held"` — a negative filter that
+  // silently admits every status added later, and did: `unresolvable_subject`
+  // widened it and only the type checker noticed. Asking "is this a
+  // remediation?" is the question the branch actually means, and it stays
+  // correct however many non-remediation statuses exist.
+  if (isRemediationStatus(status)) {
     logger.warn(
       "STRIPE_WEBHOOK",
       "COUNTRY_DENIAL_OUTCOME",
@@ -2224,6 +2529,15 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
      * refund, which is the same collapse of an error into a legitimate value
      * in the opposite direction.
      */
+    // SCL-044 — record the auto-renewal consent this session collected.
+    //
+    // BEFORE fulfilment, and deliberately NOT fatal to it. The money is already
+    // captured at this point: throwing here would leave a paid customer without
+    // the entitlement they bought, to punish a bookkeeping failure. A missing
+    // consent row is recoverable from Stripe, which holds the same fact; an
+    // unfulfilled paid session is a support ticket.
+    await recordCheckoutConsent(session, event.id);
+
     try {
       await fulfilCheckoutSession(session, event.type, event.id);
     } catch (err: unknown) {
@@ -2331,7 +2645,47 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
     return "processed";
   }
 
-  const studentProfileId = resolveStudentProfileId(subscription, event.type);
+  /**
+   * AN UNRESOLVABLE SUBJECT SETTLES. It does not retry forever.
+   *
+   * @spec [OWNER RULING 2026-09-01 as extended 2026-09-02] | @implemented [2026-09-02]
+   *
+   * plain English: a subscription whose metadata names nobody we can entitle is
+   * acknowledged and logged, and nothing is written. Expected outcome: a legacy
+   * or third-party subscription on a Customer we know stops generating 500s.
+   *
+   * Nothing is written, and that is the point twice over: once because we have
+   * no subject, and once because the plausible "fix" — resolving these to the
+   * student on the Customer — would let an orphan's cancellation overwrite that
+   * student's good entitlement. See `UnresolvableSubjectError`.
+   *
+   * ONLY THIS ARM. `fulfilCheckoutSession` still lets it propagate, and that is
+   * left unchanged deliberately: there the money has just moved, so a silent
+   * 200 would hide a payer who was charged and entitled nobody. Reported rather
+   * than widened.
+   */
+  let studentProfileId: string;
+  try {
+    studentProfileId = resolveStudentProfileId(subscription, event.type);
+  } catch (err: unknown) {
+    if (!(err instanceof UnresolvableSubjectError)) throw err;
+    logger.warn(
+      "STRIPE_WEBHOOK",
+      event.type,
+      "SETTLED WITHOUT WRITING: this subscription names no student this system can entitle, so no redelivery could change the outcome. Nothing was read or written for any profile.",
+      {
+        eventId: event.id,
+        subscriptionRef: digestId(subscription.id),
+        // KEYS, never values: enough to tell a pre-SCL-043 subscription
+        // (`profile_id`, `payer_user_id`, `payer_role`) from a current one that
+        // has genuinely lost its subject, without logging any profile id.
+        metadataKeys: Object.keys(retrieved.metadata ?? {}).sort(),
+        detail: err.detail,
+      },
+    );
+    return "unresolvable_subject";
+  }
+
   await writeEntitlementFromSubscription(
     subscription.id,
     studentProfileId,

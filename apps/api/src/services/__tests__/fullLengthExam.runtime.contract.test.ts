@@ -22,7 +22,7 @@ function buildQueryResult<T>(data: T, error: unknown = null) {
 
 function buildPublishedFormFixture(formId: string) {
   const formItems: Array<{
-    section: 'rw' | 'math';
+    section: 'RW' | 'M';
     module_index: 1 | 2;
     ordinal: number;
     question_id: string;
@@ -52,7 +52,7 @@ function buildPublishedFormFixture(formId: string) {
     structure_cluster_id: null;
   }> = [];
 
-  const addModule = (section: 'rw' | 'math', moduleIndex: 1 | 2, count: number) => {
+  const addModule = (section: 'RW' | 'M', moduleIndex: 1 | 2, count: number) => {
     for (let ordinal = 1; ordinal <= count; ordinal += 1) {
       const canonicalId = `${section.toUpperCase()}_${moduleIndex}_${String(ordinal).padStart(2, '0')}`;
       formItems.push({
@@ -66,8 +66,8 @@ function buildPublishedFormFixture(formId: string) {
         canonical_id: canonicalId,
         status: 'published',
         question_type: 'multiple_choice',
-        section_code: section === 'rw' ? 'RW' : 'MATH',
-        section: section === 'rw' ? 'RW' : 'Math',
+        section_code: section,
+        section: section,
         stem: `Q${canonicalId}`,
         options: [
           { key: 'A', text: 'A' },
@@ -92,10 +92,10 @@ function buildPublishedFormFixture(formId: string) {
     }
   };
 
-  addModule('rw', 1, 27);
-  addModule('rw', 2, 27);
-  addModule('math', 1, 22);
-  addModule('math', 2, 22);
+  addModule('RW', 1, 27);
+  addModule('RW', 2, 27);
+  addModule('M', 1, 22);
+  addModule('M', 2, 22);
 
   return {
     form: {
@@ -193,10 +193,10 @@ describe('Full-Length Runtime Contract Additions', () => {
             insert: vi.fn(() => ({
               select: vi.fn(async () => ({
                 data: [
-                  { id: 'mod-rw-1', section: 'rw', module_index: 1 },
-                  { id: 'mod-rw-2', section: 'rw', module_index: 2 },
-                  { id: 'mod-math-1', section: 'math', module_index: 1 },
-                  { id: 'mod-math-2', section: 'math', module_index: 2 },
+                  { id: 'mod-rw-1', section: 'RW', module_index: 1 },
+                  { id: 'mod-rw-2', section: 'RW', module_index: 2 },
+                  { id: 'mod-math-1', section: 'M', module_index: 1 },
+                  { id: 'mod-math-2', section: 'M', module_index: 2 },
                 ],
                 error: null,
               })),

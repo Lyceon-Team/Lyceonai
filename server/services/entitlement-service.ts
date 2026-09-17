@@ -42,14 +42,49 @@ export type EntitlementActiveResult = {
 export class EntitlementService {
   /**
    * Returns true iff the profile has a canonical active entitlement
-   * (status IN ('active','past_due') — grace-inclusive per owner ruling 2026-06-14).
+   * (status IN ('active','past_due','trialing') — grace-inclusive per owner
+   * ruling 2026-06-14, widened to include `trialing` by SCL-029 and verified
+   * against the live `entitlement_active` function body on 2026-09-02; this
+   * docstring previously omitted `trialing` and was wrong).
    * Fails closed (false) on any RPC error.
    */
   static async isEntitlementActiveForProfile(
     profileId: string,
   ): Promise<boolean> {
+    const verdict =
+      await EntitlementService.evaluateEntitlementActive(profileId);
+    // An unreadable answer is not an entitled one. Unchanged behaviour for
+    // every existing caller: this is the ACCESS question, and denying access we
+    // cannot justify is the safe direction.
+    return verdict.ok ? verdict.active : false;
+  }
+
+  /**
+   * The same predicate, with the read failure kept instead of swallowed.
+   *
+   * @spec [SCL-029 — the platform entitlement predicate is the one definition
+   *        of "entitled"] | @implemented [2026-09-02]
+   *
+   * plain English: answers "is this profile entitled?" and, separately, "could
+   * we tell?". Expected outcome: one definition of entitled, two call sites
+   * that need OPPOSITE failure directions, and neither has to re-implement the
+   * predicate to get one.
+   *
+   * WHY IT EXISTS. `isEntitlementActiveForProfile` collapses an RPC error into
+   * `false`, which is right for ACCESS — deny what we cannot justify. It is
+   * exactly wrong for a PURCHASE GUARD, where `false` means "not entitled, go
+   * ahead and charge them": a transient RPC failure would silently re-open the
+   * double-purchase gap the guard exists to close. The alternative was a second
+   * query in the checkout route, which would fork the definition of entitled —
+   * the Charter's "one fact, one source" rule refuses that. So the predicate
+   * stays in one place and the failure POLICY moves to the caller.
+   */
+  static async evaluateEntitlementActive(
+    profileId: string,
+  ): Promise<{ ok: true; active: boolean } | { ok: false }> {
     if (!profileId) {
-      return false;
+      // Not a read failure: an absent profile id is definitively not entitled.
+      return { ok: true, active: false };
     }
 
     const { data, error } = await supabaseServer.rpc("entitlement_active", {
@@ -60,16 +95,16 @@ export class EntitlementService {
       logger.error(
         "ENTITLEMENT",
         "rpc_failed",
-        "entitlement_active RPC failed; failing closed",
+        "entitlement_active RPC failed; the caller decides which way to fail",
         // Codex HIGH-6: `error.message` is vendor free text and may quote a row
         // or a constraint containing an identifier. Log the allow-listed class.
         // `profileId` is additionally digested at the logger boundary.
         { profileId, ...classifyError(error) },
       );
-      return false;
+      return { ok: false };
     }
 
-    return data === true;
+    return { ok: true, active: data === true };
   }
 
   /**

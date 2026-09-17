@@ -6,22 +6,26 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 
+import { normalizeSectionCode } from "../../../shared/question-bank-contract";
+
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 async function diagnose() {
   const args = process.argv.slice(2);
   const sectionArg = args.find((a) => a.startsWith("--section="));
-  const section = sectionArg?.split("=")[1] || "math";
-  const sectionCode = section.toLowerCase() === "math" ? "MATH" : "RW";
+  const section = sectionArg?.split("=")[1] || "M";
+  // Same defect as verify-questions-db: the filter named a column that does not exist
+  // and a value the CHECK rejects, so this diagnostic always returned zero rows.
+  const sectionCode = normalizeSectionCode(section) ?? "M";
 
-  console.log(`=== Diagnostic: Next Question Selection (section_code=${sectionCode}) ===\n`);
+  console.log(`=== Diagnostic: Next Question Selection (section=${sectionCode}) ===\n`);
 
   const { data, error } = await supabase
     .from("questions")
-    .select("id, stem, options, section_code, difficulty, question_type, status")
+    .select("id, stem, options, section, difficulty, question_type, status")
     .eq("question_type", "multiple_choice")
     .eq("status", "published")
-    .eq("section_code", sectionCode)
+    .eq("section", sectionCode)
     .limit(5);
 
   if (error) {

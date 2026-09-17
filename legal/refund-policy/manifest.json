@@ -1,0 +1,13 @@
+{
+  "slug": "refund-policy",
+  "title": "LYCEON Refund Policy",
+  "description": "Refund windows for first charges and for renewals, how to request one, and what happens after.",
+  "order": 60,
+  "current": "v2",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Refund Policy"
+  ]
+}

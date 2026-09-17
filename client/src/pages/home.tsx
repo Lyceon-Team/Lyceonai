@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
@@ -20,13 +21,57 @@ import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
+import {
+  getPublicMonthlyPrice,
+  formatMonthlyPrice,
+} from "@/lib/public-pricing";
 
 type DemoState = "idle" | "thinking" | "answered";
 type HeroVariant = "A" | "B";
 
+/**
+ * The free-tier daily practice allowance, as advertised.
+ *
+ * @spec [Doc 02B (V4) "12. Entitlement Gate System" -> "Entitlement Matrix"
+ *        and "Quota Contract": "Free users may submit up to
+ *        `practice_runtime_config.daily_quota_free` practice questions per
+ *        calendar day (40 at launch)"] | @implemented [2026-09-03]
+ *
+ * THE SOURCE OF TRUTH IS THE DATABASE, NOT THIS LINE.
+ * `practice_runtime_config.daily_quota_free` is what the runtime enforces, and
+ * it reads 40 in production (verified 2026-09-03). This page is served to
+ * logged-out visitors, so it cannot read an authenticated config endpoint; the
+ * number is therefore restated here, which is a drift risk and is named as one.
+ * Changing the config without changing this line makes the homepage lie again —
+ * the defect this replaces. Reported to the owner as a follow-up: a public
+ * free-tier endpoint would close it properly.
+ *
+ * Doc 01A Appendix A.3's example bucket map carries a THIRD number for this
+ * ("practice_daily_free": 20) against a bucket that exists in neither
+ * production nor Doc 02B. That divergence is reported, not resolved here.
+ */
+const FREE_DAILY_PRACTICE_QUESTIONS = 40;
+
 export default function HomePage() {
   const [demoState, setDemoState] = useState<DemoState>("idle");
   const [variant, setVariant] = useState<HeroVariant | null>(null);
+
+  /**
+   * The paid card's price, from Stripe via `GET /api/public/pricing`.
+   *
+   * @spec [owner ruling 2026-09-03 — publish the monthly price]
+   *
+   * `retry: 1` and no fallback: when this resolves to null the card renders
+   * WITHOUT a price line. There is deliberately no default amount to fall back
+   * to — see `client/src/lib/public-pricing.ts` for why a constant here would
+   * be the defect rather than the safety net.
+   */
+  const { data: monthlyPrice } = useQuery({
+    queryKey: ["/api/public/pricing"],
+    queryFn: getPublicMonthlyPrice,
+    retry: 1,
+  });
+  const formattedMonthlyPrice = formatMonthlyPrice(monthlyPrice ?? null);
 
   const { isAuthenticated, signOut } = useSupabaseAuth();
   const { toast } = useToast();
@@ -548,22 +593,35 @@ export default function HomePage() {
                 </p>
               </div>
 
+              {/*
+                EVERY LINE HERE IS ENFORCED SOMEWHERE. Corrected 2026-09-03 on
+                the owner's ruling after all four previous claims were checked
+                against Doc 02B's "Entitlement Matrix" and against production:
+
+                - "Up to 10 practice questions per day" understated the real
+                  allowance by a factor of four.
+                - "Up to 5 tutor chat messages per day" advertised a PREMIUM
+                  feature as free. `server/routes/tutor-runtime.ts` denies every
+                  non-entitled profile with `entitlement_required` — free gets
+                  zero, not five.
+                - "Full-length SAT exam mode" did the same:
+                  `server/routes/full-length-exam-routes.ts` answers 402
+                  `PREMIUM_REQUIRED`. It has moved to the paid card.
+                - "Progress and dashboard tracking" was true only of the single
+                  overall projection; the mastery breakdown is premium.
+              */}
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Up to 10 practice questions per day
+                  {FREE_DAILY_PRACTICE_QUESTIONS} practice questions per day
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />A worked
+                  explanation after every question you answer
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Up to 5 tutor chat messages per day
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Full-length SAT exam mode
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Progress and dashboard tracking
+                  Full diagnostic test and your overall score estimate
                 </li>
               </ul>
 
@@ -578,15 +636,30 @@ export default function HomePage() {
             </Card>
 
             <Card className="bg-foreground text-background relative overflow-hidden">
-              <div className="absolute top-4 right-4 bg-secondary text-foreground text-xs px-3 py-1 rounded-full font-medium">
-                Coming soon
-              </div>
-
               <div className="mb-6">
                 <h3 className="text-xl font-semibold mb-2">
                   Pro · for serious prep
                 </h3>
-                <div className="text-4xl font-bold mb-1">TBD</div>
+                {/*
+                  THE PRICE COMES FROM STRIPE OR IT DOES NOT APPEAR.
+                  Rendered only when `formattedMonthlyPrice` is a string, which
+                  `formatMonthlyPrice` returns only for an amount that survived
+                  `publicPricingSchema`. There is no fallback constant and no
+                  placeholder: an unconfigured price id or an unreachable Stripe
+                  drops this block entirely rather than quoting a number nobody
+                  can be charged.
+
+                  NOT THE `upgrade.tsx:92` SHAPE. That module spreads the API
+                  row over a fallback row, so a null amount from the API
+                  overwrites the fallback and reaches the formatter as `$NaN`.
+                  Nothing is merged here, so there is nothing to overwrite.
+                */}
+                {formattedMonthlyPrice !== null && (
+                  <div className="text-4xl font-bold mb-1">
+                    {formattedMonthlyPrice}
+                    <span className="text-lg opacity-70">/month</span>
+                  </div>
+                )}
                 <p className="text-sm opacity-70">Unlock everything</p>
               </div>
 
@@ -605,6 +678,16 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
+                  <span>
+                    Full-length SAT exams, with review and score reports
+                  </span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
+                  <span>Complete mastery breakdown and study calendar</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
                   <span>Expanded guardian summary and calendar visibility</span>
                 </li>
                 <li className="flex items-center gap-3">
@@ -613,13 +696,20 @@ export default function HomePage() {
                 </li>
               </ul>
 
-              <a
-                href="mailto:hello@lyceon.ai?subject=Pro%20Early%20Access"
-                className="block w-full px-6 py-3 bg-background text-foreground rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
-                data-testid="button-join-waitlist"
-              >
-                Join early access list
-              </a>
+              {/*
+                `/signup` redirects to `/login` (`App.tsx:71`), so this lands
+                where the free card's CTA lands, with different copy. That is
+                intended (owner ruling 2026-09-03): the destination is one auth
+                page, and the two labels name which plan the visitor came for.
+              */}
+              <Link href="/signup">
+                <a
+                  className="block w-full px-6 py-3 bg-background text-foreground rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                  data-testid="button-get-started-paid"
+                >
+                  Get Started
+                </a>
+              </Link>
             </Card>
           </div>
         </Container>

@@ -77,10 +77,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
   resolveUserIdFromToken: vi.fn(async () => null),
 }));
 
-vi.mock("../../server/lib/email.js", () => ({
-  sendEmail: vi.fn(async () => ({ success: true })),
-}));
-
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({
     auth: {
@@ -393,7 +389,13 @@ describe("Auth Signup Contract", () => {
     expect(ssrSetSessionMock).not.toHaveBeenCalled();
   });
 
-  it("AS1-OUTBOX-DROP-001: fails closed (503, no session cookie) when consent can't be durably captured", async () => {
+  it("FAILS OPEN when consent can't be durably captured: the account stands", async () => {
+    // WAS "AS1-OUTBOX-DROP-001: fails closed (503, no session cookie)".
+    // Overruled by the owner on 2026-09-16: never refuse the user over a consent
+    // we failed to record. An outbox outage used to cost us the account — the
+    // same shape as the defect that took /api/profile down, one route over.
+    // The consent is collected by the re-consent prompt instead, which is the
+    // mechanism that exists for exactly this.
     signUpMock.mockResolvedValueOnce({
       data: {
         user: { id: "user-503", email: "fail@example.com" },
@@ -407,9 +409,8 @@ describe("Auth Signup Contract", () => {
       },
       error: null,
     });
-    // Direct legal_acceptances write fails AND the outbox table is unmapped in this harness
-    // (profileFromMock throws for it) → captureLegalAcceptances returns {durable:false} → the signup
-    // must fail closed BEFORE persisting a session (consent is a precondition, never silently dropped).
+    // Direct legal_acceptances write fails AND the outbox is unmapped in this
+    // harness → captureLegalAcceptances returns {durable:false}.
     upsertMock.mockResolvedValueOnce({
       error: { message: "legal_acceptances unavailable" },
     });
@@ -419,7 +420,7 @@ describe("Auth Signup Contract", () => {
     const res = await signupWithCsrf(app, {
       email: "fail@example.com",
       password: "Password123!",
-      displayName: "Fail Closed",
+      displayName: "Fail Open",
       legalConsent: {
         studentTermsAccepted: true,
         privacyPolicyAccepted: true,
@@ -427,18 +428,21 @@ describe("Auth Signup Contract", () => {
       },
     });
 
-    expect(res.status).toBe(503);
-    // signUp wrote the session cookie EAGERLY; the fail-closed branch must sign out to clear it, so no
-    // session survives a consent-capture failure (AS1-OUTBOX-DROP-001).
-    expect(ssrSignOutMock).toHaveBeenCalled();
+    // The account is created and the session survives.
+    expect(res.status).toBeLessThan(400);
+    expect(ssrSignOutMock, "the session was torn down").not.toHaveBeenCalled();
+
+    // The eager cookie is STILL LIVE — not cleared. That is the whole change:
+    // the old branch blanked it, and this asserts the blanking is gone.
     const setCookies = res.headers["set-cookie"] ?? [];
     const authCookies = setCookies.filter((cookie: string) =>
       /^sb-[^=]*-auth-token=/.test(cookie),
     );
-    expect(authCookies.length).toBeGreaterThan(0); // the eager cookie WAS written ...
-    expect(authCookies[authCookies.length - 1]).toMatch(
-      /^sb-[^=]*-auth-token=;/,
-    ); // ... and then cleared (empty value) — no live session left
+    expect(authCookies.length).toBeGreaterThan(0);
+    expect(
+      authCookies[authCookies.length - 1],
+      "the session cookie was cleared — signup still fails closed",
+    ).not.toMatch(/^sb-[^=]*-auth-token=;/);
   });
 });
 
@@ -585,5 +589,61 @@ describe("Auth routes — Stage 2 deltas (signin / reset / update-password)", ()
     expect(ssrUpdateUserMock).toHaveBeenCalledWith({
       password: "BrandNewPassword123!",
     });
+  });
+
+  /**
+   * @spec [Coding Standards §7.1, §7.2; contracts/auth-standard-flow.contract.md AS-1, AS-5]
+   * @implemented [2026-09-15]
+   * The server parses passwords against the SHARED policy on both set surfaces. A password the
+   * form would refuse is refused here too — the page is the courtesy, the parse is the enforcement.
+   * The 400 body names the rule, never echoes the password. Would FAIL if either route regressed to
+   * a local `.min(n)` or to a bare truthiness check.
+   */
+  it("update-password refuses a password below the shared policy (server-side, 400, no updateUser call)", async () => {
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "abcdefgh", // 8 chars, no digit → violates the shared policy
+    });
+
+    expect(res.status).toBe(400);
+    expect(ssrUpdateUserMock).not.toHaveBeenCalled();
+    expect(String(res.body.error)).toMatch(/number/i);
+    expect(JSON.stringify(res.body)).not.toContain("abcdefgh");
+  });
+
+  it("update-password accepts a 72-character password and refuses 73 (GoTrue cap, never truncated)", async () => {
+    const app = await loadAuthApp();
+    const seventyTwo = "a1".repeat(36);
+
+    const ok = await postWithCsrf(app, "/api/auth/update-password", {
+      password: seventyTwo,
+    });
+    expect(ok.status).toBe(200);
+    expect(ssrUpdateUserMock).toHaveBeenCalledWith({ password: seventyTwo });
+
+    const tooLong = await postWithCsrf(app, "/api/auth/update-password", {
+      password: seventyTwo + "x",
+    });
+    expect(tooLong.status).toBe(400);
+    expect(ssrUpdateUserMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("signup refuses a password below the shared policy before any Supabase call", async () => {
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "student@example.com",
+      password: "short1",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/at least 8/i);
+    expect(JSON.stringify(res.body)).not.toContain("short1");
   });
 });

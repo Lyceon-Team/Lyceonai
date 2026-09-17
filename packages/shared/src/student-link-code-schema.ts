@@ -66,7 +66,31 @@ export const studentLinkCodeEntrySchema = z
 /** The redeem request body. */
 export const redeemLinkCodeRequestSchema = z.object({
   code: studentLinkCodeEntrySchema,
+  /**
+   * The guardian's acceptance of the Parent / Guardian Terms. Required, and
+   * required to be `true` — `z.literal(true)` refuses `false` rather than
+   * recording a negative consent, because there is no such thing: a guardian
+   * who declines does not get a link.
+   *
+   * The VERSION is not here and must never be. The client saying which version
+   * it accepted is the client asserting what it was shown; the server resolves
+   * the current version from `legal/` at write time.
+   */
+  acceptParentGuardianTerms: z.literal(true),
 });
+
+/**
+ * @spec [Doc-01_V8 §36.2 (per-email rate limit), §38.1; 2026-09-15 guardian invite by email]
+ * The invite request body: one address, trimmed and lower-cased so the per-address rate
+ * limit and the idempotency key see one spelling. Nothing else — the code is read from the
+ * student's own row, never from the client.
+ */
+export const inviteGuardianRequestSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email().max(254),
+  })
+  .strict();
+export type InviteGuardianRequest = z.infer<typeof inviteGuardianRequestSchema>;
 
 /**
  * What the student's own code panel is told.

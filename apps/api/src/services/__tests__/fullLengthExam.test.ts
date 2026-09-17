@@ -37,7 +37,7 @@ function buildPublishedFormFixture(formId: string) {
     created_at: '2026-03-14T00:00:00.000Z',
   };
 
-  const formItems: Array<{ section: 'rw' | 'math'; module_index: 1 | 2; ordinal: number; question_id: string }> = [];
+  const formItems: Array<{ section: 'RW' | 'M'; module_index: 1 | 2; ordinal: number; question_id: string }> = [];
   const questionRows: Array<{
     id: string;
     canonical_id: string;
@@ -62,7 +62,7 @@ function buildPublishedFormFixture(formId: string) {
     structure_cluster_id: null;
   }> = [];
 
-  const addModule = (section: 'rw' | 'math', moduleIndex: 1 | 2, count: number) => {
+  const addModule = (section: 'RW' | 'M', moduleIndex: 1 | 2, count: number) => {
     for (let ordinal = 1; ordinal <= count; ordinal += 1) {
       const canonicalId = `${section.toUpperCase()}_${moduleIndex}_${String(ordinal).padStart(2, '0')}`;
       formItems.push({ section, module_index: moduleIndex, ordinal, question_id: canonicalId });
@@ -71,8 +71,8 @@ function buildPublishedFormFixture(formId: string) {
         canonical_id: canonicalId,
         status: 'published',
         question_type: 'multiple_choice',
-        section_code: section === 'rw' ? 'RW' : 'MATH',
-        section: section === 'rw' ? 'RW' : 'Math',
+        section_code: section,
+        section: section,
         stem: `Q${canonicalId}`,
         options: [
           { key: 'A', text: 'A' },
@@ -97,10 +97,10 @@ function buildPublishedFormFixture(formId: string) {
     }
   };
 
-  addModule('rw', 1, 27);
-  addModule('rw', 2, 27);
-  addModule('math', 1, 22);
-  addModule('math', 2, 22);
+  addModule('RW', 1, 27);
+  addModule('RW', 2, 27);
+  addModule('M', 1, 22);
+  addModule('M', 2, 22);
 
   return { form, formItems, questionRows };
 }
@@ -307,10 +307,10 @@ function buildPublishedFormFixture(formId: string) {
               insert: vi.fn(() => ({
                 select: vi.fn(async () => ({
                   data: [
-                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
-                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
-                    { id: 'mod-math-1', section: 'math', module_index: 1 },
-                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                    { id: 'mod-rw-1', section: 'RW', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'RW', module_index: 2 },
+                    { id: 'mod-math-1', section: 'M', module_index: 1 },
+                    { id: 'mod-math-2', section: 'M', module_index: 2 },
                   ],
                   error: null,
                 })),
@@ -438,10 +438,10 @@ function buildPublishedFormFixture(formId: string) {
               insert: vi.fn(() => ({
                 select: vi.fn(async () => ({
                   data: [
-                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
-                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
-                    { id: 'mod-math-1', section: 'math', module_index: 1 },
-                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                    { id: 'mod-rw-1', section: 'RW', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'RW', module_index: 2 },
+                    { id: 'mod-math-1', section: 'M', module_index: 1 },
+                    { id: 'mod-math-2', section: 'M', module_index: 2 },
                   ],
                   error: null,
                 })),
@@ -578,10 +578,10 @@ function buildPublishedFormFixture(formId: string) {
               insert: vi.fn(() => ({
                 select: vi.fn(async () => ({
                   data: [
-                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
-                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
-                    { id: 'mod-math-1', section: 'math', module_index: 1 },
-                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                    { id: 'mod-rw-1', section: 'RW', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'RW', module_index: 2 },
+                    { id: 'mod-math-1', section: 'M', module_index: 1 },
+                    { id: 'mod-math-2', section: 'M', module_index: 2 },
                   ],
                   error: null,
                 })),
@@ -619,7 +619,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         userId: 'user-456',
         status: 'in_progress',
-        currentSection: 'math',
+        currentSection: 'M',
         currentModule: 1,
         seed: 'test-seed',
         startedAt: new Date(),
@@ -634,7 +634,7 @@ function buildPublishedFormFixture(formId: string) {
         currentQuestion: {
           id: 'q1',
           stem: 'Test question',
-          section: 'math',
+          section: 'M',
           question_type: 'multiple_choice',
           options: [{ key: 'A', text: 'Option A' }],
           difficulty: 'medium',
@@ -660,7 +660,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockQuestion: fullLengthExamService.GetCurrentSessionResult['currentQuestion'] = {
         id: 'q1',
         stem: 'Test',
-        section: 'math',
+        section: 'M',
         question_type: 'multiple_choice',
         options: [],
         difficulty: 1,
@@ -684,7 +684,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-anti-leak-1',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'math',
+        current_section: 'M',
         current_module: 1,
         client_instance_id: 'client-1',
         updated_at: now.toISOString(),
@@ -693,7 +693,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockModule = {
         id: 'module-anti-leak-1',
         session_id: 'session-anti-leak-1',
-        section: 'math',
+        section: 'M',
         module_index: 1,
         status: 'in_progress',
         started_at: now.toISOString(),
@@ -709,7 +709,7 @@ function buildPublishedFormFixture(formId: string) {
           order_index: 0,
           question_canonical_id: 'SATM1ABC123',
           question_stem: 'Q1',
-          question_section: 'Math',
+          question_section: 'M',
           question_type: 'multiple_choice',
           question_options: [
             { key: 'A', text: '1' },
@@ -791,7 +791,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'math',
+        current_section: 'M',
         current_module: 2,
         seed: 'test-seed',
         created_at: new Date().toISOString(),
@@ -801,7 +801,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockMathModule2 = {
         id: 'module-math-2',
         session_id: 'session-123',
-        section: 'math',
+        section: 'M',
         module_index: 2,
         status: 'in_progress', // NOT submitted
         difficulty_bucket: 'medium',
@@ -861,7 +861,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw', // Still in RW section
+        current_section: 'RW', // Still in RW section
         current_module: 1,
         seed: 'test-seed',
         created_at: new Date().toISOString(),
@@ -906,7 +906,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'completed',
-        current_section: 'math',
+        current_section: 'M',
         current_module: 2,
         seed: 'test-seed',
         completed_at: completedAt.toISOString(),
@@ -915,10 +915,10 @@ function buildPublishedFormFixture(formId: string) {
       };
 
       const mockModules = [
-        { id: 'module-rw-1', section: 'rw', module_index: 1 },
-        { id: 'module-rw-2', section: 'rw', module_index: 2 },
-        { id: 'module-math-1', section: 'math', module_index: 1 },
-        { id: 'module-math-2', section: 'math', module_index: 2 },
+        { id: 'module-rw-1', section: 'RW', module_index: 1 },
+        { id: 'module-rw-2', section: 'RW', module_index: 2 },
+        { id: 'module-math-1', section: 'M', module_index: 1 },
+        { id: 'module-math-2', section: 'M', module_index: 2 },
       ];
 
       const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
@@ -1083,7 +1083,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-789',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'math',
+        current_section: 'M',
         current_module: 2,
         seed: 'test-seed',
         created_at: new Date().toISOString(),
@@ -1100,7 +1100,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockMathModule2 = {
         id: 'module-math-2',
         session_id: 'session-789',
-        section: 'math',
+        section: 'M',
         module_index: 2,
         status: 'submitted',
         difficulty_bucket: 'medium',
@@ -1109,10 +1109,10 @@ function buildPublishedFormFixture(formId: string) {
       };
 
       const mockModules = [
-        { id: 'module-rw-1', section: 'rw', module_index: 1 },
-        { id: 'module-rw-2', section: 'rw', module_index: 2 },
-        { id: 'module-math-1', section: 'math', module_index: 1 },
-        { id: 'module-math-2', section: 'math', module_index: 2 },
+        { id: 'module-rw-1', section: 'RW', module_index: 1 },
+        { id: 'module-rw-2', section: 'RW', module_index: 2 },
+        { id: 'module-math-1', section: 'M', module_index: 1 },
+        { id: 'module-math-2', section: 'M', module_index: 2 },
       ];
 
       const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
@@ -1306,7 +1306,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw',
+        current_section: 'RW',
         current_module: 1,
         seed: 'test-seed',
       };
@@ -1314,7 +1314,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockCurrentModule = {
         id: 'module-rw-1',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 1,
         status: 'in_progress',
         difficulty_bucket: null,
@@ -1324,7 +1324,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockModule2 = {
         id: 'module-rw-2',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 2,
         status: 'not_started',
         difficulty_bucket: 'hard',
@@ -1390,7 +1390,7 @@ function buildPublishedFormFixture(formId: string) {
                         maybeSingle: vi.fn(async () => ({
                           data: {
                             id: 'cfg-rw',
-                            section: 'rw',
+                            section: 'RW',
                             hard_cutoff: 21,
                             bucket_mode: 'two_bucket',
                             active: true,
@@ -1529,7 +1529,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw',
+        current_section: 'RW',
         current_module: 2,
         seed: 'test-seed',
       };
@@ -1537,7 +1537,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockCurrentModule = {
         id: 'module-rw-1',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 2,
         status: 'in_progress',
         ends_at: null, // Module not started - ends_at is null
@@ -1597,7 +1597,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw',
+        current_section: 'RW',
         current_module: 2,
         seed: 'test-seed',
       };
@@ -1607,7 +1607,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockCurrentModule = {
         id: 'module-rw-1',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 2,
         status: 'in_progress',
         ends_at: pastTime,
@@ -1715,7 +1715,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw',
+        current_section: 'RW',
         current_module: 2,
         seed: 'test-seed',
       };
@@ -1725,7 +1725,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockCurrentModule = {
         id: 'module-rw-1',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 2,
         status: 'in_progress',
         ends_at: futureTime,
@@ -1833,7 +1833,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'session-123',
         user_id: 'user-456',
         status: 'in_progress',
-        current_section: 'rw',
+        current_section: 'RW',
         current_module: 1,
         seed: 'test-seed',
       };
@@ -1841,7 +1841,7 @@ function buildPublishedFormFixture(formId: string) {
       const mockCurrentModule = {
         id: 'module-rw-1',
         session_id: 'session-123',
-        section: 'rw',
+        section: 'RW',
         module_index: 2,
         status: 'not_started', // Not in_progress
         ends_at: new Date(Date.now() + 60000).toISOString(),
@@ -1899,7 +1899,7 @@ function buildPublishedFormFixture(formId: string) {
     const mockQuestionWithAnswers = {
       id: 'q1',
       stem: 'What is 2 + 2?',
-      section: 'Math',
+      section: 'M',
       question_type: 'multiple_choice',
       options: [{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }],
       difficulty: 1,
@@ -1915,7 +1915,7 @@ function buildPublishedFormFixture(formId: string) {
       id: 'session-review-123',
       user_id: 'user-456',
       status: 'in_progress',
-      current_section: 'math',
+      current_section: 'M',
       current_module: 1,
       seed: 'test-seed',
       started_at: new Date().toISOString(),
@@ -1931,7 +1931,7 @@ function buildPublishedFormFixture(formId: string) {
 
     const mockModule = {
       id: 'module-1',
-      section: 'math',
+      section: 'M',
       module_index: 1,
       status: 'in_progress',
       difficulty_bucket: null,
@@ -1945,8 +1945,8 @@ function buildPublishedFormFixture(formId: string) {
       order_index: 0,
       question_canonical_id: 'SATM1ABC123',
       question_stem: 'What is 2 + 2?',
-      question_section: 'Math',
-      question_section_code: 'MATH',
+      question_section: 'M',
+      question_section_code: 'M',
       question_type: 'multiple_choice',
       question_options: [
         { key: 'A', text: '3' },
@@ -2204,7 +2204,7 @@ function buildPublishedFormFixture(formId: string) {
       id: 'q1',
       canonical_id: 'c1',
       stem: 'S',
-      section_code: 'MATH',
+      section_code: 'M',
       question_type: 'multiple_choice',
       options: [
         { key: 'A', text: '1' },

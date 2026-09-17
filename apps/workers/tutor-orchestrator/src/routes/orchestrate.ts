@@ -276,7 +276,7 @@ import {
   STUDENT_INPUT_CLOSE,
   TUTOR_ANTI_LEAK_SUBSTITUTION as WORKER_ANTI_LEAK_SUBSTITUTION,
   hasAnswerLeak,
-} from "../lib/_tutor-safety-constants.generated";
+} from "../lib/_tutor-safety-constants.generated.js";
 
 /**
  * Maps a successful Vertex generation into the wire-contract OrchestrateResponse
@@ -368,6 +368,7 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
     case "vertex_400_invalid_request":
       return 400;
     case "vertex_422_safety_blocked":
+    case "vertex_max_tokens_truncated":
       return 422;
     case "vertex_5xx_retriable":
     case "vertex_429_quota":

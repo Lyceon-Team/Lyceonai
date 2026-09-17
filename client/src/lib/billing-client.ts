@@ -15,7 +15,7 @@
  * local shape that has drifted from the route, which returns `amountCents` and
  * `currency` as nullable and is typed here as non-null. That divergence is
  * reported and held for the owner, not fixed here — unifying it changes render
- * paths in `upgrade.tsx` and `SubscriptionPaywall.tsx`. Stated so this header
+ * paths in `upgrade.tsx` and `CheckoutReturnPoller.tsx`. Stated so this header
  * does not read as a guarantee it cannot make.
  *
  * WHY THIS FILE CHANGED. It previously declared its own
@@ -29,14 +29,14 @@
  * `STUDENT_ALREADY_FUNDED`. Parsing against the shared discriminated schema makes
  * that branch impossible to skip.
  */
-import { csrfFetch } from '@/lib/csrf';
-import { parseApiErrorFromResponse } from '@/lib/api-error';
+import { csrfFetch } from "@/lib/csrf";
+import { parseApiErrorFromResponse } from "@/lib/api-error";
 import {
   billingCheckoutOutcomeSchema,
   billingPortalOutcomeSchema,
   type BillingCheckoutOutcome,
   type BillingPeriodChoice,
-} from '../../../packages/shared/src/billing-schema';
+} from "../../../packages/shared/src/billing-schema";
 
 /**
  * Re-exported from the canonical Zod enum, not redeclared. The previous
@@ -60,13 +60,13 @@ export interface BillingPlanMetadata {
 }
 
 async function postBilling(
-  endpoint: '/api/billing/checkout' | '/api/billing/portal',
+  endpoint: "/api/billing/checkout" | "/api/billing/portal",
   body?: unknown,
 ): Promise<unknown> {
   const response = await csrfFetch(endpoint, {
-    method: 'POST',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    credentials: 'include',
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -81,22 +81,30 @@ async function postBilling(
   // never reached the UI that switches on it. The body is now left untouched
   // until the error path has had it.
   if (!response.ok) {
-    throw await parseApiErrorFromResponse(response, 'Unable to start billing flow');
+    throw await parseApiErrorFromResponse(
+      response,
+      "Unable to start billing flow",
+    );
   }
 
   return response.json().catch(() => ({}));
 }
 
 export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
-  const response = await csrfFetch('/api/billing/plans', {
-    credentials: 'include',
+  const response = await csrfFetch("/api/billing/plans", {
+    credentials: "include",
   });
 
   if (!response.ok) {
-    throw await parseApiErrorFromResponse(response, 'Unable to load billing plans');
+    throw await parseApiErrorFromResponse(
+      response,
+      "Unable to load billing plans",
+    );
   }
 
-  const payload = await response.json().catch(() => ({} as { plans?: BillingPlanMetadata[] }));
+  const payload = await response
+    .json()
+    .catch(() => ({}) as { plans?: BillingPlanMetadata[] });
   const plans = Array.isArray(payload?.plans) ? payload.plans : [];
   return plans;
 }
@@ -118,7 +126,7 @@ export async function startSubscriptionCheckout(
   plan: BillingPlan,
   options?: { readonly studentProfileId?: string },
 ): Promise<BillingCheckoutOutcome> {
-  const payload = await postBilling('/api/billing/checkout', {
+  const payload = await postBilling("/api/billing/checkout", {
     plan,
     ...(options?.studentProfileId
       ? { student_profile_id: options.studentProfileId }
@@ -129,11 +137,11 @@ export async function startSubscriptionCheckout(
   if (!parsed.success) {
     // Fail closed and loudly. Redirecting to `undefined`, or silently reporting
     // success, are both worse than saying the response was not understood.
-    throw new Error('Billing response did not match the checkout contract');
+    throw new Error("Billing response did not match the checkout contract");
   }
 
   const outcome = parsed.data;
-  if (outcome.kind === 'checkout_session' && typeof window !== 'undefined') {
+  if (outcome.kind === "checkout_session" && typeof window !== "undefined") {
     window.location.assign(outcome.url);
   }
 
@@ -141,16 +149,16 @@ export async function startSubscriptionCheckout(
 }
 
 export async function openBillingPortal(): Promise<string> {
-  const payload = await postBilling('/api/billing/portal');
+  const payload = await postBilling("/api/billing/portal");
 
   const parsed = billingPortalOutcomeSchema.safeParse(payload);
   if (!parsed.success) {
     // Mirrors the checkout path's fail-closed throw. Previously this narrowed
     // with a cast, which asserts a shape rather than checking one.
-    throw new Error('Billing response did not include a redirect URL');
+    throw new Error("Billing response did not include a redirect URL");
   }
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     window.location.assign(parsed.data.url);
   }
 

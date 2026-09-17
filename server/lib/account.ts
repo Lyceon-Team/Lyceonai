@@ -206,8 +206,6 @@ export async function getGuardianLinkById(
   return data ? parseGuardianLink(data) : null;
 }
 
-
-
 /**
  * @spec [Doc-01_V8, §36.3 Revocation] | @implemented [2026-08-26]
  * plain English: either party ends an active link. What it does: sets `status='revoked'`,
@@ -290,6 +288,7 @@ export async function revokeGuardianLink(
 }
 
 import { EntitlementService } from "../services/entitlement-service";
+import { resolveEntitlementDisplay } from "./entitlement-display";
 
 // ── Retired accounts model (owner ruling 2026-08-24) ─────────────────
 //
@@ -358,6 +357,25 @@ export interface LinkedPairPremiumAccess {
   /** @deprecated diagnostic only — profileId = userId in the new model */
   guardianAccountId: string | null;
   studentEntitlementStatus: Entitlement["status"] | "missing";
+  /**
+   * The PRODUCT the conferring student holds, beside the standing-good status.
+   *
+   * @spec [Doc 01 V8 §31.2 — the reference derivation is
+   *        `snap.isActive && snap.tier === 'premium'`] | @implemented [2026-09-03]
+   *
+   * Added because the guardian branch of `GET /api/billing/status` had no tier
+   * to consult and therefore applied none, while the self-pay branch applied
+   * `tier === "premium"`. One route, two branches, two answers for one student.
+   * `resolveEntitlementDisplay` now decides for both, and it needs this field.
+   */
+  studentEntitlementTier: Entitlement["tier"] | "free";
+  /**
+   * The SQL predicate's raw verdict for the conferring student, before the
+   * product check. Exposed so a caller can reach `resolveEntitlementDisplay`
+   * with the same two inputs the self-pay branch uses, rather than re-deriving
+   * standing-good from `studentEntitlementStatus` in TypeScript (SP25-001).
+   */
+  studentStandingGood: boolean;
   guardianEntitlementStatus: Entitlement["status"] | "missing";
   studentEntitlementExpired: boolean;
   guardianEntitlementExpired: boolean;
@@ -816,13 +834,31 @@ export async function resolveLinkedPairPremiumAccessForStudent(
   const studentActive =
     await EntitlementService.isEntitlementActiveForProfile(studentUserId);
   const hasActiveLink = !!guardianLink;
-  const hasPremiumAccess = studentActive;
+
+  /**
+   * The SAME derivation the guardian fold uses, so the derived guardian answer
+   * and the student's own answer cannot differ (owner ruling 2026-09-03).
+   *
+   * BEHAVIOUR DELTA, STATED. This previously returned the bare predicate, so a
+   * row that was billing-healthy on the FREE tier granted paid access. It now
+   * also requires `tier === "premium"`, per Doc 01 V8 §31.2's reference
+   * derivation (`snap.isActive && snap.tier === 'premium'`) and Doc 02B's
+   * entitlement matrix, which puts paid KPI behind the premium product rather
+   * than behind billing health. Verified against production on 2026-09-03: all
+   * entitlement rows are (`premium`, `active`), so no live account changes
+   * state. The consumer is `resolvePaidKpiAccessForStudent`.
+   */
+  const hasPremiumAccess = resolveEntitlementDisplay({
+    standingGood: studentActive,
+    tier: studentEntitlement?.tier ?? "free",
+    status: studentEntitlement?.status ?? "missing",
+  }).effectiveAccess;
 
   return {
     role: "student",
     hasPremiumAccess,
     hasActiveLink,
-    premiumSource: studentActive ? "student" : "none",
+    premiumSource: hasPremiumAccess ? "student" : "none",
     reason: hasPremiumAccess
       ? "Student has active premium entitlement."
       : hasActiveLink
@@ -833,6 +869,8 @@ export async function resolveLinkedPairPremiumAccessForStudent(
     studentAccountId: studentUserId,
     guardianAccountId: guardianUserId,
     studentEntitlementStatus: studentEntitlement?.status ?? "missing",
+    studentEntitlementTier: studentEntitlement?.tier ?? "free",
+    studentStandingGood: studentActive,
     guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
     studentEntitlementExpired: isEntitlementExpired(studentEntitlement),
     guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),
@@ -843,38 +881,85 @@ export async function resolveLinkedPairPremiumAccessForStudent(
  * @spec [Doc 01 V8 §31.3 — a guardian's premium derives from ANY ONE active
  *        premium student; SP25-001 single evaluator] | @implemented [2026-08-27]
  * plain English: find the linked student whose entitlement gives this guardian
- * premium. Expected outcome: the first active link whose student is entitled;
- * or the first active link when none is; or null when there are no links.
- * Trade-off: asks the canonical evaluator once per link and short-circuits on
- * the first hit, so a guardian with an entitled student costs one call and only
- * an all-free guardian pays for every link — deterministic because
- * `getAllGuardianStudentLinks` orders by `created_at`. Edge case: a guardian
- * with links but no entitled student must still report `hasActiveLink: true`,
- * which is why the fallback returns the first link rather than null — "linked
- * but not premium" and "not linked at all" are different facts.
+ * premium. Expected outcome: a HEALTHY paying student if one is linked; failing
+ * that any entitled student (which is where `past_due` and `trialing` land);
+ * failing that the first link, so "linked but nobody has paid" stays
+ * distinguishable from "not linked at all"; null only when there are no links.
+ * Trade-off: every link is evaluated rather than short-circuiting on the first
+ * hit — §31.2's own reference derivation is a `Promise.all` over all of them and
+ * §31.2.1 rules that sufficient at V1 scale, so this moves toward the spec, not
+ * away. Ordering within each preference tier is deterministic because
+ * `getAllGuardianStudentLinks` orders by `created_at`.
  *
  * Consumes WS-GL Phase B's reader. No second link reader is built here.
  */
-async function resolveConferringLink(
-  guardianProfileId: string,
-): Promise<{ link: GuardianLink; active: boolean } | null> {
+async function resolveConferringLink(guardianProfileId: string): Promise<{
+  link: GuardianLink;
+  active: boolean;
+  entitlement: Entitlement | null;
+} | null> {
   const links = await getAllGuardianStudentLinks(guardianProfileId);
   if (links.length === 0) return null;
 
-  for (const candidate of links) {
-    if (!candidate.student_profile_id) continue;
-    const active = await EntitlementService.isEntitlementActiveForProfile(
-      candidate.student_profile_id,
-    );
-    // The verdict travels WITH the link. Returning only the link would make the
-    // caller ask the evaluator the same question again for the same student —
-    // a second round trip for an answer already computed, on a path that runs
-    // per request.
-    if (active) return { link: candidate, active: true };
+  const candidates = links.filter(
+    (candidate): candidate is GuardianLink & { student_profile_id: string } =>
+      typeof candidate.student_profile_id === "string" &&
+      candidate.student_profile_id.length > 0,
+  );
+
+  /**
+   * EVERY link is evaluated, in parallel — the first-match-wins short-circuit
+   * that stood here is gone.
+   *
+   * @spec [Doc 01 V8 §31.2, whose reference derivation is a `Promise.all` over
+   *        every linked student followed by `.some(...)`; §31.2.1 rules that
+   *        pattern sufficient at V1 scale, "typical guardian has 1-3 linked
+   *        students"] | @implemented [2026-09-03]
+   *
+   * WHY THE SHORT-CIRCUIT WAS A DEFECT. `isEntitlementActiveForProfile` counts
+   * `past_due` as entitled (SCL-029). So a guardian whose FIRST-created link is
+   * a `past_due` student and whose second is a healthy `active` one stopped at
+   * the first, reported that student's status as the guardian's, and — while
+   * `SubscriptionPaywall` still had its `needsPaymentUpdate` early return —
+   * locked the guardian out of their entire dashboard on account of a student
+   * who was still, by the platform's own predicate, entitled. Preferring a
+   * healthy link makes the masking impossible rather than merely unlikely.
+   *
+   * The verdict AND the row travel with the link: the caller needs `status` and
+   * `tier` to reach `resolveEntitlementDisplay`, and re-reading them there
+   * would be a second round trip for facts already in hand.
+   */
+  const verdicts = await Promise.all(
+    candidates.map(async (link) => {
+      const [active, entitlement] = await Promise.all([
+        EntitlementService.isEntitlementActiveForProfile(
+          link.student_profile_id,
+        ),
+        getEntitlementForProfile(link.student_profile_id),
+      ]);
+      return { link: link as GuardianLink, active, entitlement };
+    }),
+  );
+
+  // Preference order: a healthy paying student, then any entitled student
+  // (which is where `past_due` and `trialing` land), then the first link at all
+  // — because "linked but nobody has paid" and "not linked" are different facts
+  // and only the second one is `hasActiveLink: false`.
+  const healthy = verdicts.find(
+    (verdict) => verdict.active && verdict.entitlement?.status === "active",
+  );
+  if (healthy) return healthy;
+
+  const entitled = verdicts.find((verdict) => verdict.active);
+  if (entitled) return entitled;
+
+  const firstCandidate = verdicts[0];
+  if (firstCandidate) {
+    return { ...firstCandidate, active: false };
   }
 
   const first = links[0];
-  return first ? { link: first, active: false } : null;
+  return first ? { link: first, active: false, entitlement: null } : null;
 }
 
 /**
@@ -924,36 +1009,59 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
       studentAccountId: null,
       guardianAccountId: guardianUserId,
       studentEntitlementStatus: "missing",
+      studentEntitlementTier: "free",
+      studentStandingGood: false,
       guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
       studentEntitlementExpired: false,
       guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),
     };
   }
 
-  // profile_id = student_profile_id — read entitlement directly
-  const studentEntitlement = await getEntitlementForProfile(
-    link.student_profile_id,
-  );
+  // profile_id = student_profile_id. Reuse the fold's row when it produced one:
+  // it read THIS student on THIS request, so reading again would be a second
+  // round trip for facts already in hand. The named-student path has no fold.
+  const studentEntitlement =
+    folded !== null
+      ? folded.entitlement
+      : await getEntitlementForProfile(link.student_profile_id);
 
   // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
   // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
   // visibility requires active link (resolved above) AND active student entitlement (here).
-  // Reuse the fold's verdict when it produced one: it evaluated THIS student on
-  // THIS request, so asking again would be a second round trip for an answer we
-  // already hold. The named-student path has no fold and still evaluates here.
   const studentActive =
     folded !== null
       ? folded.active
       : await EntitlementService.isEntitlementActiveForProfile(
           link.student_profile_id,
         );
-  const hasPremiumAccess = studentActive;
+
+  /**
+   * §31.2's derivation verbatim: `snap.isActive && snap.tier === 'premium'`.
+   *
+   * The tier half used to be missing here, which is how the guardian branch of
+   * `GET /api/billing/status` came to answer a question the self-pay branch
+   * answered differently for the same student. `resolveEntitlementDisplay` is
+   * now the only place either branch applies either fact (owner ruling
+   * 2026-09-03: "one resolver, both branches").
+   *
+   * `studentActive` is still the SQL predicate's verdict, not a TS re-derivation
+   * of it — SP25-001's single-evaluator rule is untouched. The resolver supplies
+   * the PRODUCT check the predicate deliberately does not make.
+   */
+  const hasPremiumAccess = resolveEntitlementDisplay({
+    standingGood: studentActive,
+    tier: studentEntitlement?.tier ?? "free",
+    status: studentEntitlement?.status ?? "missing",
+  }).effectiveAccess;
 
   return {
     role: "guardian",
     hasPremiumAccess,
     hasActiveLink: true,
-    premiumSource: studentActive ? "student" : "none",
+    // Follows `hasPremiumAccess`, not the bare predicate: a student who is
+    // billing-healthy on the FREE tier confers nothing, and naming them as the
+    // source would be the same tier-blind answer this change removes.
+    premiumSource: hasPremiumAccess ? "student" : "none",
     reason: hasPremiumAccess
       ? "Linked student has active premium entitlement."
       : "Linked student account does not have an active premium entitlement.",
@@ -962,6 +1070,8 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
     studentAccountId: link.student_profile_id,
     guardianAccountId: guardianUserId,
     studentEntitlementStatus: studentEntitlement?.status ?? "missing",
+    studentEntitlementTier: studentEntitlement?.tier ?? "free",
+    studentStandingGood: studentActive,
     guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
     studentEntitlementExpired: isEntitlementExpired(studentEntitlement),
     guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),

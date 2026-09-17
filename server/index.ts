@@ -49,8 +49,12 @@ import {
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
+import {
+  evaluateSiteUrl,
+  isProductionDeployment,
+  reportGcpCredentialStatusAtStartup,
+} from "./lib/startup-guards";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
-import notificationRoutes from "./routes/notification-routes";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -66,6 +70,7 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
+import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
@@ -81,6 +86,12 @@ import {
 // ...existing code...
 import { processStripeWebhook } from "./lib/stripe/webhook-handler";
 import { STRIPE_WEBHOOK_PATH } from "./lib/stripe/webhook-path";
+import { resendWebhookHandler } from "./routes/resend-webhook";
+import notificationsRouter from "./routes/notifications";
+import {
+  NOTIFICATION_API_MOUNT,
+  RESEND_WEBHOOK_PATH,
+} from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
 
@@ -156,6 +167,15 @@ app.post(
         .json({ error: "Webhook processing failed", requestId });
     }
   },
+);
+
+// Resend webhook — raw Buffer, Svix-signature-verified, registered BEFORE express.json()
+// (contracts/notifications.contract.md §7.1). Written fresh; not a copy of the Stripe handler.
+// CSRF_EXEMPT_REASON: Webhook uses Svix signature verification instead of CSRF
+app.post(
+  RESEND_WEBHOOK_PATH,
+  express.raw({ type: "application/json" }),
+  resendWebhookHandler,
 );
 
 app.use(express.json({ limit: "1mb" }));
@@ -400,12 +420,14 @@ app.use(
   profileRoutes,
 );
 
-// Notifications Routes
+
+// Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
+// principal; every read/write is a recipient-scoped SQL function.
 app.use(
-  "/api/notifications",
+  NOTIFICATION_API_MOUNT,
   requireSupabaseAuth,
   doubleCsrfProtection,
-  notificationRoutes,
+  notificationsRouter,
 );
 
 // Subject-scoped resources (Doc 05B §10.3 / Doc 05C §10.2). ONE route per resource, served
@@ -600,6 +622,21 @@ app.use(
   doubleCsrfProtection,
   guardianRoutes,
 );
+
+// Public Pricing Route (UNAUTHENTICATED BY DESIGN — the first /api/public/* mount)
+//
+// @spec [Doc 09 §1.4, §5.1 Stripe canonical for pricing at runtime]
+// @implemented [2026-09-03]
+//
+// The homepage is served to logged-out visitors and quotes a price, so it needs
+// one it did not invent. `/api/billing/plans` stays behind `requireSupabaseAuth`
+// (billing-routes.ts:973-974) rather than being exempted for a marketing page;
+// this route returns the monthly amount, currency and interval and nothing that
+// describes the billing configuration. Mounted with NO auth and NO CSRF: it is
+// a GET that reads no session and writes nothing. `globalRateLimiter` above
+// still applies (1000/IP/15min), but that bounds one caller, not distributed
+// load; the module's 15-minute memo is what bounds calls to Stripe itself.
+app.use("/api/public", publicPricingRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
@@ -899,54 +936,44 @@ if (isMainModule) {
   // Validate environment variables on startup
   validateEnvironment();
 
-  // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
-  function validateSiteUrl(): void {
-    const publicSiteUrl = process.env.PUBLIC_SITE_URL;
-    const isProduction = process.env.NODE_ENV === "production";
+  // Report GCP credential availability. Does NOT gate boot.
+  //
+  // This used to `process.exit(1)` when GCP_SERVICE_ACCOUNT_JSON was absent
+  // under NODE_ENV=production. Vercel sets NODE_ENV=production for previews
+  // too, so the process died before any route mounted and EVERY api route on
+  // EVERY preview deployment returned 500 FUNCTION_INVOCATION_FAILED.
+  //
+  // The credential is subsystem-scoped — LISA's crisis classifier and the
+  // BigQuery retention archive, nothing else — so its absence is reported and
+  // the two call sites fail at use. See server/lib/startup-guards.ts for the
+  // build-mode vs deployment-target distinction that both guards turned on.
+  reportGcpCredentialStatusAtStartup();
 
-    if (!publicSiteUrl) {
-      if (isProduction) {
-        console.error(
-          "❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.",
-        );
-        console.error(
-          "   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.",
-        );
-        process.exit(1);
-      } else {
-        console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
-        console.warn(
-          "   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.",
-        );
-      }
-      return;
-    }
-
-    if (publicSiteUrl.endsWith("/")) {
-      console.warn(
-        "⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.",
-      );
-    }
-
-    if (!publicSiteUrl.startsWith("https://") && isProduction) {
-      console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
-      process.exit(1);
-    }
-
-    const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
-    if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
-      console.warn(
-        "⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.",
-      );
-    }
-
-    console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
-    console.log(
-      `✅ [AUTH] Native OAuth landing: ${publicSiteUrl.replace(/\/$/, "")}/auth/callback`,
-    );
+  // Validate PUBLIC_SITE_URL at startup (critical for OAuth).
+  //
+  // STILL FATAL, BUT ONLY WHERE THE REQUIREMENT IS REAL. OAuth genuinely
+  // cannot build a callback without this, so unlike the GCP credential above
+  // it is whole-app and the guard stays. What changed is the question it
+  // asks: `isProductionDeployment()` reads VERCEL_ENV (the deployment target)
+  // rather than NODE_ENV (the build mode), so a Vercel preview — which never
+  // carries a production site URL and has no business being held to one —
+  // warns instead of dying. The decision lives in `evaluateSiteUrl`; the
+  // `process.exit` stays here, at the composition root.
+  const siteUrlVerdict = evaluateSiteUrl({
+    publicSiteUrl: process.env.PUBLIC_SITE_URL,
+    isProductionDeployment: isProductionDeployment(),
+  });
+  if (siteUrlVerdict.kind === "fatal") {
+    for (const line of siteUrlVerdict.lines) console.error(line);
+    process.exit(1);
   }
-
-  validateSiteUrl();
+  // Warning lines keep their stream: the previous inline version emitted them
+  // via console.warn, and a startup warning demoted to stdout is a startup
+  // warning nobody greps for.
+  for (const line of siteUrlVerdict.lines) {
+    if (line.startsWith("⚠️")) console.warn(line);
+    else console.log(line);
+  }
 
   console.log(`[API] Starting Lyceon API server...`);
   console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
@@ -985,11 +1012,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions`);

@@ -24,6 +24,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Send, Loader2, ArrowLeft, MessageSquare, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { MathRenderer } from "@/components/MathRenderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -58,6 +61,73 @@ function useConversationIdFromSearch(): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Tutor markdown rendering — constrained allowlist (§2)
+// ---------------------------------------------------------------------------
+
+const TUTOR_ALLOWED_ELEMENTS = [
+  "p",
+  "strong",
+  "em",
+  "ul",
+  "ol",
+  "li",
+  "code",
+  "pre",
+  "br",
+  "h3",
+  "h4",
+  "blockquote",
+] as const;
+
+const TUTOR_MARKDOWN_COMPONENTS = {
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="mb-2 last:mb-0">{children}</p>
+  ),
+  code: ({
+    className,
+    children,
+  }: {
+    className?: string;
+    children?: React.ReactNode;
+  }) => {
+    const isBlock = className?.startsWith("language-");
+    if (isBlock) {
+      return (
+        <pre className="my-2 overflow-x-auto rounded bg-black/10 p-2 text-xs dark:bg-white/10">
+          <code>{children}</code>
+        </pre>
+      );
+    }
+    return (
+      <code className="rounded bg-black/10 px-1 py-0.5 text-xs dark:bg-white/10">
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+} as const;
+
+function hasMathDelimiters(text: string): boolean {
+  return /\$.*\$|\\\(.*\\\)|\\\[.*\\\]/s.test(text);
+}
+
+function TutorMessageContent({ text }: { text: string }) {
+  if (hasMathDelimiters(text)) {
+    return <MathRenderer content={text} />;
+  }
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      allowedElements={[...TUTOR_ALLOWED_ELEMENTS]}
+      unwrapDisallowed
+      components={TUTOR_MARKDOWN_COMPONENTS}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // MessageBubble — accessible, per-message authorship labels (Tier 3)
 // ---------------------------------------------------------------------------
 
@@ -70,13 +140,17 @@ function MessageBubble({ message }: { message: TutorMessage }) {
       aria-label={authorLabel}
     >
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
           isStudent
-            ? "bg-primary text-primary-foreground"
+            ? "whitespace-pre-wrap bg-primary text-primary-foreground"
             : "bg-secondary text-foreground"
         }`}
       >
-        {message.message}
+        {isStudent ? (
+          message.message
+        ) : (
+          <TutorMessageContent text={message.message} />
+        )}
       </div>
     </div>
   );
@@ -227,7 +301,12 @@ function TutorErrorDisplay({
 
   // For upgrade actions, render the PremiumUpgradePrompt instead
   if (notice.action === "upgrade") {
-    return <PremiumUpgradePrompt reason="premium_required" mode="inline" />;
+    return (
+      <PremiumUpgradePrompt
+        featureBenefit="the interactive tutor"
+        mode="inline"
+      />
+    );
   }
 
   return (
@@ -484,7 +563,7 @@ export default function ChatPage() {
         {activePremiumReason && !dismissedPremium && (
           <div className="py-4">
             <PremiumUpgradePrompt
-              reason={activePremiumReason}
+              featureBenefit="the interactive tutor"
               mode="inline"
               onDismiss={() => setDismissedPremium(true)}
             />

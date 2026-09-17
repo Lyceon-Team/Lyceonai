@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Share2, Trophy } from "lucide-react";
+import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
 
 interface SectionModuleScore {
   correct: number;
@@ -209,7 +210,7 @@ export default function FullLengthResultsView({
         {hasStudentSectionScores && (
           <div className="grid md:grid-cols-2 gap-5">
             <div className="rounded-xl bg-secondary/50 p-5">
-              <h3 className="font-semibold mb-4">Reading & Writing</h3>
+              <h3 className="font-semibold mb-4">{SECTION_LABEL_RW}</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Module 1</span>
@@ -233,7 +234,7 @@ export default function FullLengthResultsView({
             </div>
 
             <div className="rounded-xl bg-secondary/50 p-5">
-              <h3 className="font-semibold mb-4">Math</h3>
+              <h3 className="font-semibold mb-4">{SECTION_LABEL_MATH}</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Module 1</span>
