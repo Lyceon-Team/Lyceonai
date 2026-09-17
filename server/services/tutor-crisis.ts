@@ -37,6 +37,8 @@ import { notifyCrisisEvent } from "./crisis-notification";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+type CrisisCategory = "crisis" | "safeguarding";
+
 type CrisisResult =
   | { crisis: false; forceReview: boolean }
   | {
@@ -47,6 +49,7 @@ type CrisisResult =
         | "both"
         | "classifier_degraded_no_floor"
         | "infrastructure_failure";
+      category: CrisisCategory;
       signatureId: string | null;
       modelConfidence: number | null;
       forceReview: boolean;
@@ -55,6 +58,7 @@ type CrisisResult =
 type SignatureResult = {
   triggered: boolean;
   signatureId: string | null;
+  category: CrisisCategory | null;
   /** True when the signature set returned zero crisis rows — Layer 1 is inert. */
   layer1Empty: boolean;
 };
@@ -64,27 +68,50 @@ type ClassifierResult = {
   confidence: number;
 };
 
-export type { CrisisResult };
+export type { CrisisResult, CrisisCategory };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
 
+const DEFAULT_CRISIS_COUNTRY = "US";
+
 /**
- * Crisis resource lookup by billing country code.
- * @spec [Doc-03_V3 §4.6, §21.2]
+ * Crisis-lane resources by billing country code. Youth-preferred lines
+ * per V1 spec; adult general lines only where no youth-specific service
+ * exists for the country.
+ * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §3]
  */
 const CRISIS_RESOURCES: Readonly<Record<string, string>> = {
   US: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
-  CA: "If you're in crisis, Talk Suicide Canada is there for you. Call 1-833-456-4566 or text 45645. Real people, anytime.",
-  UK: "If you're in crisis, the Samaritans are there for you. Call 116 123. Real people, anytime.",
-  GB: "If you're in crisis, the Samaritans are there for you. Call 116 123. Real people, anytime.",
-  IE: "If you're in crisis, Samaritans Ireland is there for you. Call 116 123. Real people, anytime.",
-  AU: "If you're in crisis, Lifeline is there for you. Call 13 11 14. Real people, anytime.",
-  NZ: "If you're in crisis, Lifeline Aotearoa is there for you. Call 0800 543 354. Real people, anytime.",
-  SG: "If you're in crisis, Samaritans of Singapore is there for you. Call 1-767. Real people, anytime.",
+  CA: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
+  UK: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
+  GB: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
+  IE: "If you're in crisis, Childline Ireland is there for you. Call 1800 66 66 66. You can also call Pieta at 1800 247 247. Real people, anytime.",
+  AU: "If you're in crisis, Kids Helpline is there for you. Call 1800 55 1800. Real people, anytime.",
+  NZ: "If you're in crisis, Youthline is there for you. Call 0800 376 633 or text 234. You can also call 1737 for free. Real people, anytime.",
+  SG: "If you're in crisis, the Samaritans of Singapore (SOS) are there for you. Call 1767. Real people, anytime.",
 };
 
-const DEFAULT_CRISIS_RESPONSE =
-  "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.";
+/**
+ * Safeguarding-lane resources by billing country code. Abuse/neglect
+ * helplines — youth-preferred, distinct from the crisis (suicide/self-harm)
+ * set. Template: "What you've shared matters. [Resource] is there for you —
+ * call [number]. They listen, and you decide what happens next."
+ * @spec [Layer1 PR 2 brief §2, §3]
+ */
+const SAFEGUARDING_RESOURCES: Readonly<Record<string, string>> = {
+  US: "What you've shared matters. Childhelp is there for you — call 1-800-422-4453. You can also call RAINN at 1-800-656-4673. They listen, and you decide what happens next.",
+  CA: "What you've shared matters. Kids Help Phone is there for you — call 1-800-668-6868 or text CONNECT to 686868. They listen, and you decide what happens next.",
+  UK: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
+  GB: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
+  IE: "What you've shared matters. Childline Ireland is there for you — call 1800 66 66 66. They listen, and you decide what happens next.",
+  AU: "What you've shared matters. Kids Helpline is there for you — call 1800 55 1800. They listen, and you decide what happens next.",
+  NZ: "What you've shared matters. Youthline is there for you — call 0800 376 633 or text 234. They listen, and you decide what happens next.",
+  SG: "What you've shared matters. The National Anti-Violence Helpline is there for you — call 1800-777-0000. They listen, and you decide what happens next.",
+};
+
+const DEFAULT_CRISIS_RESPONSE = CRISIS_RESOURCES[DEFAULT_CRISIS_COUNTRY];
+const DEFAULT_SAFEGUARDING_RESPONSE =
+  SAFEGUARDING_RESOURCES[DEFAULT_CRISIS_COUNTRY];
 
 // ── Layer 1: Text Normalization ───────────────────────────────────────
 
@@ -141,45 +168,52 @@ export function normalizeCrisisText(raw: string): string {
 // ── Layer 1: Deterministic Signature Match ─────────────────────────────
 
 /**
- * Checks crisis signatures against tutor_injection_signatures table
- * (reuses the injection signatures pattern per SCL-023, filtered by
- * signature_type = 'crisis').
+ * Checks crisis signatures against tutor_injection_signatures table,
+ * filtered by category IN ('crisis','safeguarding') with enabled=true.
+ * The lane comes from category, NEVER from signature_type (which carries
+ * two incompatible meanings across injection-defense and crisis subsystems).
+ *
+ * Text is normalized via normalizeCrisisText (§7.4) before matching.
  *
  * Fails CLOSED if table is unreadable (SCL-023 explicitly:
  * "Layer 1 signature table unreadable: fail closed on the turn").
  *
- * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16]
+ * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16, Layer1 PR 2 brief §1]
  */
 export async function checkCrisisSignatures(
   text: string,
 ): Promise<SignatureResult> {
   const { data, error } = await supabaseServer
     .from("tutor_injection_signatures")
-    .select("id, signature_pattern, signature_type")
-    .eq("signature_type", "crisis");
+    .select("id, signature_pattern, category")
+    .or("category.eq.crisis,category.eq.safeguarding")
+    .eq("enabled", true);
 
   if (error) {
     logger.error(
       "TUTOR_CRISIS",
       "signature_table_read_failed",
-      "tutor_injection_signatures (crisis) table unreadable; failing closed on this turn",
+      "tutor_injection_signatures (crisis/safeguarding) table unreadable; failing closed on this turn",
       error,
     );
-    // Fail CLOSED — SCL-023: "Layer 1 signature table unreadable: fail closed on the turn"
-    // Returning triggered=true so the orchestrator blocks the turn.
-    // layer1Empty=false: the table is unreadable, not known-empty.
-    return { triggered: true, signatureId: null, layer1Empty: false };
+    return {
+      triggered: true,
+      signatureId: null,
+      category: null,
+      layer1Empty: false,
+    };
   }
 
   if (!data || data.length === 0) {
-    // Layer 1 has no crisis signatures — it cannot detect anything.
-    // The caller uses layer1Empty to decide fail-closed behavior on
-    // Layer 2 failure (B1.5: SCL-023 §3.4 "Layer 1 result stands"
-    // presumes Layer 1 can produce a meaningful result).
-    return { triggered: false, signatureId: null, layer1Empty: true };
+    return {
+      triggered: false,
+      signatureId: null,
+      category: null,
+      layer1Empty: true,
+    };
   }
 
-  const lowerText = text.toLowerCase();
+  const normalized = normalizeCrisisText(text);
 
   for (const row of data) {
     const pattern = row.signature_pattern as string;
@@ -187,29 +221,38 @@ export async function checkCrisisSignatures(
     const matched = (() => {
       try {
         const re = new RegExp(pattern, "i");
-        return re.test(text);
+        return re.test(normalized);
       } catch {
-        // If regex is invalid, fall back to substring match
-        return lowerText.includes(pattern.toLowerCase());
+        return normalized.includes(pattern.toLowerCase());
       }
     })();
 
     if (matched) {
+      const matchedCategory =
+        (row.category as string) === "safeguarding"
+          ? ("safeguarding" as const)
+          : ("crisis" as const);
       logger.info(
         "TUTOR_CRISIS",
         "crisis_signature_matched",
         "Layer 1 crisis signature match detected",
-        { signatureId: row.id },
+        { signatureId: row.id, category: matchedCategory },
       );
       return {
         triggered: true,
         signatureId: row.id as string,
+        category: matchedCategory,
         layer1Empty: false,
       };
     }
   }
 
-  return { triggered: false, signatureId: null, layer1Empty: false };
+  return {
+    triggered: false,
+    signatureId: null,
+    category: null,
+    layer1Empty: false,
+  };
 }
 
 // ── Layer 2: Model Inference ───────────────────────────────────────────
@@ -431,13 +474,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
   if (!layer1Positive && !layer2Positive) {
     if (layer2MayHaveFailed && layer1Empty) {
       // B1.5 — FAIL CLOSED: Layer 2 failed AND Layer 1 has no signatures.
-      // SCL-023 §3.4 permits "turn proceeds" only when "Layer 1 result
-      // stands." With zero crisis signatures, Layer 1 has never stood for
-      // anything — the premise does not hold. Proceeding to normal
-      // generation here means a potentially-in-crisis student receives an
-      // SAT tutoring reply with no detection having occurred from either
-      // layer. Return crisis=true to route into the §4.6 crisis-safe
-      // response (regional resources). The review case is still created.
+      // Default to "crisis" lane — safest assumption when we cannot classify.
       // @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21.2, B1.5]
       logger.error(
         "TUTOR_CRISIS",
@@ -448,15 +485,13 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
       return {
         crisis: true,
         source: "classifier_degraded_no_floor",
+        category: "crisis",
         signatureId: null,
         modelConfidence: null,
         forceReview: true,
       };
     }
     if (layer2MayHaveFailed) {
-      // SCL-023 §3.4 condition 3: Layer 2 failed, Layer 1 has signatures
-      // and returned a result (no match). Layer 1 result stands — turn
-      // proceeds to normal generation, force-enqueued to §21.3 review queue.
       logger.warn(
         "TUTOR_CRISIS",
         "classifier_degraded",
@@ -466,7 +501,11 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     return { crisis: false, forceReview: layer2MayHaveFailed };
   }
 
-  // At least one layer is positive — crisis path triggered
+  // At least one layer is positive — crisis path triggered.
+  // Category comes from Layer 1 signature match when available.
+  // Layer 2 (model) does not distinguish lanes — default to "crisis" when
+  // only Layer 2 fires (model-only detection). Layer 1 match always has
+  // a category from the DB row.
   const source: "signature" | "model" | "both" =
     layer1Positive && layer2Positive
       ? "both"
@@ -474,12 +513,15 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
         ? "signature"
         : "model";
 
+  const category: CrisisCategory = signatureResult.category ?? "crisis";
+
   logger.warn(
     "TUTOR_CRISIS",
     "crisis_detected",
     "crisis classifier triggered; activating crisis protocol",
     {
       source,
+      category,
       signatureId: signatureResult.signatureId,
       modelConfidence: classifierResult.confidence,
     },
@@ -488,6 +530,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
   return {
     crisis: true,
     source,
+    category,
     signatureId: signatureResult.signatureId,
     modelConfidence: layer2Positive ? classifierResult.confidence : null,
     forceReview: true,
@@ -497,14 +540,22 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
 // ── Crisis Response ────────────────────────────────────────────────────
 
 /**
- * Returns crisis protocol response with regional resources.
- * Region derived from billing country (not IP) per Doc 03A context
- * resolution authority.
+ * Returns the lane-appropriate crisis/safeguarding response with regional
+ * resources. Region derived from billing country (not IP) per Doc 03A
+ * context resolution authority. Lane determines which resource set is used.
  *
- * @spec [Doc-03_V3 §4.6, §21.2]
+ * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §1–§3]
  */
-export function getCrisisResponse(country: string): string {
+export function getCrisisResponse(
+  country: string,
+  category: CrisisCategory = "crisis",
+): string {
   const upperCountry = country.toUpperCase().trim();
+  if (category === "safeguarding") {
+    return (
+      SAFEGUARDING_RESOURCES[upperCountry] ?? DEFAULT_SAFEGUARDING_RESPONSE
+    );
+  }
   return CRISIS_RESOURCES[upperCountry] ?? DEFAULT_CRISIS_RESPONSE;
 }
 
@@ -546,6 +597,7 @@ export async function flagConversationForReview(
     | "infrastructure_failure",
   signatureId: string | null,
   modelConfidence: number | null,
+  category: CrisisCategory = "crisis",
 ): Promise<string> {
   // Step 1: Set crisis_flagged on tutor_conversations (BLOCKING)
   const { error } = await supabaseServer
@@ -583,6 +635,7 @@ export async function flagConversationForReview(
       source,
       signatureId,
       modelConfidence,
+      category,
     });
     caseId = result.id;
     slaDeadline = result.slaDeadline;
