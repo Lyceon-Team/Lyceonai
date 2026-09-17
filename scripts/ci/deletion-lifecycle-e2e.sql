@@ -142,6 +142,12 @@ BEGIN
   RAISE NOTICE 'C3 OK  request -> in-app cancel -> restored (deleted_at cleared, request cancelled)';
 
   -- ---- self-clean: remove every seeded row (child -> parent) so a live run leaves ZERO residue ---
+  -- Evidence side first (migration 20260917000000): request_account_deletion writes a
+  -- deletion_request_log row per request. CHAIN 1's request row is consumed by the cascade, so
+  -- its log row can only be found by the seeded address; the others by their request's log_id.
+  DELETE FROM public.deletion_request_log
+   WHERE log_id IN (SELECT adr.log_id FROM public.account_deletion_requests adr WHERE adr.profile_id = ANY (persona))
+      OR subject_email IN ('a@e2e.test', 'b@e2e.test', 'c@e2e.test');
   DELETE FROM public.account_deletion_requests WHERE profile_id = ANY (persona);
   DELETE FROM public.profiles               WHERE id         = ANY (persona);
   DELETE FROM auth.users                    WHERE id         = ANY (persona);

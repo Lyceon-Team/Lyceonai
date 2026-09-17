@@ -100,6 +100,62 @@ END;
 $$;
 
 
+--
+-- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid DEFAULT NULL::uuid, p_batch_size integer DEFAULT 1000) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz;
+  v_rows   bigint;
+BEGIN
+  IF p_action NOT IN ('strip_identity', 'purge_expired') THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: unknown action %', p_action USING ERRCODE = '22023';
+  END IF;
+  IF p_action = 'strip_identity' AND p_profile_id IS NULL THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: strip_identity requires a profile id' USING ERRCODE = '22023';
+  END IF;
+  IF p_action = 'purge_expired' AND (p_batch_size IS NULL OR p_batch_size < 1) THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Open the gate for this transaction only.
+  PERFORM set_config('lyceon.audit_logs_retention', 'on', true);
+
+  IF p_action = 'strip_identity' THEN
+    UPDATE public.audit_logs
+       SET actor_profile_id  = NULL,
+           target_profile_id = NULL
+     WHERE actor_profile_id = p_profile_id
+        OR target_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+    -- Close it again, so nothing later in THIS transaction inherits the exemption.
+    PERFORM set_config('lyceon.audit_logs_retention', 'off', true);
+    RETURN jsonb_build_object('action', p_action, 'rows', v_rows, 'cutoff', NULL);
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.audit_logs_retention_days());
+
+  DELETE FROM public.audit_logs a
+   WHERE a.id IN (
+     SELECT b.id FROM public.audit_logs b
+      WHERE b.created_at < v_cutoff
+      ORDER BY b.created_at
+      LIMIT p_batch_size
+   );
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  PERFORM set_config('lyceon.audit_logs_retention', 'off', true);
+  RETURN jsonb_build_object('action', p_action, 'rows', v_rows, 'cutoff', v_cutoff);
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -340,6 +396,65 @@ BEGIN
   RETURN CASE WHEN v_applied THEN 'applied' ELSE 'ignored' END;
 END;
 $$;
+
+
+--
+-- Name: audit_logs_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_retention_days() RETURNS integer
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_raw   jsonb;
+  v_days  integer;
+BEGIN
+  SELECT c.value INTO v_raw
+    FROM public.account_deletion_runtime_config c
+   WHERE c.key = 'anonymization_retention_days';
+
+  IF v_raw IS NULL OR jsonb_typeof(v_raw) <> 'number' THEN
+    RETURN 365;
+  END IF;
+
+  v_days := (v_raw #>> '{}')::integer;
+  IF v_days IS NULL OR v_days < 1 THEN
+    RETURN 365;
+  END IF;
+  RETURN v_days;
+END;
+$$;
+
+
+--
+-- Name: audit_logs_retention_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_retention_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- The sole exemption (SCL-087 / R3). `current_setting(..., true)` returns NULL rather than
+  -- raising when the GUC was never set, so the default posture of every session is "refused".
+  IF current_setting('lyceon.audit_logs_retention', true) = 'on' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Table % is append-only; UPDATE and DELETE are not permitted', TG_TABLE_NAME;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION audit_logs_retention_guard(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.audit_logs_retention_guard() IS 'Append-only guard for audit_logs ONLY (SCL-087 / R3). Identical refusal to public.prevent_update_delete(), plus the single retention exemption gated on the lyceon.audit_logs_retention GUC that public.apply_audit_logs_retention sets transaction-locally. The shared guard is deliberately not modified: nineteen other append-only tables use it and must not inherit this exemption.';
 
 
 --
@@ -1715,8 +1830,9 @@ CREATE FUNCTION public.cancel_account_deletion(p_profile_id uuid) RETURNS uuid
     AS $$
 DECLARE
   v_request_id uuid;
+  v_log_id     uuid;
 BEGIN
-  SELECT adr.id INTO v_request_id
+  SELECT adr.id, adr.log_id INTO v_request_id, v_log_id
     FROM public.account_deletion_requests adr
    WHERE adr.profile_id = p_profile_id
      AND adr.status = 'pending'
@@ -1733,6 +1849,23 @@ BEGIN
      SET status                     = 'cancelled',
          stripe_cancellation_status = 'cancelled_by_recovery'
    WHERE id = v_request_id;
+
+  IF v_log_id IS NOT NULL THEN
+    UPDATE public.deletion_request_log
+       SET status = 'cancelled', responded_on = (now() AT TIME ZONE 'utc')::date
+     WHERE log_id = v_log_id AND status IN ('pending', 'executing');
+  END IF;
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.4] | @implemented [2026-09-17]
+  -- The in-app twin of the recovery path above; same action, different route, recorded as such.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_profile_id,
+    p_profile_id,
+    'profile_restored',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', 'set', 'to', NULL)),
+    jsonb_build_object('source', 'cancel_account_deletion', 'path', 'in_app')
+  );
 
   RETURN p_profile_id;
 END;
@@ -2240,6 +2373,91 @@ BEGIN
     INTO v_cascade_result;
 
   RETURN v_cascade_result;
+END;
+$$;
+
+
+--
+-- Name: complete_deletion_log(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_deletion_log(p_completions text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today     date := (now() AT TIME ZONE 'utc')::date;
+  v_json      jsonb;
+  v_ids       uuid[];
+  v_completed bigint;
+  v_billing   bigint;
+  v_profile   uuid;
+  v_stripped  bigint := 0;
+  v_strip     jsonb;
+BEGIN
+  v_json := p_completions::jsonb;
+  IF v_json IS NULL OR jsonb_typeof(v_json) <> 'array' THEN
+    RAISE EXCEPTION 'complete_deletion_log: p_completions must be a JSON array' USING ERRCODE = '22023';
+  END IF;
+
+  CREATE TEMP TABLE _completions ON COMMIT DROP AS
+    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id,
+           c.stripe_subscription_item_id, c.final_status, c.profile_id
+      FROM jsonb_to_recordset(v_json)
+        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text,
+             stripe_subscription_item_id text, final_status text, profile_id uuid);
+
+  SELECT array_agg(c.log_id ORDER BY c.log_id) INTO v_ids FROM _completions c;
+
+  UPDATE public.deletion_request_log
+     SET status = 'completed', responded_on = v_today
+   WHERE log_id = ANY (v_ids)
+     AND status = 'executing';
+  GET DIAGNOSTICS v_completed = ROW_COUNT;
+
+  INSERT INTO public.deletion_billing_record
+    (log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, cancelled_on, final_status)
+  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.stripe_subscription_item_id, v_today, c.final_status
+    FROM _completions c
+    JOIN public.deletion_request_log l ON l.log_id = c.log_id
+   WHERE c.final_status IS NOT NULL
+     AND (c.stripe_customer_id IS NOT NULL OR c.stripe_subscription_id IS NOT NULL)
+   ORDER BY c.log_id
+  ON CONFLICT (log_id) DO NOTHING;
+  GET DIAGNOSTICS v_billing = ROW_COUNT;
+
+  -- @spec [Doc-01_V8 §5 (profile_hard_deleted), §5.1 (ids become NULL at hard delete);
+  -- SCL-087 PROPOSED; owner brief 2026-09-17 §3.1/§3.3] | @implemented [2026-09-17]
+  --
+  -- THE AUDIT HALF OF T3. This is the evidence-side transaction, so neither of the two writes
+  -- below can share an xmin with an actor_id-side row — that isolation is the whole reason they
+  -- are here and not in the cascade (see this migration's header).
+  --
+  -- p_completions carries profile_id for exactly this: the profile row is already gone, so the
+  -- uuid is a dead key used to FIND audit rows and then erased from them. It is never stored on
+  -- the evidence side — the PG suite asserts structurally that no evidence table has a uuid
+  -- column other than log_id.
+  FOR v_profile IN SELECT c.profile_id FROM _completions c WHERE c.profile_id IS NOT NULL ORDER BY c.profile_id
+  LOOP
+    v_strip := public.apply_audit_logs_retention('strip_identity', v_profile);
+    v_stripped := v_stripped + COALESCE((v_strip ->> 'rows')::bigint, 0);
+  END LOOP;
+
+  -- One row per completed deletion, with NO ids from the start: §5.1 retains "action type,
+  -- timestamp, status code" and nothing else once a profile is hard-deleted. Written NULL rather
+  -- than written-then-stripped, so this row never needs the exemption at all.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  SELECT NULL, NULL, 'profile_hard_deleted', NULL,
+         jsonb_build_object('source', 'complete_deletion_log', 'status', 'completed')
+    FROM _completions c
+    JOIN public.deletion_request_log l ON l.log_id = c.log_id
+   WHERE l.status = 'completed';
+
+  RETURN jsonb_build_object(
+    'completed', v_completed,
+    'billing_records', v_billing,
+    'audit_rows_stripped', v_stripped
+  );
 END;
 $$;
 
@@ -2929,6 +3147,18 @@ $$;
 
 
 --
+-- Name: deletion_evidence_retention_months(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.deletion_evidence_retention_months() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 24;
+$$;
+
+
+--
 -- Name: emit_notification_event(uuid, text, uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3098,29 +3328,61 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('entitlements', v_count);
 
-  -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
-  UPDATE public.guardian_links SET accepted_by_profile_id = NULL
-   WHERE accepted_by_profile_id = p_profile_id;
-  UPDATE public.guardian_links SET revoked_by_profile_id = NULL
-   WHERE revoked_by_profile_id = p_profile_id;
-  DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
-  DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
+  -- PS-2 .. PS-4: the pre-clears that touch rows belonging to OTHER identities
+  -- (a student's consent request when a guardian deletes; another person's deletion
+  -- request that named this profile as actor; the guardian_links rows on either side).
+  --
+  -- ANONYMIZE MODE (the user-facing path): these MUST already have run in their own
+  -- transaction — public.preclear_account_deletion_links, T1.5 of the executor. A row
+  -- of a LIVE identity written in THIS transaction would share its xmin with the
+  -- anonymized_actors row written below, which is a deterministic join from actor_id
+  -- to that live person and, through profiles.guardian_email, to the deleted one
+  -- (evidence invariant rule 3, SCL-088; plan v4 §1). So this mode does not clear:
+  -- it verifies, and fails closed (INV-05E-05: explicit, gated, nothing implicit).
+  --
+  -- HARD_DELETE MODE (service_role-only internal tool, Doc 05E §1): self-clears, as
+  -- before. Nothing pseudonymous is retained by that mode, so the join has nothing
+  -- to reach.
+  IF p_privacy_mode = 'anonymize' THEN
+    IF EXISTS (SELECT 1 FROM public.guardian_links
+                WHERE accepted_by_profile_id = p_profile_id
+                   OR revoked_by_profile_id  = p_profile_id
+                   OR student_profile_id     = p_profile_id
+                   OR guardian_profile_id    = p_profile_id)
+       OR EXISTS (SELECT 1 FROM public.guardian_consent_requests
+                   WHERE guardian_profile_id = p_profile_id
+                      OR student_profile_id  = p_profile_id)
+       OR EXISTS (SELECT 1 FROM public.account_deletion_requests
+                   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id)
+    THEN
+      RAISE EXCEPTION 'PRECLEAR_REQUIRED: profile % still has guardian_links / guardian_consent_requests / actor_profile_id references — run public.preclear_account_deletion_links(profile) in its own transaction first (evidence invariant rule 3)',
+        p_profile_id;
+    END IF;
+  ELSE
+    -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
+    UPDATE public.guardian_links SET accepted_by_profile_id = NULL
+     WHERE accepted_by_profile_id = p_profile_id;
+    UPDATE public.guardian_links SET revoked_by_profile_id = NULL
+     WHERE revoked_by_profile_id = p_profile_id;
+    DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
+    DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
 
-  -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
-  UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
-   WHERE guardian_profile_id = p_profile_id;
-  DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
+    -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
+    UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
+     WHERE guardian_profile_id = p_profile_id;
+    DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
 
-  -- PS-4. account_deletion_requests — actor_profile_id edge case
-  UPDATE public.account_deletion_requests
-     SET actor_profile_id = profile_id
-   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+    -- PS-4. account_deletion_requests — actor_profile_id edge case
+    UPDATE public.account_deletion_requests
+       SET actor_profile_id = profile_id
+     WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+  END IF;
 
   -- PS-5. account_deletion_requests — delete THIS profile's request rows
   DELETE FROM public.account_deletion_requests WHERE profile_id = p_profile_id;
@@ -3193,6 +3455,19 @@ BEGIN
   DELETE FROM public.student_kpi_rollups_current WHERE student_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('student_kpi_rollups_current', v_count);
+
+  -- L1-13. legal_acceptance_outbox (2026-09-16 evidence audit, plan v4 Phase 1). The
+  -- outbox has NO profiles FK (20260619000300 dropped it so consent intent survives a
+  -- late profile insert), sat in no cascade list, and is invisible to the FK-driven
+  -- preflight above — so its rows, keyed by the auth uuid (= profile id), survived a
+  -- deletion in signup order. Classified here as identity-keyed queue state: DELETED in
+  -- both modes. The consent EVIDENCE lives in deletion_consent_evidence, copied from
+  -- legal_acceptances by mark_deletion_log_executing before this transaction; an
+  -- undrained outbox row at T+7 is intent that never became an acceptance and is not
+  -- evidence of one.
+  DELETE FROM public.legal_acceptance_outbox WHERE user_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('legal_acceptance_outbox', v_count);
 
   -- ========================================================================
   -- MODE BRANCH: hard_delete vs anonymize diverge at L2
@@ -3351,11 +3626,17 @@ BEGIN
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
     -- ====================================================================
-    -- ANONYMIZED_ACTORS LEDGER (§3.1): record that this actor_id is
-    -- anonymized, BEFORE profile deletion destroys the mapping
+    -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
+    -- (build-derived ledger; no spec anchor — SCL-088. The earlier citation of section 3.1 ("Industry precedent")
+    -- was wrong.)
     -- ====================================================================
-    INSERT INTO public.anonymized_actors (actor_id, anonymized_at)
-    VALUES (v_actor_id, now())
+    -- Records that this actor_id is anonymized, BEFORE the profile deletion below
+    -- destroys the one linkage surface. actor_id ONLY: no timestamp (SCL-088 — a
+    -- deletion time on the pseudonymous side joins a dated evidence record at this
+    -- volume), and public.rewrite_anonymized_actors() strips insertion order after
+    -- every executor pass so xmin/ctid carry no sequence either.
+    INSERT INTO public.anonymized_actors (actor_id)
+    VALUES (v_actor_id)
     ON CONFLICT (actor_id) DO NOTHING;
     v_result := v_result || jsonb_build_object('anonymized_actors', 1);
 
@@ -3564,6 +3845,48 @@ BEGIN
      AND seen_at IS NULL;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
+END;
+$$;
+
+
+--
+-- Name: mark_deletion_log_executing(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_consent bigint;
+  v_marked  bigint;
+BEGIN
+  IF p_log_ids IS NULL OR cardinality(p_log_ids) = 0 THEN
+    RETURN jsonb_build_object('marked', 0, 'consent_rows', 0);
+  END IF;
+
+  INSERT INTO public.deletion_consent_evidence
+    (log_id, accepted_on, doc_key, doc_version, actor_type, minor, consent_source, ip_address, user_agent)
+  SELECT adr.log_id,
+         (la.accepted_at AT TIME ZONE 'utc')::date,
+         la.doc_key, la.doc_version, la.actor_type, la.minor, la.consent_source,
+         public.redact_evidence_ip(la.ip_address),
+         public.redact_evidence_user_agent(la.user_agent)
+    FROM public.account_deletion_requests adr
+    JOIN public.legal_acceptances la ON la.user_id = adr.profile_id
+   WHERE adr.log_id = ANY (p_log_ids)
+     AND adr.status = 'pending'
+   ORDER BY adr.log_id, la.doc_key, la.doc_version, la.actor_type
+  ON CONFLICT (log_id, doc_key, doc_version, actor_type) DO NOTHING;
+  GET DIAGNOSTICS v_consent = ROW_COUNT;
+
+  UPDATE public.deletion_request_log
+     SET status = 'executing'
+   WHERE log_id = ANY (p_log_ids)
+     AND status = 'pending';
+  GET DIAGNOSTICS v_marked = ROW_COUNT;
+
+  RETURN jsonb_build_object('marked', v_marked, 'consent_rows', v_consent);
 END;
 $$;
 
@@ -3868,6 +4191,60 @@ $$;
 
 
 --
+-- Name: preclear_account_deletion_links(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_result jsonb := '{}'::jsonb;
+  v_count  bigint;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.account_deletion_requests adr
+     WHERE adr.profile_id = p_profile_id
+       AND adr.status = 'pending'
+       AND adr.scheduled_hard_delete_at <= now()
+  ) THEN
+    RAISE EXCEPTION 'PRECLEAR_NOT_DUE: no pending, due deletion request for profile %', p_profile_id;
+  END IF;
+
+  -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
+  UPDATE public.guardian_links SET accepted_by_profile_id = NULL
+   WHERE accepted_by_profile_id = p_profile_id;
+  UPDATE public.guardian_links SET revoked_by_profile_id = NULL
+   WHERE revoked_by_profile_id = p_profile_id;
+  DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
+  DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
+
+  -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
+  UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
+   WHERE guardian_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_consent_requests_as_guardian', v_count);
+  DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
+
+  -- PS-4. account_deletion_requests — actor_profile_id edge case
+  UPDATE public.account_deletion_requests
+     SET actor_profile_id = profile_id
+   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('account_deletion_requests_as_actor', v_count);
+
+  RETURN jsonb_build_object('status', 'precleared', 'profile_id', p_profile_id, 'rows_affected', v_result);
+END;
+$$;
+
+
+--
 -- Name: prevent_update_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4097,6 +4474,74 @@ $$;
 
 
 --
+-- Name: reconcile_deletion_log(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reconcile_deletion_log() RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today       date := (now() AT TIME ZONE 'utc')::date;
+  v_reverted    bigint;
+  v_completed   bigint;
+  v_cancelled   bigint;
+BEGIN
+  UPDATE public.deletion_request_log l
+     SET status = 'pending'
+   WHERE l.status = 'executing'
+     AND EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                  WHERE adr.log_id = l.log_id AND adr.status = 'pending');
+  GET DIAGNOSTICS v_reverted = ROW_COUNT;
+
+  UPDATE public.deletion_request_log l
+     SET status = 'cancelled', responded_on = coalesce(l.responded_on, v_today)
+   WHERE l.status = 'executing'
+     AND EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                  WHERE adr.log_id = l.log_id AND adr.status = 'cancelled');
+  GET DIAGNOSTICS v_cancelled = ROW_COUNT;
+
+  UPDATE public.deletion_request_log l
+     SET status = 'completed', responded_on = coalesce(l.responded_on, v_today)
+   WHERE l.status = 'executing'
+     AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                      WHERE adr.log_id = l.log_id);
+  GET DIAGNOSTICS v_completed = ROW_COUNT;
+
+  RETURN jsonb_build_object('reverted_to_pending', v_reverted, 'completed', v_completed, 'cancelled', v_cancelled);
+END;
+$$;
+
+
+--
+-- Name: record_deletion_suppression_outcome(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_status NOT IN ('applied', 'failed_manual') THEN
+    RAISE EXCEPTION 'record_deletion_suppression_outcome: % is not a suppression status', p_status
+      USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.deletion_request_log
+     SET suppression_status = p_status
+   WHERE log_id = p_log_id
+     AND suppression_requested = true
+     AND suppression_status IS DISTINCT FROM 'applied';
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
+END;
+$$;
+
+
+--
 -- Name: mastery_derivation_gap_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4225,6 +4670,72 @@ BEGIN
 
   RETURN QUERY SELECT * FROM public.notification_messages WHERE message_id = p_message_id;
 END;
+$$;
+
+
+--
+-- Name: redact_evidence_ip(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_ip(p_ip text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+  v inet;
+BEGIN
+  IF p_ip IS NULL OR btrim(p_ip) = '' THEN
+    RETURN NULL;
+  END IF;
+  BEGIN
+    v := btrim(p_ip)::inet;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  -- an IPv4-mapped IPv6 address (::ffff:a.b.c.d, what Node reports behind a proxy) is IPv4
+  IF family(v) = 6 AND host(v) LIKE '::ffff:%' THEN
+    BEGIN
+      v := substr(host(v), 8)::inet;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN NULL;
+    END;
+  END IF;
+  IF family(v) = 4 THEN
+    RETURN text(network(set_masklen(v, 24)));
+  END IF;
+  RETURN text(network(set_masklen(v, 48)));
+END;
+$$;
+
+
+--
+-- Name: redact_evidence_user_agent(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_user_agent(p_ua text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT CASE
+    WHEN p_ua IS NULL OR btrim(p_ua) = '' THEN NULL
+    ELSE
+      (CASE
+         WHEN p_ua ~* 'Edg/'            THEN 'Edge'
+         WHEN p_ua ~* 'OPR/|Opera'      THEN 'Opera'
+         WHEN p_ua ~* 'Firefox/|FxiOS/' THEN 'Firefox'
+         WHEN p_ua ~* 'Chrome/|CriOS/'  THEN 'Chrome'
+         WHEN p_ua ~* 'Safari/'         THEN 'Safari'
+         ELSE 'Other'
+       END)
+      || '/' ||
+      (CASE
+         WHEN p_ua ~* 'Windows'             THEN 'Windows'
+         WHEN p_ua ~* 'Android'             THEN 'Android'
+         WHEN p_ua ~* 'iPhone|iPad|iPod'    THEN 'iOS'
+         WHEN p_ua ~* 'Mac OS X|Macintosh'  THEN 'macOS'
+         WHEN p_ua ~* 'CrOS'                THEN 'ChromeOS'
+         WHEN p_ua ~* 'Linux'               THEN 'Linux'
+         ELSE 'Other'
+       END)
+  END
 $$;
 
 
@@ -4850,16 +5361,19 @@ $$;
 
 
 --
--- Name: request_account_deletion(uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: request_account_deletion(uuid, uuid, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer DEFAULT 7) RETURNS TABLE(requested_at timestamp with time zone, scheduled_hard_delete_at timestamp with time zone)
+CREATE FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer DEFAULT 7, p_request_channel text DEFAULT 'self_service_web'::text) RETURNS TABLE(requested_at timestamp with time zone, scheduled_hard_delete_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_now   timestamptz := now();
-  v_sched timestamptz := now() + make_interval(days => p_grace_days);
+  v_now       timestamptz := now();
+  v_sched     timestamptz := now() + make_interval(days => p_grace_days);
+  v_subject   text;
+  v_requester text;
+  v_log_id    uuid;
 BEGIN
   -- Idempotency: surface the existing pending request rather than creating a second one.
   IF EXISTS (
@@ -4874,16 +5388,74 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT p.email INTO v_subject FROM public.profiles p WHERE p.id = p_profile_id;
+  IF v_subject IS NULL THEN
+    RAISE EXCEPTION 'request_account_deletion: profile % not found', p_profile_id;
+  END IF;
+  SELECT p.email INTO v_requester FROM public.profiles p WHERE p.id = p_actor_id;
+  v_requester := coalesce(v_requester, v_subject);
+
+  -- T0 (evidence side): the request record, at day granularity.
+  INSERT INTO public.deletion_request_log
+    (subject_email, requester_email, request_channel, requested_on, status)
+  VALUES
+    (v_subject, v_requester, p_request_channel, (v_now AT TIME ZONE 'utc')::date, 'pending')
+  RETURNING log_id INTO v_log_id;
+
   UPDATE public.profiles SET deleted_at = v_now, updated_at = v_now WHERE id = p_profile_id;
 
   INSERT INTO public.account_deletion_requests
     (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status,
-     stripe_cancellation_status, recovery_token_hash, recovery_token_expires_at)
+     stripe_cancellation_status, recovery_token_hash, recovery_token_expires_at, log_id)
   VALUES
     (p_profile_id, v_now, v_sched, p_actor_id, 'pending',
-     'pending', p_recovery_token_hash, v_sched);
+     'pending', p_recovery_token_hash, v_sched, v_log_id);
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.2.1 Phase 1 "Emit audit event" inside the DB
+  -- transaction] | @implemented [2026-09-17]
+  -- The profile is live and identified here, so the row carries real ids: §5's trail is worth
+  -- nothing if it cannot say whose account it was. No address, no token, no free text — the
+  -- changes/context payloads carry the schedule and the source, which are not personal data.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_actor_id,
+    p_profile_id,
+    'profile_soft_deleted',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', NULL, 'to', 'set')),
+    jsonb_build_object(
+      'source', 'request_account_deletion',
+      'scheduled_hard_delete_at', v_sched,
+      'grace_days', p_grace_days
+    )
+  );
 
   RETURN QUERY SELECT v_now, v_sched;
+END;
+$$;
+
+
+--
+-- Name: resolve_deletion_billing_record(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_final_status NOT IN ('cancelled', 'item_removed', 'none_active') THEN
+    RAISE EXCEPTION 'resolve_deletion_billing_record: % is not a resolved status', p_final_status
+      USING ERRCODE = '22023';
+  END IF;
+  UPDATE public.deletion_billing_record
+     SET final_status = p_final_status,
+         cancelled_on = (now() AT TIME ZONE 'utc')::date
+   WHERE log_id = p_log_id
+     AND final_status = 'failed_manual';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
 END;
 $$;
 
@@ -4898,8 +5470,9 @@ CREATE FUNCTION public.restore_account_deletion(p_recovery_token_hash text) RETU
     AS $$
 DECLARE
   v_profile_id uuid;
+  v_log_id     uuid;
 BEGIN
-  SELECT adr.profile_id INTO v_profile_id
+  SELECT adr.profile_id, adr.log_id INTO v_profile_id, v_log_id
     FROM public.account_deletion_requests adr
    WHERE adr.recovery_token_hash    = p_recovery_token_hash
      AND adr.status                 = 'pending'
@@ -4917,6 +5490,24 @@ BEGIN
          stripe_cancellation_status = 'cancelled_by_recovery'
    WHERE recovery_token_hash = p_recovery_token_hash
      AND status              = 'pending';
+
+  IF v_log_id IS NOT NULL THEN
+    UPDATE public.deletion_request_log
+       SET status = 'cancelled', responded_on = (now() AT TIME ZONE 'utc')::date
+     WHERE log_id = v_log_id AND status IN ('pending', 'executing');
+  END IF;
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.4 "profile_restored audit event"]
+  -- | @implemented [2026-09-17] Self-service recovery: the actor is the profile itself (§5
+  -- "may be the profile itself for self-service"). The token hash is deliberately absent.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    v_profile_id,
+    v_profile_id,
+    'profile_restored',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', 'set', 'to', NULL)),
+    jsonb_build_object('source', 'restore_account_deletion', 'path', 'recovery_token')
+  );
 
   RETURN v_profile_id;
 END;
@@ -4990,6 +5581,33 @@ BEGIN
   );
 
   RETURN v_after;
+END;
+$$;
+
+
+--
+-- Name: rewrite_anonymized_actors(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rewrite_anonymized_actors() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  -- Concurrency (spec-auditor finding C on PR #769): a cascade committing between the
+  -- snapshot and the DELETE would have its ledger row destroyed and never re-inserted —
+  -- the only proof that an actor_id was anonymized. ACCESS EXCLUSIVE makes a concurrent
+  -- cascade's INSERT wait for this transaction to commit; the function is milliseconds.
+  LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE;
+  CREATE TEMP TABLE _ledger ON COMMIT DROP AS
+    SELECT actor_id FROM public.anonymized_actors;
+  DELETE FROM public.anonymized_actors;
+  INSERT INTO public.anonymized_actors (actor_id)
+    SELECT actor_id FROM _ledger ORDER BY actor_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
 END;
 $$;
 
@@ -5141,6 +5759,71 @@ $$;
 --
 
 COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
+
+
+--
+-- Name: sweep_deletion_evidence(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_deletion_evidence(p_batch_size integer) RETURNS TABLE(stripped_log_rows integer, stripped_consent_rows integer, cutoff date)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  date;
+  v_ids     uuid[];
+  v_logs    integer;
+  v_consent integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_deletion_evidence: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := ((now() AT TIME ZONE 'utc')::date
+               - make_interval(months => public.deletion_evidence_retention_months()))::date;
+
+  SELECT array_agg(l.log_id ORDER BY l.log_id)
+    INTO v_ids
+    FROM (
+      SELECT r.log_id
+        FROM public.deletion_request_log r
+       WHERE r.status IN ('completed', 'cancelled', 'denied')
+         AND r.responded_on IS NOT NULL
+         AND r.responded_on < v_cutoff
+         AND (r.subject_email IS NOT NULL OR r.requester_email IS NOT NULL)
+       ORDER BY r.responded_on, r.log_id
+       LIMIT p_batch_size
+    ) l;
+
+  IF v_ids IS NULL THEN
+    RETURN QUERY SELECT 0, 0, v_cutoff;
+    RETURN;
+  END IF;
+
+  -- The identity columns, and only those. requested_on, responded_on, status and denial_basis
+  -- are the aggregate the entry exists to keep.
+  UPDATE public.deletion_request_log
+     SET subject_email = NULL, requester_email = NULL
+   WHERE log_id = ANY (v_ids);
+  GET DIAGNOSTICS v_logs = ROW_COUNT;
+
+  -- Consent evidence rides the same clock (SCL-085, one clock for the whole bundle). doc_key,
+  -- doc_version, actor_type, minor, consent_source and accepted_on survive: that tuple is what
+  -- defends a COPPA claim, and none of it identifies anyone once the network and the browser
+  -- family are gone.
+  UPDATE public.deletion_consent_evidence
+     SET ip_address = NULL, user_agent = NULL
+   WHERE log_id = ANY (v_ids)
+     AND (ip_address IS NOT NULL OR user_agent IS NOT NULL);
+  GET DIAGNOSTICS v_consent = ROW_COUNT;
+
+  -- Nothing here touches the do-not-contact promise: it is an entry on Resend's suppression
+  -- list, not a row in this database. See the header.
+
+  RETURN QUERY SELECT v_logs, v_consent, v_cutoff;
+END;
+$$;
 
 
 --
@@ -5408,9 +6091,17 @@ CREATE TABLE public.account_deletion_requests (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     recovery_token_hash text,
     recovery_token_expires_at timestamp with time zone,
+    log_id uuid,
     CONSTRAINT account_deletion_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'cancelled'::text, 'completed'::text]))),
     CONSTRAINT account_deletion_requests_stripe_cancellation_status_check CHECK ((stripe_cancellation_status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'completed'::text, 'failed_manual'::text, 'cancelled_by_recovery'::text])))
 );
+
+
+--
+-- Name: COLUMN account_deletion_requests.log_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.account_deletion_requests.log_id IS 'deletion_request_log.log_id for this request (no FK on purpose). Set by request_account_deletion; NULL for rows created before migration 20260917000000. Dies with the row at cascade PS-5.';
 
 
 --
@@ -5455,9 +6146,15 @@ CREATE TABLE public.account_deletion_runtime_config_history (
 --
 
 CREATE TABLE public.anonymized_actors (
-    actor_id uuid NOT NULL,
-    anonymized_at timestamp with time zone DEFAULT now() NOT NULL
+    actor_id uuid NOT NULL
 );
+
+
+--
+-- Name: TABLE anonymized_actors; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.anonymized_actors IS 'Ledger of anonymized actor_ids (Doc 05E §3 Rule 4, INV-05E-01/02; build-derived, no spec anchor — SCL-088). actor_id only: no timestamp, and rewrite_anonymized_actors() strips insertion order after every executor pass.';
 
 
 --
@@ -5997,6 +6694,108 @@ CREATE TABLE public.crisis_review_cases (
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
 );
+
+
+--
+-- Name: deletion_billing_record; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_billing_record (
+    log_id uuid NOT NULL,
+    stripe_customer_id text,
+    stripe_subscription_id text,
+    stripe_subscription_item_id text,
+    cancelled_on date NOT NULL,
+    final_status text NOT NULL,
+    CONSTRAINT deletion_billing_record_final_status_check CHECK ((final_status = ANY (ARRAY['cancelled'::text, 'item_removed'::text, 'none_active'::text, 'failed_manual'::text])))
+);
+
+
+--
+-- Name: TABLE deletion_billing_record; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_billing_record IS 'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086; SCL-089 alert-and-retry). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. The item id is kept so a failed_manual teardown can be retried after the entitlement row is gone. Legal-obligation basis, 7-year tier.';
+
+
+--
+-- Name: deletion_consent_evidence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_consent_evidence (
+    log_id uuid NOT NULL,
+    accepted_on date NOT NULL,
+    doc_key text NOT NULL,
+    doc_version text NOT NULL,
+    actor_type text NOT NULL,
+    minor boolean NOT NULL,
+    consent_source text NOT NULL,
+    ip_address text,
+    user_agent text
+);
+
+
+--
+-- Name: TABLE deletion_consent_evidence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_consent_evidence IS 'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. ip_address is the /24 (IPv4) or /48 (IPv6) network and user_agent is browser family/OS family — Doc 01 §5.1 redaction, inherited (SCL-085 amendment, owner ruling 2026-09-16). Composite key on purpose: a serial would reproduce copy order.';
+
+
+--
+-- Name: deletion_request_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_request_log (
+    log_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subject_email text,
+    requester_email text,
+    request_channel text NOT NULL,
+    requested_on date NOT NULL,
+    responded_on date,
+    status text NOT NULL,
+    denial_basis text,
+    suppression_requested boolean DEFAULT false NOT NULL,
+    suppression_status text,
+    CONSTRAINT deletion_request_log_request_channel_check CHECK ((request_channel = 'self_service_web'::text)),
+    CONSTRAINT deletion_request_log_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'executing'::text, 'completed'::text, 'cancelled'::text, 'denied'::text]))),
+    CONSTRAINT deletion_request_log_suppression_status_check CHECK (((suppression_status IS NULL) OR (suppression_status = ANY (ARRAY['applied'::text, 'failed_manual'::text]))))
+);
+
+
+--
+-- Name: TABLE deletion_request_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_request_log IS 'Evidence bundle root (plan v4 §3.3; SCL-085). One row per deletion request: CCPA §7101 fields at day granularity. NO created_at, NO uuid other than the random log_id, NO FK outside the bundle — see the migration header for why (evidence invariant rules 1-3).';
+
+
+--
+-- Name: COLUMN deletion_request_log.log_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.log_id IS 'Random (gen_random_uuid), NOT a serial: a serial reproduces request order, which at low volume rank-joins the deletion order visible on the actor_id side through xmin.';
+
+
+--
+-- Name: COLUMN deletion_request_log.subject_email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.subject_email IS 'The deleted account address. NULL once the 24-month strip has run (SCL-085): the row then carries only the dated aggregate — when it was asked, when it was answered, the outcome.';
+
+
+--
+-- Name: COLUMN deletion_request_log.requester_email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.requester_email IS 'Who asked; equals subject for self-service. NULL after the 24-month strip, as above.';
+
+
+--
+-- Name: COLUMN deletion_request_log.suppression_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.suppression_status IS 'Outcome of the Resend suppression call for a request whose suppression_requested is true. NULL = not attempted. applied = Resend accepted it. failed_manual = the call failed and the executor''s retry sweep re-attempts it each pass, as it does a row left NULL. Stays applied after a subject re-consents and the entry is removed at Resend, so the sweep cannot silently re-suppress them.';
 
 
 --
@@ -8043,6 +8842,30 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 
 --
+-- Name: deletion_billing_record deletion_billing_record_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_billing_record
+    ADD CONSTRAINT deletion_billing_record_pkey PRIMARY KEY (log_id);
+
+
+--
+-- Name: deletion_consent_evidence deletion_consent_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_consent_evidence
+    ADD CONSTRAINT deletion_consent_evidence_pkey PRIMARY KEY (log_id, doc_key, doc_version, actor_type);
+
+
+--
+-- Name: deletion_request_log deletion_request_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_request_log
+    ADD CONSTRAINT deletion_request_log_pkey PRIMARY KEY (log_id);
+
+
+--
 -- Name: difficulties difficulties_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9498,7 +10321,7 @@ CREATE TRIGGER account_deletion_runtime_config_notify AFTER INSERT OR UPDATE ON 
 -- Name: audit_logs audit_logs_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER audit_logs_no_mutate BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+CREATE TRIGGER audit_logs_no_mutate BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_retention_guard();
 
 
 --
@@ -10061,6 +10884,22 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: deletion_billing_record deletion_billing_record_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_billing_record
+    ADD CONSTRAINT deletion_billing_record_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
+
+
+--
+-- Name: deletion_consent_evidence deletion_consent_evidence_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_consent_evidence
+    ADD CONSTRAINT deletion_consent_evidence_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
 
 
 --
@@ -10950,6 +11789,24 @@ CREATE POLICY "crisis_review_writer insert crisis_review_audit_log" ON public.cr
 
 CREATE POLICY "crisis_review_writer insert crisis_review_cases" ON public.crisis_review_cases FOR INSERT TO crisis_review_writer WITH CHECK (true);
 
+
+--
+-- Name: deletion_billing_record; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_billing_record ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_consent_evidence; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_request_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_request_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11948,6 +12805,14 @@ GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid,
 
 
 --
+-- Name: FUNCTION apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer) TO service_role;
+
+
+--
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -12113,6 +12978,14 @@ GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id 
 
 REVOKE ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION complete_deletion_log(p_completions text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.complete_deletion_log(p_completions text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.complete_deletion_log(p_completions text) TO service_role;
 
 
 --
@@ -12329,6 +13202,14 @@ GRANT ALL ON FUNCTION public.mark_all_notifications_seen(p_recipient_id uuid) TO
 
 
 --
+-- Name: FUNCTION mark_deletion_log_executing(p_log_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) TO service_role;
+
+
+--
 -- Name: TABLE notification_messages; Type: ACL; Schema: public; Owner: -
 --
 
@@ -12424,6 +13305,14 @@ GRANT ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) TO
 
 
 --
+-- Name: FUNCTION preclear_account_deletion_links(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION prevent_update_delete(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -12459,6 +13348,22 @@ GRANT ALL ON FUNCTION public.read_projection_constants(OUT target_qcount integer
 
 REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION reconcile_deletion_log(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.reconcile_deletion_log() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
+
+
+--
+-- Name: FUNCTION record_deletion_suppression_outcome(p_log_id uuid, p_status text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) TO service_role;
 
 
 --
@@ -12805,11 +13710,19 @@ GRANT ALL ON FUNCTION public.refresh_skill_kpi(p_student_id uuid, p_section text
 
 
 --
--- Name: FUNCTION request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) TO service_role;
+REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) TO service_role;
+
+
+--
+-- Name: FUNCTION resolve_deletion_billing_record(p_log_id uuid, p_final_status text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) TO service_role;
 
 
 --
@@ -12826,6 +13739,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.revoke_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_revoked_by uuid, p_reason text, p_request_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.revoke_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_revoked_by uuid, p_reason text, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION rewrite_anonymized_actors(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.rewrite_anonymized_actors() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.rewrite_anonymized_actors() TO service_role;
 
 
 --
@@ -12864,6 +13785,14 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_deletion_evidence(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) TO service_role;
 
 
 --
@@ -13187,6 +14116,27 @@ GRANT ALL ON TABLE public.crisis_review_audit_log TO service_role;
 --
 
 GRANT ALL ON TABLE public.crisis_review_cases TO service_role;
+
+
+--
+-- Name: TABLE deletion_billing_record; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_billing_record TO service_role;
+
+
+--
+-- Name: TABLE deletion_consent_evidence; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_consent_evidence TO service_role;
+
+
+--
+-- Name: TABLE deletion_request_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
 
 
 --
