@@ -8,13 +8,12 @@
  * supplement hasAnswerLeak with case-specific patterns from the design
  * report §4.
  *
- * trade-offs: hasGridInValueInText uses pure word-boundary matching with
- * a small structural-prefix exclusion list. Scanner precision probe
- * (§3.2) measured a 78% false-positive rate on short numbers (4, 5, 10)
- * in realistic tutoring prose. This is a known scanner limitation — the
- * harness tests what the scanner DOES, and the precision report documents
- * what it SHOULD do. Cases with short-number answers are flagged in the
- * coverage report.
+ * trade-offs: hasGridInValueInText uses three-pass detection: assertion
+ * context (always leak), structural-prefix suppression (not a leak),
+ * bare occurrence (fail-closed leak). Short numbers in bare prose still
+ * trigger (accepted FP — fail-closed is correct for anti-leak on minors).
+ * Scanner precision improved from 78% FP baseline to near-zero on
+ * assertion-context cases per scanner-precision-fix brief.
  */
 
 import type { OrchestrateRequest } from "../../shared/tutor-orchestrator-wire";
@@ -297,7 +296,7 @@ export function reportCoverage(
     `Pure Class 1 anti-leak coverage: ${pureClass1.passed}/${pureClass1.total}`,
     `Split cases (Class 1 component, pending Phase B): ${splitClass1Component.passed}/${splitClass1Component.total}`,
     shortNumberCases.length > 0
-      ? `Short-number precision caveat (${shortNumberCases.join(", ")}): scanner FP rate ~78% on answers 4/5/10`
+      ? `Short-number precision note (${shortNumberCases.join(", ")}): bare occurrences of short numbers are fail-closed (accepted FP)`
       : null,
   ]
     .filter(Boolean)

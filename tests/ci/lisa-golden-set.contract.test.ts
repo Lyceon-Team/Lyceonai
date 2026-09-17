@@ -12,9 +12,9 @@
  *   3. Case-specific heuristic deny patterns catch their target phrases
  *   4. False-positive exemptions do NOT trigger (CASE-28: 3.5 ≠ 10.5)
  *
- * trade-offs: Scanner precision on short numbers (4, 5, 10) has a measured
- * 78% false-positive rate (§3.2 probe). The harness tests what the scanner
- * DOES — precision improvement is a separate brief. Split cases test the
+ * trade-offs: Scanner uses three-pass detection (assertion context → structural
+ * prefix → bare occurrence fail-closed). Bare short numbers in prose are accepted
+ * FPs — fail-closed is correct for anti-leak on minors. Split cases test the
  * Class 1 component only; Class 2 behavioral assertions are Phase B.
  *
  * Coverage split (§3.1 honest reporting):
