@@ -102,6 +102,9 @@ DECLARE
   r          record;
   v_conname  text;
   v_current  "char";
+  v_onupd    "char";
+  v_deferrable boolean;
+  v_match    "char";
   v_changed  integer := 0;
   v_skipped  integer := 0;
 BEGIN
@@ -144,8 +147,8 @@ BEGIN
       ('review_schedule','student_id','c')
     ) AS t(tbl, col, want)
   LOOP
-    SELECT c.conname, c.confdeltype
-      INTO v_conname, v_current
+    SELECT c.conname, c.confdeltype, c.confupdtype, c.condeferrable, c.confmatchtype
+      INTO v_conname, v_current, v_onupd, v_deferrable, v_match
       FROM pg_constraint c
       JOIN pg_class src ON src.oid = c.conrelid
       JOIN pg_namespace n ON n.oid = src.relnamespace
@@ -159,6 +162,16 @@ BEGIN
 
     IF v_conname IS NULL THEN
       RAISE EXCEPTION 'DECLARATIVE_FK: no foreign key found on %.% — the edge list is stale', r.tbl, r.col;
+    END IF;
+
+    -- The re-add below writes a DEFAULT foreign key: ON UPDATE NO ACTION, not
+    -- deferrable, MATCH SIMPLE. Every one of the 77 profile-referencing FKs in
+    -- production carries exactly those today (read 2026-09-17), so nothing is
+    -- flattened. Refuse rather than flatten if that ever stops being true — a
+    -- silently dropped DEFERRABLE is a far worse defect than a failed migration.
+    IF v_onupd <> 'a' OR v_deferrable OR v_match <> 's' THEN
+      RAISE EXCEPTION 'DECLARATIVE_FK: %.% (%) carries non-default FK properties (ON UPDATE %, deferrable %, match %); re-adding it would silently drop them. Alter it by hand.',
+        r.tbl, r.col, v_conname, v_onupd, v_deferrable, v_match;
     END IF;
 
     IF v_current = r.want::"char" THEN
