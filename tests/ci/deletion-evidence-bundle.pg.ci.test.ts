@@ -71,7 +71,23 @@ const EVIDENCE_TABLES = [
   "deletion_request_log",
   "deletion_consent_evidence",
   "deletion_billing_record",
+  "deletion_verification_records",
 ] as const;
+
+/**
+ * The ONE uuid the structural rule lets through besides `log_id`, named rather than
+ * pattern-matched so a second carve-out cannot arrive by accident.
+ *
+ * `deletion_verification_records.deleted_profile_id` holds the uuid of a profile that no
+ * longer exists. It is kept so the conformance job can re-scan for it and confirm absence —
+ * the difference between recording a pass and being able to re-derive one, which is what
+ * INV-06-08's "executable proof" means. It is safe only while no retained row still carries
+ * that uuid, which is not assumed here: `tests/ci/deletion-phase-6.pg.ci.test.ts` P6.6 sweeps
+ * every uuid column in the schema after a real deletion and requires this to be the only hit.
+ */
+const UUID_CARVE_OUTS = new Set([
+  "deletion_verification_records.deleted_profile_id",
+]);
 
 let pg: Client;
 
@@ -368,7 +384,10 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(timestampCols).toEqual([]);
       const uuidCols = cols.rows.filter(
-        (c) => c.data_type === "uuid" && c.column_name !== "log_id",
+        (c) =>
+          c.data_type === "uuid" &&
+          c.column_name !== "log_id" &&
+          !UUID_CARVE_OUTS.has(`${c.table_name}.${c.column_name}`),
       );
       expect(uuidCols).toEqual([]);
       const identityLeak = cols.rows.filter((c) =>

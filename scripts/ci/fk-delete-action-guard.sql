@@ -27,6 +27,14 @@
 -- is not allowlisted. A one-way check would let a stale allowlist entry sit
 -- forever after its handler was deleted.
 --
+-- THE CRISIS EDGES ARE NO LONGER HELD. Until 2026-09-18 four crisis constraints sat on this
+-- allowlist under `CRISIS_RULING_PENDING`, waiting on a ruling about safety records versus
+-- erasure. Owner ruling A6 settled it: a crisis record is treated the way mastery and activity
+-- data are — the row survives, the identity link is severed — so three of the four are now
+-- ON DELETE SET NULL and answer to G1 like every other edge. The fourth
+-- (`crisis_review_audit_log.case_id`) points at `crisis_review_cases`, not at an identity
+-- table, and stays RESTRICT so the case cannot take its own audit trail with it.
+--
 -- NOT A REPLACEMENT FOR INV-05E-03. That guard asserts the `actor_id` substrate
 -- (columns, nullability, the PR-5c seal) and is a different invariant. It never
 -- claimed to cover foreign keys, which is why it did not catch these nine.
@@ -78,24 +86,9 @@ BEGIN
     ('profiles', 'id',
      'DELETE FROM auth.users WHERE id = p_profile_id',
      'the ordered two-step: profiles then auth.users, so the profile row never outlives its auth row'),
-    -- ---- HELD FOR AN OWNER RULING (2026-09-17) --------------------------------
-    -- These four are allowlisted so the guard is green on the tree as it stands,
-    -- NOT because they are correctly classified. They are the open question in
-    -- the PR body. `crisis_review_cases.student_id` is NOT NULL, so SET NULL is
-    -- not available without a nullability change, and `conversation_id` RESTRICT
-    -- blocks the tutor CASCADE for any student who has a case.
-    ('crisis_review_cases', 'student_id',
-     'CRISIS_RULING_PENDING',
-     'RULING PENDING: safety record vs erasure. Doc 03 §21 is silent on deletion; §14.2 schedules crisis conversations for deletion at 180 days'),
-    ('crisis_review_cases', 'conversation_id',
-     'CRISIS_RULING_PENDING',
-     'RULING PENDING: RESTRICT here blocks the tutor CASCADE one level up'),
     ('crisis_review_audit_log', 'case_id',
-     'CRISIS_RULING_PENDING',
-     'RULING PENDING: blocks the case delete'),
-    ('crisis_review_audit_log', 'reviewer_id',
-     'CRISIS_RULING_PENDING',
-     'RULING PENDING: admin-side, not student-side — this one blocks REVIEWER deletion, not subject deletion');
+     'the case SURVIVES the deletion (owner ruling A6), so nothing may cascade its audit trail away with it',
+     'A6: kept RESTRICT deliberately — this edge points at crisis_review_cases, not at an identity table, and is listed here only so the ruling is legible beside the three that changed');
 
   -- ==========================================================================
   -- G1: every FK into profiles / auth.users is CASCADE, SET NULL, or allowlisted
@@ -137,7 +130,7 @@ BEGIN
                     E'\n    ' ORDER BY w.tbl, w.col)
     INTO v_missing
     FROM _fk_allowlist w
-   WHERE w.handler <> 'CRISIS_RULING_PENDING'
+   WHERE w.tbl <> 'crisis_review_audit_log'
      AND NOT EXISTS (
        SELECT 1
          FROM pg_proc p
