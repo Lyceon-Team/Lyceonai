@@ -4,6 +4,7 @@ import type {
   FullLengthSessionHistoryItem,
 } from "../../apps/api/src/services/fullLengthExam";
 import { logger } from "../logger";
+import { getQuotaResetTimezone } from "../lib/account";
 import {
   diagnosticStateSchema,
   type DiagnosticState,
@@ -141,14 +142,27 @@ type OverallKpiRow = {
   last_active_at: string | null;
 };
 
-async function resolveTimezone(userId: string): Promise<string> {
-  const { data } = await supabaseServer
-    .from("student_study_profile")
-    .select("timezone")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  return data?.timezone || "America/Chicago";
+/**
+ * @spec [Doc-02B_V4 §41 quota_reset_timezone; owner ruling 2026-09-16] | @implemented [2026-09-16]
+ * plain English: the timezone the KPI windows are labelled with is the platform-wide
+ * value from practice_runtime_config, read through the canonical accessor in
+ * server/lib/account. The per-student profile read that used to live here left with the
+ * legacy calendar, and so did the hardcoded default zone it fell back to: a missing
+ * platform constant now logs at ERROR and rethrows, so the KPI route fails closed instead of
+ * reporting windows computed against a zone nobody configured.
+ */
+async function resolveTimezone(): Promise<string> {
+  try {
+    return await getQuotaResetTimezone();
+  } catch (err) {
+    logger.error(
+      "KPI",
+      "resolve_timezone",
+      "practice_runtime_config.quota_reset_timezone unavailable; failing closed",
+      { error: err instanceof Error ? err.message : String(err) },
+    );
+    throw err;
+  }
 }
 
 function buildStudentMetrics(input: {
@@ -237,7 +251,7 @@ export async function buildStudentKpiViewFromCanonical(
   userId: string,
   includeHistoricalTrends: boolean,
 ): Promise<StudentKpiView> {
-  const timezone = await resolveTimezone(userId);
+  const timezone = await resolveTimezone();
 
   const { data: overall, error: overallError } = await supabaseServer
     .from("student_overall_kpi")

@@ -214,7 +214,7 @@ function getVertexProjectId(): string {
 
 function getVertexLocation(): string {
   const raw = (process.env.VERTEX_LOCATION ?? "").trim();
-  return raw.length > 0 ? raw : "us-central1";
+  return raw.length > 0 ? raw : "global";
 }
 
 /**

@@ -62,7 +62,6 @@ import {
   doubleCsrfProtection,
   generateToken,
 } from "./middleware/csrf-double-submit";
-import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
@@ -442,14 +441,6 @@ app.use(
   doubleCsrfProtection,
   studentResourceRoutes,
 );
-app.use(
-  "/api/calendar",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  calendarRouter,
-);
-
 // Score Projection endpoint (College Board weighted algorithm)
 app.get(
   "/api/progress/projection",

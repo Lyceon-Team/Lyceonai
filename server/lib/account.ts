@@ -435,6 +435,40 @@ export async function getPracticeDailyFreeQuota(): Promise<number> {
 }
 
 /**
+ * @spec [Doc-02B_V4 §41 quota_reset_timezone] | @implemented [2026-09-16]
+ * plain English: the platform-wide timezone every day-boundary computation uses. The
+ * quota reset already ran on it; the KPI week/recency windows now do too, because the
+ * per-student study profile that used to carry a timezone was deleted with the legacy
+ * calendar (owner ruling 2026-09-16: timezone is platform-wide, not per student). Same
+ * shape as getPracticeDailyFreeQuota above — read at request time, no cache, no default.
+ * expected outcome: a non-empty IANA zone string from practice_runtime_config.
+ * trade-offs: one extra single-row read per KPI view, accepted for the same reason as the
+ * quota read — the value must have exactly one home.
+ * edge cases: a missing or non-string row THROWS. A platform constant that is absent is a
+ * deploy defect; silently substituting a default would make every KPI window wrong while
+ * looking healthy.
+ */
+export async function getQuotaResetTimezone(): Promise<string> {
+  const { data, error } = await supabaseServer
+    .from("practice_runtime_config")
+    .select("value")
+    .eq("key", "quota_reset_timezone")
+    .single();
+  if (error || !data) {
+    throw new Error(
+      "practice_runtime_config.quota_reset_timezone is not configured",
+    );
+  }
+  const raw = (data as { value: unknown }).value;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new Error(
+      `practice_runtime_config.quota_reset_timezone is invalid: ${String(raw)}`,
+    );
+  }
+  return raw.trim();
+}
+
+/**
  * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181] @implemented 2026-08-09
  * Read entitlement row for a profile. Returns null when no row exists (= free tier).
  * Queries by profile_id (= auth.users.id). No auto-create — absence of a row
