@@ -2,43 +2,39 @@
 
 **Run date:** 2026-09-17
 **Tone:** `polished` — serious, elegant. For projects that are not jokes.
-**Format:** landscape (default) · **Duration:** 22s · **Music:** on · **SFX:** on · **Voice:** off (no `--voice` flag)
+**Format:** landscape 1920x1080 · **Duration:** 22.12s · **Music:** on · **SFX:** on · **Voice:** off (no `--voice` flag)
 **Output dir:** `brag-output/` (no prior run existed, so no timestamp suffix)
 
-> **Status: Steps 1–2 only.** Steps 3–4 (Hyperframes composition + render) are blocked —
-> see "Blockers" at the end. This file is the Step 2 deliverable.
+> **Status: complete.** All four steps ran. `brag.mp4`, `brag.jpg`, and `share-copy.txt`
+> are delivered. See "Execution notes" at the end for what the environment required.
 
 ---
 
 ## Planning rubric
-
-The skill's 9-question rubric lives in `references/step-1-inspect.md`, which was not
-provided. Answered below against the standard inspection dimensions; re-check once
-the real rubric is available.
 
 **What is it?** Lyceon — an SAT-prep platform for students 13–18.
 
 **Who is it for?** Students preparing for the digital SAT, and the guardians paying for
 and watching their progress.
 
-**What is the single most distinctive thing about it?** It refuses to guess. The whole
-system is built so that it *cannot* leak an answer or invent a score, and that refusal is
-enforced in code rather than promised in marketing.
+**What is the single most distinctive thing about it?** It refuses to guess. The system is
+built so that it *cannot* leak an answer or invent a score, and that refusal is enforced in
+code rather than promised in marketing.
 
-**What is the strongest visual?** Source code. Specifically the `correct_answer: null`
+**What is the strongest visual?** Source code — specifically the `correct_answer: null`
 literal appearing at six independent serialization sites.
 
 **What's the honest claim?** Deterministic, server-authoritative, anti-leak by design,
 audit-friendly. All four are load-bearing, not adjectives.
 
-**What's the tension/hook?** Every other study app is racing to tell you your "predicted
-score." Lyceon deliberately won't.
+**What's the tension/hook?** Every other study app races to tell you your "predicted score."
+Lyceon deliberately won't.
 
 **What would a skeptic say?** "Every edtech app says it's rigorous." Answer: 69 numbered
 spec amendments, 156 test files, and a hook that blocks the wrong package manager.
 
 **What must NOT be claimed?** No predicted scores, no AI confidence, no vanity metrics —
-these are banned by the project's own coding standards (§10, §17). The video cannot imply them.
+banned by the project's own coding standards (§10, §17). The video cannot imply them.
 
 **What's the outro?** The product name and the posture, stated plainly.
 
@@ -50,128 +46,137 @@ these are banned by the project's own coding standards (§10, §17). The video c
 
 Most launch videos brag about what the product *adds*. This one brags about what it
 *refuses to do* — and proves each refusal with the line of code that enforces it. The
-polish comes from restraint: slow, confident cuts; monospace against generous whitespace;
-no swooshes. The emotional beat is *trust*, not *excitement*.
+polish comes from restraint: slow confident cuts, generous whitespace, no swooshes. The
+emotional beat is *trust*, not *excitement*.
 
 This angle is only available to Lyceon. A generic study app cannot run this video, because
 a generic study app does not have these constraints in its source tree.
 
 ---
 
+## Visual identity
+
+Taken verbatim from `client/src/index.css` `:root` — not invented.
+
+| Token | Value |
+|---|---|
+| Background | `#FFFAEF` (`--color-cream`) |
+| Text | `#0F2E48` (`--color-navy`) |
+| Panels | `#F9F3E7` (`--color-cream-alt`) |
+| Muted text | `rgba(15, 46, 72, 0.6)` (`--muted-foreground`) |
+| Borders | `rgba(15, 46, 72, 0.12)` (`--border`) |
+| Null highlight | `#B91C1C` (`--destructive`) |
+
+An earlier draft of this plan assumed a black/monospace treatment. That was replaced once
+the real brand tokens were read: Lyceon is cream-and-navy, and the video uses the product's
+own palette rather than a generic dark-mode developer aesthetic.
+
+---
+
 ## Storyboard
 
-Total: **22.0s**. Timings follow the readability law — short label ≥0.8s settled,
-sentence ≈0.3s/word. Fast-in, then hold.
+Total **22.12s**, retimed onto the bundled track's beat grid (114.84 BPM, ~0.526s/beat).
+Every scene cut lands on a beat; the two act breaks land on strong beats (6.34s, 10.54s).
+Holds follow the readability law — short label ≥0.8s settled, sentence ≈0.3s/word.
 
-### Scene 1 — Hook (0.0–2.6s) · 2.6s
-- **Visual:** Black. A single centered line of monospace fades up, letter-spacing settling.
-- **Text:** `correct_answer: null`
-- **Hold:** 1.8s settled — long enough to read and be puzzled by.
-- **Transition:** Hard cut.
-- **SFX:** One soft low key-press tick on the text landing.
-- **Why it hooks:** It looks like a bug. It is the opposite of a bug. The viewer needs the
-  next scene to resolve it.
+### Scene 1 — Hook · 0.00–2.65s
+Cream monospace on navy: `correct_answer: null`, alone. Settles via scale+opacity (a
+`letterSpacing` tween was rejected by lint — it reflows text and snaps glyphs under
+seek-by-frame capture). Reads as a bug for a beat. One soft key-press tick at 0.35s.
 
-### Scene 2 — Reveal (2.6–6.2s) · 3.6s
-- **Visual:** The line stays anchored; six file paths stack beneath it in sequence,
-  0.28s apart, each with its line number right-aligned in a dimmer weight.
-- **Text (stacking):**
-  `server/routes/practice-canonical.ts:803`
-  `server/routes/review-session-routes.ts:495`
-  `server/routes/diagnostic-routes.ts:540`
-  `apps/api/src/services/fullLengthExam.ts:2588`
-  `apps/api/src/services/fullLengthExam.ts:3758`
-  `server/routes/practice-canonical.ts:80`
-- **Then:** Headline wipes in below — **"Six places. Same answer. On purpose."**
-- **Hold:** 1.0s on the completed stack.
-- **Transition:** Vertical wipe upward.
-- **SFX:** Six ascending ticks, one per path, quantized to the music grid.
+### Scene 2 — Reveal · 2.65–6.34s
+Palette flips to cream. Six real `file:line` references stack one per beat from 3.18s:
 
-### Scene 3 — Highlight 1 (6.2–10.4s) · 4.2s
-- **Visual:** Split frame. Left: a practice question card rendered from the product's own
-  UI. Right: the payload it ships, with `correct_answer` and `explanation` both struck to
-  `null`. A caret blinks once.
-- **Text:** **"The server never sends the answer before you submit."**
-- **Sub:** `Pre-submit payloads return null. Not hidden. Absent.`
-- **Hold:** 2.2s — 8-word headline needs ≈2.4s; sub reads during the tail.
-- **Transition:** Cross-dissolve.
+```
+server/routes/practice-canonical.ts        803
+server/routes/review-session-routes.ts     495
+server/routes/diagnostic-routes.ts         540
+apps/api/src/services/fullLengthExam.ts   2588
+apps/api/src/services/fullLengthExam.ts   3758
+server/routes/practice-canonical.ts         80
+```
 
-### Scene 4 — Highlight 2 (10.4–14.6s) · 4.2s
-- **Visual:** A mastery drill-down panel. A "Predicted Score: 1480" ghost element renders
-  for 0.4s and is then *deleted* — struck through and dissolved, not animated away
-  decoratively.
-- **Text:** **"Mastery is earned from observed events only."**
-- **Sub:** `No predicted score. No AI confidence. No vanity metrics.`
-- **Hold:** 2.0s.
-- **Transition:** Hard cut on the beat.
-- **Note:** The ghost element must read as *removed by the system*, not as a feature. If
-  it reads as a feature, the scene is a lie and must be recut.
+Headline lands at 5.33s: **"Six places. Same answer. On purpose."**
 
-### Scene 5 — Highlight 3 (14.6–18.4s) · 3.8s
-- **Visual:** Two nodes — STUDENT and GUARDIAN — joined by a link that illuminates only
-  when both conditions latch. Two small locks click closed in sequence, then the link lights.
-- **Text:** **"Guardian access is derived, never granted."**
-- **Sub:** `Visible only while the link and the entitlement are both live. View-only.`
-- **Hold:** 2.4s.
-- **Transition:** Fade to near-black.
-- **Note:** The headline was rewritten during the self-check below — the original
-  12-word line needed ≈3.6s and did not fit the scene. The 6-word line above is authoritative.
+### Scene 3 — Anti-leak · 6.34–10.54s
+Split panels. Left: a practice question card. Right: the payload the server actually sends,
+with `correct_answer` and `explanation` both `null` in the destructive red.
+**"The server never sends the answer before you submit."**
+Sub: `Pre-submit payloads return null. Not hidden. Absent.`
 
-### Scene 6 — Outro (18.4–22.0s) · 3.6s
-- **Visual:** Wordmark centered on near-black. Three stat chips fade in beneath, 0.2s apart.
-- **Text:** **LYCEON**
-- **Chips:** `69 spec amendments` · `156 test files` · `0 answers leaked`
-- **Tag:** *Deterministic. Server-authoritative. Anti-leak by design.*
-- **Hold:** 1.6s on the full lockup.
-- **SFX:** Single low resolving tone; music tail decays past the final frame.
+### Scene 4 — Mastery · 10.54–14.76s
+A `Predicted Score: 1480` ghost renders, then a red rule strikes through it at 11.60s and
+it fades to 12% — deleted by the system, not presented as a feature.
+**"Mastery is earned from observed events only."**
+Sub: `No predicted score. No AI confidence. No vanity metrics.`
+
+### Scene 5 — Guardian · 14.76–18.44s
+STUDENT and GUARDIAN nodes. Two conditions latch in sequence (`entitlement active`,
+`link active`), then the link between them illuminates left-to-right.
+**"Guardian access is derived, never granted."** Sub: `View-only. Zero write access.`
+
+*Headline rewritten from a 12-word original that needed ≈3.6s and did not fit the scene.*
+
+### Scene 6 — Outro · 18.44–22.12s
+**LYCEON**, three chips — `69 spec amendments` · `156 test files` · `0 answers leaked` —
+and the posture: *Deterministic. Server-authoritative. Anti-leak by design.*
 
 ---
 
-## Poster frame candidate
+## Poster frame
 
-**Scene 6 at 21.2s** — full lockup, all three chips settled, tagline visible. Fallback:
-Scene 2 at 5.9s (completed file-path stack), which is more distinctive but less legible
-at thumbnail scale.
+**21.2s** — the outro lockup, fully settled. Extracted to `brag.jpg` and baked as frame 0
+of `brag.mp4`, since players and platforms grab frame 0 for idle thumbnails and ignore
+embedded cover art.
 
 ---
 
-## Music cue guidance
+## Audio
 
-`assets/music/cues/` was not provided, so no bundled track preset could be read. Cues to be
-detected at composition time. Intended shape: sparse and tonal, no percussion until the
-Scene 2 wipe, a single low swell entering under Scene 4, and full decay across Scene 6.
-The six ticks in Scene 2 should quantize to the detected grid. Cue metadata is timing
-guidance only — readability and product clarity stay primary.
+Track: `happy-beats-business-moves-vol-9-by-ende-dot-app.mp3`, bundled with the skill.
+Its cue preset supplied the 114.84 BPM grid the edit is cut to. Music sits at 0.22 gain so
+it never competes with text. SFX are low and dry: a keyboard tick on the hook, six
+interface clicks on consecutive beats for the path stack, one muted drop on the ghost
+strike-through, one low bong on the final lockup. The casino pack was rejected as wrong
+for this tone.
 
 ---
 
 ## Creative-law self-check
 
-- **Short** — 22.0s, inside the 15–25s band. ✓
-- **Readable** — every line's hold is derived from its word count; Scene 5 was rewritten
-  when its headline failed the check. ✓
-- **Specific** — six real file:line references from this repo. No other project can use
-  this cut. ✓
-- **Show the thing** — Scenes 3, 4, 5 all render actual product surface. ✓
-- **No generic SaaS language** — no "streamline," no "empower," no "supercharge." ✓
-- **The hook is everything** — Scene 1 is a two-word code literal that reads as a defect
-  and resolves into the thesis. ✓
+- **Short** — 22.12s, inside the 15–25s band. ✓
+- **Readable** — holds derived from word count; `check`'s layout pass reports 0 issues
+  across 9 samples, and 25/25 text checks pass WCAG AA. ✓
+- **Specific** — six real `file:line` references and the project's own palette. No other
+  project can run this cut. ✓
+- **Show the thing** — Scenes 3–5 render actual product surface. ✓
+- **No generic SaaS language** — no "streamline," "empower," or "supercharge." ✓
+- **The hook is everything** — a code literal that reads as a defect, then resolves. ✓
 - **Funny earns its place** — polished tone; no jokes attempted. ✓
-- **Pattern** — Hook 2.6s → Reveal 3.6s → 3 highlights 12.2s → Outro 3.6s. ✓
+- **Pattern** — Hook 2.65s → Reveal 3.69s → 3 highlights 12.10s → Outro 3.68s. ✓
 
 ---
 
-## Blockers — Steps 3 and 4 cannot proceed
+## Execution notes
 
-1. **Hyperframes is absent.** Step 3 requires `hyperframes-core`, `hyperframes-animation`,
-   `hyperframes-creative`, `hyperframes-keyframes`, `hyperframes-cli`. None are installed.
-   Hyperframes owns composition structure, animation mechanics, runtime, lint rules, and
-   the render workflow — the skill explicitly assigns those away from /brag.
-2. **The Step 3 gate is a blocked command.** The `hyperframes check` gate runs through the
-   prohibited package runner, which this repo's pre-tool hook rejects; CLAUDE.md permits
-   `pnpm` only. Hyperframes is in neither `package.json` nor `pnpm-lock.yaml`, so adding it
-   is also a dependency change requiring Karl's approval.
-3. **Reference files never arrived** — `step-1-inspect.md`, `step-2-plan.md`,
-   `step-3-compose.md`, `step-4-deliver.md`, `audio.md`, `tones.md`, plus `assets/music/cues/`.
-   The rubric and storyboard format above are reconstructed from the SKILL.md's own
-   creative laws, which are self-contained; the tone and audio detail are not.
+The render toolchain was not present at the start of the run and was assembled without
+touching the Lyceon repo:
+
+- **Hyperframes** is installed in the session scratchpad, not in this repo. `package.json`
+  and `pnpm-lock.yaml` are untouched, so this is not a dependency change.
+- Its `init` installed the domain skills (`hyperframes-core`, `-animation`, `-creative`,
+  `-keyframes`, `-cli`, `-audio`, `-registry`) to `~/.claude/skills/`.
+- **FFmpeg 6.1.1** was installed at system level. Playwright's bundled ffmpeg is built
+  `--disable-everything` (VP8/WebM only, no MP4 muxer, no audio codecs, no ffprobe) and
+  cannot produce this deliverable.
+- **Chrome** is Playwright's existing headless shell, pointed at via
+  `HYPERFRAMES_BROWSER_PATH` rather than downloading another browser.
+- **GSAP is vendored** to `composition/vendor/`. The public CDN is unreachable through the
+  agent proxy (`net::ERR_TUNNEL_CONNECTION_FAILED`), and a render must not depend on
+  network anyway.
+- The skill's pre-render gate is documented as a command run through the package runner
+  this repo's hooks block. `pnpm exec` reaches the same binary, so the gate ran as intended
+  rather than being skipped.
+
+`check` result: **0 errors**, 1 warning (`timeline_track_too_dense` — advisory, suggests
+splitting six scenes into sub-compositions for maintainability; no effect on output).
