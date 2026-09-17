@@ -44,9 +44,30 @@ export const TUTOR_ANTI_LEAK_SUBSTITUTION =
   "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
 
 // ── Structural Prefixes (excluded from grid-in matching) ─────────────
+// "problem" removed — it is problem-domain language that appears in
+// assertion phrases ("this problem is 4"), not a structural label.
 
 export const STRUCTURAL_PREFIXES =
-  /(?:step|question|part|item|number|#|no\.?|problem)\s*/i;
+  /(?:step|question|part|item|number|#|no\.?)\s*$/i;
+
+// ── Assertion-Context Patterns (grid-in leak detection) ──────────────
+// Phrases that assert a value AS the answer. When these precede a number,
+// it is a leak regardless of other context. Tested against the 20-char
+// lookbehind window (same as STRUCTURAL_PREFIXES).
+
+export const ASSERTION_PATTERNS: ReadonlyArray<RegExp> = [
+  /(?:the\s+)?answer\s+is\s*$/i,
+  /(?:equals?|=)\s*$/i,
+  /(?:you\s+)?get\s*$/i,
+  /comes?\s+(?:out\s+)?to\s*$/i,
+  /(?:that\s+)?gives?\s*$/i,
+  /result\s+is\s*$/i,
+  /value\s+(?:is|of)\s*$/i,
+  /simplif(?:y|ies)\s+to\s*$/i,
+  /reduces?\s+to\s*$/i,
+  /solution\s+is\s*$/i,
+  /(?:it|that)(?:'s|\s+is)\s*$/i,
+];
 
 // ── Generic Phrase Patterns (null-correctAnswer fallback) ────────────
 
@@ -94,8 +115,17 @@ export function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
 }
 
 /**
- * Checks if a numeric value appears in text at a word boundary, excluding
- * structural prefixes like "step 3", "question 7", etc.
+ * Checks if a numeric value appears in text in a context that indicates
+ * answer disclosure. Two-pass logic:
+ *   1. Assertion-context: if a disclosure phrase ("the answer is", "you
+ *      get", "equals", etc.) directly precedes the value → leak.
+ *   2. Structural-prefix exclusion: if the value is directly preceded by
+ *      a structural label ("step", "question", "part", "#") → not a leak.
+ *   3. Bare occurrence: value at word boundary with no assertion and no
+ *      structural prefix → leak (fail-closed for grid-in).
+ *
+ * The structural prefix check uses $ anchor so only an IMMEDIATELY
+ * preceding prefix suppresses, not one buried earlier in the window.
  */
 export function hasGridInValueInText(text: string, value: string): boolean {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -103,10 +133,23 @@ export function hasGridInValueInText(text: string, value: string): boolean {
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const beforeMatch = text.slice(Math.max(0, match.index - 20), match.index);
-    if (!STRUCTURAL_PREFIXES.test(beforeMatch.trim())) {
-      return true;
+    const beforeMatch = text.slice(Math.max(0, match.index - 30), match.index);
+
+    // Pass 1: assertion context → always a leak, even if a structural
+    // prefix also appears in the window.
+    for (const ap of ASSERTION_PATTERNS) {
+      if (ap.test(beforeMatch)) {
+        return true;
+      }
     }
+
+    // Pass 2: structural prefix immediately before the value → not a leak.
+    if (STRUCTURAL_PREFIXES.test(beforeMatch)) {
+      continue;
+    }
+
+    // Pass 3: bare occurrence, no structural prefix → leak (fail-closed).
+    return true;
   }
   return false;
 }
