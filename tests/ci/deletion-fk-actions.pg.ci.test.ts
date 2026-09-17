@@ -1,7 +1,10 @@
 /**
  * Declarative FK delete actions — real PostgreSQL proof.
  *
- * @spec [Doc 03 §14.2 (LISA tables cascade on hard delete); Doc 05E §3 Rule 4 + §5
+ * @spec [Doc 03 §14.2 (LISA tables cascade on hard delete); Doc 03B §29.1 (the
+ *        per-table list, which is the only place `tutor_injection_log` is named for
+ *        cascade — §14.2's own matrix row gives injection logs a 180-day archival
+ *        trigger and does not mention account deletion); Doc 05E §3 Rule 4 + §5
  *        (severance of the identity link, grouping retained under actor_id);
  *        Doc 01 V8 §40.5; owner brief 2026-09-17 "Declarative FK Actions, Not an
  *        Enumerated Cascade" step 4] | @implemented [2026-09-17]
@@ -180,14 +183,19 @@ describe.skipIf(!PG_AVAILABLE)(
         pg.query(`DELETE FROM public.profiles WHERE id = $1`, [SUBJECT]),
       ).resolves.toBeDefined();
 
-      for (const t of TUTOR_TABLES) {
+      // CASCADE, not severance: the rows are GONE, not kept with a nulled column.
+      // Counting `WHERE student_id = SUBJECT` cannot tell those two apart — it reads
+      // zero either way — so every table is also asserted EMPTY. An earlier version of
+      // this test claimed injection-log rows survive with the link severed; that was
+      // false (the edge is `c`, proven by FK5) and the count-by-student assertion could
+      // not have caught it.
+      for (const t of [...TUTOR_TABLES, "tutor_injection_log"]) {
         expect(await countBy(t, "student_id", SUBJECT)).toBe(0);
+        const total = await pg.query(
+          `SELECT count(*)::int AS n FROM public.${t}`,
+        );
+        expect(total.rows[0].n).toBe(0);
       }
-      // injection_log.student_id is nullable and the row is kept by design elsewhere;
-      // what must be true is that the identity link is gone.
-      expect(await countBy("tutor_injection_log", "student_id", SUBJECT)).toBe(
-        0,
-      );
     });
 
     // ══ FK2 ═══════════════════════════════════════════════════════════════════
@@ -315,6 +323,48 @@ describe.skipIf(!PG_AVAILABLE)(
        ORDER BY src.relname`);
       expect(tutor.rowCount).toBe(7);
       for (const r of tutor.rows) expect(r.act).toBe("c");
+    });
+
+    // ══ FK6 — pins a gap, does not endorse it ═════════════════════════════════
+    it("FK6 a crisis-FLAGGED conversation with no case row is cascade-deleted — the SCL-094 gap, pinned", async () => {
+      // Doc 03 §14.2 gives crisis-flagged conversations their own retention rule:
+      //   "Crisis-flagged conversations | 180 days (extended for safety review)
+      //    | Manual purge by safety review queue owner after incident closure"
+      // A declarative CASCADE cannot be conditional, so it deletes them with everyone
+      // else. Where a `crisis_review_cases` row exists its RESTRICT blocks the delete
+      // one level up and the conversation survives — that is the case SCL-094 holds
+      // for a ruling. This test covers the OTHER case: flagged with NO case row.
+      //
+      // That state is reachable. `flagConversationForReview`
+      // (server/services/tutor-crisis.ts) writes the flag and creates the case in TWO
+      // statements, not one transaction, so a failure between them leaves a flagged
+      // conversation with nothing referencing it. Production held 2 flagged
+      // conversations and 2 cases with zero orphans when this was written
+      // (2026-09-17), so the gap is latent, not live.
+      //
+      // The assertion below records what the schema DOES, so the gap is visible on
+      // every CI run rather than discovered after an erasure. It reddens the moment a
+      // ruling changes the behaviour, which is the point.
+      await seedProfile(SUBJECT, "crisisflag@fk.test");
+      await pg.query(
+        `INSERT INTO public.tutor_conversations
+           (id, student_id, entry_mode, source_surface, status, crisis_flagged)
+         VALUES ($1, $2, 'general', 'dashboard', 'active', true)`,
+        [CONVERSATION, SUBJECT],
+      );
+      const orphan = await pg.query(
+        `SELECT count(*)::int AS n FROM public.crisis_review_cases WHERE conversation_id = $1`,
+        [CONVERSATION],
+      );
+      expect(orphan.rows[0].n).toBe(0); // no case row — this is the uncovered shape
+
+      await pg.query(`DELETE FROM public.profiles WHERE id = $1`, [SUBJECT]);
+
+      const left = await pg.query(
+        `SELECT count(*)::int AS n FROM public.tutor_conversations WHERE id = $1`,
+        [CONVERSATION],
+      );
+      expect(left.rows[0].n).toBe(0);
     });
   },
 );

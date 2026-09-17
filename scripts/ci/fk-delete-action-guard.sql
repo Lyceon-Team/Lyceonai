@@ -1,7 +1,8 @@
 -- ============================================================================
 -- FK DELETE-ACTION GUARD — every edge into an identity is classified
 -- ============================================================================
--- @spec [Doc 03 §14.2; Doc 05E §3 Rule 4 + §5; Doc 01 V8 §40.5; owner brief
+-- @spec [Doc 03 §14.2; Doc 03B §29.1 (the per-table cascade list at account hard
+--        delete); Doc 05E §3 Rule 4 + §5; Doc 01 V8 §40.5; owner brief
 --        2026-09-17 "Declarative FK Actions, Not an Enumerated Cascade" step 3]
 -- @implemented [2026-09-17]
 --

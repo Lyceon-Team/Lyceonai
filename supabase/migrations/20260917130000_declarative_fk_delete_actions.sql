@@ -1,7 +1,10 @@
 -- ===========================================================================
 -- DELETION — DECLARATIVE FK DELETE ACTIONS
 -- ===========================================================================
--- @spec [Doc 03 §14.2 (LISA tables cascade on hard delete); Doc 05E §3 Rule 4 +
+-- @spec [Doc 03 §14.2 (LISA tables cascade on hard delete); Doc 03B §29.1 (the
+--        per-table list at account hard delete — the only place `tutor_injection_log`
+--        is named for cascade; §14.2's matrix row gives injection logs a 180-day
+--        archival trigger and does not mention account deletion); Doc 05E §3 Rule 4 +
 --        §5 (one-way severance of the identity link, grouping retained under
 --        actor_id); Doc 01 V8 §40.5; owner brief 2026-09-17 "Declarative FK
 --        Actions, Not an Enumerated Cascade"] | @implemented [2026-09-17]
