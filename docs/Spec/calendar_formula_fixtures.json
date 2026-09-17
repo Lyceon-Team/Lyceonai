@@ -1,0 +1,3621 @@
+{
+ "generator_versions": {
+  "deterministic_v1": "2026-09-17",
+  "fallback_v1": "2026-09-17"
+ },
+ "mastery_levels": "0..4 per public.mastery_levels (L0 Foundations weakest .. L4 Strong); NULL unmeasured",
+ "mask_convention": "Postgres DOW, bit 0 = Sunday",
+ "domain_vocabulary": "The canonical eight College Board domain names in full, exactly as production stores them. No codes, no aliases, no mapping layer.",
+ "constants": {
+  "horizon_days": 14,
+  "review_share_max_bp": 5000,
+  "review_block_max": 30,
+  "exam_review_default_count": 20,
+  "weight_by_level": {
+   "0": 5,
+   "1": 4,
+   "2": 3,
+   "3": 2,
+   "4": 1
+  },
+  "null_level_weight": 3,
+  "post_exam_emphasis_days": 7,
+  "post_exam_multiplier": 2,
+  "min_domain_questions": 5,
+  "max_domains_per_block": 4,
+  "granularity": 5,
+  "full_length_every_n_occurrences": 2,
+  "full_length_min_gap_days": 7,
+  "final_exam_lead_days": 7,
+  "max_full_length_per_horizon": 2,
+  "taper_days": 3,
+  "taper_ratio_bp": 5000
+ },
+ "engine_planning": {
+  "practice_seconds_per_unit": 90,
+  "review_seconds_per_unit": 120
+ },
+ "canonical_domain_order": [
+  "Algebra",
+  "Advanced Math",
+  "Problem Solving and Data Analysis",
+  "Geometry and Trigonometry",
+  "Information and Ideas",
+  "Craft and Structure",
+  "Expression of Ideas",
+  "Standard English Conventions"
+ ],
+ "property_suite": {
+  "generator": "suite(N=3000, seed=1)",
+  "fallback": "suite_fallback(N=3000, seed=1)",
+  "snapshot_rule": "rand_snapshot(rng)"
+ },
+ "fixtures": {
+  "cold_start_MonFri_45m_SAT60d_FLSat": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-21",
+    "study_days_mask": 62,
+    "daily_minutes": 45,
+    "levels": {
+     "Algebra": null,
+     "Advanced Math": null,
+     "Problem Solving and Data Analysis": null,
+     "Geometry and Trigonometry": null,
+     "Information and Ideas": null,
+     "Craft and Structure": null,
+     "Expression of Ideas": null,
+     "Standard English Conventions": null
+    },
+    "target_exam_date": "2026-11-20",
+    "full_length_weekday": 6,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "lopsided_MonSat_60m_SAT45d_FLSat": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-07",
+    "study_days_mask": 126,
+    "daily_minutes": 60,
+    "levels": {
+     "Algebra": 0,
+     "Advanced Math": 0,
+     "Problem Solving and Data Analysis": 4,
+     "Geometry and Trigonometry": 4,
+     "Information and Ideas": 3,
+     "Craft and Structure": 3,
+     "Expression of Ideas": 4,
+     "Standard English Conventions": 1
+    },
+    "target_exam_date": "2026-11-05",
+    "full_length_weekday": 6,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {
+     "2026-09-21": 6,
+     "2026-09-22": 6,
+     "2026-09-23": 6,
+     "2026-09-24": 6,
+     "2026-09-25": 6,
+     "2026-09-26": 6,
+     "2026-09-27": 6,
+     "2026-09-28": 6,
+     "2026-09-29": 6,
+     "2026-09-30": 6,
+     "2026-10-01": 6,
+     "2026-10-02": 6,
+     "2026-10-03": 6,
+     "2026-10-04": 6
+    },
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Advanced Math": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Information and Ideas": 5,
+       "Craft and Structure": 5
+      },
+      15,
+      "weighted"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 10,
+       "Algebra": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      20,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Expression of Ideas": 5
+      },
+      10,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Information and Ideas": 5,
+       "Craft and Structure": 5
+      },
+      15,
+      "weighted"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Advanced Math": 10
+      },
+      20,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 10
+      },
+      10,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5,
+       "Craft and Structure": 5,
+       "Standard English Conventions": 5
+      },
+      15,
+      "weighted"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 5,
+       "Algebra": 5
+      },
+      10,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5,
+       "Craft and Structure": 5
+      },
+      10,
+      "weighted"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 10,
+       "Algebra": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 10,
+       "Information and Ideas": 5
+      },
+      15,
+      "weighted"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5,
+       "Geometry and Trigonometry": 5
+      },
+      20,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5,
+       "Standard English Conventions": 5
+      },
+      10,
+      "weighted"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "review",
+      null,
+      6,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Advanced Math": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Expression of Ideas": 5,
+       "Information and Ideas": 5
+      },
+      15,
+      "weighted"
+     ]
+    ],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "review",
+      null,
+      15,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "review",
+      null,
+      9,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-10-04": []
+   }
+  },
+  "review_backlog_MonFri_30m": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-14",
+    "study_days_mask": 62,
+    "daily_minutes": 30,
+    "levels": {
+     "Algebra": 1,
+     "Advanced Math": 2,
+     "Problem Solving and Data Analysis": 2,
+     "Geometry and Trigonometry": 1,
+     "Information and Ideas": 2,
+     "Craft and Structure": 2,
+     "Expression of Ideas": 1,
+     "Standard English Conventions": 2
+    },
+    "target_exam_date": null,
+    "full_length_weekday": null,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {
+     "2026-09-21": 40,
+     "2026-09-22": 10,
+     "2026-09-23": 10,
+     "2026-09-24": 10,
+     "2026-09-25": 10,
+     "2026-09-26": 10,
+     "2026-09-27": 10,
+     "2026-09-28": 10,
+     "2026-09-29": 10,
+     "2026-09-30": 10,
+     "2026-10-01": 10,
+     "2026-10-02": 10,
+     "2026-10-03": 10,
+     "2026-10-04": 10
+    },
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Advanced Math": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "review",
+      null,
+      7,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "exam_in_10d_daily_90m_postexam_ALG_SEC": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-08-24",
+    "study_days_mask": 127,
+    "daily_minutes": 90,
+    "levels": {
+     "Algebra": 1,
+     "Advanced Math": 2,
+     "Problem Solving and Data Analysis": 3,
+     "Geometry and Trigonometry": 2,
+     "Information and Ideas": 2,
+     "Craft and Structure": 1,
+     "Expression of Ideas": 3,
+     "Standard English Conventions": 1
+    },
+    "target_exam_date": "2026-10-01",
+    "full_length_weekday": 6,
+    "last_exam_date": "2026-09-19",
+    "days_since_exam": 2,
+    "exam_weak_domains": [
+     "Algebra",
+     "Standard English Conventions"
+    ],
+    "last_exam_missed_count": 31,
+    "last_exam_reviewed": false,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      31,
+      "exam_review"
+     ],
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Craft and Structure": 5
+      },
+      10,
+      "weighted"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "Algebra": 15,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      30,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5,
+       "Expression of Ideas": 5,
+       "Craft and Structure": 5
+      },
+      30,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "Algebra": 15,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      30,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5,
+       "Craft and Structure": 5,
+       "Expression of Ideas": 5
+      },
+      30,
+      "weighted"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Advanced Math": 10,
+       "Geometry and Trigonometry": 10
+      },
+      30,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 10,
+       "Craft and Structure": 10,
+       "Information and Ideas": 10
+      },
+      30,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "Algebra": 15,
+       "Problem Solving and Data Analysis": 5,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5
+      },
+      30,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 15,
+       "Craft and Structure": 5,
+       "Expression of Ideas": 5,
+       "Information and Ideas": 5
+      },
+      30,
+      "weighted"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "Algebra": 15,
+       "Problem Solving and Data Analysis": 5,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5
+      },
+      30,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 15,
+       "Craft and Structure": 5,
+       "Expression of Ideas": 5,
+       "Information and Ideas": 5
+      },
+      30,
+      "weighted"
+     ]
+    ],
+    "2026-09-27": [
+     [
+      "practice",
+      {
+       "Algebra": 15,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5
+      },
+      25,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 15,
+       "Craft and Structure": 10,
+       "Information and Ideas": 5,
+       "Expression of Ideas": 5
+      },
+      35,
+      "weighted"
+     ]
+    ],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 10,
+       "Craft and Structure": 5
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Geometry and Trigonometry": 5
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5,
+       "Information and Ideas": 5,
+       "Craft and Structure": 5
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "Algebra": 10,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 10,
+       "Expression of Ideas": 5
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      31,
+      "exam_review"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-27": [
+     [
+      "practice",
+      {
+       "M": 30
+      },
+      30,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 30
+      },
+      30,
+      "fallback"
+     ]
+    ],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "taper"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "taper"
+     ]
+    ],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "light_TueThu_15m_SAT90d": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-21",
+    "study_days_mask": 20,
+    "daily_minutes": 15,
+    "levels": {
+     "Algebra": 2,
+     "Advanced Math": 1,
+     "Problem Solving and Data Analysis": 2,
+     "Geometry and Trigonometry": 3,
+     "Information and Ideas": 2,
+     "Craft and Structure": 2,
+     "Expression of Ideas": 2,
+     "Standard English Conventions": null
+    },
+    "target_exam_date": "2026-12-20",
+    "full_length_weekday": null,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "Advanced Math": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "Algebra": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5
+      },
+      5,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "RW": 5
+      },
+      5,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 5
+      },
+      5,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "heavy_7days_180m_SAT30d_FLSun": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-08-31",
+    "study_days_mask": 127,
+    "daily_minutes": 180,
+    "levels": {
+     "Algebra": 3,
+     "Advanced Math": 2,
+     "Problem Solving and Data Analysis": 1,
+     "Geometry and Trigonometry": 2,
+     "Information and Ideas": 4,
+     "Craft and Structure": 2,
+     "Expression of Ideas": 2,
+     "Standard English Conventions": 3
+    },
+    "target_exam_date": "2026-10-21",
+    "full_length_weekday": 0,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 10
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 5
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Geometry and Trigonometry": 20,
+       "Advanced Math": 15,
+       "Algebra": 10
+      },
+      65,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 20,
+       "Craft and Structure": 15,
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5
+      },
+      55,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 15,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 15
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 15,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 20,
+       "Algebra": 10
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 20,
+       "Standard English Conventions": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 15,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 15
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 15,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 10
+      },
+      65,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5
+      },
+      55,
+      "weighted"
+     ]
+    ],
+    "2026-09-27": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Geometry and Trigonometry": 20,
+       "Advanced Math": 15,
+       "Algebra": 10
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 20,
+       "Craft and Structure": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 5
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 10
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 5
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Geometry and Trigonometry": 20,
+       "Advanced Math": 15,
+       "Algebra": 10
+      },
+      65,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 20,
+       "Craft and Structure": 15,
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5
+      },
+      55,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 15,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 15
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 15,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 20,
+       "Algebra": 10
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 20,
+       "Standard English Conventions": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 25,
+       "Advanced Math": 15,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 15
+      },
+      70,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 15,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 10,
+       "Information and Ideas": 10
+      },
+      50,
+      "weighted"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Advanced Math": 20,
+       "Geometry and Trigonometry": 15,
+       "Algebra": 10
+      },
+      65,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 20,
+       "Expression of Ideas": 15,
+       "Standard English Conventions": 15,
+       "Information and Ideas": 5
+      },
+      55,
+      "weighted"
+     ]
+    ],
+    "2026-10-04": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ]
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-27": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-10-04": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ]
+   }
+  },
+  "counterexample_all_weak_all_strong": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-21",
+    "study_days_mask": 62,
+    "daily_minutes": 30,
+    "levels": {
+     "Algebra": 0,
+     "Advanced Math": 0,
+     "Problem Solving and Data Analysis": 0,
+     "Geometry and Trigonometry": 0,
+     "Information and Ideas": 4,
+     "Craft and Structure": 4,
+     "Expression of Ideas": 4,
+     "Standard English Conventions": 4
+    },
+    "target_exam_date": null,
+    "full_length_weekday": null,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5,
+       "Advanced Math": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 5,
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5,
+       "Geometry and Trigonometry": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5,
+       "Advanced Math": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 5,
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Expression of Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5,
+       "Geometry and Trigonometry": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "Algebra": 5,
+       "Advanced Math": 5,
+       "Problem Solving and Data Analysis": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Information and Ideas": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "Geometry and Trigonometry": 5,
+       "Algebra": 5,
+       "Advanced Math": 5
+      },
+      15,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 5
+      },
+      5,
+      "weighted"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-25": [
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "one_day_a_week_180m_with_history": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-21",
+    "study_days_mask": 4,
+    "daily_minutes": 180,
+    "levels": {
+     "Algebra": 1,
+     "Advanced Math": 2,
+     "Problem Solving and Data Analysis": 3,
+     "Geometry and Trigonometry": 3,
+     "Information and Ideas": 1,
+     "Craft and Structure": 2,
+     "Expression of Ideas": 2,
+     "Standard English Conventions": 1
+    },
+    "target_exam_date": null,
+    "full_length_weekday": null,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {
+     "Algebra": 35,
+     "Information and Ideas": 30,
+     "Standard English Conventions": 30,
+     "Advanced Math": 25
+    }
+   },
+   "deterministic_v1": {
+    "2026-09-21": [],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "Problem Solving and Data Analysis": 20,
+       "Geometry and Trigonometry": 20,
+       "Advanced Math": 5
+      },
+      45,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Craft and Structure": 30,
+       "Expression of Ideas": 30,
+       "Information and Ideas": 10,
+       "Standard English Conventions": 5
+      },
+      75,
+      "weighted"
+     ]
+    ],
+    "2026-09-23": [],
+    "2026-09-24": [],
+    "2026-09-25": [],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "Algebra": 20,
+       "Advanced Math": 15,
+       "Problem Solving and Data Analysis": 10,
+       "Geometry and Trigonometry": 10
+      },
+      55,
+      "weighted"
+     ],
+     [
+      "practice",
+      {
+       "Standard English Conventions": 20,
+       "Information and Ideas": 15,
+       "Craft and Structure": 15,
+       "Expression of Ideas": 15
+      },
+      65,
+      "weighted"
+     ]
+    ],
+    "2026-09-30": [],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [],
+    "2026-09-22": [
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-23": [],
+    "2026-09-24": [],
+    "2026-09-25": [],
+    "2026-09-26": [],
+    "2026-09-27": [],
+    "2026-09-28": [],
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "RW": 60
+      },
+      60,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 60
+      },
+      60,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [],
+    "2026-10-04": []
+   }
+  },
+  "fallback_MonWedSat_60m_FLSat_after_exam": {
+   "input": {
+    "today": "2026-09-21",
+    "setup_date": "2026-09-14",
+    "study_days_mask": 74,
+    "daily_minutes": 60,
+    "levels": {
+     "Algebra": null,
+     "Advanced Math": null,
+     "Problem Solving and Data Analysis": null,
+     "Geometry and Trigonometry": null,
+     "Information and Ideas": null,
+     "Craft and Structure": null,
+     "Expression of Ideas": null,
+     "Standard English Conventions": null
+    },
+    "target_exam_date": "2026-11-05",
+    "full_length_weekday": 6,
+    "last_exam_date": "2026-09-19",
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": 27,
+    "last_exam_reviewed": false,
+    "review_due_by_date": {
+     "2026-09-21": 12
+    },
+    "recent_planned_by_domain": {}
+   },
+   "deterministic_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      27,
+      "exam_review"
+     ]
+    ],
+    "2026-09-22": [],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      12,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "cold_start"
+     ]
+    ],
+    "2026-09-24": [],
+    "2026-09-25": [],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "cold_start"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "cold_start"
+     ]
+    ],
+    "2026-09-29": [],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "cold_start"
+     ]
+    ],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-10-04": []
+   },
+   "fallback_v1": {
+    "2026-09-21": [
+     [
+      "review",
+      null,
+      27,
+      "exam_review"
+     ]
+    ],
+    "2026-09-22": [],
+    "2026-09-23": [
+     [
+      "review",
+      null,
+      12,
+      "review_due"
+     ],
+     [
+      "practice",
+      {
+       "RW": 10
+      },
+      10,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 10
+      },
+      10,
+      "fallback"
+     ]
+    ],
+    "2026-09-24": [],
+    "2026-09-25": [],
+    "2026-09-26": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-09-27": [],
+    "2026-09-28": [
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-09-29": [],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "M": 20
+      },
+      20,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 20
+      },
+      20,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [],
+    "2026-10-02": [],
+    "2026-10-03": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-10-04": []
+   }
+  }
+ }
+}
