@@ -271,11 +271,18 @@ hash is an HMAC under it, and the addresses they were derived from have been del
 cannot be re-hashed: rotating the secret silently voids every live do-not-contact record.
 Rotation therefore requires re-hashing the table from addresses that no longer exist, which is
 to say it is not available. The variable is registered in `infra/secret-class-inventory.yaml`
-with `absence_behavior: fail_closed`, is required in production by
-`apps/api/src/env.ts validateEnvironment()`, and is listed in `notificationEnvSchema` alongside
-the three Resend variables because the dispatcher cannot lawfully send without it.
-*Violated if:* the secret is absent in production and the server boots, or the inventory entry
-or the rotation note is missing.
+with `absence_behavior: fail_closed`, and is listed in `notificationEnvSchema` alongside the
+three Resend variables because the dispatcher cannot lawfully send without it.
+
+It is REPORTED at startup and ENFORCED at use, deliberately not fatal at boot. Making it fatal
+would add it to `scripts/ci/boot-env.manifest.json`, which is a promise that Vercel production
+already carries it; a deploy that landed before somebody set the variable would stop the bundle
+finishing module load and take down every route for a secret that gates nothing but outgoing
+product mail. That is the 2026-08-27 outage shape, and the owner ruled on this class once
+already when `GCP_SERVICE_ACCOUNT_JSON` was removed from the boot manifest for the same reason.
+Startup emits `ENV / suppression_secret_absent` at error level; the dispatcher defers.
+*Violated if:* the inventory entry or the rotation note is missing; the startup line is absent
+when the secret is; or the dispatcher sends while it is absent.
 
 **C11A.4** Who honours it. The **dispatcher** (`dispatchQueuedMessages` → `dispatchOne`) consults
 the list before every product/marketing send: `suppressed` records a failed attempt with
