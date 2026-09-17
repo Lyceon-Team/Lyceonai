@@ -78,7 +78,6 @@ export const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
   NOTIFICATION_FROM_EMAIL: process.env.NOTIFICATION_FROM_EMAIL,
-  SUPPRESSION_HMAC_SECRET: process.env.SUPPRESSION_HMAC_SECRET,
 };
 
 // OCR Configuration for Option C - SAT-aware OCR pipeline
@@ -169,35 +168,6 @@ export function validateEnvironment() {
       ] as const
     ).filter((k) => !notificationEnv.data[k]);
 
-    // @spec [owner brief 2026-09-17 §2.1 ("validated at startup, alongside the three
-    // notification variables"); contracts/notifications.contract.md §11A.3]
-    // | @implemented [2026-09-17]
-    //
-    // REPORTED AT STARTUP, ENFORCED AT USE — deliberately NOT fatal, and this is a departure
-    // from the brief's wording that the boot probe forced into the open.
-    //
-    // Making it fatal adds a tenth entry to scripts/ci/boot-env.manifest.json, which is a
-    // promise that Vercel production already carries it. It does not yet. A merge that lands
-    // before somebody sets the variable would stop the bundle finishing module load, which
-    // takes down `/auth/callback` and every `/api/*` route — practice, checkout, auth, all of
-    // it — for a secret that gates nothing but outgoing product mail. That is exactly the
-    // 2026-08-27 outage shape, and the owner has already ruled on this class once: the GCP
-    // credential was removed from the boot manifest for the same reason and now fails at USE
-    // with a startup report (server/lib/startup-guards.ts `credentials_absent`).
-    //
-    // So the enforcement lives where the harm is: `getSuppressionStatus` returns `unknown`
-    // without the secret and the dispatcher DEFERS every message rather than risk mailing
-    // somebody who asked never to be contacted again. Nothing is sent and nothing is lost.
-    // This line is the alertable signal that the state exists.
-    if (!notificationEnv.data.SUPPRESSION_HMAC_SECRET) {
-      logger.error(
-        "ENV",
-        "suppression_secret_absent",
-        "SUPPRESSION_HMAC_SECRET is not set: the do-not-contact list cannot be checked, so the dispatcher will defer every product message rather than send one",
-        undefined,
-        { enforcement: "deferred_at_use", fatal: false },
-      );
-    }
     if (missing.length === 0) {
       logger.info(
         "ENV",

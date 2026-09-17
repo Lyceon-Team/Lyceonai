@@ -37,10 +37,6 @@ import {
 import { logger } from "../../logger";
 import { renderEmail, siteUrlFromEnv } from "./templates";
 import { defaultEmailTransport, type EmailTransport } from "./transport";
-import {
-  getSuppressionStatus,
-  type SuppressionStatus,
-} from "../deletion-suppression";
 
 export type DispatchSummary = {
   selected: number;
@@ -55,11 +51,6 @@ export type DispatchOptions = {
   eventId?: string;
   limit?: number;
   transport?: EmailTransport;
-  /**
-   * The do-not-contact check (owner brief 2026-09-17 §2.3). Injectable for the same reason
-   * `transport` is: the suite drives the real dispatcher without a network or a live secret.
-   */
-  suppressionCheck?: (address: string) => Promise<SuppressionStatus>;
 };
 
 const DISPATCH_DEFAULT_LIMIT = 100;
@@ -96,7 +87,6 @@ async function recordAttempt(args: RecordArgs): Promise<boolean> {
 async function dispatchOne(
   row: NotificationMessageRow,
   transport: EmailTransport,
-  suppressionCheck: (address: string) => Promise<SuppressionStatus>,
 ): Promise<"sent" | "failed" | "deferred"> {
   const { data: eventRows, error: eventError } = await supabaseServer
     .from("notification_events")
@@ -164,37 +154,12 @@ async function dispatchOne(
     return "failed";
   }
 
-  // @spec [owner brief 2026-09-17 §2.3 "the notification dispatcher consults it before send"]
-  // | @implemented [2026-09-17]
-  // PRODUCT NOTIFICATIONS HONOUR THE DO-NOT-CONTACT LIST. This is the marketing-and-product
-  // lane; the deletion lifecycle's own transactional mail does not come through here and is
-  // deliberately not checked (server/lib/notifications/direct-sends.ts) — the completion notice
-  // is the message that confirms we did what they asked, and suppression is recorded moments
-  // before it is sent.
-  const suppression = await suppressionCheck(address);
-  if (suppression === "unknown") {
-    // Neither sent nor lost: the next pass asks again. See getSuppressionStatus for why.
-    logger.error(
-      "NOTIFICATIONS",
-      "dispatch_suppression_unknown",
-      "Could not determine do-not-contact status; message deferred, nothing sent",
-      { messageId: row.message_id },
-    );
-    return "deferred";
-  }
-  if (suppression === "suppressed") {
-    // Permanent, like "recipient has no email address": it will never become sendable, so it is
-    // recorded as a failed attempt through the existing path rather than retried forever.
-    await recordAttempt({
-      p_message_id: row.message_id,
-      p_ok: false,
-      p_provider_message_id: null,
-      p_error: "recipient address is on the do-not-contact list",
-      p_max_attempts: NOTIFICATION_EMAIL_MAX_ATTEMPTS,
-    });
-    return "failed";
-  }
-
+  // @spec [contracts/notifications.contract.md §11A; owner follow-up 2026-09-17 "Replace Bespoke
+  // Suppression With Resend's"] | @implemented [2026-09-17]
+  // NO DO-NOT-CONTACT CHECK HERE, AND THAT IS THE DESIGN. Resend enforces the team's suppression
+  // list itself, on every send, whether it arrives by API or by SMTP — so a suppressed address is
+  // skipped one layer below this one. A second check here would be a copy of the vendor's
+  // enforcement that can only disagree with it.
   const rendered = renderEmail(eventRow.event_type, eventRow.payload, {
     recipientIsSubject:
       row.recipient_profile_id === eventRow.subject_profile_id,
@@ -251,8 +216,6 @@ export async function dispatchQueuedMessages(
     selectFailed: false,
   };
   const transport = options.transport ?? defaultEmailTransport();
-  const suppressionCheck =
-    options.suppressionCheck ?? ((address: string) => getSuppressionStatus(address));
   const limit = options.limit ?? DISPATCH_DEFAULT_LIMIT;
 
   let query = supabaseServer
@@ -297,7 +260,7 @@ export async function dispatchQueuedMessages(
 
   summary.selected = rows.data.length;
   for (const row of rows.data) {
-    const outcome = await dispatchOne(row, transport, suppressionCheck);
+    const outcome = await dispatchOne(row, transport);
     summary[outcome] += 1;
   }
 

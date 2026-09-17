@@ -24,9 +24,10 @@ SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 EXEC="server/lib/account-deletion-execute.ts"
 MIG="supabase/migrations/20260917000000_deletion_evidence_bundle.sql"
 MIG3="supabase/migrations/20260917100000_deletion_audit_actions.sql"
-MIG2="supabase/migrations/20260917110000_deletion_suppression.sql"
+MIG2="supabase/migrations/20260917110000_deletion_suppression_outcome.sql"
 MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
 DISPATCH="server/lib/notifications/dispatch.ts"
+ROUTES="server/routes/account-routes.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -35,6 +36,7 @@ cp "$MIG3" "$BACKUP/mig3.sql"
 cp "$MIG2" "$BACKUP/mig2.sql"
 cp "$MIG5" "$BACKUP/mig5.sql"
 cp "$DISPATCH" "$BACKUP/dispatch.ts"
+cp "$ROUTES" "$BACKUP/routes.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -45,6 +47,7 @@ restore() {
   cp "$BACKUP/mig2.sql" "$MIG2"
   cp "$BACKUP/mig5.sql" "$MIG5"
   cp "$BACKUP/dispatch.ts" "$DISPATCH"
+  cp "$BACKUP/routes.ts" "$ROUTES"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -169,13 +172,19 @@ if printf '%s\n' "$base2" | grep -q "^failed"; then
 fi
 echo "  ok   phases baseline green ($(printf '%s\n' "$base2" | grep -c '^passed') tests)"
 
-echo "==> (M14) the dispatcher stops honouring the do-not-contact list"
-plant M14 "$DISPATCH" 's.replace("suppression === \"suppressed\"", "suppression === \"never-matches\"")'
-expect_red M14 "P2.2 a suppressed address"
+# THE ONE THAT MATTERS. The brief's §3: "Ordering is the whole design." A build that suppresses
+# before the completion notice passes every other test in this file, and loses the one message
+# confirming the deletion to the person who asked for it.
+echo "==> (M14) the suppression call happens BEFORE the completion notice"
+plant M14 "$EXEC" 's.replace("""        const completedAt = new Date().toISOString();
+        try {""", """        const completedAt = new Date().toISOString();
+        if (pending.log_id !== null) { await applyRequestedSuppression(admin, pending.log_id, recipientEmail, requestId); }
+        try {""", 1)'
+expect_red M14 "P2.1 the completion notice reaches the provider BEFORE"
 
-echo "==> (M15) a suppression is recorded for somebody who never asked for one"
-plant M15 "$MIG2" 's.replace("  IF NOT v_requested THEN", "  IF false THEN", 1)'
-expect_red M15 "P2.1 suppression is recorded only when asked"
+echo "==> (M15) the address is suppressed although suppression_requested is false"
+plant M15 "$EXEC" 's.replace("  if (!requested) return;", "  if (false) return;", 1)'
+expect_red M15 "P2.2 the suppression call is made only when"
 
 echo "==> (M16) the audit_logs guard silently swallows the mutation instead of refusing"
 plant M16 "$MIG3" 's.replace("  RAISE EXCEPTION \x27Table % is append-only; UPDATE and DELETE are not permitted\x27, TG_TABLE_NAME;", "  RETURN NULL;", 1)'
@@ -193,9 +202,14 @@ echo "==> (M19) the evidence window is read as days instead of months"
 plant M19 "$MIG5" 's.replace("make_interval(months => public.deletion_evidence_retention_months())", "make_interval(days => public.deletion_evidence_retention_months())", 1)'
 expect_red M19 "P5.2 a row inside the window"
 
-echo "==> (M20) the sweep strips suppression records too"
-plant M20 "$MIG5" 's.replace("  -- public.deletion_suppression is deliberately absent from this function. See the header.", "  DELETE FROM public.deletion_suppression WHERE log_id = ANY (v_ids);", 1)'
-expect_red M20 "P5.3 a suppression record older than the window"
+echo "==> (M20) a failed suppression is not recorded, so nothing is left to retry"
+plant M20 "$EXEC" 's.replace("""  await recordSuppressionOutcome(admin, logId, "failed_manual", requestId);
+}
+
+/** The one writer""", """}
+
+/** The one writer""", 1)'
+expect_red M20 "P2.3 a suppression failure records"
 
 echo "==> (M21) a sweep run that changed nothing stops saying so"
 plant M21 "$EXEC" 's.replace("\"evidence_sweep_complete\",", "\"evidence_sweep_quiet\",", 1)'
@@ -205,7 +219,19 @@ echo "==> (M22) the audit purge hardcodes 365 instead of reading the configured 
 plant M22 "$MIG3" 's.replace("  RETURN v_days;", "  RETURN 365;", 1)'
 expect_red M22 "P5.5 the audit purge runs only through"
 
-echo "==> (23) restored: BOTH suites must be green again"
+echo "==> (M23) the retry sweep never runs"
+plant M23 "$EXEC" 's.replace("  await retryFailedSuppressions(admin, requestId);", "", 1)'
+expect_red M23 "P2.4 the retry sweep re-attempts"
+
+echo "==> (M24) the retry sweep re-suppresses an address that was already applied"
+plant M24 "$EXEC" 's.replace("""    if (row.suppression_status === "applied") return false;""", "", 1)'
+expect_red M24 "P2.4 the retry sweep re-attempts"
+
+echo "==> (M25) clearing a suppression stops recording the re-consent"
+plant M25 "$ROUTES" 's.replace("      action: EMAIL_RECONSENT_ACTION,", "      action: \"unrecorded\",", 1)'
+expect_red M25 "P2.5 clearing from account settings"
+
+echo "==> (26) restored: BOTH suites must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phases suite not green after restore"; fails=1; else echo "  ok   phases suite green after restore"; fi
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"

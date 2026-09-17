@@ -2557,20 +2557,6 @@ $$;
 
 
 --
--- Name: is_address_suppressed(text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.is_address_suppressed(p_address_hash text) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.deletion_suppression s WHERE s.address_hash = p_address_hash
-  );
-$$;
-
-
---
 -- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3302,43 +3288,29 @@ $$;
 
 
 --
--- Name: record_deletion_suppression(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: record_deletion_suppression_outcome(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.record_deletion_suppression(p_log_id uuid, p_address_hash text) RETURNS jsonb
+CREATE FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_requested boolean;
-  v_rows      bigint;
+  v_rows integer;
 BEGIN
-  IF p_address_hash IS NULL OR btrim(p_address_hash) = '' THEN
-    RAISE EXCEPTION 'record_deletion_suppression: address hash is required' USING ERRCODE = '22023';
-  END IF;
-
-  SELECT l.suppression_requested INTO v_requested
-    FROM public.deletion_request_log l
-   WHERE l.log_id = p_log_id;
-
-  IF v_requested IS NULL THEN
-    RAISE EXCEPTION 'record_deletion_suppression: no deletion request log row %', p_log_id
+  IF p_status NOT IN ('applied', 'failed_manual') THEN
+    RAISE EXCEPTION 'record_deletion_suppression_outcome: % is not a suppression status', p_status
       USING ERRCODE = '22023';
   END IF;
 
-  -- `requested` is returned, not just acted on: it is what the caller gates the PROVIDER call
-  -- on. Suppressing an address at the provider for somebody who never asked would block their
-  -- mail for ever, including after they come back and register again.
-  IF NOT v_requested THEN
-    RETURN jsonb_build_object('recorded', 0, 'requested', false);
-  END IF;
+  UPDATE public.deletion_request_log
+     SET suppression_status = p_status
+   WHERE log_id = p_log_id
+     AND suppression_requested = true
+     AND suppression_status IS DISTINCT FROM 'applied';
 
-  INSERT INTO public.deletion_suppression (log_id, address_hash)
-  VALUES (p_log_id, p_address_hash)
-  ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-
-  RETURN jsonb_build_object('recorded', v_rows, 'requested', true);
+  RETURN v_rows;
 END;
 $$;
 
@@ -4620,7 +4592,8 @@ BEGIN
      AND (ip_address IS NOT NULL OR user_agent IS NOT NULL);
   GET DIAGNOSTICS v_consent = ROW_COUNT;
 
-  -- public.deletion_suppression is deliberately absent from this function. See the header.
+  -- Nothing here touches the do-not-contact promise: it is an entry on Resend's suppression
+  -- list, not a row in this database. See the header.
 
   RETURN QUERY SELECT v_logs, v_consent, v_cutoff;
 END;
@@ -5288,8 +5261,10 @@ CREATE TABLE public.deletion_request_log (
     status text NOT NULL,
     denial_basis text,
     suppression_requested boolean DEFAULT false NOT NULL,
+    suppression_status text,
     CONSTRAINT deletion_request_log_request_channel_check CHECK ((request_channel = 'self_service_web'::text)),
-    CONSTRAINT deletion_request_log_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'executing'::text, 'completed'::text, 'cancelled'::text, 'denied'::text])))
+    CONSTRAINT deletion_request_log_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'executing'::text, 'completed'::text, 'cancelled'::text, 'denied'::text]))),
+    CONSTRAINT deletion_request_log_suppression_status_check CHECK (((suppression_status IS NULL) OR (suppression_status = ANY (ARRAY['applied'::text, 'failed_manual'::text]))))
 );
 
 
@@ -5322,27 +5297,10 @@ COMMENT ON COLUMN public.deletion_request_log.requester_email IS 'Who asked; equ
 
 
 --
--- Name: deletion_suppression; Type: TABLE; Schema: public; Owner: -
+-- Name: COLUMN deletion_request_log.suppression_status; Type: COMMENT; Schema: public; Owner: -
 --
 
-CREATE TABLE public.deletion_suppression (
-    log_id uuid NOT NULL,
-    address_hash text NOT NULL
-);
-
-
---
--- Name: TABLE deletion_suppression; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.deletion_suppression IS 'Do-not-contact records for deleted accounts (owner brief 2026-09-17 §2). One row per deletion request that asked for suppression. Evidence-bundle constraints: no timestamp column, no identity-graph key, RLS on with zero policies. EXEMPT from the 24-month evidence strip — the record is what makes the promise enforceable, so it lives as long as the suppression stands.';
-
-
---
--- Name: COLUMN deletion_suppression.address_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.deletion_suppression.address_hash IS 'HMAC-SHA256 of the lowercased, trimmed address under SUPPRESSION_HMAC_SECRET, computed in the application. The secret is never stored in the database, so this table alone cannot test a candidate address.';
+COMMENT ON COLUMN public.deletion_request_log.suppression_status IS 'Outcome of the Resend suppression call for a request whose suppression_requested is true. NULL = not attempted. applied = Resend accepted it. failed_manual = the call failed and the executor''s retry sweep re-attempts it each pass, as it does a row left NULL. Stays applied after a subject re-consents and the entry is removed at Resend, so the sweep cannot silently re-suppress them.';
 
 
 --
@@ -7251,22 +7209,6 @@ ALTER TABLE ONLY public.deletion_request_log
 
 
 --
--- Name: deletion_suppression deletion_suppression_address_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.deletion_suppression
-    ADD CONSTRAINT deletion_suppression_address_hash_key UNIQUE (address_hash);
-
-
---
--- Name: deletion_suppression deletion_suppression_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.deletion_suppression
-    ADD CONSTRAINT deletion_suppression_pkey PRIMARY KEY (log_id);
-
-
---
 -- Name: difficulties difficulties_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9135,14 +9077,6 @@ ALTER TABLE ONLY public.deletion_consent_evidence
 
 
 --
--- Name: deletion_suppression deletion_suppression_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.deletion_suppression
-    ADD CONSTRAINT deletion_suppression_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
-
-
---
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_section_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9915,12 +9849,6 @@ ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.deletion_request_log ENABLE ROW LEVEL SECURITY;
-
---
--- Name: deletion_suppression; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.deletion_suppression ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11272,14 +11200,6 @@ GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
--- Name: FUNCTION is_address_suppressed(p_address_hash text); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.is_address_suppressed(p_address_hash text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.is_address_suppressed(p_address_hash text) TO service_role;
-
-
---
 -- Name: FUNCTION lookup_mastery_level(p_score numeric, p_constants jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -11461,11 +11381,11 @@ GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
 
 
 --
--- Name: FUNCTION record_deletion_suppression(p_log_id uuid, p_address_hash text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION record_deletion_suppression_outcome(p_log_id uuid, p_status text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.record_deletion_suppression(p_log_id uuid, p_address_hash text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.record_deletion_suppression(p_log_id uuid, p_address_hash text) TO service_role;
+REVOKE ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) TO service_role;
 
 
 --
@@ -12086,13 +12006,6 @@ GRANT SELECT ON TABLE public.deletion_consent_evidence TO service_role;
 --
 
 GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
-
-
---
--- Name: TABLE deletion_suppression; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.deletion_suppression TO service_role;
 
 
 --

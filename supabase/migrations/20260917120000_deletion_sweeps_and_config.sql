@@ -26,11 +26,13 @@
 -- is the honest representation of an address we have deliberately destroyed. A sentinel string
 -- would be a second way to say NULL, and a reader would have to know it.
 --
--- WHY SUPPRESSION IS EXEMPT. `deletion_suppression` holds a keyed hash and nothing else, and it
--- is the mechanism that keeps a promise which has no end date. Stripping it at 24 months would
--- quietly start mailing people who asked never to be contacted again. It is therefore not
--- touched by this sweep, and the PG suite asserts that a suppression record older than the
--- window survives it.
+-- WHY THE DO-NOT-CONTACT PROMISE OUTLIVES THIS SWEEP WITHOUT AN EXEMPTION. The promise is kept
+-- by an entry on Resend's team suppression list, which this function cannot reach and no
+-- retention window here can expire. There is nothing to exempt: a promise with no end date is
+-- not stored in a table that gets stripped at 24 months. What this sweep DOES end is our ability
+-- to RETRY a suppression that never landed — `subject_email` is the only address a retry has, so
+-- a row still `failed_manual` after 24 months of daily attempts stops being retryable. That is
+-- the correct trade: two years of failures is a standing page, not a race to be won later.
 --
 -- WHAT DRIVES THE CLOCK. `responded_on` — the date the request reached a terminal outcome — and
 -- only for rows that HAVE one. A row still `pending` or `executing` has not finished, so its
@@ -164,7 +166,8 @@ BEGIN
      AND (ip_address IS NOT NULL OR user_agent IS NOT NULL);
   GET DIAGNOSTICS v_consent = ROW_COUNT;
 
-  -- public.deletion_suppression is deliberately absent from this function. See the header.
+  -- Nothing here touches the do-not-contact promise: it is an entry on Resend's suppression
+  -- list, not a row in this database. See the header.
 
   RETURN QUERY SELECT v_logs, v_consent, v_cutoff;
 END;

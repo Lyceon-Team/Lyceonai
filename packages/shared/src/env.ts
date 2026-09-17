@@ -64,30 +64,17 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
-  // Do-not-contact suppression (owner brief 2026-09-17 §2.1). Read at:
-  //   SUPPRESSION_HMAC_SECRET  server/lib/deletion-suppression.ts
-  // It belongs to the notification gate below rather than a gate of its own: the dispatcher
-  // cannot lawfully send without it, so an environment that sends mail must carry it. Optional
-  // in the shape for the same reason as the keys above; production presence is enforced at
-  // startup by apps/api/src/env.ts validateEnvironment().
-  //
-  // NOT ROTATABLE WHILE SUPPRESSIONS STAND. Stored hashes are HMACs under this secret and the
-  // addresses they came from have been deleted, so rotating it silently voids every live
-  // do-not-contact record. See server/lib/deletion-suppression.ts and
-  // supabase/migrations/20260917110000_deletion_suppression.sql.
-  SUPPRESSION_HMAC_SECRET: z.string().min(1).optional(),
 });
 
 /**
  * The notification lane's variables, as one schema so the startup validator and the transport
- * parse the same shape. Four since 2026-09-17: the dispatcher must be able to check the
- * do-not-contact list before it sends, so the suppression secret gates sending too.
+ * parse the same shape. Three of them: the suppression list lives at Resend and is reached with
+ * RESEND_API_KEY, so honouring a do-not-contact request needs no secret of its own.
  */
 export const notificationEnvSchema = envSchema.pick({
   RESEND_API_KEY: true,
   RESEND_WEBHOOK_SECRET: true,
   NOTIFICATION_FROM_EMAIL: true,
-  SUPPRESSION_HMAC_SECRET: true,
 });
 export type NotificationEnv = z.infer<typeof notificationEnvSchema>;
 

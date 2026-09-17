@@ -4,15 +4,17 @@
  * @spec [Doc-01_V8 §5 (the three deletion actions), §5.1 (ids NULL at hard delete; purge after
  *        anonymization_retention_days; PII redaction), App A.5 (grace_period_days,
  *        anonymization_retention_days, scheduled_deletion_job_cron), App E (audit_logs is
- *        append-only); SCL-085 / SCL-087 (PROPOSED); ICO suppression-list guidance;
- *        owner brief 2026-09-17 "Deletion Vertical: Phases 2, 3, 5" §2.4, §3.2, §5.5]
+ *        append-only); SCL-085 / SCL-087 (PROPOSED); SCL-090 (PROPOSED as ruled 2026-09-17);
+ *        owner brief 2026-09-17 "Deletion Vertical: Phases 2, 3, 5" §3.2, §5.5 and the follow-up
+ *        "Replace Bespoke Suppression With Resend's" §5]
  *        | @implemented [2026-09-17]
  *
- * plain English: drives the REAL RPCs, the REAL executor and the REAL notification dispatcher
+ * plain English: drives the REAL RPCs, the REAL executor and the REAL account-settings routes
  * against a throwaway Postgres built from `supabase/migrations`. Substituted: the database
  * transport (supabase-shaped clients → SQL via tests/helpers/pg-supabase), the Stripe client
- * (never reached), the network (a fake fetch that records provider calls), and the logger
- * (captured, so a sweep that changed nothing can be proven to have said so).
+ * (never reached), the network (a fake Resend that routes by method and path AND enforces its own
+ * suppression list, because the real one does), and the logger (captured, so a sweep that changed
+ * nothing can be proven to have said so, and a page can be counted).
  */
 import {
   afterAll,
@@ -26,6 +28,8 @@ import {
 } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import express from "express";
+import httpRequest from "supertest";
 import { Client } from "pg";
 import {
   bootstrapPgDatabase,
@@ -34,12 +38,10 @@ import {
 } from "../helpers/pg-supabase";
 
 const DB_NAME = "deletion_phases_235_ci";
-const SECRET = "test-suppression-secret-do-not-use-in-prod";
 const FROM_EMAIL = "notifications@send.example.test";
 
 const SUBJECT = { id: "a0000000-0000-4000-8000-000000000001", email: "subject@phases.test" };
 const OTHER = { id: "b0000000-0000-4000-8000-000000000002", email: "other@phases.test" };
-const GUARDIAN = { id: "c0000000-0000-4000-8000-000000000003", email: "guardian@phases.test" };
 
 let pg: Client;
 
@@ -62,17 +64,92 @@ function lines(component: string, event: string): LogLine[] {
   return logged.filter((l) => l.component === component && l.event === event);
 }
 
-// ── Provider calls (Resend) ─────────────────────────────────────────────────
-const provider = { calls: [] as Array<{ url: string; body: unknown }> };
-async function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  provider.calls.push({
-    url: typeof input === "string" ? input : input.toString(),
-    body: JSON.parse(String(init?.body ?? "{}")),
-  });
-  return new Response(JSON.stringify({ id: "re_1" }), {
-    status: 200,
+// ── Fake Resend ─────────────────────────────────────────────────────────────
+// Routes by method and path exactly as the real API does (verified against the official SDK,
+// resend@6.28.1: POST /suppressions, GET|DELETE /suppressions/{idOrEmail}, POST /emails), and —
+// the part that matters for P2.1 — it ENFORCES its own suppression list on sends, because the
+// real one does, on every send the team makes, REST and SMTP alike. A build that suppressed
+// before sending the completion notice would therefore lose the notice here too, not merely
+// reorder two recorded calls.
+//
+// The exact status Resend returns for a send to a suppressed address is not something this suite
+// has observed, so the fake does not assert one: it records `skippedByProvider` and returns a
+// 2xx. The flag is this harness's way of saying "the provider would not have delivered it".
+type ProviderCall = {
+  method: string;
+  path: string;
+  body: unknown;
+  skippedByProvider?: boolean;
+};
+const provider = {
+  calls: [] as ProviderCall[],
+  suppressed: new Set<string>(),
+  origin: "manual" as "manual" | "bounce" | "complaint",
+  failAddSuppression: false,
+  failRemoveSuppression: false,
+};
+function providerJson(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { "Content-Type": "application/json" },
   });
+}
+async function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const url = typeof input === "string" ? input : input.toString();
+  const path = url.replace(/^https?:\/\/[^/]+/, "");
+  const method = (init?.method ?? "GET").toUpperCase();
+  const body: unknown = init?.body ? JSON.parse(String(init.body)) : null;
+
+  if (method === "POST" && path === "/emails") {
+    const to = (body as { to?: string[] } | null)?.to ?? [];
+    const skipped = to.some((address) => provider.suppressed.has(address));
+    provider.calls.push({ method, path, body, skippedByProvider: skipped });
+    return providerJson({ id: "re_1" });
+  }
+
+  if (method === "POST" && path === "/suppressions") {
+    provider.calls.push({ method, path, body });
+    if (provider.failAddSuppression) {
+      return providerJson({ message: "provider is down" }, 500);
+    }
+    provider.suppressed.add(String((body as { email: string }).email));
+    return providerJson({ object: "suppression", id: "sup_1" });
+  }
+
+  const entry = /^\/suppressions\/([^/?]+)$/.exec(path);
+  if (entry) {
+    const address = decodeURIComponent(String(entry[1]));
+    provider.calls.push({ method, path, body });
+    if (method === "GET") {
+      if (!provider.suppressed.has(address)) {
+        return providerJson({ message: "Suppression not found" }, 404);
+      }
+      return providerJson({
+        object: "suppression",
+        id: "sup_1",
+        email: address,
+        origin: provider.origin,
+        source_id: null,
+        created_at: new Date().toISOString(),
+      });
+    }
+    if (method === "DELETE") {
+      if (provider.failRemoveSuppression) {
+        return providerJson({ message: "provider is down" }, 500);
+      }
+      const had = provider.suppressed.delete(address);
+      return providerJson({ object: "suppression", id: "sup_1", deleted: had });
+    }
+  }
+
+  provider.calls.push({ method, path, body });
+  return providerJson({ message: `unexpected ${method} ${path}` }, 500);
+}
+/** POST /emails and POST /suppressions in the order they actually reached the provider. */
+function sendAndSuppressSequence(): string[] {
+  return provider.calls
+    .filter((c) => c.method === "POST" && (c.path === "/emails" || c.path === "/suppressions"))
+    .map((c) => c.path);
 }
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
@@ -82,17 +159,57 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, getSupabaseAdmin: () => makePgSupabase(pg) };
+  return {
+    ...actual,
+    getSupabaseAdmin: () => makePgSupabase(pg),
+    // The suite installs the session itself (see accountApp); this guard only has to not reject.
+    requireSupabaseAuth: (
+      _req: unknown,
+      _res: unknown,
+      next: () => void,
+    ): void => next(),
+  };
 });
 vi.mock("../../server/lib/stripe/client", () => ({
   getStripeClient: () => {
     throw new Error("getStripeClient must not be called in this suite");
   },
 }));
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
+  doubleCsrfProtection: (
+    _req: unknown,
+    _res: unknown,
+    next: () => void,
+  ): void => next(),
+  generateToken: () => "test-csrf-token",
+}));
 
-function admin() {
-  return makePgSupabase(pg) as never;
+// The account router under test, with the session it would have in production. `requireSupabaseAuth`
+// is replaced by a middleware that installs the SERVER-resolved user, because that is the only
+// thing the routes are allowed to trust — the address is never read from the request.
+let sessionUser: { id: string; email: string } | null = null;
+async function accountApp(): Promise<express.Express> {
+  const { default: accountRoutes } = await import("../../server/routes/account-routes");
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    if (sessionUser) {
+      (req as express.Request & { user?: unknown }).user = {
+        id: sessionUser.id,
+        email: sessionUser.email,
+        role: "student",
+        isAdmin: false,
+        isGuardian: false,
+        display_name: "Someone",
+        actor_id: sessionUser.id,
+      };
+    }
+    next();
+  });
+  app.use("/api/account", accountRoutes);
+  return app;
 }
+
 function storageStub() {
   return {
     listBuckets: async () => ({ data: [], error: null }),
@@ -153,16 +270,9 @@ async function auditRows(action?: string): Promise<Array<Record<string, unknown>
   );
   return r.rows as Array<Record<string, unknown>>;
 }
-async function hashOf(address: string): Promise<string> {
-  const { hashSuppressionAddress } = await import("../../server/lib/deletion-suppression");
-  const h = hashSuppressionAddress(address, { SUPPRESSION_HMAC_SECRET: SECRET } as NodeJS.ProcessEnv);
-  if (h === null) throw new Error("hash unexpectedly null");
-  return h;
-}
 
 describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => {
   beforeAll(async () => {
-    process.env.SUPPRESSION_HMAC_SECRET = SECRET;
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.NOTIFICATION_FROM_EMAIL = FROM_EMAIL;
     process.env.PUBLIC_SITE_URL = "https://app.example.test";
@@ -176,7 +286,11 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
   beforeEach(async () => {
     logged.length = 0;
     provider.calls.length = 0;
-    process.env.SUPPRESSION_HMAC_SECRET = SECRET;
+    provider.suppressed.clear();
+    provider.origin = "manual";
+    provider.failAddSuppression = false;
+    provider.failRemoveSuppression = false;
+    sessionUser = null;
     await pg.query(`DELETE FROM public.deletion_request_log`);
     await pg.query(`DELETE FROM public.account_deletion_requests`);
     await pg.query(`DELETE FROM public.notification_events`);
@@ -316,108 +430,157 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
   });
 
   // ══ PHASE 2 ═══════════════════════════════════════════════════════════════
-  it("P2.1 suppression is recorded only when asked, stores no plaintext address, and reaches the provider", async () => {
+  // The do-not-contact list is Resend's. What is ours is the ORDER of two calls, the decision
+  // about whether to make the second one at all, and what happens when it fails.
+  it("P2.1 the completion notice reaches the provider BEFORE the suppression call — the sequence, not merely both", async () => {
+    await seedUser(SUBJECT);
+    await request(SUBJECT.id, true);
+
+    expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+
+    // THE ASSERTION THAT MATTERS. Resend applies its suppression list to every send, so a build
+    // that suppressed first would have the provider swallow the one message confirming we did
+    // what this person asked. Both calls happening is not enough; the order is the mechanism.
+    expect(sendAndSuppressSequence()).toEqual(["/emails", "/suppressions"]);
+
+    const notice = provider.calls.find((c) => c.path === "/emails");
+    expect((notice?.body as { to: string[] }).to).toEqual([SUBJECT.email]);
+    // and the provider would actually have delivered it — it was not on the list at that moment
+    expect(notice?.skippedByProvider).toBe(false);
+
+    // the suppression then took effect, and the evidence row records that it did
+    expect(provider.suppressed.has(SUBJECT.email)).toBe(true);
+    const row = await pg.query(
+      `SELECT suppression_status FROM public.deletion_request_log WHERE subject_email = $1`,
+      [SUBJECT.email],
+    );
+    expect(row.rows[0]?.suppression_status).toBe("applied");
+  });
+
+  it("P2.2 the suppression call is made only when suppression_requested is true", async () => {
     await seedUser(SUBJECT);
     await seedUser(OTHER);
-    const asked = await request(SUBJECT.id, true);
-    const notAsked = await request(OTHER.id, false);
+    await request(SUBJECT.id, true);
+    await request(OTHER.id, false);
 
     expect(await runExecutor()).toEqual({ executedCount: 2, skippedCount: 0, failedCount: 0 });
 
-    const rows = await pg.query(`SELECT log_id, address_hash FROM public.deletion_suppression`);
-    expect(rows.rowCount).toBe(1);
-    expect(rows.rows[0]?.log_id).toBe(asked.logId);
-    expect(rows.rows[0]?.address_hash).toBe(await hashOf(SUBJECT.email));
-    expect(notAsked.logId).toBeTruthy();
-
-    // NO PLAINTEXT: search every text column of the table for the literal address
-    const leak = await pg.query(
-      `SELECT count(*)::int AS n FROM public.deletion_suppression
-        WHERE address_hash LIKE '%' || $1 || '%' OR address_hash = $1`,
-      [SUBJECT.email],
+    const adds = provider.calls.filter(
+      (c) => c.method === "POST" && c.path === "/suppressions",
     );
-    expect(leak.rows[0]?.n).toBe(0);
+    expect(adds).toHaveLength(1);
+    expect(adds[0]?.body).toEqual({ email: SUBJECT.email });
+    expect(provider.suppressed.has(OTHER.email)).toBe(false);
 
-    // the delivery-side half was called with the normalised address
-    const suppressionCalls = provider.calls.filter((c) => c.url.endsWith("/suppressions"));
-    expect(suppressionCalls).toHaveLength(1);
-    expect(suppressionCalls[0]?.body).toEqual({ email: SUBJECT.email });
+    // and nothing was recorded against the person who did not ask
+    const notAsked = await pg.query(
+      `SELECT suppression_status FROM public.deletion_request_log WHERE subject_email = $1`,
+      [OTHER.email],
+    );
+    expect(notAsked.rows[0]?.suppression_status).toBeNull();
   });
 
-  it("P2.2 a suppressed address receives no product notification — the dispatcher's guard is observed failing the message", async () => {
-    await seedUser(SUBJECT);
-    await seedUser(GUARDIAN, "guardian");
-    await pg.query(`SELECT public.emit_notification_event($1,'guardian_linked',$2,$3::jsonb,$4::jsonb)`, [
-      "d0000000-0000-4000-8000-00000000000d",
-      SUBJECT.id,
-      JSON.stringify([{ profile_id: GUARDIAN.id, channels: ["email"] }]),
-      JSON.stringify({ link_id: "f0000000-0000-4000-8000-0000000000aa", student_display_name: "Sam" }),
-    ]);
-
-    const { getSuppressionStatus } = await import("../../server/lib/deletion-suppression");
-    const { dispatchQueuedMessages } = await import("../../server/lib/notifications/dispatch");
-    const sends: string[] = [];
-    const transport = async (input: { to: string }) => {
-      sends.push(input.to);
-      return { ok: true as const, value: { providerMessageId: "re_x" } };
-    };
-
-    // not suppressed yet → it sends
-    let summary = await dispatchQueuedMessages({ transport, suppressionCheck: getSuppressionStatus });
-    expect(summary.sent).toBe(1);
-    expect(sends).toEqual([GUARDIAN.email]);
-
-    // now suppress that address and queue a second message
-    const { logId } = await request(GUARDIAN.id, true);
-    await pg.query(`SELECT public.record_deletion_suppression($1, $2)`, [
-      logId,
-      await hashOf(GUARDIAN.email),
-    ]);
-    await pg.query(`SELECT public.emit_notification_event($1,'guardian_linked',$2,$3::jsonb,$4::jsonb)`, [
-      "d0000000-0000-4000-8000-00000000000e",
-      SUBJECT.id,
-      JSON.stringify([{ profile_id: GUARDIAN.id, channels: ["email"] }]),
-      JSON.stringify({ link_id: "f0000000-0000-4000-8000-0000000000aa", student_display_name: "Sam" }),
-    ]);
-    sends.length = 0;
-    summary = await dispatchQueuedMessages({ transport, suppressionCheck: getSuppressionStatus });
-    expect(sends).toEqual([]);
-    expect(summary.failed).toBe(1);
-    const failed = await pg.query(
-      `SELECT last_error FROM public.notification_messages WHERE status <> 'sent' AND channel='email'`,
-    );
-    expect(String(failed.rows[0]?.last_error)).toContain("do-not-contact");
-  });
-
-  it("P2.3 the deletion completion notice still sends to a suppressed address, and re-registration still succeeds", async () => {
+  it("P2.3 a suppression failure records failed_manual, pages, and the deletion still completes", async () => {
     await seedUser(SUBJECT);
     await request(SUBJECT.id, true);
+    provider.failAddSuppression = true;
+
+    // THE DELETION IS THE LEGALLY MEANINGFUL ACT. A vendor being down does not stop the clock.
     expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
-
-    // the suppression exists at the moment the notice is sent — the bypass is observed, not assumed
-    const suppressed = await pg.query(
-      `SELECT public.is_address_suppressed($1) AS s`, [await hashOf(SUBJECT.email)],
-    );
-    expect(suppressed.rows[0]?.s).toBe(true);
-    const notices = provider.calls.filter((c) => c.url.endsWith("/emails"));
-    expect(notices).toHaveLength(1);
-    expect((notices[0]?.body as { to: string[] }).to).toEqual([SUBJECT.email]);
-
-    // registration consults nothing: the same address can be used again
-    await seedUser({ id: "e0000000-0000-4000-8000-00000000000f", email: SUBJECT.email });
-    const back = await pg.query(`SELECT count(*)::int AS n FROM public.profiles WHERE email = $1`, [
-      SUBJECT.email,
+    const gone = await pg.query(`SELECT count(*)::int AS n FROM public.profiles WHERE id = $1`, [
+      SUBJECT.id,
     ]);
-    expect(back.rows[0]?.n).toBe(1);
+    expect(gone.rows[0]?.n).toBe(0);
+
+    const row = await pg.query(
+      `SELECT suppression_status FROM public.deletion_request_log WHERE subject_email = $1`,
+      [SUBJECT.email],
+    );
+    expect(row.rows[0]?.suppression_status).toBe("failed_manual");
+
+    // THE PAGE: error severity, stable event name, one line.
+    const page = lines("DELETION", "suppression_failed_manual");
+    expect(page).toHaveLength(1);
+    expect(page[0]?.level).toBe("error");
   });
 
-  it("P2.4 the check defers rather than sends when it cannot tell (no secret)", async () => {
-    const { getSuppressionStatus } = await import("../../server/lib/deletion-suppression");
-    const status = await getSuppressionStatus("anyone@phases.test", {
-      admin: admin(),
-      env: {} as NodeJS.ProcessEnv,
-    });
-    expect(status).toBe("unknown");
+  it("P2.4 the retry sweep re-attempts an unhonoured request, including one left with no status at all", async () => {
+    await seedUser(SUBJECT);
+    await seedUser(OTHER);
+    await request(SUBJECT.id, true);
+    await request(OTHER.id, true);
+    provider.failAddSuppression = true;
+    await runExecutor();
+
+    // one row known-failed, one row whose outcome write never landed (status NULL) — the sweep
+    // must rescue both, which is why it selects `IS DISTINCT FROM 'applied'` and not `= failed`.
+    await pg.query(
+      `UPDATE public.deletion_request_log SET suppression_status = NULL WHERE subject_email = $1`,
+      [OTHER.email],
+    );
+    expect(provider.suppressed.size).toBe(0);
+
+    provider.failAddSuppression = false;
+    provider.calls.length = 0;
+    logged.length = 0;
+    await runExecutor(); // no due requests this pass; the sweep runs at the top regardless
+
+    expect(provider.suppressed.has(SUBJECT.email)).toBe(true);
+    expect(provider.suppressed.has(OTHER.email)).toBe(true);
+    const rows = await pg.query(
+      `SELECT subject_email, suppression_status FROM public.deletion_request_log ORDER BY subject_email`,
+    );
+    expect(rows.rows.map((r) => r.suppression_status)).toEqual(["applied", "applied"]);
+    expect(lines("DELETION", "suppression_retried")).toHaveLength(2);
+
+    // AND IT STOPS. A row that reached 'applied' is never re-sent, which is what keeps a subject
+    // who has since re-consented from being silently re-suppressed by tonight's pass.
+    provider.calls.length = 0;
+    await runExecutor();
+    expect(provider.calls.filter((c) => c.path === "/suppressions")).toHaveLength(0);
+  });
+
+  it("P2.5 clearing from account settings calls the remove endpoint and records affirmative re-consent", async () => {
+    await seedUser(SUBJECT);
+    sessionUser = { id: SUBJECT.id, email: SUBJECT.email };
+    provider.suppressed.add(SUBJECT.email);
+    const app = await accountApp();
+
+    // the surface first: it reports the suppression and that this one is the subject's to lift
+    const shown = await httpRequest(app).get("/api/account/email-suppression");
+    expect(shown.status).toBe(200);
+    expect(shown.body).toMatchObject({ suppressed: true, origin: "manual", clearable: true });
+
+    provider.calls.length = 0;
+    const cleared = await httpRequest(app).post("/api/account/email-suppression/clear");
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({ cleared: true });
+
+    const removals = provider.calls.filter((c) => c.method === "DELETE");
+    expect(removals).toHaveLength(1);
+    expect(removals[0]?.path).toBe(`/suppressions/${encodeURIComponent(SUBJECT.email)}`);
+    expect(provider.suppressed.has(SUBJECT.email)).toBe(false);
+
+    // THE RE-CONSENT RECORD: the subject, on their own account, from the settings surface.
+    const reconsent = await auditRows("email_suppression_cleared");
+    expect(reconsent).toHaveLength(1);
+    expect(reconsent[0]?.actor_profile_id).toBe(SUBJECT.id);
+    expect(reconsent[0]?.target_profile_id).toBe(SUBJECT.id);
+    expect(reconsent[0]?.context).toMatchObject({ source: "account_settings" });
+    // no address anywhere in it — this is metadata, on a live account
+    expect(JSON.stringify(reconsent[0]?.context)).not.toContain(SUBJECT.email);
+
+    // A BOUNCE OR COMPLAINT IS NOT A DO-NOT-CONTACT REQUEST, so it is not the subject's to lift.
+    provider.suppressed.add(SUBJECT.email);
+    provider.origin = "complaint";
+    provider.calls.length = 0;
+    const refused = await httpRequest(app).post("/api/account/email-suppression/clear");
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: "SUPPRESSION_NOT_CLEARABLE" });
+    expect(provider.calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+    expect(provider.suppressed.has(SUBJECT.email)).toBe(true);
+    const stillOne = await auditRows("email_suppression_cleared");
+    expect(stillOne).toHaveLength(1);
   });
 
   // ══ PHASE 5 ═══════════════════════════════════════════════════════════════
@@ -479,27 +642,6 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       `SELECT ip_address FROM public.deletion_consent_evidence WHERE log_id = $1`, [logId],
     );
     expect(consent.rows[0]?.ip_address).toBe("203.0.113.0/24");
-  });
-
-  it("P5.3 a suppression record older than the window survives the strip", async () => {
-    await seedUser(SUBJECT);
-    const { logId } = await request(SUBJECT.id, true);
-    await runExecutor();
-    await pg.query(
-      `UPDATE public.deletion_request_log SET responded_on = (now() - interval '40 months')::date
-        WHERE log_id = $1`, [logId],
-    );
-    await pg.query(`SELECT * FROM public.sweep_deletion_evidence(100)`);
-    const kept = await pg.query(
-      `SELECT address_hash FROM public.deletion_suppression WHERE log_id = $1`, [logId],
-    );
-    expect(kept.rowCount).toBe(1);
-    expect(kept.rows[0]?.address_hash).toBe(await hashOf(SUBJECT.email));
-    // and the promise is still enforceable
-    const s = await pg.query(`SELECT public.is_address_suppressed($1) AS s`, [
-      await hashOf(SUBJECT.email),
-    ]);
-    expect(s.rows[0]?.s).toBe(true);
   });
 
   it("P5.4 both sweeps log a run that changed nothing, with counts and cutoff", async () => {
