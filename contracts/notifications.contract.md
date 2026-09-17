@@ -246,6 +246,65 @@ The batch bound applies per branch, not as a shared budget: a large event backlo
 
 ---
 
+## 11A. Do-not-contact rule (suppression)
+
+**C11A.1** A deletion request may ask that the address never be contacted again
+(`deletion_request_log.suppression_requested`). When it does, the executor records the request in
+`public.deletion_suppression` — one row per deletion request, holding the `log_id` and an
+HMAC-SHA256 of the lowercased, trimmed address under `SUPPRESSION_HMAC_SECRET`, and nothing else.
+The address itself is never stored: the record outlives every other trace of the account, so a
+plaintext column would be a permanent list of the email addresses of deleted accounts, most of
+them minors.
+*Violated if:* any column of `deletion_suppression` holds an address, a timestamp, or a key into
+the pseudonymous graph; or a suppression row exists for a request whose
+`suppression_requested` is false.
+
+**C11A.2** The database decides whether a suppression was asked for.
+`public.record_deletion_suppression(log_id, address_hash)` reads
+`deletion_request_log.suppression_requested` itself and returns `requested`; the application
+calls the provider suppression list ONLY when that came back true. The other order would
+permanently suppress an address at the provider for somebody who never asked.
+*Violated if:* the provider call is made before, or independently of, that gate.
+
+**C11A.3** `SUPPRESSION_HMAC_SECRET` IS NOT ROTATABLE while any suppression stands. Every stored
+hash is an HMAC under it, and the addresses they were derived from have been deleted, so they
+cannot be re-hashed: rotating the secret silently voids every live do-not-contact record.
+Rotation therefore requires re-hashing the table from addresses that no longer exist, which is
+to say it is not available. The variable is registered in `infra/secret-class-inventory.yaml`
+with `absence_behavior: fail_closed`, is required in production by
+`apps/api/src/env.ts validateEnvironment()`, and is listed in `notificationEnvSchema` alongside
+the three Resend variables because the dispatcher cannot lawfully send without it.
+*Violated if:* the secret is absent in production and the server boots, or the inventory entry
+or the rotation note is missing.
+
+**C11A.4** Who honours it. The **dispatcher** (`dispatchQueuedMessages` → `dispatchOne`) consults
+the list before every product/marketing send: `suppressed` records a failed attempt with
+`recipient address is on the do-not-contact list` and sends nothing; `unknown` (no secret, or the
+read failed) DEFERS — nothing is sent and nothing is lost, and the next pass asks again.
+**Deletion-lifecycle transactional mail** (`server/lib/notifications/direct-sends.ts`, notably the
+completion notice) deliberately does NOT consult it: suppression is recorded moments before the
+notice is sent, and the notice is the message that confirms we did what the person asked.
+**Registration does not consult it at all** — refusing a suppressed address at signup would make
+the signup form answer "was this address once deleted", and would lock out a student the deletion
+flow explicitly invited to come back.
+*Violated if:* a product notification is sent to a suppressed address; an `unknown` status sends
+or permanently fails a message; the completion notice is withheld; or any registration path reads
+the suppression list.
+
+**C11A.5** Suppression records are EXEMPT from the 24-month evidence strip
+(`public.sweep_deletion_evidence`), because the promise they keep has no end date. They are the
+one member of the evidence bundle the sweep does not touch.
+*Violated if:* the sweep deletes or alters a `deletion_suppression` row.
+
+**Open, for the owner and counsel.** A student who deletes with suppression and later registers
+again with the same address is, under C11A.4, a live account that receives no product
+notifications — the suppression still stands and nothing clears it. That may be the wrong
+outcome: signing up again is a fresh, explicit act by the person. Clearing a do-not-contact
+record is itself a decision about a person's stated wish, so it is not made here. See
+`docs/SpecAudit/SPEC_CHANGES_LOG.md` SCL-090.
+
+---
+
 ## 12. Sender, environment, and tracking
 
 **C12.1** Sender is `NOTIFICATION_FROM_EMAIL` (`notifications@send.lyceon.ai` in production), read from the environment, never hard-coded.
@@ -283,4 +342,5 @@ The batch bound applies per branch, not as a shared budget: a large event backlo
 | C0.6 | `tests/ci/deletion-completed-notice.pg.ci.test.ts` — real migrations on a throwaway Postgres: the `profiles` read precedes every RPC (asserted by call order); a failed RPC and a rolled-back SQL transaction each send nothing and leave the row `pending`; a rejected send leaves the deletion committed and the next account in the batch completes (two attempts, no retry); the raw address is absent from every captured log line while its redacted form is present; a second cron pass sends nothing |
 | C1.1, C2.2, C2.3, C5.1, C5.2, C8.1 for `guardian_unlinked` | `tests/ci/guardian-unlinked.pg.ci.test.ts` — student revoke → guardian only; guardian revoke → student only; LY003 emits nothing and is 409; non-party student is 404; rollback leaves zero rows; `revocation_reason` absent from every payload and rendered template; ids distinct from `guardian_linked` for the same row |
 | C3.2 on the client (page + shells) | `client/src/pages/notifications.test.tsx` — full title and body rendered, cursor pagination, archived items only when asked, mark-all-seen once on arrival and never read, archive moves the row to the archived view, read is explicit (item open / Mark as read / Mark all as read), heading focus, labelled controls, absolute time behind the relative label, polite live region; `client/src/components/layout/shells.notification-bell.test.tsx` gate 3 — the page renders inside GuardianShell for a guardian and AppShell for a student, is registered in App.tsx behind RequireRole, and the bell links to it |
+| C11A.1 – C11A.5 | `tests/ci/deletion-phases-235.pg.ci.test.ts` — P2.1 no plaintext and the provider call gated on the database, P2.2 the dispatcher's guard observed failing a message, P2.3 the completion notice still sends and re-registration still succeeds, P2.4 unknown defers, P5.3 a suppression record older than the window survives |
 | §0.4 invite direct send, §36.2 limits | `tests/ci/guardian-invite.pg.ci.test.ts` — idempotent key on repeated submit; 3/day per address denied; body carries code + prefilled link and no progress data; redeem without auth creates nothing; byte-identical response for an address with and without an account |

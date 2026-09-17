@@ -78,6 +78,7 @@ export const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
   NOTIFICATION_FROM_EMAIL: process.env.NOTIFICATION_FROM_EMAIL,
+  SUPPRESSION_HMAC_SECRET: process.env.SUPPRESSION_HMAC_SECRET,
 };
 
 // OCR Configuration for Option C - SAT-aware OCR pipeline
@@ -139,7 +140,7 @@ export function validateEnvironment() {
     );
   }
 
-  // Product notifications — contracts/notifications.contract.md §12.2. All three are required
+  // Product notifications — contracts/notifications.contract.md §12.2. All four are required
   // in production (the transport and the webhook receiver fail closed without them); in other
   // environments a missing value is reported, not fatal. NOTIFICATION_FROM_EMAIL must parse as
   // an address so a typo cannot reach Resend as the sender. Reported through the structured
@@ -165,6 +166,9 @@ export function validateEnvironment() {
         "RESEND_API_KEY",
         "RESEND_WEBHOOK_SECRET",
         "NOTIFICATION_FROM_EMAIL",
+        // Owner brief 2026-09-17 §2.1: the dispatcher defers every message while this is
+        // absent, so a production server without it sends no product mail at all.
+        "SUPPRESSION_HMAC_SECRET",
       ] as const
     ).filter((k) => !notificationEnv.data[k]);
     if (missing.length === 0) {

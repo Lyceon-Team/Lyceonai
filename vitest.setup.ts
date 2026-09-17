@@ -23,6 +23,17 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-placeholder-service-role-key';
 }
 
+// Do-not-contact suppression (owner brief 2026-09-17 §2.1). The notification dispatcher fails
+// CLOSED without this secret — it can no longer check the suppression list, so it defers every
+// message rather than risk mailing somebody who asked never to be contacted again. That is the
+// right production behaviour and the wrong default for a test run, where it would silently turn
+// every send assertion in every notification suite into a deferral. A dummy value here restores
+// "sending works unless something says otherwise"; the suites that test the absent-secret path
+// pass an explicit empty environment instead of relying on the global.
+if (!process.env.SUPPRESSION_HMAC_SECRET) {
+  process.env.SUPPRESSION_HMAC_SECRET = 'test-placeholder-suppression-hmac-secret';
+}
+
 // Ensure test environment is properly marked
 process.env.VITEST = 'true';
 process.env.NODE_ENV = 'test';

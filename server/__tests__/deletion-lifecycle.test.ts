@@ -702,7 +702,8 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
 
     // Plan v4 §3.4: T1 (mark executing) has no log ids here (request rows predate the evidence
     // bundle), so the per-request sequence is Stripe → storage → T1.5 preclear → deidentify →
-    // T2, then the evidence housekeeping (reconcile + ledger rewrite) closes the pass.
+    // T2. The pass then closes with the housekeeping, which since 2026-09-17 also runs the two
+    // retention sweeps: reconcile → evidence strip → audit purge → ledger rewrite.
     expect(callOrder).toEqual([
       "stripe_lookup",
       "request_update:in_progress",
@@ -714,6 +715,8 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       "rpc:deidentify_user",
       "rpc:complete_and_anonymize_account",
       "rpc:reconcile_deletion_log",
+      "rpc:sweep_deletion_evidence",
+      "rpc:apply_audit_logs_retention",
       "rpc:rewrite_anonymized_actors",
     ]);
   });
@@ -895,6 +898,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       p_completions: JSON.stringify([
         {
           log_id: "log-1",
+          profile_id: "p-1",
           stripe_customer_id: null,
           stripe_subscription_id: "sub_abc",
           stripe_subscription_item_id: null,
@@ -939,12 +943,14 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     expect(t3Idx).toBeGreaterThan(names.lastIndexOf("complete_and_anonymize_account"));
     expect(rpcCalls[t3Idx]!.args).toEqual({
       p_completions: JSON.stringify([
-        { log_id: "log-1", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
-        { log_id: "log-3", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
+        { log_id: "log-1", profile_id: "p-1", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
+        { log_id: "log-3", profile_id: "p-3", stripe_customer_id: null, stripe_subscription_id: null, stripe_subscription_item_id: null, final_status: null },
       ]),
     });
-    expect(names.slice(-2)).toEqual([
+    expect(names.slice(-4)).toEqual([
       "reconcile_deletion_log",
+      "sweep_deletion_evidence",
+      "apply_audit_logs_retention",
       "rewrite_anonymized_actors",
     ]);
     // Every identity-side call sits strictly between T1 and T3.
@@ -976,8 +982,10 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     const result = await executeDueDeletions(admin, "test-req");
     expect(result.failedCount).toBe(2);
     expect(rpcCalls.find((c) => c.fn === "complete_deletion_log")).toBeUndefined();
-    expect(rpcCalls.map((c) => c.fn).slice(-2)).toEqual([
+    expect(rpcCalls.map((c) => c.fn).slice(-4)).toEqual([
       "reconcile_deletion_log",
+      "sweep_deletion_evidence",
+      "apply_audit_logs_retention",
       "rewrite_anonymized_actors",
     ]);
   });

@@ -236,6 +236,8 @@ describe.skipIf(!PG_AVAILABLE)(
         "rpc:deidentify_user",
         "rpc:complete_and_anonymize_account",
         "rpc:reconcile_deletion_log",
+        "rpc:sweep_deletion_evidence",
+        "rpc:apply_audit_logs_retention",
         "rpc:rewrite_anonymized_actors",
       ]);
 

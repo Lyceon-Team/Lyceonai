@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getStripeClient } from "./stripe/client";
 import { logger } from "../logger";
 import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends";
+import { recordDeletionSuppression } from "./deletion-suppression";
 
 // @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9; SCL-085/086/088 PROPOSED;
 // owner brief 2026-09-16 "Deletion Vertical" Parts B + C; plan v4 §3.4] account-deletion
@@ -27,6 +28,14 @@ import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends"
 
 type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
 
+/**
+ * Per-call bound on each retention sweep (owner brief 2026-09-17 §5.4), matching the
+ * notification sweep's shape: finite work per pass, oldest first, and what is left over is
+ * simply swept on the next daily run. Nothing here is time-critical — a backlog drains over
+ * days without anyone noticing, whereas an unbounded delete on the audit table would not.
+ */
+const DELETION_SWEEP_BATCH_SIZE = 500;
+
 type DueRequest = {
   id: string;
   profile_id: string;
@@ -36,6 +45,13 @@ type DueRequest = {
 /** What T3 writes for one completed deletion (mirrors complete_deletion_log's jsonb element). */
 type LogCompletion = {
   log_id: string;
+  /**
+   * The deleted profile's uuid — a DEAD key by the time T3 runs (the cascade removed the row).
+   * T3 uses it to find that profile's audit_logs rows and erase the ids from them (Doc 01 §5.1),
+   * and never stores it: the PG suite asserts structurally that no evidence table carries a uuid
+   * column other than log_id.
+   */
+  profile_id: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   stripe_subscription_item_id: string | null;
@@ -468,8 +484,9 @@ async function assertNoStorageObjects(
 
 /**
  * Evidence-side housekeeping that runs at the end of EVERY pass, whether or not anything was
- * due: the reconciler resolves log rows a crashed earlier pass left 'executing', and the ledger
- * rewrite strips insertion order from anonymized_actors. (The billing retry sweep runs at the
+ * due: the reconciler resolves log rows a crashed earlier pass left 'executing', the two
+ * retention sweeps run (the 24-month evidence identity strip and the audit-log purge), and the
+ * ledger rewrite strips insertion order from anonymized_actors. (The billing retry sweep runs at the
  * START of a pass instead, so a teardown that failed in this pass is retried on the next one
  * and pages once per pass, not twice.) Each is its own transaction and touches one universe
  * only. Failures are logged, never thrown: the deletions of this pass are already committed.
@@ -495,6 +512,79 @@ async function runEvidenceHousekeeping(
       "log_reconciled",
       "Deletion request log reconciled",
       { result: reconciled ?? null, requestId },
+    );
+  }
+
+  // @spec [SCL-085 PROPOSED (24-month identity strip); Doc-01_V8 §5.1 (audit purge after
+  // anonymization_retention_days); SCL-087 PROPOSED (the purge runs through the ONE exempt
+  // function); owner brief 2026-09-17 §5.4/§5.5] | @implemented [2026-09-17]
+  //
+  // BOTH SWEEPS LOG UNCONDITIONALLY, INCLUDING A RUN THAT CHANGED NOTHING. Each function
+  // returns its counts AND the cutoff it used, so "the sweep ran and found nothing due" and
+  // "the sweep never ran" are different lines in the log rather than the same silence. That is
+  // the whole reason a retention mechanism can be trusted from logs alone.
+  const { data: evidenceSwept, error: evidenceSweepError } = await admin.rpc(
+    "sweep_deletion_evidence",
+    { p_batch_size: DELETION_SWEEP_BATCH_SIZE },
+  );
+  if (evidenceSweepError) {
+    logger.error(
+      "DELETION",
+      "evidence_sweep_failed",
+      "sweep_deletion_evidence failed; identity stays on expired evidence rows until the next pass",
+      evidenceSweepError,
+      { batchSize: DELETION_SWEEP_BATCH_SIZE, requestId },
+    );
+  } else {
+    const row = (Array.isArray(evidenceSwept) ? evidenceSwept[0] : evidenceSwept) as
+      | {
+          stripped_log_rows?: number;
+          stripped_consent_rows?: number;
+          cutoff?: string;
+        }
+      | null;
+    logger.info(
+      "DELETION",
+      "evidence_sweep_complete",
+      "24-month evidence identity strip ran",
+      {
+        strippedLogRows: row?.stripped_log_rows ?? 0,
+        strippedConsentRows: row?.stripped_consent_rows ?? 0,
+        cutoff: row?.cutoff ?? null,
+        batchSize: DELETION_SWEEP_BATCH_SIZE,
+        requestId,
+      },
+    );
+  }
+
+  const { data: auditPurged, error: auditPurgeError } = await admin.rpc(
+    "apply_audit_logs_retention",
+    {
+      p_action: "purge_expired",
+      p_profile_id: null,
+      p_batch_size: DELETION_SWEEP_BATCH_SIZE,
+    },
+  );
+  if (auditPurgeError) {
+    logger.error(
+      "DELETION",
+      "audit_purge_failed",
+      "apply_audit_logs_retention(purge_expired) failed; expired audit rows remain until the next pass",
+      auditPurgeError,
+      { batchSize: DELETION_SWEEP_BATCH_SIZE, requestId },
+    );
+  } else {
+    const purged = (auditPurged ?? {}) as { rows?: number; cutoff?: string };
+    logger.info(
+      "DELETION",
+      "audit_purge_complete",
+      "audit_logs retention purge ran",
+      {
+        purgedRows: purged.rows ?? 0,
+        cutoff: purged.cutoff ?? null,
+        batchSize: DELETION_SWEEP_BATCH_SIZE,
+        requestId,
+      },
     );
   }
 
@@ -736,10 +826,27 @@ export async function executeDueDeletions(
       if (pending.log_id) {
         completions.push({
           log_id: pending.log_id,
+          profile_id: pending.profile_id,
           stripe_customer_id: billing.stripeCustomerId,
           stripe_subscription_id: billing.stripeSubscriptionId,
           stripe_subscription_item_id: billing.stripeSubscriptionItemId,
           final_status: billing.finalStatus,
+        });
+      }
+
+      // Step 5.5 (after commit, evidence side): the do-not-contact record, when this person
+      // asked for one. Written BEFORE the completion notice on purpose — the notice is a
+      // deletion-lifecycle transactional message and deliberately does NOT consult the list
+      // (owner brief 2026-09-17 §2.3), and writing the suppression first is what makes that
+      // bypass observable rather than merely asserted. Never throws; a deletion that has
+      // already committed must not be reported as failed because a suppression write did not
+      // land, and the record is retried by nothing — it is written once, here.
+      if (pending.log_id !== null && recipientEmail !== null) {
+        await recordDeletionSuppression({
+          logId: pending.log_id,
+          address: recipientEmail,
+          admin,
+          ...(requestId !== undefined ? { requestId } : {}),
         });
       }
 

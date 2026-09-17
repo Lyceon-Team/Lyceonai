@@ -65,6 +65,11 @@ const EVIDENCE_TABLES = [
   "deletion_request_log",
   "deletion_consent_evidence",
   "deletion_billing_record",
+  // Added 2026-09-17 (owner brief "Deletion Vertical: Phases 2, 3, 5" §2.1): the suppression
+  // record is part of the bundle and is held to the same structural rules — no timestamp
+  // column, no uuid but log_id, no foreign key outside the bundle. Listing it here is what
+  // makes C3.1 enforce that, rather than C3.1's inbound-FK check merely noticing it exists.
+  "deletion_suppression",
 ] as const;
 
 let pg: Client;
