@@ -86,6 +86,58 @@ const CRISIS_RESOURCES: Readonly<Record<string, string>> = {
 const DEFAULT_CRISIS_RESPONSE =
   "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.";
 
+// ── Layer 1: Text Normalization ───────────────────────────────────────
+
+/**
+ * @spec [LISA_Layer1_Pattern_Set_v1 §7.4]
+ * @implemented 2026-09-17
+ *
+ * plain English: deterministic text normalization for Layer 1 crisis
+ * signature matching. Applied to the student message before substring
+ * containment checks. Does NOT affect the injection-defense path (that
+ * subsystem has its own matching logic in tutor-injection-defense.ts).
+ *
+ * Contract (§7.4, in order):
+ *   1. Unicode NFC normalize
+ *   2. Lowercase
+ *   3. Normalize curly/smart apostrophes and quotation marks to ASCII
+ *   4. Expand first-person contractions (i'm→i am, i've→i have,
+ *      don't→do not, can't→cannot, won't→will not)
+ *   5. Normalize self-harm variants (self-harm/self harm/selfharm → self harm)
+ *   6. Collapse repeated whitespace to single space + trim
+ *   7. Strip repeated terminal punctuation (???→?, !!!→!, ...→.)
+ */
+export function normalizeCrisisText(raw: string): string {
+  // §7.4 step 1: Unicode NFC
+  let t = raw.normalize("NFC");
+
+  // §7.4 step 2: lowercase
+  t = t.toLowerCase();
+
+  // §7.4 step 3: normalize curly/smart quotes and apostrophes to ASCII
+  t = t.replace(/[‘’‚‛]/g, "'"); // single curly → '
+  t = t.replace(/[“”„‟]/g, '"'); // double curly → "
+
+  // §7.4 step 4: expand first-person contractions
+  // Order matters: won't before don't (won't contains "on't")
+  t = t.replace(/\bwon't\b/g, "will not");
+  t = t.replace(/\bcan't\b/g, "cannot");
+  t = t.replace(/\bdon't\b/g, "do not");
+  t = t.replace(/\bi'm\b/g, "i am");
+  t = t.replace(/\bi've\b/g, "i have");
+
+  // §7.4 step 5: normalize self-harm variants to canonical "self harm"
+  t = t.replace(/\bself[-\s]?harm/g, "self harm");
+
+  // §7.4 step 6: collapse whitespace + trim
+  t = t.replace(/\s+/g, " ").trim();
+
+  // §7.4 step 7: strip repeated terminal punctuation
+  t = t.replace(/([?!.])\1+$/g, "$1");
+
+  return t;
+}
+
 // ── Layer 1: Deterministic Signature Match ─────────────────────────────
 
 /**
