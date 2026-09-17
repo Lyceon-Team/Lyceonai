@@ -48,8 +48,9 @@
 --     public.calendar_blocks, public.calendar_plan_dates,
 --     public.calendar_plan_versions, public.student_study_profile,
 --     public.calendar_runtime_config_history, public.calendar_runtime_config;
---   DROP FUNCTION public.calendar_scope_is_valid(text, text, jsonb).
---   CREATE/seed only.
+--   DROP FUNCTION public.calendar_scope_is_valid(text, text, jsonb),
+--                 public.calendar_viewer_is_admin().
+--   Policies and grants go with their tables. CREATE/seed only.
 -- ============================================================================
 
 BEGIN;
@@ -464,5 +465,196 @@ LEFT JOIN public.calendar_plan_block_memberships m
 
 COMMENT ON VIEW public.calendar_current_plan IS
   'Doc 05F §7.6. security_invoker = true — visibility is decided by the base tables'' RLS policies, not by the view owner.';
+
+-- ----------------------------------------------------------------------------
+-- 12. Admin predicate for the calendar RLS policies
+--
+-- Doc 05F §7 names current_student_id() / is_admin() (Doc 01, G-08-08). Formula
+-- sheet §8 item 10: neither exists in prod, and a repo-wide search finds no SQL
+-- definition of either. Policies therefore use auth.uid() (= profiles.id,
+-- verified 117/117) and profiles.role = 'admin'.
+--
+-- DEVIATION D-3 (recorded in the PR): this helper is deliberately named for the
+-- calendar rather than claiming the platform-wide name `is_admin()`, which
+-- Doc 01 reserves for a primitive this change is not scoped to define. When
+-- that primitive lands, this collapses into it and the policies below change
+-- one identifier. Writing the same EXISTS into eight policies instead would be
+-- the worse duplication.
+--
+-- SECURITY DEFINER + a pinned search_path, matching guardian_can_view_student:
+-- the subquery must read profiles regardless of the caller's own row-level view
+-- of it, and must not be redirectable by a caller-set search_path.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION public.calendar_viewer_is_admin() RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid() AND p.role = 'admin'::public.profile_role
+  );
+$$;
+
+COMMENT ON FUNCTION public.calendar_viewer_is_admin() IS
+  'Doc 05F §7.12 admin SELECT policies (formula sheet §8 item 10: is_admin() does not exist in prod). Collapses into Doc 01 is_admin() when that primitive ships.';
+
+-- ----------------------------------------------------------------------------
+-- 13. calendar_plan_versions_student (Doc 05F §7.12)
+--
+-- The student-facing projection of a plan version. input_snapshot and
+-- constants_snapshot are deliberately absent: the snapshot carries the
+-- student's mastery levels and the whole config surface, and neither belongs in
+-- a client payload. The base table additionally withholds them at the GRANT
+-- level below, so this view is the convenience, not the control.
+-- ----------------------------------------------------------------------------
+CREATE VIEW public.calendar_plan_versions_student WITH (security_invoker = true) AS
+SELECT v.plan_version_id,
+       v.student_id,
+       v.version_no,
+       v.generator,
+       v.generator_version,
+       v.trigger,
+       v.initiated_by,
+       v.input_snapshot_hash,
+       v.validator_result,
+       v.created_at
+FROM public.calendar_plan_versions v;
+
+COMMENT ON VIEW public.calendar_plan_versions_student IS
+  'Doc 05F §7.12. Excludes input_snapshot and constants_snapshot. security_invoker = true, so the base table RLS decides rows and the column grants decide columns.';
+
+-- ----------------------------------------------------------------------------
+-- 14. RLS on every calendar table (Doc 05F §7.12; genesis gate A.4)
+--
+-- RLS here is defense in depth, not the authorization boundary: the product
+-- read model is the server's, reached through authenticated API routes. These
+-- policies exist so that a mistake one layer up cannot become a cross-student
+-- read.
+--
+-- NO policy is created for INSERT, UPDATE or DELETE on any calendar table, and
+-- none for guardians on any calendar table (§16 — guardian reads are served by
+-- the route through resolveSubject + the entitlement gate, sheet §8 item 14).
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.student_study_profile              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_plan_versions             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_plan_dates                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_blocks                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_plan_block_memberships    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_block_launches            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_mutation_ledger           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_job_runs                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_runtime_config            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_runtime_config_history    ENABLE ROW LEVEL SECURITY;
+
+-- Student SELECT — own rows only.
+CREATE POLICY student_study_profile_student_read ON public.student_study_profile
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+CREATE POLICY calendar_plan_versions_student_read ON public.calendar_plan_versions
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+CREATE POLICY calendar_plan_dates_student_read ON public.calendar_plan_dates
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+CREATE POLICY calendar_blocks_student_read ON public.calendar_blocks
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+CREATE POLICY calendar_plan_block_memberships_student_read ON public.calendar_plan_block_memberships
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+CREATE POLICY calendar_block_launches_student_read ON public.calendar_block_launches
+  FOR SELECT TO authenticated USING (student_id = auth.uid());
+
+-- Admin SELECT — explicit, read-only, same six tables.
+CREATE POLICY student_study_profile_admin_read ON public.student_study_profile
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+CREATE POLICY calendar_plan_versions_admin_read ON public.calendar_plan_versions
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+CREATE POLICY calendar_plan_dates_admin_read ON public.calendar_plan_dates
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+CREATE POLICY calendar_blocks_admin_read ON public.calendar_blocks
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+CREATE POLICY calendar_plan_block_memberships_admin_read ON public.calendar_plan_block_memberships
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+CREATE POLICY calendar_block_launches_admin_read ON public.calendar_block_launches
+  FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+-- calendar_mutation_ledger, calendar_job_runs, calendar_runtime_config and
+-- calendar_runtime_config_history get NO client policies at all (§7.12). RLS is
+-- enabled with zero policies: denial by absence.
+
+-- ----------------------------------------------------------------------------
+-- 15. Grants (Doc 05F §7.11, §7.12)
+--
+-- INV-08-05: authenticated and anon hold no INSERT, UPDATE or DELETE on any
+-- calendar table, and no EXECUTE on any calendar write RPC. The writers are
+-- SECURITY DEFINER and are callable only by the trusted server role, after the
+-- route has done auth, role and entitlement.
+--
+-- Account deletion still works untouched: ON DELETE CASCADE runs as a
+-- referential action with the FK's own privileges, not the deleting role's, so
+-- withholding DELETE here does not strand a deleted account's rows.
+-- ----------------------------------------------------------------------------
+REVOKE ALL ON public.student_study_profile,
+              public.calendar_plan_versions,
+              public.calendar_plan_dates,
+              public.calendar_blocks,
+              public.calendar_plan_block_memberships,
+              public.calendar_block_launches,
+              public.calendar_mutation_ledger,
+              public.calendar_job_runs,
+              public.calendar_runtime_config,
+              public.calendar_runtime_config_history,
+              public.calendar_current_plan,
+              public.calendar_plan_versions_student
+  FROM PUBLIC, anon, authenticated;
+
+-- Server role: read everything, insert the append-only tables, update only the
+-- one table Doc 05F allows to be updated. DELETE is granted nowhere.
+GRANT SELECT ON public.student_study_profile,
+                public.calendar_plan_versions,
+                public.calendar_plan_dates,
+                public.calendar_blocks,
+                public.calendar_plan_block_memberships,
+                public.calendar_block_launches,
+                public.calendar_mutation_ledger,
+                public.calendar_job_runs,
+                public.calendar_runtime_config,
+                public.calendar_runtime_config_history,
+                public.calendar_current_plan,
+                public.calendar_plan_versions_student
+  TO service_role;
+
+GRANT INSERT ON public.student_study_profile,
+                public.calendar_plan_versions,
+                public.calendar_plan_dates,
+                public.calendar_blocks,
+                public.calendar_plan_block_memberships,
+                public.calendar_block_launches,
+                public.calendar_mutation_ledger,
+                public.calendar_job_runs
+  TO service_role;
+
+-- The only UPDATE in the calendar: profile edits and plan acknowledgement (§12.7).
+GRANT UPDATE ON public.student_study_profile TO service_role;
+
+-- No service_role POLICY is created: service_role holds BYPASSRLS in Supabase,
+-- and 20260624020000_05d_governance_substrate.sql R8 already ruled the explicit
+-- policy redundant. Following that ruling rather than forking a second pattern.
+
+-- Client reads. calendar_plan_versions is granted COLUMN BY COLUMN: input_snapshot
+-- and constants_snapshot are withheld from authenticated entirely, so the
+-- narrowing holds even for a caller that queries the base table directly and
+-- never goes through calendar_plan_versions_student.
+GRANT SELECT ON public.student_study_profile           TO authenticated;
+GRANT SELECT ON public.calendar_plan_dates             TO authenticated;
+GRANT SELECT ON public.calendar_blocks                 TO authenticated;
+GRANT SELECT ON public.calendar_plan_block_memberships TO authenticated;
+GRANT SELECT ON public.calendar_block_launches         TO authenticated;
+GRANT SELECT ON public.calendar_current_plan           TO authenticated;
+GRANT SELECT ON public.calendar_plan_versions_student  TO authenticated;
+
+GRANT SELECT (plan_version_id, student_id, version_no, generator, generator_version,
+              trigger, initiated_by, input_snapshot_hash, validator_result, created_at)
+  ON public.calendar_plan_versions TO authenticated;
+
+-- anon gets nothing anywhere: the REVOKE above is the whole story.
 
 COMMIT;
