@@ -102,7 +102,12 @@ function resetRows() {
   rows.student_section_projection_snapshots = [
     { section: "M", projected_score_mid: 590, projected_score_low: 560, projected_score_high: 620, relevant_question_count: 35, snapshot_at: "2026-07-01", snapshot_kind: "periodic", ...POISON },
   ];
-  rows.student_study_profile = [{ timezone: "America/Chicago" }];
+  // The KPI view labels its windows with the platform-wide zone from
+  // practice_runtime_config (Doc 02B §41). The accessor throws when the row is missing,
+  // which would 500 every KPI case here — so the seed mirrors the WS-2 config seed.
+  rows.practice_runtime_config = [
+    { key: "quota_reset_timezone", value: "America/Chicago" },
+  ];
   rows.audit_logs = [];
 }
 

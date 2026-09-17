@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-03-17 (Canonical content/review runtime truth reconciliation)
+**Last Updated:** 2026-09-16 (Legacy study calendar deleted — `/calendar` RETIRED, `/api/calendar/*` removed)
 
 ---
 
@@ -34,11 +34,11 @@ This document is the single authoritative registry of:
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
-| `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection`, `/api/calendar/profile`, `/api/calendar/month` | ACTIVE |
-| `/calendar` | student, admin | free | CalendarPage | `/api/calendar/month`, `/api/calendar/profile` | ACTIVE |
+| `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
+| `/calendar` | student, admin | free | CalendarPage | none — legacy study calendar deleted 2026-09-16 (owner ruling; rebuild from Doc 08) | RETIRED |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
-| `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
+| `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
 | `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -128,8 +128,6 @@ Removed auth endpoints (must return 404):
 |----------|--------|--------------|------|-------------|---------|
 | `/api/progress/kpis` | GET | Yes | student/admin | free | Weekly KPIs and stats |
 | `/api/progress/projection` | GET | Yes | student/admin | free | SAT score projection |
-| `/api/calendar/profile` | GET | Yes | student/admin | free | Calendar profile data |
-| `/api/calendar/month` | GET | Yes | student/admin | free | Monthly calendar data |
 | `/api/practice/next` | GET | Yes | student/admin | entitled† | Get next practice question |
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
 | `/api/practice/sessions/:sessionId/state` | GET | Yes | student/admin | entitled† | Resume practice session state |

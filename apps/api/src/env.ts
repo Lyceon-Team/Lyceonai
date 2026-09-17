@@ -139,9 +139,9 @@ export function validateEnvironment() {
     );
   }
 
-  // Product notifications — contracts/notifications.contract.md §12.2. All three are required
-  // in production (the transport and the webhook receiver fail closed without them); in other
-  // environments a missing value is reported, not fatal. NOTIFICATION_FROM_EMAIL must parse as
+  // Product notifications — contracts/notifications.contract.md §12.2. The three Resend
+  // variables are required in production (the transport and the webhook receiver fail closed
+  // without them); in other environments a missing value is reported, not fatal. NOTIFICATION_FROM_EMAIL must parse as
   // an address so a typo cannot reach Resend as the sender. Reported through the structured
   // logger — variable NAMES only, never values.
   const notificationEnv = notificationEnvSchema.safeParse(process.env);
@@ -167,6 +167,7 @@ export function validateEnvironment() {
         "NOTIFICATION_FROM_EMAIL",
       ] as const
     ).filter((k) => !notificationEnv.data[k]);
+
     if (missing.length === 0) {
       logger.info(
         "ENV",

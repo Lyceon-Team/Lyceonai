@@ -26,7 +26,6 @@ import {
   Calculator,
   Clock,
   Target,
-  Flame,
   TrendingUp,
   Award,
   ArrowRight,
@@ -40,7 +39,6 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
-import { getCalendarMonth } from "@/lib/calendarApi";
 import {
   normalizePracticeTopicDomains,
   type RawPracticeTopicDomain,
@@ -174,23 +172,6 @@ function Practice() {
     enabled: !!user && !authLoading,
   });
 
-  const {
-    data: calendarData,
-    isLoading: streakLoading,
-    isError: streakError,
-    error: streakErrorObj,
-    refetch: refetchStreak,
-  } = useQuery({
-    queryKey: ["calendar-streak-practice"],
-    queryFn: async () => {
-      const now = DateTime.local();
-      const start = now.startOf("month").toISODate() ?? now.toISODate()!;
-      const end = now.endOf("month").toISODate() ?? now.toISODate()!;
-      return getCalendarMonth(start, end);
-    },
-    enabled: !!user && !authLoading,
-  });
-
   // Diagnostic prompting gate: fetch estimateStatus to show/hide the CTA.
   // React Query deduplication ensures this shares the cache with the dashboard.
   const { data: estimateData } = useQuery<EstimateResponse>({
@@ -200,7 +181,6 @@ function Practice() {
     staleTime: 60000,
   });
 
-  const streakCurrent = calendarData?.streak?.current ?? 0;
   const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
   const mathDomains = normalizePracticeTopicDomains(
@@ -218,7 +198,6 @@ function Practice() {
 
   const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
-  const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
 
   const visibleSkills = useMemo(() => {
     const sourceDomains =
@@ -823,37 +802,19 @@ function Practice() {
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-4">
-                {(kpiError || streakError) && (
+                {kpiError && (
                   <RecoveryNotice
                     title="We couldn't load your activity summary."
                     message={
                       (kpiErrorObj as Error)?.message ||
-                      (streakErrorObj as Error)?.message ||
                       "Try again. If this keeps happening, refresh the page."
                     }
                     onRetry={() => {
                       void refetchKpis();
-                      void refetchStreak();
                     }}
                     retryLabel="Retry summary"
                   />
                 )}
-
-                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-foreground/80">
-                    <Flame className="h-4 w-4" />
-                    Streak
-                  </div>
-                  <span className="text-xl font-semibold">
-                    {streakLoading
-                      ? "—"
-                      : streakError
-                        ? "—"
-                        : streakEmpty
-                          ? "0"
-                          : streakCurrent}
-                  </span>
-                </div>
 
                 <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm text-foreground/80">
@@ -890,11 +851,6 @@ function Practice() {
                 {kpiEmpty && (
                   <p className="text-xs text-muted-foreground">
                     No weekly KPI activity recorded yet.
-                  </p>
-                )}
-                {streakEmpty && (
-                  <p className="text-xs text-muted-foreground">
-                    No streak data for this month yet.
                   </p>
                 )}
               </div>

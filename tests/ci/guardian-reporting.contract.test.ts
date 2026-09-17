@@ -42,9 +42,6 @@ const kpiMocks = {
   buildStudentFullLengthReportView: vi.fn(),
   projectGuardianFullLengthReportView: vi.fn(),
 };
-const calendarMocks = {
-  buildCalendarMonthView: vi.fn(),
-};
 const weaknessViewMocks = {
   buildWeaknessSkillsView: vi.fn(async () => ({
     ok: true,
@@ -55,7 +52,6 @@ const weaknessViewMocks = {
 
 const systemEventInserts: Record<string, unknown>[] = [];
 const guardianAuditInserts: Record<string, unknown>[] = [];
-let profileSelectError: { message: string } | null = null;
 
 class FakeSelectBuilder {
   private readonly rows: any[];
@@ -140,34 +136,6 @@ const seed = {
       created_at: "2026-03-01T00:00:00.000Z",
     },
   ],
-  student_study_profile: [
-    {
-      user_id: "student-1",
-      timezone: "America/Chicago",
-    },
-  ],
-  student_study_plan_days: [
-    {
-      user_id: "student-1",
-      day_date: "2026-03-01",
-      planned_minutes: 45,
-      completed_minutes: 30,
-      status: "in_progress",
-      focus: [{ section: "M", weight: 1 }],
-      tasks: [{ type: "practice" }],
-      is_user_override: true,
-      plan_version: 3,
-    },
-  ],
-  student_question_attempts: [
-    {
-      user_id: "student-1",
-      attempted_at: "2026-03-01T15:00:00.000Z",
-      is_correct: true,
-      time_spent_ms: 120000,
-      event_type: null,
-    },
-  ],
 };
 
 vi.mock("../../server/middleware/supabase-auth", async () => {
@@ -248,10 +216,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       }
 
       const rows = (seed as Record<string, any[]>)[table] ?? [];
-      const selectError =
-        table === "student_study_profile" ? profileSelectError : null;
       return {
-        select: () => new FakeSelectBuilder([...rows], selectError),
+        select: () => new FakeSelectBuilder([...rows]),
         insert: async () => ({ error: null }),
       };
     },
@@ -333,9 +299,6 @@ vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
   resetMasteryLevelsCache: vi.fn(),
 }));
 
-vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
-  buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
-}));
 vi.mock("../../server/services/canonical-runtime-views", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/canonical-runtime-views")
@@ -377,7 +340,6 @@ describe("Guardian reporting runtime contract", () => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
     guardianAuditInserts.length = 0;
-    profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getEntitlementForProfile.mockResolvedValue(null);
     entitlementMocks.isEntitlementActiveForProfile.mockResolvedValue(false);
@@ -487,24 +449,6 @@ describe("Guardian reporting runtime contract", () => {
       ok: true,
       count: 0,
       skills: [],
-    });
-    calendarMocks.buildCalendarMonthView.mockResolvedValue({
-      days: [
-        {
-          day_date: "2026-03-01",
-          planned_minutes: 45,
-          completed_minutes: 30,
-          status: "in_progress",
-          attempt_count: 1,
-          accuracy: 100,
-          avg_seconds_per_question: 120,
-          focus: [{ section: "M" }],
-          tasks: [{ type: "practice" }],
-          plan_version: 3,
-          is_user_override: true,
-        },
-      ],
-      streak: { current: 2, longest: 4 },
     });
   });
 
