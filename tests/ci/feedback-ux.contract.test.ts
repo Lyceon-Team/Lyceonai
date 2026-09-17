@@ -10,7 +10,6 @@ function read(relativePath: string): string {
 
 describe("Feedback UX hardening contract", () => {
   it("uses shared recovery/session notices on key customer surfaces", () => {
-    const calendar = read("client/src/pages/calendar.tsx");
     const fullTest = read("client/src/pages/full-test.tsx");
     const userProfile = read("client/src/pages/UserProfile.tsx");
 
@@ -18,8 +17,6 @@ describe("Feedback UX hardening contract", () => {
     // client/src/pages/chat.error-rendering.contract.test.tsx proves the
     // property directly (errors render through structured notice, raw
     // server text never surfaces). No static name-matching needed.
-    expect(calendar).toContain("RecoveryNotice");
-    expect(calendar).toContain("SessionNotice");
     expect(fullTest).toContain("RecoveryNotice");
     expect(fullTest).toContain("SessionNotice");
     expect(userProfile).toContain("RecoveryNotice");
@@ -55,7 +52,6 @@ describe("Feedback UX hardening contract", () => {
   it("routes every premium denial through the one CTA component", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/calendar.tsx",
       "client/src/pages/full-test.tsx",
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
@@ -78,7 +74,6 @@ describe("Feedback UX hardening contract", () => {
   it("lets no surface name a billing route for itself", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/calendar.tsx",
       "client/src/pages/full-test.tsx",
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
@@ -114,7 +109,6 @@ describe("Feedback UX hardening contract", () => {
   it("removes destructive alert variants from audited customer surfaces", () => {
     const auditedFiles = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/calendar.tsx",
       "client/src/pages/full-test.tsx",
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",

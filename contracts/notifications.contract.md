@@ -246,6 +246,77 @@ The batch bound applies per branch, not as a shared budget: a large event backlo
 
 ---
 
+## 11A. Do-not-contact rule (suppression)
+
+**C11A.1** THE LIST IS THE PROVIDER'S. A do-not-contact request is honoured by adding the address
+to Resend's team suppression list — one `POST /suppressions`. There is no local table of
+suppressed addresses, no hash of one, and no secret. Resend applies its list to every send the
+team makes, across every domain and subdomain, whether the send arrives by REST or through the
+SMTP relay, which is why it also covers the mail Supabase Auth sends (password reset, email
+change, confirmation). A second copy of that enforcement in this codebase could only disagree
+with it, and hashing an address locally protects nothing while the provider holds the plaintext.
+*Violated if:* any table, column or file in this repository stores a suppressed address or a
+value derived from one; or a module other than `server/lib/notifications/transport.ts` calls the
+provider's suppression endpoints.
+
+**C11A.2** ORDERING IS THE MECHANISM. The completion notice is sent BEFORE the suppression call,
+inside the same per-request step of `executeDueDeletions` (step 6 then step 7). Because Resend's
+list applies to transactional sends, suppressing first would have the provider swallow the one
+message that confirms the deletion to the person who asked for it. There is no bypass to build
+and none to configure; the order is the whole design.
+*Violated if:* the suppression call precedes the completion notice for the same request, or is
+moved to a place where a later notice for that request could follow it.
+
+**C11A.3** THE DATABASE DECIDES WHETHER IT WAS ASKED FOR. The executor reads
+`deletion_request_log.suppression_requested` and calls the provider only when it is true, and
+`public.record_deletion_suppression_outcome(log_id, status)` also carries
+`AND suppression_requested = true`, so no caller can record an outcome — or manufacture a
+suppression — against somebody who never requested one.
+*Violated if:* the provider call is made without reading that column, or the writer's guard is
+removed.
+
+**C11A.4** A FAILURE NEVER FAILS THE DELETION. The deletion is committed before step 7 runs and
+the erasure is the legally meaningful act, so a provider failure records
+`deletion_request_log.suppression_status = 'failed_manual'`, pages at error severity with the
+stable event name `DELETION / suppression_failed_manual`, and leaves the deletion complete. The
+retry sweep at the top of every executor pass re-attempts every request whose
+`suppression_status IS DISTINCT FROM 'applied'` — both a known failure and a row whose outcome
+write never landed — until Resend accepts. A row that reached `'applied'` is never re-sent.
+*Violated if:* a suppression failure raises into the deletion, is silent, or leaves nothing for
+the sweep; or the sweep re-suppresses a row already `'applied'`.
+
+**C11A.5** WHO HONOURS IT, AND WHO MUST NOT CONSULT IT. Resend honours it, for everything. The
+**dispatcher** therefore does NOT re-check it before sending — that check was removed, and adding
+one back is a violation of C11A.1. **Registration does not consult it and does not clear it**:
+refusing a suppressed address at signup would make the signup form answer "was this address once
+deleted", and clearing it silently would treat signing up again as unambiguous consent to be
+contacted when the original request may have come from a parent.
+*Violated if:* `server/lib/notifications/dispatch.ts` gains a suppression check; or any
+registration or signup path reads, writes or clears the suppression list.
+
+**C11A.6** IT IS SURFACED, AND THE SUBJECT CAN LIFT IT. SCL-090 as ruled 2026-09-17: keep the
+suppression, surface it, one click to clear. `GET /api/account/email-suppression` reports whether
+the authenticated account's own address is suppressed and with what origin;
+`POST /api/account/email-suppression/clear` removes the entry and records affirmative re-consent
+as one `audit_logs` row (`action = 'email_suppression_cleared'`, actor and target both the
+subject, metadata only). The address on both routes comes from the authenticated session's
+profile and never from the request, so neither route is an oracle for "was this address once
+deleted" nor a way to un-suppress somebody else. Only a `manual`-origin entry is clearable: a
+bounce or a spam complaint is not a do-not-contact request, and clearing one would not be consent.
+`deletion_request_log` is deliberately NOT written by the clear path — `suppression_status` stays
+`'applied'`, which is the value the retry sweep skips, so lifting a suppression survives the next
+nightly pass and the settings route stays out of the evidence universe entirely (plan v4 §2).
+*Violated if:* either route takes the address from the request body or query; a `bounce` or
+`complaint` entry is cleared from the account surface; a clear succeeds without the `audit_logs`
+row being attempted; or the clear path writes to any `deletion_*` table.
+
+WHY THIS MATTERS MORE THAN IT LOOKS. Because Resend's list covers Supabase Auth's mail too, a
+student who deleted with suppression and later signs up again cannot receive a **password reset**
+— not merely a product notification. Without C11A.6 that person is locked out of account recovery
+with nothing in the product to explain why.
+
+---
+
 ## 12. Sender, environment, and tracking
 
 **C12.1** Sender is `NOTIFICATION_FROM_EMAIL` (`notifications@send.lyceon.ai` in production), read from the environment, never hard-coded.
@@ -283,4 +354,5 @@ The batch bound applies per branch, not as a shared budget: a large event backlo
 | C0.6 | `tests/ci/deletion-completed-notice.pg.ci.test.ts` — real migrations on a throwaway Postgres: the `profiles` read precedes every RPC (asserted by call order); a failed RPC and a rolled-back SQL transaction each send nothing and leave the row `pending`; a rejected send leaves the deletion committed and the next account in the batch completes (two attempts, no retry); the raw address is absent from every captured log line while its redacted form is present; a second cron pass sends nothing |
 | C1.1, C2.2, C2.3, C5.1, C5.2, C8.1 for `guardian_unlinked` | `tests/ci/guardian-unlinked.pg.ci.test.ts` — student revoke → guardian only; guardian revoke → student only; LY003 emits nothing and is 409; non-party student is 404; rollback leaves zero rows; `revocation_reason` absent from every payload and rendered template; ids distinct from `guardian_linked` for the same row |
 | C3.2 on the client (page + shells) | `client/src/pages/notifications.test.tsx` — full title and body rendered, cursor pagination, archived items only when asked, mark-all-seen once on arrival and never read, archive moves the row to the archived view, read is explicit (item open / Mark as read / Mark all as read), heading focus, labelled controls, absolute time behind the relative label, polite live region; `client/src/components/layout/shells.notification-bell.test.tsx` gate 3 — the page renders inside GuardianShell for a guardian and AppShell for a student, is registered in App.tsx behind RequireRole, and the bell links to it |
+| C11A.1 – C11A.6 | `tests/ci/deletion-phases-235.pg.ci.test.ts` — P2.1 the notice reaches the provider before the suppression call (the sequence, against a fake that enforces its own list), P2.2 the call is made only when `suppression_requested`, P2.3 a failure records `failed_manual`, pages once and the deletion still completes, P2.4 the sweep rescues both a failed and a status-less row and stops at `applied`, P2.5 clearing calls `DELETE /suppressions/{address}`, records re-consent, and refuses a `complaint`-origin entry |
 | §0.4 invite direct send, §36.2 limits | `tests/ci/guardian-invite.pg.ci.test.ts` — idempotent key on repeated submit; 3/day per address denied; body carries code + prefilled link and no progress data; redeem without auth creates nothing; byte-identical response for an address with and without an account |

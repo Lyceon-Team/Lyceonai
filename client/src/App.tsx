@@ -23,7 +23,6 @@ import NotificationsPage from "@/pages/notifications";
 const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
-const CalendarPage = lazy(() => import("@/pages/calendar"));
 const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
@@ -109,14 +108,6 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "admin"]}>
               <LyceonDashboard />
-            </RequireRole>
-          )}
-        />
-        <Route
-          path="/calendar"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <CalendarPage />
             </RequireRole>
           )}
         />

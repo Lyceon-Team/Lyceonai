@@ -8,8 +8,9 @@
 #
 # Every case runs in a throwaway git repository built from a copy of legal/
 # and the gate scripts, so the real working tree is never touched and case A
-# can have a base ref that already carries published versions — which
-# origin/stripe does not until this lands.
+# can have a base ref that already carries published versions. It pins
+# LEGAL_BASE_REF to its own throwaway branch, so it never depends on which
+# remote branches exist.
 #
 # The case that matters most is B. A published en.md is edited AND its
 # content_hash updated in the same commit. A gate that compares the file to

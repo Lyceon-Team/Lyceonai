@@ -52,6 +52,7 @@ import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
+import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 
 interface UserProfile {
@@ -662,6 +663,11 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* SCL-090 as ruled 2026-09-17: a do-not-contact request outlives the account it
+                    came from and silences password resets too, so the one surface that can
+                    explain it lives here, above the control that creates it. Renders nothing
+                    unless this address is actually suppressed. */}
+                <EmailNotificationsCard />
                 <DeleteAccountCard />
               </CardContent>
             </Card>
