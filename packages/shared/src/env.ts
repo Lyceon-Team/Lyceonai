@@ -67,8 +67,9 @@ export const envSchema = z.object({
 });
 
 /**
- * The notification lane's three variables, as one schema so the startup validator and
- * the transport parse the same shape.
+ * The notification lane's variables, as one schema so the startup validator and the transport
+ * parse the same shape. Three of them: the suppression list lives at Resend and is reached with
+ * RESEND_API_KEY, so honouring a do-not-contact request needs no secret of its own.
  */
 export const notificationEnvSchema = envSchema.pick({
   RESEND_API_KEY: true,
