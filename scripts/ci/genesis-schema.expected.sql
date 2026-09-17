@@ -100,6 +100,62 @@ END;
 $$;
 
 
+--
+-- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid DEFAULT NULL::uuid, p_batch_size integer DEFAULT 1000) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz;
+  v_rows   bigint;
+BEGIN
+  IF p_action NOT IN ('strip_identity', 'purge_expired') THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: unknown action %', p_action USING ERRCODE = '22023';
+  END IF;
+  IF p_action = 'strip_identity' AND p_profile_id IS NULL THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: strip_identity requires a profile id' USING ERRCODE = '22023';
+  END IF;
+  IF p_action = 'purge_expired' AND (p_batch_size IS NULL OR p_batch_size < 1) THEN
+    RAISE EXCEPTION 'apply_audit_logs_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Open the gate for this transaction only.
+  PERFORM set_config('lyceon.audit_logs_retention', 'on', true);
+
+  IF p_action = 'strip_identity' THEN
+    UPDATE public.audit_logs
+       SET actor_profile_id  = NULL,
+           target_profile_id = NULL
+     WHERE actor_profile_id = p_profile_id
+        OR target_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+    -- Close it again, so nothing later in THIS transaction inherits the exemption.
+    PERFORM set_config('lyceon.audit_logs_retention', 'off', true);
+    RETURN jsonb_build_object('action', p_action, 'rows', v_rows, 'cutoff', NULL);
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.audit_logs_retention_days());
+
+  DELETE FROM public.audit_logs a
+   WHERE a.id IN (
+     SELECT b.id FROM public.audit_logs b
+      WHERE b.created_at < v_cutoff
+      ORDER BY b.created_at
+      LIMIT p_batch_size
+   );
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  PERFORM set_config('lyceon.audit_logs_retention', 'off', true);
+  RETURN jsonb_build_object('action', p_action, 'rows', v_rows, 'cutoff', v_cutoff);
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -343,6 +399,65 @@ $$;
 
 
 --
+-- Name: audit_logs_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_retention_days() RETURNS integer
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_raw   jsonb;
+  v_days  integer;
+BEGIN
+  SELECT c.value INTO v_raw
+    FROM public.account_deletion_runtime_config c
+   WHERE c.key = 'anonymization_retention_days';
+
+  IF v_raw IS NULL OR jsonb_typeof(v_raw) <> 'number' THEN
+    RETURN 365;
+  END IF;
+
+  v_days := (v_raw #>> '{}')::integer;
+  IF v_days IS NULL OR v_days < 1 THEN
+    RETURN 365;
+  END IF;
+  RETURN v_days;
+END;
+$$;
+
+
+--
+-- Name: audit_logs_retention_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_retention_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- The sole exemption (SCL-087 / R3). `current_setting(..., true)` returns NULL rather than
+  -- raising when the GUC was never set, so the default posture of every session is "refused".
+  IF current_setting('lyceon.audit_logs_retention', true) = 'on' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Table % is append-only; UPDATE and DELETE are not permitted', TG_TABLE_NAME;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION audit_logs_retention_guard(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.audit_logs_retention_guard() IS 'Append-only guard for audit_logs ONLY (SCL-087 / R3). Identical refusal to public.prevent_update_delete(), plus the single retention exemption gated on the lyceon.audit_logs_retention GUC that public.apply_audit_logs_retention sets transaction-locally. The shared guard is deliberately not modified: nineteen other append-only tables use it and must not inherit this exemption.';
+
+
+--
 -- Name: backfill_recompute_student(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -480,6 +595,1901 @@ $$;
 
 
 --
+-- Name: calendar_build_plan_input(uuid, date[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_profile   record;
+  v_constants jsonb;
+  v_today     date;
+  v_window    integer;
+  v_practice  integer;
+  v_review    integer;
+  v_horizon_lo date;
+  v_horizon_hi date;
+  v_degraded  jsonb := '[]'::jsonb;
+  v_mastery   jsonb;
+BEGIN
+  SELECT * INTO v_profile FROM public.student_study_profile WHERE student_id = p_student_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_build_plan_input: student % has no study profile', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT jsonb_object_agg(key, value) INTO v_constants FROM public.calendar_runtime_config;
+  IF v_constants IS NULL THEN
+    RAISE EXCEPTION 'calendar_runtime_config: no rows; the calendar cannot generate without constants'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- §8.2 local dates: every date in a plan is the student’s local date, and the
+  -- profile’s timezone is what makes "today" mean anything.
+  v_today  := (now() AT TIME ZONE v_profile.timezone)::date;
+  v_window := public.calendar_require_int(v_constants, 'recent_planned_window_days');
+  v_review := public.calendar_require_int(v_constants, 'review_estimated_seconds_per_item');
+
+  -- Doc 02B §41 owns practice timing. It is referenced, never restated (§20 audit rule).
+  SELECT public.calendar_require_int(jsonb_build_object('target_seconds_per_question', value),
+                                     'target_seconds_per_question')
+    INTO v_practice
+  FROM public.practice_runtime_config WHERE key = 'target_seconds_per_question';
+  IF v_practice IS NULL THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key ''target_seconds_per_question'''
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_horizon_lo := COALESCE((SELECT min(d) FROM unnest(p_dates) d), v_today);
+  v_horizon_hi := COALESCE((SELECT max(d) FROM unnest(p_dates) d), v_today);
+
+  -- Mastery, in canonical order, one row per domain. A student with no rows is
+  -- COLD START, not degraded: all eight unknown is a state the formula has a
+  -- branch for (sheet §2 step 3), and calling it degraded would push every new
+  -- student onto fallback_v1 for being new.
+  SELECT jsonb_agg(jsonb_build_object(
+           'section', CASE WHEN d.domain IN ('Algebra','Advanced Math',
+                                             'Problem Solving and Data Analysis',
+                                             'Geometry and Trigonometry') THEN 'M' ELSE 'RW' END,
+           'domain', d.domain,
+           'mastery_level', m.mastery_level) ORDER BY d.ord)
+    INTO v_mastery
+  FROM jsonb_array_elements_text(v_constants -> 'canonical_domain_order')
+       WITH ORDINALITY AS d(domain, ord)
+  LEFT JOIN public.student_domain_mastery m
+    ON m.student_id = p_student_id AND m.domain = d.domain;
+
+  -- The exams seam has no table yet: full-length is a rebuild vertical and its
+  -- adapter ships as a fail-open stub (G-08-02, sheet §8 item 12). Recording it
+  -- in degraded[] is the honest form — the alternative is a snapshot that claims
+  -- the student has never sat an exam, which is a different statement.
+  v_degraded := v_degraded || '"exams"'::jsonb;
+
+  RETURN jsonb_build_object(
+    'student_id', p_student_id,
+    'today', v_today::text,
+    'generated_for', jsonb_build_object(
+      'dates', COALESCE((SELECT jsonb_agg(d::text ORDER BY d) FROM unnest(p_dates) d), '[]'::jsonb)),
+
+    'profile', jsonb_build_object(
+      'timezone', v_profile.timezone,
+      'target_exam_date', v_profile.target_exam_date::text,
+      'target_score', v_profile.target_score,
+      'study_days_mask', v_profile.study_days_mask,
+      'daily_minutes', v_profile.daily_minutes,
+      'full_length_weekday', v_profile.full_length_weekday,
+      'planner_mode', v_profile.planner_mode,
+      'setup_date', COALESCE(
+        (v_profile.setup_completed_at AT TIME ZONE v_profile.timezone)::date,
+        (v_profile.created_at AT TIME ZONE v_profile.timezone)::date)::text),
+
+    'mastery', COALESCE(v_mastery, '[]'::jsonb),
+
+    -- Anything already overdue folds onto today rather than being lost: the
+    -- generator walks the horizon forward and never looks behind its first date.
+    'review_due_by_date', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('date', q.d::text, 'due_count', q.n) ORDER BY q.d)
+      FROM (
+        SELECT greatest((r.next_review_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
+               count(*)::integer AS n
+        FROM public.review_schedule r
+        WHERE r.student_id = p_student_id
+          AND r.status = 'active'
+          AND (r.next_review_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
+        GROUP BY 1
+      ) q), '[]'::jsonb),
+
+    'exams', jsonb_build_object(
+      'last_completed_local_date', NULL,
+      'days_since_exam', NULL,
+      'missed_count', NULL,
+      'reviewed', NULL,
+      'weak_domains', '[]'::jsonb),
+
+    -- The deficit rule measures a domain against what it has had over the
+    -- window plus today (sheet §2 step 5). Only domain-level practice blocks
+    -- can be attributed. A cold-start section block names no domain, and
+    -- guessing how to split it would be inventing history.
+    'recent_planned_by_domain', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('domain', q.domain, 'count', q.n) ORDER BY q.domain)
+      FROM (
+        SELECT e ->> 'domain' AS domain, sum((e ->> 'count')::integer)::integer AS n
+        FROM public.calendar_current_plan cp
+        JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+        CROSS JOIN LATERAL jsonb_array_elements(b.scope -> 'mix') e
+        WHERE cp.student_id = p_student_id
+          AND b.block_type = 'practice'
+          AND b.scope ->> 'level' = 'domain'
+          AND cp.scheduled_date >= v_today - v_window
+          AND cp.scheduled_date < v_today
+        GROUP BY 1
+      ) q), '[]'::jsonb),
+
+    -- §12.2 protected state, and the inputs V-12/V-13/V-14 are checked against.
+    'started_blocks_by_date', COALESCE((
+      SELECT jsonb_agg(DISTINCT jsonb_build_object(
+               'scheduled_date', b.scheduled_date::text, 'block_id', b.block_id::text))
+      FROM public.calendar_blocks b
+      WHERE b.student_id = p_student_id
+        AND b.scheduled_date BETWEEN v_horizon_lo AND v_horizon_hi
+        AND EXISTS (SELECT 1 FROM public.calendar_block_launches l WHERE l.block_id = b.block_id)
+      ), '[]'::jsonb),
+
+    'existing_blocks_by_date', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'scheduled_date', b.scheduled_date::text, 'block_id', b.block_id::text))
+      FROM public.calendar_blocks b
+      WHERE b.student_id = p_student_id
+        AND b.scheduled_date BETWEEN v_horizon_lo AND v_horizon_hi
+      ), '[]'::jsonb),
+
+    'current_overrides', COALESCE((
+      SELECT jsonb_agg(DISTINCT jsonb_build_object(
+               'scheduled_date', cp.scheduled_date::text, 'is_user_override', cp.is_user_override))
+      FROM public.calendar_current_plan cp
+      WHERE cp.student_id = p_student_id
+        AND cp.scheduled_date BETWEEN v_horizon_lo AND v_horizon_hi
+      ), '[]'::jsonb),
+
+    'enabled_block_types', v_constants -> 'enabled_block_types',
+
+    'engine_planning', jsonb_build_object(
+      'practice_seconds_per_unit', v_practice,
+      'review_seconds_per_unit', v_review),
+
+    'constants', v_constants,
+    'degraded', v_degraded);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1 / formula sheet §5. The only calendar function that reads canonical tables, and freezes them into the snapshot so the generator reads nothing else (INV-08-06). Raises on a missing profile or missing constants — essential inputs are never invented.';
+
+
+--
+-- Name: calendar_carry_started(jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_carry_started(p_input jsonb, p_output jsonb) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_set(p_output, '{dates}', COALESCE((
+    SELECT jsonb_agg(jsonb_set(d, '{members}',
+             COALESCE((
+               SELECT jsonb_agg(jsonb_build_object('kind','carried','block_id', s ->> 'block_id')
+                                ORDER BY s ->> 'block_id')
+               FROM jsonb_array_elements(COALESCE(p_input -> 'started_blocks_by_date','[]'::jsonb)) s
+               WHERE (s ->> 'scheduled_date')::date = (d ->> 'scheduled_date')::date
+                 AND NOT EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(COALESCE(d -> 'members','[]'::jsonb)) m
+                   WHERE m ->> 'kind' = 'carried' AND m ->> 'block_id' = s ->> 'block_id')
+             ), '[]'::jsonb) || COALESCE(d -> 'members', '[]'::jsonb))
+           ORDER BY ord)
+    FROM jsonb_array_elements(p_output -> 'dates') WITH ORDINALITY AS t(d, ord)
+  ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_carry_started(p_input jsonb, p_output jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_carry_started(p_input jsonb, p_output jsonb) IS 'Doc 05F §12.2. Prepends the date''s already-started blocks as carried members, idempotently — a member list that already carries one is left alone.';
+
+
+--
+-- Name: calendar_compute_plan(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_compute_plan(p_input jsonb) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $$
+DECLARE
+  -- constants (sheet §4)
+  k_horizon_days      integer;
+  k_review_share_bp   integer;
+  k_review_block_max  integer;
+  k_exam_review_dflt  integer;
+  k_null_weight       integer;
+  k_post_days         integer;
+  k_post_mult         integer;
+  k_min_domain_q      integer;
+  k_max_domains       integer;
+  k_granularity       integer;
+  k_taper_days        integer;
+  k_taper_bp          integer;
+  v_constants         jsonb;
+  v_weight_by_level   jsonb;
+  v_order             jsonb;
+
+  -- engine planning (snapshotted from the owning configs)
+  e_practice_secs     integer;
+  e_review_secs       integer;
+
+  -- profile
+  p_today             date;
+  p_setup             date;
+  p_mask              integer;
+  p_minutes           integer;
+  p_target            date;
+  p_fl_weekday        integer;
+
+  -- exams
+  x_last_date         date;
+  x_days_since        integer;
+  x_missed            integer;
+  x_reviewed          boolean;
+  x_weak              text[];
+
+  -- domain arrays, all aligned on canonical order
+  d_dom               text[] := '{}';
+  d_sec               text[] := '{}';
+  d_lvl               integer[] := '{}';
+  d_w                 integer[] := '{}';
+  d_why               text[] := '{}';
+  d_alloc             integer[] := '{}';
+  v_cold_start        boolean;
+
+  -- exam placement (shared derivation)
+  v_fl                jsonb;
+
+  -- running state
+  v_allocated_total   integer := 0;
+  v_planned_total     integer := 0;
+  v_due               integer := 0;
+  v_pending_active    boolean := false;
+  v_pending_size      integer;
+  v_pending_key       text;
+  v_study_index       integer := 0;
+
+  -- per-day
+  v_d                 date;
+  v_i                 integer;
+  v_j                 integer;
+  v_k                 integer;
+  v_days              jsonb := '[]'::jsonb;
+  v_blocks            jsonb;
+  v_budget            integer;
+  v_tapered           boolean;
+  v_dd                integer;
+  v_size              integer;
+  v_r                 integer;
+  v_day_q             integer;
+  v_sec_q             integer;
+  v_half              integer;
+  v_lead              text;
+  v_other             text;
+  v_tot               integer;
+  v_sec_tot           integer;
+  v_units             integer;
+  v_cum               integer;
+  v_best              integer;
+  v_best_def          integer;
+  v_def               integer;
+  v_sec_w             integer[];
+  v_sec_units         integer[];
+  v_planned_sec       integer[];
+  v_s                 integer;
+  v_secname           text;
+  v_mix_dom           integer[];
+  v_mix_cnt           integer[];
+  v_mix_json          jsonb;
+  v_pool_ok           boolean;
+  v_key               text;
+BEGIN
+  ----------------------------------------------------------------------------
+  -- Snapshot unpacking. Every essential field is required, never defaulted.
+  ----------------------------------------------------------------------------
+  v_constants := p_input -> 'constants';
+  IF v_constants IS NULL OR jsonb_typeof(v_constants) <> 'object' THEN
+    RAISE EXCEPTION 'calendar_compute_plan: snapshot has no constants object' USING ERRCODE = '22023';
+  END IF;
+
+  k_horizon_days     := public.calendar_require_int(v_constants, 'horizon_days');
+  k_review_share_bp  := public.calendar_require_int(v_constants, 'review_share_max_bp');
+  k_review_block_max := public.calendar_require_int(v_constants, 'review_block_max');
+  k_exam_review_dflt := public.calendar_require_int(v_constants, 'exam_review_default_count');
+  k_null_weight      := public.calendar_require_int(v_constants, 'null_level_weight');
+  k_post_days        := public.calendar_require_int(v_constants, 'post_exam_emphasis_days');
+  k_post_mult        := public.calendar_require_int(v_constants, 'post_exam_multiplier');
+  k_min_domain_q     := public.calendar_require_int(v_constants, 'min_domain_questions');
+  k_max_domains      := public.calendar_require_int(v_constants, 'max_domains_per_block');
+  k_granularity      := public.calendar_require_int(v_constants, 'granularity');
+  k_taper_days       := public.calendar_require_int(v_constants, 'taper_days');
+  k_taper_bp         := public.calendar_require_int(v_constants, 'taper_ratio_bp');
+
+  v_weight_by_level := v_constants -> 'weight_by_level';
+  v_order           := v_constants -> 'canonical_domain_order';
+  IF v_weight_by_level IS NULL OR jsonb_typeof(v_weight_by_level) <> 'object'
+     OR v_order IS NULL OR jsonb_typeof(v_order) <> 'array'
+     OR jsonb_array_length(v_order) <> 8 THEN
+    RAISE EXCEPTION 'calendar_compute_plan: constants must carry weight_by_level and an eight-entry canonical_domain_order'
+      USING ERRCODE = '22023';
+  END IF;
+
+  e_practice_secs := public.calendar_require_int(p_input -> 'engine_planning', 'practice_seconds_per_unit');
+  e_review_secs   := public.calendar_require_int(p_input -> 'engine_planning', 'review_seconds_per_unit');
+  IF e_practice_secs < 1 OR e_review_secs < 1 THEN
+    RAISE EXCEPTION 'calendar_compute_plan: engine_planning seconds-per-unit must be positive' USING ERRCODE = '22023';
+  END IF;
+
+  IF (p_input -> 'profile') IS NULL OR (p_input ->> 'today') IS NULL THEN
+    RAISE EXCEPTION 'calendar_compute_plan: snapshot has no profile or no today' USING ERRCODE = '22023';
+  END IF;
+  p_today      := (p_input ->> 'today')::date;
+  p_setup      := (p_input #>> '{profile,setup_date}')::date;
+  p_mask       := public.calendar_require_int(p_input -> 'profile', 'study_days_mask');
+  p_minutes    := public.calendar_require_int(p_input -> 'profile', 'daily_minutes');
+  p_target     := (p_input #>> '{profile,target_exam_date}')::date;
+  p_fl_weekday := CASE WHEN (p_input #>> '{profile,full_length_weekday}') IS NULL THEN NULL
+                       ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_weekday') END;
+  IF p_setup IS NULL THEN
+    RAISE EXCEPTION 'calendar_compute_plan: profile.setup_date is essential and was not supplied' USING ERRCODE = '22023';
+  END IF;
+
+  x_last_date  := (p_input #>> '{exams,last_completed_local_date}')::date;
+  x_days_since := CASE WHEN (p_input #>> '{exams,days_since_exam}') IS NULL THEN NULL
+                       ELSE public.calendar_require_int(p_input -> 'exams', 'days_since_exam') END;
+  x_missed     := CASE WHEN (p_input #>> '{exams,missed_count}') IS NULL THEN NULL
+                       ELSE public.calendar_require_int(p_input -> 'exams', 'missed_count') END;
+  -- jsonb null cannot be cast to boolean, it RAISES — and a snapshot whose
+  -- exam facts are unreadable carries exactly that. An absent flag means "not
+  -- known to be reviewed", which the ladder below already treats correctly.
+  x_reviewed   := CASE WHEN jsonb_typeof(p_input #> '{exams,reviewed}') = 'boolean'
+                      THEN (p_input #> '{exams,reviewed}')::boolean ELSE NULL END;
+  SELECT COALESCE(array_agg(t), '{}') INTO x_weak
+  FROM jsonb_array_elements_text(COALESCE(p_input #> '{exams,weak_domains}', '[]'::jsonb)) t;
+
+  ----------------------------------------------------------------------------
+  -- Domain arrays, in canonical order. `mastery` carries the section for each
+  -- domain, so the M/RW split is read from the snapshot rather than restated
+  -- here, and canonical_domain_order supplies only the order.
+  ----------------------------------------------------------------------------
+  FOR v_i IN 0 .. 7 LOOP
+    d_dom := d_dom || (v_order ->> v_i);
+    SELECT m ->> 'section',
+           CASE WHEN m ->> 'mastery_level' IS NULL THEN NULL ELSE (m ->> 'mastery_level')::integer END
+      INTO v_secname, v_s
+    FROM jsonb_array_elements(COALESCE(p_input -> 'mastery', '[]'::jsonb)) m
+    WHERE m ->> 'domain' = (v_order ->> v_i);
+    IF v_secname IS NULL THEN
+      RAISE EXCEPTION 'calendar_compute_plan: snapshot mastery has no row for domain ''%''', v_order ->> v_i
+        USING ERRCODE = '22023';
+    END IF;
+    d_sec := d_sec || v_secname;
+    d_lvl := d_lvl || v_s;
+    d_alloc := d_alloc || 0;
+  END LOOP;
+
+  -- recent_planned_by_domain seeds the deficit state (sheet §2 step 5: the
+  -- deficit is measured against the last recent_planned_window_days plus today).
+  FOR v_i IN 1 .. 8 LOOP
+    SELECT COALESCE((SELECT public.calendar_require_int(r, 'count')
+                     FROM jsonb_array_elements(COALESCE(p_input -> 'recent_planned_by_domain', '[]'::jsonb)) r
+                     WHERE r ->> 'domain' = d_dom[v_i]), 0)
+      INTO v_s;
+    d_alloc[v_i] := v_s;
+    v_allocated_total := v_allocated_total + v_s;
+  END LOOP;
+  v_planned_total := v_allocated_total;
+
+  ----------------------------------------------------------------------------
+  -- Step 3 — need weights. All eight unmeasured is cold start: Step 5 splits
+  -- Math and R&W evenly and no weight is consulted.
+  ----------------------------------------------------------------------------
+  v_cold_start := true;
+  FOR v_i IN 1 .. 8 LOOP
+    IF d_lvl[v_i] IS NOT NULL THEN v_cold_start := false; END IF;
+  END LOOP;
+
+  FOR v_i IN 1 .. 8 LOOP
+    IF d_lvl[v_i] IS NULL THEN
+      d_w := d_w || k_null_weight;
+      d_why := d_why || 'exploring'::text;
+    ELSE
+      d_w := d_w || public.calendar_require_int(v_weight_by_level, d_lvl[v_i]::text);
+      d_why := d_why || (CASE WHEN d_lvl[v_i] <= 1 THEN 'weak'
+                              WHEN d_lvl[v_i] >= 3 THEN 'strength'
+                              ELSE 'balanced' END)::text;
+    END IF;
+    IF x_days_since IS NOT NULL AND x_days_since <= k_post_days AND d_dom[v_i] = ANY (x_weak) THEN
+      d_w[v_i] := d_w[v_i] * k_post_mult;
+      d_why[v_i] := 'post_exam';
+    END IF;
+  END LOOP;
+
+  ----------------------------------------------------------------------------
+  -- Step 2 — full-length placement, shared with fallback_v1 so the precedence
+  -- rules have exactly one implementation (sheet §5A).
+  ----------------------------------------------------------------------------
+  v_fl := public.calendar_place_full_lengths(p_input);
+
+  ----------------------------------------------------------------------------
+  -- An exam completed and not yet reviewed owes an exam-review block on the
+  -- next study day. A missed count of zero leaves the debt standing rather than
+  -- discharging it silently -- the reference does the same, and inventing a
+  -- size here would be exactly the kind of guess §6 forbids.
+  ----------------------------------------------------------------------------
+  IF x_last_date IS NOT NULL AND x_missed IS NOT NULL AND x_reviewed IS NOT true THEN
+    v_pending_active := true;
+    v_pending_size   := x_missed;
+    v_pending_key    := 'exam_review';
+  END IF;
+
+  ----------------------------------------------------------------------------
+  -- The six steps, per date in horizon order.
+  ----------------------------------------------------------------------------
+  FOR v_i IN 0 .. k_horizon_days - 1 LOOP
+    v_d := p_today + v_i;
+
+    SELECT v_due + COALESCE((SELECT public.calendar_require_int(r, 'due_count')
+                             FROM jsonb_array_elements(COALESCE(p_input -> 'review_due_by_date', '[]'::jsonb)) r
+                             WHERE (r ->> 'date')::date = v_d), 0)
+      INTO v_due;
+
+    -- An exam day holds nothing else, and sets up the review that follows it.
+    SELECT f ->> 'explanation_key' INTO v_key
+    FROM jsonb_array_elements(v_fl) f WHERE (f ->> 'date')::date = v_d;
+
+    IF v_key IS NOT NULL THEN
+      v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
+        jsonb_build_object('block_type','full_length','section', NULL,
+                           'scope', jsonb_build_object('form_id', NULL),
+                           'target_count', 1, 'explanation_key', v_key)));
+      v_pending_active := true;
+      v_pending_size   := k_exam_review_dflt;
+      v_pending_key    := 'exam_review_placeholder';
+      CONTINUE;
+    END IF;
+
+    IF ((p_mask >> (EXTRACT(DOW FROM v_d)::integer)) & 1) <> 1 THEN
+      v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', '[]'::jsonb);
+      CONTINUE;
+    END IF;
+
+    -- Step 1 — budget. Nothing is planned on or after the test until the
+    -- student sets a new date.
+    v_budget := p_minutes * 60;
+    v_tapered := false;
+    IF p_target IS NOT NULL THEN
+      v_dd := p_target - v_d;
+      IF v_dd <= 0 THEN
+        v_budget := 0;
+      ELSIF v_dd <= k_taper_days THEN
+        v_budget := v_budget * k_taper_bp / 10000;
+        v_tapered := true;
+      END IF;
+    END IF;
+
+    v_blocks := '[]'::jsonb;
+
+    -- Step 4 — review. Exam review takes the whole budget if it needs it,
+    -- otherwise ordinary review is capped by its share of the day.
+    IF v_pending_active THEN
+      v_size := least(v_pending_size, v_budget / e_review_secs);
+      IF v_size >= 1 THEN
+        v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
+                      'scope', jsonb_build_object('mode','queue'),
+                      'target_count', v_size, 'explanation_key', v_pending_key);
+        v_budget := v_budget - v_size * e_review_secs;
+        v_pending_active := false;
+      END IF;
+    ELSE
+      v_r := least(v_due, k_review_block_max, (k_review_share_bp * v_budget / 10000) / e_review_secs);
+      IF v_r >= 1 THEN
+        v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
+                      'scope', jsonb_build_object('mode','queue'),
+                      'target_count', v_r, 'explanation_key','review_due');
+        v_due := v_due - v_r;
+        v_budget := v_budget - v_r * e_review_secs;
+      END IF;
+    END IF;
+
+    -- Step 5 — practice.
+    v_day_q := (v_budget / e_practice_secs) / k_granularity * k_granularity;
+    IF v_day_q >= k_min_domain_q THEN
+      IF v_cold_start THEN
+        -- Math and R&W halves, the leading section alternating by study-day index.
+        v_half := (v_day_q / k_granularity / 2) * k_granularity;
+        IF v_study_index % 2 = 0 THEN v_lead := 'M'; v_other := 'RW';
+        ELSE v_lead := 'RW'; v_other := 'M'; END IF;
+        v_key := CASE WHEN v_tapered THEN 'taper' ELSE 'cold_start' END;
+        v_blocks := v_blocks || jsonb_build_object('block_type','practice','section', v_lead,
+                      'scope', jsonb_build_object('level','section','count', v_day_q - v_half,
+                                                  'explanation_key', v_key),
+                      'target_count', v_day_q - v_half, 'explanation_key', v_key);
+        IF v_half <> 0 THEN
+          v_blocks := v_blocks || jsonb_build_object('block_type','practice','section', v_other,
+                        'scope', jsonb_build_object('level','section','count', v_half,
+                                                    'explanation_key', v_key),
+                        'target_count', v_half, 'explanation_key', v_key);
+        END IF;
+      ELSE
+        v_tot := 0;
+        FOR v_j IN 1 .. 8 LOOP v_tot := v_tot + d_w[v_j]; END LOOP;
+
+        v_sec_w := ARRAY[0, 0];         -- [1] = M, [2] = RW
+        v_planned_sec := ARRAY[0, 0];
+        FOR v_j IN 1 .. 8 LOOP
+          v_s := CASE WHEN d_sec[v_j] = 'M' THEN 1 ELSE 2 END;
+          v_sec_w[v_s] := v_sec_w[v_s] + d_w[v_j];
+          v_planned_sec[v_s] := v_planned_sec[v_s] + d_alloc[v_j];
+        END LOOP;
+        v_sec_tot := v_sec_w[1] + v_sec_w[2];
+        v_units := v_day_q / k_granularity;
+
+        -- Level 1 — each granule goes to the section furthest behind its share.
+        -- Ties go to Math.
+        v_sec_units := ARRAY[0, 0];
+        FOR v_j IN 1 .. v_units LOOP
+          v_cum := v_planned_total + (v_sec_units[1] + v_sec_units[2] + 1) * k_granularity;
+          v_best := 1;
+          v_best_def := v_cum * v_sec_w[1] - (v_planned_sec[1] + v_sec_units[1] * k_granularity) * v_sec_tot;
+          v_def := v_cum * v_sec_w[2] - (v_planned_sec[2] + v_sec_units[2] * k_granularity) * v_sec_tot;
+          IF v_def > v_best_def THEN v_best := 2; v_best_def := v_def; END IF;
+          v_sec_units[v_best] := v_sec_units[v_best] + 1;
+        END LOOP;
+
+        -- Product rule: when the day has two or more granules, both sections appear.
+        IF v_units >= 2 THEN
+          IF v_sec_units[1] = 0 THEN v_sec_units[1] := 1; v_sec_units[2] := v_sec_units[2] - 1; END IF;
+          IF v_sec_units[2] = 0 THEN v_sec_units[2] := 1; v_sec_units[1] := v_sec_units[1] - 1; END IF;
+        END IF;
+
+        -- Level 2 — within each section, each granule goes to the domain
+        -- furthest behind its share. Once the block holds max_domains_per_block
+        -- distinct domains, later granules stay inside them. Math first, so the
+        -- R&W deficits already see Math’s allocations for the day.
+        FOR v_s IN 1 .. 2 LOOP
+          v_secname := CASE WHEN v_s = 1 THEN 'M' ELSE 'RW' END;
+          v_sec_q := v_sec_units[v_s] * k_granularity;
+          CONTINUE WHEN v_sec_q < k_min_domain_q;
+
+          v_mix_dom := '{}';
+          v_mix_cnt := '{}';
+          FOR v_j IN 1 .. v_sec_q / k_granularity LOOP
+            v_cum := v_planned_total + (v_sec_units[1] + v_sec_units[2]) * k_granularity;
+            v_best := NULL;
+            v_pool_ok := COALESCE(array_length(v_mix_dom, 1), 0) >= k_max_domains;
+            FOR v_k IN 1 .. 8 LOOP       -- canonical order; ties keep the earlier index
+              CONTINUE WHEN d_sec[v_k] <> v_secname;
+              CONTINUE WHEN v_pool_ok AND NOT (v_k = ANY (v_mix_dom));
+              v_def := v_cum * d_w[v_k]
+                     - (d_alloc[v_k] + COALESCE(
+                         (SELECT v_mix_cnt[ix] FROM generate_subscripts(v_mix_dom, 1) ix
+                          WHERE v_mix_dom[ix] = v_k), 0)) * v_tot;
+              IF v_best IS NULL OR v_def > v_best_def THEN
+                v_best := v_k; v_best_def := v_def;
+              END IF;
+            END LOOP;
+            IF v_best = ANY (v_mix_dom) THEN
+              v_mix_cnt := (SELECT array_agg(CASE WHEN v_mix_dom[ix] = v_best
+                                                  THEN v_mix_cnt[ix] + k_granularity
+                                                  ELSE v_mix_cnt[ix] END ORDER BY ix)
+                            FROM generate_subscripts(v_mix_dom, 1) ix);
+            ELSE
+              v_mix_dom := v_mix_dom || v_best;       -- first touch fixes display order
+              v_mix_cnt := v_mix_cnt || k_granularity;
+            END IF;
+          END LOOP;
+
+          v_mix_json := '[]'::jsonb;
+          FOR v_j IN 1 .. array_length(v_mix_dom, 1) LOOP
+            v_mix_json := v_mix_json || jsonb_build_object(
+              'domain', d_dom[v_mix_dom[v_j]],
+              'count',  v_mix_cnt[v_j],
+              'explanation_key', d_why[v_mix_dom[v_j]]);
+            d_alloc[v_mix_dom[v_j]] := d_alloc[v_mix_dom[v_j]] + v_mix_cnt[v_j];
+          END LOOP;
+
+          v_blocks := v_blocks || jsonb_build_object('block_type','practice','section', v_secname,
+                        'scope', jsonb_build_object('level','domain','mix', v_mix_json),
+                        'target_count', v_sec_q,
+                        'explanation_key', CASE WHEN v_tapered THEN 'taper' ELSE 'weighted' END);
+        END LOOP;
+
+        v_planned_total := v_planned_total + (v_sec_units[1] + v_sec_units[2]) * k_granularity;
+      END IF;
+    END IF;
+
+    v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', v_blocks);
+    v_study_index := v_study_index + 1;
+  END LOOP;
+
+  RETURN jsonb_build_object('generator', 'deterministic_v1', 'days', v_days);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_compute_plan(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_compute_plan(p_input jsonb) IS 'Doc 05F §11 as superseded by the Doc 05F Formula Sheet §2 (sheet §8 item 4). Pure, IMMUTABLE, integer-only. scripts/ci/calendar-parity.ts proves it byte-equal to scripts/ci/reference/calendar_formula_reference.py on the nine fixtures and the seeded 3,000-snapshot suite.';
+
+
+--
+-- Name: calendar_compute_plan_fallback(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $$
+DECLARE
+  k_horizon_days      integer;
+  k_review_share_bp   integer;
+  k_review_block_max  integer;
+  k_exam_review_dflt  integer;
+  k_min_domain_q      integer;
+  k_granularity       integer;
+  k_taper_days        integer;
+  k_taper_bp          integer;
+  e_practice_secs     integer;
+  e_review_secs       integer;
+  p_today             date;
+  p_mask              integer;
+  p_minutes           integer;
+  p_target            date;
+  x_last              date;
+  x_reviewed          boolean;
+  x_missed            integer;
+  fl                  jsonb;
+  v_due               integer := 0;
+  v_pending_active    boolean := false;
+  v_pending_size      integer;
+  v_pending_key       text;
+  v_study_index       integer := 0;
+  v_i                 integer;
+  v_d                 date;
+  v_days              jsonb := '[]'::jsonb;
+  v_blocks            jsonb;
+  v_budget            integer;
+  v_tapered           boolean;
+  v_dd                integer;
+  v_size              integer;
+  v_r                 integer;
+  v_day_q             integer;
+  v_half              integer;
+  v_lead              text;
+  v_other             text;
+  v_key               text;
+  v_fl_key            text;
+BEGIN
+  k_horizon_days     := public.calendar_require_int(p_input -> 'constants', 'horizon_days');
+  k_review_share_bp  := public.calendar_require_int(p_input -> 'constants', 'review_share_max_bp');
+  k_review_block_max := public.calendar_require_int(p_input -> 'constants', 'review_block_max');
+  k_exam_review_dflt := public.calendar_require_int(p_input -> 'constants', 'exam_review_default_count');
+  k_min_domain_q     := public.calendar_require_int(p_input -> 'constants', 'min_domain_questions');
+  k_granularity      := public.calendar_require_int(p_input -> 'constants', 'granularity');
+  k_taper_days       := public.calendar_require_int(p_input -> 'constants', 'taper_days');
+  k_taper_bp         := public.calendar_require_int(p_input -> 'constants', 'taper_ratio_bp');
+
+  e_practice_secs := public.calendar_require_int(p_input -> 'engine_planning', 'practice_seconds_per_unit');
+  e_review_secs   := public.calendar_require_int(p_input -> 'engine_planning', 'review_seconds_per_unit');
+  IF e_practice_secs < 1 OR e_review_secs < 1 THEN
+    RAISE EXCEPTION 'calendar_compute_plan_fallback: engine_planning seconds-per-unit must be positive'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF (p_input ->> 'today') IS NULL THEN
+    RAISE EXCEPTION 'calendar_compute_plan_fallback: snapshot has no today' USING ERRCODE = '22023';
+  END IF;
+  p_today   := (p_input ->> 'today')::date;
+  p_mask    := public.calendar_require_int(p_input -> 'profile', 'study_days_mask');
+  p_minutes := public.calendar_require_int(p_input -> 'profile', 'daily_minutes');
+  p_target  := (p_input #>> '{profile,target_exam_date}')::date;
+
+  x_last     := (p_input #>> '{exams,last_completed_local_date}')::date;
+  -- jsonb null cannot be cast to boolean, it RAISES — and a snapshot whose
+  -- exam facts are unreadable carries exactly that. An absent flag means "not
+  -- known to be reviewed", which the ladder below already treats correctly.
+  x_reviewed := CASE WHEN jsonb_typeof(p_input #> '{exams,reviewed}') = 'boolean'
+                      THEN (p_input #> '{exams,reviewed}')::boolean ELSE NULL END;
+  x_missed   := CASE WHEN (p_input #>> '{exams,missed_count}') IS NULL THEN NULL
+                     ELSE public.calendar_require_int(p_input -> 'exams', 'missed_count') END;
+
+  fl := public.calendar_place_full_lengths(p_input);
+
+  -- A single total is enough here: the fallback runs precisely when the
+  -- per-date review queue may be unreadable.
+  SELECT COALESCE(sum(public.calendar_require_int(r, 'due_count')), 0) INTO v_due
+  FROM jsonb_array_elements(COALESCE(p_input -> 'review_due_by_date', '[]'::jsonb)) r;
+
+  -- Unlike deterministic_v1, a missing OR ZERO missed count falls back to the
+  -- placeholder size rather than leaving the debt standing. The fallback’s whole
+  -- job is to produce a usable day from partial inputs, and deterministic_v1 has the
+  -- real number or it waits. Both behaviours are the reference’s.
+  IF x_last IS NOT NULL AND COALESCE(x_reviewed, true) IS NOT true THEN
+    v_pending_active := true;
+    v_pending_size   := CASE WHEN COALESCE(x_missed, 0) = 0 THEN k_exam_review_dflt ELSE x_missed END;
+    v_pending_key    := 'exam_review';
+  END IF;
+
+  FOR v_i IN 0 .. k_horizon_days - 1 LOOP
+    v_d := p_today + v_i;
+
+    SELECT f ->> 'explanation_key' INTO v_fl_key
+    FROM jsonb_array_elements(fl) f WHERE (f ->> 'date')::date = v_d;
+
+    IF v_fl_key IS NOT NULL THEN
+      v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
+        jsonb_build_object('block_type','full_length','section', NULL,
+                           'scope', jsonb_build_object('form_id', NULL),
+                           'target_count', 1, 'explanation_key', v_fl_key)));
+      v_pending_active := true;
+      v_pending_size   := k_exam_review_dflt;
+      v_pending_key    := 'exam_review_placeholder';
+      CONTINUE;
+    END IF;
+
+    IF ((p_mask >> (EXTRACT(DOW FROM v_d)::integer)) & 1) <> 1 THEN
+      v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', '[]'::jsonb);
+      CONTINUE;
+    END IF;
+
+    v_budget := p_minutes * 60;
+    v_tapered := false;
+    IF p_target IS NOT NULL THEN
+      v_dd := p_target - v_d;
+      IF v_dd <= 0 THEN
+        v_budget := 0;
+      ELSIF v_dd <= k_taper_days THEN
+        v_budget := v_budget * k_taper_bp / 10000;
+        v_tapered := true;
+      END IF;
+    END IF;
+
+    v_blocks := '[]'::jsonb;
+
+    IF v_pending_active THEN
+      v_size := least(v_pending_size, v_budget / e_review_secs);
+      IF v_size >= 1 THEN
+        v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
+                      'scope', jsonb_build_object('mode','queue'),
+                      'target_count', v_size, 'explanation_key', v_pending_key);
+        v_budget := v_budget - v_size * e_review_secs;
+        v_pending_active := false;
+      END IF;
+    ELSE
+      v_r := least(v_due, k_review_block_max, (k_review_share_bp * v_budget / 10000) / e_review_secs);
+      IF v_r >= 1 THEN
+        v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
+                      'scope', jsonb_build_object('mode','queue'),
+                      'target_count', v_r, 'explanation_key','review_due');
+        v_due := v_due - v_r;
+        v_budget := v_budget - v_r * e_review_secs;
+      END IF;
+    END IF;
+
+    -- Two practice blocks, Math and R&W halves, the leading section alternating
+    -- by study-day index so no state has to be stored to keep them balanced.
+    v_day_q := (v_budget / e_practice_secs) / k_granularity * k_granularity;
+    IF v_day_q >= k_min_domain_q THEN
+      v_half := (v_day_q / k_granularity / 2) * k_granularity;
+      IF v_study_index % 2 = 0 THEN v_lead := 'M'; v_other := 'RW';
+      ELSE v_lead := 'RW'; v_other := 'M'; END IF;
+      v_key := CASE WHEN v_tapered THEN 'taper' ELSE 'fallback' END;
+      v_blocks := v_blocks || jsonb_build_object('block_type','practice','section', v_lead,
+                    'scope', jsonb_build_object('level','section','count', v_day_q - v_half,
+                                                'explanation_key', v_key),
+                    'target_count', v_day_q - v_half, 'explanation_key', v_key);
+      IF v_half <> 0 THEN
+        v_blocks := v_blocks || jsonb_build_object('block_type','practice','section', v_other,
+                      'scope', jsonb_build_object('level','section','count', v_half,
+                                                  'explanation_key', v_key),
+                      'target_count', v_half, 'explanation_key', v_key);
+      END IF;
+    END IF;
+
+    v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', v_blocks);
+    v_study_index := v_study_index + 1;
+  END LOOP;
+
+  RETURN jsonb_build_object('generator', 'fallback_v1', 'days', v_days);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_compute_plan_fallback(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) IS 'Doc 05F formula sheet §5A. The fail-open backup: profile-only inputs, no mastery, no per-date review queue, no plan history. Same output shape and validator as deterministic_v1, and every practice block carries explanation_key = fallback.';
+
+
+--
+-- Name: calendar_do_it_now(uuid, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored  jsonb;
+  v_src     record;
+  v_input   jsonb;
+  v_output  jsonb;
+  v_result  jsonb;
+  v_tz      text;
+  v_today   date;
+  v_members jsonb;
+  v_ovr     boolean;
+  v_target  integer;
+  v_avail   integer;
+BEGIN
+  -- ORDER MATTERS. The lock is taken BEFORE the ledger is read, so the
+  -- check-then-insert is atomic per student. Read first and concurrent callers
+  -- sharing a key all miss the ledger, serialise here, and then collide on
+  -- calendar_mutation_ledger_pkey — the replay returns a 23505 instead of the
+  -- stored response. Proved by scripts/ci/calendar-concurrency-gate.sh C-2.
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_do_it_now: student % has no study profile', p_student_id USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN RETURN v_stored; END IF;
+  END IF;
+
+  SELECT * INTO v_src FROM public.calendar_blocks
+  WHERE block_id = p_block_id AND student_id = p_student_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_do_it_now: block % does not belong to student %', p_block_id, p_student_id
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+
+  v_input := public.calendar_build_plan_input(p_student_id, ARRAY[v_today]);
+
+  -- Today’s current members and override flag, carried unchanged (§12.6).
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('kind','carried','block_id', cp.block_id::text)
+                            ORDER BY cp.display_ordinal), '[]'::jsonb),
+         bool_or(cp.is_user_override)
+    INTO v_members, v_ovr
+  FROM public.calendar_current_plan cp
+  WHERE cp.student_id = p_student_id AND cp.scheduled_date = v_today AND cp.block_id IS NOT NULL;
+
+  v_target := v_src.target_count;
+  IF v_src.block_type = 'review' THEN
+    SELECT COALESCE(sum((r ->> 'due_count')::integer), 0) INTO v_avail
+    FROM jsonb_array_elements(v_input -> 'review_due_by_date') r
+    WHERE (r ->> 'date')::date <= v_today;
+    v_target := least(v_target, v_avail);
+    IF v_target < 1 THEN
+      RAISE EXCEPTION 'calendar_do_it_now: block % is review work and nothing is due today', p_block_id
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  v_output := jsonb_build_object(
+    'generator', 'deterministic_v1',
+    'generator_version', p_generator_version,
+    'dates', jsonb_build_array(jsonb_build_object(
+      'scheduled_date', v_today::text,
+      'is_user_override', COALESCE(v_ovr, false),
+      'members', v_members || jsonb_build_array(jsonb_build_object(
+        'kind','created',
+        'block', jsonb_build_object(
+          'block_type', v_src.block_type,
+          'section', v_src.section,
+          'scope', CASE WHEN v_src.block_type = 'practice' AND v_src.scope ->> 'level' = 'section'
+                        THEN jsonb_set(v_src.scope, '{count}', to_jsonb(v_target))
+                        ELSE v_src.scope END,
+          'target_count', v_target,
+          'explanation_key', v_src.explanation_key,
+          'derived_from_block_id', p_block_id::text))))));
+
+  v_output := public.calendar_carry_started(v_input, v_output);
+
+  v_result := public.calendar_write_version(p_student_id, 'do_it_now', 'student',
+                'deterministic_v1', p_generator_version, v_input, v_output, 'do_it_now', NULL);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_do_it_now',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.6. One version owning today, carrying today''s members and override flag unchanged, appending one created block derived from the missed one. A review target is clamped to today''s availability (V-10), never copied.';
+
+
+--
+-- Name: calendar_edit_day(uuid, date, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored jsonb;
+  v_input  jsonb;
+  v_output jsonb;
+  v_result jsonb;
+  v_tz     text;
+  v_today  date;
+BEGIN
+  -- ORDER MATTERS. The lock is taken BEFORE the ledger is read, so the
+  -- check-then-insert is atomic per student. Read first and concurrent callers
+  -- sharing a key all miss the ledger, serialise here, and then collide on
+  -- calendar_mutation_ledger_pkey — the replay returns a 23505 instead of the
+  -- stored response. Proved by scripts/ci/calendar-concurrency-gate.sh C-2.
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_edit_day: student % has no study profile', p_student_id USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN RETURN v_stored; END IF;
+  END IF;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+
+  -- §12.2: a past date is never owned and never edited.
+  IF p_date < v_today THEN
+    RAISE EXCEPTION 'calendar_edit_day: % is in the past and cannot be edited', p_date
+      USING ERRCODE = '23514';
+  END IF;
+
+  v_input  := public.calendar_build_plan_input(p_student_id, ARRAY[p_date]);
+  v_output := public.calendar_carry_started(v_input, jsonb_build_object(
+                'generator', 'deterministic_v1',
+                'generator_version', p_generator_version,
+                'dates', jsonb_build_array(jsonb_build_object(
+                  'scheduled_date', p_date::text,
+                  'is_user_override', true,
+                  'members', COALESCE(p_members, '[]'::jsonb)))));
+
+  v_result := public.calendar_write_version(p_student_id, 'day_edit', 'student',
+                'deterministic_v1', p_generator_version, v_input, v_output, 'student_edit', NULL);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_edit_day',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date. Started blocks injected if omitted, validated in student_edit mode, persisted with is_user_override = true. No budget check (R-08-19).';
+
+
+--
+-- Name: calendar_link_launch(uuid, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_seq   smallint;
+  v_type  text;
+BEGIN
+  SELECT block_type INTO v_type
+  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_link_launch: block % does not belong to student %', p_block_id, p_student_id
+      USING ERRCODE = '42501';
+  END IF;
+  IF v_type <> p_engine THEN
+    RAISE EXCEPTION 'calendar_link_launch: block % is a % block and cannot be launched into the % engine',
+      p_block_id, v_type, p_engine USING ERRCODE = '22023';
+  END IF;
+
+  SELECT launch_sequence INTO v_seq FROM public.calendar_block_launches
+  WHERE engine = p_engine AND engine_session_id = p_engine_session_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object('block_id', p_block_id, 'launch_sequence', v_seq, 'replayed', true);
+  END IF;
+
+  SELECT COALESCE(max(launch_sequence), 0) + 1 INTO v_seq
+  FROM public.calendar_block_launches WHERE block_id = p_block_id;
+
+  INSERT INTO public.calendar_block_launches
+    (block_id, student_id, launch_sequence, engine, engine_session_id)
+  VALUES (p_block_id, p_student_id, v_seq, p_engine, p_engine_session_id);
+
+  RETURN jsonb_build_object('block_id', p_block_id, 'launch_sequence', v_seq, 'replayed', false);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) IS 'Doc 05F §7.7 / §15.1. Append-only, idempotent on (engine, engine_session_id). Used for Resume/Continue and calendar_launch_rate only, never for progress.';
+
+
+--
+-- Name: calendar_persist_version(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored     jsonb;
+  v_input      jsonb;
+  v_plan       jsonb;
+  v_output     jsonb;
+  v_generator  text := 'deterministic_v1';
+  v_reason     jsonb;
+  v_res        jsonb;
+  v_result     jsonb;
+  v_today      date;
+  v_dates      date[];
+  v_horizon    integer;
+  v_tz         text;
+  v_enabled    text[];
+  v_degraded   text[];
+BEGIN
+  -- INV-08-17. A concurrent regeneration for the same student waits here
+  -- rather than racing to the same version_no.
+  -- ORDER MATTERS. The lock is taken BEFORE the ledger is read, so the
+  -- check-then-insert is atomic per student. Read first and concurrent callers
+  -- sharing a key all miss the ledger, serialise here, and then collide on
+  -- calendar_mutation_ledger_pkey — the replay returns a 23505 instead of the
+  -- stored response. Proved by scripts/ci/calendar-concurrency-gate.sh C-2.
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_persist_version: student % has no study profile; nothing is generated and the prior plan stands', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN
+      RETURN v_stored;   -- a replayed key returns the stored response and writes nothing
+    END IF;
+  END IF;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+  SELECT public.calendar_require_int(jsonb_object_agg(key, value), 'horizon_days')
+    INTO v_horizon FROM public.calendar_runtime_config;
+
+  -- §12.1 / §12.2: which dates this trigger may own. Past dates are never
+  -- owned, and a date the student has overridden is never taken by a
+  -- non-student version — filtering here is what keeps V-14 a backstop rather
+  -- than a guaranteed rejection.
+  SELECT array_agg(d ORDER BY d) INTO v_dates
+  FROM generate_series(v_today, v_today + (v_horizon - 1), interval '1 day') g(d)
+  WHERE p_trigger IN ('setup','rollback')
+     OR NOT EXISTS (SELECT 1 FROM public.calendar_current_plan cp
+                    WHERE cp.student_id = p_student_id
+                      AND cp.scheduled_date = g.d::date
+                      AND cp.is_user_override);
+
+  v_input := public.calendar_build_plan_input(p_student_id, v_dates);
+
+  SELECT COALESCE(array_agg(t), '{}') INTO v_enabled
+  FROM jsonb_array_elements_text(v_input -> 'enabled_block_types') t;
+  SELECT COALESCE(array_agg(t), '{}') INTO v_degraded
+  FROM jsonb_array_elements_text(COALESCE(v_input -> 'degraded', '[]'::jsonb)) t;
+
+  -- §5A: a degraded mastery read or review queue means the primary generator
+  -- would be working from something it cannot trust.
+  IF 'mastery' = ANY (v_degraded) OR 'review_queue' = ANY (v_degraded) THEN
+    v_generator := 'fallback_v1';
+    v_reason := jsonb_build_object('reason','degraded_input','degraded', v_input -> 'degraded');
+  ELSE
+    BEGIN
+      v_plan := public.calendar_compute_plan(v_input);
+    EXCEPTION WHEN OTHERS THEN
+      v_generator := 'fallback_v1';
+      v_reason := jsonb_build_object('reason','primary_raised','sqlstate', SQLSTATE, 'message', SQLERRM);
+    END;
+
+    IF v_generator = 'deterministic_v1' THEN
+      v_output := public.calendar_carry_started(v_input,
+                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+      v_res := public.calendar_validate_plan('generated', v_input, v_output);
+      IF v_res ->> 'result' <> 'accepted' THEN
+        v_generator := 'fallback_v1';
+        v_reason := jsonb_build_object('reason','primary_rejected','violations', v_res -> 'violations');
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_generator = 'fallback_v1' THEN
+    v_plan := public.calendar_compute_plan_fallback(v_input);
+    v_output := public.calendar_carry_started(v_input,
+                  public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+  END IF;
+
+  v_result := public.calendar_write_version(p_student_id, p_trigger, p_initiated_by,
+                v_generator, p_generator_version, v_input, v_output, 'generated', v_reason);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_persist_version',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.3. FOR UPDATE on the profile, build, compute, validate, insert, one transaction. Falls back to fallback_v1 on degraded input, a raise, or a rejection, recording the reason on the version (sheet §5A).';
+
+
+--
+-- Name: calendar_place_full_lengths(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_place_full_lengths(p_input jsonb) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $$
+DECLARE
+  k_horizon_days integer;
+  k_fl_every_n   integer;
+  k_fl_min_gap   integer;
+  k_final_lead   integer;
+  k_fl_max       integer;
+  p_today        date;
+  p_setup        date;
+  p_target       date;
+  p_wd           integer;
+  x_last         date;
+  fl_date        date[] := '{}';
+  fl_key         text[] := '{}';
+  v_i            integer;
+  v_d            date;
+  v_probe        date;
+  v_anchor       date;
+  v_ok           boolean;
+  v_out          jsonb := '[]'::jsonb;
+BEGIN
+  k_horizon_days := public.calendar_require_int(p_input -> 'constants', 'horizon_days');
+  k_fl_every_n   := public.calendar_require_int(p_input -> 'constants', 'full_length_every_n_occurrences');
+  k_fl_min_gap   := public.calendar_require_int(p_input -> 'constants', 'full_length_min_gap_days');
+  k_final_lead   := public.calendar_require_int(p_input -> 'constants', 'final_exam_lead_days');
+  k_fl_max       := public.calendar_require_int(p_input -> 'constants', 'max_full_length_per_horizon');
+
+  p_today  := (p_input ->> 'today')::date;
+  p_setup  := (p_input #>> '{profile,setup_date}')::date;
+  p_target := (p_input #>> '{profile,target_exam_date}')::date;
+  p_wd     := CASE WHEN (p_input #>> '{profile,full_length_weekday}') IS NULL THEN NULL
+                   ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_weekday') END;
+  x_last   := (p_input #>> '{exams,last_completed_local_date}')::date;
+
+  -- No full-length weekday means no automatic exams at all (§7.1).
+  IF p_wd IS NULL THEN
+    RETURN v_out;
+  END IF;
+  IF p_setup IS NULL THEN
+    RAISE EXCEPTION 'calendar_place_full_lengths: profile.setup_date is essential and was not supplied'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_target IS NOT NULL THEN
+    v_probe := p_target - k_final_lead;
+    WHILE EXTRACT(DOW FROM v_probe)::integer <> p_wd LOOP
+      v_probe := v_probe - 1;
+    END LOOP;
+    IF v_probe >= p_today AND v_probe <= p_today + (k_horizon_days - 1) THEN
+      fl_date := fl_date || v_probe;
+      fl_key  := fl_key  || 'final_rehearsal'::text;
+    END IF;
+  END IF;
+
+  v_anchor := p_setup;
+  WHILE EXTRACT(DOW FROM v_anchor)::integer <> p_wd LOOP
+    v_anchor := v_anchor + 1;
+  END LOOP;
+
+  FOR v_i IN 0 .. k_horizon_days - 1 LOOP
+    -- COALESCE, not a bare array_length: an empty array measures NULL, and
+    -- NULL >= 0 is NULL, which would let a cap of zero place exams anyway.
+    EXIT WHEN COALESCE(array_length(fl_date, 1), 0) >= k_fl_max;
+    v_d := p_today + v_i;
+    CONTINUE WHEN EXTRACT(DOW FROM v_d)::integer <> p_wd;
+    CONTINUE WHEN v_d = ANY (fl_date);
+    CONTINUE WHEN v_d < v_anchor;                      -- guards the division below
+    CONTINUE WHEN ((v_d - v_anchor) / 7) % k_fl_every_n <> 0;
+    CONTINUE WHEN p_target IS NOT NULL AND (v_d >= p_target OR (p_target - v_d) < k_final_lead);
+    v_ok := true;
+    FOREACH v_probe IN ARRAY fl_date LOOP
+      IF abs(v_d - v_probe) < k_fl_min_gap THEN v_ok := false; END IF;
+    END LOOP;
+    IF x_last IS NOT NULL AND abs(v_d - x_last) < k_fl_min_gap THEN v_ok := false; END IF;
+    IF v_ok THEN
+      fl_date := fl_date || v_d;
+      fl_key  := fl_key  || 'exam_cadence'::text;
+    END IF;
+  END LOOP;
+
+  FOR v_i IN 1 .. COALESCE(array_length(fl_date, 1), 0) LOOP
+    v_out := v_out || jsonb_build_object('date', fl_date[v_i]::text, 'explanation_key', fl_key[v_i]);
+  END LOOP;
+  RETURN v_out;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_place_full_lengths(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) IS 'Doc 05F formula sheet §2 step 2. Shared by both generators (sheet §5A: exam placement is identical), so the precedence rules have exactly one implementation.';
+
+
+--
+-- Name: calendar_plan_to_output(jsonb, text, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_build_object(
+    'generator', p_plan ->> 'generator',
+    'generator_version', p_generator_version,
+    'dates', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'scheduled_date', d ->> 'date',
+               'is_user_override', false,
+               'members', COALESCE((
+                 SELECT jsonb_agg(jsonb_build_object('kind', 'created', 'block', b) ORDER BY ord)
+                 FROM jsonb_array_elements(d -> 'blocks') WITH ORDINALITY AS e(b, ord)
+                 WHERE (b ->> 'block_type') = ANY (p_enabled_block_types)
+               ), '[]'::jsonb))
+             ORDER BY ord)
+      FROM jsonb_array_elements(p_plan -> 'days') WITH ORDINALITY AS t(d, ord)
+    ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) IS 'Doc 05F §10.2. Generator days -> PlanOutput dates/members, filtered to enabled_block_types (§21 / sheet §8 item 12). Created members only. Carried members are merged by calendar_persist_version from §12.2 protected state.';
+
+
+--
+-- Name: calendar_require_int(jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_require_int(p_obj jsonb, p_key text) RETURNS integer
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $_$
+DECLARE v text;
+BEGIN
+  v := p_obj ->> p_key;
+  IF v IS NULL OR v !~ '^-?[0-9]+$' THEN
+    RAISE EXCEPTION 'calendar_runtime_config: missing or invalid key ''%''', p_key
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN v::integer;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION calendar_require_int(p_obj jsonb, p_key text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_require_int(p_obj jsonb, p_key text) IS 'Doc 05F formula sheet §6: essential inputs are never invented. Raises 22023 rather than defaulting. The integer regex also refuses a float, keeping sheet §2 (integers only) true at the boundary.';
+
+
+--
+-- Name: calendar_scope_is_valid(text, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_scope_is_valid(p_block_type text, p_section text, p_scope jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $_$
+  SELECT CASE p_block_type
+
+    WHEN 'practice' THEN
+      p_scope IS NOT NULL
+      AND jsonb_typeof(p_scope) = 'object'
+      AND p_section IS NOT NULL AND p_section IN ('M', 'RW')
+      AND CASE p_scope ->> 'level'
+
+        WHEN 'section' THEN
+              p_scope ?& ARRAY['level', 'count', 'explanation_key']
+          AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 3
+          AND jsonb_typeof(p_scope -> 'count') = 'number'
+          AND (p_scope ->> 'count') ~ '^[1-9][0-9]*$'
+          AND jsonb_typeof(p_scope -> 'explanation_key') = 'string'
+
+        WHEN 'domain' THEN
+              p_scope ?& ARRAY['level', 'mix']
+          AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 2
+          AND jsonb_typeof(p_scope -> 'mix') = 'array'
+          AND jsonb_array_length(p_scope -> 'mix') >= 1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(p_scope -> 'mix') AS e(entry)
+            WHERE NOT (
+                  jsonb_typeof(entry) = 'object'
+              AND entry ?& ARRAY['domain', 'count', 'explanation_key']
+              AND (SELECT count(*) FROM jsonb_object_keys(entry)) = 3
+              AND jsonb_typeof(entry -> 'domain') = 'string'
+              AND jsonb_typeof(entry -> 'count') = 'number'
+              AND (entry ->> 'count') ~ '^[1-9][0-9]*$'
+              AND jsonb_typeof(entry -> 'explanation_key') = 'string'
+              AND (
+                (p_section = 'M'  AND entry ->> 'domain' IN (
+                   'Algebra', 'Advanced Math',
+                   'Problem Solving and Data Analysis',
+                   'Geometry and Trigonometry'))
+                OR
+                (p_section = 'RW' AND entry ->> 'domain' IN (
+                   'Information and Ideas', 'Craft and Structure',
+                   'Expression of Ideas', 'Standard English Conventions'))
+              )
+            )
+          )
+          -- a domain appears at most once in a mix
+          AND (SELECT count(DISTINCT e.entry ->> 'domain')
+               FROM jsonb_array_elements(p_scope -> 'mix') AS e(entry))
+              = jsonb_array_length(p_scope -> 'mix')
+
+        ELSE false
+      END
+
+    WHEN 'review' THEN
+      p_scope IS NOT NULL
+      AND jsonb_typeof(p_scope) = 'object'
+      AND p_section IS NULL
+      AND CASE p_scope ->> 'mode'
+        WHEN 'queue' THEN
+              p_scope ?& ARRAY['mode']
+          AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 1
+        WHEN 'session' THEN
+              p_scope ?& ARRAY['mode', 'source_engine', 'source_session_id']
+          AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 3
+          AND jsonb_typeof(p_scope -> 'source_engine') = 'string'
+          AND p_scope ->> 'source_engine' IN ('practice', 'full_length')
+          AND jsonb_typeof(p_scope -> 'source_session_id') = 'string'
+        ELSE false
+      END
+
+    WHEN 'full_length' THEN
+      p_scope IS NOT NULL
+      AND jsonb_typeof(p_scope) = 'object'
+      AND p_section IS NULL
+      AND p_scope ?& ARRAY['form_id']
+      AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 1
+      AND jsonb_typeof(p_scope -> 'form_id') IN ('string', 'null')
+
+    ELSE false
+  END;
+$_$;
+
+
+--
+-- Name: FUNCTION calendar_scope_is_valid(p_block_type text, p_section text, p_scope jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_scope_is_valid(p_block_type text, p_section text, p_scope jsonb) IS 'Doc 05F §7.4 (formula sheet §8 item 3): per-block-type shape guard for calendar_blocks.scope. Shape only — config-derived magnitudes belong to calendar_validate_plan (V-04).';
+
+
+--
+-- Name: calendar_validate_plan(text, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $$
+DECLARE
+  c_block_keys  CONSTANT text[] := ARRAY[
+    'review_due','exam_review','exam_review_placeholder','final_rehearsal',
+    'exam_cadence','taper','cold_start','weighted','fallback'];
+  c_domain_keys CONSTANT text[] := ARRAY['weak','exploring','balanced','strength','post_exam'];
+
+  k_granularity   integer;
+  k_min_domain_q  integer;
+  k_max_domains   integer;
+  k_review_max    integer;
+  k_fl_max        integer;
+  e_practice_secs integer;
+  e_review_secs   integer;
+
+  p_today      date;
+  p_mask       integer;
+  p_minutes    integer;
+  p_wd         integer;
+  v_enabled    text[];
+  v_gen_dates  date[];
+
+  v_viol       jsonb := '[]'::jsonb;
+  v_date       date;
+  v_rec        record;
+  v_m          jsonb;
+  v_b          jsonb;
+  v_sec_seen   text[];
+  v_secs       integer;
+  v_created_fl integer := 0;
+  v_fl_total   integer := 0;
+  v_review_planned integer := 0;
+  v_due_through integer;
+  v_has_created_fl boolean;
+  v_count      integer;
+  v_sum        integer;
+  v_txt        text;
+BEGIN
+  IF p_mode NOT IN ('generated','student_edit','do_it_now','rollback') THEN
+    RAISE EXCEPTION 'calendar_validate_plan: unknown mode ''%''', p_mode USING ERRCODE = '22023';
+  END IF;
+
+  k_granularity   := public.calendar_require_int(p_input -> 'constants', 'granularity');
+  k_min_domain_q  := public.calendar_require_int(p_input -> 'constants', 'min_domain_questions');
+  k_max_domains   := public.calendar_require_int(p_input -> 'constants', 'max_domains_per_block');
+  k_review_max    := public.calendar_require_int(p_input -> 'constants', 'review_block_max');
+  k_fl_max        := public.calendar_require_int(p_input -> 'constants', 'max_full_length_per_horizon');
+  e_practice_secs := public.calendar_require_int(p_input -> 'engine_planning', 'practice_seconds_per_unit');
+  e_review_secs   := public.calendar_require_int(p_input -> 'engine_planning', 'review_seconds_per_unit');
+
+  p_today   := (p_input ->> 'today')::date;
+  p_mask    := public.calendar_require_int(p_input -> 'profile', 'study_days_mask');
+  p_minutes := public.calendar_require_int(p_input -> 'profile', 'daily_minutes');
+  p_wd      := CASE WHEN (p_input #>> '{profile,full_length_weekday}') IS NULL THEN NULL
+                    ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_weekday') END;
+
+  SELECT COALESCE(array_agg(t), '{}') INTO v_enabled
+  FROM jsonb_array_elements_text(COALESCE(p_input -> 'enabled_block_types', '[]'::jsonb)) t;
+
+  -- generated_for.dates is the horizon the builder froze. When it is absent the
+  -- generator’s own days are the horizon, which is the case for a plain
+  -- generate-and-validate round trip.
+  SELECT COALESCE(array_agg(t::date), '{}') INTO v_gen_dates
+  FROM jsonb_array_elements_text(COALESCE(p_input #> '{generated_for,dates}', '[]'::jsonb)) t;
+
+  FOR v_rec IN
+    SELECT (d ->> 'scheduled_date')::date AS sd,
+           COALESCE((d ->> 'is_user_override')::boolean, false) AS ovr,
+           d -> 'members' AS members,
+           ord
+    FROM jsonb_array_elements(COALESCE(p_output -> 'dates', '[]'::jsonb)) WITH ORDINALITY AS t(d, ord)
+  LOOP
+    v_date := v_rec.sd;
+
+    ------------------------------------------------------------------ V-01
+    IF COALESCE(array_length(v_gen_dates, 1), 0) > 0 AND NOT (v_date = ANY (v_gen_dates)) THEN
+      v_viol := v_viol || jsonb_build_object('rule','V-01','date',v_date::text,
+                  'detail','date is outside generated_for.dates');
+    END IF;
+    IF v_date < p_today THEN
+      v_viol := v_viol || jsonb_build_object('rule','V-01','date',v_date::text,
+                  'detail','date is before the student-local today');
+    END IF;
+
+    ------------------------------------------------------------------ V-14
+    IF p_mode IN ('generated','do_it_now')
+       AND EXISTS (SELECT 1 FROM jsonb_array_elements(
+                     COALESCE(p_input -> 'current_overrides', '[]'::jsonb)) o
+                   WHERE (o ->> 'scheduled_date')::date = v_date
+                     AND (o ->> 'is_user_override')::boolean) THEN
+      v_viol := v_viol || jsonb_build_object('rule','V-14','date',v_date::text,
+                  'detail', p_mode || ' may not take over a date the student has overridden');
+    END IF;
+
+    v_sec_seen := '{}';
+    v_secs := 0;
+    v_has_created_fl := false;
+    v_count := 0;
+
+    FOR v_m IN SELECT m FROM jsonb_array_elements(COALESCE(v_rec.members, '[]'::jsonb)) m LOOP
+      v_count := v_count + 1;
+
+      ---------------------------------------------------------------- V-13
+      IF v_m ->> 'kind' = 'carried' THEN
+        IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                         COALESCE(p_input -> 'existing_blocks_by_date', '[]'::jsonb)) x
+                       WHERE x ->> 'block_id' = v_m ->> 'block_id'
+                         AND (x ->> 'scheduled_date')::date = v_date) THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-13','date',v_date::text,
+                      'detail','carried block ' || COALESCE(v_m ->> 'block_id','<null>')
+                            || ' is not an existing block of this student on this date');
+        END IF;
+        CONTINUE;
+      END IF;
+
+      v_b := v_m -> 'block';
+      IF v_b IS NULL THEN
+        v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                    'detail','created member carries no block');
+        CONTINUE;
+      END IF;
+
+      ---------------------------------------------------------------- V-03
+      IF NOT (v_b ->> 'block_type' = ANY (v_enabled)) THEN
+        v_viol := v_viol || jsonb_build_object('rule','V-03','date',v_date::text,
+                    'detail','block_type ' || COALESCE(v_b ->> 'block_type','<null>')
+                          || ' is not in enabled_block_types');
+      END IF;
+
+      ---------------------------------------------------------------- V-06 (and the shape)
+      IF NOT public.calendar_scope_is_valid(v_b ->> 'block_type', v_b ->> 'section', v_b -> 'scope') THEN
+        v_viol := v_viol || jsonb_build_object('rule','V-06','date',v_date::text,
+                    'detail','scope is not valid for this block_type and section');
+      END IF;
+
+      IF v_b ->> 'block_type' = 'full_length' THEN
+        v_has_created_fl := true;
+        v_created_fl := v_created_fl + 1;
+        v_fl_total := v_fl_total + 1;
+        -------------------------------------------------------------- V-02
+        IF p_mode = 'generated'
+           AND (p_wd IS NULL OR EXTRACT(DOW FROM v_date)::integer <> p_wd) THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
+                      'detail','a full_length was created off the student''s full-length weekday');
+        END IF;
+        -------------------------------------------------------------- V-04
+        IF public.calendar_require_int(v_b, 'target_count') <> 1 THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                      'detail','full_length target_count must be 1');
+        END IF;
+
+      ELSIF v_b ->> 'block_type' = 'review' THEN
+        -------------------------------------------------------------- V-02
+        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
+                      'detail','a review block was created on a non-study day');
+        END IF;
+        -------------------------------------------------------------- V-04
+        -- review_block_max bounds ORDINARY review. An exam-review block is
+        -- sized by the exam and may take the whole budget (sheet §2 step 4).
+        -- Sheet §8 item 6 puts its sizing under V-10, and V-05 still caps it
+        -- at the day.
+        IF public.calendar_require_int(v_b, 'target_count') < 1
+           OR (v_b ->> 'explanation_key' = 'review_due'
+               AND public.calendar_require_int(v_b, 'target_count') > k_review_max) THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                      'detail','review target_count is outside 1..review_block_max');
+        END IF;
+        v_secs := v_secs + public.calendar_require_int(v_b, 'target_count') * e_review_secs;
+        -------------------------------------------------------------- V-10
+        -- Ordinary review may not outrun what is actually due through this
+        -- date. An exam-review block is sized by the exam, not the queue, so
+        -- the queue cap does not apply to it (sheet §2 step 4).
+        IF v_b ->> 'explanation_key' = 'review_due' THEN
+          -- deterministic_v1 works a per-date queue, so availability is what is
+          -- due THROUGH this date. fallback_v1 deliberately works a single
+          -- total (sheet §5A) precisely because the per-date queue may be
+          -- unreadable when it runs, so its availability is the horizon total.
+          -- Holding it to the through-date cap would reject every fallback plan
+          -- for doing exactly what §5A tells it to do.
+          SELECT COALESCE(sum(public.calendar_require_int(r, 'due_count')), 0) INTO v_due_through
+          FROM jsonb_array_elements(COALESCE(p_input -> 'review_due_by_date', '[]'::jsonb)) r
+          WHERE p_output ->> 'generator' = 'fallback_v1' OR (r ->> 'date')::date <= v_date;
+          IF v_review_planned + public.calendar_require_int(v_b, 'target_count') > v_due_through THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-10','date',v_date::text,
+                        'detail','review target exceeds what is due through this date net of review already planned');
+          END IF;
+          v_review_planned := v_review_planned + public.calendar_require_int(v_b, 'target_count');
+        END IF;
+
+      ELSIF v_b ->> 'block_type' = 'practice' THEN
+        -------------------------------------------------------------- V-02
+        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
+                      'detail','a practice block was created on a non-study day');
+        END IF;
+        -------------------------------------------------------------- V-04
+        IF (v_b ->> 'section') = ANY (v_sec_seen) THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                      'detail','more than one practice block in section ' || (v_b ->> 'section'));
+        END IF;
+        v_sec_seen := v_sec_seen || (v_b ->> 'section');
+
+        IF v_b #>> '{scope,level}' = 'domain' THEN
+          IF jsonb_array_length(v_b #> '{scope,mix}') > k_max_domains THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                        'detail','more than max_domains_per_block domains in one block');
+          END IF;
+          SELECT COALESCE(sum(public.calendar_require_int(e, 'count')), 0),
+                 COALESCE(string_agg(e ->> 'count', ',') FILTER (
+                   WHERE public.calendar_require_int(e, 'count') % k_granularity <> 0
+                      OR public.calendar_require_int(e, 'count') < k_min_domain_q), '')
+            INTO v_sum, v_txt
+          FROM jsonb_array_elements(v_b #> '{scope,mix}') e;
+          IF v_txt <> '' THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                        'detail','domain count(s) ' || v_txt || ' are not multiples of granularity at or above min_domain_questions');
+          END IF;
+          IF v_sum <> public.calendar_require_int(v_b, 'target_count') THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                        'detail','the mix sums to ' || v_sum || ' but target_count is ' || (v_b ->> 'target_count'));
+          END IF;
+        ELSE
+          IF public.calendar_require_int(v_b -> 'scope', 'count') <> public.calendar_require_int(v_b, 'target_count') THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                        'detail','section-level scope count disagrees with target_count');
+          END IF;
+          IF public.calendar_require_int(v_b, 'target_count') % k_granularity <> 0
+             OR public.calendar_require_int(v_b, 'target_count') < k_min_domain_q THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-04','date',v_date::text,
+                        'detail','section-level practice count is not a multiple of granularity at or above min_domain_questions');
+          END IF;
+        END IF;
+        v_secs := v_secs + public.calendar_require_int(v_b, 'target_count') * e_practice_secs;
+      END IF;
+
+      ---------------------------------------------------------------- V-09
+      IF p_mode = 'generated' THEN
+        IF NOT (v_b ->> 'explanation_key' = ANY (c_block_keys)) THEN
+          v_viol := v_viol || jsonb_build_object('rule','V-09','date',v_date::text,
+                      'detail','block explanation_key ' || COALESCE(v_b ->> 'explanation_key','<null>')
+                            || ' is not in the formula sheet §6 block set');
+        END IF;
+        IF v_b #>> '{scope,level}' = 'domain' THEN
+          SELECT string_agg(DISTINCT e ->> 'explanation_key', ',') INTO v_txt
+          FROM jsonb_array_elements(v_b #> '{scope,mix}') e
+          WHERE NOT (e ->> 'explanation_key' = ANY (c_domain_keys));
+          IF v_txt IS NOT NULL THEN
+            v_viol := v_viol || jsonb_build_object('rule','V-09','date',v_date::text,
+                        'detail','domain explanation_key(s) ' || v_txt || ' are not in the formula sheet §6 domain set');
+          END IF;
+        END IF;
+      END IF;
+    END LOOP;
+
+    ------------------------------------------------------------------ V-05
+    IF p_mode = 'generated' THEN
+      IF v_has_created_fl AND v_count > 1 THEN
+        v_viol := v_viol || jsonb_build_object('rule','V-05','date',v_date::text,
+                    'detail','an exam date carries other created blocks');
+      END IF;
+      IF v_secs > p_minutes * 60 THEN
+        v_viol := v_viol || jsonb_build_object('rule','V-05','date',v_date::text,
+                    'detail','planned seconds ' || v_secs || ' exceed the day budget ' || (p_minutes * 60));
+      END IF;
+    END IF;
+
+    ------------------------------------------------------------------ V-12
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(p_input -> 'started_blocks_by_date', '[]'::jsonb)) s
+      WHERE (s ->> 'scheduled_date')::date = v_date
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(v_rec.members, '[]'::jsonb)) m
+          WHERE m ->> 'kind' = 'carried' AND m ->> 'block_id' = s ->> 'block_id')
+    ) THEN
+      v_viol := v_viol || jsonb_build_object('rule','V-12','date',v_date::text,
+                  'detail','a block the student has already started was not carried');
+    END IF;
+  END LOOP;
+
+  -------------------------------------------------------------------- V-08
+  -- Display order IS the member array order (§10.2), so contiguity from 1 is
+  -- automatic within one date. What is not automatic is a date appearing twice
+  -- in `dates`: the two member lists would both start at ordinal 1 and collide
+  -- on calendar_plan_block_memberships’ UNIQUE (plan_version_id,
+  -- scheduled_date, display_ordinal). Catching it here turns an opaque 23505
+  -- inside the writer into a named rejection.
+  FOR v_rec IN
+    SELECT d ->> 'scheduled_date' AS sd, count(*) AS n
+    FROM jsonb_array_elements(COALESCE(p_output -> 'dates', '[]'::jsonb)) d
+    GROUP BY 1 HAVING count(*) > 1
+  LOOP
+    v_viol := v_viol || jsonb_build_object('rule','V-08','date', v_rec.sd,
+                'detail','the date appears ' || v_rec.n || ' times in the output; display ordinals would collide');
+  END LOOP;
+
+  -- A block id may not be carried onto two different dates in one plan: a
+  -- block never moves (INV-08-22), and the composite FK would refuse it.
+  FOR v_rec IN
+    SELECT m ->> 'block_id' AS sd, count(DISTINCT d ->> 'scheduled_date') AS n
+    FROM jsonb_array_elements(COALESCE(p_output -> 'dates', '[]'::jsonb)) d,
+         jsonb_array_elements(COALESCE(d -> 'members', '[]'::jsonb)) m
+    WHERE m ->> 'kind' = 'carried'
+    GROUP BY 1 HAVING count(DISTINCT d ->> 'scheduled_date') > 1
+  LOOP
+    v_viol := v_viol || jsonb_build_object('rule','V-08','date', NULL,
+                'detail','carried block ' || v_rec.sd || ' appears on ' || v_rec.n || ' different dates');
+  END LOOP;
+
+  -------------------------------------------------------------------- V-11
+  IF v_created_fl > k_fl_max THEN
+    v_viol := v_viol || jsonb_build_object('rule','V-11','date', NULL,
+                'detail','the horizon creates ' || v_created_fl
+                      || ' full-lengths, above max_full_length_per_horizon ' || k_fl_max);
+  END IF;
+
+  IF jsonb_array_length(v_viol) = 0 THEN
+    RETURN jsonb_build_object('result','accepted');
+  END IF;
+  RETURN jsonb_build_object('result','rejected','violations', v_viol);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6. Pure. Returns a rejection as data rather than raising, because calendar_persist_version has to record it and fall back. V-07 is retired: sheet §8 item 3 removed skill_codes.';
+
+
+--
+-- Name: calendar_viewer_is_admin(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_viewer_is_admin() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid() AND p.role = 'admin'::public.profile_role
+  );
+$$;
+
+
+--
+-- Name: FUNCTION calendar_viewer_is_admin(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_viewer_is_admin() IS 'Doc 05F §7.12 admin SELECT policies (formula sheet §8 item 10: is_admin() does not exist in prod). Collapses into Doc 01 is_admin() when that primitive ships.';
+
+
+--
+-- Name: calendar_write_version(uuid, text, text, text, text, jsonb, jsonb, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_write_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator text, p_generator_version text, p_input jsonb, p_output jsonb, p_mode text, p_fallback_reason jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_version_id uuid;
+  v_version_no integer;
+  v_res        jsonb;
+  v_detail     jsonb;
+  v_source     text;
+  v_date       record;
+  v_member     jsonb;
+  v_block      jsonb;
+  v_ord        integer;
+  v_block_id   uuid;
+  v_tz         text;
+BEGIN
+  v_res := public.calendar_validate_plan(p_mode, p_input, p_output);
+  v_detail := CASE WHEN p_fallback_reason IS NULL THEN v_res -> 'violations'
+                   ELSE COALESCE(v_res, '{}'::jsonb) || jsonb_build_object('fallback', p_fallback_reason) END;
+
+  SELECT COALESCE(max(version_no), 0) + 1 INTO v_version_no
+  FROM public.calendar_plan_versions WHERE student_id = p_student_id;
+
+  v_tz := p_input #>> '{profile,timezone}';
+
+  INSERT INTO public.calendar_plan_versions
+    (student_id, version_no, generator, generator_version, trigger, initiated_by,
+     input_snapshot, input_snapshot_hash, constants_snapshot, validator_result, validator_detail)
+  VALUES
+    (p_student_id, v_version_no, p_generator, p_generator_version, p_trigger, p_initiated_by,
+     p_input, encode(sha256(p_input::text::bytea), 'hex'), p_input -> 'constants',
+     v_res ->> 'result', v_detail)
+  RETURNING plan_version_id INTO v_version_id;
+
+  IF v_res ->> 'result' <> 'accepted' THEN
+    RETURN jsonb_build_object('plan_version_id', v_version_id, 'version_no', v_version_no,
+                              'generator', p_generator, 'validator_result', 'rejected',
+                              'violations', v_res -> 'violations');
+  END IF;
+
+  -- §12.1: what created a block is what the version was for.
+  v_source := CASE p_trigger
+                WHEN 'post_exam' THEN 'post_exam'
+                WHEN 'day_edit' THEN 'student'
+                WHEN 'do_it_now' THEN 'student'
+                ELSE 'auto' END;
+
+  FOR v_date IN
+    SELECT (d ->> 'scheduled_date')::date AS sd,
+           COALESCE((d ->> 'is_user_override')::boolean, false) AS ovr,
+           d -> 'members' AS members
+    FROM jsonb_array_elements(p_output -> 'dates') d
+  LOOP
+    INSERT INTO public.calendar_plan_dates (plan_version_id, student_id, scheduled_date, timezone, is_user_override)
+    VALUES (v_version_id, p_student_id, v_date.sd, v_tz, v_date.ovr);
+
+    v_ord := 0;
+    FOR v_member IN SELECT m FROM jsonb_array_elements(COALESCE(v_date.members, '[]'::jsonb)) m LOOP
+      v_ord := v_ord + 1;
+      IF v_member ->> 'kind' = 'carried' THEN
+        -- Carried blocks keep their identity: no new row, only a membership on
+        -- the new version (§12.2, §22.5).
+        INSERT INTO public.calendar_plan_block_memberships
+          (plan_version_id, student_id, scheduled_date, block_id, display_ordinal, membership_type)
+        VALUES (v_version_id, p_student_id, v_date.sd, (v_member ->> 'block_id')::uuid, v_ord, 'carried');
+      ELSE
+        v_block := v_member -> 'block';
+        INSERT INTO public.calendar_blocks
+          (student_id, created_in_version_id, scheduled_date, block_type, section, scope,
+           target_count, source, derived_from_block_id, explanation_key)
+        VALUES
+          (p_student_id, v_version_id, v_date.sd, v_block ->> 'block_type', v_block ->> 'section',
+           v_block -> 'scope', (v_block ->> 'target_count')::integer, v_source,
+           (v_block ->> 'derived_from_block_id')::uuid, v_block ->> 'explanation_key')
+        RETURNING block_id INTO v_block_id;
+
+        INSERT INTO public.calendar_plan_block_memberships
+          (plan_version_id, student_id, scheduled_date, block_id, display_ordinal, membership_type)
+        VALUES (v_version_id, p_student_id, v_date.sd, v_block_id, v_ord, 'created');
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  RETURN jsonb_build_object('plan_version_id', v_version_id, 'version_no', v_version_no,
+                            'generator', p_generator, 'validator_result', 'accepted');
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_write_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator text, p_generator_version text, p_input jsonb, p_output jsonb, p_mode text, p_fallback_reason jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_write_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator text, p_generator_version text, p_input jsonb, p_output jsonb, p_mode text, p_fallback_reason jsonb) IS 'Doc 05F §12.3. The single calendar writer: validate, allocate version_no under the caller''s FOR UPDATE, insert append-only. A rejected version is recorded and owns nothing, so the prior plan stands.';
+
+
+--
 -- Name: cancel_account_deletion(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -489,8 +2499,9 @@ CREATE FUNCTION public.cancel_account_deletion(p_profile_id uuid) RETURNS uuid
     AS $$
 DECLARE
   v_request_id uuid;
+  v_log_id     uuid;
 BEGIN
-  SELECT adr.id INTO v_request_id
+  SELECT adr.id, adr.log_id INTO v_request_id, v_log_id
     FROM public.account_deletion_requests adr
    WHERE adr.profile_id = p_profile_id
      AND adr.status = 'pending'
@@ -507,6 +2518,23 @@ BEGIN
      SET status                     = 'cancelled',
          stripe_cancellation_status = 'cancelled_by_recovery'
    WHERE id = v_request_id;
+
+  IF v_log_id IS NOT NULL THEN
+    UPDATE public.deletion_request_log
+       SET status = 'cancelled', responded_on = (now() AT TIME ZONE 'utc')::date
+     WHERE log_id = v_log_id AND status IN ('pending', 'executing');
+  END IF;
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.4] | @implemented [2026-09-17]
+  -- The in-app twin of the recovery path above; same action, different route, recorded as such.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_profile_id,
+    p_profile_id,
+    'profile_restored',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', 'set', 'to', NULL)),
+    jsonb_build_object('source', 'cancel_account_deletion', 'path', 'in_app')
+  );
 
   RETURN p_profile_id;
 END;
@@ -1014,6 +3042,91 @@ BEGIN
     INTO v_cascade_result;
 
   RETURN v_cascade_result;
+END;
+$$;
+
+
+--
+-- Name: complete_deletion_log(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_deletion_log(p_completions text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today     date := (now() AT TIME ZONE 'utc')::date;
+  v_json      jsonb;
+  v_ids       uuid[];
+  v_completed bigint;
+  v_billing   bigint;
+  v_profile   uuid;
+  v_stripped  bigint := 0;
+  v_strip     jsonb;
+BEGIN
+  v_json := p_completions::jsonb;
+  IF v_json IS NULL OR jsonb_typeof(v_json) <> 'array' THEN
+    RAISE EXCEPTION 'complete_deletion_log: p_completions must be a JSON array' USING ERRCODE = '22023';
+  END IF;
+
+  CREATE TEMP TABLE _completions ON COMMIT DROP AS
+    SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id,
+           c.stripe_subscription_item_id, c.final_status, c.profile_id
+      FROM jsonb_to_recordset(v_json)
+        AS c(log_id uuid, stripe_customer_id text, stripe_subscription_id text,
+             stripe_subscription_item_id text, final_status text, profile_id uuid);
+
+  SELECT array_agg(c.log_id ORDER BY c.log_id) INTO v_ids FROM _completions c;
+
+  UPDATE public.deletion_request_log
+     SET status = 'completed', responded_on = v_today
+   WHERE log_id = ANY (v_ids)
+     AND status = 'executing';
+  GET DIAGNOSTICS v_completed = ROW_COUNT;
+
+  INSERT INTO public.deletion_billing_record
+    (log_id, stripe_customer_id, stripe_subscription_id, stripe_subscription_item_id, cancelled_on, final_status)
+  SELECT c.log_id, c.stripe_customer_id, c.stripe_subscription_id, c.stripe_subscription_item_id, v_today, c.final_status
+    FROM _completions c
+    JOIN public.deletion_request_log l ON l.log_id = c.log_id
+   WHERE c.final_status IS NOT NULL
+     AND (c.stripe_customer_id IS NOT NULL OR c.stripe_subscription_id IS NOT NULL)
+   ORDER BY c.log_id
+  ON CONFLICT (log_id) DO NOTHING;
+  GET DIAGNOSTICS v_billing = ROW_COUNT;
+
+  -- @spec [Doc-01_V8 §5 (profile_hard_deleted), §5.1 (ids become NULL at hard delete);
+  -- SCL-087 PROPOSED; owner brief 2026-09-17 §3.1/§3.3] | @implemented [2026-09-17]
+  --
+  -- THE AUDIT HALF OF T3. This is the evidence-side transaction, so neither of the two writes
+  -- below can share an xmin with an actor_id-side row — that isolation is the whole reason they
+  -- are here and not in the cascade (see this migration's header).
+  --
+  -- p_completions carries profile_id for exactly this: the profile row is already gone, so the
+  -- uuid is a dead key used to FIND audit rows and then erased from them. It is never stored on
+  -- the evidence side — the PG suite asserts structurally that no evidence table has a uuid
+  -- column other than log_id.
+  FOR v_profile IN SELECT c.profile_id FROM _completions c WHERE c.profile_id IS NOT NULL ORDER BY c.profile_id
+  LOOP
+    v_strip := public.apply_audit_logs_retention('strip_identity', v_profile);
+    v_stripped := v_stripped + COALESCE((v_strip ->> 'rows')::bigint, 0);
+  END LOOP;
+
+  -- One row per completed deletion, with NO ids from the start: §5.1 retains "action type,
+  -- timestamp, status code" and nothing else once a profile is hard-deleted. Written NULL rather
+  -- than written-then-stripped, so this row never needs the exemption at all.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  SELECT NULL, NULL, 'profile_hard_deleted', NULL,
+         jsonb_build_object('source', 'complete_deletion_log', 'status', 'completed')
+    FROM _completions c
+    JOIN public.deletion_request_log l ON l.log_id = c.log_id
+   WHERE l.status = 'completed';
+
+  RETURN jsonb_build_object(
+    'completed', v_completed,
+    'billing_records', v_billing,
+    'audit_rows_stripped', v_stripped
+  );
 END;
 $$;
 
@@ -1703,6 +3816,18 @@ $$;
 
 
 --
+-- Name: deletion_evidence_retention_months(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.deletion_evidence_retention_months() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 24;
+$$;
+
+
+--
 -- Name: emit_notification_event(uuid, text, uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1872,29 +3997,61 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('entitlements', v_count);
 
-  -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
-  UPDATE public.guardian_links SET accepted_by_profile_id = NULL
-   WHERE accepted_by_profile_id = p_profile_id;
-  UPDATE public.guardian_links SET revoked_by_profile_id = NULL
-   WHERE revoked_by_profile_id = p_profile_id;
-  DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
-  DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
+  -- PS-2 .. PS-4: the pre-clears that touch rows belonging to OTHER identities
+  -- (a student's consent request when a guardian deletes; another person's deletion
+  -- request that named this profile as actor; the guardian_links rows on either side).
+  --
+  -- ANONYMIZE MODE (the user-facing path): these MUST already have run in their own
+  -- transaction — public.preclear_account_deletion_links, T1.5 of the executor. A row
+  -- of a LIVE identity written in THIS transaction would share its xmin with the
+  -- anonymized_actors row written below, which is a deterministic join from actor_id
+  -- to that live person and, through profiles.guardian_email, to the deleted one
+  -- (evidence invariant rule 3, SCL-088; plan v4 §1). So this mode does not clear:
+  -- it verifies, and fails closed (INV-05E-05: explicit, gated, nothing implicit).
+  --
+  -- HARD_DELETE MODE (service_role-only internal tool, Doc 05E §1): self-clears, as
+  -- before. Nothing pseudonymous is retained by that mode, so the join has nothing
+  -- to reach.
+  IF p_privacy_mode = 'anonymize' THEN
+    IF EXISTS (SELECT 1 FROM public.guardian_links
+                WHERE accepted_by_profile_id = p_profile_id
+                   OR revoked_by_profile_id  = p_profile_id
+                   OR student_profile_id     = p_profile_id
+                   OR guardian_profile_id    = p_profile_id)
+       OR EXISTS (SELECT 1 FROM public.guardian_consent_requests
+                   WHERE guardian_profile_id = p_profile_id
+                      OR student_profile_id  = p_profile_id)
+       OR EXISTS (SELECT 1 FROM public.account_deletion_requests
+                   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id)
+    THEN
+      RAISE EXCEPTION 'PRECLEAR_REQUIRED: profile % still has guardian_links / guardian_consent_requests / actor_profile_id references — run public.preclear_account_deletion_links(profile) in its own transaction first (evidence invariant rule 3)',
+        p_profile_id;
+    END IF;
+  ELSE
+    -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
+    UPDATE public.guardian_links SET accepted_by_profile_id = NULL
+     WHERE accepted_by_profile_id = p_profile_id;
+    UPDATE public.guardian_links SET revoked_by_profile_id = NULL
+     WHERE revoked_by_profile_id = p_profile_id;
+    DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
+    DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
 
-  -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
-  UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
-   WHERE guardian_profile_id = p_profile_id;
-  DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
+    -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
+    UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
+     WHERE guardian_profile_id = p_profile_id;
+    DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
 
-  -- PS-4. account_deletion_requests — actor_profile_id edge case
-  UPDATE public.account_deletion_requests
-     SET actor_profile_id = profile_id
-   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+    -- PS-4. account_deletion_requests — actor_profile_id edge case
+    UPDATE public.account_deletion_requests
+       SET actor_profile_id = profile_id
+     WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+  END IF;
 
   -- PS-5. account_deletion_requests — delete THIS profile's request rows
   DELETE FROM public.account_deletion_requests WHERE profile_id = p_profile_id;
@@ -1967,6 +4124,19 @@ BEGIN
   DELETE FROM public.student_kpi_rollups_current WHERE student_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('student_kpi_rollups_current', v_count);
+
+  -- L1-13. legal_acceptance_outbox (2026-09-16 evidence audit, plan v4 Phase 1). The
+  -- outbox has NO profiles FK (20260619000300 dropped it so consent intent survives a
+  -- late profile insert), sat in no cascade list, and is invisible to the FK-driven
+  -- preflight above — so its rows, keyed by the auth uuid (= profile id), survived a
+  -- deletion in signup order. Classified here as identity-keyed queue state: DELETED in
+  -- both modes. The consent EVIDENCE lives in deletion_consent_evidence, copied from
+  -- legal_acceptances by mark_deletion_log_executing before this transaction; an
+  -- undrained outbox row at T+7 is intent that never became an acceptance and is not
+  -- evidence of one.
+  DELETE FROM public.legal_acceptance_outbox WHERE user_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('legal_acceptance_outbox', v_count);
 
   -- ========================================================================
   -- MODE BRANCH: hard_delete vs anonymize diverge at L2
@@ -2125,11 +4295,17 @@ BEGIN
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
     -- ====================================================================
-    -- ANONYMIZED_ACTORS LEDGER (§3.1): record that this actor_id is
-    -- anonymized, BEFORE profile deletion destroys the mapping
+    -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
+    -- (build-derived ledger; no spec anchor — SCL-088. The earlier citation of section 3.1 ("Industry precedent")
+    -- was wrong.)
     -- ====================================================================
-    INSERT INTO public.anonymized_actors (actor_id, anonymized_at)
-    VALUES (v_actor_id, now())
+    -- Records that this actor_id is anonymized, BEFORE the profile deletion below
+    -- destroys the one linkage surface. actor_id ONLY: no timestamp (SCL-088 — a
+    -- deletion time on the pseudonymous side joins a dated evidence record at this
+    -- volume), and public.rewrite_anonymized_actors() strips insertion order after
+    -- every executor pass so xmin/ctid carry no sequence either.
+    INSERT INTO public.anonymized_actors (actor_id)
+    VALUES (v_actor_id)
     ON CONFLICT (actor_id) DO NOTHING;
     v_result := v_result || jsonb_build_object('anonymized_actors', 1);
 
@@ -2338,6 +4514,48 @@ BEGIN
      AND seen_at IS NULL;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
+END;
+$$;
+
+
+--
+-- Name: mark_deletion_log_executing(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_consent bigint;
+  v_marked  bigint;
+BEGIN
+  IF p_log_ids IS NULL OR cardinality(p_log_ids) = 0 THEN
+    RETURN jsonb_build_object('marked', 0, 'consent_rows', 0);
+  END IF;
+
+  INSERT INTO public.deletion_consent_evidence
+    (log_id, accepted_on, doc_key, doc_version, actor_type, minor, consent_source, ip_address, user_agent)
+  SELECT adr.log_id,
+         (la.accepted_at AT TIME ZONE 'utc')::date,
+         la.doc_key, la.doc_version, la.actor_type, la.minor, la.consent_source,
+         public.redact_evidence_ip(la.ip_address),
+         public.redact_evidence_user_agent(la.user_agent)
+    FROM public.account_deletion_requests adr
+    JOIN public.legal_acceptances la ON la.user_id = adr.profile_id
+   WHERE adr.log_id = ANY (p_log_ids)
+     AND adr.status = 'pending'
+   ORDER BY adr.log_id, la.doc_key, la.doc_version, la.actor_type
+  ON CONFLICT (log_id, doc_key, doc_version, actor_type) DO NOTHING;
+  GET DIAGNOSTICS v_consent = ROW_COUNT;
+
+  UPDATE public.deletion_request_log
+     SET status = 'executing'
+   WHERE log_id = ANY (p_log_ids)
+     AND status = 'pending';
+  GET DIAGNOSTICS v_marked = ROW_COUNT;
+
+  RETURN jsonb_build_object('marked', v_marked, 'consent_rows', v_consent);
 END;
 $$;
 
@@ -2642,6 +4860,60 @@ $$;
 
 
 --
+-- Name: preclear_account_deletion_links(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_result jsonb := '{}'::jsonb;
+  v_count  bigint;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.account_deletion_requests adr
+     WHERE adr.profile_id = p_profile_id
+       AND adr.status = 'pending'
+       AND adr.scheduled_hard_delete_at <= now()
+  ) THEN
+    RAISE EXCEPTION 'PRECLEAR_NOT_DUE: no pending, due deletion request for profile %', p_profile_id;
+  END IF;
+
+  -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
+  UPDATE public.guardian_links SET accepted_by_profile_id = NULL
+   WHERE accepted_by_profile_id = p_profile_id;
+  UPDATE public.guardian_links SET revoked_by_profile_id = NULL
+   WHERE revoked_by_profile_id = p_profile_id;
+  DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
+  DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
+
+  -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
+  UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
+   WHERE guardian_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_consent_requests_as_guardian', v_count);
+  DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
+
+  -- PS-4. account_deletion_requests — actor_profile_id edge case
+  UPDATE public.account_deletion_requests
+     SET actor_profile_id = profile_id
+   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('account_deletion_requests_as_actor', v_count);
+
+  RETURN jsonb_build_object('status', 'precleared', 'profile_id', p_profile_id, 'rows_affected', v_result);
+END;
+$$;
+
+
+--
 -- Name: prevent_update_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2871,6 +5143,74 @@ $$;
 
 
 --
+-- Name: reconcile_deletion_log(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reconcile_deletion_log() RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today       date := (now() AT TIME ZONE 'utc')::date;
+  v_reverted    bigint;
+  v_completed   bigint;
+  v_cancelled   bigint;
+BEGIN
+  UPDATE public.deletion_request_log l
+     SET status = 'pending'
+   WHERE l.status = 'executing'
+     AND EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                  WHERE adr.log_id = l.log_id AND adr.status = 'pending');
+  GET DIAGNOSTICS v_reverted = ROW_COUNT;
+
+  UPDATE public.deletion_request_log l
+     SET status = 'cancelled', responded_on = coalesce(l.responded_on, v_today)
+   WHERE l.status = 'executing'
+     AND EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                  WHERE adr.log_id = l.log_id AND adr.status = 'cancelled');
+  GET DIAGNOSTICS v_cancelled = ROW_COUNT;
+
+  UPDATE public.deletion_request_log l
+     SET status = 'completed', responded_on = coalesce(l.responded_on, v_today)
+   WHERE l.status = 'executing'
+     AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                      WHERE adr.log_id = l.log_id);
+  GET DIAGNOSTICS v_completed = ROW_COUNT;
+
+  RETURN jsonb_build_object('reverted_to_pending', v_reverted, 'completed', v_completed, 'cancelled', v_cancelled);
+END;
+$$;
+
+
+--
+-- Name: record_deletion_suppression_outcome(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_status NOT IN ('applied', 'failed_manual') THEN
+    RAISE EXCEPTION 'record_deletion_suppression_outcome: % is not a suppression status', p_status
+      USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.deletion_request_log
+     SET suppression_status = p_status
+   WHERE log_id = p_log_id
+     AND suppression_requested = true
+     AND suppression_status IS DISTINCT FROM 'applied';
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
+END;
+$$;
+
+
+--
 -- Name: mastery_derivation_gap_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2999,6 +5339,72 @@ BEGIN
 
   RETURN QUERY SELECT * FROM public.notification_messages WHERE message_id = p_message_id;
 END;
+$$;
+
+
+--
+-- Name: redact_evidence_ip(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_ip(p_ip text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+  v inet;
+BEGIN
+  IF p_ip IS NULL OR btrim(p_ip) = '' THEN
+    RETURN NULL;
+  END IF;
+  BEGIN
+    v := btrim(p_ip)::inet;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  -- an IPv4-mapped IPv6 address (::ffff:a.b.c.d, what Node reports behind a proxy) is IPv4
+  IF family(v) = 6 AND host(v) LIKE '::ffff:%' THEN
+    BEGIN
+      v := substr(host(v), 8)::inet;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN NULL;
+    END;
+  END IF;
+  IF family(v) = 4 THEN
+    RETURN text(network(set_masklen(v, 24)));
+  END IF;
+  RETURN text(network(set_masklen(v, 48)));
+END;
+$$;
+
+
+--
+-- Name: redact_evidence_user_agent(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.redact_evidence_user_agent(p_ua text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT CASE
+    WHEN p_ua IS NULL OR btrim(p_ua) = '' THEN NULL
+    ELSE
+      (CASE
+         WHEN p_ua ~* 'Edg/'            THEN 'Edge'
+         WHEN p_ua ~* 'OPR/|Opera'      THEN 'Opera'
+         WHEN p_ua ~* 'Firefox/|FxiOS/' THEN 'Firefox'
+         WHEN p_ua ~* 'Chrome/|CriOS/'  THEN 'Chrome'
+         WHEN p_ua ~* 'Safari/'         THEN 'Safari'
+         ELSE 'Other'
+       END)
+      || '/' ||
+      (CASE
+         WHEN p_ua ~* 'Windows'             THEN 'Windows'
+         WHEN p_ua ~* 'Android'             THEN 'Android'
+         WHEN p_ua ~* 'iPhone|iPad|iPod'    THEN 'iOS'
+         WHEN p_ua ~* 'Mac OS X|Macintosh'  THEN 'macOS'
+         WHEN p_ua ~* 'CrOS'                THEN 'ChromeOS'
+         WHEN p_ua ~* 'Linux'               THEN 'Linux'
+         ELSE 'Other'
+       END)
+  END
 $$;
 
 
@@ -3624,16 +6030,19 @@ $$;
 
 
 --
--- Name: request_account_deletion(uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: request_account_deletion(uuid, uuid, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer DEFAULT 7) RETURNS TABLE(requested_at timestamp with time zone, scheduled_hard_delete_at timestamp with time zone)
+CREATE FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer DEFAULT 7, p_request_channel text DEFAULT 'self_service_web'::text) RETURNS TABLE(requested_at timestamp with time zone, scheduled_hard_delete_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_now   timestamptz := now();
-  v_sched timestamptz := now() + make_interval(days => p_grace_days);
+  v_now       timestamptz := now();
+  v_sched     timestamptz := now() + make_interval(days => p_grace_days);
+  v_subject   text;
+  v_requester text;
+  v_log_id    uuid;
 BEGIN
   -- Idempotency: surface the existing pending request rather than creating a second one.
   IF EXISTS (
@@ -3648,16 +6057,74 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT p.email INTO v_subject FROM public.profiles p WHERE p.id = p_profile_id;
+  IF v_subject IS NULL THEN
+    RAISE EXCEPTION 'request_account_deletion: profile % not found', p_profile_id;
+  END IF;
+  SELECT p.email INTO v_requester FROM public.profiles p WHERE p.id = p_actor_id;
+  v_requester := coalesce(v_requester, v_subject);
+
+  -- T0 (evidence side): the request record, at day granularity.
+  INSERT INTO public.deletion_request_log
+    (subject_email, requester_email, request_channel, requested_on, status)
+  VALUES
+    (v_subject, v_requester, p_request_channel, (v_now AT TIME ZONE 'utc')::date, 'pending')
+  RETURNING log_id INTO v_log_id;
+
   UPDATE public.profiles SET deleted_at = v_now, updated_at = v_now WHERE id = p_profile_id;
 
   INSERT INTO public.account_deletion_requests
     (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status,
-     stripe_cancellation_status, recovery_token_hash, recovery_token_expires_at)
+     stripe_cancellation_status, recovery_token_hash, recovery_token_expires_at, log_id)
   VALUES
     (p_profile_id, v_now, v_sched, p_actor_id, 'pending',
-     'pending', p_recovery_token_hash, v_sched);
+     'pending', p_recovery_token_hash, v_sched, v_log_id);
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.2.1 Phase 1 "Emit audit event" inside the DB
+  -- transaction] | @implemented [2026-09-17]
+  -- The profile is live and identified here, so the row carries real ids: §5's trail is worth
+  -- nothing if it cannot say whose account it was. No address, no token, no free text — the
+  -- changes/context payloads carry the schedule and the source, which are not personal data.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_actor_id,
+    p_profile_id,
+    'profile_soft_deleted',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', NULL, 'to', 'set')),
+    jsonb_build_object(
+      'source', 'request_account_deletion',
+      'scheduled_hard_delete_at', v_sched,
+      'grace_days', p_grace_days
+    )
+  );
 
   RETURN QUERY SELECT v_now, v_sched;
+END;
+$$;
+
+
+--
+-- Name: resolve_deletion_billing_record(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF p_final_status NOT IN ('cancelled', 'item_removed', 'none_active') THEN
+    RAISE EXCEPTION 'resolve_deletion_billing_record: % is not a resolved status', p_final_status
+      USING ERRCODE = '22023';
+  END IF;
+  UPDATE public.deletion_billing_record
+     SET final_status = p_final_status,
+         cancelled_on = (now() AT TIME ZONE 'utc')::date
+   WHERE log_id = p_log_id
+     AND final_status = 'failed_manual';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
 END;
 $$;
 
@@ -3672,8 +6139,9 @@ CREATE FUNCTION public.restore_account_deletion(p_recovery_token_hash text) RETU
     AS $$
 DECLARE
   v_profile_id uuid;
+  v_log_id     uuid;
 BEGIN
-  SELECT adr.profile_id INTO v_profile_id
+  SELECT adr.profile_id, adr.log_id INTO v_profile_id, v_log_id
     FROM public.account_deletion_requests adr
    WHERE adr.recovery_token_hash    = p_recovery_token_hash
      AND adr.status                 = 'pending'
@@ -3691,6 +6159,24 @@ BEGIN
          stripe_cancellation_status = 'cancelled_by_recovery'
    WHERE recovery_token_hash = p_recovery_token_hash
      AND status              = 'pending';
+
+  IF v_log_id IS NOT NULL THEN
+    UPDATE public.deletion_request_log
+       SET status = 'cancelled', responded_on = (now() AT TIME ZONE 'utc')::date
+     WHERE log_id = v_log_id AND status IN ('pending', 'executing');
+  END IF;
+
+  -- @spec [Doc-01_V8 §5 action enum; §40.4 "profile_restored audit event"]
+  -- | @implemented [2026-09-17] Self-service recovery: the actor is the profile itself (§5
+  -- "may be the profile itself for self-service"). The token hash is deliberately absent.
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    v_profile_id,
+    v_profile_id,
+    'profile_restored',
+    jsonb_build_object('deleted_at', jsonb_build_object('from', 'set', 'to', NULL)),
+    jsonb_build_object('source', 'restore_account_deletion', 'path', 'recovery_token')
+  );
 
   RETURN v_profile_id;
 END;
@@ -3764,6 +6250,33 @@ BEGIN
   );
 
   RETURN v_after;
+END;
+$$;
+
+
+--
+-- Name: rewrite_anonymized_actors(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rewrite_anonymized_actors() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  -- Concurrency (spec-auditor finding C on PR #769): a cascade committing between the
+  -- snapshot and the DELETE would have its ledger row destroyed and never re-inserted —
+  -- the only proof that an actor_id was anonymized. ACCESS EXCLUSIVE makes a concurrent
+  -- cascade's INSERT wait for this transaction to commit; the function is milliseconds.
+  LOCK TABLE public.anonymized_actors IN ACCESS EXCLUSIVE MODE;
+  CREATE TEMP TABLE _ledger ON COMMIT DROP AS
+    SELECT actor_id FROM public.anonymized_actors;
+  DELETE FROM public.anonymized_actors;
+  INSERT INTO public.anonymized_actors (actor_id)
+    SELECT actor_id FROM _ledger ORDER BY actor_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
 END;
 $$;
 
@@ -3915,6 +6428,71 @@ $$;
 --
 
 COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
+
+
+--
+-- Name: sweep_deletion_evidence(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_deletion_evidence(p_batch_size integer) RETURNS TABLE(stripped_log_rows integer, stripped_consent_rows integer, cutoff date)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  date;
+  v_ids     uuid[];
+  v_logs    integer;
+  v_consent integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_deletion_evidence: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := ((now() AT TIME ZONE 'utc')::date
+               - make_interval(months => public.deletion_evidence_retention_months()))::date;
+
+  SELECT array_agg(l.log_id ORDER BY l.log_id)
+    INTO v_ids
+    FROM (
+      SELECT r.log_id
+        FROM public.deletion_request_log r
+       WHERE r.status IN ('completed', 'cancelled', 'denied')
+         AND r.responded_on IS NOT NULL
+         AND r.responded_on < v_cutoff
+         AND (r.subject_email IS NOT NULL OR r.requester_email IS NOT NULL)
+       ORDER BY r.responded_on, r.log_id
+       LIMIT p_batch_size
+    ) l;
+
+  IF v_ids IS NULL THEN
+    RETURN QUERY SELECT 0, 0, v_cutoff;
+    RETURN;
+  END IF;
+
+  -- The identity columns, and only those. requested_on, responded_on, status and denial_basis
+  -- are the aggregate the entry exists to keep.
+  UPDATE public.deletion_request_log
+     SET subject_email = NULL, requester_email = NULL
+   WHERE log_id = ANY (v_ids);
+  GET DIAGNOSTICS v_logs = ROW_COUNT;
+
+  -- Consent evidence rides the same clock (SCL-085, one clock for the whole bundle). doc_key,
+  -- doc_version, actor_type, minor, consent_source and accepted_on survive: that tuple is what
+  -- defends a COPPA claim, and none of it identifies anyone once the network and the browser
+  -- family are gone.
+  UPDATE public.deletion_consent_evidence
+     SET ip_address = NULL, user_agent = NULL
+   WHERE log_id = ANY (v_ids)
+     AND (ip_address IS NOT NULL OR user_agent IS NOT NULL);
+  GET DIAGNOSTICS v_consent = ROW_COUNT;
+
+  -- Nothing here touches the do-not-contact promise: it is an entry on Resend's suppression
+  -- list, not a row in this database. See the header.
+
+  RETURN QUERY SELECT v_logs, v_consent, v_cutoff;
+END;
+$$;
 
 
 --
@@ -4182,9 +6760,17 @@ CREATE TABLE public.account_deletion_requests (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     recovery_token_hash text,
     recovery_token_expires_at timestamp with time zone,
+    log_id uuid,
     CONSTRAINT account_deletion_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'cancelled'::text, 'completed'::text]))),
     CONSTRAINT account_deletion_requests_stripe_cancellation_status_check CHECK ((stripe_cancellation_status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'completed'::text, 'failed_manual'::text, 'cancelled_by_recovery'::text])))
 );
+
+
+--
+-- Name: COLUMN account_deletion_requests.log_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.account_deletion_requests.log_id IS 'deletion_request_log.log_id for this request (no FK on purpose). Set by request_account_deletion; NULL for rows created before migration 20260917000000. Dies with the row at cascade PS-5.';
 
 
 --
@@ -4229,9 +6815,15 @@ CREATE TABLE public.account_deletion_runtime_config_history (
 --
 
 CREATE TABLE public.anonymized_actors (
-    actor_id uuid NOT NULL,
-    anonymized_at timestamp with time zone DEFAULT now() NOT NULL
+    actor_id uuid NOT NULL
 );
+
+
+--
+-- Name: TABLE anonymized_actors; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.anonymized_actors IS 'Ledger of anonymized actor_ids (Doc 05E §3 Rule 4, INV-05E-01/02; build-derived, no spec anchor — SCL-088). actor_id only: no timestamp, and rewrite_anonymized_actors() strips insertion order after every executor pass.';
 
 
 --
@@ -4351,6 +6943,275 @@ CREATE TABLE public.caching_runtime_config (
 --
 
 CREATE TABLE public.caching_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: calendar_block_launches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_block_launches (
+    block_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    launch_sequence smallint NOT NULL,
+    engine text NOT NULL,
+    engine_session_id uuid NOT NULL,
+    launched_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT calendar_block_launches_engine_check CHECK ((engine = ANY (ARRAY['practice'::text, 'review'::text, 'full_length'::text]))),
+    CONSTRAINT calendar_block_launches_launch_sequence_check CHECK ((launch_sequence >= 1))
+);
+
+
+--
+-- Name: TABLE calendar_block_launches; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.calendar_block_launches IS 'Doc 05F §7.7, append-only. Used for Resume/Continue and calendar_launch_rate only. Never for progress — progress is the §13 allocator over engine events.';
+
+
+--
+-- Name: calendar_blocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_blocks (
+    block_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    created_in_version_id uuid NOT NULL,
+    scheduled_date date NOT NULL,
+    block_type text NOT NULL,
+    section text,
+    scope jsonb NOT NULL,
+    target_count integer NOT NULL,
+    source text NOT NULL,
+    derived_from_block_id uuid,
+    explanation_key text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT calendar_blocks_block_type_check CHECK ((block_type = ANY (ARRAY['practice'::text, 'review'::text, 'full_length'::text]))),
+    CONSTRAINT calendar_blocks_full_length_single CHECK (((block_type <> 'full_length'::text) OR (target_count = 1))),
+    CONSTRAINT calendar_blocks_scope_shape CHECK (public.calendar_scope_is_valid(block_type, section, scope)),
+    CONSTRAINT calendar_blocks_section_by_type CHECK ((((block_type = 'practice'::text) AND (section IS NOT NULL)) OR ((block_type = ANY (ARRAY['review'::text, 'full_length'::text])) AND (section IS NULL)))),
+    CONSTRAINT calendar_blocks_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT calendar_blocks_source_check CHECK ((source = ANY (ARRAY['auto'::text, 'student'::text, 'post_exam'::text]))),
+    CONSTRAINT calendar_blocks_target_count_check CHECK ((target_count >= 1))
+);
+
+
+--
+-- Name: TABLE calendar_blocks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.calendar_blocks IS 'Doc 05F §7.4, append-only. No ordinal, no override flag, no status: order is membership, override is the plan date, status is derived.';
+
+
+--
+-- Name: COLUMN calendar_blocks.scope; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.calendar_blocks.scope IS 'Doc 05F §7.4 as amended by formula sheet §8 item 3. practice: {"level":"domain","mix":[{domain,count,explanation_key}]} or {"level":"section","count","explanation_key"} (cold start / fallback — sheet §1). review: {"mode":"queue"} or {"mode":"session","source_engine","source_session_id"} (§8 item 13). full_length: {"form_id"}. Shape enforced by calendar_scope_is_valid.';
+
+
+--
+-- Name: calendar_plan_block_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_plan_block_memberships (
+    plan_version_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    scheduled_date date NOT NULL,
+    block_id uuid NOT NULL,
+    display_ordinal smallint NOT NULL,
+    membership_type text NOT NULL,
+    CONSTRAINT calendar_plan_block_memberships_display_ordinal_check CHECK ((display_ordinal >= 1)),
+    CONSTRAINT calendar_plan_block_memberships_membership_type_check CHECK ((membership_type = ANY (ARRAY['created'::text, 'carried'::text])))
+);
+
+
+--
+-- Name: calendar_plan_dates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_plan_dates (
+    plan_version_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    scheduled_date date NOT NULL,
+    timezone text NOT NULL,
+    is_user_override boolean DEFAULT false NOT NULL
+);
+
+
+--
+-- Name: COLUMN calendar_plan_dates.timezone; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.calendar_plan_dates.timezone IS 'Doc 05F §7.3: the IANA zone in force when this date was planned. It is the date''s temporal meaning and is immutable — a later profile timezone change does not rewrite it.';
+
+
+--
+-- Name: calendar_plan_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_plan_versions (
+    plan_version_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    version_no integer NOT NULL,
+    generator text DEFAULT 'deterministic_v1'::text NOT NULL,
+    generator_version text NOT NULL,
+    trigger text NOT NULL,
+    initiated_by text NOT NULL,
+    input_snapshot jsonb NOT NULL,
+    input_snapshot_hash text NOT NULL,
+    constants_snapshot jsonb NOT NULL,
+    validator_result text NOT NULL,
+    validator_detail jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT calendar_plan_versions_generator_check CHECK ((generator = ANY (ARRAY['deterministic_v1'::text, 'fallback_v1'::text]))),
+    CONSTRAINT calendar_plan_versions_initiated_by_check CHECK ((initiated_by = ANY (ARRAY['student'::text, 'system'::text, 'admin'::text]))),
+    CONSTRAINT calendar_plan_versions_trigger_check CHECK ((trigger = ANY (ARRAY['setup'::text, 'profile_change'::text, 'weekly'::text, 'student_refresh'::text, 'post_exam'::text, 'day_edit'::text, 'day_regenerate'::text, 'day_reset'::text, 'do_it_now'::text, 'rollback'::text]))),
+    CONSTRAINT calendar_plan_versions_validator_result_check CHECK ((validator_result = ANY (ARRAY['accepted'::text, 'rejected'::text]))),
+    CONSTRAINT calendar_plan_versions_version_no_check CHECK ((version_no >= 1))
+);
+
+
+--
+-- Name: TABLE calendar_plan_versions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.calendar_plan_versions IS 'Doc 05F §7.2, append-only. generator IN (deterministic_v1, fallback_v1) per formula sheet §8 item 1. When fallback_v1 ran, validator_detail carries the reason.';
+
+
+--
+-- Name: calendar_current_plan; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.calendar_current_plan WITH (security_invoker='true') AS
+ WITH owner AS (
+         SELECT d_1.student_id,
+            d_1.scheduled_date,
+            max(v_1.version_no) AS version_no
+           FROM (public.calendar_plan_dates d_1
+             JOIN public.calendar_plan_versions v_1 ON ((v_1.plan_version_id = d_1.plan_version_id)))
+          WHERE (v_1.validator_result = 'accepted'::text)
+          GROUP BY d_1.student_id, d_1.scheduled_date
+        )
+ SELECT d.student_id,
+    d.scheduled_date,
+    d.timezone,
+    d.is_user_override,
+    v.version_no,
+    v.plan_version_id,
+    m.block_id,
+    m.display_ordinal,
+    m.membership_type
+   FROM (((owner o
+     JOIN public.calendar_plan_versions v ON (((v.student_id = o.student_id) AND (v.version_no = o.version_no))))
+     JOIN public.calendar_plan_dates d ON (((d.plan_version_id = v.plan_version_id) AND (d.scheduled_date = o.scheduled_date))))
+     LEFT JOIN public.calendar_plan_block_memberships m ON (((m.plan_version_id = d.plan_version_id) AND (m.scheduled_date = d.scheduled_date))));
+
+
+--
+-- Name: VIEW calendar_current_plan; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.calendar_current_plan IS 'Doc 05F §7.6. security_invoker = true — visibility is decided by the base tables'' RLS policies, not by the view owner.';
+
+
+--
+-- Name: calendar_job_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_job_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    job text NOT NULL,
+    student_id uuid NOT NULL,
+    period_key date NOT NULL,
+    outcome text NOT NULL,
+    detail jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT calendar_job_runs_job_check CHECK ((job = 'weekly_regen'::text)),
+    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: calendar_mutation_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_mutation_ledger (
+    student_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    route text NOT NULL,
+    response_hash text NOT NULL,
+    response jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE calendar_mutation_ledger; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.calendar_mutation_ledger IS 'Doc 05F §7.8. A replayed key returns the stored response and writes nothing. Retired when Doc 01A Part IV IdempotencyService ships (G-08-04), and the client contract does not change.';
+
+
+--
+-- Name: calendar_plan_versions_student; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.calendar_plan_versions_student WITH (security_invoker='true') AS
+ SELECT plan_version_id,
+    student_id,
+    version_no,
+    generator,
+    generator_version,
+    trigger,
+    initiated_by,
+    input_snapshot_hash,
+    validator_result,
+    created_at
+   FROM public.calendar_plan_versions v;
+
+
+--
+-- Name: VIEW calendar_plan_versions_student; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.calendar_plan_versions_student IS 'Doc 05F §7.12. Excludes input_snapshot and constants_snapshot. security_invoker = true, so the base table RLS decides rows and the column grants decide columns.';
+
+
+--
+-- Name: calendar_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT calendar_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT calendar_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: calendar_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calendar_runtime_config_history (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     table_name text NOT NULL,
     key text NOT NULL,
@@ -4504,6 +7365,108 @@ CREATE TABLE public.crisis_review_cases (
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
 );
+
+
+--
+-- Name: deletion_billing_record; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_billing_record (
+    log_id uuid NOT NULL,
+    stripe_customer_id text,
+    stripe_subscription_id text,
+    stripe_subscription_item_id text,
+    cancelled_on date NOT NULL,
+    final_status text NOT NULL,
+    CONSTRAINT deletion_billing_record_final_status_check CHECK ((final_status = ANY (ARRAY['cancelled'::text, 'item_removed'::text, 'none_active'::text, 'failed_manual'::text])))
+);
+
+
+--
+-- Name: TABLE deletion_billing_record; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_billing_record IS 'Minimal financial record of the Stripe outcome at execution (plan v4 §3.7; SCL-086; SCL-089 alert-and-retry). NO actor_id (Doc 05E §3 Rule 2: the synthetic identifier is never written to billing surfaces; stripe_customer_id resolves to an email inside Stripe) and NO email. The item id is kept so a failed_manual teardown can be retried after the entitlement row is gone. Legal-obligation basis, 7-year tier.';
+
+
+--
+-- Name: deletion_consent_evidence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_consent_evidence (
+    log_id uuid NOT NULL,
+    accepted_on date NOT NULL,
+    doc_key text NOT NULL,
+    doc_version text NOT NULL,
+    actor_type text NOT NULL,
+    minor boolean NOT NULL,
+    consent_source text NOT NULL,
+    ip_address text,
+    user_agent text
+);
+
+
+--
+-- Name: TABLE deletion_consent_evidence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_consent_evidence IS 'Consent evidence copied from legal_acceptances at execution, keyed to the deletion request log (plan v4 §3.5; SCL-085). accepted_on is a DATE: signup is minutes before the first activity row, so a timestamp would correlate to the actor_id side. ip_address is the /24 (IPv4) or /48 (IPv6) network and user_agent is browser family/OS family — Doc 01 §5.1 redaction, inherited (SCL-085 amendment, owner ruling 2026-09-16). Composite key on purpose: a serial would reproduce copy order.';
+
+
+--
+-- Name: deletion_request_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_request_log (
+    log_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subject_email text,
+    requester_email text,
+    request_channel text NOT NULL,
+    requested_on date NOT NULL,
+    responded_on date,
+    status text NOT NULL,
+    denial_basis text,
+    suppression_requested boolean DEFAULT false NOT NULL,
+    suppression_status text,
+    CONSTRAINT deletion_request_log_request_channel_check CHECK ((request_channel = 'self_service_web'::text)),
+    CONSTRAINT deletion_request_log_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'executing'::text, 'completed'::text, 'cancelled'::text, 'denied'::text]))),
+    CONSTRAINT deletion_request_log_suppression_status_check CHECK (((suppression_status IS NULL) OR (suppression_status = ANY (ARRAY['applied'::text, 'failed_manual'::text]))))
+);
+
+
+--
+-- Name: TABLE deletion_request_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_request_log IS 'Evidence bundle root (plan v4 §3.3; SCL-085). One row per deletion request: CCPA §7101 fields at day granularity. NO created_at, NO uuid other than the random log_id, NO FK outside the bundle — see the migration header for why (evidence invariant rules 1-3).';
+
+
+--
+-- Name: COLUMN deletion_request_log.log_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.log_id IS 'Random (gen_random_uuid), NOT a serial: a serial reproduces request order, which at low volume rank-joins the deletion order visible on the actor_id side through xmin.';
+
+
+--
+-- Name: COLUMN deletion_request_log.subject_email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.subject_email IS 'The deleted account address. NULL once the 24-month strip has run (SCL-085): the row then carries only the dated aggregate — when it was asked, when it was answered, the outcome.';
+
+
+--
+-- Name: COLUMN deletion_request_log.requester_email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.requester_email IS 'Who asked; equals subject for self-service. NULL after the 24-month strip, as above.';
+
+
+--
+-- Name: COLUMN deletion_request_log.suppression_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.deletion_request_log.suppression_status IS 'Outcome of the Resend suppression call for a request whose suppression_requested is true. NULL = not attempted. applied = Resend accepted it. failed_manual = the call failed and the executor''s retry sweep re-attempts it each pass, as it does a row left NULL. Stays applied after a subject re-consents and the entry is removed at Resend, so the sweep cannot silently re-suppress them.';
 
 
 --
@@ -5849,6 +8812,40 @@ CREATE TABLE public.student_skill_kpi (
 
 
 --
+-- Name: student_study_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_study_profile (
+    student_id uuid NOT NULL,
+    timezone text NOT NULL,
+    target_exam_date date,
+    target_score integer,
+    study_days_mask smallint NOT NULL,
+    daily_minutes integer NOT NULL,
+    full_length_weekday smallint,
+    planner_mode text DEFAULT 'auto'::text NOT NULL,
+    setup_completed_at timestamp with time zone,
+    last_acknowledged_nonstudent_version_no integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT setup_requires_target_score CHECK (((setup_completed_at IS NULL) OR (target_score IS NOT NULL))),
+    CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
+    CONSTRAINT student_study_profile_full_length_weekday_check CHECK (((full_length_weekday >= 0) AND (full_length_weekday <= 6))),
+    CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
+    CONSTRAINT student_study_profile_planner_mode_check CHECK ((planner_mode = ANY (ARRAY['auto'::text, 'custom'::text]))),
+    CONSTRAINT student_study_profile_study_days_mask_check CHECK (((study_days_mask >= 1) AND (study_days_mask <= 127))),
+    CONSTRAINT student_study_profile_target_score_check CHECK ((((target_score >= 400) AND (target_score <= 1600)) AND ((target_score % 10) = 0)))
+);
+
+
+--
+-- Name: TABLE student_study_profile; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask bit i = Postgres DOW i (0 = Sunday), and full_length_weekday uses the same convention (sheet §6 mask convention). timezone is IANA, validated at the route against pg_timezone_names.';
+
+
+--
 -- Name: taxonomy_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6361,6 +9358,134 @@ ALTER TABLE ONLY public.caching_runtime_config
 
 
 --
+-- Name: calendar_block_launches calendar_block_launches_engine_engine_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_block_launches
+    ADD CONSTRAINT calendar_block_launches_engine_engine_session_id_key UNIQUE (engine, engine_session_id);
+
+
+--
+-- Name: calendar_block_launches calendar_block_launches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_block_launches
+    ADD CONSTRAINT calendar_block_launches_pkey PRIMARY KEY (block_id, launch_sequence);
+
+
+--
+-- Name: calendar_blocks calendar_blocks_block_id_student_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_block_id_student_id_key UNIQUE (block_id, student_id);
+
+
+--
+-- Name: calendar_blocks calendar_blocks_block_id_student_id_scheduled_date_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_block_id_student_id_scheduled_date_key UNIQUE (block_id, student_id, scheduled_date);
+
+
+--
+-- Name: calendar_blocks calendar_blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_pkey PRIMARY KEY (block_id);
+
+
+--
+-- Name: calendar_job_runs calendar_job_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_job_runs
+    ADD CONSTRAINT calendar_job_runs_pkey PRIMARY KEY (run_id);
+
+
+--
+-- Name: calendar_mutation_ledger calendar_mutation_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_mutation_ledger
+    ADD CONSTRAINT calendar_mutation_ledger_pkey PRIMARY KEY (student_id, idempotency_key);
+
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_membershi_plan_version_id_scheduled_dat_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_block_memberships
+    ADD CONSTRAINT calendar_plan_block_membershi_plan_version_id_scheduled_dat_key UNIQUE (plan_version_id, scheduled_date, display_ordinal);
+
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_block_memberships
+    ADD CONSTRAINT calendar_plan_block_memberships_pkey PRIMARY KEY (plan_version_id, scheduled_date, block_id);
+
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_dates
+    ADD CONSTRAINT calendar_plan_dates_pkey PRIMARY KEY (plan_version_id, scheduled_date);
+
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_plan_version_id_scheduled_date_student__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_dates
+    ADD CONSTRAINT calendar_plan_dates_plan_version_id_scheduled_date_student__key UNIQUE (plan_version_id, scheduled_date, student_id);
+
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_versions
+    ADD CONSTRAINT calendar_plan_versions_pkey PRIMARY KEY (plan_version_id);
+
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_plan_version_id_student_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_versions
+    ADD CONSTRAINT calendar_plan_versions_plan_version_id_student_id_key UNIQUE (plan_version_id, student_id);
+
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_student_id_version_no_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_versions
+    ADD CONSTRAINT calendar_plan_versions_student_id_version_no_key UNIQUE (student_id, version_no);
+
+
+--
+-- Name: calendar_runtime_config_history calendar_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_runtime_config_history
+    ADD CONSTRAINT calendar_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calendar_runtime_config calendar_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_runtime_config
+    ADD CONSTRAINT calendar_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6390,6 +9515,30 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deletion_billing_record deletion_billing_record_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_billing_record
+    ADD CONSTRAINT deletion_billing_record_pkey PRIMARY KEY (log_id);
+
+
+--
+-- Name: deletion_consent_evidence deletion_consent_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_consent_evidence
+    ADD CONSTRAINT deletion_consent_evidence_pkey PRIMARY KEY (log_id, doc_key, doc_version, actor_type);
+
+
+--
+-- Name: deletion_request_log deletion_request_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_request_log
+    ADD CONSTRAINT deletion_request_log_pkey PRIMARY KEY (log_id);
 
 
 --
@@ -6953,6 +10102,14 @@ ALTER TABLE ONLY public.student_skill_mastery
 
 
 --
+-- Name: student_study_profile student_study_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_study_profile
+    ADD CONSTRAINT student_study_profile_pkey PRIMARY KEY (student_id);
+
+
+--
 -- Name: taxonomy_versions taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7078,6 +10235,41 @@ ALTER TABLE ONLY public.review_schedule
 
 ALTER TABLE ONLY public.usage_rate_limit_ledger
     ADD CONSTRAINT usage_rate_limit_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calendar_blocks_student_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX calendar_blocks_student_date ON public.calendar_blocks USING btree (student_id, scheduled_date);
+
+
+--
+-- Name: calendar_job_runs_student_period; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX calendar_job_runs_student_period ON public.calendar_job_runs USING btree (student_id, period_key DESC);
+
+
+--
+-- Name: calendar_plan_block_memberships_block; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX calendar_plan_block_memberships_block ON public.calendar_plan_block_memberships USING btree (block_id);
+
+
+--
+-- Name: calendar_plan_dates_student_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX calendar_plan_dates_student_date ON public.calendar_plan_dates USING btree (student_id, scheduled_date);
+
+
+--
+-- Name: calendar_plan_versions_student_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX calendar_plan_versions_student_created ON public.calendar_plan_versions USING btree (student_id, created_at DESC);
 
 
 --
@@ -7819,7 +11011,7 @@ CREATE TRIGGER account_deletion_runtime_config_notify AFTER INSERT OR UPDATE ON 
 -- Name: audit_logs audit_logs_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER audit_logs_no_mutate BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+CREATE TRIGGER audit_logs_no_mutate BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_retention_guard();
 
 
 --
@@ -7862,6 +11054,20 @@ CREATE TRIGGER caching_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE 
 --
 
 CREATE TRIGGER caching_runtime_config_notify AFTER INSERT OR UPDATE ON public.caching_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: calendar_runtime_config_history calendar_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calendar_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.calendar_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: calendar_runtime_config calendar_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calendar_runtime_config_notify AFTER INSERT OR UPDATE ON public.calendar_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
 
 
 --
@@ -8203,6 +11409,118 @@ ALTER TABLE ONLY public.caching_runtime_config
 
 
 --
+-- Name: calendar_block_launches calendar_block_launches_block_id_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_block_launches
+    ADD CONSTRAINT calendar_block_launches_block_id_student_id_fkey FOREIGN KEY (block_id, student_id) REFERENCES public.calendar_blocks(block_id, student_id);
+
+
+--
+-- Name: calendar_block_launches calendar_block_launches_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_block_launches
+    ADD CONSTRAINT calendar_block_launches_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_blocks calendar_blocks_created_in_version_id_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_created_in_version_id_student_id_fkey FOREIGN KEY (created_in_version_id, student_id) REFERENCES public.calendar_plan_versions(plan_version_id, student_id);
+
+
+--
+-- Name: calendar_blocks calendar_blocks_derived_from_block_id_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_derived_from_block_id_student_id_fkey FOREIGN KEY (derived_from_block_id, student_id) REFERENCES public.calendar_blocks(block_id, student_id);
+
+
+--
+-- Name: calendar_blocks calendar_blocks_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_blocks
+    ADD CONSTRAINT calendar_blocks_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_job_runs calendar_job_runs_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_job_runs
+    ADD CONSTRAINT calendar_job_runs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_mutation_ledger calendar_mutation_ledger_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_mutation_ledger
+    ADD CONSTRAINT calendar_mutation_ledger_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_membershi_block_id_student_id_schedule_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_block_memberships
+    ADD CONSTRAINT calendar_plan_block_membershi_block_id_student_id_schedule_fkey FOREIGN KEY (block_id, student_id, scheduled_date) REFERENCES public.calendar_blocks(block_id, student_id, scheduled_date);
+
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_membershi_plan_version_id_scheduled_da_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_block_memberships
+    ADD CONSTRAINT calendar_plan_block_membershi_plan_version_id_scheduled_da_fkey FOREIGN KEY (plan_version_id, scheduled_date, student_id) REFERENCES public.calendar_plan_dates(plan_version_id, scheduled_date, student_id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_plan_version_id_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_dates
+    ADD CONSTRAINT calendar_plan_dates_plan_version_id_student_id_fkey FOREIGN KEY (plan_version_id, student_id) REFERENCES public.calendar_plan_versions(plan_version_id, student_id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_dates
+    ADD CONSTRAINT calendar_plan_dates_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_plan_versions
+    ADD CONSTRAINT calendar_plan_versions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: calendar_runtime_config_history calendar_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_runtime_config_history
+    ADD CONSTRAINT calendar_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: calendar_runtime_config calendar_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calendar_runtime_config
+    ADD CONSTRAINT calendar_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8256,6 +11574,22 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: deletion_billing_record deletion_billing_record_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_billing_record
+    ADD CONSTRAINT deletion_billing_record_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
+
+
+--
+-- Name: deletion_consent_evidence deletion_consent_evidence_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_consent_evidence
+    ADD CONSTRAINT deletion_consent_evidence_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
 
 
 --
@@ -8667,6 +12001,14 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: student_study_profile student_study_profile_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_study_profile
+    ADD CONSTRAINT student_study_profile_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_context_resolution_log tutor_context_resolution_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8949,6 +12291,130 @@ ALTER TABLE public.caching_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.caching_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: calendar_block_launches; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_block_launches ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_block_launches calendar_block_launches_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_block_launches_admin_read ON public.calendar_block_launches FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: calendar_block_launches calendar_block_launches_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_block_launches_student_read ON public.calendar_block_launches FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: calendar_blocks; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_blocks ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_blocks calendar_blocks_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_blocks_admin_read ON public.calendar_blocks FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: calendar_blocks calendar_blocks_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_blocks_student_read ON public.calendar_blocks FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: calendar_job_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_job_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_mutation_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_mutation_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_plan_block_memberships; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_plan_block_memberships ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_memberships_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_block_memberships_admin_read ON public.calendar_plan_block_memberships FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: calendar_plan_block_memberships calendar_plan_block_memberships_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_block_memberships_student_read ON public.calendar_plan_block_memberships FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: calendar_plan_dates; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_plan_dates ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_dates_admin_read ON public.calendar_plan_dates FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: calendar_plan_dates calendar_plan_dates_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_dates_student_read ON public.calendar_plan_dates FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: calendar_plan_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_plan_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_versions_admin_read ON public.calendar_plan_versions FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: calendar_plan_versions calendar_plan_versions_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY calendar_plan_versions_student_read ON public.calendar_plan_versions FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: calendar_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.calendar_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: consent_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9013,6 +12479,24 @@ CREATE POLICY "crisis_review_writer insert crisis_review_audit_log" ON public.cr
 
 CREATE POLICY "crisis_review_writer insert crisis_review_cases" ON public.crisis_review_cases FOR INSERT TO crisis_review_writer WITH CHECK (true);
 
+
+--
+-- Name: deletion_billing_record; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_billing_record ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_consent_evidence; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_request_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_request_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9588,6 +13072,26 @@ CREATE POLICY student_skill_mastery_student_read ON public.student_skill_mastery
 
 
 --
+-- Name: student_study_profile; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_study_profile ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_study_profile student_study_profile_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY student_study_profile_admin_read ON public.student_study_profile FOR SELECT TO authenticated USING (public.calendar_viewer_is_admin());
+
+
+--
+-- Name: student_study_profile student_study_profile_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY student_study_profile_student_read ON public.student_study_profile FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
 -- Name: taxonomy_versions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9991,6 +13495,14 @@ GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid,
 
 
 --
+-- Name: FUNCTION apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer) TO service_role;
+
+
+--
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10069,6 +13581,116 @@ GRANT ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_n
 
 REVOKE ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, p_section text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, p_section text) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_carry_started(p_input jsonb, p_output jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_carry_started(p_input jsonb, p_output jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_compute_plan(p_input jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_compute_plan(p_input jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_compute_plan_fallback(p_input jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_place_full_lengths(p_input jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_require_int(p_obj jsonb, p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_require_int(p_obj jsonb, p_key text) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_scope_is_valid(p_block_type text, p_section text, p_scope jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_scope_is_valid(p_block_type text, p_section text, p_scope jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_viewer_is_admin(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
+
+
+--
+-- Name: FUNCTION calendar_write_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator text, p_generator_version text, p_input jsonb, p_output jsonb, p_mode text, p_fallback_reason jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_write_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator text, p_generator_version text, p_input jsonb, p_output jsonb, p_mode text, p_fallback_reason jsonb) FROM PUBLIC;
 
 
 --
@@ -10156,6 +13778,14 @@ GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id 
 
 REVOKE ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION complete_deletion_log(p_completions text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.complete_deletion_log(p_completions text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.complete_deletion_log(p_completions text) TO service_role;
 
 
 --
@@ -10372,6 +14002,14 @@ GRANT ALL ON FUNCTION public.mark_all_notifications_seen(p_recipient_id uuid) TO
 
 
 --
+-- Name: FUNCTION mark_deletion_log_executing(p_log_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) TO service_role;
+
+
+--
 -- Name: TABLE notification_messages; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10467,6 +14105,14 @@ GRANT ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) TO
 
 
 --
+-- Name: FUNCTION preclear_account_deletion_links(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION prevent_update_delete(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10502,6 +14148,22 @@ GRANT ALL ON FUNCTION public.read_projection_constants(OUT target_qcount integer
 
 REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION reconcile_deletion_log(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.reconcile_deletion_log() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
+
+
+--
+-- Name: FUNCTION record_deletion_suppression_outcome(p_log_id uuid, p_status text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) TO service_role;
 
 
 --
@@ -10848,11 +14510,19 @@ GRANT ALL ON FUNCTION public.refresh_skill_kpi(p_student_id uuid, p_section text
 
 
 --
--- Name: FUNCTION request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) TO service_role;
+REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer, p_request_channel text) TO service_role;
+
+
+--
+-- Name: FUNCTION resolve_deletion_billing_record(p_log_id uuid, p_final_status text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_final_status text) TO service_role;
 
 
 --
@@ -10869,6 +14539,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.revoke_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_revoked_by uuid, p_reason text, p_request_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.revoke_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_revoked_by uuid, p_reason text, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION rewrite_anonymized_actors(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.rewrite_anonymized_actors() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.rewrite_anonymized_actors() TO service_role;
 
 
 --
@@ -10907,6 +14585,14 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_deletion_evidence(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) TO service_role;
 
 
 --
@@ -11038,6 +14724,159 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.caching_runtime_config_history
 
 
 --
+-- Name: TABLE calendar_block_launches; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_block_launches TO service_role;
+GRANT SELECT ON TABLE public.calendar_block_launches TO authenticated;
+
+
+--
+-- Name: TABLE calendar_blocks; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_blocks TO service_role;
+GRANT SELECT ON TABLE public.calendar_blocks TO authenticated;
+
+
+--
+-- Name: TABLE calendar_plan_block_memberships; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_plan_block_memberships TO service_role;
+GRANT SELECT ON TABLE public.calendar_plan_block_memberships TO authenticated;
+
+
+--
+-- Name: TABLE calendar_plan_dates; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_plan_dates TO service_role;
+GRANT SELECT ON TABLE public.calendar_plan_dates TO authenticated;
+
+
+--
+-- Name: TABLE calendar_plan_versions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_plan_versions TO service_role;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.plan_version_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(plan_version_id) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.version_no; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(version_no) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.generator; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(generator) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.generator_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(generator_version) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.trigger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(trigger) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.initiated_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(initiated_by) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.input_snapshot_hash; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(input_snapshot_hash) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.validator_result; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(validator_result) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: COLUMN calendar_plan_versions.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE public.calendar_plan_versions TO authenticated;
+
+
+--
+-- Name: TABLE calendar_current_plan; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.calendar_current_plan TO service_role;
+GRANT SELECT ON TABLE public.calendar_current_plan TO authenticated;
+
+
+--
+-- Name: TABLE calendar_job_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_job_runs TO service_role;
+
+
+--
+-- Name: TABLE calendar_mutation_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.calendar_mutation_ledger TO service_role;
+
+
+--
+-- Name: TABLE calendar_plan_versions_student; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.calendar_plan_versions_student TO service_role;
+GRANT SELECT ON TABLE public.calendar_plan_versions_student TO authenticated;
+
+
+--
+-- Name: TABLE calendar_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.calendar_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE calendar_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.calendar_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE questions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -11077,6 +14916,27 @@ GRANT ALL ON TABLE public.crisis_review_audit_log TO service_role;
 --
 
 GRANT ALL ON TABLE public.crisis_review_cases TO service_role;
+
+
+--
+-- Name: TABLE deletion_billing_record; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_billing_record TO service_role;
+
+
+--
+-- Name: TABLE deletion_consent_evidence; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_consent_evidence TO service_role;
+
+
+--
+-- Name: TABLE deletion_request_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
 
 
 --
@@ -12023,6 +15883,14 @@ GRANT SELECT(accuracy_last_30d) ON TABLE public.student_skill_kpi TO authenticat
 --
 
 GRANT SELECT(last_active_at) ON TABLE public.student_skill_kpi TO authenticated;
+
+
+--
+-- Name: TABLE student_study_profile; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.student_study_profile TO service_role;
+GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
 
 
 --

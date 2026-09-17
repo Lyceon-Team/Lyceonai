@@ -90,13 +90,10 @@ describe("Premium CTA wiring contract", () => {
 
   it("routes entitlement denials through premium prompt UX on key premium surfaces", () => {
     const chat = read("client/src/pages/chat.tsx");
-    const calendar = read("client/src/pages/calendar.tsx");
     const fullTest = read("client/src/pages/full-test.tsx");
 
     expect(chat).toContain("PremiumUpgradePrompt");
     expect(chat).toContain("mapTutorErrorToPremiumReason");
-    expect(calendar).toContain("PremiumUpgradePrompt");
-    expect(calendar).toContain("getPremiumDenialReason");
     expect(fullTest).toContain("PremiumUpgradePrompt");
     expect(fullTest).toContain("getPremiumDenialReason");
   });

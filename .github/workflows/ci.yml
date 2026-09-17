@@ -194,7 +194,11 @@ jobs:
       # and says so — it will not pass without a comparison point.
       - name: Fetch base ref for the legal immutability gate
         run: |
-          BASE="${{ github.base_ref || 'stripe' }}"
+          # `github.base_ref` is empty on a push event, so the fallback is what a push to an
+          # integration branch actually uses. It must name a branch that cannot disappear:
+          # the previous value, `stripe`, was deleted after merging and took this gate's
+          # comparison point with it, turning the push build red on every integration branch.
+          BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags --depth=1 origin \
             "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
 
@@ -450,6 +454,137 @@ jobs:
   # config doctrine (quota RPC rejects missing config / succeeds with config),
   # and idempotency. No mocks — real SQL against real schema.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Doc 05F calendar — parity gate.
+  #
+  # calendar_formula_reference.py is the oracle, as validation_sweep.py is for
+  # Doc 04B. This runs the nine committed fixtures AND the seeded suite,
+  # regenerated from rand_snapshot and never stored, through both the reference
+  # and the PL/pgSQL RPCs, and fails on any byte difference or suite violation.
+  #
+  # WHY 17 AND NOT 16. genesis-fresh-apply above runs on 16 and that is fine —
+  # it proves the pipeline applies and matches the committed snapshot. This gate
+  # proves the FORMULA, and the two things most likely to differ between majors
+  # are exactly what it is built to catch: security_invoker semantics and
+  # integer-division edges. Prod is 17, so the formula is proved on 17
+  # (Doc 05F formula sheet §6). CALENDAR_PARITY_REQUIRE_PG_MAJOR makes a
+  # mis-pinned service container fail loudly rather than quietly prove less.
+  #
+  # The gate also refuses to exit 0 having compared fewer plans than it claims
+  # to run — a parity gate that silently compares nothing is the same vacuous
+  # pass this workflow guards against elsewhere.
+  # @spec [Doc_05F_formula_sheet.md §6 "Parity gate"; INV-08-06 as amended by
+  #        sheet §8 item 7] | @implemented [2026-09-17]
+  # ---------------------------------------------------------------------------
+  calendar-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17   # prod major; genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply the migration pipeline to a throwaway database
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE calendar_parity;" >/dev/null
+          # Supabase-provided roles and auth schema; a plain Postgres has neither.
+          psql -v ON_ERROR_STOP=1 -d calendar_parity -q >/dev/null <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN; END IF;
+          END $$;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
+          SQL
+          # Same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema
+          # under test is the one the pipeline produces.
+          for f in supabase/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -d calendar_parity -q -f "$f" >/dev/null
+          done
+
+      - name: Calendar schema + config gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+
+      - name: Calendar grant + RLS gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
+
+      - name: Calendar write-RPC gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-writer-gates.sql
+
+      # Real concurrent sessions, not a single-session script: the FOR UPDATE on
+      # the study profile that makes version_no = MAX+1 safe (INV-08-17) is
+      # invisible unless somebody else is holding it. This is also where the
+      # idempotency ledger's check-then-insert is proved atomic.
+      - name: Calendar concurrency gate (INV-08-17, INV-08-09)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+        run: bash scripts/ci/calendar-concurrency-gate.sh
+
+      - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 3000 --suite-seed 1
+
   practice-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -626,6 +761,61 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-completed.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-completed.json \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts
+
+      # @spec [SCL-085/086/088 PROPOSED; plan v4 §1 (two universes, three rules); owner brief
+      #        2026-09-16 "Deletion Vertical" C3 tests 1-7 + B3] | @implemented [2026-09-16]
+      # Evidence bundle: structural (no timestamp / uuid / outside-FK on the evidence side),
+      # cross-universe xmin, rank (execution order ORDER BY profile_id — fails if the ORDER BY is
+      # removed), guardian pre-clear in its own transaction, cancelled outcome, rolled-back cascade
+      # reconciled both ways, no free text crosses, Stripe cancel arguments, Stripe failure →
+      # failed_manual with the deletion still completing, billing record structural.
+      - name: Deletion evidence bundle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-evidence-bundle.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-evidence.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-evidence.json \
+            --file tests/ci/deletion-evidence-bundle.pg.ci.test.ts
+
+      # The proof above is only worth its red proof: plant one mutation per assertion (drop the
+      # ORDER BY, share a transaction, add a timestamp column, disable the reconciler, cancel
+      # with proration, ...) and require the NAMED test to turn red each time.
+      # @spec [Doc-01_V8 §5 / §5.1 / App A.5 / App E; SCL-085 / SCL-087 (PROPOSED); SCL-090
+      #        (PROPOSED as ruled 2026-09-17); owner brief 2026-09-17 "Deletion Vertical: Phases
+      #        2, 3, 5" and its follow-up "Replace Bespoke Suppression With Resend's"]
+      #        | @implemented [2026-09-17]
+      # Phases 2/3/5: the audit_logs guard refuses UPDATE/DELETE for service_role and the single
+      # exempt function is the only body that may open the gate; the three deletion actions are
+      # written, with profile_hard_deleted proven to share no transaction with the pseudonymous
+      # side; the completion notice reaches the provider BEFORE the suppression call, the call is
+      # made only when it was asked for, a failure pages and is retried, and the subject can lift
+      # it from account settings; the 24-month strip strips rather than deletes, leaves a 729-day
+      # row alone, and says so when it changed nothing.
+      - name: Deletion phases 2/3/5 → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-phases-235.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phases.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phases.json \
+            --file tests/ci/deletion-phases-235.pg.ci.test.ts
+
+      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
 
       - name: Guardian schema-truth conversions → real PG proof
         env:

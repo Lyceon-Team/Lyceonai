@@ -13,7 +13,6 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  Calendar,
   type LucideIcon,
 } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
@@ -56,7 +55,6 @@ function AppHeader() {
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/calendar", label: "Calendar", icon: Calendar },
     { href: "/practice", label: "Practice", icon: BookOpen },
     { href: "/full-test", label: "Full Tests", icon: CreditCard },
     { href: "/chat", label: "Lisa", icon: MessageSquare },

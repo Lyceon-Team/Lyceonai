@@ -154,6 +154,12 @@ async function dispatchOne(
     return "failed";
   }
 
+  // @spec [contracts/notifications.contract.md §11A; owner follow-up 2026-09-17 "Replace Bespoke
+  // Suppression With Resend's"] | @implemented [2026-09-17]
+  // NO DO-NOT-CONTACT CHECK HERE, AND THAT IS THE DESIGN. Resend enforces the team's suppression
+  // list itself, on every send, whether it arrives by API or by SMTP — so a suppressed address is
+  // skipped one layer below this one. A second check here would be a copy of the vendor's
+  // enforcement that can only disagree with it.
   const rendered = renderEmail(eventRow.event_type, eventRow.payload, {
     recipientIsSubject:
       row.recipient_profile_id === eventRow.subject_profile_id,

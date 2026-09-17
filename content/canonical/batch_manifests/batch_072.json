@@ -1,0 +1,43 @@
+{
+  "batch": 72,
+  "description": "29 skills × 3 difficulties + 3 extra hard (Boundaries d3, Form Structure and Sense d3, Transitions d3)",
+  "target_skills": [
+    "Linear Equations in One Variable",
+    "Linear Equations in Two Variables",
+    "Linear Functions",
+    "Linear Inequalities in One or Two Variables",
+    "Systems of Two Linear Equations in Two Variables",
+    "Equivalent Expressions",
+    "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+    "Nonlinear Functions",
+    "Ratios, Rates, Proportional Relationships, and Units",
+    "Percentages",
+    "One-Variable Data: Distributions and Measures of Center and Spread",
+    "Two-Variable Data: Models and Scatterplots",
+    "Probability and Conditional Probability",
+    "Inference from Sample Statistics and Margin of Error",
+    "Evaluating Statistical Claims: Observational Studies and Experiments",
+    "Lines, Angles, and Triangles",
+    "Right Triangles and Trigonometry",
+    "Area and Volume",
+    "Circles",
+    "Central Ideas and Details",
+    "Command of Evidence",
+    "Inferences",
+    "Words in Context",
+    "Text Structure and Purpose",
+    "Cross-Text Connections",
+    "Transitions",
+    "Rhetorical Synthesis",
+    "Boundaries",
+    "Form, Structure, and Sense"
+  ],
+  "difficulties": [1, 2, 3],
+  "extra_hard": [
+    {"skill": "Boundaries", "difficulty": 3},
+    {"skill": "Form, Structure, and Sense", "difficulty": 3},
+    {"skill": "Transitions", "difficulty": 3}
+  ],
+  "parts_dir": "content/canonical/batch_072_parts",
+  "sql_out": "infra/supabase/seed/proving_batch_072.sql"
+}

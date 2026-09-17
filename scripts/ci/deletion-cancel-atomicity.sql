@@ -113,6 +113,10 @@ BEGIN
   RAISE NOTICE '(3) OK  no pending request → NULL (route → 404)';
 
   -- ---- self-clean: remove every seeded row (child -> parent) so a live run leaves ZERO residue ---
+  -- Evidence side first (migration 20260917000000): every request_account_deletion call wrote a
+  -- deletion_request_log row keyed from the request row's log_id.
+  DELETE FROM public.deletion_request_log
+   WHERE log_id IN (SELECT adr.log_id FROM public.account_deletion_requests adr WHERE adr.profile_id = ANY (persona));
   DELETE FROM public.account_deletion_requests WHERE profile_id = ANY (persona);
   DELETE FROM public.profiles               WHERE id         = ANY (persona);
   DELETE FROM auth.users                    WHERE id         = ANY (persona);

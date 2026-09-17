@@ -228,9 +228,17 @@ describe.skipIf(!PG_AVAILABLE)(
       const addressRead = callOrder.indexOf("read:profiles");
       expect(addressRead).toBe(0);
       expect(firstRpc).toBeGreaterThan(addressRead);
+      // Plan v4 §3.4 (2026-09-16): T1.5 pre-clear precedes deidentify, and the evidence
+      // housekeeping (reconcile + ledger rewrite) closes the pass. T1/T3 do not appear
+      // because this request row was seeded directly and has no log_id.
       expect(callOrder.slice(firstRpc)).toEqual([
+        "rpc:preclear_account_deletion_links",
         "rpc:deidentify_user",
         "rpc:complete_and_anonymize_account",
+        "rpc:reconcile_deletion_log",
+        "rpc:sweep_deletion_evidence",
+        "rpc:apply_audit_logs_retention",
+        "rpc:rewrite_anonymized_actors",
       ]);
 
       expect(await requestStatus(requestId)).toBe("absent");
