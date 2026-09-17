@@ -194,7 +194,11 @@ jobs:
       # and says so — it will not pass without a comparison point.
       - name: Fetch base ref for the legal immutability gate
         run: |
-          BASE="${{ github.base_ref || 'stripe' }}"
+          # `github.base_ref` is empty on a push event, so the fallback is what a push to an
+          # integration branch actually uses. It must name a branch that cannot disappear:
+          # the previous value, `stripe`, was deleted after merging and took this gate's
+          # comparison point with it, turning the push build red on every integration branch.
+          BASE="${{ github.base_ref || 'main' }}"
           git fetch --no-tags --depth=1 origin \
             "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
 

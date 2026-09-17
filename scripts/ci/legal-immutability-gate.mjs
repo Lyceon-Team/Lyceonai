@@ -26,7 +26,7 @@
  *
  * trade-offs:
  *  - Needs the base ref fetched. CI fetches it; locally it falls back through
- *    LEGAL_BASE_REF, origin/<GITHUB_BASE_REF>, origin/stripe.
+ *    LEGAL_BASE_REF, origin/<GITHUB_BASE_REF>, origin/main.
  *  - If the base ref carries no legal/ directory at all — true on the commit
  *    that introduces it — there is nothing published yet to protect, and the
  *    gate says so rather than passing silently.
@@ -67,8 +67,12 @@ function resolveBaseRef() {
   const candidates = [
     process.env.LEGAL_BASE_REF,
     process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : undefined,
-    "origin/stripe",
-    "stripe",
+    // Trunk, not an integration branch. The previous fallback was `stripe`, which was
+    // where legal versioning was built; that branch has since been merged and deleted, and a
+    // fallback pointing at a branch that can be deleted turns this gate off the day it is.
+    // `main` is where a published version ends up and is the one ref that always exists.
+    "origin/main",
+    "main",
   ].filter((r) => typeof r === "string" && r.length > 0);
 
   for (const ref of candidates) {
@@ -82,7 +86,7 @@ const baseRef = resolveBaseRef();
 console.log("legal immutability gate — published versions are read-only");
 if (!baseRef) {
   console.error("✗ no base ref available to compare against");
-  console.error("  Tried LEGAL_BASE_REF, origin/$GITHUB_BASE_REF, origin/stripe, stripe.");
+  console.error("  Tried LEGAL_BASE_REF, origin/$GITHUB_BASE_REF, origin/main, main.");
   console.error("  Fetch the base branch, or set LEGAL_BASE_REF, and run again.");
   console.error("  Passing without a comparison point would make this gate decorative.");
   process.exit(2);
