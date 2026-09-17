@@ -18,6 +18,9 @@
  *      EVERY locked formula constant (30, 5, 0.50, …, 1.0, 2, 4, 6) and asserting red.
  *  (2) Non-formula SQL function bodies — VALUE denylist (belt-and-suspenders) for operational +
  *      formula values leaking into any other function body. Seed migrations are not bodies.
+ *      One structural unit is masked first: `<x>_bp / 10000`, the definition of basis points,
+ *      which the integer-only Doc 05F calendar formula uses for every ratio. The mask requires
+ *      the adjacent `_bp` identifier, so a bare 10000 elsewhere in the body still fails.
  *  (3) App code — NAME-based (low false-positive): no constant KEYWORD assigned a numeric
  *      literal in service/engine code. Bare numbers in UI (2.5rem) are ignored.
  *
@@ -83,6 +86,23 @@ const PROJECTION_DENY = [
 ];
 
 // ── (2) Non-formula SQL bodies: value denylist (operational + formula) ──
+//
+// STRUCTURAL UNIT, masked before the denylist scan. Basis points are a UNIT, not a
+// tunable: `<something>_bp / 10000` IS the definition of "one hundredth of a
+// percent", the same way POWER(0.5, …) is the definition of a half-life in the
+// formula allowlist above. The Doc 05F calendar formula is integer-only and
+// therefore carries every ratio in basis points (review_share_max_bp,
+// taper_ratio_bp), which collided with 10000 = "tutor monthly cap" below.
+//
+// The masks are deliberately narrow — they require a `_bp` identifier adjacent to
+// the division — so a bare 10000 anywhere else in the same body still fails. The
+// denominator cannot be made config: making a unit configurable would let a config
+// edit silently rescale every ratio in the system.
+const STRUCTURAL_UNIT_ALLOW = [
+  [/\b\w*_bp\b\s*\*\s*\w+\s*\/\s*10000\b/g, "basis-point divisor: <x>_bp * y / 10000"],
+  [/\b\w+\s*\*\s*\w*_bp\b\s*\/\s*10000\b/g, "basis-point divisor: y * <x>_bp / 10000"],
+];
+
 const SQL_DENY = [
   ["0.50","src weight test"],["0.30","src weight practice"],["0.20","src weight review / L1"],
   ["0.79","diff weight easy"],["1.20","diff weight hard"],
@@ -180,7 +200,8 @@ for (const rel of walk("supabase/migrations")) {
       }
     } else {
       // (2) value denylist on non-formula bodies.
-      const code = stripNonCode(body);
+      let code = stripNonCode(body);
+      for (const [re] of STRUCTURAL_UNIT_ALLOW) code = code.replace(re, " ");
       for (const [val, label] of SQL_DENY) {
         const re = new RegExp(`(?<![\\d.])${val.replace(".", "\\.")}(?![\\d])`);
         if (re.test(code)) violations.push(`${rel} [fn ${name}]: hardcoded ${val} (${label}) — read from its constants table`);
