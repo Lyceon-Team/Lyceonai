@@ -715,6 +715,29 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-fk.json \
             --file tests/ci/deletion-fk-actions.pg.ci.test.ts
 
+      # @spec [Doc 03 §21/§14.2 via owner ruling A6; Doc 06D §6.2/§6.5 INV-06-08 as amended by
+      #        owner rulings A2/A4/B2/B3; owner brief 2026-09-17 "Deletion Vertical — Owner
+      #        Rulings + Phase 6"] | @implemented [2026-09-18]
+      # Phase 6: the last account-deletion blocker and the proof that a deletion happened.
+      # A student whose tutor conversation was flagged for crisis review could not be deleted —
+      # three crisis edges were still RESTRICT behind the tutor CASCADE. They are SET NULL now,
+      # the case survives with both links severed, and the denormalized conversation_id copy is
+      # severed by trigger so no deletion path can leave it behind. P6.6 sweeps every uuid
+      # column in the schema to prove the verification record's dead-profile uuid is the only
+      # place that uuid survives.
+      - name: Deletion phase 6 (crisis severance + verification record) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-phase-6.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phase6.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phase6.json \
+            --file tests/ci/deletion-phase-6.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost

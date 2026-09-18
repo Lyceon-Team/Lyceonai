@@ -14,7 +14,7 @@
 # leave a mutation on disk.
 #
 # Needs a Postgres reachable through PG* env (each suite bootstraps its own database from
-# supabase/migrations). Runs three suites thirty-one times between them; each run is ~2s on the CI
+# supabase/migrations). Runs four suites thirty-eight times between them; each run is ~2s on the CI
 # service container.
 # =============================================================================
 set -uo pipefail
@@ -31,6 +31,7 @@ DISPATCH="server/lib/notifications/dispatch.ts"
 RECONSENT="server/services/email-reconsent-audit.ts"
 MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
+MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -42,6 +43,7 @@ cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
+cp "$MIG6" "$BACKUP/mig6.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -55,6 +57,7 @@ restore() {
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
   cp "$BACKUP/guard.sql" "$GUARD"
+  cp "$BACKUP/mig6.sql" "$MIG6"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -278,6 +281,54 @@ expect_red M27 "FK4 the guard reddens when a new FK arrives"
 echo "==> (27c) restored: the FK suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: FK suite not green after restore"; fails=1; else echo "  ok   FK suite green after restore"; fi
+
+# ===========================================================================
+# PHASE 6 — crisis severance + the verification record (owner brief 2026-09-17)
+# ===========================================================================
+SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
+
+echo "==> (0d) the phase-6 suite must be green before planting"
+base4="$(run_suite)"
+if printf '%s\n' "$base4" | grep -q "^failed"; then
+  echo "  FAIL: phase-6 suite is not green before planting"
+  printf '%s\n' "$base4" | sed 's/^/       | /'
+  exit 1
+fi
+echo "  ok   phase-6 baseline green ($(printf '%s\n' "$base4" | grep -c '^passed') tests)"
+
+# The production blocker, planted: leave crisis_review_cases.student_id RESTRICT and the two
+# accounts that cannot be deleted today stay undeletable.
+echo "==> (M28) crisis_review_cases.student_id is left off the SET NULL list"
+plant M28 "$MIG6" "s.replace(\"      ('crisis_review_cases',     'student_id'),\n\", '', 1)"
+expect_red M28 "P6.1 a student with a crisis-flagged conversation"
+
+# SET NULL on a NOT NULL column does not fail at migration time — it fails at DELETE time.
+# Drop the nullability change and the fix becomes a different defect that still blocks deletion.
+echo "==> (M29) the DROP NOT NULL is skipped, so SET NULL has nowhere to put the NULL"
+plant M29 "$MIG6" "s.replace('ALTER TABLE public.crisis_review_cases     ALTER COLUMN student_id      DROP NOT NULL;', '', 1)"
+expect_red M29 "P6.1 a student with a crisis-flagged conversation"
+
+# THE CHOKEPOINT. Remove the trigger and the severance on crisis_review_cases.conversation_id
+# is decoration: the value is recoverable from the denormalized copy with one join on case_id.
+echo "==> (M30) the denormalized conversation_id copy is left intact"
+plant M30 "$MIG6" "s.replace('  AFTER DELETE ON public.tutor_conversations', '  AFTER UPDATE ON public.tutor_conversations', 1)"
+expect_red M30 "P6.2 the crisis case survives the deletion"
+
+# The manifest hash must be DERIVED from the record, not stamped. A constant passes every
+# other assertion in the file and proves nothing about the record's integrity.
+echo "==> (M31) proof_manifest_ref is a constant instead of a digest of the record"
+plant M31 "$MIG6" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
+expect_red M31 "P6.5 a verification record is written"
+
+# The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
+# verification record is no longer the only place it survives.
+echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
+plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
+expect_red M32 "P6.6 the deleted profile's uuid survives ONLY on the evidence side"
+
+echo "==> (29c) restored: the phase-6 suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phase-6 suite not green after restore"; fails=1; else echo "  ok   phase-6 suite green after restore"; fi
 
 echo "==> (28) restored: the other two suites must be green again"
 again="$(run_suite)"
