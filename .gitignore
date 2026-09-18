@@ -63,3 +63,15 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 # NOTE: .terraform.lock.hcl is NOT ignored — commit it (pins provider versions)
+
+# /brag render outputs (the storyboard is tracked; binaries and composition are not)
+brag-output/**/*.mp4
+brag-output/**/*.jpg
+brag-output/**/*.png
+brag-output/composition/
+
+# Supabase CLI local link state (machine-specific; never commit)
+supabase/.temp/
+
+# Scanner test scratch dir (transient fixture)
+tests/ci/lib/__scanner_test_tmp__/
