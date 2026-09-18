@@ -704,10 +704,11 @@ export async function flagConversationForReview(
     { conversationId, caseId, source, slaDeadline },
   );
 
-  // Step 3: Fire-and-forget ops notification via Cloud Tasks (§21.2 step 5).
-  // Not blocking — the review case is the durable safety record.
+  // Step 3: Ops notification via Cloud Tasks (§21.2 step 5).
+  // Awaited so the async continuation completes before Cloud Run
+  // reclaims CPU after the HTTP response is sent.
   // Metadata only — no conversation content, no student name per SCL-025(c).
-  void notifyCrisisEvent({
+  await notifyCrisisEvent({
     caseId,
     conversationId,
     source,
