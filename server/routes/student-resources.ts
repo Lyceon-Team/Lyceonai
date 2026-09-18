@@ -71,6 +71,7 @@ import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
+import { sendPaymentRequired } from "../lib/http-errors";
 
 const router = Router({ mergeParams: true });
 
@@ -145,14 +146,7 @@ function requireSubject(
   return req.subject;
 }
 
-function sendPaymentRequired(res: Response, requestId?: string) {
-  return res.status(402).json({
-    error: "Subscription required",
-    code: "PAYMENT_REQUIRED",
-    message: "An active subscription is required to see this.",
-    requestId,
-  });
-}
+
 
 /**
  * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
