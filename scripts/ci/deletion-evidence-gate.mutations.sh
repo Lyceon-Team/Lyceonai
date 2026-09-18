@@ -13,8 +13,9 @@
 # Baseline green is asserted first, and restoration is trap-guaranteed, so a crashed run cannot
 # leave a mutation on disk.
 #
-# Needs a Postgres reachable through PG* env (the suite bootstraps its own database from
-# supabase/migrations). Runs the two suites twenty-six times between them; each run is ~2s on the CI service container.
+# Needs a Postgres reachable through PG* env (each suite bootstraps its own database from
+# supabase/migrations). Runs four suites thirty-eight times between them; each run is ~2s on the CI
+# service container.
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -28,6 +29,9 @@ MIG2="supabase/migrations/20260917110000_deletion_suppression_outcome.sql"
 MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
 DISPATCH="server/lib/notifications/dispatch.ts"
 RECONSENT="server/services/email-reconsent-audit.ts"
+MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
+GUARD="scripts/ci/fk-delete-action-guard.sql"
+MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -37,6 +41,9 @@ cp "$MIG2" "$BACKUP/mig2.sql"
 cp "$MIG5" "$BACKUP/mig5.sql"
 cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
+cp "$MIGFK" "$BACKUP/migfk.sql"
+cp "$GUARD" "$BACKUP/guard.sql"
+cp "$MIG6" "$BACKUP/mig6.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -48,6 +55,9 @@ restore() {
   cp "$BACKUP/mig5.sql" "$MIG5"
   cp "$BACKUP/dispatch.ts" "$DISPATCH"
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
+  cp "$BACKUP/migfk.sql" "$MIGFK"
+  cp "$BACKUP/guard.sql" "$GUARD"
+  cp "$BACKUP/mig6.sql" "$MIG6"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -101,14 +111,18 @@ echo "==> (M1) remove ORDER BY profile_id from the executor's due-request select
 plant M1 "$EXEC" 's.replace(".order(\"profile_id\", { ascending: true })", "")'
 expect_red M1 "C3.3 rank"
 
+# Targets MIGFK, not MIG: migration 20260917130000 REPLACES execute_account_deletion_cascade to
+# drop the steps the foreign keys now perform, so the cascade body lives there. Planting into the
+# older copy would mutate a function that the pipeline immediately overwrites — the same way M9
+# silently stopped biting when Phase 3 landed.
 echo "==> (M2) write evidence rows inside the cascade transaction (shared xmin)"
 # The consent rows, not the log rows: T3 re-stamps the log rows afterwards, which would hide
 # the leak from a current-version xmin read; the consent rows are never touched after T1.
-plant M2 "$MIG" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
+plant M2 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
 expect_red M2 "C3.2 cross-universe xmin"
 
 echo "==> (M3) touch a live student's consent row inside the guardian's cascade transaction"
-plant M3 "$MIG" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
+plant M3 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
 expect_red M3 "C3.4 guardian pre-clear"
 
 echo "==> (M4) give the log the genesis-style created_at timestamptz column"
@@ -231,7 +245,92 @@ echo "==> (M25) clearing a suppression stops recording the re-consent"
 plant M25 "$RECONSENT" 's.replace("    action: EMAIL_RECONSENT_ACTION,", "    action: \"unrecorded\",", 1)'
 expect_red M25 "P2.5 clearing from account settings"
 
-echo "==> (26) restored: BOTH suites must be green again"
+# ===========================================================================
+# DECLARATIVE FK DELETE ACTIONS — third suite (owner brief 2026-09-17 step 4)
+# ===========================================================================
+# Same harness again, pointed at the FK suite. Two mutations, one per half of the
+# redesign: the migration that fixes today's nine edges, and the guard that is
+# supposed to catch the tenth.
+SUITE="tests/ci/deletion-fk-actions.pg.ci.test.ts"
+
+echo "==> (0c) the FK suite must be green before planting"
+base3="$(run_suite)"
+if printf '%s\n' "$base3" | grep -q "^failed"; then
+  echo "  FAIL: FK suite is not green before planting"
+  printf '%s\n' "$base3" | sed 's/^/       | /'
+  exit 1
+fi
+echo "  ok   FK baseline green ($(printf '%s\n' "$base3" | grep -c '^passed') tests)"
+
+# The migration half: drop one tutor edge from the list and it keeps its RESTRICT, which
+# is exactly the prod defect — DELETE FROM profiles raises for anyone who used the tutor.
+echo "==> (M26) tutor_conversations.student_id is left off the FK action list"
+plant M26 "$MIGFK" "s.replace(\"      ('tutor_conversations','student_id','c'),\n\", '', 1)"
+expect_red M26 "FK1 a profile with rows in all seven tutor tables"
+
+# The guard half: this is the deliverable the brief calls the most important one. Put the
+# hand-maintained list back — G1 enumerating named tables instead of the catalog — and the
+# brand-new unclassified foreign key walks straight past it.
+echo "==> (M27) the guard reads a hand-maintained table list instead of pg_constraint"
+plant M27 "$GUARD" "s.replace(\"\"\"         AND ((tn.nspname = 'public' AND tgt.relname = 'profiles')
+           OR (tn.nspname = 'auth'   AND tgt.relname = 'users'))\"\"\", \"\"\"         AND ((tn.nspname = 'public' AND tgt.relname = 'profiles')
+           OR (tn.nspname = 'auth'   AND tgt.relname = 'users'))
+         AND src.relname IN ('tutor_conversations','tutor_messages','practice_sessions','entitlements','guardian_links')\"\"\", 1)"
+expect_red M27 "FK4 the guard reddens when a new FK arrives"
+
+echo "==> (27c) restored: the FK suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: FK suite not green after restore"; fails=1; else echo "  ok   FK suite green after restore"; fi
+
+# ===========================================================================
+# PHASE 6 — crisis severance + the verification record (owner brief 2026-09-17)
+# ===========================================================================
+SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
+
+echo "==> (0d) the phase-6 suite must be green before planting"
+base4="$(run_suite)"
+if printf '%s\n' "$base4" | grep -q "^failed"; then
+  echo "  FAIL: phase-6 suite is not green before planting"
+  printf '%s\n' "$base4" | sed 's/^/       | /'
+  exit 1
+fi
+echo "  ok   phase-6 baseline green ($(printf '%s\n' "$base4" | grep -c '^passed') tests)"
+
+# The production blocker, planted: leave crisis_review_cases.student_id RESTRICT and the two
+# accounts that cannot be deleted today stay undeletable.
+echo "==> (M28) crisis_review_cases.student_id is left off the SET NULL list"
+plant M28 "$MIG6" "s.replace(\"      ('crisis_review_cases',     'student_id'),\n\", '', 1)"
+expect_red M28 "P6.1 a student with a crisis-flagged conversation"
+
+# SET NULL on a NOT NULL column does not fail at migration time — it fails at DELETE time.
+# Drop the nullability change and the fix becomes a different defect that still blocks deletion.
+echo "==> (M29) the DROP NOT NULL is skipped, so SET NULL has nowhere to put the NULL"
+plant M29 "$MIG6" "s.replace('ALTER TABLE public.crisis_review_cases     ALTER COLUMN student_id      DROP NOT NULL;', '', 1)"
+expect_red M29 "P6.1 a student with a crisis-flagged conversation"
+
+# THE CHOKEPOINT. Remove the trigger and the severance on crisis_review_cases.conversation_id
+# is decoration: the value is recoverable from the denormalized copy with one join on case_id.
+echo "==> (M30) the denormalized conversation_id copy is left intact"
+plant M30 "$MIG6" "s.replace('  AFTER DELETE ON public.tutor_conversations', '  AFTER UPDATE ON public.tutor_conversations', 1)"
+expect_red M30 "P6.2 the crisis case survives the deletion"
+
+# The manifest hash must be DERIVED from the record, not stamped. A constant passes every
+# other assertion in the file and proves nothing about the record's integrity.
+echo "==> (M31) proof_manifest_ref is a constant instead of a digest of the record"
+plant M31 "$MIG6" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
+expect_red M31 "P6.5 a verification record is written"
+
+# The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
+# verification record is no longer the only place it survives.
+echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
+plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
+expect_red M32 "P6.6 the deleted profile's uuid survives ONLY on the evidence side"
+
+echo "==> (29c) restored: the phase-6 suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phase-6 suite not green after restore"; fails=1; else echo "  ok   phase-6 suite green after restore"; fi
+
+echo "==> (28) restored: the other two suites must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phases suite not green after restore"; fails=1; else echo "  ok   phases suite green after restore"; fi
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
