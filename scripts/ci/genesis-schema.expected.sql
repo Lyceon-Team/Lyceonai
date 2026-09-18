@@ -3245,6 +3245,61 @@ $$;
 
 
 --
+-- Name: record_deletion_verification(uuid, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid DEFAULT NULL::uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_canonical text;
+  v_hash      text;
+BEGIN
+  IF p_outcome NOT IN ('pass', 'fail') THEN
+    RAISE EXCEPTION 'record_deletion_verification: outcome must be pass or fail (got %)', p_outcome
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.deletion_request_log l WHERE l.log_id = p_log_id) THEN
+    RAISE EXCEPTION 'record_deletion_verification: no deletion_request_log row for %', p_log_id
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF jsonb_typeof(p_layers_verified) <> 'object' THEN
+    RAISE EXCEPTION 'record_deletion_verification: layers_verified must be a JSON object'
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_canonical := p_log_id::text
+              || E'\n' || p_outcome
+              || E'\n' || p_layers_verified::text
+              || E'\n' || COALESCE(p_deleted_profile_id::text, '');
+  v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');
+
+  INSERT INTO public.deletion_verification_records
+    (log_id, verification_outcome, layers_verified, proof_manifest_ref, deleted_profile_id)
+  VALUES
+    (p_log_id, p_outcome, p_layers_verified, v_hash, p_deleted_profile_id)
+  ON CONFLICT (log_id) DO UPDATE
+    SET verification_outcome = EXCLUDED.verification_outcome,
+        layers_verified      = EXCLUDED.layers_verified,
+        proof_manifest_ref   = EXCLUDED.proof_manifest_ref,
+        deleted_profile_id   = EXCLUDED.deleted_profile_id;
+
+  RETURN p_log_id;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail) — there is no in_progress state because verification runs inside T3. proof_manifest_ref is a SHA-256 over the canonical record per owner ruling B3; the manifest IS the record.';
+
+
+--
 -- Name: mastery_derivation_gap_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4442,6 +4497,30 @@ $$;
 
 
 --
+-- Name: sever_crisis_audit_conversation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sever_crisis_audit_conversation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  UPDATE public.crisis_review_audit_log
+     SET conversation_id = NULL
+   WHERE conversation_id = OLD.id;
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sever_crisis_audit_conversation(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sever_crisis_audit_conversation() IS 'Severs the denormalized crisis_review_audit_log.conversation_id when the conversation it names is deleted. That column carries no foreign key, so no ON DELETE action can reach it, and a copy that outlives the severance on crisis_review_cases.conversation_id restores the link with one join. Owner ruling A6 + the chokepoint rule in CLAUDE.md.';
+
+
+--
 -- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5095,7 +5174,7 @@ CREATE TABLE public.crisis_review_audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     case_id uuid,
     conversation_id uuid,
-    reviewer_id uuid NOT NULL,
+    reviewer_id uuid,
     action text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     ip inet,
@@ -5111,8 +5190,8 @@ CREATE TABLE public.crisis_review_audit_log (
 
 CREATE TABLE public.crisis_review_cases (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    conversation_id uuid,
+    student_id uuid,
     source text NOT NULL,
     signature_id uuid,
     model_confidence numeric,
@@ -5230,6 +5309,27 @@ COMMENT ON COLUMN public.deletion_request_log.requester_email IS 'Who asked; equ
 --
 
 COMMENT ON COLUMN public.deletion_request_log.suppression_status IS 'Outcome of the Resend suppression call for a request whose suppression_requested is true. NULL = not attempted. applied = Resend accepted it. failed_manual = the call failed and the executor''s retry sweep re-attempts it each pass, as it does a row left NULL. Stays applied after a subject re-consents and the entry is removed at Resend, so the sweep cannot silently re-suppress them.';
+
+
+--
+-- Name: deletion_verification_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_verification_records (
+    log_id uuid NOT NULL,
+    verification_outcome text NOT NULL,
+    layers_verified jsonb NOT NULL,
+    proof_manifest_ref text NOT NULL,
+    deleted_profile_id uuid,
+    CONSTRAINT deletion_verification_records_verification_outcome_check CHECK ((verification_outcome = ANY (ARRAY['pass'::text, 'fail'::text])))
+);
+
+
+--
+-- Name: TABLE deletion_verification_records; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4 (the account_deletion_requests row it originally keyed on is deleted by the cascade at PS-5 and cannot be the correlation surface). Evidence side: no timestamp column, no uuid but log_id and the deliberate deleted_profile_id carve-out. Written terminal inside T3 by public.record_deletion_verification; direct writes are a defect.';
 
 
 --
@@ -7138,6 +7238,14 @@ ALTER TABLE ONLY public.deletion_request_log
 
 
 --
+-- Name: deletion_verification_records deletion_verification_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_verification_records
+    ADD CONSTRAINT deletion_verification_records_pkey PRIMARY KEY (log_id);
+
+
+--
 -- Name: difficulties difficulties_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8801,6 +8909,13 @@ CREATE TRIGGER tutor_context_runtime_config_notify AFTER INSERT OR UPDATE ON pub
 
 
 --
+-- Name: tutor_conversations tutor_conversations_sever_crisis_audit; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_conversations_sever_crisis_audit AFTER DELETE ON public.tutor_conversations FOR EACH ROW EXECUTE FUNCTION public.sever_crisis_audit_conversation();
+
+
+--
 -- Name: tutor_conversations tutor_conversations_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8962,7 +9077,7 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 --
 
 ALTER TABLE ONLY public.crisis_review_audit_log
-    ADD CONSTRAINT crisis_review_audit_log_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_audit_log_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -8970,7 +9085,7 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 --
 
 ALTER TABLE ONLY public.crisis_review_cases
-    ADD CONSTRAINT crisis_review_cases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_cases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE SET NULL;
 
 
 --
@@ -8986,7 +9101,7 @@ ALTER TABLE ONLY public.crisis_review_cases
 --
 
 ALTER TABLE ONLY public.crisis_review_cases
-    ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -9003,6 +9118,14 @@ ALTER TABLE ONLY public.deletion_billing_record
 
 ALTER TABLE ONLY public.deletion_consent_evidence
     ADD CONSTRAINT deletion_consent_evidence_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
+
+
+--
+-- Name: deletion_verification_records deletion_verification_records_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_verification_records
+    ADD CONSTRAINT deletion_verification_records_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
 
 
 --
@@ -9778,6 +9901,12 @@ ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.deletion_request_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_verification_records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_verification_records ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11315,6 +11444,14 @@ GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
 
 REVOKE ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) TO service_role;
+
+
+--
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) TO service_role;
 
 
 --
