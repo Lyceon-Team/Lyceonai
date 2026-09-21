@@ -48,12 +48,13 @@ This document is the single authoritative registry of:
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
-| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
+| `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
+| `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
@@ -145,8 +146,6 @@ Removed auth endpoints (must return 404):
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
 | `/api/questions/stats` | GET | Yes | student/admin | free | Question statistics |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
-| `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
-| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Submit session-based review answer (owner: `submitReviewSessionAnswer`) |
 | `/api/students/{{studentId}}/mastery/domains` | GET | Yes | student/admin | premium | Domain grid: level + level name per canonical domain |
 | `/api/students/:studentId/mastery/skills` | GET | Yes | student/admin | premium | Skill panel for one domain; unmeasured skills present and labelled |
 | `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
@@ -176,6 +175,11 @@ Removed auth endpoints (must return 404):
 | Endpoint | Method | Auth Required | Role | Purpose |
 |----------|--------|--------------|------|---------|
 | `/api/admin/db-health` | GET | Yes | admin | Database health check |
+| `/api/admin/crisis-review/cases` | GET | Yes | admin | List crisis review cases (filterable by status) |
+| `/api/admin/crisis-review/cases/:id` | GET | Yes | admin | Get single crisis review case with audit log |
+| `/api/admin/crisis-review/cases/:id/claim` | POST | Yes | admin | Claim an open case for review |
+| `/api/admin/crisis-review/cases/:id/disposition` | POST | Yes | admin | Resolve case with disposition and notes |
+| `/api/admin/crisis-review/sla-breaches` | GET | Yes | admin | List cases that have breached SLA deadline |
 
 ### Billing Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |

@@ -692,12 +692,12 @@ BEGIN
     'review_due_by_date', COALESCE((
       SELECT jsonb_agg(jsonb_build_object('date', q.d::text, 'due_count', q.n) ORDER BY q.d)
       FROM (
-        SELECT greatest((r.next_review_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
+        SELECT greatest((r.queued_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
                count(*)::integer AS n
         FROM public.review_schedule r
         WHERE r.student_id = p_student_id
           AND r.status = 'active'
-          AND (r.next_review_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
+          AND (r.queued_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
         GROUP BY 1
       ) q), '[]'::jsonb),
 
@@ -4836,6 +4836,46 @@ $$;
 
 
 --
+-- Name: practice_item_enqueue_review(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.practice_item_enqueue_review() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_outcome text;
+BEGIN
+  -- An anonymized item has no owner to queue for. Practice's anonymize path
+  -- UPDATEs user_id to NULL on already-resolved rows (20260917000000:732), so
+  -- this is reached on exactly that path and must write nothing (G10).
+  IF NEW.user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- Ruling 2: misses AND skips enter the queue. Ruling 13: a correct answer
+  -- never touches it.
+  IF NEW.status = 'answered' AND NEW.is_correct = false THEN
+    v_outcome := 'incorrect';
+  ELSIF NEW.status = 'skipped' THEN
+    v_outcome := 'skipped';
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  -- occurred_at, not answered_at: psi_resolved_requires_occurred_at guarantees
+  -- the former on every resolved row, and nothing guarantees the latter.
+  PERFORM public.review_queue_record(
+    NEW.user_id, NEW.question_id, 'practice',
+    NEW.session_id, NEW.id, v_outcome, NEW.occurred_at
+  );
+
+  RETURN NULL;
+END
+$$;
+
+
+--
 -- Name: practice_session_mode_to_event_kind(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6184,6 +6224,162 @@ $$;
 
 
 --
+-- Name: review_item_resolve(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_item_resolve() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.student_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF NEW.status = 'answered' THEN
+    -- id = NEW.id so the attempt id EQUALS the item id. R3 passes that as the
+    -- mastery event id (ruling 11), and canonical_mastery_events reads
+    -- review_error_attempts.id as event_id.
+    INSERT INTO public.review_error_attempts (
+      id, session_item_id, student_id, question_id,
+      selected_answer, is_correct, seconds_spent, client_attempt_id,
+      used_tutor, section, domain, skill, difficulty, occurred_at, actor_id
+    ) VALUES (
+      NEW.id, NEW.id, NEW.student_id, NEW.question_id,
+      NEW.selected_answer, NEW.is_correct,
+      NEW.time_spent_ms / 1000, NEW.client_attempt_id,
+      false,                      -- ruling 9: LISA is out at launch
+      NEW.question_section, NEW.question_domain, NEW.question_skill,
+      NEW.question_difficulty, NEW.occurred_at, NEW.actor_id
+    );
+
+    IF NEW.is_correct THEN
+      PERFORM public.review_queue_graduate(
+        NEW.student_id, NEW.question_id, NEW.id, NEW.occurred_at);
+    ELSE
+      PERFORM public.review_queue_record(
+        NEW.student_id, NEW.question_id, 'review',
+        NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at);
+    END IF;
+
+  ELSIF NEW.status = 'skipped' THEN
+    -- No attempt row. Pre-build check 7: canonical_mastery_events' practice
+    -- branch filters status='answered' (20260806000000_diagnostic_gate.sql:140),
+    -- so practice skips carry no mastery. Review mirrors that; writing an
+    -- attempt here would make review skips count where practice skips do not.
+    PERFORM public.review_queue_record(
+      NEW.student_id, NEW.question_id, 'review',
+      NEW.session_id, NEW.id, 'skipped', NEW.occurred_at);
+  END IF;
+
+  RETURN NULL;
+END
+$$;
+
+
+--
+-- Name: review_queue_graduate(uuid, text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text), hashtext(p_question_id));
+
+  UPDATE public.review_schedule
+     SET status            = 'graduated',
+         closed_at         = p_at,
+         closed_by_item_id = p_review_item_id,
+         updated_at        = p_at
+   WHERE student_id = p_student_id
+     AND question_id = p_question_id
+     AND status = 'active'
+  RETURNING id INTO v_id;
+
+  -- No active entry is a normal outcome, not an error: the question may have
+  -- graduated in another open session (plan §6, "the same question in two open
+  -- sessions"). Returning NULL says "nothing to close" without raising.
+  RETURN v_id;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 4. Closes the question''s open queue entry as graduated. Returns NULL when there is none — the question graduated elsewhere first.';
+
+
+--
+-- Name: review_queue_record(uuid, text, text, uuid, uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_existing uuid;
+  v_new      uuid;
+BEGIN
+  -- The lock is taken BEFORE any read of the state it protects. Two concurrent
+  -- misses on one question must not both see "no active entry" and both insert
+  -- (G6). Transaction-scoped: released at commit, so the caller's CAS owns it.
+  PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text), hashtext(p_question_id));
+
+  -- Replay: this exact source item already enqueued. Returning the existing row
+  -- rather than raising is what makes the backfill re-runnable (§4) and makes a
+  -- retried CAS harmless (G4).
+  SELECT id INTO v_existing
+  FROM public.review_schedule
+  WHERE source_engine = p_source_engine AND source_item_id = p_source_item_id;
+
+  IF v_existing IS NOT NULL THEN
+    RETURN v_existing;
+  END IF;
+
+  -- Ruling 12: a new miss supersedes the question's open entry rather than
+  -- mutating it, so the queue keeps one row per event. closed_by_item_id is the
+  -- review item that closed it, which only exists when review is the source —
+  -- a practice miss closes the entry but is not a review item.
+  UPDATE public.review_schedule
+     SET status            = 'superseded',
+         closed_at         = p_at,
+         closed_by_item_id = CASE WHEN p_source_engine = 'review' THEN p_source_item_id END,
+         updated_at        = p_at
+   WHERE student_id = p_student_id
+     AND question_id = p_question_id
+     AND status = 'active';
+
+  INSERT INTO public.review_schedule (
+    student_id, question_id, status, queued_at,
+    source_engine, source_session_id, source_item_id, source_outcome,
+    created_at, updated_at
+  ) VALUES (
+    p_student_id, p_question_id, 'active', p_at,
+    p_source_engine, p_source_session_id, p_source_item_id, p_source_outcome,
+    p_at, p_at
+  )
+  RETURNING id INTO v_new;
+
+  RETURN v_new;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 12. The only writer of review_schedule entries. Takes the (student, question) advisory lock before reading, replays on (source_engine, source_item_id), supersedes the open entry, inserts the new one.';
+
+
+--
 -- Name: revoke_guardian_link_audited(uuid, uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7359,6 +7555,8 @@ CREATE TABLE public.crisis_review_cases (
     sla_deadline timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    category text DEFAULT 'crisis'::text NOT NULL,
+    CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
@@ -8450,6 +8648,65 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 
 
 --
+-- Name: review_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_schedule (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    question_id text NOT NULL,
+    queued_at timestamp with time zone NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_engine text NOT NULL,
+    source_session_id uuid NOT NULL,
+    source_item_id uuid NOT NULL,
+    source_outcome text NOT NULL,
+    closed_at timestamp with time zone,
+    closed_by_item_id uuid,
+    CONSTRAINT review_schedule_closed_iff_not_active CHECK (((status = 'active'::text) = (closed_at IS NULL))),
+    CONSTRAINT review_schedule_source_engine_check CHECK ((source_engine = ANY (ARRAY['practice'::text, 'full_length'::text, 'review'::text]))),
+    CONSTRAINT review_schedule_source_outcome_check CHECK ((source_outcome = ANY (ARRAY['incorrect'::text, 'skipped'::text]))),
+    CONSTRAINT review_schedule_status_check CHECK ((status = ANY (ARRAY['active'::text, 'graduated'::text, 'superseded'::text, 'retired'::text])))
+);
+
+
+--
+-- Name: review_question_history; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.review_question_history WITH (security_invoker='true') AS
+ SELECT q.student_id,
+    q.question_id,
+    (count(*))::integer AS entry_count,
+    (count(*) FILTER (WHERE (q.source_engine = 'practice'::text)))::integer AS entries_from_practice,
+    (count(*) FILTER (WHERE (q.source_engine = 'review'::text)))::integer AS entries_from_review,
+    (count(*) FILTER (WHERE (q.source_engine = 'full_length'::text)))::integer AS entries_from_full_length,
+    (count(*) FILTER (WHERE (q.source_outcome = 'incorrect'::text)))::integer AS entries_incorrect,
+    (count(*) FILTER (WHERE (q.source_outcome = 'skipped'::text)))::integer AS entries_skipped,
+    min(q.queued_at) AS first_queued_at,
+    max(q.queued_at) AS last_queued_at,
+    COALESCE(a.review_attempts, 0) AS review_attempts,
+    COALESCE(a.review_fails, 0) AS review_fails,
+    max(q.status) FILTER (WHERE (q.status = 'active'::text)) AS open_status,
+    max(q.closed_at) FILTER (WHERE (q.status = 'graduated'::text)) AS graduated_at
+   FROM (public.review_schedule q
+     LEFT JOIN LATERAL ( SELECT (count(*))::integer AS review_attempts,
+            (count(*) FILTER (WHERE (ra.is_correct = false)))::integer AS review_fails
+           FROM public.review_error_attempts ra
+          WHERE ((ra.student_id = q.student_id) AND (ra.question_id = q.question_id))) a ON (true))
+  GROUP BY q.student_id, q.question_id, a.review_attempts, a.review_fails;
+
+
+--
+-- Name: VIEW review_question_history; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.review_question_history IS 'Ruled plan §3 ruling 21. One row per (student, question) present in the queue: entry counts by engine and outcome, first/last queued_at, review attempt and fail counts, whether an entry is currently open, and the graduation time. Derived only; stores nothing. service_role only.';
+
+
+--
 -- Name: review_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8487,26 +8744,6 @@ CREATE TABLE public.review_runtime_config_history (
 
 
 --
--- Name: review_schedule; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.review_schedule (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
-    question_id text NOT NULL,
-    repetition_count integer DEFAULT 0 NOT NULL,
-    interval_days integer DEFAULT 0 NOT NULL,
-    ease_factor numeric NOT NULL,
-    next_review_at timestamp with time zone,
-    status text DEFAULT 'active'::text NOT NULL,
-    first_missed_session_id uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT review_schedule_status_check CHECK ((status = ANY (ARRAY['active'::text, 'graduated'::text, 'retired'::text])))
-);
-
-
---
 -- Name: review_session_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8526,16 +8763,33 @@ CREATE TABLE public.review_session_items (
     question_skill text NOT NULL,
     question_difficulty smallint NOT NULL,
     question_section text NOT NULL,
-    retry_mode text DEFAULT 'same_question'::text NOT NULL,
-    status text DEFAULT 'queued'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
     served_at timestamp with time zone,
     answered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     actor_id uuid NOT NULL,
+    selected_answer text,
+    is_correct boolean,
+    outcome text,
+    time_spent_ms integer,
+    client_attempt_id text,
+    occurred_at timestamp with time zone,
+    option_order text[],
+    option_token_map jsonb,
+    client_instance_id text,
+    question_item_type text DEFAULT 'mcq'::text NOT NULL,
+    question_correct_variants text[],
+    question_assets jsonb,
+    question_estimated_time_seconds integer,
+    queue_entry_id uuid,
+    CONSTRAINT review_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT review_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
     CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
-    CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
-    CONSTRAINT review_session_items_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'served'::text, 'answered'::text, 'skipped'::text])))
+    CONSTRAINT review_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text]))),
+    CONSTRAINT rsi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb)))),
+    CONSTRAINT rsi_question_domain_section_canonical CHECK ((((question_section = 'M'::text) AND (question_domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((question_section = 'RW'::text) AND (question_domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
+    CONSTRAINT rsi_resolved_requires_occurred_at CHECK (((status <> ALL (ARRAY['answered'::text, 'skipped'::text])) OR (occurred_at IS NOT NULL)))
 );
 
 
@@ -8546,14 +8800,23 @@ CREATE TABLE public.review_session_items (
 CREATE TABLE public.review_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     student_id uuid,
-    status text DEFAULT 'active'::text NOT NULL,
-    source_origin text NOT NULL,
+    status text DEFAULT 'created'::text NOT NULL,
     client_instance_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     actor_id uuid NOT NULL,
-    CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
-    CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
+    mode text NOT NULL,
+    filters jsonb DEFAULT '{}'::jsonb NOT NULL,
+    target_count integer NOT NULL,
+    platform text NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    abandoned_at timestamp with time zone,
+    CONSTRAINT review_sessions_abandoned_not_completed CHECK (((status <> 'abandoned'::text) OR ((completed_at IS NULL) AND (abandoned_at IS NOT NULL)))),
+    CONSTRAINT review_sessions_mode_check CHECK ((mode = ANY (ARRAY['queue'::text, 'session'::text, 'filter'::text]))),
+    CONSTRAINT review_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
+    CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
+    CONSTRAINT review_sessions_target_count_check CHECK ((target_count > 0))
 );
 
 
@@ -8995,7 +9258,12 @@ CREATE TABLE public.tutor_injection_signatures (
     action text NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
     added_by text,
-    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text]))),
+    category text,
+    version text,
+    source text,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text, 'stop_and_review'::text, 'stop_and_safeguarding_review'::text]))),
+    CONSTRAINT tutor_injection_signatures_category_check CHECK ((category = ANY (ARRAY['suicide'::text, 'self_harm'::text, 'abuse'::text]))),
     CONSTRAINT tutor_injection_signatures_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
 );
 
@@ -10215,11 +10483,11 @@ ALTER TABLE ONLY public.tutor_turn_metrics
 
 
 --
--- Name: review_schedule uq_review_schedule_profile_question; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: review_schedule uq_review_schedule_source_item; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.review_schedule
-    ADD CONSTRAINT uq_review_schedule_profile_question UNIQUE (student_id, question_id);
+    ADD CONSTRAINT uq_review_schedule_source_item UNIQUE (source_engine, source_item_id);
 
 
 --
@@ -10354,6 +10622,13 @@ CREATE INDEX idx_crisis_audit_log_case ON public.crisis_review_audit_log USING b
 --
 
 CREATE INDEX idx_crisis_audit_log_reviewer ON public.crisis_review_audit_log USING btree (reviewer_id, created_at DESC);
+
+
+--
+-- Name: idx_crisis_review_cases_category_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_category_active ON public.crisis_review_cases USING btree (category) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
 
 
 --
@@ -10612,7 +10887,21 @@ CREATE INDEX idx_review_items_student ON public.review_session_items USING btree
 -- Name: idx_review_schedule_due; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, next_review_at) WHERE (status = 'active'::text);
+CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, queued_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_review_schedule_source_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_schedule_source_session ON public.review_schedule USING btree (student_id, source_engine, source_session_id);
+
+
+--
+-- Name: idx_review_sessions_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_sessions_active ON public.review_sessions USING btree (student_id) WHERE (status = 'active'::text);
 
 
 --
@@ -10739,6 +11028,13 @@ CREATE INDEX idx_tutor_injection_log_signature ON public.tutor_injection_log USI
 --
 
 CREATE INDEX idx_tutor_injection_log_student_recent ON public.tutor_injection_log USING btree (student_id, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_signatures_category_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_signatures_category_enabled ON public.tutor_injection_signatures USING btree (category) WHERE (enabled = true);
 
 
 --
@@ -10942,6 +11238,20 @@ CREATE UNIQUE INDEX uq_practice_items_idem ON public.practice_session_items USIN
 --
 
 CREATE UNIQUE INDEX uq_review_attempts_idem ON public.review_error_attempts USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_review_items_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_review_items_idem ON public.review_session_items USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_review_schedule_open_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_review_schedule_open_question ON public.review_schedule USING btree (student_id, question_id) WHERE (status = 'active'::text);
 
 
 --
@@ -11238,6 +11548,20 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 CREATE TRIGGER trg_capture_mastery_constant_change AFTER INSERT OR DELETE OR UPDATE ON public.mastery_constants FOR EACH ROW EXECUTE FUNCTION public.capture_mastery_constant_change();
 
 ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_constant_change;
+
+
+--
+-- Name: practice_session_items trg_practice_item_enqueue_review; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND ((new.status = 'skipped'::text) OR ((new.status = 'answered'::text) AND (new.is_correct = false))))) EXECUTE FUNCTION public.practice_item_enqueue_review();
+
+
+--
+-- Name: review_session_items trg_review_item_resolve; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_review_item_resolve AFTER UPDATE ON public.review_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND (new.status = ANY (ARRAY['answered'::text, 'skipped'::text])))) EXECUTE FUNCTION public.review_item_resolve();
 
 
 --
@@ -11944,7 +12268,7 @@ ALTER TABLE ONLY public.review_schedule
 --
 
 ALTER TABLE ONLY public.review_schedule
-    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -11953,6 +12277,14 @@ ALTER TABLE ONLY public.review_schedule
 
 ALTER TABLE ONLY public.review_session_items
     ADD CONSTRAINT review_session_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: review_session_items review_session_items_queue_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_queue_entry_id_fkey FOREIGN KEY (queue_entry_id) REFERENCES public.review_schedule(id) ON DELETE SET NULL;
 
 
 --
@@ -14076,6 +14408,13 @@ GRANT ALL ON FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summa
 
 
 --
+-- Name: FUNCTION practice_item_enqueue_review(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.practice_item_enqueue_review() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION practice_session_mode_to_event_kind(p_mode text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14510,6 +14849,27 @@ GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_fi
 
 REVOKE ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) TO service_role;
+
+
+--
+-- Name: FUNCTION review_item_resolve(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_item_resolve() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) FROM PUBLIC;
 
 
 --
@@ -15483,6 +15843,21 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 
 
 --
+-- Name: TABLE review_schedule; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_schedule TO service_role;
+GRANT SELECT ON TABLE public.review_schedule TO authenticated;
+
+
+--
+-- Name: TABLE review_question_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.review_question_history TO service_role;
+
+
+--
 -- Name: TABLE review_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15494,14 +15869,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO servi
 --
 
 GRANT ALL ON TABLE public.review_runtime_config_history TO service_role;
-
-
---
--- Name: TABLE review_schedule; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_schedule TO service_role;
-GRANT SELECT ON TABLE public.review_schedule TO authenticated;
 
 
 --
@@ -15596,13 +15963,6 @@ GRANT SELECT(question_section) ON TABLE public.review_session_items TO authentic
 
 
 --
--- Name: COLUMN review_session_items.retry_mode; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(retry_mode) ON TABLE public.review_session_items TO authenticated;
-
-
---
 -- Name: COLUMN review_session_items.status; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15628,6 +15988,55 @@ GRANT SELECT(answered_at) ON TABLE public.review_session_items TO authenticated;
 --
 
 GRANT SELECT(created_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.selected_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(selected_answer) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.is_correct; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_correct) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.outcome; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(outcome) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.time_spent_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(time_spent_ms) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.client_attempt_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_attempt_id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.occurred_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(occurred_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.queue_entry_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(queue_entry_id) ON TABLE public.review_session_items TO authenticated;
 
 
 --

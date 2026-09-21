@@ -27,7 +27,6 @@ const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
-const ReviewErrors = lazy(() => import("@/pages/review-errors"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
@@ -47,6 +46,10 @@ const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
+const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
+const CrisisReviewDetail = lazy(
+  () => import("@/pages/admin/CrisisReviewDetail"),
+);
 
 function PageLoader() {
   return (
@@ -182,14 +185,6 @@ function Router() {
             </RequireRole>
           )}
         />
-        <Route
-          path="/review-errors"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <ReviewErrors />
-            </RequireRole>
-          )}
-        />
         {/* Profile routes - allow all authenticated roles */}
         <Route
           path="/profile"
@@ -222,6 +217,24 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
               <NotificationsPage />
+            </RequireRole>
+          )}
+        />
+
+        {/* Admin routes — require admin role */}
+        <Route
+          path="/admin/crisis-review/:id"
+          component={() => (
+            <RequireRole allow={["admin"]}>
+              <CrisisReviewDetail />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/admin/crisis-review"
+          component={() => (
+            <RequireRole allow={["admin"]}>
+              <CrisisReviewList />
             </RequireRole>
           )}
         />
