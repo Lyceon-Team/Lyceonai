@@ -869,6 +869,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phase6.json \
             --file tests/ci/deletion-phase-6.pg.ci.test.ts
 
+      # Privacy Policy v3 §6.7 published a 90-day ceiling on operational records that
+      # name you and fall outside the ten enumerated categories. SCL-101 filed that
+      # sentence as a BUILD COMMITMENT because nothing enforced it. This suite is the
+      # enforcement: a row past its window goes, a row inside it stays, and a run that
+      # deleted nothing still reports every table — the last one because Vercel's cron
+      # registration cannot be read back from tooling, so an unscheduled sweep and an
+      # empty sweep are otherwise indistinguishable.
+      - name: Operational-log retention (v3 §6.7 catch-all) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/operational-log-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-oplog-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-oplog-retention.json \
+            --file tests/ci/operational-log-retention.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost

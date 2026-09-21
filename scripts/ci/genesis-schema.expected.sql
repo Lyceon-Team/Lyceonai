@@ -4745,6 +4745,25 @@ $$;
 
 
 --
+-- Name: operational_log_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.operational_log_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 90;
+$$;
+
+
+--
+-- Name: FUNCTION operational_log_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.operational_log_retention_days() IS 'Privacy Policy v3 §6.7: the ceiling on operational records not covered by an enumerated category, in days. THE single definition; the sweep reads it.';
+
+
+--
 -- Name: pg_notify_memory_summary(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6579,6 +6598,75 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sweep_notification_retention(p_batch_size integer) IS 'contracts/notifications.contract.md C11.2: ONE window (notification_retention_days()), two branches in one transaction — (1) notification_events older than the window, oldest first, at most p_batch_size per call, messages and matched delivery events by FK cascade; (2) unmatched delivery events (message_id IS NULL) whose received_at is older than the same window, at most p_batch_size per call. Returns both counts and the cutoff so every run can be logged.';
+
+
+--
+-- Name: sweep_operational_log_retention(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_operational_log_retention(p_batch_size integer) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  -- (table, time column). The ONLY place the set is written down.
+  v_targets CONSTANT text[][] := ARRAY[
+    ['usage_rate_limit_ledger',      'created_at'],
+    ['rate_limit_ledger',            'window_end'],
+    ['tutor_turn_metrics',           'recorded_at'],
+    ['tutor_context_resolution_log', 'resolved_at']
+  ];
+  v_cutoff  timestamptz;
+  v_tbl     text;
+  v_col     text;
+  v_deleted integer;
+  i         integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_operational_log_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.operational_log_retention_days());
+
+  FOR i IN 1 .. array_length(v_targets, 1) LOOP
+    v_tbl := v_targets[i][1];
+    v_col := v_targets[i][2];
+
+    -- ctid is the only key every one of these tables shares: rate_limit_ledger
+    -- has a composite primary key and no id column, so a DELETE ... WHERE id IN
+    -- (...) would not compile against it. Deleting by ctid within one statement
+    -- is safe here because the subselect and the delete see the same snapshot.
+    EXECUTE format(
+      'WITH doomed AS (
+         SELECT t.ctid FROM public.%I t
+          WHERE t.%I < $1
+          ORDER BY t.%I ASC
+          LIMIT $2
+       ), gone AS (
+         DELETE FROM public.%I d WHERE d.ctid IN (SELECT doomed.ctid FROM doomed)
+         RETURNING 1
+       )
+       SELECT count(*)::integer FROM gone',
+      v_tbl, v_col, v_col, v_tbl
+    )
+    INTO v_deleted
+    USING v_cutoff, p_batch_size;
+
+    swept_table   := v_tbl;
+    deleted_count := v_deleted;
+    cutoff        := v_cutoff;
+    RETURN NEXT;   -- emitted even when v_deleted = 0; see the edge-case note.
+  END LOOP;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_operational_log_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) IS 'Privacy Policy v3 §6.7 / SCL-101: deletes rows older than operational_log_retention_days() from the four identity-bearing operational tables, oldest first, at most p_batch_size per table per call. Returns one row per table INCLUDING zero-row tables, with the cutoff, so every run is loggable.';
 
 
 --
@@ -14147,6 +14235,14 @@ GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
 
 
 --
+-- Name: FUNCTION operational_log_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.operational_log_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.operational_log_retention_days() TO service_role;
+
+
+--
 -- Name: FUNCTION pg_notify_memory_summary(p_student_id uuid, p_summary_type text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14667,6 +14763,14 @@ GRANT ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) TO se
 
 REVOKE ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_operational_log_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) TO service_role;
 
 
 --

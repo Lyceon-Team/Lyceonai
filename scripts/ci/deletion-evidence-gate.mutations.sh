@@ -32,6 +32,7 @@ RECONSENT="server/services/email-reconsent-audit.ts"
 MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
+MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -44,6 +45,7 @@ cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
+cp "$MIG7" "$BACKUP/mig7.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -58,6 +60,7 @@ restore() {
   cp "$BACKUP/migfk.sql" "$MIGFK"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
+  cp "$BACKUP/mig7.sql" "$MIG7"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -326,6 +329,46 @@ echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
 plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
 expect_red M32 "P6.6 the deleted profile's uuid survives ONLY on the evidence side"
 
+# =============================================================================
+# Operational-log retention (v3 §6.7 / SCL-101) — B1
+# =============================================================================
+# The catch-all sweep is the one gate here that guards a PUBLISHED sentence with
+# no other enforcement behind it, so each of its assertions gets a mutation.
+SUITE="tests/ci/operational-log-retention.pg.ci.test.ts"
+
+echo "==> (M33) the retention window stops being 90 days"
+plant M33 "$MIG7" "s.replace('  SELECT 90;', '  SELECT 3650;', 1)"
+expect_red M33 "B1.1 — the window is defined once, in SQL, and is 90 days"
+
+echo "==> (M34) rate_limit_ledger ages on updated_at instead of window_end"
+plant M34 "$MIG7" "s.replace(\"['rate_limit_ledger',            'window_end'],\", \"['rate_limit_ledger',            'updated_at'],\", 1)"
+expect_red M34 "B1.5 — each table ages on the column the migration names"
+
+echo "==> (M35) the sweep stops emitting a row for a table it deleted nothing from"
+plant M35 "$MIG7" "s.replace('    RETURN NEXT;', '    IF v_deleted > 0 THEN RETURN NEXT; END IF;', 1)"
+expect_red M35 "B1.4 — a zero-row run still reports every table, with its cutoff"
+
+echo "==> (M36) the sweep deletes newest-first instead of oldest-first"
+plant M36 "$MIG7" "s.replace('ORDER BY t.%I ASC', 'ORDER BY t.%I DESC', 1)"
+expect_red M36 "B1.7 — oldest goes first"
+
+echo "==> (M37) the sweep becomes callable by authenticated"
+plant M37 "$MIG7" "s.replace('GRANT EXECUTE ON FUNCTION public.sweep_operational_log_retention(integer) TO service_role;', 'GRANT EXECUTE ON FUNCTION public.sweep_operational_log_retention(integer) TO service_role, authenticated;', 1)"
+expect_red M37 "B1.8 — the sweep is not callable by anon or authenticated"
+
+# SINGLE-quoted outer string: the mutation text contains `$2`, which bash would
+# expand to the script's own second positional argument (empty, and fatal under
+# `set -u`). Every other plant here is double-quoted because none of them names a
+# shell variable; this one must not be.
+echo "==> (M38) the per-table batch bound stops being honoured"
+plant M38 "$MIG7" 's.replace("          LIMIT $2", "          LIMIT GREATEST($2 - 1, 0)", 1)'
+expect_red M38 "B1.6 — the batch bound is per table, not per call"
+
+echo "==> (29d) restored: the operational-log suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: operational-log suite not green after restore"; fails=1; else echo "  ok   operational-log suite green after restore"; fi
+
+SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
 echo "==> (29c) restored: the phase-6 suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: phase-6 suite not green after restore"; fails=1; else echo "  ok   phase-6 suite green after restore"; fi
