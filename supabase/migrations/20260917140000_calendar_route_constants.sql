@@ -795,5 +795,45 @@ $$;
 COMMENT ON FUNCTION public.calendar_link_launch(uuid, uuid, text, uuid) IS
   'Doc 05F §7.7, §15.1 (INV-08-18). Append-only, idempotent on (engine, engine_session_id). Takes FOR UPDATE on the block row before allocating launch_sequence: the applied 20260917130000 body held nothing, so two concurrent launches of one block both computed max + 1 and the second died on the primary key with a raw 23505.';
 
+-- ----------------------------------------------------------------------------
+-- 6. Rate-limit buckets for the regenerate routes (Doc 05F §7, §15)
+--
+-- Doc 05F §7 names the mechanism -- "Rate limiting | Doc 01A Part V |
+-- RateLimitLedger | Regenerate routes" -- and §15 marks both regenerate rows
+-- "key + rate limit". It names no LIMIT, so the two numbers below are proposed
+-- and recorded for a ruling in docs/plans/Doc_05F_Change_Record_Addendum.md.
+-- They are not decorative: checkAndIncrement RAISES on a bucket with no
+-- definition, so without these rows both routes answer 503 rather than running.
+--
+-- TWO BUCKETS, NOT ONE SHARED NUMBER, because they are different surfaces.
+-- The horizon refresh replans the whole fortnight and a student has few honest
+-- reasons to do it often. A day regenerate or reset touches one date, and a
+-- student tidying a week can legitimately do it several times in a sitting.
+-- One shared quota would let a morning of day edits lock the student out of the
+-- refresh button, which is the control they reach for when the plan is wrong.
+--
+-- Merged into the existing object rather than replacing it: jsonb || preserves
+-- every bucket Doc 01A and SCL-080 already seeded.
+-- ----------------------------------------------------------------------------
+UPDATE public.rate_limit_runtime_config
+SET value = value || jsonb_build_object(
+      'calendar_plan_regenerate', jsonb_build_object('limit', 20, 'window_seconds', 86400),
+      'calendar_day_regenerate',  jsonb_build_object('limit', 60, 'window_seconds', 86400)
+    ),
+    updated_at = now()
+WHERE key = 'bucket_definitions';
+
+DO $rl$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.rate_limit_runtime_config
+    WHERE key = 'bucket_definitions'
+      AND value ? 'calendar_plan_regenerate'
+      AND value ? 'calendar_day_regenerate'
+  ) THEN
+    RAISE EXCEPTION 'calendar route constants: the bucket_definitions row is missing, so the two calendar buckets were not seeded and both regenerate routes would answer 503';
+  END IF;
+END
+$rl$;
 
 COMMIT;

@@ -109,6 +109,33 @@ export async function readStudyProfile(
     throw new Error(`study_profile_read_failed: ${error.message}`);
   }
   if (data === null) return null;
+  return parseProfileRow(data, requestId);
+}
+
+/**
+ * A stored row becomes a `StudyProfile` by NAMING its eight fields, never by handing the row
+ * object to the parser.
+ *
+ * `studyProfileSchema` is `.strict()` — it is the WIRE shape, and this value is served as
+ * `response.profile` — so passing the row through would make the read fail the moment the
+ * table gains a column, and `last_acknowledged_nonstudent_version_no` is already one the
+ * SELECT does not name. Naming the fields is the same discipline `projection-read.ts` uses
+ * and the same chokepoint rule as `toGuardianPlanBlock`: a column that is never read cannot
+ * be spread into a response by a later edit, and a column added to the table cannot break
+ * the read.
+ */
+function parseProfileRow(row: unknown, requestId: string | undefined): StudyProfile {
+  const source = (row ?? {}) as Record<string, unknown>;
+  const data = {
+    timezone: source.timezone,
+    target_exam_date: source.target_exam_date,
+    target_score: source.target_score,
+    study_days_mask: source.study_days_mask,
+    daily_minutes: source.daily_minutes,
+    full_length_weekday: source.full_length_weekday,
+    planner_mode: source.planner_mode,
+    setup_completed_at: source.setup_completed_at,
+  };
 
   const parsed = studyProfileSchema.safeParse(data);
   if (!parsed.success) {
@@ -265,14 +292,13 @@ export async function upsertStudyProfile(
     return err({ kind: "write_failed", detail: error.message });
   }
 
-  const after = studyProfileSchema.safeParse(data);
-  if (!after.success) {
-    logger.error(
-      "CALENDAR_PROFILE",
-      "row_shape_unexpected",
-      "the upserted profile does not match the shape this build expects",
-      { requestId, issues: after.error.issues.map((issue) => issue.path.join(".")) },
-    );
+  let after: StudyProfile;
+  try {
+    after = parseProfileRow(data, requestId);
+  } catch {
+    // `parseProfileRow` has already logged which fields disagreed. The upsert COMMITTED, so
+    // this is a serialization failure and not a write failure — but the caller has nothing
+    // to serve, so it is reported as one rather than as a success with no profile.
     return err({ kind: "write_failed", detail: "row_shape_unexpected" });
   }
 
@@ -289,13 +315,13 @@ export async function upsertStudyProfile(
 
   const versionNo = await regenerateAfterProfileChange({
     studentId,
-    profile: after.data,
+    profile: after,
     idempotencyKey: update.idempotency_key,
     generatorVersion: config.generatorVersion,
     requestId,
   });
 
-  return ok(versionNo === null ? { profile: after.data } : { profile: after.data, version_no: versionNo });
+  return ok(versionNo === null ? { profile: after } : { profile: after, version_no: versionNo });
 }
 
 /**

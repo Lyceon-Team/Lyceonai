@@ -58,6 +58,7 @@ import {
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
+import { calendarRouter, streakRouter } from "./routes/calendar-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
@@ -434,6 +435,25 @@ app.use(
   doubleCsrfProtection,
   studentResourceRoutes,
 );
+
+// Doc 05F §15. The student's own calendar surface. `requireStudentOrAdmin` because every
+// route here is the student acting on their OWN plan — a guardian is view-only (§16) and
+// reads through /api/students/:studentId/calendar, which is role-blind by construction.
+// The calendar_access entitlement check is inside the handlers, applied to the subject, so
+// a 402 carries the shared CTA payload rather than a bare middleware denial.
+app.use(
+  "/api/calendar",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentOrAdmin,
+  calendarRouter,
+);
+
+// Doc 05F §15 / INV-08-20 and formula sheet §8 item 11: GET /api/me/streak is served to a
+// student of ANY tier and carries NO calendar_access check. It is mounted on its own path
+// with its own router so that gate is absent by construction and cannot be acquired by
+// someone adding middleware to the calendar mount above.
+app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
 // Score Projection endpoint (College Board weighted algorithm)
 app.get(
   "/api/progress/projection",
