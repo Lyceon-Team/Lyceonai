@@ -501,4 +501,138 @@ BEGIN
 END;
 $regen$;
 
+-- ----------------------------------------------------------------------------
+-- Z-28 .. Z-32 — calendar_weekly_candidates (Doc 05F §12.5, R-08-30)
+--
+-- The §12.5 predicate decides who the weekly job replans, and the TypeScript
+-- job stubs it -- so this is the only place the real query is exercised. Every
+-- case here is one arm of the CASE expression, plus the two things §12.5 says
+-- in words and a query can silently get wrong: day-scoped versions must NOT
+-- suppress the run, and a student whose setup is unfinished is not in the
+-- population at all.
+--
+-- Fresh students, because the earlier blocks in this file have already written
+-- versions for S1..S3 and a shared fixture would make these outcomes depend on
+-- gate order.
+-- ----------------------------------------------------------------------------
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('cccccccc-0000-0000-0000-000000000001', 'weekly-auto@example.test',    '{}'::jsonb),
+  ('cccccccc-0000-0000-0000-000000000002', 'weekly-custom@example.test',  '{}'::jsonb),
+  ('cccccccc-0000-0000-0000-000000000003', 'weekly-fresh@example.test',   '{}'::jsonb),
+  ('cccccccc-0000-0000-0000-000000000004', 'weekly-dayedit@example.test', '{}'::jsonb),
+  ('cccccccc-0000-0000-0000-000000000005', 'weekly-setup@example.test',   '{}'::jsonb),
+  ('cccccccc-0000-0000-0000-000000000006', 'weekly-unent@example.test',   '{}'::jsonb);
+
+INSERT INTO public.student_study_profile
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, planner_mode, setup_completed_at)
+VALUES
+  ('cccccccc-0000-0000-0000-000000000001', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000002', 'America/Chicago', 62, 60, 6, 1400, 'custom', now()),
+  ('cccccccc-0000-0000-0000-000000000003', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000004', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
+  -- Setup UNFINISHED. Not a skip: absent from the population entirely (R-08-04).
+  ('cccccccc-0000-0000-0000-000000000005', 'America/Chicago', 62, 60, 6, 1400, 'auto',   NULL),
+  ('cccccccc-0000-0000-0000-000000000006', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now());
+
+-- Entitlement for everyone EXCEPT ...006, who exists to make the
+-- skipped_no_entitlement arm reachable. entitlement_active reads
+-- public.entitlements and counts active / past_due / trialing.
+INSERT INTO public.entitlements (profile_id, tier, status)
+VALUES ('cccccccc-0000-0000-0000-000000000001', 'premium', 'active'),
+       ('cccccccc-0000-0000-0000-000000000002', 'premium', 'active'),
+       ('cccccccc-0000-0000-0000-000000000003', 'premium', 'active'),
+       ('cccccccc-0000-0000-0000-000000000004', 'premium', 'active'),
+       ('cccccccc-0000-0000-0000-000000000005', 'premium', 'active');
+
+DO $weekly$
+DECLARE
+  W_AUTO    CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000001';
+  W_CUSTOM  CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000002';
+  W_FRESH   CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000003';
+  W_DAYEDIT CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000004';
+  W_SETUP   CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000005';
+  W_UNENT   CONSTANT uuid := 'cccccccc-0000-0000-0000-000000000006';
+  v_monday  date;
+  v_out     text;
+  v_n       integer;
+BEGIN
+  v_monday := date_trunc('week', now() AT TIME ZONE 'America/Chicago')::date;
+
+  -- A HORIZON-refresh version, accepted, inside the current local week.
+  INSERT INTO public.calendar_plan_versions
+    (student_id, version_no, generator_version, trigger, initiated_by,
+     input_snapshot, input_snapshot_hash, constants_snapshot, validator_result, created_at)
+  VALUES (W_FRESH, 1, 'v1', 'weekly', 'system', '{}', 'h', '{}', 'accepted', now());
+
+  -- A DAY-SCOPED version, accepted, inside the same week. §12.5: this must NOT
+  -- suppress the weekly run.
+  INSERT INTO public.calendar_plan_versions
+    (student_id, version_no, generator_version, trigger, initiated_by,
+     input_snapshot, input_snapshot_hash, constants_snapshot, validator_result, created_at)
+  VALUES (W_DAYEDIT, 1, 'v1', 'day_edit', 'student', '{}', 'h', '{}', 'accepted', now());
+
+  ------------------------------------------------------------------- Z-28
+  SELECT outcome INTO v_out FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_AUTO;
+  IF v_out IS DISTINCT FROM NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-28 an entitled auto student with no version this week got outcome %, expected NULL (generate)', v_out;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_weekly_candidates(1000) WHERE student_id = W_AUTO) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-28 the due student is not in the population at all';
+  END IF;
+  RAISE NOTICE '    OK Z-28 an entitled auto student with no horizon version this week is due (outcome NULL)';
+
+  ------------------------------------------------------------------- Z-29
+  SELECT outcome INTO v_out FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_CUSTOM;
+  IF v_out IS DISTINCT FROM 'skipped_custom' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-29 a custom-planner student got outcome %, expected skipped_custom', v_out;
+  END IF;
+  -- W_UNENT carries no entitlements row, which is what makes this arm reachable. A student
+  -- who stopped paying is RECORDED as skipped, not deleted and not silently dropped (§16:
+  -- "402, rows retained").
+  SELECT outcome INTO v_out FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_UNENT;
+  IF v_out IS DISTINCT FROM 'skipped_no_entitlement' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-29 an unentitled auto student got outcome %, expected skipped_no_entitlement', v_out;
+  END IF;
+  RAISE NOTICE '    OK Z-29 custom and unentitled students are RECORDED as skipped, not filtered away';
+
+  ------------------------------------------------------------------- Z-30
+  SELECT outcome INTO v_out FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_FRESH;
+  IF v_out IS DISTINCT FROM 'skipped_fresh' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-30 a student with an accepted weekly version this local week got outcome %, expected skipped_fresh', v_out;
+  END IF;
+  RAISE NOTICE '    OK Z-30 a horizon-refresh version inside the current local week suppresses the run';
+
+  ------------------------------------------------------------------- Z-31
+  -- THE LOAD-BEARING ONE. §12.5: "Day-scoped versions (day_edit,
+  -- day_regenerate, day_reset, do_it_now) never suppress the weekly run."
+  -- Widen the trigger list in the SQL by one string and this goes red.
+  SELECT outcome INTO v_out FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_DAYEDIT;
+  IF v_out IS DISTINCT FROM NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-31 a day_edit version suppressed the weekly run (outcome %); §12.5 says only horizon refreshes do', v_out;
+  END IF;
+  RAISE NOTICE '    OK Z-31 a day-scoped version does NOT suppress the weekly run';
+
+  ------------------------------------------------------------------- Z-32
+  SELECT count(*) INTO v_n FROM public.calendar_weekly_candidates(1000)
+  WHERE student_id = W_SETUP;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-32 a student whose setup is unfinished is in the weekly population; R-08-04 puts their first plan on their first open';
+  END IF;
+  -- And the period key is the local MONDAY, which is R-08-30.
+  IF (SELECT period_key FROM public.calendar_weekly_candidates(1000) WHERE student_id = W_AUTO)
+     IS DISTINCT FROM v_monday THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-32 period_key is not the local Monday';
+  END IF;
+  IF EXTRACT(ISODOW FROM v_monday) <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-32 the computed period_key % is not a Monday', v_monday;
+  END IF;
+  RAISE NOTICE '    OK Z-32 unfinished setup is outside the population, and period_key is the local Monday (R-08-30)';
+END;
+$weekly$;
+
 ROLLBACK;

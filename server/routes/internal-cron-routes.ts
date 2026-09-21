@@ -15,6 +15,7 @@ import {
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
+import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -379,6 +380,53 @@ router.get(
         err,
       );
       res.status(500).json({ error: "notification_retention_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/calendar-weekly-regen
+ * @spec [Doc-05F_V1.0 §12.5 (weekly job, R-08-30), §12.1 (`weekly` trigger), §18 (job
+ *        outcomes); `calendar_runtime_config.weekly_job_interval_minutes` = 1440]
+ *        | @implemented [2026-09-21]
+ *
+ * plain English: the once-per-local-week plan refresh. Scheduled DAILY, not weekly, because
+ * §12.5 says "once per local week, never at 00:00" — a cron fires in one timezone and the
+ * students are in all of them, so the schedule wakes the job and
+ * `calendar_weekly_candidates` decides who is actually due in their OWN Monday-anchored
+ * week. A student in Auckland and one in Los Angeles both get exactly one refresh a week.
+ *
+ * Safe to rerun: the idempotency key is derived from (student, local week), so a second call
+ * the same day replays the ledger rather than writing a second version — and the predicate
+ * would answer `skipped_fresh` even without it.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which
+ * reveals nothing and fails closed. No pg_cron (installed, unused, stays so).
+ */
+router.get(
+  "/calendar-weekly-regen",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runWeeklyRegeneration(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      // NESTED, not spread. The summary is keyed by `calendar_job_runs.outcome` and one of
+      // those values IS `ok` — spreading it would overwrite the envelope's `ok: true` with
+      // a COUNT, so a run that generated nothing would report `ok: 0` and read to every
+      // caller and every log scraper as a failure. tsc caught it (TS2783).
+      res.json({ ok: true, job: "weekly_regen", summary });
+    } catch (err) {
+      logger.error(
+        "CALENDAR_JOB",
+        "weekly_regen_job_error",
+        "Scheduled calendar weekly regeneration failed",
+        err,
+      );
+      res.status(500).json({ error: "calendar_weekly_regen_failed" });
     }
   },
 );

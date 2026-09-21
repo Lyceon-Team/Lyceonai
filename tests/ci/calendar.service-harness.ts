@@ -22,7 +22,7 @@ export type QueryState = {
   table: string;
   columns: string;
   head: boolean;
-  op: "select" | "upsert";
+  op: "select" | "upsert" | "insert";
   payload: unknown;
   filters: { kind: string; column: string; value: unknown }[];
   mode: "list" | "single" | "maybeSingle";
@@ -43,6 +43,7 @@ export type FakeClient = {
 type FakeBuilder = {
   select(columns?: string, options?: { count?: string; head?: boolean }): FakeBuilder;
   upsert(row: unknown, options?: { onConflict?: string }): FakeBuilder;
+  insert(row: unknown): Promise<FakeReply>;
   eq(column: string, value: unknown): FakeBuilder;
   neq(column: string, value: unknown): FakeBuilder;
   gt(column: string, value: unknown): FakeBuilder;
@@ -101,6 +102,14 @@ export function makeFakeClient(options: {
         state.op = "upsert";
         state.payload = row;
         return api;
+      },
+      // An insert with no `.select()` resolves on its own rather than returning a builder,
+      // which is how `@supabase/supabase-js` behaves and how `recordRun` awaits it.
+      insert(row) {
+        state.op = "insert";
+        state.payload = row;
+        state.mode = "list";
+        return Promise.resolve(settle(state));
       },
       eq: (column, value) => push("eq", column, value),
       neq: (column, value) => push("neq", column, value),

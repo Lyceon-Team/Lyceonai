@@ -2603,6 +2603,43 @@ COMMENT ON FUNCTION public.calendar_viewer_is_admin() IS 'Doc 05F §7.12 admin S
 
 
 --
+-- Name: calendar_weekly_candidates(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500) RETURNS TABLE(student_id uuid, period_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p.student_id,
+         (date_trunc('week', now() AT TIME ZONE p.timezone))::date AS period_key,
+         CASE
+           WHEN p.planner_mode <> 'auto' THEN 'skipped_custom'
+           WHEN NOT public.entitlement_active(p.student_id) THEN 'skipped_no_entitlement'
+           WHEN EXISTS (
+             SELECT 1 FROM public.calendar_plan_versions v
+             WHERE v.student_id = p.student_id
+               AND v.validator_result = 'accepted'
+               AND v.trigger IN ('setup','profile_change','weekly','student_refresh','post_exam')
+               AND (v.created_at AT TIME ZONE p.timezone)
+                     >= date_trunc('week', now() AT TIME ZONE p.timezone)
+           ) THEN 'skipped_fresh'
+           ELSE NULL
+         END AS outcome
+  FROM public.student_study_profile p
+  WHERE p.setup_completed_at IS NOT NULL
+  ORDER BY p.student_id
+  LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidates(p_limit integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_weekly_candidates(p_limit integer) IS 'Doc 05F §12.5 / R-08-30: the weekly job population and its per-student outcome. outcome NULL means generate; the three skip values are the calendar_job_runs CHECK verbatim, so every student the job considered gets a row. Monday-anchored in each student''s own timezone.';
+
+
+--
 -- Name: calendar_write_version(uuid, text, text, text, text, jsonb, jsonb, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -14239,6 +14276,14 @@ REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb,
 --
 
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidates(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_weekly_candidates(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_weekly_candidates(p_limit integer) TO service_role;
 
 
 --

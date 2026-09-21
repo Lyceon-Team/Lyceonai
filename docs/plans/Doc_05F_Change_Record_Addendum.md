@@ -18,6 +18,7 @@ rather than take it.
 | 24 | §7.1 | §7.1 puts the timezone check "at the route, against `pg_timezone_names`", and the route cannot: that view lives in `pg_catalog`, which PostgREST does not expose. `calendar_is_known_timezone(text)` is the check, so the answer comes from the database that will consume the value (`AT TIME ZONE` in `calendar_build_plan_input`) rather than from a second IANA list in TypeScript. A false answer is sheet item 19's fall-open to `America/Chicago`, never a 400. | **Proposed** | `20260917140000` §3b; `profile-service.ts` |
 | 25 | §12.7, §15 | §12.7 defines the acknowledgement watermark and §15 gives `POST /api/calendar/acknowledge` no idempotency key, which is only sound if the write is monotonic — but no writer existed. `calendar_acknowledge_version(student, version_no)` raises `last_acknowledged_nonstudent_version_no` as `GREATEST(current, LEAST(requested, highest accepted))`. The clamp is the part worth reviewing: without it a client could acknowledge version 10⁹ and permanently suppress the §17.4 banner, including for a support rollback it has never been shown. | **Proposed** | `20260917140000` §3c; `plan-service.ts` |
 | 27 | §7, §15 | The two regenerate routes are marked "key + rate limit" and §7 names the mechanism (`RateLimitLedger`, Doc 01A Part V), but no LIMIT. Two buckets are seeded: `calendar_plan_regenerate` 20/day and `calendar_day_regenerate` 60/day. **Both numbers need a ruling** — they are not decorative, because `checkAndIncrement` RAISES on an undefined bucket and both routes would otherwise answer 503. Two buckets rather than one shared number because they are different surfaces: the horizon refresh replans the whole fortnight and a student has few honest reasons to do it often, while a day reset touches one date and a student tidying a week can legitimately do it several times in a sitting. One shared quota would let a morning of day edits lock the student out of the refresh button, which is the control they reach for when the plan is wrong. | **Proposed — needs a ruling** | `20260917140000` §6; `calendar-routes.ts` |
+| 28 | §12.5 | The weekly-job predicate ships as one SQL function, `calendar_weekly_candidates(p_limit)`, returning `(student_id, period_key, outcome)` where `outcome IS NULL` means generate. §12.5 names three conditions and a Monday-anchored truncation in a per-student timezone — all queries, none of them formula — so they live where the read model can see them rather than being reimplemented in the job. It returns the OUTCOME rather than only the due students, because `calendar_job_runs.outcome` already enumerates three skips and a function that filtered them away would make three of its five values unreachable. | **Proposed** | `20260917140000` §3d; gates Z-28…Z-32 |
 | 26 | §15, §17.5 | `GET /api/calendar` needs a pre-setup answer. The §15 response shape requires `profile`, and a student who has never completed setup has no `student_study_profile` row to serve — R-08-04 puts the first generation on the first entitled open *after setup completes*, so the row genuinely does not exist yet. The read service returns `setup_required` and the route answers **404** with `code: "CALENDAR_SETUP_REQUIRED"`, which §17.5's "pre-setup" state renders as the setup sheet over the greyed preview week. **This is the item most worth a ruling** — the alternative is making `profile` nullable in the response schema, which changes the wire contract the client layer is already built against. | **Proposed — needs a ruling** | `read-service.ts`; `calendar.read-service.test.ts` |
 
 ## Two decisions recorded here that are NOT spec changes
@@ -57,3 +58,39 @@ UNCHANGED to `server/middleware/rate-limit.ts` together with the header and 429-
 the guardian module imports them and its own exports are behaviour-identical. The full suite
 was run before and after the move with the same result (2794 passing), so the extraction is
 provably neutral.
+
+
+## An open dependency the weekly job cannot satisfy
+
+§12.5 routes a failed per-student run to a **Doc 06C dead-letter**. Doc 06C has not landed:
+a repository-wide search finds no dead-letter table, no queue and no enqueue helper. The job
+therefore records `outcome = 'failed'` in `calendar_job_runs` with its reason and logs at
+ERROR, and nothing is enqueued. The `failed` branch in `weekly-job.ts` is where the enqueue
+goes when 06C ships; it is marked in the file rather than left to be rediscovered. This is
+stated as a gap, not worked around — inventing a dead-letter table here would be the
+hand-rolled infrastructure CLAUDE.md's managed-service rule exists to prevent, and it would
+be the wrong shape when the real one arrives.
+
+## The plants (Brief 3 Step 7), each run and reverted
+
+Every one was applied to the working tree, the named gate was run, the failure was observed,
+and the change was reverted. A gate that cannot fail is not a gate.
+
+| Plant | Gate that went red |
+|---|---|
+| (a) the practice adapter forwards `${key}:v2` instead of the key it was given | `calendar.launch-contract.practice.ci.test.ts` — "forwards the idempotency key UNCHANGED" |
+| (b) the guardian calendar route serializes through `readCalendar` (the STUDENT type) instead of `readGuardianCalendar` | `student-resources.contract.test.ts` — "the guardian payload really contains the block, and none of §16's withheld keys" |
+| (c) `GET /api/calendar` drops its `calendar_access` check | `calendar.routes.contract.test.ts` — "GET /api/calendar answers 402 with the shared CTA payload" |
+| (d) the weekly predicate counts `day_edit` as a horizon refresh | `calendar-writer-gates.sql` Z-31 — "a day_edit version suppressed the weekly run" |
+| (e) `GET /api/me/streak` acquires a `calendar_access` check | `calendar.routes.contract.test.ts` — "answers 200 for the very caller every calendar route refuses" |
+
+**Plant (b) is the one worth reading twice.** The generic `ANTI-LEAK /calendar` cases —
+the ones driven from the route table over the RULE-4 column list — did **not** fail. RULE-4
+is the mastery-score family; `explanation_key` is not in it. Only the explicit §16 case
+caught it. A workstream that had relied on the existing anti-leak sweep alone would have
+shipped the guardian leak green.
+
+**Plant (d) also reddened a gate it was not aimed at.** Re-creating the function outside the
+migration dropped its REVOKE, and Z-19 — the sweep over every `calendar_%` function — caught
+the missing grant before Z-31 was reached. That is the fourth time this session a sweep has
+caught something a targeted check would not have.

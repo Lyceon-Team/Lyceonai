@@ -10,7 +10,7 @@
 --        sixth, generator_version, is the formula naming its own revision]
 -- @implemented [2026-09-17]
 --
--- plain English. Five things the server layer cannot work without.
+-- plain English. Six things the server layer cannot work without.
 --
 -- 1. Six configuration rows. Doc 05F §8.1 bounds the study profile, §12.5
 --    paces the weekly job and §10.2 stamps each version with the generator
@@ -30,6 +30,9 @@
 --    route no idempotency key, which only works if the write is monotonic in
 --    SQL. No writer existed. See section 3c.
 --
+-- 5. calendar_weekly_candidates. §12.5 names the weekly-job predicate and the
+--    four outcomes it records. See section 3d.
+--
 -- WHY A NEW VALIDATOR MODE. Both routes exist to hand a date the student has
 -- overridden back to the generator. V-14 refuses exactly that for mode
 -- generated, so validating these versions as generated would reject them
@@ -40,7 +43,7 @@
 -- five generated-only rules V-02, V-05 and V-09 all still apply, because the
 -- day being written is an auto-generated day and must satisfy them.
 --
--- 5. calendar_link_launch takes a lock. It allocated launch_sequence as
+-- 6. calendar_link_launch takes a lock. It allocated launch_sequence as
 --    COALESCE(max, 0) + 1 with nothing held, so two concurrent launches of one
 --    block computed the same sequence and one lost to a raw 23505 on the
 --    primary key. See section 5.
@@ -694,6 +697,70 @@ COMMENT ON FUNCTION public.calendar_acknowledge_version(uuid, integer) IS
   'Doc 05F §12.7 / INV-08-13: raises last_acknowledged_nonstudent_version_no monotonically, clamped to the student’s highest accepted version. Monotonic by construction, which is why POST /api/calendar/acknowledge carries no idempotency key (§15).';
 
 -- ----------------------------------------------------------------------------
+-- 3d. calendar_weekly_candidates — the §12.5 weekly-job predicate, in one place
+--
+-- "For each auto student with active calendar_access: generate iff no accepted
+-- horizon-refresh version was created in the student`s current local ISO week
+-- (Monday-anchored, R-08-30). Day-scoped versions never suppress the weekly
+-- run." That is three conditions and a date-truncation in a timezone that
+-- varies per student, and every one of them is a QUERY rather than a formula --
+-- so it belongs in SQL, where the job cannot reimplement it slightly
+-- differently from the read model.
+--
+-- IT RETURNS THE OUTCOME, NOT JUST THE CANDIDATES. calendar_job_runs.outcome
+-- already enumerates skipped_custom, skipped_no_entitlement and skipped_fresh,
+-- so the job must RECORD each skip rather than filter it away. A function that
+-- returned only the students to generate for would make those three outcome
+-- values unreachable and the job invisible for everybody it skipped.
+-- outcome IS NULL means "generate".
+--
+-- WHO IS NOT IN THE POPULATION AT ALL. A student with no study profile, or one
+-- whose setup is unfinished, has no plan to refresh and no outcome value that
+-- describes them -- R-08-04 puts their first generation on their first entitled
+-- open. They are absent rather than recorded, which is why this is an inner
+-- join on the profile.
+--
+-- date_trunc(`week`) is Monday-anchored in Postgres, which is R-08-30 exactly.
+-- The comparison is done in the student`s own zone on both sides: the period
+-- starts at local Monday 00:00 and a version counts if it was created at or
+-- after that local instant.
+--
+-- p_limit bounds one invocation so a cold start cannot try to replan the whole
+-- user base in one request. Ordering is by student_id so successive pages are
+-- stable and a rerun covers the same students in the same order.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500)
+RETURNS TABLE (student_id uuid, period_key date, outcome text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT p.student_id,
+         (date_trunc('week', now() AT TIME ZONE p.timezone))::date AS period_key,
+         CASE
+           WHEN p.planner_mode <> 'auto' THEN 'skipped_custom'
+           WHEN NOT public.entitlement_active(p.student_id) THEN 'skipped_no_entitlement'
+           WHEN EXISTS (
+             SELECT 1 FROM public.calendar_plan_versions v
+             WHERE v.student_id = p.student_id
+               AND v.validator_result = 'accepted'
+               AND v.trigger IN ('setup','profile_change','weekly','student_refresh','post_exam')
+               AND (v.created_at AT TIME ZONE p.timezone)
+                     >= date_trunc('week', now() AT TIME ZONE p.timezone)
+           ) THEN 'skipped_fresh'
+           ELSE NULL
+         END AS outcome
+  FROM public.student_study_profile p
+  WHERE p.setup_completed_at IS NOT NULL
+  ORDER BY p.student_id
+  LIMIT p_limit;
+$$;
+
+COMMENT ON FUNCTION public.calendar_weekly_candidates(integer) IS
+  'Doc 05F §12.5 / R-08-30: the weekly job population and its per-student outcome. outcome NULL means generate; the three skip values are the calendar_job_runs CHECK verbatim, so every student the job considered gets a row. Monday-anchored in each student''s own timezone.';
+
+-- ----------------------------------------------------------------------------
 -- 4. Grants (Doc 05F §7.12)
 --
 -- Same posture as the five writers 20260917130000 granted: the server role and
@@ -710,13 +777,15 @@ REVOKE ALL ON FUNCTION
   public.calendar_regenerate_day(uuid, date, text, text, uuid),
   public.calendar_regenerate_day_only(jsonb, date),
   public.calendar_is_known_timezone(text),
-  public.calendar_acknowledge_version(uuid, integer)
+  public.calendar_acknowledge_version(uuid, integer),
+  public.calendar_weekly_candidates(integer)
   FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION
   public.calendar_regenerate_day(uuid, date, text, text, uuid),
   public.calendar_is_known_timezone(text),
-  public.calendar_acknowledge_version(uuid, integer)
+  public.calendar_acknowledge_version(uuid, integer),
+  public.calendar_weekly_candidates(integer)
   TO service_role;
 
 -- ----------------------------------------------------------------------------
