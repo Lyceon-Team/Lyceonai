@@ -11553,7 +11553,7 @@ ALTER TABLE ONLY public.calendar_plan_versions
 --
 
 ALTER TABLE ONLY public.calendar_runtime_config_history
-    ADD CONSTRAINT calendar_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT calendar_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -11561,7 +11561,7 @@ ALTER TABLE ONLY public.calendar_runtime_config_history
 --
 
 ALTER TABLE ONLY public.calendar_runtime_config
-    ADD CONSTRAINT calendar_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT calendar_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
