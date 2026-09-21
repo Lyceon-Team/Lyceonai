@@ -1618,8 +1618,12 @@ DECLARE
   v_seq   smallint;
   v_type  text;
 BEGIN
+  -- FOR UPDATE: the one line that differs from the applied body. Every caller
+  -- allocating a sequence for this block queues here, so max + 1 is read under
+  -- exclusive access rather than raced.
   SELECT block_type INTO v_type
-  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id;
+  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id
+  FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'calendar_link_launch: block % does not belong to student %', p_block_id, p_student_id
       USING ERRCODE = '42501';
@@ -1651,7 +1655,7 @@ $$;
 -- Name: FUNCTION calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) IS 'Doc 05F §7.7 / §15.1. Append-only, idempotent on (engine, engine_session_id). Used for Resume/Continue and calendar_launch_rate only, never for progress.';
+COMMENT ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) IS 'Doc 05F §7.7, §15.1 (INV-08-18). Append-only, idempotent on (engine, engine_session_id). Takes FOR UPDATE on the block row before allocating launch_sequence: the applied 20260917130000 body held nothing, so two concurrent launches of one block both computed max + 1 and the second died on the primary key with a raw 23505.';
 
 
 --

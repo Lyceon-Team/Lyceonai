@@ -1,5 +1,5 @@
 -- ============================================================================
--- Doc 05F — Study Calendar: route and scheduling constants, day regeneration
+-- Doc 05F — Study Calendar: route constants, day regeneration, launch lock
 -- ============================================================================
 -- @spec [Doc-05F_V1.0 §8.1 (setup bounds), §12.1/§12.5 (triggers, weekly job),
 --        §15 (API surface), §10.3 (validator modes)]
@@ -30,6 +30,11 @@
 -- day_regenerate is therefore mode generated minus V-14, and nothing else: the
 -- five generated-only rules V-02, V-05 and V-09 all still apply, because the
 -- day being written is an auto-generated day and must satisfy them.
+--
+-- 3. calendar_link_launch takes a lock. It allocated launch_sequence as
+--    COALESCE(max, 0) + 1 with nothing held, so two concurrent launches of one
+--    block computed the same sequence and one lost to a raw 23505 on the
+--    primary key. See section 5.
 --
 -- Migration authored only. The owner applies it and updates genesis.
 -- ============================================================================
@@ -448,7 +453,7 @@ COMMENT ON FUNCTION public.calendar_regenerate_day_only(jsonb, date) IS
 -- consequence of regenerating rather than as a separate write.
 --
 -- WHY IT PLANS THE HORIZON AND KEEPS ONE DAY. calendar_compute_plan loops
--- `0 .. horizon_days - 1` from the snapshot's today and ignores
+-- `0 .. horizon_days - 1` from the snapshot’s today and ignores
 -- generated_for.dates, so it cannot plan a single date — handing it a one-date
 -- snapshot yields a fourteen-day plan that V-01 then rejects thirteen times over.
 -- That is also the right answer rather than a workaround: what belongs on a
@@ -619,5 +624,82 @@ REVOKE ALL ON FUNCTION
 GRANT EXECUTE ON FUNCTION
   public.calendar_regenerate_day(uuid, date, text, text, uuid)
   TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 5. calendar_link_launch — serialise sequence allocation (Doc 05F §7.7, §15.1)
+--
+-- Replaced from the applied 20260917130000 body with ONE line changed: the block
+-- lookup gains FOR UPDATE. Everything else — the ownership check, the engine
+-- check, the replay on (engine, engine_session_id), the INSERT — is byte-identical.
+--
+-- WHY. launch_sequence is COALESCE(max(launch_sequence), 0) + 1 over
+-- calendar_block_launches, and the applied version held nothing while computing
+-- it. Two launches of the same block with different engine_session_ids both read
+-- max = 0, both computed 1, and the second hit
+-- calendar_block_launches_pkey (block_id, launch_sequence) with a raw 23505 —
+-- an unhandled 500 on a student pressing Start twice. calendar_persist_version
+-- already takes the profile FOR UPDATE for exactly this reason (INV-08-17) and
+-- this writer was the one that did not.
+--
+-- The lock is on the BLOCK row, not the profile. Launch contention is per block:
+-- locking the profile would serialise every launch a student makes across every
+-- block, and the block row is the narrowest thing that makes max + 1 correct.
+-- calendar_blocks is append-only and nothing UPDATEs it, so the lock contends
+-- only with other launches of the same block, which is the whole point.
+--
+-- This does NOT replace the engine idempotency key. Two concurrent launches still
+-- reach the engine with the same calendar:block:<id>:<seq> key and get ONE
+-- session back (INV-08-18) -- the lock is what stops the two link rows colliding
+-- after that.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.calendar_link_launch(
+  p_student_id        uuid,
+  p_block_id          uuid,
+  p_engine            text,
+  p_engine_session_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+DECLARE
+  v_seq   smallint;
+  v_type  text;
+BEGIN
+  -- FOR UPDATE: the one line that differs from the applied body. Every caller
+  -- allocating a sequence for this block queues here, so max + 1 is read under
+  -- exclusive access rather than raced.
+  SELECT block_type INTO v_type
+  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_link_launch: block % does not belong to student %', p_block_id, p_student_id
+      USING ERRCODE = '42501';
+  END IF;
+  IF v_type <> p_engine THEN
+    RAISE EXCEPTION 'calendar_link_launch: block % is a % block and cannot be launched into the % engine',
+      p_block_id, v_type, p_engine USING ERRCODE = '22023';
+  END IF;
+
+  SELECT launch_sequence INTO v_seq FROM public.calendar_block_launches
+  WHERE engine = p_engine AND engine_session_id = p_engine_session_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object('block_id', p_block_id, 'launch_sequence', v_seq, 'replayed', true);
+  END IF;
+
+  SELECT COALESCE(max(launch_sequence), 0) + 1 INTO v_seq
+  FROM public.calendar_block_launches WHERE block_id = p_block_id;
+
+  INSERT INTO public.calendar_block_launches
+    (block_id, student_id, launch_sequence, engine, engine_session_id)
+  VALUES (p_block_id, p_student_id, v_seq, p_engine, p_engine_session_id);
+
+  RETURN jsonb_build_object('block_id', p_block_id, 'launch_sequence', v_seq, 'replayed', false);
+END;
+$$;
+
+COMMENT ON FUNCTION public.calendar_link_launch(uuid, uuid, text, uuid) IS
+  'Doc 05F §7.7, §15.1 (INV-08-18). Append-only, idempotent on (engine, engine_session_id). Takes FOR UPDATE on the block row before allocating launch_sequence: the applied 20260917130000 body held nothing, so two concurrent launches of one block both computed max + 1 and the second died on the primary key with a raw 23505.';
+
 
 COMMIT;
