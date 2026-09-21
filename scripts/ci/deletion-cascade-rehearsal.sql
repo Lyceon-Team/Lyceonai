@@ -130,10 +130,21 @@ BEGIN
   -- ==================================================================
   -- SEED: L1-11 review_schedule
   -- ==================================================================
-  INSERT INTO public.review_schedule (student_id, question_id, ease_factor)
-  VALUES
-    (v_target,  v_question_id, 2.5),
-    (v_control, v_question_id, 2.5);
+  -- R2: the SM-2 shape is gone. An entry is now a miss or skip with provenance
+  -- (ruled plan ruling 14). source_item_id must differ per row: the writer's
+  -- idempotency key is UNIQUE (source_engine, source_item_id).
+  INSERT INTO public.review_schedule (
+    id, student_id, question_id, queued_at,
+    source_engine, source_session_id, source_item_id, source_outcome
+  ) VALUES
+    ('0b000001-0000-4000-8000-000000000001',
+     v_target,  v_question_id, now(), 'practice',
+     'cccccccc-cccc-cccc-cccc-cccccccccccc',
+     '0a000001-0000-4000-8000-000000000001', 'incorrect'),
+    ('0b000001-0000-4000-8000-000000000002',
+     v_control, v_question_id, now(), 'practice',
+     'dddddddd-dddd-dddd-dddd-dddddddddddd',
+     '0a000001-0000-4000-8000-000000000002', 'incorrect');
 
   -- ==================================================================
   -- SEED: L1-12 student_kpi_rollups_current (SCL-004)
@@ -171,26 +182,32 @@ BEGIN
   -- ==================================================================
   -- SEED: L2 review sessions/items/attempts
   -- ==================================================================
-  INSERT INTO public.review_sessions (id, student_id, status, source_origin, client_instance_id, actor_id)
+  -- R2: source_origin is gone; the envelope now mirrors practice_sessions
+  -- (mode/filters/target_count/platform).
+  INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, client_instance_id, actor_id)
   VALUES
-    ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target,  'completed', 'practice', 'inst-target', (SELECT actor_id FROM public.profiles WHERE id = v_target)),
-    ('ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 'completed', 'practice', 'inst-control', (SELECT actor_id FROM public.profiles WHERE id = v_control));
+    ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target,  'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-target', (SELECT actor_id FROM public.profiles WHERE id = v_target)),
+    ('ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-control', (SELECT actor_id FROM public.profiles WHERE id = v_control));
 
   INSERT INTO public.review_session_items (
     id, session_id, student_id, ordinal, question_id,
     question_stem, question_options, question_correct_answer, question_explanation,
     question_domain, question_skill, question_difficulty, question_section,
-    status, actor_id
+    status, occurred_at, queue_entry_id, actor_id
   ) VALUES (
     '11111111-1111-1111-1111-111111111111',
     'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target, 1, v_question_id,
     'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-    'Algebra', 'ALG.01', 2, 'M', 'answered', (SELECT actor_id FROM public.profiles WHERE id = v_target)
+    'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+    '0b000001-0000-4000-8000-000000000001',
+    (SELECT actor_id FROM public.profiles WHERE id = v_target)
   ), (
     '22222222-2222-2222-2222-222222222222',
     'ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 1, v_question_id,
     'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-    'Algebra', 'ALG.01', 2, 'M', 'answered', (SELECT actor_id FROM public.profiles WHERE id = v_control)
+    'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+    '0b000001-0000-4000-8000-000000000002',
+    (SELECT actor_id FROM public.profiles WHERE id = v_control)
   );
 
   INSERT INTO public.review_error_attempts (
@@ -597,8 +614,13 @@ BEGIN
     INSERT INTO public.student_kpi_rollups_current (student_id, scope, scope_key, payload, computed_at)
     VALUES (v_anon, 'section', 'M', '{"events_total": 10}'::jsonb, now());
 
-    INSERT INTO public.review_schedule (student_id, question_id, ease_factor)
-    VALUES (v_anon, v_question_id, 2.5);
+    INSERT INTO public.review_schedule (
+      id, student_id, question_id, queued_at,
+      source_engine, source_session_id, source_item_id, source_outcome
+    ) VALUES (
+      '0b000001-0000-4000-8000-000000000003',
+      v_anon, v_question_id, now(), 'practice',
+      v_anon_ps_id, '0a000001-0000-4000-8000-000000000003', 'incorrect');
 
     -- L2 seeds (activity — will be RETAINED, identity-decoupled)
     INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id, status, actor_id)
@@ -618,18 +640,19 @@ BEGIN
       'anon-attempt-1', v_anon_actor
     );
 
-    INSERT INTO public.review_sessions (id, student_id, status, source_origin, client_instance_id, actor_id)
-    VALUES (v_anon_rs_id, v_anon, 'completed', 'practice', 'inst-anon', v_anon_actor);
+    INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, client_instance_id, actor_id)
+    VALUES (v_anon_rs_id, v_anon, 'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-anon', v_anon_actor);
 
     INSERT INTO public.review_session_items (
       id, session_id, student_id, ordinal, question_id,
       question_stem, question_options, question_correct_answer, question_explanation,
       question_domain, question_skill, question_difficulty, question_section,
-      status, actor_id
+      status, occurred_at, queue_entry_id, actor_id
     ) VALUES (
       v_anon_rsi_id, v_anon_rs_id, v_anon, 1, v_question_id,
       'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-      'Algebra', 'ALG.01', 2, 'M', 'answered', v_anon_actor
+      'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+      '0b000001-0000-4000-8000-000000000003', v_anon_actor
     );
 
     INSERT INTO public.review_error_attempts (

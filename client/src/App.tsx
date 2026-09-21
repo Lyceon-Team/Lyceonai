@@ -27,7 +27,6 @@ const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
-const ReviewErrors = lazy(() => import("@/pages/review-errors"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
@@ -183,14 +182,6 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "admin"]}>
               <UpgradePage />
-            </RequireRole>
-          )}
-        />
-        <Route
-          path="/review-errors"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <ReviewErrors />
             </RequireRole>
           )}
         />
