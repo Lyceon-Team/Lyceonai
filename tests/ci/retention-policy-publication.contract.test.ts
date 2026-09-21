@@ -252,6 +252,31 @@ describe("Phase 7 B — Microsoft Clarity is removed", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("the dependency itself is gone from package.json", () => {
+    // Until the owner approved the dependency change this suite could only
+    // assert that nothing IMPORTED it, which closed the re-enablement path
+    // without closing the door. Both are now assertable, and both are
+    // asserted: an unimported dependency is still a dependency someone can
+    // reach for, and it still ships in the install tree.
+    const pkg = JSON.parse(read("package.json")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const everySection = {
+      ...pkg.optionalDependencies,
+      ...pkg.devDependencies,
+      ...pkg.dependencies,
+    };
+    expect(Object.keys(everySection)).not.toContain("@microsoft/clarity");
+  });
+
+  it("the lockfile no longer resolves @microsoft/clarity", () => {
+    // package.json and the lockfile can disagree — a stale lockfile still
+    // installs the package. Both have to be clean for the removal to be real.
+    expect(read("pnpm-lock.yaml")).not.toMatch(/@microsoft\/clarity/);
+  });
+
   it("no source file calls clarity.init or clarity.consent", () => {
     const offenders = allSources.filter((rel) =>
       /\bclarity\s*\.\s*(init|consent|identify|setTag|upgrade)\s*\(/.test(
