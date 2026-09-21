@@ -30,6 +30,7 @@ export const RETURN_PATH_ALLOWLIST: readonly string[] = [
   "/full-test",
   "/mastery",
   "/upgrade",
+  "/review-errors",
   "/update-password",
   "/notifications",
 ];

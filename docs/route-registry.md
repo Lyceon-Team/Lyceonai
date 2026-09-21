@@ -48,6 +48,7 @@ This document is the single authoritative registry of:
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
+| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
@@ -144,6 +145,8 @@ Removed auth endpoints (must return 404):
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
 | `/api/questions/stats` | GET | Yes | student/admin | free | Question statistics |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
+| `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
+| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Submit session-based review answer (owner: `submitReviewSessionAnswer`) |
 | `/api/students/{{studentId}}/mastery/domains` | GET | Yes | student/admin | premium | Domain grid: level + level name per canonical domain |
 | `/api/students/:studentId/mastery/skills` | GET | Yes | student/admin | premium | Skill panel for one domain; unmeasured skills present and labelled |
 | `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |

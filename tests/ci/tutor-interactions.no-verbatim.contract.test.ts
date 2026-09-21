@@ -90,22 +90,8 @@ describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime 
     );
   });
 
-  // R3-PENDING (Review rebuild, brief R1 -> R3). Parked, not retired: no review
-  // code may read the dormant `tutor_interactions` table. R1 deleted the file this
-  // read — server/routes/review-session-routes.ts — so the assertion has no target
-  // until R3 lands the rebuilt review submit path.
-  //
-  // Note the schema-level guarantee above (no migration ever CREATEs
-  // tutor_interactions) is unchanged and still enforced, so this is the narrower
-  // of the two checks, not the only one.
-  //
-  // Ruled plan §3 ruling 9 puts LISA out of review at launch and holds `used_tutor`
-  // at false, so R3's review submit should query no tutor table at all. That makes
-  // this assertion cheap to restore and worth restoring — "out at launch" implies a
-  // later wave that re-wires it, and this is the guard for that wave:
-  //
-  //   it("the review submit path does not read the dormant tutor_interactions table", () => {
-  //     const src = read("<R3 review submit route>");
-  //     expect(src).not.toMatch(/from\(["']tutor_interactions["']\)/);
-  //   });
+  it("the review mastery-bridge read no longer depends on the dormant tutor_interactions table", () => {
+    const src = read("server/routes/review-session-routes.ts");
+    expect(src).not.toMatch(/from\(["']tutor_interactions["']\)/);
+  });
 });

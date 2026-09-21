@@ -1,0 +1,191 @@
+{
+  "generated_at": "2026-03-26T21:04:31.085Z",
+  "total_refs": 297,
+  "tables": 46,
+  "tableExistence": {
+    "answer_attempts": {
+      "exists": true,
+      "error": null
+    },
+    "diagnostic_responses": {
+      "exists": false,
+      "error": "Could not find the table 'public.diagnostic_responses' in the schema cache"
+    },
+    "diagnostic_sessions": {
+      "exists": false,
+      "error": "Could not find the table 'public.diagnostic_sessions' in the schema cache"
+    },
+    "entitlements": {
+      "exists": true,
+      "error": null
+    },
+    "exam_form_items": {
+      "exists": true,
+      "error": null
+    },
+    "exam_forms": {
+      "exists": true,
+      "error": null
+    },
+    "full_length_exam_modules": {
+      "exists": true,
+      "error": null
+    },
+    "full_length_exam_questions": {
+      "exists": true,
+      "error": null
+    },
+    "full_length_exam_responses": {
+      "exists": true,
+      "error": null
+    },
+    "full_length_exam_score_rollups": {
+      "exists": true,
+      "error": null
+    },
+    "full_length_exam_sessions": {
+      "exists": true,
+      "error": null
+    },
+    "guardian_consent_requests": {
+      "exists": true,
+      "error": null
+    },
+    "guardian_link_audit": {
+      "exists": true,
+      "error": null
+    },
+    "guardian_links": {
+      "exists": true,
+      "error": null
+    },
+    "legal_acceptances": {
+      "exists": true,
+      "error": null
+    },
+    "lyceon_account_members": {
+      "exists": true,
+      "error": null
+    },
+    "notification_reads": {
+      "exists": false,
+      "error": "Could not find the table 'public.notification_reads' in the schema cache"
+    },
+    "notifications": {
+      "exists": true,
+      "error": null
+    },
+    "practice_events": {
+      "exists": true,
+      "error": null
+    },
+    "practice_session_items": {
+      "exists": true,
+      "error": null
+    },
+    "practice_sessions": {
+      "exists": true,
+      "error": null
+    },
+    "prices": {
+      "exists": false,
+      "error": "Could not find the table 'public.prices' in the schema cache"
+    },
+    "products": {
+      "exists": false,
+      "error": "Could not find the table 'public.products' in the schema cache"
+    },
+    "profiles": {
+      "exists": true,
+      "error": null
+    },
+    "question_embeddings": {
+      "exists": true,
+      "error": null
+    },
+    "question_feedback": {
+      "exists": false,
+      "error": "Could not find the table 'public.question_feedback' in the schema cache"
+    },
+    "question_versions": {
+      "exists": true,
+      "error": null
+    },
+    "questions": {
+      "exists": true,
+      "error": null
+    },
+    "review_error_attempts": {
+      "exists": false,
+      "error": "Could not find the table 'public.review_error_attempts' in the schema cache"
+    },
+    "review_session_events": {
+      "exists": false,
+      "error": "Could not find the table 'public.review_session_events' in the schema cache"
+    },
+    "review_session_items": {
+      "exists": false,
+      "error": "Could not find the table 'public.review_session_items' in the schema cache"
+    },
+    "review_sessions": {
+      "exists": false,
+      "error": "Could not find the table 'public.review_sessions' in the schema cache"
+    },
+    "skill_mastery": {
+      "exists": false,
+      "error": "Could not find the table 'public.skill_mastery' in the schema cache"
+    },
+    "stripe_webhook_events": {
+      "exists": true,
+      "error": null
+    },
+    "student_cluster_mastery": {
+      "exists": true,
+      "error": null
+    },
+    "student_question_attempts": {
+      "exists": true,
+      "error": null
+    },
+    "student_skill_mastery": {
+      "exists": true,
+      "error": null
+    },
+    "student_study_plan_days": {
+      "exists": true,
+      "error": null
+    },
+    "student_study_plan_tasks": {
+      "exists": true,
+      "error": null
+    },
+    "student_study_profile": {
+      "exists": true,
+      "error": null
+    },
+    "subscriptions": {
+      "exists": false,
+      "error": "Could not find the table 'public.subscriptions' in the schema cache"
+    },
+    "system_event_logs": {
+      "exists": true,
+      "error": null
+    },
+    "test_form_items": {
+      "exists": true,
+      "error": null
+    },
+    "test_forms": {
+      "exists": true,
+      "error": null
+    },
+    "tutor_interactions": {
+      "exists": true,
+      "error": null
+    },
+    "usage_daily": {
+      "exists": true,
+      "error": null
+    }
+  }
+}

@@ -30,8 +30,15 @@ import {
   getQuestionsFeed,
   getRecentQuestions,
   getQuestionById,
+  getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
+import {
+  startReviewErrorSession,
+  getReviewErrorSessionState,
+  submitReviewSessionAnswer,
+  getRecentReviewSessions,
+} from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   enforceDeletionLock,
@@ -549,6 +556,43 @@ app.get(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getQuestionById,
+);
+
+// Review errors endpoint - authenticated students can review their failed attempts
+app.get(
+  "/api/review-errors",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrors,
+);
+
+app.get(
+  "/api/review-errors/recent-sessions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getRecentReviewSessions,
+);
+
+// Review errors attempt endpoint - records student attempts during error review
+app.post(
+  "/api/review-errors/sessions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  startReviewErrorSession,
+);
+app.get(
+  "/api/review-errors/sessions/:sessionId/state",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrorSessionState,
+);
+app.post(
+  "/api/review-errors/attempt",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  submitReviewSessionAnswer,
 );
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
