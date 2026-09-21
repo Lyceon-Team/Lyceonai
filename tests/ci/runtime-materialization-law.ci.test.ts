@@ -106,13 +106,19 @@ describe("Canonical runtime materialization law invariants", () => {
     );
   });
 
-  it("review runtime queue/session builders do not use raw questions lookups", () => {
-    const queueSource = readRepoFile("server/services/review-queue.ts");
-    const sessionSource = readRepoFile(
-      "server/routes/review-session-routes.ts",
-    );
-
-    expect(queueSource.includes('.from("questions")')).toBe(false);
-    expect(sessionSource.includes('.from("questions")')).toBe(false);
-  });
+  // R3-PENDING (Review rebuild, brief R1 -> R3). The rule below still binds the
+  // rebuild and is NOT retired: review must never read the raw `questions` table.
+  // Ruled plan §3 ruling 19 — review content and metadata come from the
+  // `servable_questions` join at prefill, exactly as practice does, so the
+  // published/issue_flags gate applies to a re-served miss too.
+  //
+  // The assertion is parked rather than weakened because both files it read were
+  // deleted in R1: server/services/review-queue.ts and
+  // server/routes/review-session-routes.ts. R3 restores it verbatim against the
+  // rebuilt module paths:
+  //
+  //   it("review runtime queue/session builders do not use raw questions lookups", () => {
+  //     const src = readRepoFile("<R3 review pool/service module>");
+  //     expect(src.includes('.from("questions")')).toBe(false);
+  //   });
 });

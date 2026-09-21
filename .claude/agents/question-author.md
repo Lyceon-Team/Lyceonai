@@ -34,6 +34,24 @@ Instead, vary coefficients, constants, and context so that each question is stru
 
 Content NDJSON per the contract's record schema — one JSON object per line — to your assigned part-file only. **No IDs, no `correct_variants`, no SQL, no prose in the file.** The pipeline mints IDs and derives grid-in forms; that is not your job.
 
+## CRITICAL — JSON backslash escaping for LaTeX
+
+When writing LaTeX inside JSON strings, each LaTeX backslash command must appear as exactly **two backslashes** in the file:
+
+- `"$\\frac{2}{3}$"` → ✅ CORRECT (JSON string = `$\frac{2}{3}$`)
+- `"$\\\\frac{2}{3}$"` → ❌ WRONG — doubled escape, renders as literal text
+- `"$\frac{2}{3}$"` → ❌ WRONG — `\f` = JSON form-feed, corrupts the string
+
+This applies to ALL LaTeX commands: `\frac`, `\sqrt`, `\text`, `\left`, `\right`, `\cdot`, `\times`, `\pi`, `\geq`, `\leq`, `\dfrac`, `\sin`, `\cos`, `\tan`, `\theta`, `\begin`, `\end`, etc.
+
+**Self-check before writing**: after generating each JSON line, verify no `\\\\` (four consecutive backslashes) appear before any LaTeX command name. If found, replace `\\\\` with `\\` for that command.
+
+## CRITICAL — MCQ records must NOT include `correct_answer`
+
+For MCQ (`item_type: "mcq"`) records, include `correct_option` (one of "A","B","C","D") but **OMIT the `correct_answer` field entirely**. The pipeline derives it from `correct_option`. Including `correct_answer` on an MCQ record causes a gate failure.
+
+Only grid-in records (`item_type: "grid_in"`) include `correct_answer` (as a STRING).
+
 ## Definition of Done
 
 - Your part-file exists at the assigned path and contains exactly `count` records summed across your leaves, records only.
