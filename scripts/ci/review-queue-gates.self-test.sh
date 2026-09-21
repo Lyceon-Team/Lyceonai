@@ -80,8 +80,8 @@ psql -v ON_ERROR_STOP=1 -q -d "$DB" -c "
     '00000000-bbbb-4000-8000-000000000001','00000000-dddd-4000-8000-00000000000b','incorrect', now());
   COMMIT;" >/dev/null 2>&1 &
 P2=$!
-wait $P1; W1=$?
-wait $P2; W2=$?
+W1=0; wait $P1 || W1=$?
+W2=0; wait $P2 || W2=$?
 [ "$W1" = "0" ] && [ "$W2" = "0" ] || fail "G6: a concurrent writer errored (exit $W1/$W2) — the lock did not serialize them"
 ACTIVE=$(qt -c "select count(*) from public.review_schedule where question_id='SATM1AAA001' and status='active';")
 TOTAL=$(qt -c "select count(*) from public.review_schedule where question_id='SATM1AAA001';")
@@ -248,6 +248,96 @@ SQL
 LEAK=$(psql -tA -d "$DB" -c "begin; set local role authenticated; set local lyceon.test_uid = '00000000-aaaa-4000-8000-000000000001'; select count(*) from public.review_schedule; commit;" | grep -E '^[0-9]+$' | tail -1)
 [ "$LEAK" = "1" ] || fail "G12 plant did not open cross-student reads (saw $LEAK) — the gate proves nothing"
 echo "    RED  [G12]: replacing the own-row policy exposes another student's queue, as designed"
+
+# --- G3: make the trigger fire on ANY resolution, including a correct answer.
+plant_sql G3 "DROP TRIGGER trg_practice_item_enqueue_review ON public.practice_session_items;
+CREATE OR REPLACE FUNCTION public.practice_item_enqueue_review() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN IF NEW.user_id IS NULL THEN RETURN NULL; END IF; PERFORM public.review_queue_record(NEW.user_id, NEW.question_id, 'practice', NEW.session_id, NEW.id, CASE WHEN NEW.status='skipped' THEN 'skipped' ELSE 'incorrect' END, NEW.occurred_at); RETURN NULL; END \$f\$;
+CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_session_items FOR EACH ROW WHEN (OLD.status NOT IN ('answered','skipped') AND NEW.status IN ('answered','skipped')) EXECUTE FUNCTION public.practice_item_enqueue_review();" "G3 FAIL"
+
+# --- G7: swap the correct and incorrect branches of the review trigger.
+plant_sql G7 "CREATE OR REPLACE FUNCTION public.review_item_resolve() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN IF NEW.student_id IS NULL THEN RETURN NULL; END IF; IF NEW.status='answered' THEN INSERT INTO public.review_error_attempts (id, session_item_id, student_id, question_id, selected_answer, is_correct, seconds_spent, client_attempt_id, used_tutor, section, domain, skill, difficulty, occurred_at, actor_id) VALUES (NEW.id, NEW.id, NEW.student_id, NEW.question_id, NEW.selected_answer, NEW.is_correct, NEW.time_spent_ms/1000, NEW.client_attempt_id, false, NEW.question_section, NEW.question_domain, NEW.question_skill, NEW.question_difficulty, NEW.occurred_at, NEW.actor_id); IF NEW.is_correct THEN PERFORM public.review_queue_record(NEW.student_id, NEW.question_id, 'review', NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at); ELSE PERFORM public.review_queue_graduate(NEW.student_id, NEW.question_id, NEW.id, NEW.occurred_at); END IF; ELSIF NEW.status='skipped' THEN PERFORM public.review_queue_record(NEW.student_id, NEW.question_id, 'review', NEW.session_id, NEW.id, 'skipped', NEW.occurred_at); END IF; RETURN NULL; END \$f\$;" "G7 FAIL"
+
+# --- G8: skip the supersede inside the writer.
+plant_sql G8 "CREATE OR REPLACE FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamptz) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ DECLARE v_existing uuid; v_new uuid; BEGIN PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text), hashtext(p_question_id)); SELECT id INTO v_existing FROM public.review_schedule WHERE source_engine=p_source_engine AND source_item_id=p_source_item_id; IF v_existing IS NOT NULL THEN RETURN v_existing; END IF; INSERT INTO public.review_schedule (student_id, question_id, status, queued_at, source_engine, source_session_id, source_item_id, source_outcome, created_at, updated_at) VALUES (p_student_id, p_question_id, 'active', p_at, p_source_engine, p_source_session_id, p_source_item_id, p_source_outcome, p_at, p_at) RETURNING id INTO v_new; RETURN v_new; END \$f\$;" "uq_review_schedule_open_question"
+
+# NOTE on G8's marker. Removing the supersede is caught EARLIER than G8, at G5,
+# and by the database rather than by an assertion: the second miss tries to
+# insert a second ACTIVE row for one (student, question) and
+# uq_review_schedule_open_question refuses it. That is a stronger result than
+# G8 noticing after the fact — the bad state cannot exist at all — so the
+# expected marker is the constraint name, not a "Gn FAIL" message.
+
+# --- G9: remove the skipped branch from the REVIEW trigger.
+plant_sql G9 "CREATE OR REPLACE FUNCTION public.review_item_resolve() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN IF NEW.student_id IS NULL THEN RETURN NULL; END IF; IF NEW.status='answered' THEN INSERT INTO public.review_error_attempts (id, session_item_id, student_id, question_id, selected_answer, is_correct, seconds_spent, client_attempt_id, used_tutor, section, domain, skill, difficulty, occurred_at, actor_id) VALUES (NEW.id, NEW.id, NEW.student_id, NEW.question_id, NEW.selected_answer, NEW.is_correct, NEW.time_spent_ms/1000, NEW.client_attempt_id, false, NEW.question_section, NEW.question_domain, NEW.question_skill, NEW.question_difficulty, NEW.occurred_at, NEW.actor_id); IF NEW.is_correct THEN PERFORM public.review_queue_graduate(NEW.student_id, NEW.question_id, NEW.id, NEW.occurred_at); ELSE PERFORM public.review_queue_record(NEW.student_id, NEW.question_id, 'review', NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at); END IF; END IF; RETURN NULL; END \$f\$;" "G9 FAIL"
+
+# --- G17: write the skill column as an array literal, so the seam stops matching.
+plant_sql G17 "CREATE OR REPLACE FUNCTION public.review_item_resolve() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN IF NEW.student_id IS NULL THEN RETURN NULL; END IF; IF NEW.status='answered' THEN INSERT INTO public.review_error_attempts (id, session_item_id, student_id, question_id, selected_answer, is_correct, seconds_spent, client_attempt_id, used_tutor, section, domain, skill, difficulty, occurred_at, actor_id) VALUES (NEW.id, NEW.id, NEW.student_id, NEW.question_id, NEW.selected_answer, NEW.is_correct, NEW.time_spent_ms/1000, NEW.client_attempt_id, false, NEW.question_section, NEW.question_domain, '{' || NEW.question_skill || '}', NEW.question_difficulty, NEW.occurred_at, NEW.actor_id); IF NEW.is_correct THEN PERFORM public.review_queue_graduate(NEW.student_id, NEW.question_id, NEW.id, NEW.occurred_at); ELSE PERFORM public.review_queue_record(NEW.student_id, NEW.question_id, 'review', NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at); END IF; ELSIF NEW.status='skipped' THEN PERFORM public.review_queue_record(NEW.student_id, NEW.question_id, 'review', NEW.session_id, NEW.id, 'skipped', NEW.occurred_at); END IF; RETURN NULL; END \$f\$;" "G17 FAIL"
+
+# --- G6: remove the advisory lock, then race two writers for real.
+echo "==> G6 plant: remove the advisory lock and race two writers"
+build_db
+q >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email) VALUES ('00000000-aaaa-4000-8000-000000000001','g@example.com');
+INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation, status)
+VALUES ('SATM1AAA001','M',1,'Algebra',ARRAY['ALG.01'],2,'stem',
+        '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,'A','exp','published');
+CREATE OR REPLACE FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamptz) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $f$
+DECLARE v_existing uuid; v_new uuid; BEGIN
+  SELECT id INTO v_existing FROM public.review_schedule WHERE source_engine=p_source_engine AND source_item_id=p_source_item_id;
+  IF v_existing IS NOT NULL THEN RETURN v_existing; END IF;
+  UPDATE public.review_schedule SET status='superseded', closed_at=p_at, updated_at=p_at
+   WHERE student_id=p_student_id AND question_id=p_question_id AND status='active';
+  INSERT INTO public.review_schedule (student_id, question_id, status, queued_at, source_engine, source_session_id, source_item_id, source_outcome, created_at, updated_at)
+  VALUES (p_student_id, p_question_id, 'active', p_at, p_source_engine, p_source_session_id, p_source_item_id, p_source_outcome, p_at, p_at)
+  RETURNING id INTO v_new; RETURN v_new; END $f$;
+SQL
+psql -v ON_ERROR_STOP=1 -q -d "$DB" -c "BEGIN; SELECT public.review_queue_record('00000000-aaaa-4000-8000-000000000001','SATM1AAA001','practice','00000000-bbbb-4000-8000-000000000001','00000000-dddd-4000-8000-00000000000a','incorrect', now()); SELECT pg_sleep(2); COMMIT;" >/dev/null 2>&1 & Q1=$!
+sleep 0.5
+psql -v ON_ERROR_STOP=1 -q -d "$DB" -c "BEGIN; SELECT public.review_queue_record('00000000-aaaa-4000-8000-000000000001','SATM1AAA001','practice','00000000-bbbb-4000-8000-000000000001','00000000-dddd-4000-8000-00000000000b','incorrect', now()); COMMIT;" >/dev/null 2>&1 & Q2=$!
+R1=0; wait $Q1 || R1=$?
+R2=0; wait $Q2 || R2=$?
+UNLOCKED_ACTIVE=$(qt -c "select count(*) from public.review_schedule where question_id='SATM1AAA001' and status='active';" | grep -E '^[0-9]+$' | tail -1)
+if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$UNLOCKED_ACTIVE" = "1" ]; then
+  fail "G6 plant: removing the lock changed nothing (both ok, 1 active) — G6 proves nothing"
+fi
+echo "    RED  [G6]: without the lock a writer errored (exit $R1/$R2) or left $UNLOCKED_ACTIVE active entries"
+
+# --- G14: revert ONE of the two calendar lines; PL/pgSQL only notices at run time.
+echo "==> G14 plant: revert one of the two calendar column references"
+build_db
+python3 - "$ROOT" <<'PYEOF'
+import re, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+mig = (root / "supabase/migrations/20260921000000_review_queue_runtime.sql").read_text()
+i = mig.index("CREATE OR REPLACE FUNCTION public.calendar_build_plan_input")
+j = mig.index("$$;", i) + 3
+fn = mig[i:j]
+assert fn.count("queued_at") == 2, fn.count("queued_at")
+fn = fn.replace("queued_at", "next_review_at", 1)   # revert only the FIRST line
+(root / ".plant_calendar.sql").write_text(fn + "\n")
+PYEOF
+q -f "$ROOT/.plant_calendar.sql" >/dev/null
+q >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email) VALUES ('00000000-aaaa-4000-8000-000000000002','b@example.com');
+INSERT INTO public.student_study_profile (student_id, timezone, target_exam_date, target_score, study_days_mask, daily_minutes, setup_completed_at)
+VALUES ('00000000-aaaa-4000-8000-000000000002','America/Chicago', current_date + 60, 1400, 127, 60, now());
+SQL
+if psql -v ON_ERROR_STOP=1 -tA -d "$DB" -c "select public.calendar_build_plan_input('00000000-aaaa-4000-8000-000000000002', ARRAY[current_date]::date[]);" >/dev/null 2>&1; then
+  rm -f "$ROOT/.plant_calendar.sql"
+  fail "G14 plant: one reverted line still ran — the two-line claim in the migration is wrong"
+fi
+rm -f "$ROOT/.plant_calendar.sql"
+echo "    RED  [G14]: reverting ONE of the two lines breaks plan generation at run time"
+
+# --- G15: queue_entry_id as ON DELETE RESTRICT breaks the anonymize path.
+echo "==> G15 plant: queue_entry_id ON DELETE RESTRICT"
+build_db
+q -c "ALTER TABLE public.review_session_items DROP CONSTRAINT review_session_items_queue_entry_id_fkey;
+      ALTER TABLE public.review_session_items ADD CONSTRAINT review_session_items_queue_entry_id_fkey FOREIGN KEY (queue_entry_id) REFERENCES public.review_schedule(id) ON DELETE RESTRICT;" >/dev/null
+if psql -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/scripts/ci/deletion-cascade-rehearsal.sql" >/dev/null 2>&1; then
+  fail "G15 plant: RESTRICT did not break the rehearsal — the fixtures do not link an item to an entry"
+fi
+echo "    RED  [G15]: RESTRICT makes the deletion rehearsal fail, as designed"
 
 echo
 echo "REVIEW QUEUE GATES SELF-TEST: PASS"
