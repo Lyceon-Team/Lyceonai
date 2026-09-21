@@ -195,7 +195,8 @@ export async function checkSignatureTable(
 ): Promise<SignatureCheckResult> {
   const { data, error } = await supabaseServer
     .from("tutor_injection_signatures")
-    .select("id, signature_pattern, signature_type");
+    .select("id, signature_pattern, signature_type")
+    .is("category", null);
 
   if (error) {
     logger.error(

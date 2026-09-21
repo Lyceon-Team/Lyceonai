@@ -47,6 +47,10 @@ const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
+const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
+const CrisisReviewDetail = lazy(
+  () => import("@/pages/admin/CrisisReviewDetail"),
+);
 
 function PageLoader() {
   return (
@@ -222,6 +226,24 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
               <NotificationsPage />
+            </RequireRole>
+          )}
+        />
+
+        {/* Admin routes — require admin role */}
+        <Route
+          path="/admin/crisis-review/:id"
+          component={() => (
+            <RequireRole allow={["admin"]}>
+              <CrisisReviewDetail />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/admin/crisis-review"
+          component={() => (
+            <RequireRole allow={["admin"]}>
+              <CrisisReviewList />
             </RequireRole>
           )}
         />

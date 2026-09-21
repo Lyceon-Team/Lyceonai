@@ -7367,6 +7367,8 @@ CREATE TABLE public.crisis_review_cases (
     sla_deadline timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    category text DEFAULT 'crisis'::text NOT NULL,
+    CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
@@ -9024,7 +9026,12 @@ CREATE TABLE public.tutor_injection_signatures (
     action text NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
     added_by text,
-    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text]))),
+    category text,
+    version text,
+    source text,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text, 'stop_and_review'::text, 'stop_and_safeguarding_review'::text]))),
+    CONSTRAINT tutor_injection_signatures_category_check CHECK ((category = ANY (ARRAY['suicide'::text, 'self_harm'::text, 'abuse'::text]))),
     CONSTRAINT tutor_injection_signatures_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
 );
 
@@ -10394,6 +10401,13 @@ CREATE INDEX idx_crisis_audit_log_reviewer ON public.crisis_review_audit_log USI
 
 
 --
+-- Name: idx_crisis_review_cases_category_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_category_active ON public.crisis_review_cases USING btree (category) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
+
+
+--
 -- Name: idx_crisis_review_cases_conversation_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10776,6 +10790,13 @@ CREATE INDEX idx_tutor_injection_log_signature ON public.tutor_injection_log USI
 --
 
 CREATE INDEX idx_tutor_injection_log_student_recent ON public.tutor_injection_log USING btree (student_id, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_signatures_category_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_signatures_category_enabled ON public.tutor_injection_signatures USING btree (category) WHERE (enabled = true);
 
 
 --
