@@ -2415,10 +2415,15 @@ router.post(
     //
     // BUG-4. This wrote completed_at while setting status='abandoned'. completed_at
     // is the completion signal; stamping it on abandonment makes abandoned work
-    // read as finished work to anything that inspects the column. review_sessions
-    // has carried a separate abandoned_at since 20260610020000 and writes the
-    // matching one (server/routes/review-session-routes.ts:684) — this is the same
-    // shape, not a new convention.
+    // read as finished work to anything that inspects the column.
+    //
+    // @corrected [R2, 2026-09-21] This comment used to justify itself by claiming
+    // review_sessions "has carried a separate abandoned_at since 20260610020000"
+    // and cite review-session-routes.ts:684. Both were false: that migration gave
+    // review_sessions neither abandoned_at nor completed_at, and the file it cited
+    // was deleted in R1. practice_sessions was the FIRST table to carry the pair,
+    // not the second. review_sessions only gained it in 20260921000000, by
+    // mirroring what this migration established here.
     //
     // practice_sessions_abandoned_not_completed (migration 20260817020000) rejects
     // the old pair outright, so the defect cannot be reintroduced silently: it
