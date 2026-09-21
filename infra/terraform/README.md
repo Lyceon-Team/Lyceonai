@@ -20,9 +20,16 @@ Terraform state.
 | 6 | `google_bigquery_dataset.archive` | **import** | `lyceon_analytics_archive_prod` — existing dataset |
 | 7 | `google_cloud_tasks_queue.crisis_notification` | **import** | `lisa-crisis-notification` — existing queue |
 | 8 | `google_cloud_run_v2_service.tutor_orchestrator` | **import** | `lyceon-tutor-orchestrator` — CI-deployed service (Terraform manages IAM only) |
+| 9 | `google_project_service.cloudscheduler` | **create** | Enables the Cloud Scheduler API |
+| 10 | `google_cloud_scheduler_job.retention_sweep_7d` | **create** | Daily signed POST to `/api/internal/retention/sweep` (7d tier) |
 
-**Not in Phase 1:** Cloud Scheduler jobs, BigQuery tables, RAG corpus,
-Phase 2 Cloud Tasks queues, floor settings.
+**Not in Phase 1:** BigQuery tables, RAG corpus, Phase 2 Cloud Tasks
+queues, floor settings.
+
+Rows 9 and 10 were added after Phase 1 (2026-09-21, retention policy
+publication). Cloud Scheduler was on the Phase 1 exclusion list; the
+retention sweep route had no caller, so it came off. The counts below
+include them.
 
 ---
 
@@ -131,16 +138,18 @@ any cloud resource.
 #### What a CORRECT plan looks like
 
 ```
-Plan: 5 to add, 0 to change, 0 to destroy.
+Plan: 7 to add, 0 to change, 0 to destroy.
       3 to import.
 ```
 
-The 5 "add" resources:
+The 7 "add" resources:
 - `google_project_service.modelarmor`
 - `google_model_armor_template.input`
 - `google_model_armor_template.output`
 - `google_service_account.cloud_tasks`
 - `google_cloud_run_v2_service_iam_member.cloud_tasks_invoker`
+- `google_project_service.cloudscheduler`
+- `google_cloud_scheduler_job.retention_sweep_7d`
 
 The 3 "import" resources:
 - `google_bigquery_dataset.archive`
@@ -148,7 +157,7 @@ The 3 "import" resources:
 - `google_cloud_run_v2_service.tutor_orchestrator`
 
 Each resource in the plan is prefixed with a symbol:
-- `+` means **create** — new resource, expected for the 5 above
+- `+` means **create** — new resource, expected for the 7 above
 - `~` means **update in-place** — only expected if an imported resource's
   config was modified intentionally
 - `-/+` means **destroy and recreate** — **STOP, something is wrong**
@@ -163,7 +172,7 @@ Each resource in the plan is prefixed with a symbol:
 | Changes on `google_cloud_tasks_queue` | Rate limits or retry config don't match reality | Run the `gcloud tasks queues describe` command from Step 0 and copy the values |
 | Changes on `google_bigquery_dataset` | Location mismatch | Run the `bq show` command from Step 0 |
 | "Error: resource already exists" | A resource Terraform is trying to create already exists in GCP | Add an `import` block for it (e.g. if the SA already exists) |
-| More than 5 creates or 3 imports | Unexpected — re-read the plan carefully |
+| More than 7 creates or 3 imports | Unexpected — re-read the plan carefully |
 
 ### Step 5: Apply (PROVISIONS RESOURCES)
 
@@ -173,7 +182,7 @@ Only after the plan from Step 4 is correct:
 terraform apply phase1.tfplan
 ```
 
-This creates the 5 new resources and writes the 3 imported resources
+This creates the 7 new resources and writes the 3 imported resources
 into Terraform state. After apply, Terraform prints the outputs.
 
 ### Step 6: Get the output values
@@ -191,6 +200,14 @@ After apply, set these env vars on the Cloud Run service and/or Vercel:
 | `MODEL_ARMOR_INPUT_TEMPLATE_ID` | `model_armor_input_template_id` = `lyceon-lisa-input-v1` | Cloud Run + Vercel |
 | `MODEL_ARMOR_OUTPUT_TEMPLATE_ID` | `model_armor_output_template_id` = `lyceon-lisa-output-v1` | Cloud Run + Vercel |
 | `CLOUD_TASKS_SERVICE_ACCOUNT` | `cloud_tasks_sa_email` = `lisa-cloud-tasks@replit-cop.iam.gserviceaccount.com` | Cloud Run + Vercel |
+| `RETENTION_SWEEP_OIDC_AUDIENCE` | `retention_sweep_oidc_audience` = `https://lyceon.ai/api/internal/retention/sweep` | Vercel |
+
+`RETENTION_SWEEP_OIDC_AUDIENCE` is not optional decoration. The Cloud
+Scheduler job in `cloud-scheduler.tf` signs its OIDC token with exactly
+that audience, and `server/routes/internal-retention-routes.ts` compares
+the token's `aud` claim to the env var. Unset, the route refuses every
+delivery with 500 (`internal_auth_not_configured`); set to anything else,
+401. Copy it from the Terraform output rather than retyping it.
 
 Also set in `tutor_context_runtime_config` (Supabase):
 

@@ -34,3 +34,20 @@ output "cloud_tasks_sa_email" {
   description = "Service account email → CLOUD_TASKS_SERVICE_ACCOUNT env var"
   value       = google_service_account.cloud_tasks.email
 }
+
+# ── Cloud Scheduler — retention sweep ────────────────────────────────
+
+output "retention_sweep_oidc_audience" {
+  description = <<-EOT
+    Audience claim the retention sweep job signs with → set this verbatim
+    as RETENTION_SWEEP_OIDC_AUDIENCE on Vercel. The route compares the
+    token's `aud` to this string exactly; a mismatch is a 401, not a
+    warning.
+  EOT
+  value       = google_cloud_scheduler_job.retention_sweep_7d.http_target[0].oidc_token[0].audience
+}
+
+output "retention_sweep_job_name" {
+  description = "Cloud Scheduler job name — `gcloud scheduler jobs describe` target"
+  value       = google_cloud_scheduler_job.retention_sweep_7d.name
+}
