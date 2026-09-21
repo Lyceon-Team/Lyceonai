@@ -32,13 +32,13 @@ import path from "node:path";
  *    the minutes. The checks that matter here are cross-file agreement (does
  *    the scheduler URI still match the route the server actually mounts?),
  *    which a syntax validator would not catch anyway.
- *  - Suite D scans for code that READS the variable, not for every textual
- *    mention. `client/.env.example` still declares `VITE_CLARITY_PROJECT_ID=`
- *    and this suite deliberately does not assert on that file: a declaration
- *    in an example env file gates nothing, and the line could not be removed
- *    in this change (see the PR description). Its presence is reported, not
- *    hidden — but a test that fails on it would be a test nobody can make
- *    pass from here.
+ *  - Suite D scans source for code that READS the variable, and additionally
+ *    pins `client/.env.example` by name. That file has no code extension, so
+ *    the source walker cannot see it — which is exactly how its declaration
+ *    outlived the rest of Part B. A declaration in an example env file gates
+ *    nothing by itself, but it is the documented way back in: it tells the
+ *    next contributor the variable is expected, and setting it was the single
+ *    step between a dark Clarity and one recording minors.
  *
  * edge cases:
  *  - Suite A resolves references against headings in the CURRENT published
@@ -439,6 +439,19 @@ describe("Phase 7 D — no code gates on VITE_CLARITY_PROJECT_ID", () => {
       /VITE_CLARITY_PROJECT_ID/.test(read(rel)),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("the client env example no longer declares it", () => {
+    // Removed in 1cee769b, after the rest of Part B. Until then this was the
+    // one surviving reference, and it is the file a future contributor copies
+    // to .env — so it is pinned by name rather than left to the source
+    // walker, which skips extensionless files.
+    const rel = "client/.env.example";
+    expect(existsSync(path.join(repoRoot, rel))).toBe(true);
+    expect({ rel, hit: /VITE_CLARITY_PROJECT_ID/.test(read(rel)) }).toEqual({
+      rel,
+      hit: false,
+    });
   });
 
   it("no build or deploy config references it", () => {
