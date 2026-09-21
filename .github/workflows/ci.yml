@@ -606,6 +606,29 @@ jobs:
           pnpm exec vitest run tests/ci/calendar.launch-contract.review.test.ts
           pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
 
+      # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
+      # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice
+      # engine's own idempotency ledger, reached over a wire as a real service_role JWT,
+      # agree about what a repeated key means. The gate greps its own output because a
+      # self-skipping vitest file exits 0 and reads green from the outside.
+      - name: Install PostgREST (real transport)
+        run: |
+          curl -sL -o /tmp/pgrst.tar.xz \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          tar -xf /tmp/pgrst.tar.xz -C /tmp
+          sudo mv /tmp/postgrest /usr/local/bin/postgrest
+          postgrest --version
+
+      - name: Calendar launch crash-retry → REAL PostgREST proof (INV-08-18)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/calendar-postgrest-gate.sh
+
       - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
         env:
           PGHOST: localhost

@@ -83,6 +83,7 @@ and the change was reverted. A gate that cannot fail is not a gate.
 | (c) `GET /api/calendar` drops its `calendar_access` check | `calendar.routes.contract.test.ts` — "GET /api/calendar answers 402 with the shared CTA payload" |
 | (d) the weekly predicate counts `day_edit` as a horizon refresh | `calendar-writer-gates.sql` Z-31 — "a day_edit version suppressed the weekly run" |
 | (e) `GET /api/me/streak` acquires a `calendar_access` check | `calendar.routes.contract.test.ts` — "answers 200 for the very caller every calendar route refuses" |
+| (f) `launchBlock` computes `seq` from the clock instead of the stored launch rows | `calendar-postgrest-gate.sh` — 3 of its 4 cases, through the real transport |
 
 **Plant (b) is the one worth reading twice.** The generic `ANTI-LEAK /calendar` cases —
 the ones driven from the route table over the RULE-4 column list — did **not** fail. RULE-4
@@ -94,3 +95,26 @@ shipped the guardian leak green.
 migration dropped its REVOKE, and Z-19 — the sweep over every `calendar_%` function — caught
 the missing grant before Z-31 was reached. That is the fourth time this session a sweep has
 caught something a targeted check would not have.
+
+
+## The crash-retry proof, and what the recorder could not have seen
+
+`scripts/ci/calendar-postgrest-gate.sh` drives `CalendarLaunchService` over
+`liveLaunchDeps` against real PostgREST on a real HS256 `service_role` JWT, with real
+Postgres carrying genesis and every migration. Exactly one thing is substituted: the first
+`linkLaunch` fails, which IS §18's "Created but link failed" and is the one event a test
+cannot produce by asking politely.
+
+Writing it surfaced a defect in a **fixture pattern already in the repository**. The
+existing `calendar.launch-contract.practice.ci.test.ts` seeds questions with
+`options: '["A","B","C","D"]'`, and the `questions_item_shape_chk` CHECK accepts that — but
+`parseCanonicalMcOptions` skips any element without both a `key` and a `text`, so those
+options parse to **zero**, `isCanonicalRuntimeQuestion` drops every row, and the practice
+engine answers 422 `empty_pool`. That contract test never noticed because it asserts the SQL
+filter directly and never serves a question. Only actually creating a session through the
+engine can see it. The new fixture uses `{key, text}` objects and says why in a comment.
+
+Two more schema facts the transport corrected: `questions` has `skill_codes`, not `skill`;
+and the practice engine stores its idempotency key as `session_start_idempotency_key` inside
+`practice_sessions.filters`, not in a column of its own. Each of those was a green mocked
+assumption until a real query ran.
