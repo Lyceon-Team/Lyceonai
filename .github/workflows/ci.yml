@@ -454,6 +454,137 @@ jobs:
   # config doctrine (quota RPC rejects missing config / succeeds with config),
   # and idempotency. No mocks — real SQL against real schema.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Doc 05F calendar — parity gate.
+  #
+  # calendar_formula_reference.py is the oracle, as validation_sweep.py is for
+  # Doc 04B. This runs the nine committed fixtures AND the seeded suite,
+  # regenerated from rand_snapshot and never stored, through both the reference
+  # and the PL/pgSQL RPCs, and fails on any byte difference or suite violation.
+  #
+  # WHY 17 AND NOT 16. genesis-fresh-apply above runs on 16 and that is fine —
+  # it proves the pipeline applies and matches the committed snapshot. This gate
+  # proves the FORMULA, and the two things most likely to differ between majors
+  # are exactly what it is built to catch: security_invoker semantics and
+  # integer-division edges. Prod is 17, so the formula is proved on 17
+  # (Doc 05F formula sheet §6). CALENDAR_PARITY_REQUIRE_PG_MAJOR makes a
+  # mis-pinned service container fail loudly rather than quietly prove less.
+  #
+  # The gate also refuses to exit 0 having compared fewer plans than it claims
+  # to run — a parity gate that silently compares nothing is the same vacuous
+  # pass this workflow guards against elsewhere.
+  # @spec [Doc_05F_formula_sheet.md §6 "Parity gate"; INV-08-06 as amended by
+  #        sheet §8 item 7] | @implemented [2026-09-17]
+  # ---------------------------------------------------------------------------
+  calendar-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17   # prod major; genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply the migration pipeline to a throwaway database
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE calendar_parity;" >/dev/null
+          # Supabase-provided roles and auth schema; a plain Postgres has neither.
+          psql -v ON_ERROR_STOP=1 -d calendar_parity -q >/dev/null <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN; END IF;
+          END $$;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
+          SQL
+          # Same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema
+          # under test is the one the pipeline produces.
+          for f in supabase/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -d calendar_parity -q -f "$f" >/dev/null
+          done
+
+      - name: Calendar schema + config gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+
+      - name: Calendar grant + RLS gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
+
+      - name: Calendar write-RPC gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-writer-gates.sql
+
+      # Real concurrent sessions, not a single-session script: the FOR UPDATE on
+      # the study profile that makes version_no = MAX+1 safe (INV-08-17) is
+      # invisible unless somebody else is holding it. This is also where the
+      # idempotency ledger's check-then-insert is proved atomic.
+      - name: Calendar concurrency gate (INV-08-17, INV-08-09)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+        run: bash scripts/ci/calendar-concurrency-gate.sh
+
+      - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 3000 --suite-seed 1
+
   practice-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 10

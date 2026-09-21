@@ -296,11 +296,24 @@ All math in stems, options, explanations, and passages uses **LaTeX** delimited 
 - Degree symbol: `$30°$` or `$30^\circ$`
 - Percent: `$25\%$`
 
+**CRITICAL — JSON backslash escaping for LaTeX commands:**
+
+When writing LaTeX inside JSON strings (NDJSON part files), every backslash in a LaTeX command must be escaped as a double backslash (`\\`). In the raw JSON file bytes:
+
+- `\\frac{2}{3}` → correct (JSON string contains `\frac{2}{3}`, renders as $\frac{2}{3}$)
+- `\\\\frac{2}{3}` → **WRONG** (JSON string contains `\\frac{2}{3}`, renders as literal `\frac{2}{3}` text)
+- `\frac{2}{3}` → **WRONG** (`\f` is a JSON form-feed escape, corrupts the string)
+
+This applies to ALL LaTeX commands: `\frac`, `\sqrt`, `\text`, `\left`, `\right`, `\cdot`, `\times`, `\pi`, `\geq`, `\leq`, `\sin`, `\cos`, `\tan`, `\theta`, `\dfrac`, `\begin`, `\end`, etc.
+
+The pattern is always: **exactly two backslashes** in the JSON file for each LaTeX backslash command. Not one (form-feed corruption), not four (doubled literal backslash).
+
 **Anti-patterns (do not use):**
 - Unicode math symbols in place of LaTeX (e.g., `>=` instead of `$\geq$`)
 - Plain-text fractions in stems (e.g., `2/3` instead of `$\frac{2}{3}$`)
 - Images of equations when LaTeX rendering is possible
 - AsciiMath or MathML notation — use LaTeX exclusively
+- Doubled backslash escapes (`\\\\frac`) — produces literal backslash text instead of rendered math
 
 ### Assets (`assets` JSONB)
 
