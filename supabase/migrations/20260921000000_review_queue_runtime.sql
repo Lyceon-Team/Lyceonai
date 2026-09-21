@@ -465,10 +465,13 @@ BEGIN
 END
 $$;
 
--- The OLD.status clause is the whole reason anonymization cannot re-fire this.
--- Anonymize UPDATEs resolved rows without touching status, so OLD.status is
--- already terminal and the trigger never runs (G10). Without it, every
--- anonymized student would re-enqueue their entire history.
+-- Two independent guards, and they cover different things. The NEW.user_id
+-- check inside the function covers anonymization specifically, because that
+-- path nulls user_id. The OLD.status clause here covers the wider case: ANY
+-- re-UPDATE of an already-resolved row while it is still owned — a backfill
+-- touching a column, a later migration, a correction. Neither subsumes the
+-- other, and G10 asserts both halves separately so removing either one is
+-- visible.
 CREATE TRIGGER trg_practice_item_enqueue_review
   AFTER UPDATE ON public.practice_session_items
   FOR EACH ROW

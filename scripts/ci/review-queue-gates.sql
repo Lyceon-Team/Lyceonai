@@ -84,7 +84,27 @@ BEGIN
            '00000000-dddd-4000-8000-000000000001', 'incorrect', v_ts1) INTO v_entry;
   SELECT count(*) INTO v_n FROM public.review_schedule WHERE source_item_id='00000000-dddd-4000-8000-000000000001';
   IF v_n <> 1 THEN RAISE EXCEPTION 'G4 FAIL: replay created a second row, total %', v_n; END IF;
-  RAISE NOTICE 'ok   [G4]: replaying one source item creates no second row';
+
+  -- The early return above is the mechanism; uq_review_schedule_source_item is
+  -- the backstop, and only the backstop covers a writer that bypasses the
+  -- function. Asserting both is what makes the brief's plant ("drop UNIQUE
+  -- (source_engine, source_item_id)") able to turn this gate red — without this
+  -- half, dropping the constraint changes nothing observable and G4 passes a
+  -- database that has lost its last defence against a duplicate enqueue.
+  BEGIN
+    -- closed_at is set because review_schedule_closed_iff_not_active requires a
+    -- non-active row to carry one; without it that CHECK fires first and the
+    -- probe would never reach the unique index it is meant to test.
+    INSERT INTO public.review_schedule (
+      student_id, question_id, status, queued_at, closed_at,
+      source_engine, source_session_id, source_item_id, source_outcome)
+    VALUES (v_student, v_qid, 'superseded', v_ts1, v_ts1, 'practice', v_ps,
+            '00000000-dddd-4000-8000-000000000001', 'incorrect');
+    RAISE EXCEPTION 'G4 FAIL: a duplicate (source_engine, source_item_id) was accepted — the unique backstop is gone';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;  -- expected
+  END;
+  RAISE NOTICE 'ok   [G4]: replay returns the existing row, and a direct duplicate insert is refused';
 
   -- ===================================================================== G2
   -- A practice skip creates one active entry with outcome skipped (ruling 2).
@@ -154,7 +174,21 @@ BEGIN
   SELECT count(*) INTO v_n FROM public.review_schedule
    WHERE student_id=v_student AND question_id=v_qid AND status='superseded' AND closed_at IS NULL;
   IF v_n <> 0 THEN RAISE EXCEPTION 'G5 FAIL: a superseded entry has no closed_at'; END IF;
-  RAISE NOTICE 'ok   [G5]: a second miss supersedes the first; exactly one entry stays active';
+  -- As with G4: the explicit supersede inside review_queue_record is the
+  -- mechanism, and uq_review_schedule_open_question is the backstop that holds
+  -- when a writer bypasses the function or races it. Only this half can notice
+  -- the brief's plant ("drop the partial unique index").
+  BEGIN
+    INSERT INTO public.review_schedule (
+      student_id, question_id, status, queued_at,
+      source_engine, source_session_id, source_item_id, source_outcome)
+    VALUES (v_student, v_qid, 'active', v_ts2, 'practice', v_ps,
+            '00000000-dddd-4000-8000-0000000000ff', 'incorrect');
+    RAISE EXCEPTION 'G5 FAIL: a second ACTIVE entry for one (student, question) was accepted — the open-entry index is gone';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;  -- expected
+  END;
+  RAISE NOTICE 'ok   [G5]: a second miss supersedes the first; a second active entry is refused';
 
   RAISE NOTICE '--- practice-side gates complete; review-side follows ---';
 END
@@ -301,11 +335,24 @@ BEGIN
   -- ==================================================================== G10
   -- Anonymizing a student with resolved misses creates zero entries. The
   -- OLD.status guard is what stops it: anonymize UPDATEs already-resolved rows.
+  -- (a) The OLD.status clause's own job: a resolved row that is UPDATEd again
+  --     while still OWNED must not re-enqueue. This is the half the NEW.user_id
+  --     guard cannot cover, and the only half that can notice the brief's plant
+  --     ("drop the OLD.status clause").
+  SELECT count(*) INTO v_n FROM public.review_schedule;
+  UPDATE public.practice_session_items SET time_spent_ms = 1234
+   WHERE id = '00000000-dddd-4000-8000-000000000004';
+  SELECT count(*) - v_n INTO v_n FROM public.review_schedule;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'G10 FAIL: re-UPDATEing an already-resolved owned row created % queue entr(ies)', v_n;
+  END IF;
+
+  -- (b) And the anonymize path itself, which the NEW.user_id guard covers.
   SELECT count(*) INTO v_n FROM public.review_schedule;
   UPDATE public.practice_session_items SET user_id = NULL, client_attempt_id = NULL
    WHERE user_id = v_student;
   SELECT count(*) - v_n INTO v_n FROM public.review_schedule;
   IF v_n <> 0 THEN RAISE EXCEPTION 'G10 FAIL: anonymization created % queue entr(ies)', v_n; END IF;
-  RAISE NOTICE 'ok   [G10]: anonymizing resolved practice misses creates zero queue entries';
+  RAISE NOTICE 'ok   [G10]: neither a re-UPDATE of a resolved owned row nor anonymization enqueues';
 END
 $gates_review$;
