@@ -68,6 +68,9 @@ beforeEach(() => {
     if (table === "tutor_injection_signatures") {
       return {
         select: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
           eq: vi.fn().mockResolvedValue({ data: [], error: null }),
         }),
       };

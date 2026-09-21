@@ -198,6 +198,10 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "action",
     "added_at",
     "added_by",
+    "category",
+    "version",
+    "source",
+    "enabled",
   ],
   // §18.7 — injection detection events (service-role only)
   tutor_injection_log: [
@@ -294,7 +298,13 @@ const REQUIRED_ENUMS: Array<{
   {
     table: "tutor_injection_signatures",
     column: "action",
-    values: ["flag", "reject", "silent_redirect"],
+    values: [
+      "flag",
+      "reject",
+      "silent_redirect",
+      "stop_and_review",
+      "stop_and_safeguarding_review",
+    ],
   },
 ];
 

@@ -55,12 +55,15 @@ type AuditAction =
   | "disposition_set"
   | "note_added";
 
+type CrisisCategory = "crisis" | "safeguarding";
+
 type CreateCaseParams = {
   conversationId: string;
   studentId: string;
   source: CrisisSource;
   signatureId: string | null;
   modelConfidence: number | null;
+  category: CrisisCategory;
 };
 
 type UpdateDispositionParams = {
@@ -145,6 +148,7 @@ export async function createCrisisReviewCase(
     conversation_id: params.conversationId,
     student_id: params.studentId,
     source: params.source,
+    category: params.category,
     signature_id: params.signatureId,
     model_confidence: params.modelConfidence,
     sla_deadline: slaDeadline,
