@@ -234,7 +234,11 @@ DECLARE
     -- cross-check them against the oracle. They bound the settings sheet and
     -- pace the weekly job.
     'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
-    'target_exam_date_max_days','weekly_job_interval_minutes'];
+    'target_exam_date_max_days','weekly_job_interval_minutes',
+    -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
+    -- beside the formula so a stored plan version traces to the exact SQL that
+    -- made it. C-09 below asserts it names a migration timestamp.
+    'generator_version'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
@@ -248,7 +252,7 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 5 route/job keys of Doc 05F §8.1/§12.5';
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 6 route/job/provenance keys of Doc 05F §8.1/§12.5/§10.2';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
@@ -321,6 +325,24 @@ BEGIN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-08 the config notify / history-no-mutate trigger pair is not wired';
   END IF;
   RAISE NOTICE '    OK C-08 calendar_runtime_config has the standard notify + append-only history triggers';
+
+  -- C-09. generator_version is a migration timestamp, stored as a string.
+  --
+  -- Doc 05F §10.2 makes it the provenance stamp on every calendar_plan_versions
+  -- row, and it only earns that if it names the SQL that produced the plan. The
+  -- format is asserted here because a value like `v1` or `latest` would store
+  -- cleanly and trace to nothing. That the named migration FILE exists is
+  -- asserted by the CI step that runs this file -- SQL cannot see a filesystem.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.calendar_runtime_config
+    WHERE key = 'generator_version'
+      AND value_type = 'string'
+      AND (value #>> '{}') ~ '^[0-9]{14}$'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-09 generator_version is not a 14-digit migration timestamp stored as a string (got %)',
+      (SELECT value::text || ' / ' || value_type FROM public.calendar_runtime_config WHERE key = 'generator_version');
+  END IF;
+  RAISE NOTICE '    OK C-09 generator_version names a migration timestamp, so a stored plan version traces to its SQL';
 END;
 $config$;
 

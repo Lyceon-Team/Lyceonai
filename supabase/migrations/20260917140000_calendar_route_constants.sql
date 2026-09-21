@@ -6,20 +6,29 @@
 --       [Doc_05F_formula_sheet.md §4 — the generator constants. The five keys
 --        seeded here are NOT generator constants: they belong to the routes and
 --        the weekly job, which is why 20260917130000_calendar_v1.sql
---        deliberately left them out and reported them as still to land]
+--        deliberately left them out and reported them as still to land. The
+--        sixth, generator_version, is the formula naming its own revision]
 -- @implemented [2026-09-17]
 --
--- plain English. Two things the server layer cannot work without.
+-- plain English. Five things the server layer cannot work without.
 --
--- 1. Five configuration rows. Doc 05F §8.1 bounds the study profile and §12.5
---    paces the weekly job, and neither had a row to read. The route would
---    otherwise have to inline a literal, which §17 forbids.
+-- 1. Six configuration rows. Doc 05F §8.1 bounds the study profile, §12.5
+--    paces the weekly job and §10.2 stamps each version with the generator
+--    revision, and none of them had a row to read. The route would otherwise
+--    have to inline a literal, which §17 forbids.
 --
 -- 2. calendar_regenerate_day. Doc 05F §12.1 lists day_regenerate and day_reset
 --    as triggers and §15 gives each a route, but the applied migration named no
 --    writer for either — the two strings appear only in the trigger CHECK. This
 --    is that writer, and it is one function for both routes because the only
 --    difference between them is the trigger recorded on the version.
+--
+-- 3. calendar_is_known_timezone. §7.1 puts the IANA check at the route, and the
+--    route cannot reach pg_timezone_names through PostgREST. See section 3b.
+--
+-- 4. calendar_acknowledge_version. §12.7 names the watermark and §15 gives the
+--    route no idempotency key, which only works if the write is monotonic in
+--    SQL. No writer existed. See section 3c.
 --
 -- WHY A NEW VALIDATOR MODE. Both routes exist to hand a date the student has
 -- overridden back to the generator. V-14 refuses exactly that for mode
@@ -31,7 +40,7 @@
 -- five generated-only rules V-02, V-05 and V-09 all still apply, because the
 -- day being written is an auto-generated day and must satisfy them.
 --
--- 3. calendar_link_launch takes a lock. It allocated launch_sequence as
+-- 5. calendar_link_launch takes a lock. It allocated launch_sequence as
 --    COALESCE(max, 0) + 1 with nothing held, so two concurrent launches of one
 --    block computed the same sequence and one lost to a raw 23505 on the
 --    primary key. See section 5.
@@ -42,7 +51,7 @@
 BEGIN;
 
 -- ----------------------------------------------------------------------------
--- 1. Route and scheduling constants (Doc 05F §8.1, §12.5)
+-- 1. Route and scheduling constants (Doc 05F §8.1, §12.5, §10.2)
 --
 -- Column shape and bounds follow calendar_runtime_config as
 -- 20260917130000_calendar_v1.sql created it. min_value/max_value are the doc’s
@@ -74,7 +83,10 @@ INSERT INTO public.calendar_runtime_config
    'Doc 05F §8.1: how far ahead of the student’s local today a target exam date may be set, in days. The floor is local today — a past exam date is not a plan.'),
 
   ('weekly_job_interval_minutes', '1440', 'integer', '15', '1440', 'product',
-   'Doc 05F §12.5: how often the weekly job WAKES, in minutes. It is not how often it generates — generation is once per student local ISO week, Monday-anchored (R-08-30), and a wake that finds a fresh version writes skipped_fresh. Launch value is 1440, one daily Vercel cron. DEVIATION from Doc 05F §21, which bounds this 15..360 and launches at 60: that ceiling assumed a sub-daily sweep, and a daily wake does not fit under it. The ceiling is raised to 1440 so the launch value is inside its own bounds rather than the bounds being decorative.');
+   'Doc 05F §12.5: how often the weekly job WAKES, in minutes. It is not how often it generates — generation is once per student local ISO week, Monday-anchored (R-08-30), and a wake that finds a fresh version writes skipped_fresh. Launch value is 1440, one daily Vercel cron. DEVIATION from Doc 05F §21, which bounds this 15..360 and launches at 60: that ceiling assumed a sub-daily sweep, and a daily wake does not fit under it. The ceiling is raised to 1440 so the launch value is inside its own bounds rather than the bounds being decorative.'),
+
+  ('generator_version', '"20260917140000"', 'string', NULL, NULL, 'engineering',
+   'Doc 05F §10.2 PlanOutput.generator_version. Names the MIGRATION whose function bodies produce the plan, so any stored calendar_plan_versions row can be traced to the exact SQL that made it. It is not operator-tunable: it is the formula declaring its own revision, which is why it is seeded beside the formula instead of living as a literal in the server (Coding Standards §17). Any later migration that changes calendar_compute_plan, calendar_compute_plan_fallback, calendar_place_full_lengths, calendar_plan_to_output or calendar_validate_plan MUST update this row in the same file.');
 
 
 -- ----------------------------------------------------------------------------
@@ -604,6 +616,84 @@ COMMENT ON FUNCTION public.calendar_regenerate_day(uuid, date, text, text, uuid)
   'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student’s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
 
 -- ----------------------------------------------------------------------------
+-- 3b. calendar_is_known_timezone — the IANA check Doc 05F §7.1 puts at the route
+--
+-- §7.1 says timezone is "validated at the route against pg_timezone_names", and
+-- the route cannot: pg_timezone_names lives in pg_catalog, which PostgREST does
+-- not expose. Without this the server would have to carry its own IANA list,
+-- which is the second source of truth Coding Standards §7.2 exists to prevent --
+-- and the wrong one, because the value is consumed by AT TIME ZONE in PL/pgSQL.
+--
+-- STABLE and side-effect free. It is SECURITY INVOKER on purpose: pg_timezone_names
+-- is readable by every role, so there is nothing here to elevate.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION public.calendar_is_known_timezone(p_timezone text) RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $$
+  SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names t WHERE t.name = p_timezone);
+$$;
+
+COMMENT ON FUNCTION public.calendar_is_known_timezone(text) IS
+  'Doc 05F §7.1: the route validates a timezone against pg_timezone_names, which PostgREST cannot reach. Formula sheet §8 item 19 makes a false answer a fall-open to America/Chicago, not a rejection.';
+
+-- ----------------------------------------------------------------------------
+-- 3c. calendar_acknowledge_version — Doc 05F §12.7, INV-08-13
+--
+-- POST /api/calendar/acknowledge dismisses the plan-updated banner by raising
+-- student_study_profile.last_acknowledged_nonstudent_version_no. §15 gives that
+-- route no idempotency key, which is only sound if the write is MONOTONIC: the
+-- same body twice is the same outcome and an older version never lowers the
+-- watermark. GREATEST is that guarantee, and it belongs in SQL because it is a
+-- read-modify-write -- expressing it as a client-side SELECT then UPDATE would
+-- lose the later of two concurrent acknowledgements.
+--
+-- IT ALSO CLAMPS. Without the LEAST, a client could acknowledge version 10^9
+-- and suppress the banner for good, including for a support rollback it has
+-- never seen (§17.4). The ceiling is the student’s own highest ACCEPTED version:
+-- you cannot acknowledge a plan that was never written. A rejected version is
+-- not a plan the student was shown, so it is not a ceiling either.
+--
+-- Returns the watermark as stored, so the caller never has to guess whether the
+-- clamp fired.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION public.calendar_acknowledge_version(
+  p_student_id uuid,
+  p_version_no integer
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+DECLARE
+  v_ceiling integer;
+  v_new     integer;
+BEGIN
+  SELECT COALESCE(max(version_no), 0) INTO v_ceiling
+  FROM public.calendar_plan_versions
+  WHERE student_id = p_student_id AND validator_result = 'accepted';
+
+  UPDATE public.student_study_profile
+     SET last_acknowledged_nonstudent_version_no =
+           GREATEST(last_acknowledged_nonstudent_version_no, LEAST(p_version_no, v_ceiling)),
+         updated_at = now()
+   WHERE student_id = p_student_id
+   RETURNING last_acknowledged_nonstudent_version_no INTO v_new;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_acknowledge_version: student % has no study profile', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN v_new;
+END;
+$$;
+
+COMMENT ON FUNCTION public.calendar_acknowledge_version(uuid, integer) IS
+  'Doc 05F §12.7 / INV-08-13: raises last_acknowledged_nonstudent_version_no monotonically, clamped to the student’s highest accepted version. Monotonic by construction, which is why POST /api/calendar/acknowledge carries no idempotency key (§15).';
+
+-- ----------------------------------------------------------------------------
 -- 4. Grants (Doc 05F §7.12)
 --
 -- Same posture as the five writers 20260917130000 granted: the server role and
@@ -618,11 +708,15 @@ COMMENT ON FUNCTION public.calendar_regenerate_day(uuid, date, text, text, uuid)
 -- ----------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION
   public.calendar_regenerate_day(uuid, date, text, text, uuid),
-  public.calendar_regenerate_day_only(jsonb, date)
+  public.calendar_regenerate_day_only(jsonb, date),
+  public.calendar_is_known_timezone(text),
+  public.calendar_acknowledge_version(uuid, integer)
   FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION
-  public.calendar_regenerate_day(uuid, date, text, text, uuid)
+  public.calendar_regenerate_day(uuid, date, text, text, uuid),
+  public.calendar_is_known_timezone(text),
+  public.calendar_acknowledge_version(uuid, integer)
   TO service_role;
 
 -- ----------------------------------------------------------------------------

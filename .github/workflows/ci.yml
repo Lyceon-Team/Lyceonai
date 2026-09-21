@@ -544,7 +544,18 @@ jobs:
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+        run: |
+          psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+          # C-09's other half. The gate above proves generator_version LOOKS like
+          # a migration timestamp; only the filesystem can say whether it names a
+          # migration that exists, and a provenance stamp pointing at no file is
+          # worse than none at all.
+          gv="$(psql -qtAX -d calendar_parity -c "SELECT value #>> '{}' FROM public.calendar_runtime_config WHERE key = 'generator_version'")"
+          if ! ls "supabase/migrations/${gv}"_*.sql >/dev/null 2>&1; then
+            echo "CALENDAR_SCHEMA_GATE_FAILED: C-09 generator_version=${gv} names no migration under supabase/migrations/"
+            exit 1
+          fi
+          echo "    OK C-09b generator_version ${gv} names $(ls supabase/migrations/${gv}_*.sql)"
 
       - name: Calendar grant + RLS gates
         env:

@@ -30,4 +30,4 @@ export function adapterForBlock(block: PlanBlock): CalendarEngineAdapter {
 
 export { ADAPTERS };
 export * from "./types";
-export { localDayWindowUtc, isKnownTimeZone } from "./local-day";
+export { localDayWindowUtc, isKnownTimeZone, localTodayIn } from "./local-day";

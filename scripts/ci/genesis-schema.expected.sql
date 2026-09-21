@@ -595,6 +595,46 @@ $$;
 
 
 --
+-- Name: calendar_acknowledge_version(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_ceiling integer;
+  v_new     integer;
+BEGIN
+  SELECT COALESCE(max(version_no), 0) INTO v_ceiling
+  FROM public.calendar_plan_versions
+  WHERE student_id = p_student_id AND validator_result = 'accepted';
+
+  UPDATE public.student_study_profile
+     SET last_acknowledged_nonstudent_version_no =
+           GREATEST(last_acknowledged_nonstudent_version_no, LEAST(p_version_no, v_ceiling)),
+         updated_at = now()
+   WHERE student_id = p_student_id
+   RETURNING last_acknowledged_nonstudent_version_no INTO v_new;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_acknowledge_version: student % has no study profile', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN v_new;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_acknowledge_version(p_student_id uuid, p_version_no integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) IS 'Doc 05F §12.7 / INV-08-13: raises last_acknowledged_nonstudent_version_no monotonically, clamped to the student’s highest accepted version. Monotonic by construction, which is why POST /api/calendar/acknowledge carries no idempotency key (§15).';
+
+
+--
 -- Name: calendar_build_plan_input(uuid, date[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1604,6 +1644,25 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date. Started blocks injected if omitted, validated in student_edit mode, persisted with is_user_override = true. No budget check (R-08-19).';
+
+
+--
+-- Name: calendar_is_known_timezone(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_is_known_timezone(p_timezone text) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names t WHERE t.name = p_timezone);
+$$;
+
+
+--
+-- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_is_known_timezone(p_timezone text) IS 'Doc 05F §7.1: the route validates a timezone against pg_timezone_names, which PostgREST cannot reach. Formula sheet §8 item 19 makes a false answer a fall-open to America/Chicago, not a rejection.';
 
 
 --
@@ -14049,6 +14108,14 @@ GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, 
 
 
 --
+-- Name: FUNCTION calendar_acknowledge_version(p_student_id uuid, p_version_no integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) TO service_role;
+
+
+--
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14091,6 +14158,14 @@ GRANT ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uu
 
 REVOKE ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_is_known_timezone(p_timezone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_is_known_timezone(p_timezone text) TO service_role;
 
 
 --

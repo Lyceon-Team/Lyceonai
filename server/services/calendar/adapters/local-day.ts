@@ -122,3 +122,38 @@ export function isKnownTimeZone(timeZone: string): boolean {
     return false;
   }
 }
+
+/**
+ * Today's date in `timeZone`, as `YYYY-MM-DD`.
+ *
+ * §8.2: "`today` is in `profile.timezone`". Every service that needs the student's
+ * local today comes here, and `now` is a PARAMETER so the services above stay
+ * testable across a midnight boundary without faking the process clock.
+ *
+ * `en-CA` is used for its format, not its locale: it renders Gregorian dates as
+ * `YYYY-MM-DD`, which is the one thing this function must produce. The fields are
+ * read back individually rather than trusting the joined string, so a runtime whose
+ * `en-CA` differs still yields the ISO form.
+ */
+export function localTodayIn(timeZone: string, now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const field = (type: string): string => {
+    const found = parts.find((part) => part.type === type);
+    return found === undefined ? "" : found.value;
+  };
+
+  const year = field("year").padStart(4, "0");
+  const month = field("month").padStart(2, "0");
+  const day = field("day").padStart(2, "0");
+  const localDate = `${year}-${month}-${day}`;
+  if (!ISO_DATE.test(localDate)) {
+    throw new Error(`localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`);
+  }
+  return localDate;
+}
