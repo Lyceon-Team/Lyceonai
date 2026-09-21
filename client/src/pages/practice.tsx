@@ -287,12 +287,6 @@ function Practice() {
 
   const secondaryActions = [
     {
-      href: "/review-errors",
-      title: "Review Errors",
-      icon: AlertCircle,
-      caption: "Resolve unresolved mistakes",
-    },
-    {
       href: "/full-test",
       title: "Full-Length Exam",
       icon: Target,
