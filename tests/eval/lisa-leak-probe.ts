@@ -1,13 +1,13 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env pnpm exec tsx
 /**
  * LISA Golden-Set Leak Probe — Cases 01, 06, 07, 08, 32, 33
  *
  * @spec [Doc-03D_V1.2 §5.1, INV-03-04, INV-03-12, SCL-060]
  *
- * Direct-to-Gemini probe. Assembles the prompt using the SAME renderStateBlocks
- * and buildSystemInstruction that the worker uses, calls Gemini via the
- * @google/genai SDK with an API key, and runs the response through both
- * detection layers.
+ * Direct-to-Vertex probe. Assembles the prompt using the SAME renderStateBlocks
+ * and buildSystemInstruction that the worker uses, calls Vertex AI via the
+ * @google/genai SDK (same client shape as the worker), and runs the response
+ * through both detection layers.
  *
  * WHAT THIS COVERS:
  *   The question SCL-060 asks: "does the explanation in the prompt cause a leak."
@@ -32,8 +32,12 @@
  *   - scanner verdict + heuristic verdict
  *   - an overall PASS / LEAK / ERROR / REVIEW_NEEDED
  *
+ * Auth: Vertex AI via Application Default Credentials (ADC). In CI, WIF
+ * provides ADC. Locally, use `gcloud auth application-default login` or
+ * set GOOGLE_APPLICATION_CREDENTIALS.
+ *
  * Usage:
- *   GEMINI_API_KEY=<key> npx tsx tests/eval/lisa-leak-probe.ts
+ *   VERTEX_PROJECT_ID=replit-cop pnpm exec tsx tests/eval/lisa-leak-probe.ts
  *
  * Exit codes:
  *   0 — all cases passed both layers
@@ -56,8 +60,13 @@ import { GoogleGenAI, type Content } from "@google/genai";
 
 // ── Config ──────────────────────────────────────────────────────────────
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim() ?? "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash";
+const VERTEX_PROJECT_ID = (
+  process.env.VERTEX_PROJECT_ID ??
+  process.env.GOOGLE_CLOUD_PROJECT ??
+  ""
+).trim();
+const VERTEX_LOCATION = (process.env.VERTEX_LOCATION ?? "").trim() || "global";
+const VERTEX_MODEL = process.env.VERTEX_MODEL?.trim() || "gemini-3.5-flash";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -750,11 +759,15 @@ async function callGemini(
     parts: [{ text: m.text }],
   }));
 
-  const client = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const client = new GoogleGenAI({
+    vertexai: true,
+    project: VERTEX_PROJECT_ID,
+    location: VERTEX_LOCATION,
+  });
 
   try {
     const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+      model: VERTEX_MODEL,
       contents,
       config: {
         systemInstruction,
@@ -774,7 +787,7 @@ async function callGemini(
   } catch (err: unknown) {
     return {
       ok: false,
-      error: `Gemini API error: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Vertex AI error: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -948,18 +961,20 @@ function printResults(results: CaseResult[]): void {
 // ── Main ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  if (!GEMINI_API_KEY) {
-    console.error("ERROR: GEMINI_API_KEY is required.");
+  if (!VERTEX_PROJECT_ID) {
     console.error(
-      "Usage: GEMINI_API_KEY=<key> npx tsx tests/eval/lisa-leak-probe.ts",
+      "ERROR: VERTEX_PROJECT_ID (or GOOGLE_CLOUD_PROJECT) is required.",
+    );
+    console.error(
+      "Usage: VERTEX_PROJECT_ID=replit-cop pnpm exec tsx tests/eval/lisa-leak-probe.ts",
     );
     process.exit(1);
   }
 
+  console.log(`\nLISA Leak Probe (Vertex AI) — ${ALL_CASES.length} cases`);
   console.log(
-    `\nLISA Leak Probe (direct-to-Gemini) — ${ALL_CASES.length} cases`,
+    `Model: ${VERTEX_MODEL} | Project: ${VERTEX_PROJECT_ID} | Location: ${VERTEX_LOCATION}`,
   );
-  console.log(`Model: ${GEMINI_MODEL}`);
   console.log(
     `Prompt assembly: real worker functions (renderStateBlocks, buildSystemInstruction)`,
   );

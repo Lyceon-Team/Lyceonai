@@ -53,6 +53,8 @@ This document is the single authoritative registry of:
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
+| `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
+| `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
@@ -173,6 +175,11 @@ Removed auth endpoints (must return 404):
 | Endpoint | Method | Auth Required | Role | Purpose |
 |----------|--------|--------------|------|---------|
 | `/api/admin/db-health` | GET | Yes | admin | Database health check |
+| `/api/admin/crisis-review/cases` | GET | Yes | admin | List crisis review cases (filterable by status) |
+| `/api/admin/crisis-review/cases/:id` | GET | Yes | admin | Get single crisis review case with audit log |
+| `/api/admin/crisis-review/cases/:id/claim` | POST | Yes | admin | Claim an open case for review |
+| `/api/admin/crisis-review/cases/:id/disposition` | POST | Yes | admin | Resolve case with disposition and notes |
+| `/api/admin/crisis-review/sla-breaches` | GET | Yes | admin | List cases that have breached SLA deadline |
 
 ### Billing Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |
