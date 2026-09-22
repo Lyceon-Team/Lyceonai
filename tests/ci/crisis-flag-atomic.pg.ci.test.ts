@@ -139,6 +139,7 @@ describe.skipIf(!PG_AVAILABLE)(
       const result = await flag();
       expect(result.already_existed).toBe(false);
       expect(result.persisted_source).toBe("signature");
+      expect(result.case_status).toBe("open");
       expect(typeof result.case_id).toBe("string");
 
       expect(await state()).toEqual({ flagged: true, cases: 1 });
@@ -189,6 +190,25 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(new Date(second.sla_deadline as string).toISOString()).toBe(
         new Date(firstRow.rows[0].sla_deadline as string).toISOString(),
       );
+    });
+
+    it("D1.12 — case_status is read back from the row, not assumed", async () => {
+      // `evaluateNotificationPolicy` throttles on this value: an in_review
+      // case means a human has claimed it and a second signal of the same
+      // severity must NOT page again. Returning a hardcoded 'open' would
+      // re-page every time during exactly the event someone is working.
+      const first = await flag();
+      expect(first.case_status).toBe("open");
+
+      await pg.query(
+        `UPDATE public.crisis_review_cases SET status = 'in_review' WHERE id = $1`,
+        [first.case_id],
+      );
+
+      const second = await flag({ source: "model" });
+      expect(second.already_existed).toBe(true);
+      expect(second.case_id).toBe(first.case_id);
+      expect(second.case_status).toBe("in_review");
     });
 
     it("D1.5 — a RESOLVED case does not block a new one (the index is partial)", async () => {

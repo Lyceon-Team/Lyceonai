@@ -94,6 +94,7 @@ const mockSupabaseRpc = vi.fn((_fn: string, _args: Record<string, unknown>) =>
       case_id: "00000000-0000-4000-8000-000000000001",
       sla_deadline: "2026-09-20T12:00:00Z",
       already_existed: false,
+      case_status: "open",
       persisted_source: "signature",
     },
     error: null,
@@ -204,9 +205,12 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
     resetCallTracking();
   });
 
-  // §5 Test 4: Case creation invokes the crisis notification dispatcher
-  it("flagConversationForReview awaits notifyCrisisEvent", async () => {
-    await flagConversationForReview(
+  // §5 Test 4: Case creation returns FlagForReviewResult — notification
+  // dispatch moved to route handler per PagerDuty-style policy (§1). The two
+  // writes it reports on are one RPC now (owner ruling D1), so the result
+  // comes from the rpc mock rather than a `from()` chain per table.
+  it("flagConversationForReview returns FlagForReviewResult and does NOT call notifyCrisisEvent", async () => {
+    const result = await flagConversationForReview(
       "conv-789",
       "student-321",
       "signature",
@@ -215,16 +219,16 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
       "crisis",
     );
 
-    expect(mockNotifyCrisisEvent).toHaveBeenCalledTimes(1);
-    const payload = mockNotifyCrisisEvent.mock.calls[0]![0] as Record<
-      string,
-      unknown
-    >;
-    expect(payload.caseId).toBe("00000000-0000-4000-8000-000000000001");
-    expect(payload.conversationId).toBe("conv-789");
-    expect(payload.source).toBe("signature");
-    expect(typeof payload.slaDeadline).toBe("string");
-    expect(typeof payload.timestamp).toBe("string");
+    // Notification dispatch is now the route handler's responsibility,
+    // gated by evaluateNotificationPolicy(). flagConversationForReview
+    // must NOT call notifyCrisisEvent directly.
+    expect(mockNotifyCrisisEvent).not.toHaveBeenCalled();
+
+    // Instead it returns the data the route handler needs.
+    expect(result.caseId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(result.isNewCase).toBe(true);
+    expect(result.caseStatus).toBe("open");
+    expect(typeof result.slaDeadline).toBe("string");
   });
 
   it("flagConversationForReview does BOTH writes through one rpc, not two table calls", async () => {

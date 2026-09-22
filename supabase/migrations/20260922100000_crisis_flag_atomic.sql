@@ -136,6 +136,7 @@ DECLARE
   v_fallback  text;
   v_case_id   uuid;
   v_found_at  timestamptz;
+  v_status    text;
   v_rows      integer;
 BEGIN
   UPDATE public.tutor_conversations
@@ -156,20 +157,21 @@ BEGIN
     VALUES
       (p_conversation_id, p_student_id, v_source, p_category,
        p_signature_id, p_model_confidence, v_deadline)
-    RETURNING id INTO v_case_id;
+    RETURNING id, status INTO v_case_id, v_status;
 
     RETURN jsonb_build_object(
       'case_id',          v_case_id,
       'sla_deadline',     v_deadline,
       'already_existed',  false,
+      'case_status',      v_status,
       'persisted_source', v_source
     );
 
   EXCEPTION
     WHEN unique_violation THEN
       -- An active case already exists. Return it; the flag stands.
-      SELECT c.id, c.sla_deadline
-        INTO v_case_id, v_found_at
+      SELECT c.id, c.sla_deadline, c.status
+        INTO v_case_id, v_found_at, v_status
         FROM public.crisis_review_cases c
        WHERE c.conversation_id = p_conversation_id
          AND c.status IN ('open', 'in_review')
@@ -185,6 +187,7 @@ BEGIN
         'case_id',          v_case_id,
         'sla_deadline',     v_found_at,
         'already_existed',  true,
+        'case_status',      v_status,
         'persisted_source', NULL
       );
 
@@ -204,19 +207,20 @@ BEGIN
   VALUES
     (p_conversation_id, p_student_id, v_source, p_category,
      p_signature_id, p_model_confidence, v_deadline)
-  RETURNING id INTO v_case_id;
+  RETURNING id, status INTO v_case_id, v_status;
 
   RETURN jsonb_build_object(
     'case_id',          v_case_id,
     'sla_deadline',     v_deadline,
     'already_existed',  false,
+    'case_status',      v_status,
     'persisted_source', v_source
   );
 END;
 $$;
 
 COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text) IS
-  'Doc 03 §21.2/§21.3, owner ruling D1 2026-09-22: sets tutor_conversations.crisis_flagged AND creates the review case in ONE transaction, so a flagged conversation with no case in the queue is not a reachable state. Returns {case_id, sla_deadline, already_existed, persisted_source}. Does NOT notify — Cloud Tasks cannot join the transaction; the caller notifies after this returns.';
+  'Doc 03 §21.2/§21.3, owner ruling D1 2026-09-22: sets tutor_conversations.crisis_flagged AND creates the review case in ONE transaction, so a flagged conversation with no case in the queue is not a reachable state. Returns {case_id, sla_deadline, already_existed, case_status, persisted_source}. `case_status` is read back from the row rather than assumed, so the caller''s notification policy (Doc 03 §21.3 throttling) sees what the table actually holds. Does NOT notify — Cloud Tasks cannot join the transaction; the caller notifies after this returns.';
 
 -- ── 4. Grants — service_role only, like every other privileged function ────
 

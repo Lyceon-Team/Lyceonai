@@ -36,6 +36,15 @@ export const STUDENT_RESOURCE_PATHS = {
   kpiOverall: "/kpi/overall",
   projectionsSections: "/projections/sections",
   projectionsSnapshots: "/projections/snapshots",
+  /**
+   * Doc 05F §16 as amended by the formula sheet §8 item 14: the guardian calendar read is
+   * `/api/students/:studentId/calendar` through the existing subject resolver, NOT a
+   * `/api/guardian/…` path. The student's own rich surface is `GET /api/calendar`; this one
+   * serves the narrow `{ days, facts, streak }` projection to whoever the resolver admits,
+   * student and guardian alike, because a route that cannot tell them apart cannot give
+   * them different answers.
+   */
+  calendar: "/calendar",
 } as const;
 
 export type StudentResourceKey = keyof typeof STUDENT_RESOURCE_PATHS;

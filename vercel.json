@@ -27,6 +27,10 @@
     {
       "path": "/api/internal/notification-retention-sweep",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/internal/calendar-weekly-regen",
+      "schedule": "30 5 * * *"
     }
   ],
   "routes": [

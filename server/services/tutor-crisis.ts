@@ -74,9 +74,69 @@ type ClassifierResult = {
   confidence: number;
 };
 
+export type NotificationPolicyInput = {
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  currentCategory: CrisisCategory;
+  priorEvents: Array<{ category: string; created_at: string }>;
+  nowMs: number;
+  throttleWindowMs: number;
+};
+
+export type NotificationPolicyResult = {
+  shouldNotify: boolean;
+  suppressionReason: string | null;
+};
+
+const SEVERITY_RANK: Record<string, number> = {
+  safeguarding: 1,
+  crisis: 2,
+};
+
+export function evaluateNotificationPolicy(
+  input: NotificationPolicyInput,
+): NotificationPolicyResult {
+  const currentSeverity = SEVERITY_RANK[input.currentCategory] ?? 0;
+
+  if (input.isNewCase) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const maxPriorSeverity = input.priorEvents.reduce(
+    (max, e) => Math.max(max, SEVERITY_RANK[e.category] ?? 0),
+    0,
+  );
+
+  if (input.caseStatus === "in_review") {
+    if (currentSeverity > maxPriorSeverity) {
+      return { shouldNotify: true, suppressionReason: null };
+    }
+    return { shouldNotify: false, suppressionReason: "case_claimed" };
+  }
+
+  // Open (unclaimed) case
+  if (currentSeverity > maxPriorSeverity) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const mostRecentMs = input.priorEvents.reduce((latest, e) => {
+    const t = new Date(e.created_at).getTime();
+    return t > latest ? t : latest;
+  }, 0);
+
+  const msSinceLast = mostRecentMs > 0 ? input.nowMs - mostRecentMs : Infinity;
+
+  if (msSinceLast >= input.throttleWindowMs) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  return { shouldNotify: false, suppressionReason: "throttled_same_severity" };
+}
+
 // Re-exported so existing consumers keep their import site; the definition
 // lives in packages/shared.
 export type { CrisisResult, CrisisCategory };
+export { notifyCrisisEvent };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
 
@@ -163,6 +223,9 @@ export function normalizeCrisisText(raw: string): string {
 
   // §7.4 step 5: normalize self-harm variants to canonical "self harm"
   t = t.replace(/\bself[-\s]?harm/g, "self harm");
+
+  // §7.4 step 5b: normalize "my self" → "myself" (compound split variant)
+  t = t.replace(/\bmy\s+self\b/g, "myself");
 
   // §7.4 step 6: collapse whitespace + trim
   t = t.replace(/\s+/g, " ").trim();
@@ -572,7 +635,7 @@ export function getCrisisResponse(
 /**
  * Flags a conversation for crisis review: sets `crisis_flagged` on the
  * conversation AND creates the durable review case with its SLA deadline, in
- * ONE database transaction, then notifies ops.
+ * ONE database transaction.
  *
  * BLOCKING: throws on failure. A failed flag write means the crisis turn will
  * not be reviewed — that is worse than a failed turn. The caller MUST let the
@@ -592,17 +655,20 @@ export function getCrisisResponse(
  * `public.flag_conversation_for_crisis_review`, so either both land or
  * neither does.
  *
- * expected outcome: returns the review case id. Two outcomes are
- * success-equivalent and are resolved inside the function: an active case
- * already existing for this conversation (a second signal during one sustained
- * event), and a `source` value newer than production's CHECK constraint, which
- * retries once at coarser precision (WS-L8 Item 4b).
+ * expected outcome: returns the case id, whether it is new, its status and its
+ * SLA deadline — the four things `evaluateNotificationPolicy` needs from the
+ * write. Two outcomes are success-equivalent and are resolved inside the SQL
+ * function: an active case already existing for this conversation (a second
+ * signal during one sustained event), and a `source` value newer than
+ * production's CHECK constraint, which retries once at coarser precision
+ * (WS-L8 Item 4b).
  *
  * trade-offs:
- *  - The ops notification stays OUT of the transaction. Cloud Tasks cannot
- *    join it, and a notification sent for a case that then rolls back is worse
- *    than one sent a moment late. It is awaited, so the async continuation
- *    completes before Cloud Run reclaims CPU after the response is sent.
+ *  - This function does NOT notify. The ops notification is the caller's
+ *    (`tutor-runtime.ts`), which first runs `evaluateNotificationPolicy` over
+ *    the result below. That split predates D1 and is kept: Cloud Tasks cannot
+ *    join a database transaction anyway, and a notification sent for a case
+ *    that then rolls back is worse than one sent a moment late.
  *  - The RPC's payload is parsed with Zod rather than cast. It crosses a
  *    process boundary like any other external input.
  *
@@ -611,9 +677,15 @@ export function getCrisisResponse(
  *    error when a filtered UPDATE matches zero rows, so the old code reported
  *    success and then failed on the case INSERT's foreign key — a confusing FK
  *    error for what is really a bad conversation id.
- *  - Metadata only in the notification — no conversation content, no student
- *    name, per SCL-025(c).
  */
+
+export type FlagForReviewResult = {
+  caseId: string;
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  slaDeadline: string;
+};
+
 export async function flagConversationForReview(
   conversationId: string,
   studentId: string,
@@ -621,7 +693,7 @@ export async function flagConversationForReview(
   signatureId: string | null,
   modelConfidence: number | null,
   category: CrisisCategory = "crisis",
-): Promise<string> {
+): Promise<FlagForReviewResult> {
   const { data, error } = await supabaseServer.rpc(
     "flag_conversation_for_crisis_review",
     {
@@ -649,7 +721,8 @@ export async function flagConversationForReview(
   const parsed = crisisFlagResultSchema.safeParse(data);
   if (!parsed.success) {
     // The write succeeded, so the case exists — but we cannot say which one.
-    // Blocking is still right: an unreadable result is not a reviewed turn.
+    // Blocking is still right: an unreadable result is not a reviewed turn,
+    // and a cast would hand `undefined` to the notification policy.
     logger.error(
       "TUTOR_CRISIS",
       "crisis_flag_result_unparseable",
@@ -665,8 +738,10 @@ export async function flagConversationForReview(
     case_id: caseId,
     sla_deadline: slaDeadline,
     already_existed: alreadyExisted,
+    case_status: caseStatus,
     persisted_source: persistedSource,
   } = parsed.data;
+  const isNewCase = !alreadyExisted;
 
   if (alreadyExisted) {
     logger.warn(
@@ -674,7 +749,7 @@ export async function flagConversationForReview(
       "crisis_case_already_exists",
       "active crisis review case already exists for this conversation — " +
         "treating duplicate signal as success-equivalent per Doc 03 §21.3",
-      { conversationId, existingCaseId: caseId, source },
+      { conversationId, existingCaseId: caseId, source, caseStatus },
     );
   } else if (persistedSource !== source) {
     logger.warn(
@@ -691,20 +766,8 @@ export async function flagConversationForReview(
     "TUTOR_CRISIS",
     "conversation_crisis_flagged",
     "conversation flagged for safety review queue (48h SLA at launch)",
-    { conversationId, caseId, source, slaDeadline },
+    { conversationId, caseId, source, slaDeadline, isNewCase, caseStatus },
   );
 
-  // Doc 03 §21.2 step 5. Outside the transaction by necessity; awaited so the
-  // async continuation completes before Cloud Run reclaims CPU after the HTTP
-  // response is sent. Metadata only — no conversation content, no student name
-  // per SCL-025(c).
-  await notifyCrisisEvent({
-    caseId,
-    conversationId,
-    source,
-    slaDeadline,
-    timestamp: new Date().toISOString(),
-  });
-
-  return caseId;
+  return { caseId, isNewCase, caseStatus, slaDeadline };
 }

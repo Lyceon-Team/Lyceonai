@@ -65,7 +65,8 @@ Some features are available to free tier but with **usage limits**:
 | `/math-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:93` |
 | `/reading-writing-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:94` |
 | `/mastery` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:95`, `server/index.ts:326` |
-| `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:422` |
+| `/review` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx`, `server/index.ts` (`/api/review` mount) |
+| `/review/session/:sessionId` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx`, `server/index.ts` (`/api/review` mount) |
 | `/flow-cards` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:97` |
 | `/structured-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:98` |
 | **Profile Routes** | | | | | |
@@ -123,8 +124,16 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/questions/validate` | student, admin | free | UNMOUNTED in runtime (404 contract) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:237-246` |
 | `POST /api/questions/feedback` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:430` |
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
-| `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
-| `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection (owner: `submitReviewSessionAnswer`) | `server/index.ts:345` |
+| `GET /api/review/pool` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/sessions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `GET /api/review/sessions/open` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `GET /api/review/sessions/:sessionId/state` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `GET /api/review/sessions/:sessionId/next` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/sessions/:sessionId/resume` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/sessions/:sessionId/terminate` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/sessions/:sessionId/calculator-state` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/sessions/:sessionId/skip` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
+| `POST /api/review/answer` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection | `server/index.ts` (`/api/review` mount) |
 | `GET /api/students/{{studentId}}/mastery/domains` | student, admin | premium (`mastery_domains`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
 | `GET /api/students/:studentId/mastery/skills` | student, admin | premium (`mastery_skills`) | requireSupabaseAuth, requireStudentOrAdmin, `ensurePremiumMasteryAccess` | `server/index.ts:326` |
 | `GET /api/students/{{studentId}}/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |

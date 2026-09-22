@@ -126,6 +126,13 @@ echo "==> (M8) a TypeScript copy of the SLA constant comes back"
 plant M8 "$SVC" "s.replace('// ── Types ─────────────────────────────────────────────────────────────', 'const SLA_HOURS = 48;\n\n// ── Types ─────────────────────────────────────────────────────────────', 1)"
 expect_red M8 "D1.11 — no TypeScript copy of the SLA or the fallback map survives"
 
+echo "==> (M10) the duplicate branch hardcodes case_status instead of reading the row"
+# evaluateNotificationPolicy throttles on this value. A hardcoded 'open' would
+# re-page on every signal while a human is already working the case — exactly
+# the event the throttle exists for.
+plant M10 "$MIG" "s.replace(\"        'case_status',      v_status,\n        'persisted_source', NULL\", \"        'case_status',      'open',\n        'persisted_source', NULL\", 1)"
+expect_red M10 "D1.12 — case_status is read back from the row, not assumed"
+
 echo "==> (1) restored: the suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then

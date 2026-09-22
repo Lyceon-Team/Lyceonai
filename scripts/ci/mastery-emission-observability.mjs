@@ -31,10 +31,21 @@ const ROOT = path.resolve(
   "..",
 );
 
-/** Files that call applyMasteryEvent, i.e. every mastery emission call site. */
+/** Files that call applyMasteryEvent, i.e. every mastery emission call site.
+ *
+ * RESTORED 2026-09-21 (R3), in the same PR as the applyMasteryEvent call it covers,
+ * exactly as the R1 note required. The review entry was parked in R1 because
+ * server/routes/review-session-routes.ts was deleted with the old runtime — a file
+ * that wrote to a schema which does not exist and answered 503 in production, so it
+ * emitted no mastery at all. The seam is live again at
+ * server/routes/review-canonical.ts, which calls applyMasteryEvent with
+ * sourceFamily 'review' and the review item's id as the event id (ruled plan
+ * ruling 11). Review and practice are the two seams canonical_mastery_events reads;
+ * both are covered here again.
+ */
 const EMISSION_FILES = [
   "server/routes/practice-canonical.ts",
-  "server/routes/review-session-routes.ts",
+  "server/routes/review-canonical.ts",
   "apps/api/src/services/fullLengthExam.ts",
 ];
 

@@ -100,6 +100,13 @@ export default function Navigation() {
                     Practice
                   </Link>
                   <Link
+                    href="/review"
+                    className={`${isActive("/review") ? "text-foreground font-medium border-b-2 border-foreground" : "text-muted-foreground hover:text-foreground"} transition-colors pb-1`}
+                    data-testid="nav-review"
+                  >
+                    Review
+                  </Link>
+                  <Link
                     href="/chat"
                     className={`${isActive("/chat") ? "text-foreground font-medium border-b-2 border-foreground" : "text-muted-foreground hover:text-foreground"} transition-colors pb-1`}
                     data-testid="nav-resources"
@@ -111,7 +118,6 @@ export default function Navigation() {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-
             {isAuthenticated ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

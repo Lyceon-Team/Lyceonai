@@ -30,15 +30,8 @@ import {
   getQuestionsFeed,
   getRecentQuestions,
   getQuestionById,
-  getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import {
-  startReviewErrorSession,
-  getReviewErrorSessionState,
-  submitReviewSessionAnswer,
-  getRecentReviewSessions,
-} from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   enforceDeletionLock,
@@ -65,6 +58,7 @@ import {
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
+import { calendarRouter, streakRouter } from "./routes/calendar-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
@@ -73,6 +67,7 @@ import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import reviewCanonicalRouter from "./routes/review-canonical";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -441,6 +436,25 @@ app.use(
   doubleCsrfProtection,
   studentResourceRoutes,
 );
+
+// Doc 05F §15. The student's own calendar surface. `requireStudentOrAdmin` because every
+// route here is the student acting on their OWN plan — a guardian is view-only (§16) and
+// reads through /api/students/:studentId/calendar, which is role-blind by construction.
+// The calendar_access entitlement check is inside the handlers, applied to the subject, so
+// a 402 carries the shared CTA payload rather than a bare middleware denial.
+app.use(
+  "/api/calendar",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentOrAdmin,
+  calendarRouter,
+);
+
+// Doc 05F §15 / INV-08-20 and formula sheet §8 item 11: GET /api/me/streak is served to a
+// student of ANY tier and carries NO calendar_access check. It is mounted on its own path
+// with its own router so that gate is absent by construction and cannot be acquired by
+// someone adding middleware to the calendar mount above.
+app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
 // Score Projection endpoint (College Board weighted algorithm)
 app.get(
   "/api/progress/projection",
@@ -558,43 +572,6 @@ app.get(
   getQuestionById,
 );
 
-// Review errors endpoint - authenticated students can review their failed attempts
-app.get(
-  "/api/review-errors",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getReviewErrors,
-);
-
-app.get(
-  "/api/review-errors/recent-sessions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getRecentReviewSessions,
-);
-
-// Review errors attempt endpoint - records student attempts during error review
-app.post(
-  "/api/review-errors/sessions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  startReviewErrorSession,
-);
-app.get(
-  "/api/review-errors/sessions/:sessionId/state",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getReviewErrorSessionState,
-);
-app.post(
-  "/api/review-errors/attempt",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  submitReviewSessionAnswer,
-);
-
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
@@ -673,6 +650,21 @@ app.use(
   requireStudentOrAdmin,
   doubleCsrfProtection,
   practiceCanonicalRouter,
+);
+
+// Review Canonical Routes (the mistake queue — practice's loop, a different pool)
+// @spec [Doc-02B_V4 §16; ruled plan §2; brief R3 §2.2] | @implemented [2026-09-21]
+// The middleware stack is practice's, identically: auth, student-or-admin, then CSRF
+// (the middleware ignores GET/HEAD/OPTIONS, so it covers exactly the writes). There is
+// deliberately NO entitlement gate and NO usage-limit call — review is free and
+// unlimited (ruled plan ruling 10). The concurrent-session cap inside the router is a
+// resource guard, not a quota.
+app.use(
+  "/api/review",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  reviewCanonicalRouter,
 );
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)

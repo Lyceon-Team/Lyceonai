@@ -8,8 +8,10 @@
  * before it reaches business logic rather than cast.
  *
  * expected outcome: a parsed result carries the case id, the SLA deadline the
- * database computed, whether an active case already existed, and which source
- * value actually persisted.
+ * database computed, whether an active case already existed, the case's
+ * lifecycle status, and which source value actually persisted. The status is
+ * what `evaluateNotificationPolicy` throttles on, so it is read back from the
+ * row rather than assumed to be 'open'.
  *
  * trade-offs:
  *  - `persistedSource` is null exactly when `alreadyExisted` is true: the
@@ -33,6 +35,10 @@ export const crisisSourceSchema = z.enum([
 ]);
 export type CrisisSource = z.infer<typeof crisisSourceSchema>;
 
+/** Lifecycle states `crisis_review_cases.status` accepts. */
+export const crisisCaseStatusSchema = z.enum(["open", "in_review", "resolved"]);
+export type CrisisCaseStatus = z.infer<typeof crisisCaseStatusSchema>;
+
 /** Categories `crisis_review_cases.category` accepts. */
 export const crisisCategorySchema = z.enum(["crisis", "safeguarding"]);
 export type CrisisCategory = z.infer<typeof crisisCategorySchema>;
@@ -42,6 +48,7 @@ export const crisisFlagResultSchema = z
     case_id: z.string().uuid(),
     sla_deadline: z.string().min(1),
     already_existed: z.boolean(),
+    case_status: crisisCaseStatusSchema,
     persisted_source: crisisSourceSchema.nullable(),
   })
   .refine((r) => (r.already_existed ? r.persisted_source === null : true), {
