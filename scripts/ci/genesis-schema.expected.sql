@@ -6757,6 +6757,48 @@ COMMENT ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer)
 
 
 --
+-- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_tutor_conversations_on_entitlement_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_active boolean;
+BEGIN
+  -- The single evaluator. Not a re-listed status set.
+  v_active := public.entitlement_active(NEW.profile_id);
+
+  IF v_active THEN
+    -- Restored. Clear the stamp so the 7-day sweep stops seeing these rows.
+    -- Owner ruling 2026-09-22 C1: without this a returning student loses their
+    -- tutor history on day seven of a lapse they already ended.
+    UPDATE public.tutor_conversations
+       SET deleted_at = NULL
+     WHERE student_id = NEW.profile_id
+       AND deleted_at IS NOT NULL;
+  ELSE
+    -- Lapsed. Start the clock, but only on conversations not already stamped.
+    UPDATE public.tutor_conversations
+       SET deleted_at = now()
+     WHERE student_id = NEW.profile_id
+       AND deleted_at IS NULL;
+  END IF;
+
+  RETURN NULL;   -- AFTER trigger; return value is ignored.
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11318,6 +11360,13 @@ CREATE TRIGGER entitlement_runtime_config_notify AFTER INSERT OR UPDATE ON publi
 
 
 --
+-- Name: entitlements entitlements_sync_tutor_conversations; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF status ON public.entitlements FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
+
+
+--
 -- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -14874,6 +14923,13 @@ GRANT ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) 
 
 REVOKE ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) TO service_role;
+
+
+--
+-- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
 
 
 --

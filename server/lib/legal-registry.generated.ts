@@ -43,9 +43,9 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
   "privacy-policy": {
     slug: "privacy-policy",
     title: "LYCEON Privacy Policy",
-    version: "3.0",
-    effectiveDate: "2026-09-21",
-    contentHash: "sha256:6e91f0a9ce25cacbd12f26e560406e7977a9fdf33cf6e120b701872697d1431e",
+    version: "4.0",
+    effectiveDate: "2026-09-22",
+    contentHash: "sha256:be7fb69a7643ca39f622c637c619f3d56e5726da0e4117b3b18bf0301e1cada4",
   },
   "refund-policy": {
     slug: "refund-policy",

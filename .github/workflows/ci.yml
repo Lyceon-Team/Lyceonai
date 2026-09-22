@@ -907,6 +907,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-financial-retention.json \
             --file tests/ci/financial-record-retention.pg.ci.test.ts
 
+      # The writer that did not exist. retention-sweep.ts:113 documented
+      # tutor_conversations.deleted_at as "set when entitlement lapses" from
+      # 2026-08-20; nothing set it, so sweep7d's input was permanently empty and
+      # Privacy Policy v3 had to publish the narrower account-deletion wording.
+      # C1.6 closes the loop by showing the sweep's own predicate matching a row.
+      # C1.7 guards the coupling between the trigger's column list and the
+      # canonical predicate's body — the way this would rot silently.
+      - name: Tutor lapse severance (Doc 03 §14.2 / C1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-lapse-severance.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-lapse.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
+            --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost
