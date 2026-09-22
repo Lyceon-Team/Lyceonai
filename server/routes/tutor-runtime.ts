@@ -61,7 +61,10 @@ import {
   runCrisisClassifier,
   getCrisisResponse,
   flagConversationForReview,
+  notifyCrisisEvent,
+  evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
+import type { FlagForReviewResult } from "../services/tutor-crisis";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -1037,7 +1040,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Crisis path: bypass model generation entirely; respond with the
     // regional crisis resource and flag for the safety review queue.
     if (crisisResult.crisis) {
-      const caseId = await flagConversationForReview(
+      const flagResult: FlagForReviewResult = await flagConversationForReview(
         conversation.id,
         studentId,
         crisisResult.source,
@@ -1054,19 +1057,33 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .update({ crisis_paused_at: crisisPausedAt })
         .eq("id", conversation.id);
 
-      // Write crisis_review_event for this signal.
-      // Notification suppression: suppress if the case already has a prior
-      // signal_received event (PagerDuty-style: first signal alerts, subsequent
-      // signals are updates that don't re-alert).
-      const { count: priorSignalCount } = await supabaseServer
-        .from("crisis_review_events")
-        .select("id", { count: "exact", head: true })
-        .eq("case_id", caseId)
-        .eq("event_type", "signal_received");
-      const isFirstSignal = (priorSignalCount ?? 0) === 0;
+      // ── PagerDuty-style notification policy ──
+      // @spec [CC Brief "LISA Session Lifecycle" §1]
+      const THROTTLE_WINDOW_MS = 2 * 60 * 1000;
 
+      const { data: priorEvents } = flagResult.isNewCase
+        ? { data: [] as Array<{ category: string; created_at: string }> }
+        : await supabaseServer
+            .from("crisis_review_events")
+            .select("category, created_at")
+            .eq("case_id", flagResult.caseId)
+            .eq("event_type", "signal_received");
+
+      const { shouldNotify, suppressionReason } = evaluateNotificationPolicy({
+        isNewCase: flagResult.isNewCase,
+        caseStatus: flagResult.caseStatus,
+        currentCategory: crisisResult.category,
+        priorEvents: (priorEvents ?? []) as Array<{
+          category: string;
+          created_at: string;
+        }>,
+        nowMs: Date.now(),
+        throttleWindowMs: THROTTLE_WINDOW_MS,
+      });
+
+      // Insert crisis_review_event for this signal.
       await supabaseServer.from("crisis_review_events").insert({
-        case_id: caseId,
+        case_id: flagResult.caseId,
         conversation_id: conversation.id,
         student_id: studentId,
         event_type: "signal_received",
@@ -1075,9 +1092,20 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         signature_id: crisisResult.signatureId,
         model_confidence: crisisResult.modelConfidence,
         category: crisisResult.category,
-        notification_suppressed: !isFirstSignal,
-        suppression_reason: isFirstSignal ? null : "duplicate_signal_same_case",
+        notification_suppressed: !shouldNotify,
+        suppression_reason: suppressionReason,
       });
+
+      // Dispatch notification only when the policy says to.
+      if (shouldNotify) {
+        await notifyCrisisEvent({
+          caseId: flagResult.caseId,
+          conversationId: conversation.id,
+          source: crisisResult.source,
+          slaDeadline: flagResult.slaDeadline,
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       // Mark student message as completed — crisis detection is a valid response.
       await supabaseServer
@@ -1208,13 +1236,21 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
     // force-enqueued to the §21.3 review queue with classifier_degraded.
     if (!crisisResult.crisis && crisisResult.forceReview) {
-      await flagConversationForReview(
+      const degradedResult = await flagConversationForReview(
         conversation.id,
         studentId,
         "classifier_degraded",
         null,
         null,
       );
+      // Degraded path always notifies — it's a force-review enqueue.
+      await notifyCrisisEvent({
+        caseId: degradedResult.caseId,
+        conversationId: conversation.id,
+        source: "classifier_degraded",
+        slaDeadline: degradedResult.slaDeadline,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.

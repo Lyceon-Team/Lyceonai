@@ -109,9 +109,7 @@ describe("Session Lifecycle — Shared schemas", () => {
         entry_mode: "general",
         source_surface: "dashboard",
       };
-      expect(() =>
-        createConversationRequestSchema.parse(missing),
-      ).toThrow();
+      expect(() => createConversationRequestSchema.parse(missing)).toThrow();
     });
   });
 
@@ -155,6 +153,137 @@ describe("Session Lifecycle — Shared schemas", () => {
         listConversationsQuerySchema.parse({ status: "abandoned" }),
       ).toThrow();
     });
+  });
+});
+
+// ── Notification suppression policy tests (§5) ──────────────────────
+
+import {
+  evaluateNotificationPolicy,
+  type NotificationPolicyInput,
+} from "../../server/services/tutor-crisis";
+
+const THROTTLE_MS = 2 * 60 * 1000;
+const NOW = Date.now();
+
+function policyInput(
+  overrides: Partial<NotificationPolicyInput>,
+): NotificationPolicyInput {
+  return {
+    isNewCase: false,
+    caseStatus: "open",
+    currentCategory: "safeguarding",
+    priorEvents: [],
+    nowMs: NOW,
+    throttleWindowMs: THROTTLE_MS,
+    ...overrides,
+  };
+}
+
+describe("Session Lifecycle — Notification suppression policy (§5)", () => {
+  it("case created → notified", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({ isNewCase: true, currentCategory: "safeguarding" }),
+    );
+    expect(result.shouldNotify).toBe(true);
+    expect(result.suppressionReason).toBeNull();
+  });
+
+  it("second event, same severity, unclaimed, outside throttle → notified", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        currentCategory: "safeguarding",
+        priorEvents: [
+          {
+            category: "safeguarding",
+            created_at: new Date(NOW - THROTTLE_MS - 1000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(result.shouldNotify).toBe(true);
+    expect(result.suppressionReason).toBeNull();
+  });
+
+  it("second event, same severity, unclaimed, inside throttle → suppressed (throttled_same_severity)", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        currentCategory: "safeguarding",
+        priorEvents: [
+          {
+            category: "safeguarding",
+            created_at: new Date(NOW - 30_000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(result.shouldNotify).toBe(false);
+    expect(result.suppressionReason).toBe("throttled_same_severity");
+  });
+
+  it("second event, higher severity, inside throttle → notified (escalation)", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        currentCategory: "crisis",
+        priorEvents: [
+          {
+            category: "safeguarding",
+            created_at: new Date(NOW - 30_000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(result.shouldNotify).toBe(true);
+    expect(result.suppressionReason).toBeNull();
+  });
+
+  it("event on claimed case, same severity → suppressed (case_claimed)", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        caseStatus: "in_review",
+        currentCategory: "safeguarding",
+        priorEvents: [
+          {
+            category: "safeguarding",
+            created_at: new Date(NOW - 10_000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(result.shouldNotify).toBe(false);
+    expect(result.suppressionReason).toBe("case_claimed");
+  });
+
+  it("event on claimed case, higher severity → notified (escalation)", () => {
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        caseStatus: "in_review",
+        currentCategory: "crisis",
+        priorEvents: [
+          {
+            category: "safeguarding",
+            created_at: new Date(NOW - 10_000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(result.shouldNotify).toBe(true);
+    expect(result.suppressionReason).toBeNull();
+  });
+
+  it("new signal on resolved case → new case, notified", () => {
+    // A resolved case triggers flagConversationForReview which creates a new
+    // case (the partial unique index only covers open/in_review). The policy
+    // sees isNewCase = true regardless of the prior case being resolved.
+    const result = evaluateNotificationPolicy(
+      policyInput({
+        isNewCase: true,
+        caseStatus: "open",
+        currentCategory: "safeguarding",
+      }),
+    );
+    expect(result.shouldNotify).toBe(true);
+    expect(result.suppressionReason).toBeNull();
   });
 });
 
