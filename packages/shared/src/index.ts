@@ -17,3 +17,5 @@ export * from "./notifications-schema.js";
 export * from "./password-policy.js";
 export * from "./return-path.js";
 export * from "./support-contact.js";
+export * from "./practice-response-schema.js";
+export * from "./review-schema.js";

@@ -16,7 +16,7 @@ import {
 } from "../../apps/api/src/lib/rate-limit-ledger";
 import {
   hasCanonicalOptionSet,
-  buildStudentSafeOptionTokens,
+  buildServedOptions,
   buildStudentSafeOptionsFromStoredMap,
   type CanonicalMcOption,
   type CanonicalItemType,
@@ -57,7 +57,11 @@ import {
  * Storage differs (idempotency keys vs uniqueness checks), but behavior is consistent.
  */
 
-type PracticeLifecycleState = "created" | "active" | "completed" | "abandoned";
+export type PracticeLifecycleState =
+  | "created"
+  | "active"
+  | "completed"
+  | "abandoned";
 
 type McOption = CanonicalMcOption;
 
@@ -122,7 +126,12 @@ type SessionRow = {
   actor_id: string;
 };
 
-type SessionItemRow = Omit<PracticeSessionItemRow, "question_difficulty"> & {
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export type SessionItemRow = Omit<
+  PracticeSessionItemRow,
+  "question_difficulty"
+> & {
   question_difficulty: string | number | null;
 };
 
@@ -286,7 +295,9 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
 // No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
 // If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
 
-async function practiceAnswerRateLimiter(
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export async function practiceAnswerRateLimiter(
   req: Request,
   res: Response,
   next: () => void,
@@ -449,7 +460,9 @@ function asSessionMetadata(metadata: unknown): SessionMetadata {
 
 // @spec [Doc-02B_V4 §14] | @implemented [2026-06-27]
 // Single lifecycle source: practice_sessions.status column. metadata.lifecycle_state retired.
-function normalizeSessionState(status: string): PracticeLifecycleState {
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export function normalizeSessionState(status: string): PracticeLifecycleState {
   if (status === "completed") return "completed";
   if (status === "abandoned") return "abandoned";
   if (status === "created") return "created";
@@ -558,29 +571,11 @@ function safeParseOptions(raw: unknown): McOption[] {
   return options;
 }
 
-function fisherYates<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = crypto.randomInt(0, i + 1);
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-function buildServedOptions(options: McOption[]): {
-  optionOrder: string[];
-  optionTokenMap: Record<string, string>;
-  safeOptions: StudentSafeOption[];
-} {
-  const shuffled = fisherYates(options);
-  const optionOrder = shuffled.map((o) => o.key);
-  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
-    shuffled,
-    optionOrder,
-  );
-
-  return { optionOrder, optionTokenMap, safeOptions };
-}
+// The option shuffle moved to shared/question-bank-contract.ts on 2026-09-21
+// (brief R3 §2.1) so review runs the SAME code, not a second copy. The private
+// `fisherYates`/`buildServedOptions` that lived here are gone; `buildServedOptions`
+// is now imported at the top of this file. Behaviour is unchanged — the move was
+// verbatim, `crypto.randomInt` included.
 
 // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
 // Builds the server-side serving record from a genesis-reconciled `questions` row.
@@ -642,8 +637,37 @@ export function toCanonicalQuestionForServing(
 // Reconstructs the server-side serving record from a persisted practice_session_items
 // snapshot. Branches on question_item_type: MCQ requires 4-option canonical set + A–D key;
 // grid-in requires empty options + raw correct_answer + correct_variants array.
-function toCanonicalQuestionFromSessionItem(
-  item: SessionItemRow,
+/**
+ * The snapshot columns a persisted session item carries, and the ONLY columns
+ * `toCanonicalQuestionFromSessionItem` reads. Named separately from `SessionItemRow`
+ * (2026-09-21, brief R3) because review's items live in a different table with a
+ * different owner column: both `practice_session_items` and `review_session_items`
+ * satisfy this shape structurally, so one reconstitution function serves both without
+ * a cast and without a second copy.
+ */
+export type QuestionSnapshotRow = Pick<
+  SessionItemRow,
+  | "question_id"
+  | "question_stem"
+  | "question_passage"
+  | "question_options"
+  | "question_correct_answer"
+  | "question_explanation"
+  | "question_option_metadata"
+  | "question_domain"
+  | "question_skill"
+  | "question_difficulty"
+  | "question_section"
+  | "question_item_type"
+  | "question_correct_variants"
+  | "question_assets"
+  | "question_estimated_time_seconds"
+>;
+
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export function toCanonicalQuestionFromSessionItem(
+  item: QuestionSnapshotRow,
 ): CanonicalQuestionForServing | null {
   const canonicalId = String(item.question_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
@@ -711,7 +735,9 @@ function toCanonicalQuestionFromSessionItem(
 }
 
 // Grid-in has no options to tokenize — short-circuit to [].
-function buildSafeOptionsForItem(
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export function buildSafeOptionsForItem(
   q: CanonicalQuestionForServing,
   optionOrder: string[] | null,
   optionTokenMap: Record<string, string> | null,
@@ -811,15 +837,24 @@ export type SessionItemInsertContext = {
   actorId: string;
   clientInstanceId: string;
   now: string;
+  /**
+   * Which column owns the row. Practice's items are keyed by `user_id`; review's by
+   * `student_id`, and renaming review's would break the deletion and anonymization
+   * functions (ruled plan §2 row 8). Added 2026-09-21 so both engines share ONE
+   * definition of the 30-column snapshot shape instead of two that drift. Omitted
+   * means `user_id`, so every practice call site is unchanged.
+   */
+  ownerColumn?: "user_id" | "student_id";
 };
 
 export function buildSessionItemInsertRows(
   selected: CanonicalQuestionForServing[],
   ctx: SessionItemInsertContext,
 ): Record<string, unknown>[] {
+  const ownerColumn = ctx.ownerColumn ?? "user_id";
   return selected.map((question, index) => ({
     session_id: ctx.sessionId,
-    user_id: ctx.userId,
+    [ownerColumn]: ctx.userId,
     actor_id: ctx.actorId,
     question_id: question.id,
     question_section: question.section_code,
@@ -998,19 +1033,31 @@ async function countSessionItems(sessionId: string): Promise<number> {
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
+/**
+ * @spec [Doc-02B_V4 §16; brief R3 §2.1] | @implemented [2026-06-27] | @rescoped [2026-09-21]
+ * plain English: fill option_order/option_token_map on every freshly inserted item of a
+ * session. `table` was added for review, whose items live in review_session_items but
+ * need the identical treatment. expected outcome: practice's call sites are unchanged
+ * and so is their behaviour — the default is practice's table and the thrown message
+ * strings are derived from it, so they read exactly as before. trade-offs: a table name
+ * as a string parameter is looser than two functions, but two functions is the fork this
+ * repo forbids. edge cases: already-hydrated rows are skipped, so it is idempotent; a
+ * grid-in falls out on the hasCanonicalOptionSet guard.
+ */
 export async function hydrateSessionItemOptionTokens(
   sessionId: string,
+  table:
+    | "practice_session_items"
+    | "review_session_items" = "practice_session_items",
 ): Promise<void> {
   const { data, error } = await supabaseServer
-    .from("practice_session_items")
+    .from(table)
     .select("id, question_options, option_order, option_token_map")
     .eq("session_id", sessionId)
     .order("ordinal", { ascending: true });
 
   if (error) {
-    throw new Error(
-      `practice_session_items_option_fetch_failed: ${error.message}`,
-    );
+    throw new Error(`${table}_option_fetch_failed: ${error.message}`);
   }
 
   for (const row of (data ?? []) as any[]) {
@@ -1019,7 +1066,7 @@ export async function hydrateSessionItemOptionTokens(
     if (!hasCanonicalOptionSet(options)) continue;
     const served = buildServedOptions(options);
     const { error: updateError } = await supabaseServer
-      .from("practice_session_items")
+      .from(table)
       .update({
         option_order: served.optionOrder,
         option_token_map: served.optionTokenMap,
@@ -1027,9 +1074,7 @@ export async function hydrateSessionItemOptionTokens(
       .eq("id", row.id);
 
     if (updateError) {
-      throw new Error(
-        `practice_session_items_option_update_failed: ${updateError.message}`,
-      );
+      throw new Error(`${table}_option_update_failed: ${updateError.message}`);
     }
   }
 }
@@ -2696,7 +2741,9 @@ async function findSessionItemForSubmission(
 // Unified grader — MCQ key-match vs grid-in correct_variants array membership.
 // Grid-in grades against the snapshot correct_variants, NOT parseGridInValue.
 // Fail closed on malformed data — no fallback grading path.
-type GradeResult =
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export type GradeResult =
   | {
       ok: true;
       isCorrect: boolean;
@@ -2706,7 +2753,9 @@ type GradeResult =
     }
   | { ok: false; status: number; error: string; message: string };
 
-function gradeAnswer(
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export function gradeAnswer(
   canonicalQuestion: CanonicalQuestionForServing,
   selectedAnswer: string,
   optionTokenMap: Record<string, string> | null,

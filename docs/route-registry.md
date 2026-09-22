@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-09-16 (Legacy study calendar deleted — `/calendar` RETIRED, `/api/calendar/*` removed)
+**Last Updated:** 2026-09-21 (R3 — review API rebuilt at `/api/review/*`; review is free, ruling 10. The `/review` CLIENT route is R4's and is deliberately not listed yet: this file's validator compares ACTIVE client rows against `client/src/App.tsx`, and a row with no component would fail it.)
 
 ---
 
@@ -135,6 +135,16 @@ Removed auth endpoints (must return 404):
 | `/api/practice/sessions/:sessionId/next` | GET | Yes | student/admin | entitled† | Resume practice session next |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
+| `/api/review/pool` | GET | Yes | student/admin | free | Review pool summary — counts and past sessions for the pickers |
+| `/api/review/sessions` | POST | Yes | student/admin | free | Start a review session (mode: queue / session / filter) |
+| `/api/review/sessions/open` | GET | Yes | student/admin | free | Open review sessions (created + active only) |
+| `/api/review/sessions/:sessionId/state` | GET | Yes | student/admin | free | Resume review session state |
+| `/api/review/sessions/:sessionId/next` | GET | Yes | student/admin | free | Serve the next review item |
+| `/api/review/sessions/:sessionId/resume` | POST | Yes | student/admin | free | Resume / take over a review session |
+| `/api/review/sessions/:sessionId/terminate` | POST | Yes | student/admin | free | Abandon a review session |
+| `/api/review/sessions/:sessionId/calculator-state` | POST | Yes | student/admin | free | Persist Desmos state for a review session |
+| `/api/review/sessions/:sessionId/skip` | POST | Yes | student/admin | free | Skip the served review item (requeues, no mastery) |
+| `/api/review/answer` | POST | Yes | student/admin | free | Submit a review answer (mastery source `review`) |
 | `/api/tutor/conversations` | POST | Yes | student/admin | entitled† | start/reuse tutor conversation |
 | `/api/tutor/messages` | POST | Yes | student/admin | entitled† | append tutor turn + response |
 | `/api/tutor/conversations/:conversationId` | GET | Yes | student/admin | entitled† | fetch tutor conversation + messages |
