@@ -138,6 +138,58 @@ if [ "$distinct_responses" != "1" ]; then
 fi
 echo "    OK C-2 $N concurrent calls on one key produced 1 version, 1 ledger row, and 1 identical response"
 
+# ---------------------------------------------------------------------------
+# C-3 — N concurrent launches of ONE block, N distinct engine_session_ids.
+#
+# This is the case the (engine, engine_session_id) replay does NOT cover, so
+# sequence allocation is the only thing keeping the callers apart.
+# launch_sequence is COALESCE(max, 0) + 1 over calendar_block_launches, and the
+# applied 20260917130000 body held nothing while computing it: every caller read
+# the same max and the losers died on calendar_block_launches_pkey with a raw
+# 23505 -- a 500 on a student pressing Start twice. 20260917140000 replaces the
+# function with FOR UPDATE on the block row.
+#
+# Measured on the unlocked body, three runs of N=8: 1, 3 and 2 collisions. A race
+# does not lose every time, which is exactly why this is a gate and not a comment.
+# ---------------------------------------------------------------------------
+echo "==> C-3: $N concurrent launches of one block, distinct engine sessions"
+q -c "SELECT public.calendar_persist_version('$S','setup','student','v1');" >/tmp/_cal_c3_seed.out 2>&1 || { echo "  C-3 seed failed:"; cat /tmp/_cal_c3_seed.out; exit 1; }
+BLOCK="$(q -c "SELECT block_id FROM public.calendar_blocks
+               WHERE student_id = '$S' AND block_type = 'practice'
+               ORDER BY scheduled_date, block_id LIMIT 1;")"
+if [ -z "$BLOCK" ]; then
+  echo "FAIL C-3: the fixture produced no practice block to launch"
+  exit 1
+fi
+
+pids=()
+for i in $(seq 1 "$N"); do
+  sid="$(printf 'dddddddd-0000-4000-8000-%012d' "$i")"
+  q -c "SELECT public.calendar_link_launch('$S','$BLOCK','practice','$sid');" \
+    >"/tmp/_cal_c3_$i.out" 2>&1 &
+  pids+=($!)
+done
+for p in "${pids[@]}"; do wait "$p" || true; done
+
+# Count errors, not successes: the 23505 DETAIL line contains the words
+# launch_sequence, so grepping for success matches the failure too.
+# `grep -l` exits 1 when it matches nothing, and under `set -e` with pipefail
+# that kills the gate on the PASSING case. `|| true` keeps zero errors meaning
+# zero errors rather than a silent exit.
+errs="$({ grep -lE '^ERROR:' /tmp/_cal_c3_*.out 2>/dev/null || true; } | wc -l | tr -d ' ')"
+read -r rows distinct <<<"$(q -c "
+  SELECT count(*), count(DISTINCT launch_sequence)
+  FROM public.calendar_block_launches WHERE block_id = '$BLOCK';" | tr '|' ' ')"
+
+if [ "$errs" != "0" ] || [ "$rows" != "$N" ] || [ "$distinct" != "$N" ]; then
+  echo "FAIL C-3: $errs errored, $rows row(s), $distinct distinct sequence(s) — expected 0/$N/$N"
+  grep -hoE 'ERROR:.*' /tmp/_cal_c3_*.out 2>/dev/null | sort -u | head -3
+  rm -f /tmp/_cal_c3_*.out
+  exit 1
+fi
+echo "    OK C-3 $N concurrent launches produced $N rows with $N distinct sequences — no collision"
+
+rm -f /tmp/_cal_c3_*.out
 rm -f /tmp/_cal_c1_*.out /tmp/_cal_c2_*.out
 # Prove the cleanup worked rather than trusting it: a leftover row here is a
 # booby trap for the next gate.

@@ -1,0 +1,186 @@
+/**
+ * The practice engine adapter — Doc 05F §9.2.
+ *
+ * @spec [Doc-05F_V1.0 §9.1 contract, §9.2 practice adapter, §13 allocator,
+ *        §15.1 launch (INV-08-18); Doc-02B_V4 §14 session create]
+ * | @implemented [2026-09-18]
+ *
+ * plain English: turns a calendar practice block into a real practice session, and
+ * reads back the answered items that block can count. It creates through the SAME
+ * function the practice page uses, so the session limit, the client-instance binding
+ * and the idempotency replay all behave identically — a second create path would be
+ * a second contract, and only one of them would get fixed.
+ *
+ * expected outcome: pressing Start on an Algebra 20 block opens a structured
+ * practice session filtered to Math/Algebra with 20 questions, and a retry of the
+ * same launch returns that same session rather than a second one.
+ *
+ * trade-offs: `mode` is `structured` (§9.2). It is a client-requestable mode, so the
+ * calendar is not claiming a privilege the practice page lacks — and it is NOT
+ * `diagnostic`, which decides how answers land in mastery and is server-assigned by
+ * one route only.
+ *
+ * edge cases: a section-level block (cold start, every fallback plan) carries no
+ * domains, so it filters on section alone and the whole section is in scope. That is
+ * the shape the generator emits before any mastery exists, not a degenerate case.
+ */
+import { supabaseServer } from "../../../../apps/api/src/lib/supabase-server";
+import { startOrReplaySession, loadPracticeConfig } from "../../../routes/practice-canonical";
+import { logger } from "../../../logger";
+import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
+import { localDayWindowUtc } from "./local-day";
+import type {
+  CalendarEngineAdapter,
+  EngineCreateContext,
+  EngineCreateResult,
+  EngineLifecycle,
+} from "./types";
+
+/** The domains a practice block's scope names, or none for a section-level block. */
+function domainsOf(block: PlanBlock): string[] {
+  if (block.block_type !== "practice") return [];
+  if (block.scope.level === "section") return [];
+  return block.scope.mix.map((entry) => entry.domain);
+}
+
+async function create(
+  block: PlanBlock,
+  size: number,
+  ctx: EngineCreateContext,
+): Promise<EngineCreateResult> {
+  if (block.block_type !== "practice" || block.section === null) {
+    return err({
+      reason: "engine_error",
+      detail: `practice adapter was handed a ${block.block_type} block`,
+    });
+  }
+
+  const result = await startOrReplaySession({
+    userId: ctx.student_id,
+    actorId: ctx.actor_id,
+    role: ctx.role,
+    section: block.section,
+    mode: "structured",
+    clientInstanceId: ctx.client_instance_id,
+    // §9.2: forwarded UNCHANGED. The calendar owns the key format, the engine
+    // owns what a repeated key means, and neither rewrites the other's half.
+    idempotencyKey: ctx.idempotency_key,
+    targetQuestionCount: size,
+    sessionSpec: {
+      sections: [block.section],
+      domains: domainsOf(block),
+      skills: [],
+      difficulties: [],
+      target_minutes: null,
+      target_question_count: size,
+      mode: "structured",
+    },
+  });
+
+  if (!result.ok) {
+    logger.error(
+      "CALENDAR_ADAPTER",
+      "practice_create_failed",
+      "practice session create refused a calendar launch",
+      {
+        status: result.status,
+        // The engine's own error CODE, never its prose and never the block scope.
+        code: typeof result.body.error === "string" ? result.body.error : "unknown",
+      },
+    );
+    return err({
+      reason: "engine_error",
+      status: result.status,
+      detail: typeof result.body.error === "string" ? result.body.error : undefined,
+    });
+  }
+
+  return ok({
+    session_id: result.session.id,
+    next: `/practice/session/${result.session.id}`,
+    resumed: result.replayed,
+  });
+}
+
+/**
+ * §9.2: one unit per answered item on the local date, carrying its section and
+ * domain. `answered_at` is the timestamp — the moment of retrieval — and the local
+ * date is resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ */
+async function activityUnits(
+  studentId: string,
+  localDate: string,
+  timeZone: string,
+): Promise<ActivityUnit[]> {
+  const window = localDayWindowUtc(localDate, timeZone);
+
+  const { data, error } = await supabaseServer
+    .from("practice_session_items")
+    .select("id, question_section, question_domain, answered_at")
+    .eq("user_id", studentId)
+    .not("answered_at", "is", null)
+    .gte("answered_at", window.startUtc)
+    .lt("answered_at", window.endUtc);
+
+  if (error) {
+    // Fail OPEN. A read that cannot see today's activity must show a plan with no
+    // progress, never a 500 — Doc 05F §5A, and the same posture as the stubs.
+    logger.error(
+      "CALENDAR_ADAPTER",
+      "practice_activity_read_failed",
+      "practice activity units could not be read",
+      { code: error.code, localDate },
+    );
+    return [];
+  }
+
+  const rows = data ?? [];
+  const units: ActivityUnit[] = [];
+  for (const row of rows) {
+    if (typeof row.id !== "string" || typeof row.answered_at !== "string") continue;
+    const section = row.question_section;
+    units.push({
+      engine: "practice",
+      unit_id: row.id,
+      occurred_at: row.answered_at,
+      local_date: localDate,
+      section: section === "M" || section === "RW" ? section : null,
+      domain: typeof row.question_domain === "string" ? row.question_domain : null,
+      form_id: null,
+    });
+  }
+  return units;
+}
+
+/** §13 `in_progress` needs a live session. `created` and `active` are both live. */
+async function progress(sessionId: string): Promise<EngineLifecycle | null> {
+  const { data, error } = await supabaseServer
+    .from("practice_sessions")
+    .select("status")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (error || data === null) return null;
+  if (data.status === "completed") return "completed";
+  if (data.status === "abandoned") return "abandoned";
+  if (data.status === "created" || data.status === "active") return "active";
+  return null;
+}
+
+/**
+ * §9.2: the practice create contract decides valid sizes, not the calendar. The
+ * ceiling is `max_session_count_premium` from practice's own config, read at call
+ * time rather than cached here — one owner, one value.
+ */
+async function nextLaunchSize(_block: PlanBlock, remaining: number): Promise<number> {
+  const config = await loadPracticeConfig();
+  return Math.max(1, Math.min(remaining, config.maxSessionCountPremium));
+}
+
+export const practiceAdapter: CalendarEngineAdapter = {
+  engine: "practice",
+  create,
+  activityUnits,
+  progress,
+  nextLaunchSize,
+};

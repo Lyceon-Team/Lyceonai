@@ -71,6 +71,8 @@ import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
+import { readGuardianCalendar } from "../services/calendar/read-service";
+import { sendPaymentRequired } from "../lib/http-errors";
 
 const router = Router({ mergeParams: true });
 
@@ -124,6 +126,10 @@ export const requiresEntitlement: Record<string, string | null> = {
   [STUDENT_RESOURCE_PATHS.kpiOverall]: null,
   [STUDENT_RESOURCE_PATHS.projectionsSections]: null,
   [STUDENT_RESOURCE_PATHS.projectionsSnapshots]: null,
+  // Doc 05F §16: the calendar is premium for the SUBJECT. A guardian reading it is gated on
+  // that student's entitlement, which is the same term `guardian_view_decision` uses — so a
+  // lapsed student and their guardian lose the view together, and nothing is deleted.
+  [STUDENT_RESOURCE_PATHS.calendar]: "calendar_access",
 };
 /** `req.subject` is set by the resolver; reaching a handler without it is a wiring bug. */
 function requireSubject(
@@ -145,14 +151,7 @@ function requireSubject(
   return req.subject;
 }
 
-function sendPaymentRequired(res: Response, requestId?: string) {
-  return res.status(402).json({
-    error: "Subscription required",
-    code: "PAYMENT_REQUIRED",
-    message: "An active subscription is required to see this.",
-    requestId,
-  });
-}
+
 
 /**
  * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
@@ -397,6 +396,84 @@ resource(STUDENT_RESOURCE_PATHS.projectionsSections, async (subject) => ({
 resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
   snapshots: await readProjectionSnapshots({ studentId: subject.studentId }),
 }));
+
+// --- calendar (Doc 05F §16, formula sheet §8 item 14) ----------------------
+
+/**
+ * The guardian calendar read, and the student's own narrow view of the same rows.
+ *
+ * WHY IT IS DECLARED HERE AND NOT THROUGH `resource()`. It takes `?from&to`, which
+ * `resource()` does not pass through — the same reason `/mastery/domains` has its own
+ * registration. The order is still the file's fixed one: subject → entitlement → read →
+ * serialize.
+ *
+ * WHAT MAKES IT SAFE TO SERVE THIS ONE PAYLOAD TO BOTH CALLERS. `readGuardianCalendar`
+ * parses its result through `guardianCalendarResponseSchema`, which is `.strict()` and was
+ * built as its own union rather than by sanitising the student shape — so `explanation_key`,
+ * `version_no`, `is_user_override` and the profile are absent by construction at BOTH levels
+ * (the block and the per-domain entries inside a practice mix), not stripped on the way out.
+ * The spread below therefore carries exactly `days`, `facts` and `streak`.
+ *
+ * Nothing here reads `subject.via`. §16 gives a guardian no controls and this payload has
+ * none to withhold, so there is no branch to make — which is the chokepoint gate's point.
+ */
+router.get(
+  `/:studentId${STUDENT_RESOURCE_PATHS.calendar}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    try {
+      if (
+        !(await entitlementGate(
+          STUDENT_RESOURCE_PATHS.calendar,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
+      }
+      const result = await readGuardianCalendar({
+        student_id: subject.studentId,
+        query: req.query,
+        ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
+      });
+      if (!result.ok) {
+        // `setup_required` is a 404 with the same code the student surface uses: the
+        // subject has not finished setup, and there is no plan for anyone to read.
+        if (result.error.kind === "setup_required") {
+          return sendNotFound(res, req.requestId);
+        }
+        if (result.error.kind === "invalid_query") {
+          return res.status(400).json({
+            error: {
+              message: "Invalid request",
+              code: "INVALID_QUERY",
+              details: result.error.details,
+            },
+            requestId: req.requestId,
+          });
+        }
+        return res
+          .status(500)
+          .json({ error: "Internal server error", requestId: req.requestId });
+      }
+      return res.json({ ok: true, ...result.value, requestId: req.requestId });
+    } catch (err) {
+      logger.error(
+        "STUDENT_RESOURCES",
+        "calendar_read_failed",
+        "Subject-scoped calendar read failed",
+        { err, requestId: req.requestId },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId: req.requestId });
+    }
+  },
+);
 
 // --- link lifecycle --------------------------------------------------------
 
