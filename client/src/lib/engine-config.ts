@@ -173,8 +173,20 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
   labels: {
     startFailure: "Failed to start practice session",
     shellEyebrow: "Academic Practice Runner",
+    /**
+     * OWNER COPY, R4.2 — do not paraphrase. The previous wording ("Responses
+     * submit directly to canonical practice endpoints. If you leave and return,
+     * Lyceon restores your unresolved state from runtime session truth.") named
+     * our internals at a 13-to-18-year-old: "canonical practice endpoints",
+     * "unresolved state" and "runtime session truth" are all engineering
+     * language, and the same "runtime session truth" phrase R4.1 removed from
+     * review. It said two true things, and both survive here in plain words:
+     * answers go to the server as you give them, and leaving does not lose your
+     * place. Voice matches review's guidance above. Pinned by a test
+     * (CanonicalPracticePage.guidance.test.tsx) so the jargon cannot come back.
+     */
     sessionGuidance:
-      "Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.",
+      "Your answers are submitted as you go. You can leave anytime; your place is saved.",
   },
   completionHref: "/practice",
   backHref: "/practice",

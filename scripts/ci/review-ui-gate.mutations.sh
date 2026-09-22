@@ -133,6 +133,14 @@ plant "R4.1a" "restore the wrong 'twice' rule in the guidance copy" \
 assert s.count(a) == 1
 s = s.replace(a, "These are questions you missed or skipped. Answer one correctly twice and it leaves your queue.", 1)'
 
+# ── R4.2 — practice's guidance card speaks to a student, not to us ───────────────────
+plant "R4.2" "restore the 'runtime session truth' jargon in practice's guidance copy" \
+  "client/src/components/practice/CanonicalPracticePage.guidance.test.tsx" \
+  "client/src/lib/engine-config.ts" \
+  'a = "      \"Your answers are submitted as you go. You can leave anytime; your place is saved.\","
+assert s.count(a) == 1
+s = s.replace(a, "      \"Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.\",", 1)'
+
 # ── R4.1b — Review by topic sits above the past-sessions picker ──────────────────────
 plant "R4.1b" "swap the topic picker back below the past-sessions picker" \
   "client/src/pages/review.test.tsx" \
