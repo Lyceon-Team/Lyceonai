@@ -6,7 +6,7 @@
  * | @implemented [2026-09-18]
  *
  * plain English: the adapters ask "what did this student answer on 2026-09-13, in
- * the timezone that date was planned in". Postgres stores `answered_at` as an
+ * the timezone that date was planned in". Postgres stores `occurred_at` as an
  * instant, so that question is a half-open instant range, and this computes it.
  *
  * WHY HERE AND NOT IN `@lyceon/shared`. The shared calendar layer is deliberately
@@ -77,7 +77,9 @@ function startOfLocalDay(localDate: string, timeZone: string): Date {
 
   // Pass one: offset at the naive instant. Pass two: re-measure after applying it,
   // which is what makes a DST boundary land on the right side.
-  const firstGuess = new Date(naiveUtc - offsetMinutesAt(new Date(naiveUtc), timeZone) * 60_000);
+  const firstGuess = new Date(
+    naiveUtc - offsetMinutesAt(new Date(naiveUtc), timeZone) * 60_000,
+  );
   const secondOffset = offsetMinutesAt(firstGuess, timeZone);
   return new Date(naiveUtc - secondOffset * 60_000);
 }
@@ -95,7 +97,10 @@ export type LocalDayWindow = {
  * Computed from the day's own start and the NEXT day's start rather than
  * start + 24h, so a 23-hour or 25-hour DST day is the length it actually is.
  */
-export function localDayWindowUtc(localDate: string, timeZone: string): LocalDayWindow {
+export function localDayWindowUtc(
+  localDate: string,
+  timeZone: string,
+): LocalDayWindow {
   const match = ISO_DATE.exec(localDate);
   if (match === null) {
     throw new Error(`localDayWindowUtc: ${localDate} is not a YYYY-MM-DD date`);
@@ -153,7 +158,40 @@ export function localTodayIn(timeZone: string, now: Date = new Date()): string {
   const day = field("day").padStart(2, "0");
   const localDate = `${year}-${month}-${day}`;
   if (!ISO_DATE.test(localDate)) {
-    throw new Error(`localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`);
+    throw new Error(
+      `localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`,
+    );
   }
   return localDate;
+}
+
+/**
+ * A timestamp column, as an ISO-8601 string, whatever the transport handed back.
+ *
+ * @spec [Doc-05F_V1.0 §9.1 adapter contract (`occurred_at`), §22.4 midnight split]
+ * | @implemented [2026-09-22]
+ *
+ * WHY THIS EXISTS. supabase-js speaks PostgREST over JSON, so a `timestamptz` arrives as a
+ * STRING. `node-postgres` parses the same column into a `Date`. An adapter that guards with
+ * `typeof row.occurred_at !== "string"` is therefore correct in production and silently
+ * wrong against a pg-backed harness — it drops every row, returns no activity units, and
+ * reports it as "the student did nothing today" rather than as an error.
+ *
+ * That is not only a test problem. Dropping a resolved row because its timestamp arrived in
+ * an unexpected shape under-reports a student's progress with nothing anywhere to notice,
+ * which is the same failure mode as the skip predicate. Narrowing `unknown` at the boundary
+ * is what the standards ask for (§3.2), and this is that boundary.
+ *
+ * Returns null for anything that is not a usable instant, so the caller still skips a row it
+ * cannot date rather than inventing one.
+ */
+export function toIsoTimestamp(value: unknown): string | null {
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return null;
 }

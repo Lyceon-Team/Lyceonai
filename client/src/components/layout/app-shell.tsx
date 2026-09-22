@@ -12,6 +12,7 @@ import {
   RotateCcw,
   MessageSquare,
   CreditCard,
+  CalendarDays,
   Settings,
   LogOut,
   type LucideIcon,
@@ -41,6 +42,7 @@ export const navItems: readonly {
   icon: LucideIcon;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/practice", label: "Practice", icon: BookOpen },
   { href: "/review", label: "Review", icon: RotateCcw },
   { href: "/full-test", label: "Full Tests", icon: CreditCard },
@@ -84,6 +86,18 @@ function AppHeader() {
   // guardian shell through ./HeaderUserMenu so the two headers cannot drift.
   const { signOut: handleSignOut, isSigningOut } = useHeaderSignOut();
 
+  // @spec [Doc_05F_Study_Calendar, §17.1 (the student's own calendar)]
+  // | @implemented [2026-09-22]
+  //
+  // plain English: Calendar sits beside Practice and Review because it is the page
+  // that sends a student to either of them. It is shown to EVERY student, entitled
+  // or not: §16 makes the calendar premium, but hiding the tab is how the page
+  // became unreachable in the first place. A free student who taps it gets the
+  // page's own 402 branch and the upgrade prompt, which is the upsell path -- a
+  // missing tab is not a paywall, it is a dead end.
+  //
+  // Nothing here grants anything. The server decides entitlement on every request
+  // (§7.12); this array only decides what is on screen.
   const NavLink = ({
     href,
     label,

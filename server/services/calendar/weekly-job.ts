@@ -83,7 +83,10 @@ type Candidate = {
  * Deterministic per student-week, which is what makes a rerun a replay rather than a second
  * version. Exported for the test, and for nobody else.
  */
-export function weeklyIdempotencyKey(studentId: string, periodKey: string): string {
+export function weeklyIdempotencyKey(
+  studentId: string,
+  periodKey: string,
+): string {
   const digest = createHash("sha256")
     .update(`calendar:weekly:${studentId}:${periodKey}`, "utf8")
     .digest("hex");
@@ -146,9 +149,12 @@ export async function runWeeklyRegeneration(options?: {
   };
 
   const config = await loadCalendarConfig();
-  const { data, error } = await supabaseServer.rpc("calendar_weekly_candidates", {
-    p_limit: options?.limit ?? 500,
-  });
+  const { data, error } = await supabaseServer.rpc(
+    "calendar_weekly_candidates",
+    {
+      p_limit: options?.limit ?? 500,
+    },
+  );
 
   if (error) {
     logger.error(
@@ -163,7 +169,10 @@ export async function runWeeklyRegeneration(options?: {
   const candidates = Array.isArray(data) ? (data as Candidate[]) : [];
 
   for (const candidate of candidates) {
-    if (typeof candidate.student_id !== "string" || typeof candidate.period_key !== "string") {
+    if (
+      typeof candidate.student_id !== "string" ||
+      typeof candidate.period_key !== "string"
+    ) {
       continue;
     }
     summary.considered += 1;
@@ -174,8 +183,15 @@ export async function runWeeklyRegeneration(options?: {
       const outcome = candidate.outcome as JobOutcome;
       if (outcome === "skipped_fresh") summary.skipped_fresh += 1;
       else if (outcome === "skipped_custom") summary.skipped_custom += 1;
-      else if (outcome === "skipped_no_entitlement") summary.skipped_no_entitlement += 1;
-      await recordRun(candidate.student_id, candidate.period_key, outcome, null, requestId);
+      else if (outcome === "skipped_no_entitlement")
+        summary.skipped_no_entitlement += 1;
+      await recordRun(
+        candidate.student_id,
+        candidate.period_key,
+        outcome,
+        null,
+        requestId,
+      );
       continue;
     }
 
@@ -189,7 +205,10 @@ export async function runWeeklyRegeneration(options?: {
           trigger: "weekly",
           initiated_by: "system",
           generator_version: config.generatorVersion,
-          idempotency_key: weeklyIdempotencyKey(candidate.student_id, candidate.period_key),
+          idempotency_key: weeklyIdempotencyKey(
+            candidate.student_id,
+            candidate.period_key,
+          ),
         },
         requestId,
       );
@@ -236,16 +255,24 @@ export async function runWeeklyRegeneration(options?: {
         "CALENDAR_JOB",
         "weekly_regenerate_threw",
         "the weekly regeneration threw for one student; the loop continued",
-        { requestId, reason: thrown instanceof Error ? thrown.message : "unknown" },
+        {
+          requestId,
+          reason: thrown instanceof Error ? thrown.message : "unknown",
+        },
       );
     }
   }
 
   // §18 `calendar.job_run {job, outcome}`. One line per pass, counts only — no student ids.
-  logger.info("CALENDAR_JOB", "job_run", "the weekly calendar regeneration finished a pass", {
-    job: WEEKLY_JOB,
-    ...summary,
-    requestId,
-  });
+  logger.info(
+    "CALENDAR_JOB",
+    "job_run",
+    "the weekly calendar regeneration finished a pass",
+    {
+      job: WEEKLY_JOB,
+      ...summary,
+      requestId,
+    },
+  );
   return summary;
 }

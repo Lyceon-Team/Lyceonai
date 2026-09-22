@@ -87,6 +87,12 @@ const FACTS = {
 
 const STREAK = { current: 4, longest: null, history_complete: false };
 
+/** §17.1's "~N min" constants. On BOTH payloads by the owner ruling of 2026-09-22. */
+const ESTIMATES = {
+  practice_seconds_per_unit: 90,
+  review_seconds_per_unit: 120,
+};
+
 /** A body exactly as the §15 route serves it — minus the `requestId` the routes spread in. */
 const READY_BODY = {
   status: "ready",
@@ -100,6 +106,12 @@ const READY_BODY = {
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   },
+  bounds: {
+    daily_minutes_min: 15,
+    daily_minutes_max: 180,
+    daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+    target_exam_date_max_days: 540,
+  },
   estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 120 },
   days: [DAY],
   facts: FACTS,
@@ -110,6 +122,8 @@ const READY_BODY = {
 
 const GUARDIAN_BODY = {
   status: "ready",
+  // Owner ruling 2026-09-22: the guardian payload carries the same estimates.
+  estimates: ESTIMATES,
   days: [],
   facts: FACTS,
   streak: STREAK,
@@ -273,7 +287,7 @@ describe("transport correlation is stripped, not tolerated", () => {
 describe("a malformed 200 is REFUSED, never defaulted", () => {
   it("rejects with a message naming the mismatch, rather than returning an empty calendar", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", days: [] }),
+      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -283,7 +297,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("names the failing resource in the thrown message, so the error state is traceable to one route", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", days: [] }),
+      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -293,7 +307,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("reports through console.error with the issue PATHS only — never the body, which holds the plan", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", days: [] }),
+      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow();

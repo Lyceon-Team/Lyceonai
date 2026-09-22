@@ -124,7 +124,10 @@ export async function readStudyProfile(
  * be spread into a response by a later edit, and a column added to the table cannot break
  * the read.
  */
-function parseProfileRow(row: unknown, requestId: string | undefined): StudyProfile {
+function parseProfileRow(
+  row: unknown,
+  requestId: string | undefined,
+): StudyProfile {
   const source = (row ?? {}) as Record<string, unknown>;
   const data = {
     timezone: source.timezone,
@@ -145,7 +148,10 @@ function parseProfileRow(row: unknown, requestId: string | undefined): StudyProf
       "CALENDAR_PROFILE",
       "row_shape_unexpected",
       "student_study_profile row does not match the shape this build expects",
-      { requestId, issues: parsed.error.issues.map((issue) => issue.path.join(".")) },
+      {
+        requestId,
+        issues: parsed.error.issues.map((issue) => issue.path.join(".")),
+      },
     );
     throw new Error("study_profile_row_shape_unexpected");
   }
@@ -156,7 +162,10 @@ function parseProfileRow(row: unknown, requestId: string | undefined): StudyProf
  * The student's local today (§8.2), falling open to Chicago for a student with no
  * profile. Sheet item 19 names that fallback for exactly this case.
  */
-export function localTodayForProfile(profile: StudyProfile | null, now?: Date): string {
+export function localTodayForProfile(
+  profile: StudyProfile | null,
+  now?: Date,
+): string {
   return localTodayIn(profile?.timezone ?? FALLBACK_TIMEZONE, now);
 }
 
@@ -181,9 +190,12 @@ export async function resolveStoredTimezone(
   candidate: string,
   requestId?: string,
 ): Promise<{ timezone: string; fellBack: boolean }> {
-  const { data, error } = await supabaseServer.rpc("calendar_is_known_timezone", {
-    p_timezone: candidate,
-  });
+  const { data, error } = await supabaseServer.rpc(
+    "calendar_is_known_timezone",
+    {
+      p_timezone: candidate,
+    },
+  );
 
   if (error) {
     logger.warn(
@@ -239,7 +251,9 @@ export async function upsertStudyProfile(
   const update: StudyProfileUpsert = parsed.data;
 
   if (existing === null) {
-    const missing = REQUIRED_ON_CREATE.filter((field) => update[field] === undefined);
+    const missing = REQUIRED_ON_CREATE.filter(
+      (field) => update[field] === undefined,
+    );
     if (missing.length > 0) return err({ kind: "incomplete", missing });
   }
 
@@ -248,10 +262,13 @@ export async function upsertStudyProfile(
   // rather than truthiness — `target_score: null` and `full_length_weekday: 0` both
   // have to survive.
   const row: UpsertRow = { student_id: studentId };
-  if (update.target_exam_date !== undefined) row.target_exam_date = update.target_exam_date;
+  if (update.target_exam_date !== undefined)
+    row.target_exam_date = update.target_exam_date;
   if (update.target_score !== undefined) row.target_score = update.target_score;
-  if (update.study_days_mask !== undefined) row.study_days_mask = update.study_days_mask;
-  if (update.daily_minutes !== undefined) row.daily_minutes = update.daily_minutes;
+  if (update.study_days_mask !== undefined)
+    row.study_days_mask = update.study_days_mask;
+  if (update.daily_minutes !== undefined)
+    row.daily_minutes = update.daily_minutes;
   if (update.full_length_weekday !== undefined) {
     row.full_length_weekday = update.full_length_weekday;
   }
@@ -272,8 +289,11 @@ export async function upsertStudyProfile(
   // `setup_requires_target_score` CHECK encodes, so the derivation and the constraint
   // cannot disagree.
   const targetScoreAfter =
-    update.target_score !== undefined ? update.target_score : (existing?.target_score ?? null);
-  const completesSetup = existing?.setup_completed_at == null && targetScoreAfter !== null;
+    update.target_score !== undefined
+      ? update.target_score
+      : (existing?.target_score ?? null);
+  const completesSetup =
+    existing?.setup_completed_at == null && targetScoreAfter !== null;
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
   const { data, error } = await supabaseServer
@@ -321,7 +341,11 @@ export async function upsertStudyProfile(
     requestId,
   });
 
-  return ok(versionNo === null ? { profile: after } : { profile: after, version_no: versionNo });
+  return ok(
+    versionNo === null
+      ? { profile: after }
+      : { profile: after, version_no: versionNo },
+  );
 }
 
 /**

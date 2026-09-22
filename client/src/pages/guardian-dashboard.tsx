@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Redirect } from "wouter";
+import { Link, Redirect } from "wouter";
 import { linkCodeFromSearch } from "@/lib/link-code-prefill";
 import {
   Card,
@@ -42,6 +42,7 @@ import {
   AlertCircle,
   CheckCircle,
   UserMinus,
+  CalendarDays,
   RefreshCw,
   AlertTriangle,
   CreditCard,
@@ -750,6 +751,38 @@ export default function GuardianDashboard() {
                               </div>
                             )}
                           </button>
+                          {/*
+                            @spec [Doc_05F_Study_Calendar, §16 guardian view,
+                                   formula sheet item 14 — the guardian read]
+                            | @implemented [2026-09-22]
+
+                            The guardian's way in to THIS student's calendar.
+                            Per student, not one global link, because the route
+                            is scoped to a student id and a guardian may have
+                            several.
+
+                            Always rendered, never gated on
+                            `has_active_entitlement`. The route derives
+                            visibility server-side from link AND the STUDENT's
+                            entitlement (§16), and answers 402 itself when that
+                            fails. Hiding the link on a hunch about entitlement
+                            would be the client deciding access, which §7.12
+                            forbids — and it would leave a guardian whose
+                            student just paid with no way to reach the page
+                            until this component happened to refetch.
+                          */}
+                          <Link href={`/students/${student.id}/calendar`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
+                              title={`View ${student.display_name || student.email.split("@")[0]}'s calendar`}
+                              data-testid={`guardian-calendar-link-${student.id}`}
+                            >
+                              <CalendarDays className="h-4 w-4" />
+                            </Button>
+                          </Link>
                           <Button
                             variant="ghost"
                             size="sm"

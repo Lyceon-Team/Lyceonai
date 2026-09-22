@@ -38,8 +38,12 @@ import {
 } from "@dnd-kit/core";
 import type {
   CalendarSetupDefaults,
+  PlanBlock,
   PlanTrigger,
+  PlanningEstimates,
   StreakSummary,
+  StudyProfile,
+  StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import {
   monthGridDates,
@@ -76,7 +80,13 @@ import {
 import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import type { DayActions } from "./components/DayMenu";
 import { SetupSheet } from "./components/SetupSheet";
+import {
+  SettingsSheet,
+  scheduleSummary,
+  type SettingsDraft,
+} from "./components/SettingsSheet";
 
 /**
  * Everything this screen can do to the server. A guardian caller passes `undefined`, which
@@ -92,8 +102,11 @@ export type CalendarMutations = {
   regeneratePlan: () => void;
   regenerateDay: (date: string) => void;
   resetDay: (date: string) => void;
+  /** §12.4. A block-out is an edit to an EMPTY member list, not a status of its own. */
+  blockOutDay: (date: string) => void;
   doItNow: (blockId: string) => void;
-  launch: (blockId: string) => void;
+  /** The block type travels with it: the prefetch key differs per engine (§15.1). */
+  launch: (blockId: string, blockType: PlanBlock["block_type"]) => void;
   acknowledge: (versionNo: number) => void;
   refreshPending: boolean;
   launchPending: boolean;
@@ -122,6 +135,23 @@ export type CalendarViewProps = {
   /** Called when the visible range changes, so the page can re-query. */
   onRangeChange: (view: "week" | "month", cursor: string) => void;
   /**
+   * §17.3's settings sheet. Present only for a student, which is what keeps the schedule
+   * card and the Edit schedule button off the guardian surface — §16 gives a guardian no
+   * write path, and this is a write.
+   */
+  schedule?: {
+    profile: StudyProfile;
+    bounds: StudyProfileBounds;
+    estimates: PlanningEstimates;
+    onSave: (draft: SettingsDraft) => void;
+    pending: boolean;
+    error: string | null;
+    /** True once a save in `custom` mode has landed and planned nothing. */
+    offerReplan: boolean;
+    onConfirmReplan: () => void;
+    onDismissReplan: () => void;
+  };
+  /**
    * Where the back control goes: `/dashboard` for a student, `/guardian` for a guardian.
    *
    * A PROP, NOT A BRANCH ON `readOnly`. This file's own rule — "the guardian difference is
@@ -143,6 +173,7 @@ export function CalendarView({
   streak,
   planUpdate,
   onRangeChange,
+  schedule,
   backHref,
   mutations,
 }: CalendarViewProps): JSX.Element {
@@ -151,6 +182,7 @@ export function CalendarView({
   const [miniMonth, setMiniMonth] = useState(() => startOfMonth(today));
   const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
   const [openBlockId, setOpenBlockId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const readOnly = mutations === undefined;
 
@@ -201,6 +233,23 @@ export function CalendarView({
       }),
     [readOnly, today],
   );
+
+  /**
+   * §17.2's four day controls, built ONCE and handed to both grids. Two copies would be
+   * two chances for Week and Month to offer different things on the same date.
+   *
+   * Undo is `resetDay`, not a second route: §12.1's day_reset is exactly "this date is the
+   * generator's again", which is what undoing a day off means.
+   */
+  const dayActions: DayActions | undefined =
+    mutations === undefined
+      ? undefined
+      : {
+          onBlockOut: mutations.blockOutDay,
+          onUndoBlockOut: mutations.resetDay,
+          onRegenerateDay: mutations.regenerateDay,
+          onResetDay: mutations.resetDay,
+        };
 
   const sensors = useSensors(
     // A small activation distance so a tap that opens the sheet is not read as a drag.
@@ -294,7 +343,11 @@ export function CalendarView({
         });
         setOpenBlockId(null);
       },
-      onLaunch: () => mutations.launch(block.blockId),
+      onLaunch: () => {
+        // `plan` is null only on the guardian surface, which has no onLaunch at all.
+        if (block.plan === null) return;
+        mutations.launch(block.blockId, block.plan.block_type);
+      },
       onDoItNow: () => {
         mutations.doItNow(block.blockId);
         setOpenBlockId(null);
@@ -341,6 +394,20 @@ export function CalendarView({
           footer={
             readOnly ? "Read-only view" : "Your plan updates itself each week"
           }
+          {...(schedule === undefined
+            ? {}
+            : {
+                schedule: {
+                  // Derived from the profile and the served estimates, never stored —
+                  // the same function the sheet's live readout uses, so the card and the
+                  // sheet cannot describe the same schedule differently.
+                  summary: scheduleSummary(
+                    schedule.profile,
+                    schedule.estimates,
+                  ),
+                  onEdit: () => setSettingsOpen(true),
+                },
+              })}
         />
 
         <div className="main">
@@ -365,6 +432,9 @@ export function CalendarView({
                   onRefresh: mutations.regeneratePlan,
                   refreshPending: mutations.refreshPending,
                 })}
+            {...(schedule === undefined
+              ? {}
+              : { onEditSchedule: () => setSettingsOpen(true) })}
           />
 
           {planUpdate !== null && mutations !== undefined ? (
@@ -384,11 +454,10 @@ export function CalendarView({
                   visible={visible}
                   canDrag={canDrag}
                   onOpen={setOpenBlockId}
+                  {...(dayActions === undefined ? {} : { dayActions })}
                   {...(mutations === undefined
                     ? {}
                     : {
-                        onRegenerateDay: mutations.regenerateDay,
-                        onResetDay: mutations.resetDay,
                         onAddBlock: (date: string) => {
                           const day = dayFor(date);
                           if (day === null) return;
@@ -422,6 +491,7 @@ export function CalendarView({
                   visible={visible}
                   canDrag={canDrag}
                   onOpen={setOpenBlockId}
+                  {...(dayActions === undefined ? {} : { dayActions })}
                 />
               )}
             </div>
@@ -439,6 +509,27 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+        />
+      )}
+
+      {schedule === undefined || !settingsOpen ? null : (
+        <SettingsSheet
+          profile={schedule.profile}
+          bounds={schedule.bounds}
+          estimates={schedule.estimates}
+          today={today}
+          onSave={schedule.onSave}
+          onClose={() => setSettingsOpen(false)}
+          pending={schedule.pending}
+          error={schedule.error}
+          replanOffer={
+            schedule.offerReplan
+              ? {
+                  onConfirm: schedule.onConfirmReplan,
+                  onDismiss: schedule.onDismissReplan,
+                }
+              : null
+          }
         />
       )}
 
