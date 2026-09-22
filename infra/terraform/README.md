@@ -22,17 +22,14 @@ Terraform state.
 | 8 | `google_cloud_run_v2_service.tutor_orchestrator` | **import** | `lyceon-tutor-orchestrator` — CI-deployed service (Terraform manages IAM only) |
 | 9 | `google_project_service.cloudscheduler` | **create** | Enables the Cloud Scheduler API |
 | 10 | `google_cloud_scheduler_job.retention_sweep_7d` | **create** | Daily signed POST to `/api/internal/retention/sweep` (7d tier) |
-| 11–14 | `google_bigquery_table.retention_archive["retention__*"]` | **create** | The four retention archive tables — DAY-partitioned on `event_date`, 730-day partition expiration |
 
-**Not in Phase 1:** RAG corpus, Phase 2 Cloud Tasks queues, floor settings.
+**Not in Phase 1:** BigQuery tables, RAG corpus, Phase 2 Cloud Tasks
+queues, floor settings.
 
 Rows 9 and 10 were added after Phase 1 (2026-09-21, retention policy
 publication). Cloud Scheduler was on the Phase 1 exclusion list; the
-retention sweep route had no caller, so it came off. Rows 11–14 were added
-2026-09-22 — "BigQuery tables" was also on the exclusion list, and came off
-because the published policy's 24-month analytics period (v4 §6.6) has no
-mechanism without partition expiration, and partition expiration is a
-property of a table. The counts below include all six.
+retention sweep route had no caller, so it came off. The counts below
+include them.
 
 ---
 
@@ -141,11 +138,11 @@ any cloud resource.
 #### What a CORRECT plan looks like
 
 ```
-Plan: 11 to add, 0 to change, 0 to destroy.
+Plan: 7 to add, 0 to change, 0 to destroy.
       3 to import.
 ```
 
-The 11 "add" resources:
+The 7 "add" resources:
 - `google_project_service.modelarmor`
 - `google_model_armor_template.input`
 - `google_model_armor_template.output`
@@ -153,25 +150,6 @@ The 11 "add" resources:
 - `google_cloud_run_v2_service_iam_member.cloud_tasks_invoker`
 - `google_project_service.cloudscheduler`
 - `google_cloud_scheduler_job.retention_sweep_7d`
-- `google_bigquery_table.retention_archive["retention__tutor_instruction_assignments"]`
-- `google_bigquery_table.retention_archive["retention__tutor_instruction_exposures"]`
-- `google_bigquery_table.retention_archive["retention__crisis_review_cases"]`
-- `google_bigquery_table.retention_archive["retention__tutor_injection_log"]`
-
-If a `retention__*` table already exists in BigQuery, the plan fails with
-"Error: resource already exists". **Do not import it.** Every such table is
-empty — the 90d/180d tiers have never had a working archive client, so
-nothing has ever been archived — and it is unpartitioned, and BigQuery cannot
-add partitioning to an existing table. Importing it would put an
-unpartitioned table under a config that claims a 730-day expiration, and
-Terraform would report success. Drop it instead:
-
-```bash
-bq rm -f -t "replit-cop:lyceon_analytics_archive_prod.retention__crisis_review_cases"
-```
-
-then re-plan. Confirm it was empty first with
-`bq query --nouse_legacy_sql 'SELECT COUNT(*) FROM ...'`.
 
 The 3 "import" resources:
 - `google_bigquery_dataset.archive`
@@ -194,8 +172,7 @@ Each resource in the plan is prefixed with a symbol:
 | Changes on `google_cloud_tasks_queue` | Rate limits or retry config don't match reality | Run the `gcloud tasks queues describe` command from Step 0 and copy the values |
 | Changes on `google_bigquery_dataset` | Location mismatch | Run the `bq show` command from Step 0 |
 | "Error: resource already exists" | A resource Terraform is trying to create already exists in GCP | Add an `import` block for it (e.g. if the SA already exists) |
-| Changes on `google_bigquery_table.retention_archive` | The checked-in schema JSON drifted from the live table | Run `node scripts/ci/retention-archive-drift-check.mjs`, then `bq update --table ... schemas/TABLE.json` |
-| More than 11 creates or 3 imports | Unexpected — re-read the plan carefully |
+| More than 7 creates or 3 imports | Unexpected — re-read the plan carefully |
 
 ### Step 5: Apply (PROVISIONS RESOURCES)
 
@@ -205,7 +182,7 @@ Only after the plan from Step 4 is correct:
 terraform apply phase1.tfplan
 ```
 
-This creates the 11 new resources and writes the 3 imported resources
+This creates the 7 new resources and writes the 3 imported resources
 into Terraform state. After apply, Terraform prints the outputs.
 
 ### Step 6: Get the output values
@@ -224,7 +201,6 @@ After apply, set these env vars on the Cloud Run service and/or Vercel:
 | `MODEL_ARMOR_OUTPUT_TEMPLATE_ID` | `model_armor_output_template_id` = `lyceon-lisa-output-v1` | Cloud Run + Vercel |
 | `CLOUD_TASKS_SERVICE_ACCOUNT` | `cloud_tasks_sa_email` = `lisa-cloud-tasks@replit-cop.iam.gserviceaccount.com` | Cloud Run + Vercel |
 | `RETENTION_SWEEP_OIDC_AUDIENCE` | `retention_sweep_oidc_audience` = `https://lyceon.ai/api/internal/retention/sweep` | Vercel |
-| `BIGQUERY_ARCHIVE_DATASET` | `bigquery_archive_dataset` = `lyceon_analytics_archive_prod` | Vercel |
 
 `RETENTION_SWEEP_OIDC_AUDIENCE` is not optional decoration. The Cloud
 Scheduler job in `cloud-scheduler.tf` signs its OIDC token with exactly
@@ -232,20 +208,6 @@ that audience, and `server/routes/internal-retention-routes.ts` compares
 the token's `aud` claim to the env var. Unset, the route refuses every
 delivery with 500 (`internal_auth_not_configured`); set to anything else,
 401. Copy it from the Terraform output rather than retyping it.
-
-`BIGQUERY_ARCHIVE_DATASET` is what `getArchiveClient()` in
-`server/routes/internal-retention-routes.ts` checks before it will build a
-BigQuery client at all. Unset, the 90d and 180d retention tiers return
-`{ok: false, reason: "archive_client_not_configured"}` and delete nothing.
-
-Setting it is necessary and **not** sufficient. The same function then calls
-`createBigQueryArchiveClient()`, which `require`s `@google-cloud/bigquery` —
-a package that is in no `package.json` and absent from `pnpm-lock.yaml`
-(it appears only as `--external` in the `build:vercel` esbuild line). The
-require throws, the error is caught and logged, and the two tiers decline
-with the same reason. So neither tier is scheduled in `cloud-scheduler.tf`
-yet: a nightly job that cannot do its work is worse than no job. Adding the
-dependency needs owner approval.
 
 Also set in `tutor_context_runtime_config` (Supabase):
 
