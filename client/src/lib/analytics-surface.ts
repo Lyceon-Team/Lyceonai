@@ -28,7 +28,7 @@
  *
  * expected outcome: `/`, the marketing pages, the blog, the trust pages, the
  * legal documents and the pre-auth sign-in page report page views. `/chat`,
- * `/practice/*`, `/full-test`, `/mastery`, `/review-errors`, `/dashboard`,
+ * `/practice/*`, `/full-test`, `/mastery`, `/review/*`, `/dashboard`,
  * `/profile/*`, `/notifications`, `/guardian`, `/admin/*`, `/upgrade`,
  * `/account/recover`, `/update-password` and anything not listed do not.
  *
