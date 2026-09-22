@@ -26,6 +26,7 @@
  * control.
  */
 import { useState } from "react";
+import { prefetchEngineChunk } from "../api/launch";
 import type { CanonicalDomain, PlanBlock } from "@lyceon/shared/calendar";
 import { domainsForSection } from "../lib/blocks";
 import { longDate } from "../lib/dates";
@@ -283,13 +284,27 @@ export function BlockSheet({
                   type="button"
                   className="btn primary"
                   disabled={complete || actions.launchPending || isPast}
+                  // §17.7: warm the resume chunk on reach, not on mount — prefetching
+                  // every Start on a 14-day grid would download both engines' bundles
+                  // for a student who is only looking at their week.
+                  onMouseEnter={() =>
+                    block.plan === null
+                      ? undefined
+                      : prefetchEngineChunk(block.plan.block_type)
+                  }
+                  onFocus={() =>
+                    block.plan === null
+                      ? undefined
+                      : prefetchEngineChunk(block.plan.block_type)
+                  }
                   onClick={actions.onLaunch}
                 >
                   {complete ? "Done" : block.started ? "Resume" : "Start"}
                 </button>
               ) : (
-                // Formula sheet item 12: review and full-length adapters answer
+                // Formula sheet item 12: the full-length adapter still answers
                 // `engine_unavailable`, so the control says so and never calls launch.
+                // Review left this branch on 2026-09-22 when its engine shipped.
                 <button
                   type="button"
                   className="btn"

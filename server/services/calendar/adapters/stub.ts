@@ -80,5 +80,10 @@ export function makeUnavailableAdapter(
   };
 }
 
-export const reviewAdapter = makeUnavailableAdapter("review");
+/**
+ * FULL-LENGTH ONLY, since 2026-09-22. `reviewAdapter` used to be made here too; review
+ * shipped, so its adapter is real and lives in ./review. The factory stays because the
+ * exam vertical still needs it, and because the two engines differ in what they will DO
+ * rather than in how they decline.
+ */
 export const fullLengthAdapter = makeUnavailableAdapter("full_length");

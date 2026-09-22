@@ -36,6 +36,7 @@ import type {
 } from "@lyceon/shared/calendar";
 import { explanationLines } from "../copy/explanations";
 import {
+  isLaunchableBlockType,
   isStarted,
   minutesLabel,
   titleOf,
@@ -63,7 +64,7 @@ export type ViewBlock = {
   started: boolean;
   /** §17.6 "why this block". ALWAYS empty on the guardian surface — see the module note. */
   explanations: readonly string[];
-  /** Only a practice block can be launched today (formula sheet item 12). */
+  /** Which engines are real enough to Start — see `isLaunchableBlockType`. */
   launchable: boolean;
   /**
    * The block exactly as the plan holds it — needed to build a §12.4 member list, because
@@ -127,7 +128,7 @@ function toViewBlock(
       blockKey: block.explanation_key,
       domainKeys,
     }),
-    launchable: block.block_type === "practice",
+    launchable: isLaunchableBlockType(block.block_type),
     plan: block,
   };
 }

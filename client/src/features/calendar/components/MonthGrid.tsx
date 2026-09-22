@@ -14,6 +14,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
 import { dayOfMonth, isSameMonth, WEEKDAY_HEADERS } from "../lib/dates";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
+import { DayMenu, type DayActions } from "./DayMenu";
+import { canControlDay, isBlockedOut } from "../lib/day-state";
 
 const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
   math: "math",
@@ -72,6 +74,7 @@ function MonthCell({
   visible,
   canDrag,
   onOpen,
+  dayActions,
 }: {
   date: string;
   day: ViewDay | null;
@@ -80,6 +83,7 @@ function MonthCell({
   visible: (block: ViewBlock) => boolean;
   canDrag: (day: ViewDay, block: ViewBlock) => boolean;
   onOpen: (blockId: string) => void;
+  dayActions?: DayActions;
 }): JSX.Element {
   const { setNodeRef, isOver } = useDroppable({
     id: `day:${date}`,
@@ -87,12 +91,16 @@ function MonthCell({
   });
   const blocks = day?.blocks ?? [];
   const shown = blocks.filter(visible);
-  const isRest = day !== null && blocks.length === 0;
+  // Same distinction the week view draws, from the same helper: a day the STUDENT
+  // cleared is not a rest day the mask produced.
+  const blockedOut = isBlockedOut(day);
+  const isRest = day !== null && blocks.length === 0 && !blockedOut;
 
   const className = [
     "mcell",
     isSameMonth(date, cursor) ? "" : "out",
     isRest ? "rest" : "",
+    blockedOut ? "off" : "",
     date === today ? "today" : "",
     isOver ? "drop" : "",
   ]
@@ -107,6 +115,15 @@ function MonthCell({
       data-testid={`calendar-month-cell-${date}`}
     >
       <span className="mnum">{dayOfMonth(date)}</span>
+      {canControlDay(date, today) ? (
+        <DayMenu
+          date={date}
+          blockedOut={blockedOut}
+          isOverride={day?.isOverride === true}
+          {...(dayActions === undefined ? {} : { actions: dayActions })}
+        />
+      ) : null}
+      {blockedOut ? <span className="moff">Day off</span> : null}
       {shown.map((block) => (
         <MonthChip
           key={block.blockId}
@@ -128,6 +145,8 @@ export type MonthGridProps = {
   visible: (block: ViewBlock) => boolean;
   canDrag: (day: ViewDay, block: ViewBlock) => boolean;
   onOpen: (blockId: string) => void;
+  /** §17.2's day controls, the SAME menu the week view renders. Absent for a guardian. */
+  dayActions?: DayActions;
 };
 
 export function MonthGrid({
@@ -138,6 +157,7 @@ export function MonthGrid({
   visible,
   canDrag,
   onOpen,
+  dayActions,
 }: MonthGridProps): JSX.Element {
   return (
     <div data-testid="calendar-month-grid">
@@ -157,6 +177,7 @@ export function MonthGrid({
             visible={visible}
             canDrag={canDrag}
             onOpen={onOpen}
+            {...(dayActions === undefined ? {} : { dayActions })}
           />
         ))}
       </div>

@@ -32,6 +32,11 @@ const SCENES = [
   ["error", 1440, 900, null],
   ["guardian-not-set-up", 1440, 900, null],
   ["week", 430, 900, "mobile"],
+  // Brief 6.
+  ["settings", 1440, 900, null],
+  ["dayoff-week", 1440, 900, null],
+  ["dayoff-month", 1440, 900, null],
+  ["week", 1440, 900, "daymenu"],
 ];
 
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
@@ -39,11 +44,18 @@ for (const [scene, w, h, variant] of SCENES) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
   await page.goto(`http://127.0.0.1:4599/?scene=${scene}`, { waitUntil: "networkidle" });
   await page.waitForTimeout(700);
-  if (scene === "month") {
+  if (scene === "month" || scene === "dayoff-month") {
     // The view toggle is component state, not a URL parameter — the scene only widens the
     // data range, so the Month view has to actually be pressed.
     await page.getByRole("button", { name: "Month", exact: true }).click();
     await page.waitForTimeout(600);
+  }
+  if (variant === "daymenu") {
+    // The ⋯ menu is hover-revealed and click-opened, so it has to actually be pressed —
+    // a screenshot of the closed column would show nothing and prove nothing.
+    const menu = page.locator('[data-testid^="day-menu-"]').first();
+    await menu.click();
+    await page.waitForTimeout(400);
   }
   if (variant === "sheet") {
     const card = page.locator('[data-testid^="calendar-block-"]').nth(1);

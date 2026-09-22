@@ -29,10 +29,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getQueryFn } from "@/lib/queryClient";
 import {
   isLaunchable,
+  stateKeyForEngine,
   practiceStateKey,
   useLaunchBlock,
   type LaunchOutcome,
 } from "./launch";
+import { isLaunchableBlockType } from "../lib/blocks";
 
 const csrfFetchMock = vi.fn();
 
@@ -147,10 +149,47 @@ describe("practiceStateKey — the one string that stops the prefetch rotting", 
 // ── isLaunchable (formula sheet §8 item 12) ─────────────────────────────────
 
 describe("isLaunchable", () => {
-  it("is true for practice ONLY — review and full_length adapters answer engine_unavailable", () => {
+  it("is true for the engines that are REAL — practice and, since 2026-09-22, review", () => {
     expect(isLaunchable({ block_type: "practice" })).toBe(true);
-    expect(isLaunchable({ block_type: "review" })).toBe(false);
+    expect(isLaunchable({ block_type: "review" })).toBe(true);
+    // Full-length is still the fail-open stub, so its control reads "Coming soon" and
+    // never calls launch. When the exam vertical ships, this line moves and the sheet's
+    // branch goes with it.
     expect(isLaunchable({ block_type: "full_length" })).toBe(false);
+  });
+
+  it("is the SAME rule the view model uses — one definition, not two that agree by luck", () => {
+    // Until this change the rule existed twice: here, and as a hand-written
+    // `block.block_type === "practice"` in view-model.ts. They agreed by coincidence, and
+    // the moment review shipped the launch path accepted it while the card still drew
+    // "Coming soon". Both now call `isLaunchableBlockType`.
+    for (const blockType of ["practice", "review", "full_length"] as const) {
+      expect(isLaunchable({ block_type: blockType })).toBe(
+        isLaunchableBlockType(blockType),
+      );
+    }
+  });
+});
+
+describe("the prefetch key is the one the landing page actually reads", () => {
+  it("routes each engine to its own state key, and full_length to none", () => {
+    expect(stateKeyForEngine("practice", "s1", "ci")).toBe(
+      "/api/practice/sessions/s1/state?client_instance_id=ci",
+    );
+    // resume-review.tsx:65, character for character.
+    expect(stateKeyForEngine("review", "s1", "ci")).toBe(
+      "/api/review/sessions/s1/state?client_instance_id=ci",
+    );
+    // Null means "navigate without prefetching", never "prefetch the wrong key" — a key
+    // nothing reads warms a slot nobody looks in and the spinner comes back silently.
+    expect(stateKeyForEngine("full_length", "s1", "ci")).toBeNull();
+  });
+
+  it("never returns the practice key for a review launch", () => {
+    // The one mistake that would look like it worked.
+    expect(stateKeyForEngine("review", "s1", "ci")).not.toBe(
+      stateKeyForEngine("practice", "s1", "ci"),
+    );
   });
 });
 

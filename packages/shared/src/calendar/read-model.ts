@@ -63,7 +63,7 @@ export type CalendarDayInput = z.infer<typeof calendarDayInputSchema>;
 /**
  * The whole range in one call. Units are bucketed by their own `local_date`, which is how
  * §22.4's midnight split lands: one session's items become activity on two different days
- * because the adapter dated each item by `answered_at` in that day's zone.
+ * because the adapter dated each item by `occurred_at` in that day's zone.
  *
  * A unit whose `local_date` is not one of `days` belongs to a date outside the requested
  * range and is ignored — counting it would put activity from outside the window into the
