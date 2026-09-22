@@ -106,13 +106,36 @@ describe("Canonical runtime materialization law invariants", () => {
     );
   });
 
-  it("review runtime queue/session builders do not use raw questions lookups", () => {
-    const queueSource = readRepoFile("server/services/review-queue.ts");
-    const sessionSource = readRepoFile(
-      "server/routes/review-session-routes.ts",
-    );
+  // RESTORED 2026-09-21 (R3), against the rebuilt module paths. Parked in R1 because
+  // both files it read were deleted with the old runtime
+  // (server/services/review-queue.ts, server/routes/review-session-routes.ts).
+  //
+  // Ruled plan §3 ruling 19: review content and metadata come from the
+  // `servable_questions` join at prefill, exactly as practice does, so the
+  // published / issue_flags gate applies to a re-served miss too. A retired question
+  // keeps its queue entry (ruling 18) and simply stops being poolable.
+  it("review runtime pool and route modules do not use raw questions lookups", () => {
+    for (const relativePath of [
+      "server/services/review-pool.ts",
+      "server/routes/review-canonical.ts",
+    ]) {
+      const src = readRepoFile(relativePath);
+      expect(
+        src.includes('.from("questions")'),
+        `${relativePath} reads the raw questions table`,
+      ).toBe(false);
+      expect(
+        src.includes(".from('questions')"),
+        `${relativePath} reads the raw questions table`,
+      ).toBe(false);
+    }
+  });
 
-    expect(queueSource.includes('.from("questions")')).toBe(false);
-    expect(sessionSource.includes('.from("questions")')).toBe(false);
+  // The positive half of the same law: review's ONLY question source is the servable
+  // view. Absence of `questions` would also be satisfied by a module that reads no
+  // bank at all, which would pass while serving nothing.
+  it("review pool reads servable_questions", () => {
+    const src = readRepoFile("server/services/review-pool.ts");
+    expect(src.includes('.from("servable_questions")')).toBe(true);
   });
 });

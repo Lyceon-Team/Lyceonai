@@ -19,7 +19,7 @@ Disallow: /chat
 Disallow: /full-test
 Disallow: /practice
 Disallow: /mastery
-Disallow: /review-errors
+Disallow: /review
 Disallow: /guardian
 Disallow: /profile
 Disallow: /login

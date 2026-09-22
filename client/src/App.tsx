@@ -26,9 +26,16 @@ const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
+// Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
+// and its own stylesheet, and a student who never opens it should not download either.
+const Calendar = lazy(() => import("@/pages/calendar"));
+const GuardianStudentCalendar = lazy(
+  () => import("@/pages/guardian-student-calendar"),
+);
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
-const ReviewErrors = lazy(() => import("@/pages/review-errors"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const Review = lazy(() => import("@/pages/review"));
+const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 
@@ -164,6 +171,29 @@ function Router() {
             </RequireRole>
           )}
         />
+        {/* Doc 05F §17.1 — the student's own calendar. */}
+        <Route
+          path="/calendar"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <Calendar />
+            </RequireRole>
+          )}
+        />
+        {/*
+          Doc 05F §16 — a guardian reading a linked student's plan. The path mirrors the API
+          route (formula sheet item 14, /api/students/:studentId/calendar) so the two are
+          obviously the same resource. The server is the authority: this guard only decides
+          what is worth rendering.
+        */}
+        <Route
+          path="/students/:studentId/calendar"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianStudentCalendar />
+            </RequireRole>
+          )}
+        />
         <Route path="/math-practice">
           {() => <Redirect to="/practice" replace />}
         </Route>
@@ -186,11 +216,20 @@ function Router() {
             </RequireRole>
           )}
         />
+        {/* Review vertical — the mistake queue. Same gate as practice. */}
         <Route
-          path="/review-errors"
+          path="/review"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <ReviewErrors />
+              <Review />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/review/session/:sessionId"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ResumeReview />
             </RequireRole>
           )}
         />

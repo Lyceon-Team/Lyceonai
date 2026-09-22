@@ -26,11 +26,11 @@ export const RETURN_PATH_ALLOWLIST: readonly string[] = [
   "/dashboard",
   "/profile",
   "/practice",
+  "/review",
   "/chat",
   "/full-test",
   "/mastery",
   "/upgrade",
-  "/review-errors",
   "/update-password",
   "/notifications",
 ];

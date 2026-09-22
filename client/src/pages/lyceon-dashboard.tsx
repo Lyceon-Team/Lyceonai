@@ -16,7 +16,7 @@ import {
   Loader2,
   MessageCircle,
   Play,
-  Target,
+  RotateCcw,
 } from "lucide-react";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
@@ -404,6 +404,20 @@ export default function LyceonDashboard() {
             </a>
           </Link>
 
+          <Link href="/review">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <RotateCcw className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">
+                Review Queue
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Redo the questions you missed until they stick.
+              </p>
+            </a>
+          </Link>
+
           <Link href="/full-test">
             <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
               <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
@@ -414,22 +428,6 @@ export default function LyceonDashboard() {
               </h2>
               <p className="text-sm text-muted-foreground">
                 Run a timed SAT simulation.
-              </p>
-            </a>
-          </Link>
-
-          <Link href="/review-errors">
-            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-                <Target className="h-5 w-5" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight mb-1">
-                Review Errors
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {weekQuestions > 0
-                  ? "Analyze misses from your recent attempts."
-                  : "Complete practice first to populate your error queue."}
               </p>
             </a>
           </Link>
