@@ -197,6 +197,39 @@ describe("review landing", () => {
     expect(body).toContain("Reading & Writing");
   });
 
+  // ── R4.1 ──────────────────────────────────────────────────────────────────
+  it("R4.1: 'Review by topic' sits ABOVE the past-sessions picker", () => {
+    const { container } = render(<ReviewPage />);
+
+    const topic = screen.getByTestId("review-topic-picker");
+    const picker = screen.getByTestId("review-session-picker");
+
+    // Document order, not CSS order: compareDocumentPosition is the only reading
+    // that survives a layout change. FOLLOWING means `picker` comes after `topic`.
+    const position = topic.compareDocumentPosition(picker);
+    expect(
+      position & Node.DOCUMENT_POSITION_FOLLOWING,
+      "the past-sessions picker must render after the topic picker",
+    ).toBeTruthy();
+
+    // And both are still inside the same column, so this is an ordering change
+    // rather than one of them having been moved out or dropped.
+    const column = container.querySelector(".lg\\:col-span-8");
+    expect(column?.contains(topic)).toBe(true);
+    expect(column?.contains(picker)).toBe(true);
+  });
+
+  it("R4.1: no screen on the landing repeats the wrong 'twice' rule", () => {
+    render(<ReviewPage />);
+    // One correct review answer graduates a question
+    // (20260921000000_review_queue_runtime.sql:392). The landing said "twice" in
+    // two places — the header lede and the "How review works" card.
+    expect(document.body.textContent).not.toContain("twice");
+    expect(document.body.textContent).toContain(
+      "Get it right once and it leaves your queue.",
+    );
+  });
+
   // ── U5 ────────────────────────────────────────────────────────────────────
   it("U5: groups by the BROWSER's local day, formats the headline, filters and count", () => {
     render(<ReviewPage />);
