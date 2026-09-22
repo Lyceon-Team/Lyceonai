@@ -51,6 +51,23 @@ export function BlockCard({
   });
 
   const complete = block.target > 0 && block.actual >= block.target;
+
+  /*
+   * "Full sitting" belongs to a FULL-LENGTH block, not to every block without a minute
+   * estimate. `minutes` is null for two different reasons — a full-length block has no
+   * per-question figure, and the GUARDIAN payload carries no `estimates` at all (§16) — and
+   * a bare `?? "Full sitting"` conflated them, labelling every block on the guardian surface
+   * as a full sitting. Keyed off the tone, which is the fact that actually decides it.
+   */
+  const progressText =
+    block.actual > 0 && !complete
+      ? `${block.actual} of ${block.target} done`
+      : null;
+  const durationText =
+    block.minutes ?? (block.tone === "exam" ? "Full sitting" : null);
+  const subtitle =
+    [durationText, progressText].filter((part) => part !== null).join(" · ") ||
+    null;
   const percent =
     block.target > 0 ? Math.min(100, Math.round(block.progress * 100)) : 0;
 
@@ -89,12 +106,7 @@ export function BlockCard({
           </span>
         ) : null}
       </div>
-      <div className="sub">
-        {block.minutes ?? "Full sitting"}
-        {block.actual > 0 && !complete
-          ? ` · ${block.actual} of ${block.target} done`
-          : ""}
-      </div>
+      {subtitle === null ? null : <div className="sub">{subtitle}</div>}
       {block.mix.length > 0 ? (
         <div className="dom">
           {block.mix.map((entry) => (

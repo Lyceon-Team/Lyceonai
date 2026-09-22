@@ -33,14 +33,22 @@
   --canvas: #ffffff;
   --surface: #f7f8fb;
   --rail: #0e1424;
-  /* The four block colours come from the shared token layer (styles/tokens.css). */
-  --math: var(--calendar-math);
+  /*
+   * The four block colours come from the shared token layer (styles/tokens.css), which
+   * App.tsx imports globally — with a LITERAL FALLBACK each, because the failure mode
+   * without one is silent. The pale tints below are literals, so a page rendering this
+   * stylesheet without the token layer still shows coloured blocks; what disappears is the
+   * left accent bar and the "Today" pill, both of which resolve to nothing. A screenshot
+   * harness rendering the component outside App.tsx is exactly how that was found. The
+   * token stays the source of truth — the fallback only fires when it is absent.
+   */
+  --math: var(--calendar-math, #2563eb);
   --math-t: #eaf0fe;
-  --rw: var(--calendar-rw);
+  --rw: var(--calendar-rw, #7c3aed);
   --rw-t: #f3edfe;
-  --rev: var(--calendar-review);
+  --rev: var(--calendar-review, #b45309);
   --rev-t: #fdf2e1;
-  --exam: var(--calendar-exam);
+  --exam: var(--calendar-exam, #334155);
   --exam-t: #ebeff5;
   --ok: #0e7a55;
   --warn: #b45309;
