@@ -36,6 +36,47 @@ export type PgSupabaseResult<T = unknown> = {
 
 type Filter = { op: string; col: string; val: unknown };
 
+/**
+ * Per-table set of json/jsonb column names, read once from information_schema.
+ *
+ * WHY THIS EXISTS. node-pg serializes a JS array as a POSTGRES ARRAY LITERAL, which is
+ * right for `text[]` and wrong for `jsonb`. A snapshot row carries both —
+ * `option_order text[]` and `question_options jsonb` — so a single blanket rule breaks
+ * one or the other. PostgREST does not have this problem, so the failure exists only
+ * in this harness, and a test that hit it would look like a product bug. Added
+ * 2026-09-21 (R3), when review's prefill insert became the first one to write a jsonb
+ * ARRAY through this shim.
+ */
+const jsonColumnCache = new Map<string, Set<string>>();
+
+async function jsonColumnsFor(pg: Client, table: string): Promise<Set<string>> {
+  const cached = jsonColumnCache.get(table);
+  if (cached) return cached;
+  const r = await pg.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+        AND data_type IN ('json', 'jsonb')`,
+    [table],
+  );
+  const cols = new Set<string>(
+    r.rows.map((row) => String((row as { column_name: unknown }).column_name)),
+  );
+  jsonColumnCache.set(table, cols);
+  return cols;
+}
+
+/** JSON-encode a value bound for a json/jsonb column; pass everything else through. */
+function encodeForColumn(
+  value: unknown,
+  column: string,
+  jsonColumns: Set<string>,
+): unknown {
+  if (!jsonColumns.has(column)) return value;
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
 const PGREST_NO_ROWS = "PGRST116";
 
 /**
@@ -44,7 +85,7 @@ const PGREST_NO_ROWS = "PGRST116";
 class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
   private selectCols = "*";
   private filters: Filter[] = [];
-  private orderBy: { col: string; ascending: boolean } | null = null;
+  private orderBy: Array<{ col: string; ascending: boolean }> = [];
   private limitN: number | null = null;
   private writeMode: "insert" | "update" | "upsert" | "delete" | null = null;
   private payload: Record<string, unknown> | Record<string, unknown>[] | null =
@@ -124,8 +165,15 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
     return this;
   }
 
+  /**
+   * Chained `.order()` calls ACCUMULATE, as they do in supabase-js: the first is the
+   * primary sort and each later one is a tiebreak. Extended 2026-09-21 (R3) — this
+   * used to overwrite, which silently dropped every tiebreak key. A test asserting a
+   * deterministic order would then have passed on whatever order Postgres happened to
+   * return, which is the shape of a green test proving nothing.
+   */
   order(col: string, opts?: { ascending?: boolean }): this {
-    this.orderBy = { col, ascending: opts?.ascending ?? true };
+    this.orderBy.push({ col, ascending: opts?.ascending ?? true });
     return this;
   }
 
@@ -199,10 +247,11 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
           ? this.payload
           : [this.payload as Record<string, unknown>];
         const cols = Object.keys(rows[0] ?? {});
+        const jsonCols = await jsonColumnsFor(this.pg, this.table);
         const params: unknown[] = [];
         const tuples = rows.map((r) => {
           const ph = cols.map((c) => {
-            params.push(r[c]);
+            params.push(encodeForColumn(r[c], c, jsonCols));
             return `$${params.length}`;
           });
           return `(${ph.join(", ")})`;
@@ -233,9 +282,10 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
       if (this.writeMode === "update") {
         const data = this.payload as Record<string, unknown>;
         const cols = Object.keys(data);
+        const jsonCols = await jsonColumnsFor(this.pg, this.table);
         const params: unknown[] = [];
         const sets = cols.map((c) => {
-          params.push(data[c]);
+          params.push(encodeForColumn(data[c], c, jsonCols));
           return `"${c}" = $${params.length}`;
         });
         const where = this.buildWhere(params.length + 1);
@@ -263,8 +313,11 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
         } as PgSupabaseResult;
       }
       let sql = `SELECT ${this.selectCols === "*" ? "*" : this.selectCols} FROM ${t}${where.sql}`;
-      if (this.orderBy) {
-        sql += ` ORDER BY "${this.orderBy.col}" ${this.orderBy.ascending ? "ASC" : "DESC"}`;
+      if (this.orderBy.length > 0) {
+        const keys = this.orderBy
+          .map((o) => `"${o.col}" ${o.ascending ? "ASC" : "DESC"}`)
+          .join(", ");
+        sql += ` ORDER BY ${keys}`;
       }
       if (this.limitN !== null) sql += ` LIMIT ${this.limitN}`;
       const r = await this.pg.query(sql, where.params);

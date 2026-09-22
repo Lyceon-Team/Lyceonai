@@ -1,0 +1,4674 @@
+{
+  "$schema_note": "Doc 05F \u00a713/\u00a714 allocator and read-model fixtures. INPUT is a DayAllocationInput (kind=allocate) or a CalendarRangeInput (kind=range) as packages/shared/src/calendar defines them. EXPECTED is hand-authored from the spec, not captured from the implementation, and is compared as a projection: blocks by (block_id, target, actual, status), extra work by (engine, section, domain, count), and \u2014 where ordering is the point \u2014 the consumed unit ids. The file is the contract: the server and UI suites read these cases rather than inventing their own.",
+  "version": 1,
+  "case_count": 26,
+  "cases": [
+    {
+      "id": "two-tens-satisfy-a-twenty",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 properties: 'two 10s satisfy a 20'",
+      "why": "Two ten-question practice sessions on one day are twenty answered items, and a twenty-question block is satisfied by them. Sessions are not part of the unit model; their items are.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 20,
+            "status": "completed"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "a-twenty-satisfies-two-tens",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 properties: 'a 20 satisfies two 10s'",
+      "why": "One twenty-question session fills two ten-question blocks, in display order, and neither block sees a unit the other took.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 10,
+            "actual": 10,
+            "status": "completed"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 10,
+            "actual": 10,
+            "status": "completed"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "thirty-against-twenty-leaves-ten-extra",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 properties: '30 against 20 = 20/20 + 10 extra'",
+      "why": "A block is capped at its target. The overshoot is the student's, and it shows as extra work rather than as 30/20.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-21",
+            "occurred_at": "2026-09-14T17:20:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-22",
+            "occurred_at": "2026-09-14T17:21:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-23",
+            "occurred_at": "2026-09-14T17:22:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-24",
+            "occurred_at": "2026-09-14T17:23:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-25",
+            "occurred_at": "2026-09-14T17:24:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-26",
+            "occurred_at": "2026-09-14T17:25:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-27",
+            "occurred_at": "2026-09-14T17:26:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-28",
+            "occurred_at": "2026-09-14T17:27:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-29",
+            "occurred_at": "2026-09-14T17:28:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-30",
+            "occurred_at": "2026-09-14T17:29:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 30,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 20,
+            "status": "completed"
+          }
+        ],
+        "extra_work": [
+          {
+            "engine": "practice",
+            "section": "M",
+            "domain": "Algebra",
+            "count": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "overlapping-scope-wide-block-first",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
+      "why": "{Algebra 20} then {Algebra 10, Geometry 10} against twenty Algebra items. The first block takes all twenty; the second sees none. Overlapping scopes cannot inflate progress.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                },
+                {
+                  "domain": "Geometry and Trigonometry",
+                  "count": 10,
+                  "explanation_key": "balanced"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 20,
+            "status": "completed"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 20,
+            "actual": 0,
+            "status": "scheduled"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "overlapping-scope-mixed-block-first",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
+      "why": "The same two blocks in the other display order. Display order is the only tiebreak \u00a713 allows, and it is stored, so the reversal changes who gets the items and nothing else.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                },
+                {
+                  "domain": "Geometry and Trigonometry",
+                  "count": 10,
+                  "explanation_key": "balanced"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 20,
+            "actual": 20,
+            "status": "completed"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 0,
+            "status": "scheduled"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "overlapping-scope-asymmetric-wide-first",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713: 'ALG-20 followed by ALG/LIN-10 against 20 Algebra items yields 20/20 and 0/10'",
+      "why": "\u00a713's own numbers, with the narrower block scoped by a second domain instead of a skill. Twenty Algebra items, a 20-block then a 10-block: 20/20 and 0/10.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 5,
+                  "explanation_key": "weak"
+                },
+                {
+                  "domain": "Geometry and Trigonometry",
+                  "count": 5,
+                  "explanation_key": "balanced"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 20,
+            "status": "completed"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 10,
+            "actual": 0,
+            "status": "scheduled"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "overlapping-scope-asymmetric-narrow-first",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713: '\u2026and the reverse order yields 10/10 and 10/20'",
+      "why": "The same pair reversed. The ten-block takes ten Algebra items, the twenty-block takes what is left: 10/10 and 10/20.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 5,
+                  "explanation_key": "weak"
+                },
+                {
+                  "domain": "Geometry and Trigonometry",
+                  "count": 5,
+                  "explanation_key": "balanced"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-13",
+            "occurred_at": "2026-09-14T17:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-14",
+            "occurred_at": "2026-09-14T17:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-15",
+            "occurred_at": "2026-09-14T17:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-16",
+            "occurred_at": "2026-09-14T17:15:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-17",
+            "occurred_at": "2026-09-14T17:16:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-18",
+            "occurred_at": "2026-09-14T17:17:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-19",
+            "occurred_at": "2026-09-14T17:18:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-20",
+            "occurred_at": "2026-09-14T17:19:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 20,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 10,
+            "actual": 10,
+            "status": "completed"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 10,
+            "status": "partial"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "review-items-never-satisfy-a-practice-block",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a79.2 / \u00a79.3 (`matches` begins with engine equality); \u00a713",
+      "why": "Ten review items in Math/Algebra against an Algebra practice block. Section and domain line up and the engine does not, so the block gets nothing and the items are extra work. Engine equality is checked BEFORE scope, which is why this is not a match.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "review",
+            "unit_id": "r-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 10,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 10,
+            "actual": 0,
+            "status": "scheduled"
+          }
+        ],
+        "extra_work": [
+          {
+            "engine": "review",
+            "section": "M",
+            "domain": "Algebra",
+            "count": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "off-scope-practice-becomes-extra-work",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 (`extra(D)` = unconsumed units grouped by engine, section, domain)",
+      "why": "Five Algebra items and five Expression of Ideas items against an Algebra block. The off-scope five are not a failure and not progress \u2014 they are extra work, grouped by (engine, section, domain).",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 10,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-01",
+            "occurred_at": "2026-09-14T17:30:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-02",
+            "occurred_at": "2026-09-14T17:31:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-03",
+            "occurred_at": "2026-09-14T17:32:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-04",
+            "occurred_at": "2026-09-14T17:33:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-05",
+            "occurred_at": "2026-09-14T17:34:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 10,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 10,
+            "actual": 5,
+            "status": "partial"
+          }
+        ],
+        "extra_work": [
+          {
+            "engine": "practice",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "count": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "section-level-scope-matches-any-domain-in-its-section",
+      "kind": "allocate",
+      "spec": "Doc 05F formula sheet \u00a71 (cold start / fallback section-level scope); \u00a79.2",
+      "why": "A cold-start block is scoped to a section, not a domain. Every Math item matches it and no Reading & Writing item does.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "section",
+              "count": 10,
+              "explanation_key": "cold_start"
+            },
+            "target_count": 10,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-01",
+            "occurred_at": "2026-09-14T17:20:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-02",
+            "occurred_at": "2026-09-14T17:21:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-03",
+            "occurred_at": "2026-09-14T17:22:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-04",
+            "occurred_at": "2026-09-14T17:23:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-cs-01",
+            "occurred_at": "2026-09-14T17:40:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-cs-02",
+            "occurred_at": "2026-09-14T17:41:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-cs-03",
+            "occurred_at": "2026-09-14T17:42:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 13,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 10,
+            "actual": 10,
+            "status": "completed"
+          }
+        ],
+        "extra_work": [
+          {
+            "engine": "practice",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "full-length-form-id-null-takes-any-exam",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a79.4 (`matches` = engine equality and (scope.form_id IS NULL or equal))",
+      "why": "Two exam blocks: one pinned to FORM-A, one left to Doc 04 rotation. The student sat FORM-B, so the pinned block gets nothing and the rotation block counts it.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "full_length",
+            "section": null,
+            "scope": {
+              "form_id": "FORM-A"
+            },
+            "target_count": 1,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "exam_cadence",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "scheduled_date": "2026-09-14",
+            "block_type": "full_length",
+            "section": null,
+            "scope": {
+              "form_id": null
+            },
+            "target_count": 1,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "exam_cadence",
+            "display_ordinal": 2,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "full_length",
+            "unit_id": "x-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": null,
+            "domain": null,
+            "form_id": "FORM-B"
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 1,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 1,
+            "actual": 0,
+            "status": "scheduled"
+          },
+          {
+            "block_id": "00000000-0000-4000-8000-000000000002",
+            "target": 1,
+            "actual": 1,
+            "status": "completed"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "an-active-launch-with-no-answers-is-in-progress",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 `status(b)`: in_progress if a launch exists whose lifecycle is active and actual = 0",
+      "why": "The student opened the session and has answered nothing yet. Both facts are passed in as data \u2014 the allocator never calls an engine.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [],
+        "launches": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "lifecycle": "active"
+          }
+        ]
+      },
+      "expected": {
+        "units_considered": 0,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 0,
+            "status": "in_progress"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "a-past-block-with-no-answers-is-missed",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 `status(b)`: missed if D < today and actual = 0",
+      "why": "`today` is a parameter. A pure function that read the clock would be a test that passes until midnight.",
+      "input": {
+        "local_date": "2026-09-13",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-13",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 0,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 0,
+            "status": "missed"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "an-abandoned-launch-is-not-in-progress",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 `status(b)` (in_progress requires a NON-TERMINAL session); \u00a715.1 step 3",
+      "why": "A launch row alone is not progress. The session was abandoned, nothing was answered, and yesterday's block is missed.",
+      "input": {
+        "local_date": "2026-09-13",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-13",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 20,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 20,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [],
+        "launches": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "lifecycle": "abandoned"
+          }
+        ]
+      },
+      "expected": {
+        "units_considered": 0,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 20,
+            "actual": 0,
+            "status": "missed"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "units-are-consumed-in-occurred-at-order",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713: units 'sorted by (occurred_at, engine, unit_id)'",
+      "why": "Five Algebra items answered in a row against a two-question block. The two the block counts are the two answered FIRST. The unit ids here run backwards against the clock, so an implementation that sorted by unit_id would count a different pair.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 5,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 2,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 5,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 2,
+            "actual": 2,
+            "status": "completed"
+          }
+        ],
+        "extra_work": [
+          {
+            "engine": "practice",
+            "section": "M",
+            "domain": "Algebra",
+            "count": 3
+          }
+        ],
+        "unit_ids": {
+          "00000000-0000-4000-8000-000000000001": [
+            "p-alg-05",
+            "p-alg-04"
+          ]
+        }
+      }
+    },
+    {
+      "id": "a-repeated-identity-is-one-unit",
+      "kind": "allocate",
+      "spec": "Doc 05F \u00a713 (identity is (engine, unit_id)); INV-08-21",
+      "why": "The same item reported twice is one item. Counting it twice would inflate progress, which is the invariant the whole allocator exists to hold.",
+      "input": {
+        "local_date": "2026-09-14",
+        "today": "2026-09-14",
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "scheduled_date": "2026-09-14",
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 5,
+                  "explanation_key": "weak"
+                }
+              ]
+            },
+            "target_count": 5,
+            "source": "auto",
+            "derived_from_block_id": null,
+            "explanation_key": "weighted",
+            "display_ordinal": 1,
+            "membership_type": "created"
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "units_considered": 2,
+        "blocks": [
+          {
+            "block_id": "00000000-0000-4000-8000-000000000001",
+            "target": 5,
+            "actual": 2,
+            "status": "partial"
+          }
+        ],
+        "extra_work": []
+      }
+    },
+    {
+      "id": "rest-day-with-activity-stays-a-rest-day",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 (`day.status`); owner ruling B4 2026-09-17",
+      "why": "A student who studies on an off day has not turned it into a planned day. The day's extra-work list carries the activity and the status stays `rest`.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": false,
+            "version_no": null,
+            "blocks": []
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "rest",
+            "planned_count": 0,
+            "actual_count": 0,
+            "extra_count": 6,
+            "blocks": [],
+            "extra_work": [
+              {
+                "engine": "practice",
+                "section": "M",
+                "domain": "Algebra",
+                "count": 6
+              }
+            ]
+          }
+        ],
+        "facts": {
+          "blocks_total": 0,
+          "blocks_completed": 0,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 6,
+          "full_lengths_completed": 0,
+          "extra_questions": 6
+        }
+      }
+    },
+    {
+      "id": "an-all-done-day-is-complete",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 (`complete` \u2014 all blocks completed); \u00a717.5 'all-done'",
+      "why": "Every block satisfied. Nothing extra, nothing outstanding.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-14",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 10,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 10,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              },
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-14",
+                "block_type": "review",
+                "section": null,
+                "scope": {
+                  "mode": "queue"
+                },
+                "target_count": 4,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "review_due",
+                "display_ordinal": 2,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-mix-01",
+            "occurred_at": "2026-09-14T17:30:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-mix-02",
+            "occurred_at": "2026-09-14T17:31:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-mix-03",
+            "occurred_at": "2026-09-14T17:32:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          },
+          {
+            "engine": "review",
+            "unit_id": "r-mix-04",
+            "occurred_at": "2026-09-14T17:33:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Craft and Structure",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 14,
+            "actual_count": 14,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 10,
+                "actual": 10,
+                "status": "completed"
+              },
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "target": 4,
+                "actual": 4,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 2,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 14,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "a-past-day-with-some-progress-is-partial-never-missed",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714; owner ruling B5 2026-09-17",
+      "why": "Twelve of twenty answered yesterday. `partial` sits above `missed` in the precedence because a student who did twelve did not miss the day.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-13",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 20,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 20,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-13T17:00:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-13T17:01:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-13T17:02:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-13T17:03:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-13T17:04:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-06",
+            "occurred_at": "2026-09-13T17:05:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-07",
+            "occurred_at": "2026-09-13T17:06:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-08",
+            "occurred_at": "2026-09-13T17:07:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-09",
+            "occurred_at": "2026-09-13T17:08:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-10",
+            "occurred_at": "2026-09-13T17:09:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-11",
+            "occurred_at": "2026-09-13T17:10:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-12",
+            "occurred_at": "2026-09-13T17:11:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "status": "partial",
+            "planned_count": 20,
+            "actual_count": 12,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 20,
+                "actual": 12,
+                "status": "partial"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 1,
+          "blocks_completed": 0,
+          "blocks_partial": 1,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 12,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "a-past-day-with-no-progress-is-missed",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 (`missed` \u2014 past, none)",
+      "why": "The complement of the case above, so the boundary between `partial` and `missed` is pinned from both sides.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-13",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 20,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 20,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "status": "missed",
+            "planned_count": 20,
+            "actual_count": 0,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 20,
+                "actual": 0,
+                "status": "missed"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 1,
+          "blocks_completed": 0,
+          "blocks_partial": 0,
+          "blocks_missed": 1,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 0,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "a-cleared-past-study-day-is-a-rest-day",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 (totality of the day-status ladder); \u00a712.4 (an empty member list clears a day)",
+      "why": "A study day the student cleared owns no blocks, so there is nothing to have missed. None of \u00a714's six rules names this day; `rest` is the honest label and this is the only way to reach it with `is_study_day` true.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": true,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": []
+          }
+        ],
+        "units": [],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "status": "rest",
+            "planned_count": 0,
+            "actual_count": 0,
+            "extra_count": 0,
+            "blocks": [],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 0,
+          "blocks_completed": 0,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 0,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "each-day-keeps-the-timezone-it-was-planned-in",
+      "kind": "range",
+      "spec": "Doc 05F \u00a78.2 (every planned date carries the timezone in force when it was planned)",
+      "why": "The student moved from Los Angeles to New York. The older day keeps its own zone and the newer one carries the new zone. This module never reads a profile, so the only timezone it can report is the one the plan date carries.",
+      "input": {
+        "today": "2026-09-15",
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-13",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          },
+          {
+            "local_date": "2026-09-15",
+            "timezone": "America/New_York",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-15",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Geometry and Trigonometry",
+                      "count": 5,
+                      "explanation_key": "balanced"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-13T17:00:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-13T17:01:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-13T17:02:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-13T17:03:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-13T17:04:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-01",
+            "occurred_at": "2026-09-15T17:00:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-02",
+            "occurred_at": "2026-09-15T17:01:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-03",
+            "occurred_at": "2026-09-15T17:02:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-04",
+            "occurred_at": "2026-09-15T17:03:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-geo-05",
+            "occurred_at": "2026-09-15T17:04:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Geometry and Trigonometry",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 5,
+            "actual_count": 5,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          },
+          {
+            "local_date": "2026-09-15",
+            "timezone": "America/New_York",
+            "status": "complete",
+            "planned_count": 5,
+            "actual_count": 5,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 2,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 10,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "a-session-across-midnight-splits-by-item-date",
+      "kind": "range",
+      "spec": "Doc 05F \u00a722.4 (midnight, LA); \u00a78.2; \u00a713 (sort by occurred_at)",
+      "why": "One session: 8 items answered before local midnight, 12 after. Sunday counts 8 and Monday 12, by item `answered_at` in that day's own zone. Sunday's block asked for 5, so which 5 it counts is decided by the clock \u2014 Sunday's unit ids run backwards against time on purpose, so an implementation that sorted by unit_id would count a different five.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-13",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          },
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-14",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 10,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 10,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-08",
+            "occurred_at": "2026-09-14T06:50:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-07",
+            "occurred_at": "2026-09-14T06:51:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-06",
+            "occurred_at": "2026-09-14T06:52:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-05",
+            "occurred_at": "2026-09-14T06:53:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-04",
+            "occurred_at": "2026-09-14T06:54:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-03",
+            "occurred_at": "2026-09-14T06:55:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-02",
+            "occurred_at": "2026-09-14T06:56:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-sun-01",
+            "occurred_at": "2026-09-14T06:57:00Z",
+            "local_date": "2026-09-13",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-01",
+            "occurred_at": "2026-09-14T07:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-02",
+            "occurred_at": "2026-09-14T07:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-03",
+            "occurred_at": "2026-09-14T07:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-04",
+            "occurred_at": "2026-09-14T07:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-05",
+            "occurred_at": "2026-09-14T07:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-06",
+            "occurred_at": "2026-09-14T07:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-07",
+            "occurred_at": "2026-09-14T07:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-08",
+            "occurred_at": "2026-09-14T07:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-09",
+            "occurred_at": "2026-09-14T07:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-10",
+            "occurred_at": "2026-09-14T07:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-11",
+            "occurred_at": "2026-09-14T07:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-mon-12",
+            "occurred_at": "2026-09-14T07:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-13",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 5,
+            "actual_count": 5,
+            "extra_count": 3,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": [
+              {
+                "engine": "practice",
+                "section": "M",
+                "domain": "Algebra",
+                "count": 3
+              }
+            ]
+          },
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 10,
+            "actual_count": 10,
+            "extra_count": 2,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "target": 10,
+                "actual": 10,
+                "status": "completed"
+              }
+            ],
+            "extra_work": [
+              {
+                "engine": "practice",
+                "section": "M",
+                "domain": "Algebra",
+                "count": 2
+              }
+            ]
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 2,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 20,
+          "full_lengths_completed": 0,
+          "extra_questions": 5
+        },
+        "unit_ids": {
+          "00000000-0000-4000-8000-000000000001": [
+            "p-sun-08",
+            "p-sun-07",
+            "p-sun-06",
+            "p-sun-05",
+            "p-sun-04"
+          ]
+        }
+      }
+    },
+    {
+      "id": "the-counter-worked-example",
+      "kind": "range",
+      "spec": "Doc 05F \u00a722.3 (Counter); \u00a714 (facts, R-08-28)",
+      "why": "\u00a722.3 end to end: ALG 20 and CS 10 planned on a Tuesday. The student answers 12 Algebra, then 10 more from the practice page, then 15 Expression of Ideas. The Algebra block reaches 20/20 with 2 extra, the CS block is missed, and the facts read 37 questions and 17 extra.",
+      "input": {
+        "today": "2026-09-15",
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-14",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 20,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 20,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              },
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-14",
+                "block_type": "practice",
+                "section": "RW",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Craft and Structure",
+                      "count": 10,
+                      "explanation_key": "balanced"
+                    }
+                  ]
+                },
+                "target_count": 10,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 2,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-06",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-07",
+            "occurred_at": "2026-09-14T17:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-08",
+            "occurred_at": "2026-09-14T17:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-09",
+            "occurred_at": "2026-09-14T17:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-10",
+            "occurred_at": "2026-09-14T17:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-11",
+            "occurred_at": "2026-09-14T17:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-a-12",
+            "occurred_at": "2026-09-14T17:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-01",
+            "occurred_at": "2026-09-14T17:30:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-02",
+            "occurred_at": "2026-09-14T17:31:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-03",
+            "occurred_at": "2026-09-14T17:32:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-04",
+            "occurred_at": "2026-09-14T17:33:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-05",
+            "occurred_at": "2026-09-14T17:34:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-06",
+            "occurred_at": "2026-09-14T17:35:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-07",
+            "occurred_at": "2026-09-14T17:36:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-08",
+            "occurred_at": "2026-09-14T17:37:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-09",
+            "occurred_at": "2026-09-14T17:38:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-b-10",
+            "occurred_at": "2026-09-14T17:39:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-01",
+            "occurred_at": "2026-09-14T18:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-02",
+            "occurred_at": "2026-09-14T18:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-03",
+            "occurred_at": "2026-09-14T18:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-04",
+            "occurred_at": "2026-09-14T18:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-05",
+            "occurred_at": "2026-09-14T18:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-06",
+            "occurred_at": "2026-09-14T18:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-07",
+            "occurred_at": "2026-09-14T18:06:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-08",
+            "occurred_at": "2026-09-14T18:07:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-09",
+            "occurred_at": "2026-09-14T18:08:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-10",
+            "occurred_at": "2026-09-14T18:09:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-11",
+            "occurred_at": "2026-09-14T18:10:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-12",
+            "occurred_at": "2026-09-14T18:11:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-13",
+            "occurred_at": "2026-09-14T18:12:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-14",
+            "occurred_at": "2026-09-14T18:13:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-eoi-15",
+            "occurred_at": "2026-09-14T18:14:00Z",
+            "local_date": "2026-09-14",
+            "section": "RW",
+            "domain": "Expression of Ideas",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "partial",
+            "planned_count": 30,
+            "actual_count": 20,
+            "extra_count": 17,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 20,
+                "actual": 20,
+                "status": "completed"
+              },
+              {
+                "block_id": "00000000-0000-4000-8000-000000000002",
+                "target": 10,
+                "actual": 0,
+                "status": "missed"
+              }
+            ],
+            "extra_work": [
+              {
+                "engine": "practice",
+                "section": "M",
+                "domain": "Algebra",
+                "count": 2
+              },
+              {
+                "engine": "practice",
+                "section": "RW",
+                "domain": "Expression of Ideas",
+                "count": 15
+              }
+            ]
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 1,
+          "blocks_partial": 0,
+          "blocks_missed": 1,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 37,
+          "full_lengths_completed": 0,
+          "extra_questions": 17
+        }
+      }
+    },
+    {
+      "id": "an-unplanned-exam-counts-as-a-full-length-and-not-as-extra-questions",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 (facts: full-length tests completed; extra questions)",
+      "why": "An exam sat on a day with no exam block is a full-length completed. It is not an extra QUESTION \u2014 the two facts count different things and a test must not leak into the question tally.",
+      "input": {
+        "today": "2026-09-15",
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-14",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "occurred_at": "2026-09-14T17:00:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "full_length",
+            "unit_id": "x-01",
+            "occurred_at": "2026-09-14T19:00:00Z",
+            "local_date": "2026-09-14",
+            "section": null,
+            "domain": null,
+            "form_id": "FORM-C"
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 5,
+            "actual_count": 5,
+            "extra_count": 1,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": [
+              {
+                "engine": "full_length",
+                "section": null,
+                "domain": null,
+                "count": 1
+              }
+            ]
+          }
+        ],
+        "facts": {
+          "blocks_total": 1,
+          "blocks_completed": 1,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 5,
+          "full_lengths_completed": 1,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "activity-outside-the-requested-range-is-not-counted",
+      "kind": "range",
+      "spec": "Doc 05F \u00a714 ('per range'); \u00a715 (`?from&to`)",
+      "why": "A unit dated outside the days asked for belongs to another window. Counting it would put activity from outside the range into the range's facts.",
+      "input": {
+        "today": "2026-09-15",
+        "days": [
+          {
+            "local_date": "2026-09-15",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 7,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-15",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-in-01",
+            "occurred_at": "2026-09-15T17:00:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-in-02",
+            "occurred_at": "2026-09-15T17:01:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-in-03",
+            "occurred_at": "2026-09-15T17:02:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-in-04",
+            "occurred_at": "2026-09-15T17:03:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-in-05",
+            "occurred_at": "2026-09-15T17:04:00Z",
+            "local_date": "2026-09-15",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-out-01",
+            "occurred_at": "2026-09-10T17:00:00Z",
+            "local_date": "2026-09-10",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-out-02",
+            "occurred_at": "2026-09-10T17:01:00Z",
+            "local_date": "2026-09-10",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-out-03",
+            "occurred_at": "2026-09-10T17:02:00Z",
+            "local_date": "2026-09-10",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-out-04",
+            "occurred_at": "2026-09-10T17:03:00Z",
+            "local_date": "2026-09-10",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": []
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-15",
+            "timezone": "America/Los_Angeles",
+            "status": "complete",
+            "planned_count": 5,
+            "actual_count": 5,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "00000000-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 1,
+          "blocks_completed": 1,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 5,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    }
+  ]
+}

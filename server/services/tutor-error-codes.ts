@@ -134,6 +134,28 @@ export const TUTOR_CONVERSATION_ALREADY_CLOSED: TutorErrorCode = {
   message: "This conversation was already closed.",
 } as const;
 
+/** @spec [CC Brief "LISA Session Lifecycle" §5.1] */
+export const TUTOR_CONVERSATION_ALREADY_ENDED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_already_ended",
+  message: "This session has already been ended.",
+} as const;
+
+/** @spec [CC Brief "LISA Session Lifecycle" §5.4] */
+export const TUTOR_CONVERSATION_CRISIS_PAUSED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_crisis_paused",
+  message:
+    "This session is paused because a crisis response was provided. Resume the session first.",
+} as const;
+
+/** @spec [CC Brief "LISA Session Lifecycle" §5.4] */
+export const TUTOR_CONVERSATION_NOT_PAUSED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_not_paused",
+  message: "This session is not currently paused.",
+} as const;
+
 /** @spec [Doc-03B_V2 §5.9] */
 export const TUTOR_IDEMPOTENCY_CONFLICT: TutorErrorCode = {
   httpStatus: 409,
@@ -203,6 +225,9 @@ export const TUTOR_ERROR_CODES = {
   conversation_not_found: TUTOR_CONVERSATION_NOT_FOUND,
   conversation_closed: TUTOR_CONVERSATION_CLOSED,
   conversation_already_closed: TUTOR_CONVERSATION_ALREADY_CLOSED,
+  conversation_already_ended: TUTOR_CONVERSATION_ALREADY_ENDED,
+  conversation_crisis_paused: TUTOR_CONVERSATION_CRISIS_PAUSED,
+  conversation_not_paused: TUTOR_CONVERSATION_NOT_PAUSED,
   idempotency_conflict: TUTOR_IDEMPOTENCY_CONFLICT,
   idempotency_lookup_failed: TUTOR_IDEMPOTENCY_LOOKUP_FAILED,
   canonical_write_failed: TUTOR_CANONICAL_WRITE_FAILED,

@@ -6,6 +6,8 @@ import { ArrowLeft, Flame, Target } from "lucide-react";
 interface PracticeShellProps {
   children: ReactNode;
   title?: string;
+  /** The small uppercase line above the title. Practice's wording is the default. */
+  eyebrow?: string;
   backLink?: string;
   backLabel?: string;
   score: {
@@ -22,14 +24,18 @@ interface PracticeShellProps {
 export function PracticeShell({
   children,
   title = "Practice",
+  eyebrow = "Academic Practice Runner",
   backLink = "/practice",
   backLabel = "Back to Practice",
   score,
   currentIndex,
   totalQuestions,
 }: PracticeShellProps) {
-  const progressPercent = totalQuestions ? ((currentIndex + 1) / totalQuestions) * 100 : 0;
-  const accuracyPercent = score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0;
+  const progressPercent = totalQuestions
+    ? ((currentIndex + 1) / totalQuestions) * 100
+    : 0;
+  const accuracyPercent =
+    score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -37,30 +43,40 @@ export function PracticeShell({
         <div className="container mx-auto px-4 py-4 max-w-7xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => window.location.assign(backLink)}
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 {backLabel}
               </Button>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Academic Practice Runner</p>
-                <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">{title}</h1>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {eyebrow}
+                </p>
+                <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                  {title}
+                </h1>
               </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5">
                 <Target className="h-3.5 w-3.5 text-foreground/80" />
-                <span className="text-xs font-semibold text-foreground">{accuracyPercent}%</span>
-                <span className="text-[11px] text-muted-foreground">{score.correct}/{score.total}</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {accuracyPercent}%
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {score.correct}/{score.total}
+                </span>
               </div>
 
               <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5">
                 <Flame className="h-3.5 w-3.5 text-foreground/80" />
-                <span className="text-xs font-semibold text-foreground">{score.streak}</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {score.streak}
+                </span>
               </div>
 
               {totalQuestions && (

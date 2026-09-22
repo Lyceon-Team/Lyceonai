@@ -29,21 +29,23 @@
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import type {
+  CrisisSource,
+  CrisisCategory,
+} from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Constants ─────────────────────────────────────────────────────────
-
-/** SLA window in hours (§21.3 V1 launch: 48h, target after 30 days: 24h). */
-const SLA_HOURS = 48;
+// `SLA_HOURS` was here. It is `public.crisis_review_sla_hours()` now — the
+// write that uses it is SQL (migration 20260922100000), and a TypeScript copy
+// of a number the database applies is a second definition waiting to drift.
+// `tests/ci/crisis-flag-atomic.pg.ci.test.ts` holds the SQL function to Doc 03
+// §21.3's published 48.
 
 // ── Types ─────────────────────────────────────────────────────────────
-
-type CrisisSource =
-  | "signature"
-  | "model"
-  | "both"
-  | "classifier_degraded"
-  | "classifier_degraded_no_floor"
-  | "infrastructure_failure";
+// `CrisisSource` and `CrisisCategory` are inferred from the Zod schemas in
+// packages/shared and re-exported here so existing import sites keep working.
+// They were hand-written unions in three files; three copies of one enum drift
+// the moment the database CHECK gains a value (Coding Standards §7.2 / §17).
 
 type CaseStatus = "open" | "in_review" | "resolved";
 
@@ -54,14 +56,6 @@ type AuditAction =
   | "status_changed"
   | "disposition_set"
   | "note_added";
-
-type CreateCaseParams = {
-  conversationId: string;
-  studentId: string;
-  source: CrisisSource;
-  signatureId: string | null;
-  modelConfidence: number | null;
-};
 
 type UpdateDispositionParams = {
   caseId: string;
@@ -84,215 +78,46 @@ type AuditLogParams = {
 
 export type {
   CrisisSource,
+  CrisisCategory,
   CaseStatus,
   CaseDisposition,
   AuditAction,
-  CreateCaseParams,
   UpdateDispositionParams,
   AuditLogParams,
 };
 
-// ── Schema-drift tolerance ────────────────────────────────────────────
+// ── Schema-drift tolerance: MOVED INTO SQL ────────────────────────────
+// `SOURCE_FALLBACK` (WS-L8 Item 4b) is `public.crisis_source_fallback()`, and
+// the two PG error codes it was matched against are `unique_violation` and
+// `check_violation` conditions in the PL/pgSQL handler. Matching a driver's
+// error code string in TypeScript was always the weaker form: it depended on
+// the message text as well as the code, and the code did not survive
+// createCrisisReviewCase wrapping the error in a new Error.
 
-/**
- * Source values that were added after the initial CHECK constraint and
- * may not be present in production if the migration hasn't been applied.
- * Each maps to the coarser value that the original schema accepts.
- *
- * @spec [WS-L8 Item 4b — narrow crisis-path tolerance]
- */
-const SOURCE_FALLBACK: Partial<Record<CrisisSource, CrisisSource>> = {
-  classifier_degraded_no_floor: "classifier_degraded",
-  infrastructure_failure: "classifier_degraded",
-};
-
-/** PostgreSQL error code for check_violation (23514). */
-const PG_CHECK_VIOLATION = "23514";
-
-/** PostgreSQL error code for unique_violation (23505). */
-const PG_UNIQUE_VIOLATION = "23505";
-
-// ── Create Case ───────────────────────────────────────────────────────
-
-/**
- * Creates a crisis review case with a computed 48h SLA deadline.
- * Called by the crisis detection path (tutor-crisis.ts) when a crisis
- * is detected or the classifier is degraded.
- *
- * BLOCKING: throws on failure. The caller must NOT swallow this error.
- * A failed case creation means a crisis turn will not be reviewed —
- * that is worse than a failed turn.
- *
- * Schema-drift tolerance (WS-L8 Item 4b): if the INSERT fails with a
- * CHECK violation (PG code 23514) AND the source value is one of the
- * newer values that may not be in production's CHECK constraint yet,
- * the function retries once with a coarser source value that the old
- * schema accepts. The case still persists — only its precision degrades.
- * This does NOT reverse B1.1d's blocking-write ruling: a real failure
- * (FK violation, connection error, anything other than an identifiable
- * schema-version CHECK mismatch) still blocks the turn.
- *
- * @spec [Doc-03_V3 §21.3, CR-03C-V3-01 §3.4, WS-L8 Item 4b]
- */
-export async function createCrisisReviewCase(
-  params: CreateCaseParams,
-): Promise<{ id: string; slaDeadline: string }> {
-  const slaDeadline = new Date(
-    Date.now() + SLA_HOURS * 60 * 60 * 1000,
-  ).toISOString();
-
-  const insertPayload = {
-    conversation_id: params.conversationId,
-    student_id: params.studentId,
-    source: params.source,
-    signature_id: params.signatureId,
-    model_confidence: params.modelConfidence,
-    sla_deadline: slaDeadline,
-  };
-
-  const { data, error } = await supabaseServer
-    .from("crisis_review_cases")
-    .insert(insertPayload)
-    .select("id")
-    .single();
-
-  // ── Schema-drift retry (WS-L8 Item 4b) ──────────────────────────
-  // Narrow: only when (1) the error is a CHECK violation, (2) the source
-  // has a known fallback, and (3) the retry with the coarser value
-  // succeeds. All other errors propagate immediately.
-  if (error && error.code === PG_CHECK_VIOLATION) {
-    const fallbackSource = SOURCE_FALLBACK[params.source];
-    if (fallbackSource) {
-      logger.warn(
-        "CRISIS_REVIEW",
-        "case_create_schema_drift",
-        "CHECK violation on crisis_review_cases.source — production schema " +
-          "may not include the newer value. Retrying with coarser source. " +
-          "Apply the pending migration to restore full precision.",
-        {
-          conversationId: params.conversationId,
-          originalSource: params.source,
-          fallbackSource,
-          pgCode: error.code,
-        },
-      );
-
-      const { data: retryData, error: retryError } = await supabaseServer
-        .from("crisis_review_cases")
-        .insert({ ...insertPayload, source: fallbackSource })
-        .select("id")
-        .single();
-
-      if (retryError || !retryData) {
-        // Retry also failed — this is a real failure, not schema drift.
-        logger.error(
-          "CRISIS_REVIEW",
-          "case_create_failed",
-          "failed to create crisis review case even with fallback source — " +
-            "crisis turn may not be reviewed",
-          retryError,
-          {
-            conversationId: params.conversationId,
-            source: fallbackSource,
-          },
-        );
-        throw new Error(
-          `crisis review case creation failed (with fallback): ${retryError?.message ?? "no data returned"}`,
-        );
-      }
-
-      logger.warn(
-        "CRISIS_REVIEW",
-        "case_created_degraded",
-        "crisis review case created with degraded source precision " +
-          "(schema drift — apply pending migration)",
-        {
-          caseId: retryData.id,
-          conversationId: params.conversationId,
-          originalSource: params.source,
-          persistedSource: fallbackSource,
-          slaDeadline,
-        },
-      );
-
-      return { id: retryData.id as string, slaDeadline };
-    }
-  }
-
-  // ── Duplicate crisis case (Defect 2 — WS-T1) ─────────────────────
-  // idx_crisis_review_cases_conversation_active allows one active case per
-  // conversation. A second crisis turn on the same conversation hits 23505.
-  // That is a redundant write, not a failed write: the case already exists
-  // and will be reviewed. Return the existing case ID so the caller can
-  // proceed (B1.1d: case already durable → safety obligation met).
-  if (
-    error &&
-    error.code === PG_UNIQUE_VIOLATION &&
-    error.message.includes("conversation_active")
-  ) {
-    logger.info(
-      "CRISIS_REVIEW",
-      "case_already_open",
-      "crisis review case already open for this conversation — " +
-        "redundant write treated as success (B1.1d)",
-      {
-        conversationId: params.conversationId,
-        source: params.source,
-        pgCode: error.code,
-      },
-    );
-
-    // Fetch the existing active case to return its ID.
-    const { data: existing } = await supabaseServer
-      .from("crisis_review_cases")
-      .select("id, sla_deadline")
-      .eq("conversation_id", params.conversationId)
-      .is("resolved_at", null)
-      .single();
-
-    if (existing) {
-      return {
-        id: existing.id as string,
-        slaDeadline: existing.sla_deadline as string,
-      };
-    }
-
-    // Race: case was resolved between the INSERT and the SELECT.
-    // Extremely unlikely, but we still need a case. Fall through to the
-    // generic error handler, which will throw and block the turn — correct
-    // per B1.1d (better to fail loudly than to lose a case silently).
-  }
-
-  if (error || !data) {
-    logger.error(
-      "CRISIS_REVIEW",
-      "case_create_failed",
-      "failed to create crisis review case — crisis turn may not be reviewed",
-      error,
-      {
-        conversationId: params.conversationId,
-        source: params.source,
-      },
-    );
-    throw new Error(
-      `crisis review case creation failed: ${error?.message ?? "no data returned"}`,
-    );
-  }
-
-  logger.warn(
-    "CRISIS_REVIEW",
-    "case_created",
-    "crisis review case created with 48h SLA deadline",
-    {
-      caseId: data.id,
-      conversationId: params.conversationId,
-      source: params.source,
-      slaDeadline,
-    },
-  );
-
-  return { id: data.id as string, slaDeadline };
-}
+// ── Create Case: MOVED INTO SQL (owner ruling D1, 2026-09-22) ─────────
+//
+// `createCrisisReviewCase` lived here and had exactly one caller,
+// `flagConversationForReview`. That caller did two writes in sequence — flag
+// the conversation, then insert the case — and between them sat a state the
+// system must never be in: a conversation MARKED as a crisis with NOTHING in
+// the review queue. Both writes are now
+// `public.flag_conversation_for_crisis_review` (migration
+// 20260922100000_crisis_flag_atomic.sql), which is one transaction.
+//
+// The function is DELETED rather than kept, because a second write path to
+// `crisis_review_cases` is how the two drift. Everything it did is in the SQL:
+// the 48h deadline (`crisis_review_sla_hours()`), the WS-L8 Item 4b
+// source fallback (`crisis_source_fallback()`), and the
+// unique-violation-is-success-equivalent rule.
+//
+// ONE BUG DIED WITH IT, AND IT IS WORTH NAMING. The duplicate-case lookup
+// queried `.is("resolved_at", null)`. `crisis_review_cases` has no
+// `resolved_at` column — it has `reviewed_at` and `status`. That lookup could
+// not succeed, so the "race: case was resolved between the INSERT and the
+// SELECT" comment described the ONLY path it ever took: every duplicate fell
+// through to the generic handler and threw. The SQL matches on
+// `status IN ('open','in_review')`, which is what the partial unique index
+// itself uses.
 
 // ── Audit Logging ─────────────────────────────────────────────────────
 

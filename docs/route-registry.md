@@ -9,7 +9,8 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-09-16 (Legacy study calendar deleted — `/calendar` RETIRED, `/api/calendar/*` removed)
+**Last Updated:** 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
+**Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
 
@@ -35,7 +36,8 @@ This document is the single authoritative registry of:
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
-| `/calendar` | student, admin | free | CalendarPage | none — legacy study calendar deleted 2026-09-16 (owner ruling; rebuild from Doc 08) | RETIRED |
+| `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
+| `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
@@ -46,14 +48,17 @@ This document is the single authoritative registry of:
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
+| `/review` | student, admin | free | Review | `/api/review/pool`, `/api/review/sessions/open`, `/api/review/sessions`, `/api/practice/topics` | ACTIVE |
+| `/review/session/:sessionId` | student, admin | free | ResumeReview | `/api/review/sessions/:sessionId/state`, `/api/review/sessions/:sessionId/next`, `/api/review/answer`, `/api/review/sessions/:sessionId/skip` | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
-| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
+| `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
+| `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
@@ -134,6 +139,16 @@ Removed auth endpoints (must return 404):
 | `/api/practice/sessions/:sessionId/next` | GET | Yes | student/admin | entitled† | Resume practice session next |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
+| `/api/review/pool` | GET | Yes | student/admin | free | Review pool summary — counts and past sessions for the pickers |
+| `/api/review/sessions` | POST | Yes | student/admin | free | Start a review session (mode: queue / session / filter) |
+| `/api/review/sessions/open` | GET | Yes | student/admin | free | Open review sessions (created + active only) |
+| `/api/review/sessions/:sessionId/state` | GET | Yes | student/admin | free | Resume review session state |
+| `/api/review/sessions/:sessionId/next` | GET | Yes | student/admin | free | Serve the next review item |
+| `/api/review/sessions/:sessionId/resume` | POST | Yes | student/admin | free | Resume / take over a review session |
+| `/api/review/sessions/:sessionId/terminate` | POST | Yes | student/admin | free | Abandon a review session |
+| `/api/review/sessions/:sessionId/calculator-state` | POST | Yes | student/admin | free | Persist Desmos state for a review session |
+| `/api/review/sessions/:sessionId/skip` | POST | Yes | student/admin | free | Skip the served review item (requeues, no mastery) |
+| `/api/review/answer` | POST | Yes | student/admin | free | Submit a review answer (mastery source `review`) |
 | `/api/tutor/conversations` | POST | Yes | student/admin | entitled† | start/reuse tutor conversation |
 | `/api/tutor/messages` | POST | Yes | student/admin | entitled† | append tutor turn + response |
 | `/api/tutor/conversations/:conversationId` | GET | Yes | student/admin | entitled† | fetch tutor conversation + messages |
@@ -145,8 +160,6 @@ Removed auth endpoints (must return 404):
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
 | `/api/questions/stats` | GET | Yes | student/admin | free | Question statistics |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
-| `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
-| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Submit session-based review answer (owner: `submitReviewSessionAnswer`) |
 | `/api/students/{{studentId}}/mastery/domains` | GET | Yes | student/admin | premium | Domain grid: level + level name per canonical domain |
 | `/api/students/:studentId/mastery/skills` | GET | Yes | student/admin | premium | Skill panel for one domain; unmeasured skills present and labelled |
 | `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
@@ -176,6 +189,11 @@ Removed auth endpoints (must return 404):
 | Endpoint | Method | Auth Required | Role | Purpose |
 |----------|--------|--------------|------|---------|
 | `/api/admin/db-health` | GET | Yes | admin | Database health check |
+| `/api/admin/crisis-review/cases` | GET | Yes | admin | List crisis review cases (filterable by status) |
+| `/api/admin/crisis-review/cases/:id` | GET | Yes | admin | Get single crisis review case with audit log |
+| `/api/admin/crisis-review/cases/:id/claim` | POST | Yes | admin | Claim an open case for review |
+| `/api/admin/crisis-review/cases/:id/disposition` | POST | Yes | admin | Resolve case with disposition and notes |
+| `/api/admin/crisis-review/sla-breaches` | GET | Yes | admin | List cases that have breached SLA deadline |
 
 ### Billing Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |

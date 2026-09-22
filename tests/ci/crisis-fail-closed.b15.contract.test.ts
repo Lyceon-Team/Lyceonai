@@ -66,24 +66,27 @@ vi.mock("../../server/lib/gcp-credentials", () => ({
 
 /**
  * Creates a mock Supabase query chain for tutor_injection_signatures.
- * Simulates: supabaseServer.from("tutor_injection_signatures").select(...).eq(...)
+ * Simulates: supabaseServer.from("tutor_injection_signatures").select(...).or(...).eq(...)
  */
 function mockSignatureQuery(result: {
   data: Array<{
     id: string;
     signature_pattern: string;
-    signature_type: string;
+    signature_type?: string;
+    category?: string;
   }> | null;
   error: { message: string; code: string } | null;
 }): void {
   const chain = {
     select: vi.fn().mockReturnValue({
+      or: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue(result),
+      }),
       eq: vi.fn().mockResolvedValue(result),
     }),
   };
   mockSupabaseFrom.mockImplementation((table: string) => {
     if (table === "tutor_injection_signatures") return chain;
-    // Classifier config query
     if (table === "tutor_context_runtime_config") {
       return {
         select: vi.fn().mockReturnValue({
@@ -108,7 +111,8 @@ function mockSignatureAndClassifierQueries(
     data: Array<{
       id: string;
       signature_pattern: string;
-      signature_type: string;
+      signature_type?: string;
+      category?: string;
     }> | null;
     error: { message: string; code: string } | null;
   },
@@ -119,6 +123,9 @@ function mockSignatureAndClassifierQueries(
     if (table === "tutor_injection_signatures") {
       return {
         select: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue(signatureResult),
+          }),
           eq: vi.fn().mockResolvedValue(signatureResult),
         }),
       };
@@ -310,6 +317,7 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
     > = {
       crisis: true,
       source: "classifier_degraded_no_floor",
+      category: "crisis",
       signatureId: null,
       modelConfidence: null,
       forceReview: true,
@@ -322,6 +330,7 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
     > = {
       crisis: true,
       source: "infrastructure_failure",
+      category: "crisis",
       signatureId: null,
       modelConfidence: null,
       forceReview: true,
@@ -362,6 +371,9 @@ describe("B1.5 — new source values accepted by CHECK constraint", () => {
       if (table === "tutor_injection_signatures") {
         return {
           select: vi.fn().mockReturnValue({
+            or: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           }),
         };
@@ -410,6 +422,9 @@ describe("B1.5 — new source values accepted by CHECK constraint", () => {
       if (table === "tutor_injection_signatures") {
         return {
           select: vi.fn().mockReturnValue({
+            or: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           }),
         };

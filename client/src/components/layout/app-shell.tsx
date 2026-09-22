@@ -9,8 +9,10 @@ import {
   GraduationCap,
   LayoutDashboard,
   BookOpen,
+  RotateCcw,
   MessageSquare,
   CreditCard,
+  CalendarDays,
   Settings,
   LogOut,
   type LucideIcon,
@@ -20,6 +22,37 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import Footer from "./Footer";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
+
+/**
+ * The primary navigation, as data.
+ *
+ * @spec [issue #829 — one anchor per nav item] | @implemented [2026-09-22]
+ *
+ * EXPORTED SO THE TEST IS DRIVEN BY THE CONFIG, NOT BY A COPY OF IT. `app-shell.nav-anchors`
+ * iterates this array, so a sixth nav item is covered the moment it is added here — rather
+ * than needing someone to remember to write it a test. A test that lists the routes itself
+ * is a second source of truth, and the one that drifts is always the copy.
+ *
+ * It closes over nothing, so module scope is where it always belonged; it lived inside
+ * `AppHeader` only because that is where it was first written.
+ */
+export const navItems: readonly {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/practice", label: "Practice", icon: BookOpen },
+  { href: "/review", label: "Review", icon: RotateCcw },
+  { href: "/full-test", label: "Full Tests", icon: CreditCard },
+  { href: "/chat", label: "Lisa", icon: MessageSquare },
+];
+
+/** The testid a nav item carries, derived from its label in one place. */
+export function navTestId(label: string): string {
+  return `nav-${label.toLowerCase().replace(/\s+/g, "-")}`;
+}
 
 export function AppShell({
   children,
@@ -53,13 +86,18 @@ function AppHeader() {
   // guardian shell through ./HeaderUserMenu so the two headers cannot drift.
   const { signOut: handleSignOut, isSigningOut } = useHeaderSignOut();
 
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/practice", label: "Practice", icon: BookOpen },
-    { href: "/full-test", label: "Full Tests", icon: CreditCard },
-    { href: "/chat", label: "Lisa", icon: MessageSquare },
-  ];
-
+  // @spec [Doc_05F_Study_Calendar, §17.1 (the student's own calendar)]
+  // | @implemented [2026-09-22]
+  //
+  // plain English: Calendar sits beside Practice and Review because it is the page
+  // that sends a student to either of them. It is shown to EVERY student, entitled
+  // or not: §16 makes the calendar premium, but hiding the tab is how the page
+  // became unreachable in the first place. A free student who taps it gets the
+  // page's own 402 branch and the upgrade prompt, which is the upsell path -- a
+  // missing tab is not a paywall, it is a dead end.
+  //
+  // Nothing here grants anything. The server decides entitlement on every request
+  // (§7.12); this array only decides what is on screen.
   const NavLink = ({
     href,
     label,
@@ -82,16 +120,26 @@ function AppHeader() {
         ? "text-foreground/70 hover:bg-secondary"
         : "text-foreground/70 hover:text-foreground hover:bg-secondary";
 
+    // ONE anchor, carrying the href, the testid, the label and the class (#829). The
+    // wouter v2 idiom this replaced — a bare anchor child inside Link — renders a NESTED anchor
+    // under wouter 3, and the inner one, the one with the testid, had no `href` at all:
+    // middle-click, ⌘-click, open-in-new-tab, copy-link and screen-reader link
+    // announcement were all broken on every tab in the product. Clicking worked, which is
+    // why it survived. `Link` spreads every other prop onto the anchor it renders
+    // (wouter@3.9.0 src/index.js:310-318), so nothing needs a wrapper to hold them.
+    //
+    // `onClick` closes the mobile sheet and is DELIBERATELY not shimmed for modified
+    // clicks: wouter skips it on a ⌘-click, and a sheet that stays open in this tab while
+    // the link opens in another is the correct outcome, not an oversight.
     return (
-      <Link href={href}>
-        <a
-          className={`${baseClasses} ${activeClasses}`}
-          data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
-          onClick={() => mobile && setMobileMenuOpen(false)}
-        >
-          <Icon className={mobile ? "h-5 w-5" : "h-4 w-4"} />
-          {label}
-        </a>
+      <Link
+        href={href}
+        className={`${baseClasses} ${activeClasses}`}
+        data-testid={navTestId(label)}
+        onClick={() => mobile && setMobileMenuOpen(false)}
+      >
+        <Icon className={mobile ? "h-5 w-5" : "h-4 w-4"} />
+        {label}
       </Link>
     );
   };
@@ -102,14 +150,19 @@ function AppHeader() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/dashboard">
-            <a
-              className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity"
-              data-testid="logo-link"
-            >
-              <GraduationCap className="h-6 w-6 text-foreground" />
-              <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
-            </a>
+          {/* The wordmark is the way home. It was already a Link to /dashboard — but with
+              the href on the outer anchor and the testid on an inner one that had none, so
+              it was unusable by every means except a plain left click (#829). The focus
+              ring and the title are new: a link a keyboard user cannot see they have
+              reached is not reachable. */}
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            data-testid="logo-link"
+            title="Lyceon home — your dashboard"
+          >
+            <GraduationCap className="h-6 w-6 text-foreground" />
+            <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
           </Link>
 
           {/* Desktop Navigation */}

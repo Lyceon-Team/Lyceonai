@@ -5,19 +5,24 @@
  * @spec [Doc_05F_formula_sheet.md §6 "Parity gate"; Doc-05F_V1.0 §10.3 validator;
  *        INV-08-06 as amended by sheet §8 item 7]
  *
- * scripts/ci/reference/calendar_formula_reference.py is the oracle, as
- * validation_sweep.py is for Doc 04B. This gate runs the nine committed
- * fixtures and the seeded suite — suite(N, seed) and suite_fallback(N, seed),
- * regenerated from rand_snapshot and never stored — through BOTH the reference
- * and the PL/pgSQL RPCs, and fails on any byte difference or any suite
- * violation.
+ * docs/Spec/calendar_formula_reference.py is the oracle, as validation_sweep.py
+ * is for Doc 04B. This gate runs the nine committed fixtures and the seeded
+ * suite — suite(N, seed) and suite_fallback(N, seed), regenerated from
+ * rand_snapshot and never stored — through BOTH the reference and the PL/pgSQL
+ * RPCs, and fails on any byte difference or any suite violation.
  *
- * It checks six things:
- *   0. The oracle exists in exactly one state. docs/Spec/ carries reader copies
- *      of the reference and the fixtures; scripts/ci/ carries the ones CI runs.
- *      Two copies of an oracle that can drift apart is not an oracle, and
- *      docs/Spec/ is read-only to Claude Code, so a divergence could only be
- *      fixed by the owner — which is exactly why it must fail loudly.
+ * THE ORACLE IS ONE FILE. It and the fixtures are read from docs/Spec/ directly.
+ * There used to be a second copy under scripts/ci/ and a byte-identity check
+ * guarding the pair; the pair was the defect and the check was a workaround for
+ * it. A single file cannot drift from itself, so the check has nothing left to
+ * detect and is gone along with the copies (owner ruling, 2026-09-17).
+ *
+ * There is also no domain-name mapping. The oracle, the fixtures and the RPCs
+ * all speak the canonical eight names in full — a translation step between the
+ * oracle and the database is a place for a difference to hide, which is the
+ * opposite of what a parity gate is for.
+ *
+ * It checks five things:
  *   1. calendar_runtime_config carries exactly the oracle's constants, so a
  *      config edit that diverges from the formula fails CI instead of silently
  *      changing every student's plan.
@@ -35,7 +40,6 @@
  *   tsx scripts/ci/calendar-parity.ts [--suite-n 3000] [--suite-seed 1]
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // pg ships no types and @types/pg is not a dependency here; scripts/ci/types/pg.d.ts
@@ -47,18 +51,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const EMITTER = path.join(ROOT, 'scripts', 'ci', 'reference', 'calendar_parity_emit.py');
 const PYTHON = process.env.PYTHON ?? 'python3';
 const BATCH = 250;
-
-/** The oracle abbreviates the eight domains; the database uses the canonical strings. */
-const SHORT_BY_DOMAIN: ReadonlyMap<string, string> = new Map([
-  ['Algebra', 'ALG'],
-  ['Advanced Math', 'ADV'],
-  ['Problem Solving and Data Analysis', 'PSDA'],
-  ['Geometry and Trigonometry', 'GEO'],
-  ['Information and Ideas', 'II'],
-  ['Craft and Structure', 'CS'],
-  ['Expression of Ideas', 'EOI'],
-  ['Standard English Conventions', 'SEC'],
-]);
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
 type BlockMix = Record<string, number> | null;
@@ -85,20 +77,6 @@ type PlanDay = { date: string; blocks: PlanBlock[] };
 type Plan = { generator: string; days: PlanDay[] };
 type ValidatorResult = { result: string; violations?: JsonValue };
 type ParityRow = { idx: string; det: Plan; fb: Plan; vdet: ValidatorResult; vfb: ValidatorResult };
-
-/**
- * The oracle must be one artifact. If docs/Spec/ carries a reader copy, it has
- * to be byte-identical to the file CI actually executes — otherwise the
- * canonical corpus and the gate can disagree about what the formula is, and the
- * corpus is the one that wins arguments.
- *
- * Absent copies are fine: this asserts identity where a copy exists, it does not
- * require one.
- */
-const ORACLE_COPIES: ReadonlyArray<readonly [string, string]> = [
-  ['docs/Spec/calendar_formula_reference.py', 'scripts/ci/reference/calendar_formula_reference.py'],
-  ['docs/Spec/calendar_formula_fixtures.json', 'scripts/ci/fixtures/calendar_formula_fixtures.json'],
-];
 
 const failures: string[] = [];
 let comparisons = 0;
@@ -144,9 +122,7 @@ function project(plan: Plan): SerializedPlan {
         mix = {};
         if (b.scope.level === 'domain') {
           for (const e of b.scope.mix ?? []) {
-            const short = SHORT_BY_DOMAIN.get(e.domain);
-            if (short === undefined) throw new Error(`unknown canonical domain ${e.domain}`);
-            mix[short] = e.count;
+            mix[e.domain] = e.count;
           }
         } else {
           if (b.section === null) throw new Error('section-level practice block with no section');
@@ -167,9 +143,7 @@ function projectExplanations(plan: Plan): Record<string, Record<string, string>>
       if (b.block_type !== 'practice' || b.scope.level !== 'domain') return;
       const m: Record<string, string> = {};
       for (const e of b.scope.mix ?? []) {
-        const short = SHORT_BY_DOMAIN.get(e.domain);
-        if (short === undefined) throw new Error(`unknown canonical domain ${e.domain}`);
-        m[short] = e.explanation_key;
+        m[e.domain] = e.explanation_key;
       }
       out[`${day.date}#${i}`] = m;
     });
@@ -190,35 +164,6 @@ function sameExplanations(a: Record<string, string>, b: Record<string, string>):
   const kb = Object.keys(b).sort();
   if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
   return ka.every((k) => a[k] === b[k]);
-}
-
-function checkOracleCopies(): void {
-  const before = failures.length;
-  let checked = 0;
-  for (const [specPath, ciPath] of ORACLE_COPIES) {
-    const spec = path.join(ROOT, specPath);
-    const ci = path.join(ROOT, ciPath);
-    if (!existsSync(spec)) continue;
-    if (!existsSync(ci)) {
-      fail(`${ciPath} is missing, but ${specPath} exists — CI has no oracle to run`);
-      continue;
-    }
-    checked += 1;
-    if (!readFileSync(spec).equals(readFileSync(ci))) {
-      fail(
-        `${specPath} and ${ciPath} have diverged. The oracle must be one artifact; ` +
-          `docs/Spec is the canonical corpus and is read-only to Claude Code, so this one is the owner's to reconcile.`,
-      );
-    }
-  }
-  const added = failures.length - before;
-  console.log(
-    added > 0
-      ? `    FAIL ${added} docs/Spec reader copy/copies have diverged from the files CI runs`
-      : checked === 0
-        ? '    OK no docs/Spec reader copy of the oracle to cross-check'
-        : `    OK ${checked} docs/Spec reader copy/copies are byte-identical to the files CI runs`,
-  );
 }
 
 async function checkConstants(client: PgClient): Promise<void> {
@@ -380,9 +325,6 @@ async function main(): Promise<void> {
       }
       console.log(`    OK server major is ${major}, as required`);
     }
-
-    console.log('==> the oracle exists in exactly one state');
-    checkOracleCopies();
 
     console.log('==> calendar_runtime_config vs the oracle constants');
     await checkConstants(client);

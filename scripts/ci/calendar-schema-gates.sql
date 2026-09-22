@@ -227,7 +227,18 @@ DECLARE
     -- Doc 05F §21 / SCL-08-F: calendar-owned until Doc 02B claims a review
     -- timing constant. Not in sheet §4's table, which lists it as read from an
     -- owner that does not have it.
-    'review_estimated_seconds_per_item'];
+    'review_estimated_seconds_per_item',
+    -- Doc 05F §8.1 and §12.5, seeded by 20260917140000. These are ROUTE and JOB
+    -- constants, not formula constants: the generator never reads one, which is
+    -- why sheet §4 does not list them and why the parity gate does not
+    -- cross-check them against the oracle. They bound the settings sheet and
+    -- pace the weekly job.
+    'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
+    'target_exam_date_max_days','weekly_job_interval_minutes',
+    -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
+    -- beside the formula so a stored plan version traces to the exact SQL that
+    -- made it. C-09 below asserts it names a migration timestamp.
+    'generator_version'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
@@ -241,7 +252,7 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys plus review_estimated_seconds_per_item (SCL-08-F)';
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 6 route/job/provenance keys of Doc 05F §8.1/§12.5/§10.2';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
@@ -300,12 +311,29 @@ BEGIN
   END IF;
   RAISE NOTICE '    OK C-06 canonical_domain_order is the canonical eight, Math then Reading & Writing';
 
-  -- Launch value: practice only (sheet §8 item 12 / V-03).
+  -- Sheet §8 item 12 / V-03. This used to pin the LAUNCH value, `["practice"]`. Review
+  -- shipped on 2026-09-22 and was enabled, so pinning that literal would now assert a
+  -- state the product has deliberately left -- the test pushing against the truth rather
+  -- than protecting it.
+  --
+  -- What is still worth asserting, and is the part that can actually go wrong, is that
+  -- nothing is enabled whose ADAPTER is a fail-open stub. Enabling an engine before its
+  -- engine exists puts live Start controls on blocks with nothing behind them, which is
+  -- the one failure this gate was really there to prevent. full_length is that engine
+  -- today; it joins the list when its contract test passes against a real engine, and
+  -- this line moves with it.
   IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-     <> '["practice"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 enabled_block_types is not the launch value ["practice"]';
+       @> '["full_length"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its adapter is still the fail-open stub (enabled_block_types = %)',
+      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK C-07 enabled_block_types is the launch value ["practice"]';
+  IF NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
+         @> '["practice"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 practice is not enabled, which no release has ever intended (enabled_block_types = %)',
+      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
+  END IF;
+  RAISE NOTICE '    OK C-07 enabled_block_types = % — practice on, no stub engine enabled',
+    (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
 
   -- The config history trigger pair is wired exactly as the other thirteen
   -- *_runtime_config tables (sheet §8 item 9).
@@ -314,6 +342,24 @@ BEGIN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-08 the config notify / history-no-mutate trigger pair is not wired';
   END IF;
   RAISE NOTICE '    OK C-08 calendar_runtime_config has the standard notify + append-only history triggers';
+
+  -- C-09. generator_version is a migration timestamp, stored as a string.
+  --
+  -- Doc 05F §10.2 makes it the provenance stamp on every calendar_plan_versions
+  -- row, and it only earns that if it names the SQL that produced the plan. The
+  -- format is asserted here because a value like `v1` or `latest` would store
+  -- cleanly and trace to nothing. That the named migration FILE exists is
+  -- asserted by the CI step that runs this file -- SQL cannot see a filesystem.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.calendar_runtime_config
+    WHERE key = 'generator_version'
+      AND value_type = 'string'
+      AND (value #>> '{}') ~ '^[0-9]{14}$'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-09 generator_version is not a 14-digit migration timestamp stored as a string (got %)',
+      (SELECT value::text || ' / ' || value_type FROM public.calendar_runtime_config WHERE key = 'generator_version');
+  END IF;
+  RAISE NOTICE '    OK C-09 generator_version names a migration timestamp, so a stored plan version traces to its SQL';
 END;
 $config$;
 
@@ -483,3 +529,52 @@ END;
 $validator$;
 
 ROLLBACK;
+
+-- ----------------------------------------------------------------------------
+-- B-01 — the live calendar_build_plan_input reads the CURRENT review column
+--
+-- This is a CLASS, not an instance. review R2 (20260921000000) renamed
+-- review_schedule.next_review_at to queued_at and re-declared the builder to
+-- match. PL/pgSQL does not resolve column names until the function RUNS, so a
+-- migration that re-declares the builder from the stale calendar_v1 body passes
+-- every structural gate in this file, applies cleanly, and then fails on the
+-- first real plan generation in production with "column next_review_at does not
+-- exist" -- at which point no student gets a calendar.
+--
+-- Nothing else catches it. genesis-fresh-apply compares a schema dump, and the
+-- dump contains the stale body quite happily. The parity gate never reaches the
+-- builder: it feeds snapshots straight to calendar_compute_plan.
+--
+-- So the gate asserts the BODY of whatever function is live at the end of the
+-- migration pipeline, whichever migration declared it last.
+-- ----------------------------------------------------------------------------
+DO $builder$
+DECLARE
+  v_src text;
+BEGIN
+  SELECT p.prosrc INTO v_src
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'calendar_build_plan_input';
+
+  IF v_src IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-01 calendar_build_plan_input does not exist';
+  END IF;
+
+  IF v_src LIKE '%next_review_at%' THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-01 the live calendar_build_plan_input still reads next_review_at. review R2 renamed that column to queued_at (20260921000000). A migration re-declared the builder from the pre-R2 body — rebuild it from the 20260921000000 body, never from 20260917130000.';
+  END IF;
+
+  IF v_src NOT LIKE '%queued_at%' THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-01 the live calendar_build_plan_input does not read queued_at at all, so review_due_by_date cannot be populated';
+  END IF;
+
+  -- The column has to exist for the body to mean anything.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'review_schedule'
+                   AND column_name = 'queued_at') THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-01 review_schedule.queued_at does not exist';
+  END IF;
+
+  RAISE NOTICE '    OK B-01 the live calendar_build_plan_input reads review_schedule.queued_at and not next_review_at';
+END;
+$builder$;

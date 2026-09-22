@@ -595,6 +595,46 @@ $$;
 
 
 --
+-- Name: calendar_acknowledge_version(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_ceiling integer;
+  v_new     integer;
+BEGIN
+  SELECT COALESCE(max(version_no), 0) INTO v_ceiling
+  FROM public.calendar_plan_versions
+  WHERE student_id = p_student_id AND validator_result = 'accepted';
+
+  UPDATE public.student_study_profile
+     SET last_acknowledged_nonstudent_version_no =
+           GREATEST(last_acknowledged_nonstudent_version_no, LEAST(p_version_no, v_ceiling)),
+         updated_at = now()
+   WHERE student_id = p_student_id
+   RETURNING last_acknowledged_nonstudent_version_no INTO v_new;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_acknowledge_version: student % has no study profile', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN v_new;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_acknowledge_version(p_student_id uuid, p_version_no integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) IS 'Doc 05F §12.7 / INV-08-13: raises last_acknowledged_nonstudent_version_no monotonically, clamped to the student’s highest accepted version. Monotonic by construction, which is why POST /api/calendar/acknowledge carries no idempotency key (§15).';
+
+
+--
 -- Name: calendar_build_plan_input(uuid, date[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -613,6 +653,9 @@ DECLARE
   v_horizon_hi date;
   v_degraded  jsonb := '[]'::jsonb;
   v_mastery   jsonb;
+  -- Which engines the product has actually turned on. Read once, used twice below.
+  v_review_on      boolean;
+  v_full_length_on boolean;
 BEGIN
   SELECT * INTO v_profile FROM public.student_study_profile WHERE student_id = p_student_id;
   IF NOT FOUND THEN
@@ -625,6 +668,19 @@ BEGIN
     RAISE EXCEPTION 'calendar_runtime_config: no rows; the calendar cannot generate without constants'
       USING ERRCODE = '22023';
   END IF;
+
+  -- The snapshot must describe the world the OUTPUT will be filtered against.
+  -- calendar_plan_to_output drops every member whose block_type is not in
+  -- enabled_block_types (20260917130000 line 1586), but the generator allocates
+  -- budget from these inputs without consulting that list. So a disabled engine
+  -- spends the day's seconds on a block that is then thrown away, and the day
+  -- comes up short with nothing to explain it. Reading the list HERE is what
+  -- makes the two agree.
+  SELECT
+    COALESCE(bool_or(t = 'review'), false),
+    COALESCE(bool_or(t = 'full_length'), false)
+    INTO v_review_on, v_full_length_on
+  FROM jsonb_array_elements_text(COALESCE(v_constants -> 'enabled_block_types', '[]'::jsonb)) t;
 
   -- §8.2 local dates: every date in a plan is the student’s local date, and the
   -- profile’s timezone is what makes "today" mean anything.
@@ -679,7 +735,18 @@ BEGIN
       'target_score', v_profile.target_score,
       'study_days_mask', v_profile.study_days_mask,
       'daily_minutes', v_profile.daily_minutes,
-      'full_length_weekday', v_profile.full_length_weekday,
+      -- The single field that places an exam. calendar_compute_plan derives its
+      -- full-length dates from this weekday (20260917130000 line 966); with it NULL
+      -- there are no exam dates, so the "an exam day holds nothing else" CONTINUE
+      -- never fires and the day keeps its budget for practice. The same branch is
+      -- what reserves the exam_review_placeholder, so nulling this withholds the
+      -- reservation too -- both symptoms, one field.
+      --
+      -- The PROFILE still stores the student's chosen test day. This is the
+      -- SNAPSHOT: what the generator is told, not what the student asked for. When
+      -- full_length is enabled the stored value flows through untouched.
+      'full_length_weekday', CASE WHEN v_full_length_on
+                                  THEN v_profile.full_length_weekday ELSE NULL END,
       'planner_mode', v_profile.planner_mode,
       'setup_date', COALESCE(
         (v_profile.setup_completed_at AT TIME ZONE v_profile.timezone)::date,
@@ -689,24 +756,49 @@ BEGIN
 
     -- Anything already overdue folds onto today rather than being lost: the
     -- generator walks the horizon forward and never looks behind its first date.
-    'review_due_by_date', COALESCE((
+    -- Same rule as full_length_weekday above: with review disabled the generator
+    -- must not see work it is about to have filtered away. An empty list is the
+    -- honest snapshot of "no review is planned", which is true when the engine
+    -- cannot be reached. The queue itself is untouched -- the entries stay active
+    -- and are planned the moment review is enabled.
+    'review_due_by_date', CASE WHEN NOT v_review_on THEN '[]'::jsonb ELSE COALESCE((
       SELECT jsonb_agg(jsonb_build_object('date', q.d::text, 'due_count', q.n) ORDER BY q.d)
       FROM (
-        SELECT greatest((r.next_review_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
+        SELECT greatest((r.queued_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
                count(*)::integer AS n
         FROM public.review_schedule r
+        -- H5: the ONLY change from the 20260921000000 body. A queue entry whose question
+        -- has been retired or issue-flagged since it was queued is not servable, so it must
+        -- not be PLANNED either -- the queue stores no question metadata (ruling 19), and
+        -- review's own prefill joins this same view at serve time. Without the join the
+        -- generator sizes a review block against rows the engine will then refuse to serve,
+        -- and the student gets a block that runs short with nothing to explain it.
+        -- INNER join, deliberately: a missing row means not servable, which is the same
+        -- answer as a retired one.
+        JOIN public.servable_questions sq ON sq.id = r.question_id
         WHERE r.student_id = p_student_id
           AND r.status = 'active'
-          AND (r.next_review_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
+          AND (r.queued_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
         GROUP BY 1
-      ) q), '[]'::jsonb),
+      ) q), '[]'::jsonb) END,
 
-    'exams', jsonb_build_object(
+    -- Every field here is unconditionally NULL today: the exams seam has no table
+    -- and the adapter is a fail-open stub, which is why "exams" is in degraded[]
+    -- above. The gate is written anyway so that enabling full_length stays the ONE
+    -- switch that makes exam facts visible to the generator. Until the exam vertical
+    -- ships this CASE cannot change the result -- stated plainly rather than left for
+    -- a reader to work out, and asserted as a no-op by the parity suite.
+    'exams', CASE WHEN NOT v_full_length_on THEN jsonb_build_object(
       'last_completed_local_date', NULL,
       'days_since_exam', NULL,
       'missed_count', NULL,
       'reviewed', NULL,
-      'weak_domains', '[]'::jsonb),
+      'weak_domains', '[]'::jsonb) ELSE jsonb_build_object(
+      'last_completed_local_date', NULL,
+      'days_since_exam', NULL,
+      'missed_count', NULL,
+      'reviewed', NULL,
+      'weak_domains', '[]'::jsonb) END,
 
     -- The deficit rule measures a domain against what it has had over the
     -- window plus today (sheet §2 step 5). Only domain-level practice blocks
@@ -769,7 +861,7 @@ $$;
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1 / formula sheet §5. The only calendar function that reads canonical tables, and freezes them into the snapshot so the generator reads nothing else (INV-08-06). Raises on a missing profile or missing constants — essential inputs are never invented.';
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §9.3. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday and exam facts NULL; review off -> review_due_by_date []. The generator therefore does not reserve budget for blocks calendar_plan_to_output would filter out (§10.2 / sheet §8 item 12).';
 
 
 --
@@ -1535,6 +1627,55 @@ COMMENT ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid
 
 
 --
+-- Name: calendar_drop_today_for_system(jsonb, text, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT CASE
+    WHEN p_trigger NOT IN ('weekly', 'post_exam') THEN p_output
+    ELSE jsonb_set(p_output, '{dates}', COALESCE((
+      SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+      FROM jsonb_array_elements(p_output -> 'dates') d
+      WHERE (d ->> 'scheduled_date')::date <> p_today
+    ), '[]'::jsonb))
+  END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) IS 'Doc 05F §12.1 / owner ruling 2026-09-22: weekly and post_exam are system-initiated and own dates from tomorrow. Drops today from a generated plan OUTPUT, leaving generated_for.dates whole so V-01''s membership test still passes. A no-op for setup, profile_change, student_refresh, day_* and rollback.';
+
+
+--
+-- Name: calendar_drop_unowned_dates(jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_set(p_output, '{dates}', COALESCE((
+    SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+    FROM jsonb_array_elements(p_output -> 'dates') d
+    WHERE (d ->> 'scheduled_date') IN (
+      SELECT jsonb_array_elements_text(
+               COALESCE(p_input #> '{generated_for,dates}', '[]'::jsonb)))
+  ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_drop_unowned_dates(p_output jsonb, p_input jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) IS 'Doc 05F §12.1/§12.2. Keeps only the dates generated_for.dates names, so a generated plan never offers a date the trigger does not own -- chiefly one the student has overridden. calendar_compute_plan walks the horizon from the profile clock and never reads generated_for.dates, so without this the output carries dates the input excluded and V-01/V-14 reject the whole version. Complementary to calendar_drop_today_for_system, which removes today for system triggers; generated_for.dates still contains today.';
+
+
+--
 -- Name: calendar_edit_day(uuid, date, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1607,6 +1748,25 @@ COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_m
 
 
 --
+-- Name: calendar_is_known_timezone(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_is_known_timezone(p_timezone text) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names t WHERE t.name = p_timezone);
+$$;
+
+
+--
+-- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_is_known_timezone(p_timezone text) IS 'Doc 05F §7.1: the route validates a timezone against pg_timezone_names, which PostgREST cannot reach. Formula sheet §8 item 19 makes a false answer a fall-open to America/Chicago, not a rejection.';
+
+
+--
 -- Name: calendar_link_launch(uuid, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1618,8 +1778,12 @@ DECLARE
   v_seq   smallint;
   v_type  text;
 BEGIN
+  -- FOR UPDATE: the one line that differs from the applied body. Every caller
+  -- allocating a sequence for this block queues here, so max + 1 is read under
+  -- exclusive access rather than raced.
   SELECT block_type INTO v_type
-  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id;
+  FROM public.calendar_blocks WHERE block_id = p_block_id AND student_id = p_student_id
+  FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'calendar_link_launch: block % does not belong to student %', p_block_id, p_student_id
       USING ERRCODE = '42501';
@@ -1651,7 +1815,153 @@ $$;
 -- Name: FUNCTION calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) IS 'Doc 05F §7.7 / §15.1. Append-only, idempotent on (engine, engine_session_id). Used for Resume/Continue and calendar_launch_rate only, never for progress.';
+COMMENT ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) IS 'Doc 05F §7.7, §15.1 (INV-08-18). Append-only, idempotent on (engine, engine_session_id). Takes FOR UPDATE on the block row before allocating launch_sequence: the applied 20260917130000 body held nothing, so two concurrent launches of one block both computed max + 1 and the second died on the primary key with a raw 23505.';
+
+
+--
+-- Name: calendar_move_block(uuid, uuid, date, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_move_block(p_student_id uuid, p_block_id uuid, p_to_date date, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored    jsonb;
+  v_src       record;
+  v_input     jsonb;
+  v_output    jsonb;
+  v_result    jsonb;
+  v_tz        text;
+  v_today     date;
+  v_from      date;
+  v_from_mem  jsonb;
+  v_to_mem    jsonb;
+  v_created   jsonb;
+  v_lo        date;
+  v_hi        date;
+BEGIN
+  -- ORDER MATTERS. The lock is taken BEFORE the ledger is read, so the
+  -- check-then-insert is atomic per student. Read first and concurrent callers
+  -- sharing a key all miss the ledger, serialise here, and then collide on
+  -- calendar_mutation_ledger_pkey -- the replay returns a 23505 instead of the
+  -- stored response. Proved by scripts/ci/calendar-concurrency-gate.sh C-2.
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_move_block: student % has no study profile', p_student_id USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN RETURN v_stored; END IF;
+  END IF;
+
+  SELECT * INTO v_src FROM public.calendar_blocks
+  WHERE block_id = p_block_id AND student_id = p_student_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_move_block: block % does not belong to student %', p_block_id, p_student_id
+      USING ERRCODE = '42501';
+  END IF;
+  v_from := v_src.scheduled_date;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+
+  -- §12.2: a past date is never owned and never edited, at either end. Moving
+  -- work INTO the past would rewrite what the student did not do. Moving it
+  -- OUT of the past would erase it.
+  IF v_from < v_today OR p_to_date < v_today THEN
+    RETURN jsonb_build_object('refused', 'date_in_past',
+                              'from_date', v_from::text, 'to_date', p_to_date::text);
+  END IF;
+
+  IF v_from = p_to_date THEN
+    RETURN jsonb_build_object('refused', 'same_date',
+                              'from_date', v_from::text, 'to_date', p_to_date::text);
+  END IF;
+
+  v_lo := least(v_from, p_to_date);
+  v_hi := greatest(v_from, p_to_date);
+  v_input := public.calendar_build_plan_input(p_student_id, ARRAY[v_lo, v_hi]);
+
+  -- §12.2 V-12: a started block is protected state. started_blocks_by_date is
+  -- the canonical answer to "has this block been launched" -- calendar_carry_started
+  -- and the V-12 validator arm both read exactly this key, so the refusal is
+  -- decided by the same fact they are, never by a second query that could drift.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(COALESCE(v_input -> 'started_blocks_by_date', '[]'::jsonb)) s
+    WHERE (s ->> 'block_id')::uuid = p_block_id
+  ) THEN
+    RETURN jsonb_build_object('refused', 'block_started',
+                              'from_date', v_from::text, 'to_date', p_to_date::text);
+  END IF;
+
+  -- The source date, re-stated WITHOUT the block being moved. Everything else
+  -- on that day is carried by id, so nothing is regenerated by moving a sibling.
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('kind','carried','block_id', cp.block_id::text)
+                            ORDER BY cp.display_ordinal), '[]'::jsonb)
+    INTO v_from_mem
+  FROM public.calendar_current_plan cp
+  WHERE cp.student_id = p_student_id AND cp.scheduled_date = v_from
+    AND cp.block_id IS NOT NULL AND cp.block_id <> p_block_id;
+
+  -- The target date, as it stands today. The moved copy is appended, so it
+  -- lands last in display order rather than displacing the day.
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('kind','carried','block_id', cp.block_id::text)
+                            ORDER BY cp.display_ordinal), '[]'::jsonb)
+    INTO v_to_mem
+  FROM public.calendar_current_plan cp
+  WHERE cp.student_id = p_student_id AND cp.scheduled_date = p_to_date
+    AND cp.block_id IS NOT NULL;
+
+  v_created := jsonb_build_array(jsonb_build_object(
+    'kind','created',
+    'block', jsonb_build_object(
+      'block_type', v_src.block_type,
+      'section', v_src.section,
+      'scope', v_src.scope,
+      'target_count', v_src.target_count,
+      'explanation_key', v_src.explanation_key,
+      'derived_from_block_id', p_block_id::text)));
+
+  -- Ascending date order, so the emitted output is a function of the inputs and
+  -- not of which direction the student dragged.
+  v_output := jsonb_build_object(
+    'generator', 'deterministic_v1',
+    'generator_version', p_generator_version,
+    'dates', CASE WHEN v_from < p_to_date THEN
+      jsonb_build_array(
+        jsonb_build_object('scheduled_date', v_from::text,    'is_user_override', true, 'members', v_from_mem),
+        jsonb_build_object('scheduled_date', p_to_date::text, 'is_user_override', true, 'members', v_to_mem || v_created))
+    ELSE
+      jsonb_build_array(
+        jsonb_build_object('scheduled_date', p_to_date::text, 'is_user_override', true, 'members', v_to_mem || v_created),
+        jsonb_build_object('scheduled_date', v_from::text,    'is_user_override', true, 'members', v_from_mem))
+    END);
+
+  v_output := public.calendar_carry_started(v_input, v_output);
+
+  v_result := public.calendar_write_version(p_student_id, 'day_edit', 'student',
+                'deterministic_v1', p_generator_version, v_input, v_output, 'student_edit', NULL);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_move_block',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_move_block(p_student_id uuid, p_block_id uuid, p_to_date date, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_move_block(p_student_id uuid, p_block_id uuid, p_to_date date, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.2/§12.4. Moves one unstarted block to another date in a single day_edit version owning both dates; the target gets a created copy with derived_from_block_id set, and both dates become user overrides. Refuses a started block, a past date at either end, and a move to the same date as DATA ({"refused": ...}), never as an exception.';
 
 
 --
@@ -1737,8 +2047,12 @@ BEGIN
     END;
 
     IF v_generator = 'deterministic_v1' THEN
-      v_output := public.calendar_carry_started(v_input,
-                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+      v_output := public.calendar_drop_unowned_dates(
+                    public.calendar_drop_today_for_system(
+                      public.calendar_carry_started(v_input,
+                        public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                      p_trigger, v_today),
+                    v_input);
       v_res := public.calendar_validate_plan('generated', v_input, v_output);
       IF v_res ->> 'result' <> 'accepted' THEN
         v_generator := 'fallback_v1';
@@ -1749,8 +2063,15 @@ BEGIN
 
   IF v_generator = 'fallback_v1' THEN
     v_plan := public.calendar_compute_plan_fallback(v_input);
-    v_output := public.calendar_carry_started(v_input,
-                  public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+    -- The fallback needs the same narrowing as the primary. Without it a student with an
+    -- overridden date whose primary plan was rejected would have the fallback rejected for
+    -- the identical reason, and the ladder would have no rung left.
+    v_output := public.calendar_drop_unowned_dates(
+                  public.calendar_drop_today_for_system(
+                    public.calendar_carry_started(v_input,
+                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                    p_trigger, v_today),
+                  v_input);
   END IF;
 
   v_result := public.calendar_write_version(p_student_id, p_trigger, p_initiated_by,
@@ -1772,7 +2093,7 @@ $$;
 -- Name: FUNCTION calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.3. FOR UPDATE on the profile, build, compute, validate, insert, one transaction. Falls back to fallback_v1 on degraded input, a raise, or a rejection, recording the reason on the version (sheet §5A).';
+COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1-§12.3. Allocates a version under the profile lock, generates, validates, and persists. The plan OUTPUT is narrowed twice before validation: calendar_drop_today_for_system removes today for weekly/post_exam, and calendar_drop_unowned_dates removes any date generated_for.dates does not name -- chiefly a date the student overrode. Both are output filters, because calendar_compute_plan derives its dates from the profile clock and never reads generated_for.dates.';
 
 
 --
@@ -1906,6 +2227,206 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) IS 'Doc 05F §10.2. Generator days -> PlanOutput dates/members, filtered to enabled_block_types (§21 / sheet §8 item 12). Created members only. Carried members are merged by calendar_persist_version from §12.2 protected state.';
+
+
+--
+-- Name: calendar_regenerate_day(uuid, date, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_stored     jsonb;
+  v_input      jsonb;
+  v_plan       jsonb;
+  v_output     jsonb;
+  v_generator  text := 'deterministic_v1';
+  v_reason     jsonb;
+  v_res        jsonb;
+  v_result     jsonb;
+  v_today      date;
+  v_tz         text;
+  v_enabled    text[];
+  v_degraded   text[];
+  v_horizon    integer;
+  v_dates      date[];
+BEGIN
+  IF p_trigger NOT IN ('day_regenerate', 'day_reset') THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: trigger ''%'' is not a day-scoped trigger', p_trigger
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM 1 FROM public.student_study_profile WHERE student_id = p_student_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: student % has no study profile; nothing is generated and the prior plan stands', p_student_id
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT response INTO v_stored FROM public.calendar_mutation_ledger
+    WHERE student_id = p_student_id AND idempotency_key = p_idempotency_key;
+    IF FOUND THEN RETURN v_stored; END IF;
+  END IF;
+
+  SELECT timezone INTO v_tz FROM public.student_study_profile WHERE student_id = p_student_id;
+  v_today := (now() AT TIME ZONE v_tz)::date;
+
+  -- §12.2: a past date is never owned and never regenerated.
+  IF p_date < v_today THEN
+    RAISE EXCEPTION 'calendar_regenerate_day: % is in the past and cannot be regenerated', p_date
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT public.calendar_require_int(jsonb_object_agg(key, value), 'horizon_days')
+    INTO v_horizon FROM public.calendar_runtime_config;
+
+  SELECT array_agg(d ORDER BY d) INTO v_dates
+  FROM generate_series(v_today, v_today + (v_horizon - 1), interval '1 day') g(d);
+
+  ----------------------------------------------------------------------------
+  -- BEYOND THE HORIZON: own the date, plan nothing, and leave it to the future.
+  --
+  -- This used to RAISE. The reasoning was sound as far as it went -- the generator
+  -- never emits a date outside the horizon, so running it and narrowing to that
+  -- date would produce a version owning nothing, and the route would report a
+  -- success that changed no plan.
+  --
+  -- What it missed is that a day-scoped RESET is not a request to plan a date. It
+  -- is a request to STOP owning one. A student who blocks out a concert three weeks
+  -- out creates an override at day +21; undoing it has to clear that override, and
+  -- the horizon is fourteen days, so the undo raised and the day off could not be
+  -- taken back until the date drifted into range. The control existed and could not
+  -- be reversed, which is worse than not offering it.
+  --
+  -- So the version owns the date with NO members and is_user_override false. That is
+  -- precisely "this date is the generator's again, and it has nothing to say about
+  -- it yet". When the date enters the horizon the ordinary weekly run plans it,
+  -- because there is no override left to stop it (V-14) -- which is the whole point.
+  --
+  -- The generator is NOT run here. There is nothing for it to compute: a date outside
+  -- the horizon has no budget, no mix and no cadence yet. Skipping it is why this
+  -- branch cannot disturb parity.
+  --
+  -- The snapshot is built over the horizon PLUS this date, so generated_for.dates
+  -- names it and V-01's membership test passes. Without that the version would be
+  -- rejected for owning a date its own input never mentioned.
+  ----------------------------------------------------------------------------
+  IF p_date > v_today + (v_horizon - 1) THEN
+    v_input := public.calendar_build_plan_input(p_student_id, v_dates || p_date);
+    v_output := jsonb_build_object(
+      'generator', 'deterministic_v1',
+      'generator_version', p_generator_version,
+      'dates', jsonb_build_array(jsonb_build_object(
+        'scheduled_date', p_date::text,
+        'is_user_override', false,
+        'members', '[]'::jsonb)));
+
+    v_res := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+    IF v_res ->> 'result' <> 'accepted' THEN
+      RAISE EXCEPTION 'calendar_regenerate_day: clearing % was rejected: %', p_date, v_res
+        USING ERRCODE = '22023';
+    END IF;
+
+    v_result := public.calendar_write_version(p_student_id, p_trigger, 'student',
+                  'deterministic_v1', p_generator_version, v_input, v_output, 'day_regenerate',
+                  jsonb_build_object('reason', 'beyond_horizon_cleared', 'horizon_days', v_horizon));
+
+    IF p_idempotency_key IS NOT NULL THEN
+      INSERT INTO public.calendar_mutation_ledger
+        (student_id, idempotency_key, route, response_hash, response)
+      VALUES (p_student_id, p_idempotency_key, 'calendar_regenerate_day',
+              encode(sha256(v_result::text::bytea), 'hex'), v_result);
+    END IF;
+
+    RETURN v_result;
+  END IF;
+
+  v_input := public.calendar_build_plan_input(p_student_id, v_dates);
+
+  SELECT COALESCE(array_agg(t), '{}') INTO v_enabled
+  FROM jsonb_array_elements_text(v_input -> 'enabled_block_types') t;
+  SELECT COALESCE(array_agg(t), '{}') INTO v_degraded
+  FROM jsonb_array_elements_text(COALESCE(v_input -> 'degraded', '[]'::jsonb)) t;
+
+  -- Sheet §5A, the same ladder calendar_persist_version runs. A day the student
+  -- asked for is never left blank: a degraded read, a raise or a rejection all
+  -- fall through to fallback_v1 on the same snapshot, with the reason recorded.
+  IF 'mastery' = ANY (v_degraded) OR 'review_queue' = ANY (v_degraded) THEN
+    v_generator := 'fallback_v1';
+    v_reason := jsonb_build_object('reason','degraded_input','degraded', v_input -> 'degraded');
+  ELSE
+    BEGIN
+      v_plan := public.calendar_compute_plan(v_input);
+    EXCEPTION WHEN OTHERS THEN
+      v_generator := 'fallback_v1';
+      v_reason := jsonb_build_object('reason','primary_raised','sqlstate', SQLSTATE, 'message', SQLERRM);
+    END;
+
+    IF v_generator = 'deterministic_v1' THEN
+      v_output := public.calendar_carry_started(v_input,
+                    public.calendar_regenerate_day_only(
+                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled),
+                      p_date));
+      v_res := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+      IF v_res ->> 'result' <> 'accepted' THEN
+        v_generator := 'fallback_v1';
+        v_reason := jsonb_build_object('reason','primary_rejected','violations', v_res -> 'violations');
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_generator = 'fallback_v1' THEN
+    v_plan := public.calendar_compute_plan_fallback(v_input);
+    v_output := public.calendar_carry_started(v_input,
+                  public.calendar_regenerate_day_only(
+                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled),
+                    p_date));
+  END IF;
+
+  v_result := public.calendar_write_version(p_student_id, p_trigger, 'student',
+                v_generator, p_generator_version, v_input, v_output, 'day_regenerate', v_reason);
+
+  IF p_idempotency_key IS NOT NULL THEN
+    INSERT INTO public.calendar_mutation_ledger
+      (student_id, idempotency_key, route, response_hash, response)
+    VALUES (p_student_id, p_idempotency_key, 'calendar_regenerate_day',
+            encode(sha256(v_result::text::bytea), 'hex'), v_result);
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student''s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. BEYOND THE HORIZON it owns the date with no members and runs no generator, so a day blocked out past the horizon can still be undone; the date is planned by the ordinary weekly run once it comes into range. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
+
+
+--
+-- Name: calendar_regenerate_day_only(jsonb, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_set(p_output, '{dates}', COALESCE((
+    SELECT jsonb_agg(d)
+    FROM jsonb_array_elements(p_output -> 'dates') d
+    WHERE (d ->> 'scheduled_date')::date = p_date
+  ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day_only(p_output jsonb, p_date date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) IS 'Doc 05F §12.1: keeps one date of a horizon plan so a day-scoped version owns exactly that date. calendar_compute_plan always emits the full horizon and ignores generated_for.dates, so narrowing happens on the output, after generation, never by shrinking the snapshot.';
 
 
 --
@@ -2073,7 +2594,7 @@ DECLARE
   v_sum        integer;
   v_txt        text;
 BEGIN
-  IF p_mode NOT IN ('generated','student_edit','do_it_now','rollback') THEN
+  IF p_mode NOT IN ('generated','day_regenerate','student_edit','do_it_now','rollback') THEN
     RAISE EXCEPTION 'calendar_validate_plan: unknown mode ''%''', p_mode USING ERRCODE = '22023';
   END IF;
 
@@ -2175,7 +2696,7 @@ BEGIN
         v_created_fl := v_created_fl + 1;
         v_fl_total := v_fl_total + 1;
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated'
+        IF p_mode IN ('generated','day_regenerate')
            AND (p_wd IS NULL OR EXTRACT(DOW FROM v_date)::integer <> p_wd) THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a full_length was created off the student''s full-length weekday');
@@ -2188,7 +2709,7 @@ BEGIN
 
       ELSIF v_b ->> 'block_type' = 'review' THEN
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+        IF p_mode IN ('generated','day_regenerate') AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a review block was created on a non-study day');
         END IF;
@@ -2227,7 +2748,7 @@ BEGIN
 
       ELSIF v_b ->> 'block_type' = 'practice' THEN
         -------------------------------------------------------------- V-02
-        IF p_mode = 'generated' AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
+        IF p_mode IN ('generated','day_regenerate') AND ((p_mask >> (EXTRACT(DOW FROM v_date)::integer)) & 1) <> 1 THEN
           v_viol := v_viol || jsonb_build_object('rule','V-02','date',v_date::text,
                       'detail','a practice block was created on a non-study day');
         END IF;
@@ -2272,7 +2793,7 @@ BEGIN
       END IF;
 
       ---------------------------------------------------------------- V-09
-      IF p_mode = 'generated' THEN
+      IF p_mode IN ('generated','day_regenerate') THEN
         IF NOT (v_b ->> 'explanation_key' = ANY (c_block_keys)) THEN
           v_viol := v_viol || jsonb_build_object('rule','V-09','date',v_date::text,
                       'detail','block explanation_key ' || COALESCE(v_b ->> 'explanation_key','<null>')
@@ -2291,7 +2812,7 @@ BEGIN
     END LOOP;
 
     ------------------------------------------------------------------ V-05
-    IF p_mode = 'generated' THEN
+    IF p_mode IN ('generated','day_regenerate') THEN
       IF v_has_created_fl AND v_count > 1 THEN
         v_viol := v_viol || jsonb_build_object('rule','V-05','date',v_date::text,
                     'detail','an exam date carries other created blocks');
@@ -2364,7 +2885,7 @@ $$;
 -- Name: FUNCTION calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6. Pure. Returns a rejection as data rather than raising, because calendar_persist_version has to record it and fall back. V-07 is retired: sheet §8 item 3 removed skill_codes.';
+COMMENT ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb, p_output jsonb) IS 'Doc 05F §10.3 as amended by formula sheet §8 item 6 and by the day_regenerate mode (2026-09-17). Pure. Returns a rejection as data rather than raising. Mode day_regenerate is mode generated minus V-14: the day-scoped student triggers exist to clear the student’s own override, which is the one thing V-14 forbids a generated version from doing. V-07 is retired: sheet §8 item 3 removed skill_codes.';
 
 
 --
@@ -2387,6 +2908,43 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_viewer_is_admin() IS 'Doc 05F §7.12 admin SELECT policies (formula sheet §8 item 10: is_admin() does not exist in prod). Collapses into Doc 01 is_admin() when that primitive ships.';
+
+
+--
+-- Name: calendar_weekly_candidates(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500) RETURNS TABLE(student_id uuid, period_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p.student_id,
+         (date_trunc('week', now() AT TIME ZONE p.timezone))::date AS period_key,
+         CASE
+           WHEN p.planner_mode <> 'auto' THEN 'skipped_custom'
+           WHEN NOT public.entitlement_active(p.student_id) THEN 'skipped_no_entitlement'
+           WHEN EXISTS (
+             SELECT 1 FROM public.calendar_plan_versions v
+             WHERE v.student_id = p.student_id
+               AND v.validator_result = 'accepted'
+               AND v.trigger IN ('setup','profile_change','weekly','student_refresh','post_exam')
+               AND (v.created_at AT TIME ZONE p.timezone)
+                     >= date_trunc('week', now() AT TIME ZONE p.timezone)
+           ) THEN 'skipped_fresh'
+           ELSE NULL
+         END AS outcome
+  FROM public.student_study_profile p
+  WHERE p.setup_completed_at IS NOT NULL
+  ORDER BY p.student_id
+  LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidates(p_limit integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_weekly_candidates(p_limit integer) IS 'Doc 05F §12.5 / R-08-30: the weekly job population and its per-student outcome. outcome NULL means generate; the three skip values are the calendar_job_runs CHECK verbatim, so every student the job considered gets a row. Monday-anchored in each student''s own timezone.';
 
 
 --
@@ -3790,6 +4348,48 @@ $$;
 
 
 --
+-- Name: crisis_review_sla_hours(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_review_sla_hours() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 48;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_review_sla_hours(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_review_sla_hours() IS 'Doc 03 §21.3: the crisis review SLA window in hours. 48 at launch; the §21.3 target after 30 days is 24. THE single definition — flag_conversation_for_crisis_review() reads it.';
+
+
+--
+-- Name: crisis_source_fallback(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_source_fallback(p_source text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE p_source
+           WHEN 'classifier_degraded_no_floor' THEN 'classifier_degraded'
+           WHEN 'infrastructure_failure'       THEN 'classifier_degraded'
+           ELSE NULL
+         END;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_source_fallback(p_source text) IS 'WS-L8 Item 4b: source values added after the original CHECK constraint, mapped to the coarser value the old constraint accepts. NULL means no fallback — the CHECK violation is real and must propagate.';
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4343,6 +4943,112 @@ $_$;
 
 
 --
+-- Name: flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_deadline  timestamptz := now()
+                 + make_interval(hours => public.crisis_review_sla_hours());
+  v_source    text        := p_source;
+  v_fallback  text;
+  v_case_id   uuid;
+  v_found_at  timestamptz;
+  v_status    text;
+  v_rows      integer;
+BEGIN
+  UPDATE public.tutor_conversations
+     SET crisis_flagged = true
+   WHERE id = p_conversation_id;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION
+      'crisis flag target conversation % does not exist', p_conversation_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.crisis_review_cases
+      (conversation_id, student_id, source, category,
+       signature_id, model_confidence, sla_deadline)
+    VALUES
+      (p_conversation_id, p_student_id, v_source, p_category,
+       p_signature_id, p_model_confidence, v_deadline)
+    RETURNING id, status INTO v_case_id, v_status;
+
+    RETURN jsonb_build_object(
+      'case_id',          v_case_id,
+      'sla_deadline',     v_deadline,
+      'already_existed',  false,
+      'case_status',      v_status,
+      'persisted_source', v_source
+    );
+
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- An active case already exists. Return it; the flag stands.
+      SELECT c.id, c.sla_deadline, c.status
+        INTO v_case_id, v_found_at, v_status
+        FROM public.crisis_review_cases c
+       WHERE c.conversation_id = p_conversation_id
+         AND c.status IN ('open', 'in_review')
+       LIMIT 1;
+
+      IF v_case_id IS NULL THEN
+        -- A unique violation with nothing to find is not a state this
+        -- function understands. Propagate and roll the flag back with it.
+        RAISE;
+      END IF;
+
+      RETURN jsonb_build_object(
+        'case_id',          v_case_id,
+        'sla_deadline',     v_found_at,
+        'already_existed',  true,
+        'case_status',      v_status,
+        'persisted_source', NULL
+      );
+
+    WHEN check_violation THEN
+      v_fallback := public.crisis_source_fallback(p_source);
+      IF v_fallback IS NULL THEN
+        RAISE;   -- a real CHECK violation, not a schema-version mismatch
+      END IF;
+      v_source := v_fallback;
+  END;
+
+  -- Only reached via the check_violation fallback above. Unwrapped on
+  -- purpose: if this fails too, everything rolls back, flag included.
+  INSERT INTO public.crisis_review_cases
+    (conversation_id, student_id, source, category,
+     signature_id, model_confidence, sla_deadline)
+  VALUES
+    (p_conversation_id, p_student_id, v_source, p_category,
+     p_signature_id, p_model_confidence, v_deadline)
+  RETURNING id, status INTO v_case_id, v_status;
+
+  RETURN jsonb_build_object(
+    'case_id',          v_case_id,
+    'sla_deadline',     v_deadline,
+    'already_existed',  false,
+    'case_status',      v_status,
+    'persisted_source', v_source
+  );
+END;
+$$;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) IS 'Doc 03 §21.2/§21.3, owner ruling D1 2026-09-22: sets tutor_conversations.crisis_flagged AND creates the review case in ONE transaction, so a flagged conversation with no case in the queue is not a reachable state. Returns {case_id, sla_deadline, already_existed, case_status, persisted_source}. `case_status` is read back from the row rather than assumed, so the caller''s notification policy (Doc 03 §21.3 throttling) sees what the table actually holds. Does NOT notify — Cloud Tasks cannot join the transaction; the caller notifies after this returns.';
+
+
+--
 -- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4832,6 +5538,46 @@ BEGIN
     )::text
   );
 END;
+$$;
+
+
+--
+-- Name: practice_item_enqueue_review(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.practice_item_enqueue_review() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_outcome text;
+BEGIN
+  -- An anonymized item has no owner to queue for. Practice's anonymize path
+  -- UPDATEs user_id to NULL on already-resolved rows (20260917000000:732), so
+  -- this is reached on exactly that path and must write nothing (G10).
+  IF NEW.user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- Ruling 2: misses AND skips enter the queue. Ruling 13: a correct answer
+  -- never touches it.
+  IF NEW.status = 'answered' AND NEW.is_correct = false THEN
+    v_outcome := 'incorrect';
+  ELSIF NEW.status = 'skipped' THEN
+    v_outcome := 'skipped';
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  -- occurred_at, not answered_at: psi_resolved_requires_occurred_at guarantees
+  -- the former on every resolved row, and nothing guarantees the latter.
+  PERFORM public.review_queue_record(
+    NEW.user_id, NEW.question_id, 'practice',
+    NEW.session_id, NEW.id, v_outcome, NEW.occurred_at
+  );
+
+  RETURN NULL;
+END
 $$;
 
 
@@ -6184,6 +6930,162 @@ $$;
 
 
 --
+-- Name: review_item_resolve(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_item_resolve() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.student_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF NEW.status = 'answered' THEN
+    -- id = NEW.id so the attempt id EQUALS the item id. R3 passes that as the
+    -- mastery event id (ruling 11), and canonical_mastery_events reads
+    -- review_error_attempts.id as event_id.
+    INSERT INTO public.review_error_attempts (
+      id, session_item_id, student_id, question_id,
+      selected_answer, is_correct, seconds_spent, client_attempt_id,
+      used_tutor, section, domain, skill, difficulty, occurred_at, actor_id
+    ) VALUES (
+      NEW.id, NEW.id, NEW.student_id, NEW.question_id,
+      NEW.selected_answer, NEW.is_correct,
+      NEW.time_spent_ms / 1000, NEW.client_attempt_id,
+      false,                      -- ruling 9: LISA is out at launch
+      NEW.question_section, NEW.question_domain, NEW.question_skill,
+      NEW.question_difficulty, NEW.occurred_at, NEW.actor_id
+    );
+
+    IF NEW.is_correct THEN
+      PERFORM public.review_queue_graduate(
+        NEW.student_id, NEW.question_id, NEW.id, NEW.occurred_at);
+    ELSE
+      PERFORM public.review_queue_record(
+        NEW.student_id, NEW.question_id, 'review',
+        NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at);
+    END IF;
+
+  ELSIF NEW.status = 'skipped' THEN
+    -- No attempt row. Pre-build check 7: canonical_mastery_events' practice
+    -- branch filters status='answered' (20260806000000_diagnostic_gate.sql:140),
+    -- so practice skips carry no mastery. Review mirrors that; writing an
+    -- attempt here would make review skips count where practice skips do not.
+    PERFORM public.review_queue_record(
+      NEW.student_id, NEW.question_id, 'review',
+      NEW.session_id, NEW.id, 'skipped', NEW.occurred_at);
+  END IF;
+
+  RETURN NULL;
+END
+$$;
+
+
+--
+-- Name: review_queue_graduate(uuid, text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text), hashtext(p_question_id));
+
+  UPDATE public.review_schedule
+     SET status            = 'graduated',
+         closed_at         = p_at,
+         closed_by_item_id = p_review_item_id,
+         updated_at        = p_at
+   WHERE student_id = p_student_id
+     AND question_id = p_question_id
+     AND status = 'active'
+  RETURNING id INTO v_id;
+
+  -- No active entry is a normal outcome, not an error: the question may have
+  -- graduated in another open session (plan §6, "the same question in two open
+  -- sessions"). Returning NULL says "nothing to close" without raising.
+  RETURN v_id;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 4. Closes the question''s open queue entry as graduated. Returns NULL when there is none — the question graduated elsewhere first.';
+
+
+--
+-- Name: review_queue_record(uuid, text, text, uuid, uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_existing uuid;
+  v_new      uuid;
+BEGIN
+  -- The lock is taken BEFORE any read of the state it protects. Two concurrent
+  -- misses on one question must not both see "no active entry" and both insert
+  -- (G6). Transaction-scoped: released at commit, so the caller's CAS owns it.
+  PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text), hashtext(p_question_id));
+
+  -- Replay: this exact source item already enqueued. Returning the existing row
+  -- rather than raising is what makes the backfill re-runnable (§4) and makes a
+  -- retried CAS harmless (G4).
+  SELECT id INTO v_existing
+  FROM public.review_schedule
+  WHERE source_engine = p_source_engine AND source_item_id = p_source_item_id;
+
+  IF v_existing IS NOT NULL THEN
+    RETURN v_existing;
+  END IF;
+
+  -- Ruling 12: a new miss supersedes the question's open entry rather than
+  -- mutating it, so the queue keeps one row per event. closed_by_item_id is the
+  -- review item that closed it, which only exists when review is the source —
+  -- a practice miss closes the entry but is not a review item.
+  UPDATE public.review_schedule
+     SET status            = 'superseded',
+         closed_at         = p_at,
+         closed_by_item_id = CASE WHEN p_source_engine = 'review' THEN p_source_item_id END,
+         updated_at        = p_at
+   WHERE student_id = p_student_id
+     AND question_id = p_question_id
+     AND status = 'active';
+
+  INSERT INTO public.review_schedule (
+    student_id, question_id, status, queued_at,
+    source_engine, source_session_id, source_item_id, source_outcome,
+    created_at, updated_at
+  ) VALUES (
+    p_student_id, p_question_id, 'active', p_at,
+    p_source_engine, p_source_session_id, p_source_item_id, p_source_outcome,
+    p_at, p_at
+  )
+  RETURNING id INTO v_new;
+
+  RETURN v_new;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 12. The only writer of review_schedule entries. Takes the (student, question) advisory lock before reading, replays on (source_engine, source_item_id), supersedes the open entry, inserts the new one.';
+
+
+--
 -- Name: revoke_guardian_link_audited(uuid, uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7359,9 +8261,35 @@ CREATE TABLE public.crisis_review_cases (
     sla_deadline timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    category text DEFAULT 'crisis'::text NOT NULL,
+    CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
+);
+
+
+--
+-- Name: crisis_review_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crisis_review_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    event_type text NOT NULL,
+    message_id uuid,
+    source text,
+    signature_id uuid,
+    model_confidence numeric,
+    category text,
+    notification_suppressed boolean DEFAULT false NOT NULL,
+    suppression_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT crisis_review_events_category_check CHECK (((category IS NULL) OR (category = ANY (ARRAY['crisis'::text, 'safeguarding'::text])))),
+    CONSTRAINT crisis_review_events_event_type_check CHECK ((event_type = ANY (ARRAY['case_opened'::text, 'signal_received'::text, 'notification_sent'::text, 'assigned'::text, 'resolved'::text]))),
+    CONSTRAINT crisis_review_events_source_check CHECK (((source IS NULL) OR (source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))))
 );
 
 
@@ -8450,6 +9378,65 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 
 
 --
+-- Name: review_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_schedule (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    question_id text NOT NULL,
+    queued_at timestamp with time zone NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_engine text NOT NULL,
+    source_session_id uuid NOT NULL,
+    source_item_id uuid NOT NULL,
+    source_outcome text NOT NULL,
+    closed_at timestamp with time zone,
+    closed_by_item_id uuid,
+    CONSTRAINT review_schedule_closed_iff_not_active CHECK (((status = 'active'::text) = (closed_at IS NULL))),
+    CONSTRAINT review_schedule_source_engine_check CHECK ((source_engine = ANY (ARRAY['practice'::text, 'full_length'::text, 'review'::text]))),
+    CONSTRAINT review_schedule_source_outcome_check CHECK ((source_outcome = ANY (ARRAY['incorrect'::text, 'skipped'::text]))),
+    CONSTRAINT review_schedule_status_check CHECK ((status = ANY (ARRAY['active'::text, 'graduated'::text, 'superseded'::text, 'retired'::text])))
+);
+
+
+--
+-- Name: review_question_history; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.review_question_history WITH (security_invoker='true') AS
+ SELECT q.student_id,
+    q.question_id,
+    (count(*))::integer AS entry_count,
+    (count(*) FILTER (WHERE (q.source_engine = 'practice'::text)))::integer AS entries_from_practice,
+    (count(*) FILTER (WHERE (q.source_engine = 'review'::text)))::integer AS entries_from_review,
+    (count(*) FILTER (WHERE (q.source_engine = 'full_length'::text)))::integer AS entries_from_full_length,
+    (count(*) FILTER (WHERE (q.source_outcome = 'incorrect'::text)))::integer AS entries_incorrect,
+    (count(*) FILTER (WHERE (q.source_outcome = 'skipped'::text)))::integer AS entries_skipped,
+    min(q.queued_at) AS first_queued_at,
+    max(q.queued_at) AS last_queued_at,
+    COALESCE(a.review_attempts, 0) AS review_attempts,
+    COALESCE(a.review_fails, 0) AS review_fails,
+    max(q.status) FILTER (WHERE (q.status = 'active'::text)) AS open_status,
+    max(q.closed_at) FILTER (WHERE (q.status = 'graduated'::text)) AS graduated_at
+   FROM (public.review_schedule q
+     LEFT JOIN LATERAL ( SELECT (count(*))::integer AS review_attempts,
+            (count(*) FILTER (WHERE (ra.is_correct = false)))::integer AS review_fails
+           FROM public.review_error_attempts ra
+          WHERE ((ra.student_id = q.student_id) AND (ra.question_id = q.question_id))) a ON (true))
+  GROUP BY q.student_id, q.question_id, a.review_attempts, a.review_fails;
+
+
+--
+-- Name: VIEW review_question_history; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.review_question_history IS 'Ruled plan §3 ruling 21. One row per (student, question) present in the queue: entry counts by engine and outcome, first/last queued_at, review attempt and fail counts, whether an entry is currently open, and the graduation time. Derived only; stores nothing. service_role only.';
+
+
+--
 -- Name: review_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8487,26 +9474,6 @@ CREATE TABLE public.review_runtime_config_history (
 
 
 --
--- Name: review_schedule; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.review_schedule (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
-    question_id text NOT NULL,
-    repetition_count integer DEFAULT 0 NOT NULL,
-    interval_days integer DEFAULT 0 NOT NULL,
-    ease_factor numeric NOT NULL,
-    next_review_at timestamp with time zone,
-    status text DEFAULT 'active'::text NOT NULL,
-    first_missed_session_id uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT review_schedule_status_check CHECK ((status = ANY (ARRAY['active'::text, 'graduated'::text, 'retired'::text])))
-);
-
-
---
 -- Name: review_session_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8526,16 +9493,33 @@ CREATE TABLE public.review_session_items (
     question_skill text NOT NULL,
     question_difficulty smallint NOT NULL,
     question_section text NOT NULL,
-    retry_mode text DEFAULT 'same_question'::text NOT NULL,
-    status text DEFAULT 'queued'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
     served_at timestamp with time zone,
     answered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     actor_id uuid NOT NULL,
+    selected_answer text,
+    is_correct boolean,
+    outcome text,
+    time_spent_ms integer,
+    client_attempt_id text,
+    occurred_at timestamp with time zone,
+    option_order text[],
+    option_token_map jsonb,
+    client_instance_id text,
+    question_item_type text DEFAULT 'mcq'::text NOT NULL,
+    question_correct_variants text[],
+    question_assets jsonb,
+    question_estimated_time_seconds integer,
+    queue_entry_id uuid,
+    CONSTRAINT review_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT review_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
     CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
-    CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
-    CONSTRAINT review_session_items_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'served'::text, 'answered'::text, 'skipped'::text])))
+    CONSTRAINT review_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text]))),
+    CONSTRAINT rsi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb)))),
+    CONSTRAINT rsi_question_domain_section_canonical CHECK ((((question_section = 'M'::text) AND (question_domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text]))) OR ((question_section = 'RW'::text) AND (question_domain = ANY (ARRAY['Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text]))))),
+    CONSTRAINT rsi_resolved_requires_occurred_at CHECK (((status <> ALL (ARRAY['answered'::text, 'skipped'::text])) OR (occurred_at IS NOT NULL)))
 );
 
 
@@ -8546,14 +9530,23 @@ CREATE TABLE public.review_session_items (
 CREATE TABLE public.review_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     student_id uuid,
-    status text DEFAULT 'active'::text NOT NULL,
-    source_origin text NOT NULL,
+    status text DEFAULT 'created'::text NOT NULL,
     client_instance_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     actor_id uuid NOT NULL,
-    CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
-    CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
+    mode text NOT NULL,
+    filters jsonb DEFAULT '{}'::jsonb NOT NULL,
+    target_count integer NOT NULL,
+    platform text NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    abandoned_at timestamp with time zone,
+    CONSTRAINT review_sessions_abandoned_not_completed CHECK (((status <> 'abandoned'::text) OR ((completed_at IS NULL) AND (abandoned_at IS NOT NULL)))),
+    CONSTRAINT review_sessions_mode_check CHECK ((mode = ANY (ARRAY['queue'::text, 'session'::text, 'filter'::text]))),
+    CONSTRAINT review_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
+    CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
+    CONSTRAINT review_sessions_target_count_check CHECK ((target_count > 0))
 );
 
 
@@ -8944,11 +9937,16 @@ CREATE TABLE public.tutor_conversations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     closed_at timestamp with time zone,
+    title text DEFAULT 'New session'::text,
+    surface text,
+    crisis_paused_at timestamp with time zone,
+    ended_at timestamp with time zone,
     CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
     CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
     CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
     CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
-    CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text])))
+    CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text, 'ended'::text]))),
+    CONSTRAINT tutor_conversations_surface_check CHECK (((surface IS NULL) OR (surface = ANY (ARRAY['standalone'::text, 'practice'::text, 'review'::text]))))
 );
 
 
@@ -8995,7 +9993,12 @@ CREATE TABLE public.tutor_injection_signatures (
     action text NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
     added_by text,
-    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text]))),
+    category text,
+    version text,
+    source text,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text, 'stop_and_review'::text, 'stop_and_safeguarding_review'::text]))),
+    CONSTRAINT tutor_injection_signatures_category_check CHECK ((category = ANY (ARRAY['suicide'::text, 'self_harm'::text, 'abuse'::text]))),
     CONSTRAINT tutor_injection_signatures_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
 );
 
@@ -9120,8 +10123,10 @@ CREATE TABLE public.tutor_messages (
     injection_flag boolean DEFAULT false NOT NULL,
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'completed'::text NOT NULL,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
-    CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text])))
+    CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
+    CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
 
 
@@ -9508,6 +10513,14 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crisis_review_events crisis_review_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -10215,11 +11228,11 @@ ALTER TABLE ONLY public.tutor_turn_metrics
 
 
 --
--- Name: review_schedule uq_review_schedule_profile_question; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: review_schedule uq_review_schedule_source_item; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.review_schedule
-    ADD CONSTRAINT uq_review_schedule_profile_question UNIQUE (student_id, question_id);
+    ADD CONSTRAINT uq_review_schedule_source_item UNIQUE (source_engine, source_item_id);
 
 
 --
@@ -10357,6 +11370,13 @@ CREATE INDEX idx_crisis_audit_log_reviewer ON public.crisis_review_audit_log USI
 
 
 --
+-- Name: idx_crisis_review_cases_category_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_category_active ON public.crisis_review_cases USING btree (category) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
+
+
+--
 -- Name: idx_crisis_review_cases_conversation_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10375,6 +11395,20 @@ CREATE INDEX idx_crisis_review_cases_sla_breach ON public.crisis_review_cases US
 --
 
 CREATE INDEX idx_crisis_review_cases_status ON public.crisis_review_cases USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_crisis_review_events_case; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_events_case ON public.crisis_review_events USING btree (case_id, created_at);
+
+
+--
+-- Name: idx_crisis_review_events_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_events_conversation ON public.crisis_review_events USING btree (conversation_id, created_at);
 
 
 --
@@ -10612,7 +11646,21 @@ CREATE INDEX idx_review_items_student ON public.review_session_items USING btree
 -- Name: idx_review_schedule_due; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, next_review_at) WHERE (status = 'active'::text);
+CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, queued_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_review_schedule_source_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_schedule_source_session ON public.review_schedule USING btree (student_id, source_engine, source_session_id);
+
+
+--
+-- Name: idx_review_sessions_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_sessions_active ON public.review_sessions USING btree (student_id) WHERE (status = 'active'::text);
 
 
 --
@@ -10721,6 +11769,13 @@ CREATE INDEX idx_tutor_conversations_reuse_envelope ON public.tutor_conversation
 
 
 --
+-- Name: idx_tutor_conversations_standalone_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_standalone_active ON public.tutor_conversations USING btree (student_id, updated_at DESC) WHERE ((surface = 'standalone'::text) AND (status = 'active'::text) AND (deleted_at IS NULL));
+
+
+--
 -- Name: idx_tutor_conversations_student_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10739,6 +11794,13 @@ CREATE INDEX idx_tutor_injection_log_signature ON public.tutor_injection_log USI
 --
 
 CREATE INDEX idx_tutor_injection_log_student_recent ON public.tutor_injection_log USING btree (student_id, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_signatures_category_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_signatures_category_enabled ON public.tutor_injection_signatures USING btree (category) WHERE (enabled = true);
 
 
 --
@@ -10809,6 +11871,13 @@ CREATE INDEX idx_tutor_messages_conversation ON public.tutor_messages USING btre
 --
 
 CREATE INDEX idx_tutor_messages_injection ON public.tutor_messages USING btree (injection_flag, created_at DESC) WHERE (injection_flag = true);
+
+
+--
+-- Name: idx_tutor_messages_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_messages_status ON public.tutor_messages USING btree (conversation_id, status) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]));
 
 
 --
@@ -10942,6 +12011,20 @@ CREATE UNIQUE INDEX uq_practice_items_idem ON public.practice_session_items USIN
 --
 
 CREATE UNIQUE INDEX uq_review_attempts_idem ON public.review_error_attempts USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_review_items_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_review_items_idem ON public.review_session_items USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_review_schedule_open_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_review_schedule_open_question ON public.review_schedule USING btree (student_id, question_id) WHERE (status = 'active'::text);
 
 
 --
@@ -11238,6 +12321,20 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 CREATE TRIGGER trg_capture_mastery_constant_change AFTER INSERT OR DELETE OR UPDATE ON public.mastery_constants FOR EACH ROW EXECUTE FUNCTION public.capture_mastery_constant_change();
 
 ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_constant_change;
+
+
+--
+-- Name: practice_session_items trg_practice_item_enqueue_review; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND ((new.status = 'skipped'::text) OR ((new.status = 'answered'::text) AND (new.is_correct = false))))) EXECUTE FUNCTION public.practice_item_enqueue_review();
+
+
+--
+-- Name: review_session_items trg_review_item_resolve; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_review_item_resolve AFTER UPDATE ON public.review_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND (new.status = ANY (ARRAY['answered'::text, 'skipped'::text])))) EXECUTE FUNCTION public.review_item_resolve();
 
 
 --
@@ -11553,6 +12650,38 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.crisis_review_cases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.tutor_messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -11944,7 +13073,7 @@ ALTER TABLE ONLY public.review_schedule
 --
 
 ALTER TABLE ONLY public.review_schedule
-    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -11953,6 +13082,14 @@ ALTER TABLE ONLY public.review_schedule
 
 ALTER TABLE ONLY public.review_session_items
     ADD CONSTRAINT review_session_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: review_session_items review_session_items_queue_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_queue_entry_id_fkey FOREIGN KEY (queue_entry_id) REFERENCES public.review_schedule(id) ON DELETE SET NULL;
 
 
 --
@@ -12444,6 +13581,19 @@ ALTER TABLE public.crisis_review_audit_log ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.crisis_review_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.crisis_review_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_events crisis_review_events_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY crisis_review_events_service_role ON public.crisis_review_events TO service_role USING (true);
+
 
 --
 -- Name: crisis_review_audit_log crisis_review_writer insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -13563,6 +14713,14 @@ GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, 
 
 
 --
+-- Name: FUNCTION calendar_acknowledge_version(p_student_id uuid, p_version_no integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_acknowledge_version(p_student_id uuid, p_version_no integer) TO service_role;
+
+
+--
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13600,6 +14758,20 @@ GRANT ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uu
 
 
 --
+-- Name: FUNCTION calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_drop_unowned_dates(p_output jsonb, p_input jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13608,11 +14780,26 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
+-- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_is_known_timezone(p_timezone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_is_known_timezone(p_timezone text) TO service_role;
+
+
+--
 -- Name: FUNCTION calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_link_launch(p_student_id uuid, p_block_id uuid, p_engine text, p_engine_session_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_move_block(p_student_id uuid, p_block_id uuid, p_to_date date, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_move_block(p_student_id uuid, p_block_id uuid, p_to_date date, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
 
 
 --
@@ -13635,6 +14822,21 @@ REVOKE ALL ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) FROM PU
 --
 
 REVOKE ALL ON FUNCTION public.calendar_plan_to_output(p_plan jsonb, p_generator_version text, p_enabled_block_types text[]) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_regenerate_day_only(p_output jsonb, p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_regenerate_day_only(p_output jsonb, p_date date) FROM PUBLIC;
 
 
 --
@@ -13663,6 +14865,14 @@ REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb,
 --
 
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidates(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_weekly_candidates(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_weekly_candidates(p_limit integer) TO service_role;
 
 
 --
@@ -13885,6 +15095,22 @@ GRANT ALL ON FUNCTION public.crisis_review_cases_updated_at() TO service_role;
 
 
 --
+-- Name: FUNCTION crisis_review_sla_hours(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_review_sla_hours() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_review_sla_hours() TO service_role;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_source_fallback(p_source text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_source_fallback(p_source text) TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13914,6 +15140,14 @@ GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_ro
 
 REVOKE ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) TO service_role;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) TO service_role;
 
 
 --
@@ -14073,6 +15307,13 @@ GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
 
 REVOKE ALL ON FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summary_type text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.pg_notify_memory_summary(p_student_id uuid, p_summary_type text) TO service_role;
+
+
+--
+-- Name: FUNCTION practice_item_enqueue_review(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.practice_item_enqueue_review() FROM PUBLIC;
 
 
 --
@@ -14510,6 +15751,27 @@ GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_fi
 
 REVOKE ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) TO service_role;
+
+
+--
+-- Name: FUNCTION review_item_resolve(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_item_resolve() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) FROM PUBLIC;
 
 
 --
@@ -15483,6 +16745,21 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 
 
 --
+-- Name: TABLE review_schedule; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_schedule TO service_role;
+GRANT SELECT ON TABLE public.review_schedule TO authenticated;
+
+
+--
+-- Name: TABLE review_question_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.review_question_history TO service_role;
+
+
+--
 -- Name: TABLE review_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15494,14 +16771,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO servi
 --
 
 GRANT ALL ON TABLE public.review_runtime_config_history TO service_role;
-
-
---
--- Name: TABLE review_schedule; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_schedule TO service_role;
-GRANT SELECT ON TABLE public.review_schedule TO authenticated;
 
 
 --
@@ -15596,13 +16865,6 @@ GRANT SELECT(question_section) ON TABLE public.review_session_items TO authentic
 
 
 --
--- Name: COLUMN review_session_items.retry_mode; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(retry_mode) ON TABLE public.review_session_items TO authenticated;
-
-
---
 -- Name: COLUMN review_session_items.status; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15628,6 +16890,55 @@ GRANT SELECT(answered_at) ON TABLE public.review_session_items TO authenticated;
 --
 
 GRANT SELECT(created_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.selected_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(selected_answer) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.is_correct; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_correct) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.outcome; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(outcome) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.time_spent_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(time_spent_ms) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.client_attempt_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_attempt_id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.occurred_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(occurred_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.queue_entry_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(queue_entry_id) ON TABLE public.review_session_items TO authenticated;
 
 
 --

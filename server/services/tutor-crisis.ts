@@ -32,10 +32,18 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { getGcpCredentials } from "../lib/gcp-credentials";
 import { logger } from "../logger";
-import { createCrisisReviewCase } from "./crisis-review-queue";
 import { notifyCrisisEvent } from "./crisis-notification";
+import {
+  crisisFlagResultSchema,
+  type CrisisCategory,
+  type CrisisSource,
+} from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Types ──────────────────────────────────────────────────────────────
+// `CrisisCategory` and `CrisisSource` are inferred from the Zod schemas in
+// packages/shared. They were declared here AND in crisis-review-queue.ts as
+// hand-written unions; three copies of one enum drift the moment the database
+// CHECK gains a value. Coding Standards §7.2 / §17.
 
 type CrisisResult =
   | { crisis: false; forceReview: boolean }
@@ -47,6 +55,7 @@ type CrisisResult =
         | "both"
         | "classifier_degraded_no_floor"
         | "infrastructure_failure";
+      category: CrisisCategory;
       signatureId: string | null;
       modelConfidence: number | null;
       forceReview: boolean;
@@ -55,6 +64,7 @@ type CrisisResult =
 type SignatureResult = {
   triggered: boolean;
   signatureId: string | null;
+  category: CrisisCategory | null;
   /** True when the signature set returned zero crisis rows — Layer 1 is inert. */
   layer1Empty: boolean;
 };
@@ -64,70 +74,217 @@ type ClassifierResult = {
   confidence: number;
 };
 
-export type { CrisisResult };
+export type NotificationPolicyInput = {
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  currentCategory: CrisisCategory;
+  priorEvents: Array<{ category: string; created_at: string }>;
+  nowMs: number;
+  throttleWindowMs: number;
+};
+
+export type NotificationPolicyResult = {
+  shouldNotify: boolean;
+  suppressionReason: string | null;
+};
+
+const SEVERITY_RANK: Record<string, number> = {
+  safeguarding: 1,
+  crisis: 2,
+};
+
+export function evaluateNotificationPolicy(
+  input: NotificationPolicyInput,
+): NotificationPolicyResult {
+  const currentSeverity = SEVERITY_RANK[input.currentCategory] ?? 0;
+
+  if (input.isNewCase) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const maxPriorSeverity = input.priorEvents.reduce(
+    (max, e) => Math.max(max, SEVERITY_RANK[e.category] ?? 0),
+    0,
+  );
+
+  if (input.caseStatus === "in_review") {
+    if (currentSeverity > maxPriorSeverity) {
+      return { shouldNotify: true, suppressionReason: null };
+    }
+    return { shouldNotify: false, suppressionReason: "case_claimed" };
+  }
+
+  // Open (unclaimed) case
+  if (currentSeverity > maxPriorSeverity) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const mostRecentMs = input.priorEvents.reduce((latest, e) => {
+    const t = new Date(e.created_at).getTime();
+    return t > latest ? t : latest;
+  }, 0);
+
+  const msSinceLast = mostRecentMs > 0 ? input.nowMs - mostRecentMs : Infinity;
+
+  if (msSinceLast >= input.throttleWindowMs) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  return { shouldNotify: false, suppressionReason: "throttled_same_severity" };
+}
+
+// Re-exported so existing consumers keep their import site; the definition
+// lives in packages/shared.
+export type { CrisisResult, CrisisCategory };
+export { notifyCrisisEvent };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
 
+const DEFAULT_CRISIS_COUNTRY = "US";
+
 /**
- * Crisis resource lookup by billing country code.
- * @spec [Doc-03_V3 §4.6, §21.2]
+ * Crisis-lane resources by billing country code. Youth-preferred lines
+ * per V1 spec; adult general lines only where no youth-specific service
+ * exists for the country.
+ * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §3]
  */
 const CRISIS_RESOURCES: Readonly<Record<string, string>> = {
   US: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
-  CA: "If you're in crisis, Talk Suicide Canada is there for you. Call 1-833-456-4566 or text 45645. Real people, anytime.",
-  UK: "If you're in crisis, the Samaritans are there for you. Call 116 123. Real people, anytime.",
-  GB: "If you're in crisis, the Samaritans are there for you. Call 116 123. Real people, anytime.",
-  IE: "If you're in crisis, Samaritans Ireland is there for you. Call 116 123. Real people, anytime.",
-  AU: "If you're in crisis, Lifeline is there for you. Call 13 11 14. Real people, anytime.",
-  NZ: "If you're in crisis, Lifeline Aotearoa is there for you. Call 0800 543 354. Real people, anytime.",
-  SG: "If you're in crisis, Samaritans of Singapore is there for you. Call 1-767. Real people, anytime.",
+  CA: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
+  UK: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
+  GB: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
+  IE: "If you're in crisis, Childline Ireland is there for you. Call 1800 66 66 66. You can also call Pieta at 1800 247 247. Real people, anytime.",
+  AU: "If you're in crisis, Kids Helpline is there for you. Call 1800 55 1800. Real people, anytime.",
+  NZ: "If you're in crisis, Youthline is there for you. Call 0800 376 633 or text 234. You can also call 1737 for free. Real people, anytime.",
+  SG: "If you're in crisis, the Samaritans of Singapore (SOS) are there for you. Call 1767. Real people, anytime.",
 };
 
-const DEFAULT_CRISIS_RESPONSE =
-  "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.";
+/**
+ * Safeguarding-lane resources by billing country code. Abuse/neglect
+ * helplines — youth-preferred, distinct from the crisis (suicide/self-harm)
+ * set. Template: "What you've shared matters. [Resource] is there for you —
+ * call [number]. They listen, and you decide what happens next."
+ * @spec [Layer1 PR 2 brief §2, §3]
+ */
+const SAFEGUARDING_RESOURCES: Readonly<Record<string, string>> = {
+  US: "What you've shared matters. Childhelp is there for you — call 1-800-422-4453. You can also call RAINN at 1-800-656-4673. They listen, and you decide what happens next.",
+  CA: "What you've shared matters. Kids Help Phone is there for you — call 1-800-668-6868 or text CONNECT to 686868. They listen, and you decide what happens next.",
+  UK: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
+  GB: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
+  IE: "What you've shared matters. Childline Ireland is there for you — call 1800 66 66 66. They listen, and you decide what happens next.",
+  AU: "What you've shared matters. Kids Helpline is there for you — call 1800 55 1800. They listen, and you decide what happens next.",
+  NZ: "What you've shared matters. Youthline is there for you — call 0800 376 633 or text 234. They listen, and you decide what happens next.",
+  SG: "What you've shared matters. The National Anti-Violence Helpline is there for you — call 1800-777-0000. They listen, and you decide what happens next.",
+};
+
+const DEFAULT_CRISIS_RESPONSE = CRISIS_RESOURCES[DEFAULT_CRISIS_COUNTRY];
+const DEFAULT_SAFEGUARDING_RESPONSE =
+  SAFEGUARDING_RESOURCES[DEFAULT_CRISIS_COUNTRY];
+
+// ── Layer 1: Text Normalization ───────────────────────────────────────
+
+/**
+ * @spec [LISA_Layer1_Pattern_Set_v1 §7.4]
+ * @implemented 2026-09-17
+ *
+ * plain English: deterministic text normalization for Layer 1 crisis
+ * signature matching. Applied to the student message before substring
+ * containment checks. Does NOT affect the injection-defense path (that
+ * subsystem has its own matching logic in tutor-injection-defense.ts).
+ *
+ * Contract (§7.4, in order):
+ *   1. Unicode NFC normalize
+ *   2. Lowercase
+ *   3. Normalize curly/smart apostrophes and quotation marks to ASCII
+ *   4. Expand first-person contractions (i'm→i am, i've→i have,
+ *      don't→do not, can't→cannot, won't→will not)
+ *   5. Normalize self-harm variants (self-harm/self harm/selfharm → self harm)
+ *   6. Collapse repeated whitespace to single space + trim
+ *   7. Strip repeated terminal punctuation (???→?, !!!→!, ...→.)
+ */
+export function normalizeCrisisText(raw: string): string {
+  // §7.4 step 1: Unicode NFC
+  let t = raw.normalize("NFC");
+
+  // §7.4 step 2: lowercase
+  t = t.toLowerCase();
+
+  // §7.4 step 3: normalize curly/smart quotes and apostrophes to ASCII
+  t = t.replace(/[‘’‚‛]/g, "'"); // single curly → '
+  t = t.replace(/[“”„‟]/g, '"'); // double curly → "
+
+  // §7.4 step 4: expand first-person contractions
+  // Order matters: won't before don't (won't contains "on't")
+  t = t.replace(/\bwon't\b/g, "will not");
+  t = t.replace(/\bcan't\b/g, "cannot");
+  t = t.replace(/\bdon't\b/g, "do not");
+  t = t.replace(/\bi'm\b/g, "i am");
+  t = t.replace(/\bi've\b/g, "i have");
+
+  // §7.4 step 5: normalize self-harm variants to canonical "self harm"
+  t = t.replace(/\bself[-\s]?harm/g, "self harm");
+
+  // §7.4 step 5b: normalize "my self" → "myself" (compound split variant)
+  t = t.replace(/\bmy\s+self\b/g, "myself");
+
+  // §7.4 step 6: collapse whitespace + trim
+  t = t.replace(/\s+/g, " ").trim();
+
+  // §7.4 step 7: strip repeated terminal punctuation
+  t = t.replace(/([?!.])\1+$/g, "$1");
+
+  return t;
+}
 
 // ── Layer 1: Deterministic Signature Match ─────────────────────────────
 
 /**
- * Checks crisis signatures against tutor_injection_signatures table
- * (reuses the injection signatures pattern per SCL-023, filtered by
- * signature_type = 'crisis').
+ * Checks crisis signatures against tutor_injection_signatures table,
+ * filtered by category IN ('crisis','safeguarding') with enabled=true.
+ * The lane comes from category, NEVER from signature_type (which carries
+ * two incompatible meanings across injection-defense and crisis subsystems).
+ *
+ * Text is normalized via normalizeCrisisText (§7.4) before matching.
  *
  * Fails CLOSED if table is unreadable (SCL-023 explicitly:
  * "Layer 1 signature table unreadable: fail closed on the turn").
  *
- * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16]
+ * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16, Layer1 PR 2 brief §1]
  */
 export async function checkCrisisSignatures(
   text: string,
 ): Promise<SignatureResult> {
   const { data, error } = await supabaseServer
     .from("tutor_injection_signatures")
-    .select("id, signature_pattern, signature_type")
-    .eq("signature_type", "crisis");
+    .select("id, signature_pattern, category")
+    .or("category.eq.crisis,category.eq.safeguarding")
+    .eq("enabled", true);
 
   if (error) {
     logger.error(
       "TUTOR_CRISIS",
       "signature_table_read_failed",
-      "tutor_injection_signatures (crisis) table unreadable; failing closed on this turn",
+      "tutor_injection_signatures (crisis/safeguarding) table unreadable; failing closed on this turn",
       error,
     );
-    // Fail CLOSED — SCL-023: "Layer 1 signature table unreadable: fail closed on the turn"
-    // Returning triggered=true so the orchestrator blocks the turn.
-    // layer1Empty=false: the table is unreadable, not known-empty.
-    return { triggered: true, signatureId: null, layer1Empty: false };
+    return {
+      triggered: true,
+      signatureId: null,
+      category: null,
+      layer1Empty: false,
+    };
   }
 
   if (!data || data.length === 0) {
-    // Layer 1 has no crisis signatures — it cannot detect anything.
-    // The caller uses layer1Empty to decide fail-closed behavior on
-    // Layer 2 failure (B1.5: SCL-023 §3.4 "Layer 1 result stands"
-    // presumes Layer 1 can produce a meaningful result).
-    return { triggered: false, signatureId: null, layer1Empty: true };
+    return {
+      triggered: false,
+      signatureId: null,
+      category: null,
+      layer1Empty: true,
+    };
   }
 
-  const lowerText = text.toLowerCase();
+  const normalized = normalizeCrisisText(text);
 
   for (const row of data) {
     const pattern = row.signature_pattern as string;
@@ -135,29 +292,38 @@ export async function checkCrisisSignatures(
     const matched = (() => {
       try {
         const re = new RegExp(pattern, "i");
-        return re.test(text);
+        return re.test(normalized);
       } catch {
-        // If regex is invalid, fall back to substring match
-        return lowerText.includes(pattern.toLowerCase());
+        return normalized.includes(pattern.toLowerCase());
       }
     })();
 
     if (matched) {
+      const matchedCategory =
+        (row.category as string) === "safeguarding"
+          ? ("safeguarding" as const)
+          : ("crisis" as const);
       logger.info(
         "TUTOR_CRISIS",
         "crisis_signature_matched",
         "Layer 1 crisis signature match detected",
-        { signatureId: row.id },
+        { signatureId: row.id, category: matchedCategory },
       );
       return {
         triggered: true,
         signatureId: row.id as string,
+        category: matchedCategory,
         layer1Empty: false,
       };
     }
   }
 
-  return { triggered: false, signatureId: null, layer1Empty: false };
+  return {
+    triggered: false,
+    signatureId: null,
+    category: null,
+    layer1Empty: false,
+  };
 }
 
 // ── Layer 2: Model Inference ───────────────────────────────────────────
@@ -379,13 +545,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
   if (!layer1Positive && !layer2Positive) {
     if (layer2MayHaveFailed && layer1Empty) {
       // B1.5 — FAIL CLOSED: Layer 2 failed AND Layer 1 has no signatures.
-      // SCL-023 §3.4 permits "turn proceeds" only when "Layer 1 result
-      // stands." With zero crisis signatures, Layer 1 has never stood for
-      // anything — the premise does not hold. Proceeding to normal
-      // generation here means a potentially-in-crisis student receives an
-      // SAT tutoring reply with no detection having occurred from either
-      // layer. Return crisis=true to route into the §4.6 crisis-safe
-      // response (regional resources). The review case is still created.
+      // Default to "crisis" lane — safest assumption when we cannot classify.
       // @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21.2, B1.5]
       logger.error(
         "TUTOR_CRISIS",
@@ -396,15 +556,13 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
       return {
         crisis: true,
         source: "classifier_degraded_no_floor",
+        category: "crisis",
         signatureId: null,
         modelConfidence: null,
         forceReview: true,
       };
     }
     if (layer2MayHaveFailed) {
-      // SCL-023 §3.4 condition 3: Layer 2 failed, Layer 1 has signatures
-      // and returned a result (no match). Layer 1 result stands — turn
-      // proceeds to normal generation, force-enqueued to §21.3 review queue.
       logger.warn(
         "TUTOR_CRISIS",
         "classifier_degraded",
@@ -414,7 +572,11 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     return { crisis: false, forceReview: layer2MayHaveFailed };
   }
 
-  // At least one layer is positive — crisis path triggered
+  // At least one layer is positive — crisis path triggered.
+  // Category comes from Layer 1 signature match when available.
+  // Layer 2 (model) does not distinguish lanes — default to "crisis" when
+  // only Layer 2 fires (model-only detection). Layer 1 match always has
+  // a category from the DB row.
   const source: "signature" | "model" | "both" =
     layer1Positive && layer2Positive
       ? "both"
@@ -422,12 +584,15 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
         ? "signature"
         : "model";
 
+  const category: CrisisCategory = signatureResult.category ?? "crisis";
+
   logger.warn(
     "TUTOR_CRISIS",
     "crisis_detected",
     "crisis classifier triggered; activating crisis protocol",
     {
       source,
+      category,
       signatureId: signatureResult.signatureId,
       modelConfidence: classifierResult.confidence,
     },
@@ -436,6 +601,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
   return {
     crisis: true,
     source,
+    category,
     signatureId: signatureResult.signatureId,
     modelConfidence: layer2Positive ? classifierResult.confidence : null,
     forceReview: true,
@@ -445,150 +611,154 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
 // ── Crisis Response ────────────────────────────────────────────────────
 
 /**
- * Returns crisis protocol response with regional resources.
- * Region derived from billing country (not IP) per Doc 03A context
- * resolution authority.
+ * Returns the lane-appropriate crisis/safeguarding response with regional
+ * resources. Region derived from billing country (not IP) per Doc 03A
+ * context resolution authority. Lane determines which resource set is used.
  *
- * @spec [Doc-03_V3 §4.6, §21.2]
+ * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §1–§3]
  */
-export function getCrisisResponse(country: string): string {
+export function getCrisisResponse(
+  country: string,
+  category: CrisisCategory = "crisis",
+): string {
   const upperCountry = country.toUpperCase().trim();
+  if (category === "safeguarding") {
+    return (
+      SAFEGUARDING_RESOURCES[upperCountry] ?? DEFAULT_SAFEGUARDING_RESPONSE
+    );
+  }
   return CRISIS_RESOURCES[upperCountry] ?? DEFAULT_CRISIS_RESPONSE;
 }
 
 // ── Conversation Flagging ──────────────────────────────────────────────
 
 /**
- * Sets crisis_flagged = true on the conversation AND creates a durable
- * crisis_review_cases row with a 48h SLA deadline.
+ * Flags a conversation for crisis review: sets `crisis_flagged` on the
+ * conversation AND creates the durable review case with its SLA deadline, in
+ * ONE database transaction.
  *
- * BLOCKING: throws on failure. A failed flag write means the crisis turn
- * will not be reviewed — that is worse than a failed turn. The caller
- * MUST let the throw propagate; the student receives an error rather than
- * an untracked crisis turn.
+ * BLOCKING: throws on failure. A failed flag write means the crisis turn will
+ * not be reviewed — that is worse than a failed turn. The caller MUST let the
+ * throw propagate; the student receives an error rather than an untracked
+ * crisis turn.
  *
- * @spec [Doc-03_V3 §21.2, §21.3, SCL-025]
- * @implemented 2026-08-13 (changed from fire-and-forget to BLOCKING)
+ * @spec [Doc-03_V3 §21.2 step 5, §21.3; SCL-025; WS-L8 Item 4b;
+ *        owner ruling 2026-09-22 D1]
+ * @implemented 2026-08-13; made atomic 2026-09-22
+ *
+ * plain English: this used to do two writes in sequence, and between them sat
+ * a state the system must never be in — a conversation MARKED as a crisis with
+ * NOTHING in the review queue. The turn failed and the student saw an error,
+ * correctly, but the flag stayed set. Nothing sweeps for a flagged
+ * conversation without a case, and the 48h SLA never starts because the SLA
+ * lives on the case that was never created. Both writes are now inside
+ * `public.flag_conversation_for_crisis_review`, so either both land or
+ * neither does.
+ *
+ * expected outcome: returns the case id, whether it is new, its status and its
+ * SLA deadline — the four things `evaluateNotificationPolicy` needs from the
+ * write. Two outcomes are success-equivalent and are resolved inside the SQL
+ * function: an active case already existing for this conversation (a second
+ * signal during one sustained event), and a `source` value newer than
+ * production's CHECK constraint, which retries once at coarser precision
+ * (WS-L8 Item 4b).
  *
  * trade-offs:
- *   - Previously this function swallowed errors so the crisis response
- *     could still be delivered. The new behavior fails the turn on a flag
- *     write failure. Rationale: an unreviewed crisis turn is a safety gap
- *     that monitoring alone cannot close within the 48h SLA.
- *   - The crisis_review_cases INSERT uses a UNIQUE partial index on
- *     (conversation_id) WHERE status IN ('open', 'in_review'), so calling
- *     this twice for the same conversation is safe — the second call will
- *     throw a unique violation, which the route handler treats as a turn
- *     failure (idempotency is NOT required here; duplicate calls indicate
- *     a retry scenario that should be investigated).
+ *  - This function does NOT notify. The ops notification is the caller's
+ *    (`tutor-runtime.ts`), which first runs `evaluateNotificationPolicy` over
+ *    the result below. That split predates D1 and is kept: Cloud Tasks cannot
+ *    join a database transaction anyway, and a notification sent for a case
+ *    that then rolls back is worse than one sent a moment late.
+ *  - The RPC's payload is parsed with Zod rather than cast. It crosses a
+ *    process boundary like any other external input.
+ *
+ * edge cases:
+ *  - A conversation id that does not exist now throws. PostgREST reports no
+ *    error when a filtered UPDATE matches zero rows, so the old code reported
+ *    success and then failed on the case INSERT's foreign key — a confusing FK
+ *    error for what is really a bad conversation id.
  */
+
+export type FlagForReviewResult = {
+  caseId: string;
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  slaDeadline: string;
+};
+
 export async function flagConversationForReview(
   conversationId: string,
   studentId: string,
-  source:
-    | "signature"
-    | "model"
-    | "both"
-    | "classifier_degraded"
-    | "classifier_degraded_no_floor"
-    | "infrastructure_failure",
+  source: CrisisSource,
   signatureId: string | null,
   modelConfidence: number | null,
-): Promise<string> {
-  // Step 1: Set crisis_flagged on tutor_conversations (BLOCKING)
-  const { error } = await supabaseServer
-    .from("tutor_conversations")
-    .update({ crisis_flagged: true })
-    .eq("id", conversationId);
+  category: CrisisCategory = "crisis",
+): Promise<FlagForReviewResult> {
+  const { data, error } = await supabaseServer.rpc(
+    "flag_conversation_for_crisis_review",
+    {
+      p_conversation_id: conversationId,
+      p_student_id: studentId,
+      p_source: source,
+      p_signature_id: signatureId,
+      p_model_confidence: modelConfidence,
+      p_category: category,
+    },
+  );
 
   if (error) {
     logger.error(
       "TUTOR_CRISIS",
       "crisis_flag_write_failed",
-      "failed to set crisis_flagged on tutor_conversations; BLOCKING the turn",
+      "failed to flag conversation and create its review case; BLOCKING the turn. " +
+        "Both writes are one transaction, so nothing was left half-done.",
       error,
       { conversationId },
     );
     throw new Error(`crisis flag write failed: ${error.message}`);
   }
 
-  // Step 2: Create a durable review case with 48h SLA (BLOCKING)
-  //
-  // Unique-violation (23505) from idx_crisis_review_cases_conversation_active
-  // means an active case already exists for this conversation. That is not a
-  // failed write — the case IS persisted; this is a redundant signal (e.g., a
-  // second degraded turn during a sustained Vertex outage). Treat it as
-  // success-equivalent: query the existing case and proceed.
-  //
-  // This does NOT reverse B1.1d: genuine failures (FK violation, connection
-  // error, etc.) still throw and block the turn.
-  let caseId: string;
-  let slaDeadline: string;
-  try {
-    const result = await createCrisisReviewCase({
-      conversationId,
-      studentId,
-      source,
-      signatureId,
-      modelConfidence,
-    });
-    caseId = result.id;
-    slaDeadline = result.slaDeadline;
-  } catch (createErr: unknown) {
-    // Check for unique violation on the active-case partial index
-    const pgCode =
-      createErr instanceof Error &&
-      "code" in createErr &&
-      typeof (createErr as Record<string, unknown>).code === "string"
-        ? ((createErr as Record<string, unknown>).code as string)
-        : null;
+  const parsed = crisisFlagResultSchema.safeParse(data);
+  if (!parsed.success) {
+    // The write succeeded, so the case exists — but we cannot say which one.
+    // Blocking is still right: an unreadable result is not a reviewed turn,
+    // and a cast would hand `undefined` to the notification policy.
+    logger.error(
+      "TUTOR_CRISIS",
+      "crisis_flag_result_unparseable",
+      "flag_conversation_for_crisis_review returned a payload that does not " +
+        "match its contract; BLOCKING the turn",
+      undefined,
+      { conversationId, issues: parsed.error.flatten() },
+    );
+    throw new Error("crisis flag write returned an unreadable result");
+  }
 
-    // createCrisisReviewCase wraps the PG error in a new Error, so the
-    // code is not on the thrown error itself. Match the message instead.
-    const isUniqueViolation =
-      pgCode === "23505" ||
-      (createErr instanceof Error &&
-        createErr.message.includes("unique") &&
-        createErr.message.includes(
-          "idx_crisis_review_cases_conversation_active",
-        ));
+  const {
+    case_id: caseId,
+    sla_deadline: slaDeadline,
+    already_existed: alreadyExisted,
+    case_status: caseStatus,
+    persisted_source: persistedSource,
+  } = parsed.data;
+  const isNewCase = !alreadyExisted;
 
-    if (!isUniqueViolation) {
-      // Genuine failure — re-throw per B1.1d
-      throw createErr;
-    }
-
-    // Active case already exists — query it
-    const { data: existingCase, error: lookupError } = await supabaseServer
-      .from("crisis_review_cases")
-      .select("id, sla_deadline")
-      .eq("conversation_id", conversationId)
-      .in("status", ["open", "in_review"])
-      .limit(1)
-      .maybeSingle();
-
-    if (lookupError || !existingCase) {
-      // Cannot find the case that caused the violation — this is unexpected.
-      // Re-throw the original error so B1.1d holds.
-      logger.error(
-        "TUTOR_CRISIS",
-        "crisis_case_lookup_after_duplicate_failed",
-        "unique violation on crisis_review_cases but could not find the existing case",
-        lookupError,
-        { conversationId },
-      );
-      throw createErr;
-    }
-
-    caseId = existingCase.id as string;
-    slaDeadline = existingCase.sla_deadline as string;
-
+  if (alreadyExisted) {
     logger.warn(
       "TUTOR_CRISIS",
       "crisis_case_already_exists",
       "active crisis review case already exists for this conversation — " +
         "treating duplicate signal as success-equivalent per Doc 03 §21.3",
-      { conversationId, existingCaseId: caseId, source },
+      { conversationId, existingCaseId: caseId, source, caseStatus },
+    );
+  } else if (persistedSource !== source) {
+    logger.warn(
+      "TUTOR_CRISIS",
+      "crisis_case_created_degraded",
+      "crisis review case created with degraded source precision — " +
+        "production's CHECK constraint predates this source value. " +
+        "Apply the pending migration to restore full precision (WS-L8 Item 4b).",
+      { conversationId, caseId, requestedSource: source, persistedSource },
     );
   }
 
@@ -596,19 +766,8 @@ export async function flagConversationForReview(
     "TUTOR_CRISIS",
     "conversation_crisis_flagged",
     "conversation flagged for safety review queue (48h SLA at launch)",
-    { conversationId, caseId, source, slaDeadline },
+    { conversationId, caseId, source, slaDeadline, isNewCase, caseStatus },
   );
 
-  // Step 3: Fire-and-forget ops notification via Cloud Tasks (§21.2 step 5).
-  // Not blocking — the review case is the durable safety record.
-  // Metadata only — no conversation content, no student name per SCL-025(c).
-  void notifyCrisisEvent({
-    caseId,
-    conversationId,
-    source,
-    slaDeadline,
-    timestamp: new Date().toISOString(),
-  });
-
-  return caseId;
+  return { caseId, isNewCase, caseStatus, slaDeadline };
 }

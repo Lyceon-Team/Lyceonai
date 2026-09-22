@@ -729,7 +729,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
       <li>Cookie-backed auth enforcement in Supabase auth middleware for protected user routes.</li>
       <li>Role-based access control on server routes for student, guardian, and admin paths.</li>
-      <li>Supabase RLS policies in migrations for practice, progress, guardian-link, review-errors, and exam tables.</li>
+      <li>Supabase RLS policies in migrations for practice, progress, guardian-link, review, and exam tables.</li>
       <li>Privacy-safe logging and monitoring with redaction of tokens, cookies, and secrets.</li>
       <li>Security response headers for browser hardening and transport protection.</li>
     </ul>
@@ -768,7 +768,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <section style="margin-bottom: 2rem;">
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Data Isolation (RLS)</h2>
       <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>Supabase migrations enable RLS for practice, progress, review-errors, full-length exam, guardian-link, and legal acceptance tables.</li>
+        <li>Supabase migrations enable RLS for practice, progress, review, full-length exam, guardian-link, and legal acceptance tables.</li>
         <li>Policies scope read/write access to <code>auth.uid()</code> for user-owned rows.</li>
         <li>Service-role policies are explicit and limited to server-side operations.</li>
       </ul>
