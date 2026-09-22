@@ -38,7 +38,6 @@ import express, {
   type Response,
   type NextFunction,
 } from "express";
-import cookieParser from "cookie-parser";
 import fs from "node:fs";
 import type { Client } from "pg";
 import {
@@ -312,9 +311,23 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
       reviewRouter,
     );
 
+    // NO cookie-parser here, deliberately. A6 asserts that a write with no CSRF
+    // token is refused, and an absent cookie jar is "no token" just as an empty one
+    // is — the 403 still comes from csrf-csrf's token check, which the A6b plant in
+    // scripts/ci/review-routes-gate.mutations.sh proves by disabling that check and
+    // requiring this test to go red.
+    //
+    // Mounting cookie-parser here tripped CodeQL's js/missing-token-validation
+    // ("Missing CSRF middleware"), high severity, on PR #803. It is the same false
+    // positive already documented at server/index.ts:104-111: CodeQL's default model
+    // recognises only app-level `csurf`, not this repo's `doubleCsrfProtection`
+    // (csrf-csrf + Origin allowlist). That one was dismissed in the Security UI
+    // because, as that note records, default-setup CodeQL does not honour inline
+    // suppressions — so a `// codeql[...]` comment here would NOT clear the check.
+    // Dropping a middleware the test never needed is the fix that does, and it costs
+    // the assertion nothing.
     guardedApp = express();
     guardedApp.use(express.json());
-    guardedApp.use(cookieParser());
     guardedApp.use(
       "/api/review",
       requireSupabaseAuth,
