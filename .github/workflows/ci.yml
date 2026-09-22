@@ -889,6 +889,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-oplog-retention.json \
             --file tests/ci/operational-log-retention.pg.ci.test.ts
 
+      # v3 §6.2 publishes a seven-year period for payment records. It will delete
+      # nothing until 2033, which is exactly why its behaviour is pinned now: a
+      # sweep with an empty input for seven years is one nobody would notice was
+      # broken. B2.9 additionally pins the append-only blocker that kept §6.5's
+      # configuration sweep out of the same migration.
+      - name: Seven-year payment-record retention (v3 §6.2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/financial-record-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-financial-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-financial-retention.json \
+            --file tests/ci/financial-record-retention.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost

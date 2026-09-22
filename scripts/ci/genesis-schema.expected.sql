@@ -4272,6 +4272,25 @@ $_$;
 
 
 --
+-- Name: financial_record_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.financial_record_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 2557;   -- 7 years, leap-inclusive (365*7 + 2)
+$$;
+
+
+--
+-- Name: FUNCTION financial_record_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.financial_record_retention_days() IS 'Privacy Policy v3 §6.2: how long payment records are kept, in days. THE single definition for that sentence; sweep_financial_record_retention reads it. Deliberately separate from configuration_record_retention_days even though both are 7 years — the two sentences rest on different bases and are separately amendable.';
+
+
+--
 -- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6520,6 +6539,74 @@ BEGIN
   RETURN QUERY SELECT v_logs, v_consent, v_cutoff;
 END;
 $$;
+
+
+--
+-- Name: sweep_financial_record_retention(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_financial_record_retention(p_batch_size integer) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  -- (table, age column). Named, not catalog-driven: "payment records" is a
+  -- closed set the policy names, and a new financial table should have to be
+  -- classified by a person rather than captured by a name pattern.
+  v_targets CONSTANT text[][] := ARRAY[
+    ['deletion_billing_record', 'cancelled_on'],
+    ['stripe_webhook_events',   'created_at']
+  ];
+  v_cutoff  timestamptz;
+  v_tbl     text;
+  v_col     text;
+  v_deleted integer;
+  i         integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_financial_record_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.financial_record_retention_days());
+
+  FOR i IN 1 .. array_length(v_targets, 1) LOOP
+    v_tbl := v_targets[i][1];
+    v_col := v_targets[i][2];
+
+    -- ctid, as in the 90-day sweep: deletion_billing_record is keyed on
+    -- log_id and stripe_webhook_events on its own id, so no single key column
+    -- name spans both. The subselect and the delete share one snapshot.
+    EXECUTE format(
+      'WITH doomed AS (
+         SELECT t.ctid FROM public.%I t
+          WHERE t.%I < $1
+          ORDER BY t.%I ASC
+          LIMIT $2
+       ), gone AS (
+         DELETE FROM public.%I d WHERE d.ctid IN (SELECT doomed.ctid FROM doomed)
+         RETURNING 1
+       )
+       SELECT count(*)::integer FROM gone',
+      v_tbl, v_col, v_col, v_tbl
+    )
+    INTO v_deleted
+    USING v_cutoff, p_batch_size;
+
+    swept_table   := v_tbl;
+    deleted_count := v_deleted;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_financial_record_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) IS 'Privacy Policy v3 §6.2 / SCL-101: deletes payment records older than financial_record_retention_days(), oldest first, at most p_batch_size per table per call. Returns one row per table including zero-row tables.';
 
 
 --
@@ -14084,6 +14171,14 @@ GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid,
 
 
 --
+-- Name: FUNCTION financial_record_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.financial_record_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.financial_record_retention_days() TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14755,6 +14850,14 @@ GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO serv
 
 REVOKE ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_financial_record_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) TO service_role;
 
 
 --

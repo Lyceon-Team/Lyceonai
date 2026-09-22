@@ -19,10 +19,14 @@
  *    TypeScript would be a second place for 90 to be written down, and the
  *    first one to drift. Only the per-call batch bound lives here, because
  *    that is a caller's concern rather than a policy one.
- *  - `swept_table` is a plain string, not an enum of the four table names.
- *    The set is the SQL function's array; duplicating it as a TS union would
- *    make adding a fifth table a two-file change and let the two lists
- *    disagree silently.
+ *  - `swept_table` is a plain string, not an enum of table names. The set is
+ *    the SQL function's own — an array for some tiers, a pg_class query for
+ *    others; duplicating it as a TS union would make adding a table a two-file
+ *    change and let the two lists disagree silently.
+ *  - ONE row schema across every tier, not one per tier. All the sweep
+ *    functions return `(swept_table, deleted_count, cutoff)` by design, so the
+ *    shared runner in server/lib/retention/sweeps.ts can parse any of them.
+ *    A per-tier schema would be three identical objects.
  */
 import { z } from "zod";
 
@@ -33,12 +37,21 @@ import { z } from "zod";
  */
 export const OPERATIONAL_LOG_SWEEP_BATCH_SIZE = 5000;
 
-/** Row shape returned by `public.sweep_operational_log_retention(p_batch_size)`. */
-export const operationalLogSweepRowSchema = z.object({
+/**
+ * Per-table, per-call bound for the seven-year financial sweep. Smaller than
+ * the 90-day bound because these tables are small by construction and a
+ * seven-year backlog cannot exist before 2033 — the bound is a safety rail,
+ * not a throughput setting.
+ */
+export const FINANCIAL_RECORD_SWEEP_BATCH_SIZE = 1000;
+
+/**
+ * Row shape returned by EVERY `public.sweep_*_retention(p_batch_size)`
+ * function. They share one shape deliberately; see the note above.
+ */
+export const retentionSweepRowSchema = z.object({
   swept_table: z.string().min(1),
   deleted_count: z.number().int().min(0),
   cutoff: z.string().datetime({ offset: true }),
 });
-export type OperationalLogSweepRow = z.infer<
-  typeof operationalLogSweepRowSchema
->;
+export type RetentionSweepRow = z.infer<typeof retentionSweepRowSchema>;
