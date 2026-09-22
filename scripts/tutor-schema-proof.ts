@@ -105,6 +105,10 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "assignment_key",
     "initialization_snapshot",
     "status",
+    "title",
+    "surface",
+    "crisis_paused_at",
+    "ended_at",
     "created_at",
     "updated_at",
   ],
@@ -122,6 +126,7 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "source_question_row_id",
     "source_question_canonical_id",
     "client_turn_id",
+    "status",
     "created_at",
   ],
   tutor_instruction_assignments: [
@@ -235,7 +240,12 @@ const REQUIRED_ENUMS: Array<{
   {
     table: "tutor_conversations",
     column: "status",
-    values: ["active", "closed", "abandoned"],
+    values: ["active", "closed", "abandoned", "ended"],
+  },
+  {
+    table: "tutor_conversations",
+    column: "surface",
+    values: ["standalone", "practice", "review"],
   },
   {
     table: "tutor_conversations",
@@ -251,6 +261,11 @@ const REQUIRED_ENUMS: Array<{
     table: "tutor_messages",
     column: "content_kind",
     values: ["message", "suggestion", "consent_prompt", "system_note"],
+  },
+  {
+    table: "tutor_messages",
+    column: "status",
+    values: ["pending", "completed", "failed"],
   },
   {
     table: "tutor_instruction_assignments",
