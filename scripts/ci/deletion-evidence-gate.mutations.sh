@@ -42,6 +42,8 @@ SWEEP="server/services/retention-sweep.ts"
 SCHEDTF="infra/terraform/cloud-scheduler.tf"
 RETROUTE="server/routes/internal-retention-routes.ts"
 OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
+ANASURF="client/src/lib/analytics-surface.ts"
+APPTSX="client/src/App.tsx"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -64,6 +66,8 @@ cp "$SWEEP"      "$BACKUP/retention-sweep.ts"
 cp "$SCHEDTF"    "$BACKUP/cloud-scheduler.tf"
 cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
+cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
+cp "$APPTSX"     "$BACKUP/App.tsx"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -88,6 +92,8 @@ restore() {
   cp "$BACKUP/cloud-scheduler.tf" "$SCHEDTF"
   cp "$BACKUP/internal-retention-routes.ts" "$RETROUTE"
   cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
+  cp "$BACKUP/analytics-surface.ts" "$ANASURF"
+  cp "$BACKUP/App.tsx" "$APPTSX"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -593,6 +599,46 @@ echo "==> (M81) the derivation is replaced by a literal that is correct TODAY"
 plant M81 "$OBSCFG" "s.replace('to_jsonb(public.audit_logs_retention_days())', \"to_jsonb(365)\", 1)"
 expect_red M81 "F2.8 — each seeded value is DERIVED from its enforcing function, not typed"
 
+echo "==> (29j2) the analytics student-surface block"
+SUITE="tests/ci/analytics-student-surface.contract.test.ts"
+
+echo "==> (M82) the predicate is dropped from the call site"
+plant M82 "$APPTSX" "s.replace('<Analytics beforeSend={analyticsBeforeSend} />', '<Analytics />', 1)"
+expect_red M82 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
+
+echo "==> (M83) a second Analytics mount bypasses the one predicate"
+plant M83 "$APPTSX" "s.replace('    </ErrorBoundary>', '      <Analytics />\n    </ErrorBoundary>', 1)"
+expect_red M83 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
+
+echo "==> (M84) a student surface is added to the public allowlist"
+plant M84 "$ANASURF" "s.replace('  \"/digital-sat\",', '  \"/digital-sat\",\n  \"/chat\",', 1)"
+expect_red M84 "E1.2 — every role-gated route is denied"
+
+echo "==> (M85) the predicate stops defaulting to deny"
+plant M85 "$ANASURF" "s.replace('  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;', '  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;\n  return true;', 1)"
+expect_red M85 "E1.3 — an unknown path is denied (defaults to deny, per Doc 06A §5.3)"
+
+echo "==> (M86) prefix matching loses its segment boundary"
+plant M86 "$ANASURF" "s.replace('const PUBLIC_PREFIXES: readonly string[] = [\"/blog/\", \"/legal/\"];', 'const PUBLIC_PREFIXES: readonly string[] = [\"/blog\", \"/legal\"];', 1)"
+expect_red M86 "E1.6 — a prefix matches at a segment boundary, not as a substring"
+
+echo "==> (M87) the verdict is taken from the whole URL instead of its path"
+plant M87 "$ANASURF" "s.replace('  const pathname = pathnameOf(event.url);\n  return pathname !== null \x26\x26 isAnalyticsAllowedPath(pathname) ? event : null;', '  return event.url.includes(\"/chat\") ? null : event;', 1)"
+expect_red M87 "E1.7 — the verdict comes from the path, not from the query string"
+
+echo "==> (M88) an empty event url resolves to the home page and is reported"
+plant M88 "$ANASURF" "s.replace('  if (typeof url !== \"string\" || url.length === 0) return null;\n  try {\n    return new URL(url).pathname;', '  if (typeof url !== \"string\") return null;\n  try {\n    return new URL(url, \"https://lyceon.ai\").pathname;', 1)"
+expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
+
+echo "==> (M89) /tutor is allowed although its SPA route is role-gated"
+plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
+expect_red M89 "E1.11 — /tutor is public AND role-gated, and deny wins"
+
+echo "==> (29k) restored: the analytics-surface suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: analytics-surface suite not green after restore"; fails=1; else echo "  ok   analytics-surface suite green after restore"; fi
+
+SUITE="tests/ci/observability-retention-config.pg.ci.test.ts"
 echo "==> (29j) restored: the observability-config suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: observability-config suite not green after restore"; fails=1; else echo "  ok   observability-config suite green after restore"; fi
