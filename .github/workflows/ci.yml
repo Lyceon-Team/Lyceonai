@@ -600,13 +600,28 @@ jobs:
       # and the idempotency key have to arrive intact. Half A runs anywhere; half B
       # needs a real schema with real rows, which is why it lives in this job and is
       # skipped in the plain `ci` job like every other *.ci.test.ts.
+      #
+      # THROUGH THE SUMMARY GATE, for the reason the review step below spells out. This
+      # step already had the environment and already passed, so nothing about it was
+      # wrong -- but nothing would have SAID so if half B stopped running. `CAN_RUN` here
+      # is `!!process.env.PGHOST`, so a renamed variable, a dropped service container or
+      # a new PG-gated case added to the file all turn 13 passed into 8 passed and 5
+      # skipped, with exit 0 either way. The gate reads vitest's own verdict and treats
+      # `numPendingTests > 0` as red, so the difference between those two outcomes stops
+      # being invisible. Same shape as the review and activity-units steps: its own
+      # report file, named explicitly, so a failure says which contract broke.
       - name: Calendar practice launch contract (real PostgreSQL)
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: pnpm exec vitest run tests/ci/calendar.launch-contract.practice.ci.test.ts
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.launch-contract.practice.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-practice-contract.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-practice-contract.json \
+            --file tests/ci/calendar.launch-contract.practice.ci.test.ts
 
       # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
       # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
