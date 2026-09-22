@@ -8508,6 +8508,13 @@ CREATE TABLE public.observability_runtime_config (
 
 
 --
+-- Name: TABLE observability_runtime_config; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.observability_runtime_config IS 'Doc 01A App A.5. Holds the two Legal-owned retention periods the published Privacy Policy states and the build enforces (SCL-101). NO CODE READS THIS TABLE: the rows are declarative, and tests/ci/observability-retention-config.pg.ci.test.ts holds each one to the function that actually enforces it. cold_log_retention_days is deliberately absent — no cold archive exists (SCL-101 (iii)).';
+
+
+--
 -- Name: observability_runtime_config_history; Type: TABLE; Schema: public; Owner: -
 --
 

@@ -41,6 +41,7 @@ SECRETGATE="scripts/ci/secret-class-inventory-check.ts"
 SWEEP="server/services/retention-sweep.ts"
 SCHEDTF="infra/terraform/cloud-scheduler.tf"
 RETROUTE="server/routes/internal-retention-routes.ts"
+OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -62,6 +63,7 @@ cp "$SECRETGATE" "$BACKUP/secret-class-inventory-check.ts"
 cp "$SWEEP"      "$BACKUP/retention-sweep.ts"
 cp "$SCHEDTF"    "$BACKUP/cloud-scheduler.tf"
 cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
+cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -85,6 +87,7 @@ restore() {
   cp "$BACKUP/retention-sweep.ts" "$SWEEP"
   cp "$BACKUP/cloud-scheduler.tf" "$SCHEDTF"
   cp "$BACKUP/internal-retention-routes.ts" "$RETROUTE"
+  cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -550,6 +553,49 @@ echo "==> (M74) a new tier joins the route enum with no schedule and no no-op re
 # this catches the next one.
 plant M74 "$RETROUTE" "s.replace('z.enum([\"7d\", \"90d\", \"180d\", \"365d\"])', 'z.enum([\"7d\", \"90d\", \"180d\", \"365d\", \"730d\"])', 1)"
 expect_red M74 "every accepted tier is either scheduled or a documented no-op"
+
+# =============================================================================
+# The declared retention periods must equal the enforced ones (F2, Doc 01A A.5)
+# =============================================================================
+# observability_runtime_config is read by nothing. These rows are only as good as
+# the assertions holding them to the functions that actually delete rows, so those
+# assertions get the same treatment as everything else here.
+SUITE="tests/ci/observability-retention-config.pg.ci.test.ts"
+
+echo "==> (M75) the declared audit period drifts off the one the purge enforces"
+plant M75 "$OBSCFG" "s.replace('to_jsonb(public.audit_logs_retention_days())', \"to_jsonb(999)\", 1)"
+expect_red M75 "F2.2 — the declared audit period equals the one audit_logs_retention_days() enforces"
+
+echo "==> (M76) the declared operational ceiling is typed as a literal instead of derived"
+plant M76 "$OBSCFG" "s.replace('to_jsonb(public.operational_log_retention_days()),\n    \x27integer\x27', \"to_jsonb(120),\n    'integer'\", 1)"
+expect_red M76 "F2.3 — the declared operational ceiling equals the one the sweep enforces"
+
+echo "==> (M77) A.5's four audit tiers are seeded although three are neither published nor built"
+plant M77 "$OBSCFG" "s.replace(\"      'security_and_administrative',\n      to_jsonb(public.audit_logs_retention_days())\", \"      'security_and_administrative',\n      to_jsonb(public.audit_logs_retention_days()),\n      'authentication', to_jsonb(90)\", 1)"
+expect_red M77 "F2.2 — the declared audit period equals the one audit_logs_retention_days() enforces"
+
+echo "==> (M78) cold_log_retention_days is pasted in from A.5 'for completeness'"
+plant M78 "$OBSCFG" "s.replace(\"ON CONFLICT (key) DO NOTHING;\", \"  , ('cold_log_retention_days', to_jsonb(365), 'integer', NULL, NULL, 'Legal', 'A.5 launch value.', 'all')\nON CONFLICT (key) DO NOTHING;\", 1)"
+expect_red M78 "F2.4 — cold_log_retention_days is NOT seeded: no cold archive exists"
+
+echo "==> (M79) a row's value_type stops describing the jsonb it holds"
+plant M79 "$OBSCFG" "s.replace(\"    'object', NULL, NULL, 'Legal',\", \"    'integer', NULL, NULL, 'Legal',\", 1)"
+expect_red M79 "F2.6 — every seeded value_type matches the jsonb it holds"
+
+echo "==> (M80) the seed overwrites an operator's tuned value on replay"
+plant M80 "$OBSCFG" "s.replace('ON CONFLICT (key) DO NOTHING;', 'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;', 1)"
+expect_red M80 "F2.7 — replaying the migration never overwrites an operator's value"
+
+echo "==> (M81) the derivation is replaced by a literal that is correct TODAY"
+# The one M75 cannot catch: 365 is what the function returns right now, so a
+# hardcoded 365 passes every value comparison until the config behind the
+# function changes. F2.8 asserts the derivation itself.
+plant M81 "$OBSCFG" "s.replace('to_jsonb(public.audit_logs_retention_days())', \"to_jsonb(365)\", 1)"
+expect_red M81 "F2.8 — each seeded value is DERIVED from its enforcing function, not typed"
+
+echo "==> (29j) restored: the observability-config suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: observability-config suite not green after restore"; fails=1; else echo "  ok   observability-config suite green after restore"; fi
 
 echo "==> (29i) restored: the sweep and publication suites must be green again"
 SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
