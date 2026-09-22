@@ -143,7 +143,15 @@ type ReviewSessionMetadata = {
   target_question_count?: number;
   prebuilt?: boolean;
   session_start_idempotency_key?: string | null;
-  pool_mode?: string;
+  /**
+   * NO `pool_mode` KEY. The session's mode is the `review_sessions.mode` COLUMN,
+   * written at the insert below and constrained to `queue | session | filter` by
+   * 20260921000000_review_queue_runtime.sql:199-201. It used to be written here as
+   * well, so every session carried the same value twice with only the column under a
+   * CHECK — the owner's production walk found all four live sessions carrying both
+   * (R4.1). One fact, one home. Rows created before this change keep the stale key;
+   * nothing reads it, which is the property the test below pins.
+   */
   source_engine?: string;
   source_session_id?: string;
   sections?: string[] | null;
@@ -165,16 +173,16 @@ function normalizeClientInstanceId(value: unknown): string | null {
 
 /** The pool-spec half of `filters`, in the shapes brief R3 §2.3 specifies. */
 function poolSpecToFilters(spec: ReviewPoolSpec): Record<string, unknown> {
-  if (spec.mode === "queue") return { pool_mode: "queue" };
+  // The mode itself is NOT returned here — it is the `mode` column (see the insert).
+  // What belongs in `filters` is the part of the spec the column cannot hold.
+  if (spec.mode === "queue") return {};
   if (spec.mode === "session") {
     return {
-      pool_mode: "session",
       source_engine: spec.source.source_engine,
       source_session_id: spec.source.source_session_id,
     };
   }
   return {
-    pool_mode: "filter",
     sections: spec.filter.sections ?? null,
     domains: spec.filter.domains ?? null,
     skills: spec.filter.skills ?? null,
