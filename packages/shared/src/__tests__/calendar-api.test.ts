@@ -420,6 +420,9 @@ describe("guardian read (§16, R-08-22)", () => {
   it("round-trips the guardian response and refuses the student's day shape", () => {
     const payload = {
       status: "ready" as const,
+      // Owner ruling 2026-09-22: the guardian payload carries the same estimates the
+      // student's does — minutes are not among §16's exclusions.
+      estimates: ESTIMATES,
       days: [toGuardianCalendarDay(DAY)],
       facts: FACTS,
       streak: STREAK,
@@ -430,6 +433,9 @@ describe("guardian read (§16, R-08-22)", () => {
     expect(
       guardianCalendarResponseSchema.safeParse({
         status: "ready",
+        // Present and valid on purpose: without it this would be rejected for the MISSING
+        // field, and the test would stop proving that the student DAY shape is refused.
+        estimates: ESTIMATES,
         days: [DAY],
         facts: FACTS,
         streak: STREAK,

@@ -26,7 +26,12 @@
  * assert them against the stub, and the rebuilt engine must pass the same tests
  * with `create` succeeding instead of declining.
  */
-import { err, type ActivityUnit, type CalendarEngine, type PlanBlock } from "@lyceon/shared";
+import {
+  err,
+  type ActivityUnit,
+  type CalendarEngine,
+  type PlanBlock,
+} from "@lyceon/shared";
 import type {
   CalendarEngineAdapter,
   EngineCreateContext,
@@ -34,7 +39,9 @@ import type {
   EngineLifecycle,
 } from "./types";
 
-export function makeUnavailableAdapter(engine: CalendarEngine): CalendarEngineAdapter {
+export function makeUnavailableAdapter(
+  engine: CalendarEngine,
+): CalendarEngineAdapter {
   return {
     engine,
 
@@ -64,7 +71,10 @@ export function makeUnavailableAdapter(engine: CalendarEngine): CalendarEngineAd
       return null;
     },
 
-    async nextLaunchSize(_block: PlanBlock, remaining: number): Promise<number> {
+    async nextLaunchSize(
+      _block: PlanBlock,
+      remaining: number,
+    ): Promise<number> {
       return Math.max(1, remaining);
     },
   };

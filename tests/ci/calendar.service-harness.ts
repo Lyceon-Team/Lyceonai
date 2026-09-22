@@ -55,6 +55,7 @@ type FakeBuilder = {
   neq(column: string, value: unknown): FakeBuilder;
   gt(column: string, value: unknown): FakeBuilder;
   gte(column: string, value: unknown): FakeBuilder;
+  lt(column: string, value: unknown): FakeBuilder;
   lte(column: string, value: unknown): FakeBuilder;
   in(column: string, value: unknown): FakeBuilder;
   not(column: string, operator: string, value: unknown): FakeBuilder;
@@ -137,6 +138,9 @@ export function makeFakeClient(options: {
       neq: (column, value) => push("neq", column, value),
       gt: (column, value) => push("gt", column, value),
       gte: (column, value) => push("gte", column, value),
+      // `lt` was missing until 2026-09-23, which is why nothing had ever driven the practice
+      // adapter's local-day window through this fake — it builds a half-open [gte, lt) range.
+      lt: (column, value) => push("lt", column, value),
       lte: (column, value) => push("lte", column, value),
       in: (column, value) => push("in", column, value),
       not: (column, operator, value) => push(`not.${operator}`, column, value),

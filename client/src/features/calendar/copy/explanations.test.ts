@@ -19,8 +19,24 @@ import {
   explanationLines,
 } from "./explanations";
 
+/**
+ * `weighted` is the ONE block key ruled to have no block-level copy (owner ruling
+ * 2026-09-22, addendum item 16). It is the key on a practice block that HAS a domain mix,
+ * and `explanationLines` prefers that mix's per-domain reasons — which are more specific
+ * and already on screen. A generic sentence above them would say less and take more room.
+ *
+ * Named here as a constant rather than special-cased inline, so the exemption is ONE entry
+ * long and visible. A second key added to it is a decision someone has to make on purpose.
+ */
+const BLOCK_KEYS_WITH_NO_COPY_BY_RULING = ["weighted"] as const;
+
+const BLOCK_KEYS_REQUIRING_COPY = BLOCK_EXPLANATION_KEYS.filter(
+  (key) =>
+    !(BLOCK_KEYS_WITH_NO_COPY_BY_RULING as readonly string[]).includes(key),
+);
+
 describe("every canonical key has copy (§17.6: no key renders as raw text)", () => {
-  it.each([...BLOCK_EXPLANATION_KEYS])(
+  it.each([...BLOCK_KEYS_REQUIRING_COPY])(
     "has non-empty block copy for the generator key %s",
     (key) => {
       const copy = blockExplanation(key);
@@ -43,11 +59,22 @@ describe("every canonical key has copy (§17.6: no key renders as raw text)", ()
     },
   );
 
-  it("covers the block enum with no gaps — a new key without copy fails here", () => {
+  it("covers the block enum with no gaps beyond the one ruled exemption", () => {
     const missing = BLOCK_EXPLANATION_KEYS.filter(
       (key) => blockExplanation(key) === null,
     );
-    expect(missing).toEqual([]);
+    // EXACTLY the exemption — not "at most". A key that quietly loses its copy shows up
+    // here as an extra entry, and a key added to the enum without copy does too.
+    expect(missing).toEqual([...BLOCK_KEYS_WITH_NO_COPY_BY_RULING]);
+  });
+
+  it("still explains a `weighted` block, through its per-domain reasons", () => {
+    // This is what makes the exemption safe rather than a hole: the block is not left
+    // unexplained, the explanation just comes from the more specific place.
+    expect(blockExplanation("weighted")).toBeNull();
+    expect(
+      explanationLines({ blockKey: "weighted", domainKeys: ["weak"] }),
+    ).toEqual(["One of your weaker areas right now."]);
   });
 
   it("covers the domain enum with no gaps — a new key without copy fails here", () => {
@@ -61,7 +88,7 @@ describe("every canonical key has copy (§17.6: no key renders as raw text)", ()
     // The retired `weak_domain`/`maintain_strength`/`post_exam_focus` vocabulary from the
     // pre-sheet §17.6 must not linger in the tables: it would be unreachable dead copy.
     expect(Object.keys(EXPLANATION_COPY_TABLES.block).sort()).toEqual(
-      [...BLOCK_EXPLANATION_KEYS].sort(),
+      [...BLOCK_KEYS_REQUIRING_COPY].sort(),
     );
     expect(Object.keys(EXPLANATION_COPY_TABLES.domain).sort()).toEqual(
       [...DOMAIN_EXPLANATION_KEYS].sort(),
@@ -169,7 +196,7 @@ describe("explanationLines (§17.6 'Why this is here')", () => {
         blockKey: "taper",
         domainKeys: ["nonsense", null, "also_nonsense"],
       }),
-    ]).toEqual(["Easing off as test day gets close, so you arrive fresh."]);
+    ]).toEqual(["Test week: lighter days so you arrive rested."]);
   });
 
   it("shows only the recognised domain lines when some are unknown — no fallback alongside", () => {
