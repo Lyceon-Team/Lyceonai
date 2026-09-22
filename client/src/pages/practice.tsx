@@ -31,6 +31,7 @@ import {
   ArrowRight,
   AlertCircle,
   PlayCircle,
+  RotateCcw,
   Trash2,
   X,
   Hash,
@@ -287,6 +288,12 @@ function Practice() {
 
   const secondaryActions = [
     {
+      href: "/review",
+      title: "Review Queue",
+      icon: RotateCcw,
+      caption: "Redo what you missed",
+    },
+    {
       href: "/full-test",
       title: "Full-Length Exam",
       icon: Target,
@@ -357,7 +364,7 @@ function Practice() {
                           <p className="text-xs text-muted-foreground">
                             Progress: {s.answered_items} / {s.total_items}{" "}
                             questions · Started{" "}
-                            {DateTime.fromISO(s.started_at).toRelative()}
+                            {DateTime.fromISO(s.created_at).toRelative()}
                           </p>
                         </div>
                       </div>
@@ -495,7 +502,9 @@ function Practice() {
                           <SelectValue placeholder="All sections" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="M">{SECTION_LABEL_MATH}</SelectItem>
+                          <SelectItem value="M">
+                            {SECTION_LABEL_MATH}
+                          </SelectItem>
                           <SelectItem value="RW">{SECTION_LABEL_RW}</SelectItem>
                         </SelectContent>
                       </Select>

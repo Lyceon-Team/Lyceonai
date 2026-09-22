@@ -18,6 +18,16 @@
  * and redirects to /dashboard on completion — even when the state API
  * returns section: null (which it always does for diagnostic sessions).
  *
+ * READ-ONLY GUARD (added R4, ruling 17 / brief R4 §2.5). This endpoint applies no
+ * status predicate — `loadOwnedSession` checks ownership and nothing else
+ * (`practice-canonical.ts:2653-2662`) — and the stale-session sweeper flips idle
+ * sessions to `abandoned` (`stale-session-sweep.ts:70-71`). The page therefore used to
+ * render the full loop for an abandoned session: it declared `state` and `readOnly` on
+ * its DTO and read neither. A bookmark, a back button, or a diagnostic CTA
+ * (`DiagnosticCTACard.tsx:37-39`) landed a student on a "Continue" that the server
+ * refuses later at `/next` (`practice-canonical.ts:1897-1907`). The server already
+ * ships the answer at `practice-canonical.ts:2703`; this page now reads it.
+ *
  * trade-offs: mode detection is a simple string check ("diagnostic") —
  * no enum import needed since the server already validates. The "section"
  * prop passed to CanonicalPracticePage for diagnostic is "math" (unused
@@ -98,6 +108,34 @@ export default function ResumePracticePage() {
             Back to Practice
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // Ruling 17: a closed session is never playable, however the student got here.
+  // This is checked BEFORE the diagnostic branch, because an abandoned diagnostic is
+  // just as unplayable as an abandoned single-section session.
+  if (session.readOnly) {
+    const wasAbandoned = session.state === "abandoned";
+    return (
+      <div
+        className="flex h-screen flex-col items-center justify-center p-4 text-center"
+        data-testid="practice-session-closed"
+      >
+        <h1 className="text-2xl font-semibold mb-3">
+          {wasAbandoned ? "This session has ended" : "Session complete"}
+        </h1>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          {wasAbandoned
+            ? "This practice session was ended or timed out. Start a new one to keep going."
+            : "You finished this practice session."}
+        </p>
+        <button
+          onClick={() => window.location.assign("/practice")}
+          className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
+        >
+          Back to Practice
+        </button>
       </div>
     );
   }

@@ -34,6 +34,11 @@ import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import {
+  type EngineConfig,
+  type ReviewSessionSpec,
+  PRACTICE_ENGINE_CONFIG,
+} from "@/lib/engine-config";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import type { PracticeDifficulty } from "@/lib/practice-filters";
 import { isMathSection } from "@shared/section-display";
@@ -110,7 +115,10 @@ function useSplitEnabled(): boolean {
  * @spec [Doc-05C §7.4, Doc-01_V8 §20–24 diagnostic client wiring]
  * @implemented 2026-08-14
  *
- * completionHref: where to navigate after session completion. Default "/practice".
+ * engine: which engine's endpoints, labels and feature switches the loop uses
+ *   (brief R4 §2.1). Defaults to practice, so every existing call site is unchanged.
+ * completionHref: where to navigate after session completion. Defaults to the engine's
+ *   own completion route ("/practice" for practice, "/review" for review).
  *   For diagnostic sessions, pass "/dashboard" so the student lands on the baseline card.
  * isDiagnostic: when true, hides "Skip" and "End Session" buttons. A skipped diagnostic
  *   item means that domain gets <5 mastery events → evidence gate may not clear →
@@ -127,7 +135,17 @@ export default function CanonicalPracticePage(props: {
   domains?: string[];
   completionHref?: string;
   isDiagnostic?: boolean;
+  engine?: EngineConfig;
+  review?: ReviewSessionSpec;
 }) {
+  const engine = props.engine ?? PRACTICE_ENGINE_CONFIG;
+  /**
+   * The diagnostic prop is honoured only by an engine that HAS a diagnostic mode.
+   * Review's modes are `queue | session | filter`, so a stray `isDiagnostic` from a
+   * review caller must not hide Skip and End Session on a review session.
+   */
+  const isDiagnostic =
+    engine.features.diagnostic && props.isDiagnostic === true;
   const sessionSpec = React.useMemo(
     () => ({
       ...(typeof props.targetMinutes === "number"
@@ -139,8 +157,9 @@ export default function CanonicalPracticePage(props: {
       ...(props.domains && props.domains.length > 0
         ? { domains: props.domains }
         : {}),
+      ...(props.review ? { review: props.review } : {}),
     }),
-    [props.targetMinutes, props.difficulties, props.domains],
+    [props.targetMinutes, props.difficulties, props.domains, props.review],
   );
 
   const {
@@ -171,7 +190,7 @@ export default function CanonicalPracticePage(props: {
     submitBlocked,
     runtimeDisabled,
     setForceTakeover,
-  } = useCanonicalPractice(props.section, sessionSpec, props.sessionId);
+  } = useCanonicalPractice(props.section, sessionSpec, props.sessionId, engine);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
@@ -249,7 +268,7 @@ export default function CanonicalPracticePage(props: {
     setLocalCalculatorState(calculatorState ?? null);
   }, [calculatorState]);
 
-  const completionDest = props.completionHref ?? "/practice";
+  const completionDest = props.completionHref ?? engine.completionHref;
 
   const endSession = React.useCallback(async () => {
     if (isEndingSession) return;
@@ -258,7 +277,7 @@ export default function CanonicalPracticePage(props: {
       // Diagnostic sessions: do NOT call terminateSession (which sets status
       // to 'abandoned', preventing baseline capture). Navigate directly to
       // the completion destination — the session remains resumable.
-      if (props.isDiagnostic) {
+      if (isDiagnostic) {
         window.location.assign(completionDest);
         return;
       }
@@ -267,7 +286,7 @@ export default function CanonicalPracticePage(props: {
     } finally {
       setIsEndingSession(false);
     }
-  }, [isEndingSession, terminateSession, completionDest, props.isDiagnostic]);
+  }, [isEndingSession, terminateSession, completionDest, isDiagnostic]);
 
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
@@ -365,18 +384,20 @@ export default function CanonicalPracticePage(props: {
         </div>
         <div className="flex items-center gap-3">
           {calculatorToggle}
-          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Flag className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">
-              Review tagging is available in full-length exam mode.
-            </span>
-          </div>
+          {engine.features.examTagHint && (
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Flag className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">
+                Review tagging is available in full-length exam mode.
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {runtimeDisabled ? (
         <RuntimeContractDisabledCard
-          domain="practice"
+          domain={engine.domain}
           code={runtimeDisabled.code}
         />
       ) : isLoading && !question ? (
@@ -397,7 +418,7 @@ export default function CanonicalPracticePage(props: {
           <div className="flex justify-center gap-3">
             <Button
               variant="outline"
-              onClick={() => window.location.assign("/practice")}
+              onClick={() => window.location.assign(engine.backHref)}
             >
               Go Back
             </Button>
@@ -413,7 +434,7 @@ export default function CanonicalPracticePage(props: {
           <p className="text-sm text-red-700 mb-6">
             {typedError?.message as string}
           </p>
-          <Button onClick={() => window.location.assign("/practice")}>
+          <Button onClick={() => window.location.assign(engine.backHref)}>
             Manage Sessions
           </Button>
         </div>
@@ -467,7 +488,7 @@ export default function CanonicalPracticePage(props: {
                     projection → no baseline) and End Session (abandon prevents
                     baseline capture). The diagnostic is finishable, not
                     discardable. */}
-                {!props.isDiagnostic && (
+                {!isDiagnostic && (
                   <Button
                     variant="outline"
                     disabled={isSubmitting || isLoading || isEndingSession}
@@ -477,7 +498,7 @@ export default function CanonicalPracticePage(props: {
                   </Button>
                 )}
 
-                {!props.isDiagnostic && (
+                {!isDiagnostic && (
                   <Button
                     variant="ghost"
                     disabled={isSubmitting || isLoading || isEndingSession}
@@ -559,8 +580,9 @@ export default function CanonicalPracticePage(props: {
   return (
     <PracticeShell
       title={props.title}
-      backLink="/practice"
-      backLabel="Back to Practice"
+      eyebrow={engine.labels.shellEyebrow}
+      backLink={engine.backHref}
+      backLabel={engine.backLabel}
       score={{
         correct: score.correct,
         incorrect: score.incorrect,
@@ -619,9 +641,7 @@ export default function CanonicalPracticePage(props: {
                   Session Guidance
                 </p>
                 <p className="text-sm text-foreground/90 leading-relaxed">
-                  Responses submit directly to canonical practice endpoints. If
-                  you leave and return, Lyceon restores your unresolved state
-                  from runtime session truth.
+                  {engine.labels.sessionGuidance}
                 </p>
               </Card>
             </div>
