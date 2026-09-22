@@ -1575,6 +1575,31 @@ COMMENT ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid
 
 
 --
+-- Name: calendar_drop_today_for_system(jsonb, text, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT CASE
+    WHEN p_trigger NOT IN ('weekly', 'post_exam') THEN p_output
+    ELSE jsonb_set(p_output, '{dates}', COALESCE((
+      SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+      FROM jsonb_array_elements(p_output -> 'dates') d
+      WHERE (d ->> 'scheduled_date')::date <> p_today
+    ), '[]'::jsonb))
+  END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) IS 'Doc 05F §12.1 / owner ruling 2026-09-22: weekly and post_exam are system-initiated and own dates from tomorrow. Drops today from a generated plan OUTPUT, leaving generated_for.dates whole so V-01''s membership test still passes. A no-op for setup, profile_change, student_refresh, day_* and rollback.';
+
+
+--
 -- Name: calendar_edit_day(uuid, date, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1800,8 +1825,10 @@ BEGIN
     END;
 
     IF v_generator = 'deterministic_v1' THEN
-      v_output := public.calendar_carry_started(v_input,
-                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+      v_output := public.calendar_drop_today_for_system(
+                    public.calendar_carry_started(v_input,
+                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                    p_trigger, v_today);
       v_res := public.calendar_validate_plan('generated', v_input, v_output);
       IF v_res ->> 'result' <> 'accepted' THEN
         v_generator := 'fallback_v1';
@@ -1812,8 +1839,10 @@ BEGIN
 
   IF v_generator = 'fallback_v1' THEN
     v_plan := public.calendar_compute_plan_fallback(v_input);
-    v_output := public.calendar_carry_started(v_input,
-                  public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled));
+    v_output := public.calendar_drop_today_for_system(
+                  public.calendar_carry_started(v_input,
+                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                  p_trigger, v_today);
   END IF;
 
   v_result := public.calendar_write_version(p_student_id, p_trigger, p_initiated_by,
@@ -1835,7 +1864,7 @@ $$;
 -- Name: FUNCTION calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.3. FOR UPDATE on the profile, build, compute, validate, insert, one transaction. Falls back to fallback_v1 on degraded input, a raise, or a rejection, recording the reason on the version (sheet §5A).';
+COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.3. FOR UPDATE on the profile, build, compute, validate, insert, one transaction. Falls back to fallback_v1 on degraded input, a raise, or a rejection, recording the reason on the version (sheet §5A). Since 2026-09-22 the two SYSTEM triggers, weekly and post_exam, own dates from tomorrow: the generator still reasons over the whole horizon and the OUTPUT is narrowed by calendar_drop_today_for_system.';
 
 
 --
@@ -14187,6 +14216,13 @@ REVOKE ALL ON FUNCTION public.calendar_compute_plan_fallback(p_input jsonb) FROM
 
 REVOKE ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_do_it_now(p_student_id uuid, p_block_id uuid, p_generator_version text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trigger text, p_today date) FROM PUBLIC;
 
 
 --

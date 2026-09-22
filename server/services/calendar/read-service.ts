@@ -59,7 +59,9 @@ import {
   type BlockLaunchState,
   type CalendarDayInput,
   type CalendarEngine,
+  type CalendarReadyResponse,
   type CalendarResponse,
+  type CalendarSetupDefaults,
   type GuardianCalendarResponse,
   type Result,
   type StudyProfile,
@@ -73,13 +75,15 @@ import { readSectionProjections } from "../../../apps/api/src/services/projectio
 import { getStudentActivityStreak } from "../activity-streak";
 import { adapterFor } from "./adapters";
 import { localTodayIn } from "./adapters/local-day";
-import { loadCalendarConfig } from "./config";
+import { loadCalendarConfig, type CalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
-import { FALLBACK_TIMEZONE, readStudyProfile } from "./profile-service";
+import {
+  FALLBACK_TIMEZONE,
+  readStudyProfile,
+  resolveStoredTimezone,
+} from "./profile-service";
 
 export type ReadFailure =
-  /** R-08-04: no study profile row, so setup has not happened. §17.5 state 2. */
-  | { kind: "setup_required" }
   | { kind: "invalid_query"; details: unknown }
   | { kind: "read_failed"; detail: string };
 
@@ -487,7 +491,14 @@ export async function readCalendar(
 
   const config = await loadCalendarConfig();
   const profile = await readStudyProfile(request.student_id, request.request_id);
-  if (profile === null) return err({ kind: "setup_required" });
+  // R-08-04 / §17.5's pre-setup state. An empty calendar, not a missing one — so a 200
+  // carrying the state, never a 404 (owner ruling on addendum item 26).
+  if (profile === null) {
+    return ok({
+      status: "setup_required",
+      defaults: await setupDefaults(config, query.device_timezone, request.request_id),
+    });
+  }
 
   const today = localTodayIn(profile.timezone, request.now);
   const from = query.from ?? today;
@@ -519,6 +530,7 @@ export async function readCalendar(
   ]);
 
   return ok({
+    status: "ready",
     profile,
     days: built.days,
     facts: built.facts,
@@ -614,11 +626,40 @@ async function generateOnFirstOpen(
   );
 }
 
+/**
+ * §8.1's bounds plus a suggested timezone, for a student who has not set up.
+ *
+ * Every value comes from `calendar_runtime_config` via `loadCalendarConfig` — there is no
+ * literal here, which is the point: the setup sheet's chips and the server's validation
+ * read the same rows, so they cannot disagree.
+ *
+ * The zone is a SUGGESTION and nothing is written. The device zone is offered when
+ * `calendar_is_known_timezone` recognises it; otherwise `America/Chicago`, which is sheet
+ * §8 item 19's fall-open applied to the one case that has no profile to fall back on.
+ */
+async function setupDefaults(
+  config: CalendarConfig,
+  deviceTimezone: string | undefined,
+  requestId: string | undefined,
+): Promise<CalendarSetupDefaults> {
+  const timezone =
+    deviceTimezone === undefined
+      ? FALLBACK_TIMEZONE
+      : (await resolveStoredTimezone(deviceTimezone, requestId)).timezone;
+  return {
+    timezone,
+    daily_minutes_presets: config.bounds.daily_minutes_presets,
+    daily_minutes_min: config.bounds.daily_minutes_min,
+    daily_minutes_max: config.bounds.daily_minutes_max,
+    target_exam_date_max_days: config.bounds.target_exam_date_max_days,
+  };
+}
+
 /** Doc 05C's band. Optional in the response, so a failure omits it rather than failing. */
 async function readProjection(
   studentId: string,
   requestId?: string,
-): Promise<CalendarResponse["projection"] | null> {
+): Promise<CalendarReadyResponse["projection"] | null> {
   try {
     const sections = await readSectionProjections({ studentId });
     return sections.length === 0 ? null : sections;
@@ -656,7 +697,9 @@ export async function readGuardianCalendar(
 
   const config = await loadCalendarConfig();
   const profile = await readStudyProfile(request.student_id, request.request_id);
-  if (profile === null) return err({ kind: "setup_required" });
+  // §16 gives a guardian no write path, so no `defaults`: the chips exist to prefill a
+  // setup form, and a guardian cannot run setup for their student.
+  if (profile === null) return ok({ status: "setup_required" });
 
   const today = localTodayIn(profile.timezone, request.now);
   const from = query.from ?? today;
@@ -683,6 +726,7 @@ export async function readGuardianCalendar(
   // is a privacy incident rather than a bug, and `.strict()` rejects an extra key that a
   // future edit to `toGuardianCalendarDay` might let through.
   const response = guardianCalendarResponseSchema.safeParse({
+    status: "ready",
     days: built.days.map(toGuardianCalendarDay),
     facts: built.facts,
     streak,

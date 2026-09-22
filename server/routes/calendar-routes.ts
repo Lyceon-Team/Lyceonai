@@ -183,7 +183,11 @@ function sendPlanFailure(
     case "beyond_horizon":
       return sendError(res, 404, "That day is not planned yet.", "CALENDAR_BEYOND_HORIZON", requestId);
     case "no_profile":
-      return sendError(res, 404, "Finish setting up your calendar first.", "CALENDAR_SETUP_REQUIRED", requestId);
+      // NOT the pre-setup read state. `GET /api/calendar` answers that with 200
+      // `setup_required` (owner ruling on addendum item 26). This arm is a MUTATION —
+      // regenerate, edit, do-it-now — against a student who has no study profile at all,
+      // which a correct client never issues. Its own code, so the two cannot be conflated.
+      return sendError(res, 404, "Finish setting up your calendar first.", "CALENDAR_NO_PROFILE", requestId);
     case "not_found":
       return sendError(res, 404, "That block is no longer on your plan.", "CALENDAR_NOT_FOUND", requestId);
     case "rejected":
@@ -201,10 +205,6 @@ function sendReadFailure(
   requestId: string | undefined,
 ): Response {
   switch (failure.kind) {
-    case "setup_required":
-      // R-08-04 / §17.5's pre-setup state. Not an error the student caused — the client
-      // opens the setup sheet over the greyed preview week on this code.
-      return sendError(res, 404, "Finish setting up your calendar first.", "CALENDAR_SETUP_REQUIRED", requestId);
     case "invalid_query":
       return sendError(res, 400, "Invalid request.", "INVALID_QUERY", requestId, failure.details);
     case "read_failed":
@@ -439,6 +439,13 @@ calendarRouter.put("/days/:date", async (req: Request, res: Response) => {
       ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
     });
     if (!after.ok) return sendReadFailure(res, after.error, req.requestId);
+    // The edit just succeeded, so the student HAS a profile and the read is `ready`. The
+    // compiler cannot know that, and narrowing beats casting: if it is somehow
+    // `setup_required`, the profile vanished between the write and the read, which is an
+    // anomaly worth a 500 and a log rather than a confident `as`.
+    if (after.value.status !== "ready") {
+      return sendServerError(res, "day_edit_readback", new Error("calendar not ready after edit"), req.requestId);
+    }
     const day = after.value.days[0];
     if (day === undefined) {
       return sendServerError(res, "day_edit_readback", new Error("no day returned"), req.requestId);
@@ -524,6 +531,9 @@ calendarRouter.post("/blocks/:id/do-it-now", async (req: Request, res: Response)
       ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
     });
     if (!today.ok) return sendReadFailure(res, today.error, req.requestId);
+    if (today.value.status !== "ready") {
+      return sendServerError(res, "do_it_now_readback", new Error("calendar not ready after do-it-now"), req.requestId);
+    }
     const blocks = today.value.days[0]?.blocks ?? [];
     const appended = [...blocks].reverse().find((entry) => entry.block.source === "student");
     if (appended === undefined) {

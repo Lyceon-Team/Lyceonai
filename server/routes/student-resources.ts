@@ -441,11 +441,10 @@ router.get(
         ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
       });
       if (!result.ok) {
-        // `setup_required` is a 404 with the same code the student surface uses: the
-        // subject has not finished setup, and there is no plan for anyone to read.
-        if (result.error.kind === "setup_required") {
-          return sendNotFound(res, req.requestId);
-        }
+        // `setup_required` is NOT a failure here — it comes back as an ok value with
+        // `status: "setup_required"` and is served as a 200, the same as on the student
+        // surface (owner ruling on addendum item 26). A guardian looking at a student who
+        // has not set up sees an empty calendar, not a broken one.
         if (result.error.kind === "invalid_query") {
           return res.status(400).json({
             error: {
