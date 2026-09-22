@@ -85,41 +85,40 @@ be written.
 
 ---
 
-## The one that is "explicitly forbidden" — what I can and cannot confirm
+## "Explicitly forbidden" — corrected: none of them is
 
-The ruling says one of the 31 is explicitly forbidden. **No file in this list
-is forbidden as a file** by any sentence in the corpus: a scan for
-`MUST NOT` / `not created` / `forbidden` / `never` within 140 characters of
+**Owner ruling, 2026-09-22:** *"'Explicitly forbidden' file — none. That claim
+came from CC's own earlier report and CC now can't confirm it. Record it as a
+correction. The alert registry gets built by its own workstream, without
+analytics-layer alert rows."*
+
+The F1 breadth ruling that commissioned this report said one of the 31 was
+explicitly forbidden. That phrase entered the record from an earlier report of
+mine, and when this inventory went looking for its basis there was none: a scan
+for `MUST NOT` / `not created` / `forbidden` / `never` within 140 characters of
 each filename returns only false positives (`never restated`,
-`forbidden-identifier field`). So I cannot confirm the statement as written,
-and I am not going to guess silently. The two candidates, with their evidence:
+`forbidden-identifier field`). **No file in this list is forbidden as a file.**
+The claim is withdrawn, and it was mine to withdraw.
 
-**`infra/alert-registry.yaml` (Doc 06C §7) — the likely one.** The file is not
-forbidden, but *content in it for Doc 07 surfaces is*. Doc 07 Parent **INV-07-09**
-is a negative invariant — "No Doc 07 V1 mechanism produces an alert" — with its
-own proving mechanism, `ci/doc07-v1-no-alerts`, which "fails if any V1 Doc 07
-mechanism declares an `alert_id`". Doc 07E §2 lists among its explicit
-exclusions: "the alert-registry registration for analytics surfaces (Doc 06C
-§7 — none at V1 per INV-07-09 negative invariant)". Doc 07 Parent §4 gives the
-reason: an alert with "no rotation owner and no runbook" leaves 06C §11/§10
-obligations unsatisfiable. So for the analytics layer, registering an alert is
-forbidden at V1 — which is exactly why every `purge_alert_id` in the retention
-registry is null, and why Doc 07E §6 sets both of its own rows' alert ids to
-null citing INV-07-09.
+What *is* forbidden is narrower, real, and worth stating precisely, because it
+governs how one of these files must be built when its workstream gets to it:
 
-**`infra/kpi-registry.yaml` (Doc 07B §9.5) — the opposite.** Its two proving
-mechanisms (INV-07-05 `ci/kpi-canonical-owner-cite`, INV-07-06
-`ci/kpi-body-no-restate`) are described as launch-required, and Doc 07B §9.5 is
-titled a "launch-required KPI registry". It is the most strongly *mandated*
-file in the list, not a forbidden one.
+**`infra/alert-registry.yaml` (Doc 06C §7) must be built without
+analytics-layer alert rows.** Doc 07 Parent **INV-07-09** is a negative
+invariant — "No Doc 07 V1 mechanism produces an alert" — with its own proving
+mechanism, `ci/doc07-v1-no-alerts`, which "fails if any V1 Doc 07 mechanism
+declares an `alert_id`". Doc 07E §2 lists among its explicit exclusions: "the
+alert-registry registration for analytics surfaces (Doc 06C §7 — none at V1 per
+INV-07-09 negative invariant)". Doc 07 Parent §4 gives the reason: an alert with
+"no rotation owner and no runbook" leaves 06C §11/§10 obligations unsatisfiable.
 
-**Owner action:** confirm which file the ruling meant. If it is the alert
-registry, the constraint is narrower than "do not create it" — it is "create it
-without analytics-layer alert rows", and that distinction decides whether
-`ci/retention-policy-registry-parity` (Doc 06D §9.3) can ever be implemented,
-because §9.3 (d) requires every `purge_alert_id` to resolve there and §9.3 (g)
-requires every `manual` substrate to carry one. Six rows of the retention
-registry are `manual` because no mechanism exists for their published period.
+That constraint is why every `purge_alert_id` in
+`infra/retention-policy-registry.yaml` is null, and why Doc 07E §6 sets both of
+its own rows' alert ids to null citing INV-07-09. It also means Doc 06D §9.3
+(d) and (g) — every `purge_alert_id` must resolve in the alert registry, and
+every `manual` substrate must carry one — cannot be satisfied for the analytics
+layer at V1 by anyone, which is a fact for the 06C workstream to inherit rather
+than a gap in the retention registry.
 
 ## Grouping by workstream, for whoever picks these up
 

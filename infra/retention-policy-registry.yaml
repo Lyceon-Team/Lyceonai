@@ -301,22 +301,38 @@ retention_policies:
     out_of_scope_reason: null
     last_reviewed_at: 2026-09-22
 
-  # ── Privacy Policy v4 §6.5 — configuration records, 7 years ─────────
-  # NOT ENFORCED, AND BLOCKED. Eighteen *_config_history tables plus
-  # mastery_constants_history and abuse_score_incidents carry the shared
-  # public.prevent_update_delete() BEFORE DELETE OR UPDATE trigger (Doc 01A
-  # §5, "History is append-only"). A sweep against any of them raises at run
-  # time. SCL-105 puts the two options to the owner: extend the SCL-087
-  # exemption pattern, or amend §6.5 to publish what is true. Until that is
-  # ruled, this row records the published period and the fact that nothing
-  # can perform it.
+  # ── Privacy Policy v4 §6.5 — configuration records, PERMANENT ───────
+  # PERMANENT BY RULING, and that is now what the policy says. SCL-105 put two
+  # options to the owner — sweep the tables by extending the SCL-087 exemption,
+  # or amend §6.5 — and the ruling of 2026-09-22 took the amendment: "those 19
+  # tables are tamper-evident governance records, they carry no student
+  # identity after SCL-093, and weakening their guard to honour a deletion
+  # promise about operator records is backwards."
+  #
+  # So there is no period to enforce and nothing is blocked. Eighteen
+  # *_config_history tables plus mastery_constants_history and
+  # abuse_score_incidents keep the shared public.prevent_update_delete()
+  # trigger (Doc 01A §5, "History is append-only") intact.
+  #
+  # IT IS STILL A PII SURFACE, which is why the row stays. The column named
+  # here holds the profile id of the STAFF MEMBER who made a change. SCL-093
+  # severs it when that person's own account is deleted (ON DELETE SET NULL),
+  # but until then it is personal data about an identifiable person — which is
+  # why v4 §6.5 says these records "describe our operations, not you" and does
+  # NOT claim they contain no personal information at all.
+  #
+  # SCL-107 FINDING (a), SECOND INSTANCE: permanent-by-design, not pending a
+  # forward-ref, so both horizon fields and the token are null — which §9.3 (i)
+  # fails. The first instance was RPOL-SUPPRESS-01, filed hours earlier. Two
+  # rows in one registry is no longer an edge case in the schema; it is a
+  # missing value.
   - policy_id: RPOL-CONFIG-01
     pii_surface_name: 'auth_runtime_config_history.changed_by_profile_id'
     canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.5'
     classification: operational
     retention_horizon_months: null
     calendar_month_semantics: null
-    retention_horizon_seconds: 220924800      # 2557 days
+    retention_horizon_seconds: null
     partial_provable_until: null
     purge_substrate: manual
     purge_lag_allowance_seconds: 86400
@@ -388,36 +404,27 @@ retention_policies:
     out_of_scope_reason: null
     last_reviewed_at: 2026-09-22
 
-  # ── Privacy Policy v4 §6.6 — the BigQuery retention archive, 24 months
-  # ENFORCED as of 2026-09-22 (owner ruling B3), by BigQuery's own partition
-  # expiration: the four retention__* tables are DAY-partitioned on
-  # `event_date` = DATE(_archived_at) with expiration_ms = 63072000000.
-  # SCL-106 carries the divergence from Doc 07B §5.3 and Doc 07E §5.2, and
-  # the larger finding that these tables carry a real student_id and so are
-  # not the "separated from anything identifying" data §6.6 governs.
+  # ── Privacy Policy v4 §6.6 — the BigQuery retention archive: REMOVED ─
+  # There is no RPOL-ANALYTICS-04. The row existed in the first draft of this
+  # file, for the four `retention__*` tables the 90d/180d sweeps export to,
+  # with a 730-day partition expiration.
   #
-  # SCL-107 FINDING (c): the §9.1 `purge_substrate` enum is
-  # {pg_cron, scheduled_job, doc05d_cascade, doc01v6_t_plus_7,
-  # doc03_lisa_cron, manual}. A native substrate TTL is none of them. There
-  # is no job to miss, no operator to page and no run record for §9.4 (e) to
-  # read — so `manual` would be false in both directions. It is left as
-  # `manual` under protest and named here, rather than silently mis-encoded
-  # or given an enum value the spec does not define.
-  - policy_id: RPOL-ANALYTICS-04
-    pii_surface_name: 'lyceon_analytics_archive_prod.retention__crisis_review_cases.student_id'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.6'
-    classification: pii
-    retention_horizon_months: null
-    calendar_month_semantics: null
-    retention_horizon_seconds: 63072000       # 730 days
-    partial_provable_until: null
-    purge_substrate: manual
-    purge_lag_allowance_seconds: 86400
-    purge_alert_id: null
-    out_of_scope: false
-    out_of_scope_reason: null
-    last_reviewed_at: 2026-09-22
-
+  # The owner ruling of 2026-09-22 removed the archive instead: "stop
+  # archiving, delete outright ... the archive carries student_id, reviewer_id
+  # and free-text notes about minors in crisis. BigQuery is the worst home for
+  # those. Nothing has ever been archived, so there's nothing to migrate."
+  #
+  # The row is deleted rather than kept with a null horizon because the surface
+  # itself is being deleted: nothing has ever been written to it (the archive
+  # client's dependency was never installed), and a follow-up PR removes
+  # server/services/retention-archive.ts and its callers. Registering a
+  # retention policy for a surface that has never held a row and is on its way
+  # out would be the registry documenting something that does not exist —
+  # the failure mode this file is meant to end, pointed the other way.
+  #
+  # §6.6 is still covered: RPOL-ANALYTICS-03 above carries the Vercel
+  # analytics surface, which is what §6.6 actually governs now. See SCL-106.
+  #
   # ── Privacy Policy v4 §6.7 — the catch-all, 90 days ─────────────────
   # ENFORCED as of 2026-09-21. public.operational_log_retention_days()
   # returns a literal 90 and public.sweep_operational_log_retention sweeps

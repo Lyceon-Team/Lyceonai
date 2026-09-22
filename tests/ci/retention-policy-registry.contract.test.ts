@@ -7,7 +7,6 @@ import {
   parseYamlScalar,
   type FlatMapping,
 } from "../../scripts/ci/lib/minimal-yaml";
-import { ARCHIVE_PARTITION_EXPIRATION_DAYS } from "../../server/services/retention-archive";
 
 /**
  * @spec [Doc-06D_V1.0 §9.1 (schema) + §9.2 (hard rules) + §9.3 (parity
@@ -127,8 +126,6 @@ const SPEC_06D =
 const SPEC_07E =
   "docs/Spec/Lyceon — Document 07E_ Analytics Retention, Privacy & Cascade.md";
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 /** Read a `SELECT <n>;` retention constant out of the migration that defines it. */
 function sqlConstant(fnName: string): number | null {
   const dir = path.join(repoRoot, "supabase/migrations");
@@ -242,7 +239,16 @@ describe("F1 suite A — §9.1 schema conformance", () => {
     // token, and forbids both being set. One row breaks the first half on
     // purpose: a do-not-contact list is indefinite by design, not pending a
     // forward-ref, and the schema cannot say so (SCL-107 finding (a)).
-    const EXPECTED_NULL_HORIZON_NO_TOKEN = ["RPOL-SUPPRESS-01"];
+    // Two, as of the §6.5 ruling of 2026-09-22. RPOL-SUPPRESS-01 is a
+    // do-not-contact list; RPOL-CONFIG-01 is configuration history the policy
+    // now keeps permanently. Neither is pending a forward-ref — both are
+    // indefinite by design, and the schema has no way to say so. A second
+    // instance arriving within hours of the first is why SCL-107 finding (a)
+    // asks for a schema value rather than a carve-out.
+    const EXPECTED_NULL_HORIZON_NO_TOKEN = [
+      "RPOL-CONFIG-01",
+      "RPOL-SUPPRESS-01",
+    ];
     const offenders: string[] = [];
     for (const row of rows) {
       const hasHorizon =
@@ -335,11 +341,11 @@ describe("F1 suite B — agreement with the published policy and the SQL", () =>
     );
     expect(byId("RPOL-DELETE-02").retention_horizon_months).toBe(Number(evid));
 
-    // The BigQuery archive's window comes from the writer's own constant, not
-    // from a number retyped here.
-    expect(byId("RPOL-ANALYTICS-04").retention_horizon_seconds).toBe(
-      (ARCHIVE_PARTITION_EXPIRATION_DAYS * MS_PER_DAY) / 1000,
-    );
+    // There is no BigQuery archive row to check. The owner ruling of
+    // 2026-09-22 removed the archive rather than expiring it, so the surface
+    // and its 730-day constant are both gone — see SCL-106 and the note where
+    // the row used to be.
+    expect(rows.some((r) => r.policy_id === "RPOL-ANALYTICS-04")).toBe(false);
   });
 
   it("F1.11 — Doc 07E §6's two rows are consumed verbatim, not restated", () => {
