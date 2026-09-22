@@ -65,6 +65,21 @@ export function makeUnavailableAdapter(
       return [];
     },
 
+    /**
+     * §9.1. An engine with no sessions has no session route: `create` always refuses with
+     * `engine_unavailable` and `progress` always returns `null`, so neither branch of the
+     * launch service can reach this. It THROWS rather than returning the landing page
+     * (`/full-test`), because a route that does not open the session is the exact lie this
+     * method was added to make unrepresentable — a wrong path navigates and 404s quietly,
+     * where a throw is a 500 with a stack that names the cause. Coding Standards §3.6:
+     * `throw` is for programming errors, and calling this is one.
+     */
+    resumeHref(_sessionId: string): string {
+      throw new Error(
+        `the ${engine} engine has no session route: its adapter is a stub`,
+      );
+    },
+
     async progress(_sessionId: string): Promise<EngineLifecycle | null> {
       // No session can exist, so there is no lifecycle to report. `null` keeps the
       // block out of `in_progress` rather than inventing a state for it.
