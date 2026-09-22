@@ -27,6 +27,7 @@ import {
   WEEKDAY_HEADERS,
 } from "../lib/dates";
 import type { CalendarViewModel, ViewBlock } from "../lib/view-model";
+import { Link } from "wouter";
 
 // ── Left rail ───────────────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ function addSevenDays(date: string): string {
 // ── Top bar ─────────────────────────────────────────────────────────────────
 
 export function TopBar({
+  backHref,
   rangeLabelText,
   view,
   onView,
@@ -202,6 +204,8 @@ export function TopBar({
   refreshPending,
   onEditSchedule,
 }: {
+  /** `/dashboard` for a student, `/guardian` for a guardian — the page decides. */
+  backHref: string;
   rangeLabelText: string;
   view: "week" | "month";
   onView: (next: "week" | "month") => void;
@@ -217,6 +221,14 @@ export function TopBar({
 }): JSX.Element {
   return (
     <div className="top">
+      {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping the
+          history stack lands wherever the student happened to arrive from, including an
+          external referrer, and it cannot be middle-clicked or opened in a new tab. A
+          link to the dashboard is deterministic and behaves like every other link. */}
+      <Link href={backHref} className="back" data-testid="calendar-back-link">
+        <span aria-hidden="true">←</span> Dashboard
+      </Link>
+      <span className="topdiv" aria-hidden="true" />
       <div className="arrows">
         <button
           type="button"

@@ -4348,6 +4348,48 @@ $$;
 
 
 --
+-- Name: crisis_review_sla_hours(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_review_sla_hours() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 48;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_review_sla_hours(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_review_sla_hours() IS 'Doc 03 §21.3: the crisis review SLA window in hours. 48 at launch; the §21.3 target after 30 days is 24. THE single definition — flag_conversation_for_crisis_review() reads it.';
+
+
+--
+-- Name: crisis_source_fallback(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_source_fallback(p_source text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE p_source
+           WHEN 'classifier_degraded_no_floor' THEN 'classifier_degraded'
+           WHEN 'infrastructure_failure'       THEN 'classifier_degraded'
+           ELSE NULL
+         END;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_source_fallback(p_source text) IS 'WS-L8 Item 4b: source values added after the original CHECK constraint, mapped to the coarser value the old constraint accepts. NULL means no fallback — the CHECK violation is real and must propagate.';
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4898,6 +4940,112 @@ BEGIN
   );
 END;
 $_$;
+
+
+--
+-- Name: flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_deadline  timestamptz := now()
+                 + make_interval(hours => public.crisis_review_sla_hours());
+  v_source    text        := p_source;
+  v_fallback  text;
+  v_case_id   uuid;
+  v_found_at  timestamptz;
+  v_status    text;
+  v_rows      integer;
+BEGIN
+  UPDATE public.tutor_conversations
+     SET crisis_flagged = true
+   WHERE id = p_conversation_id;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION
+      'crisis flag target conversation % does not exist', p_conversation_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.crisis_review_cases
+      (conversation_id, student_id, source, category,
+       signature_id, model_confidence, sla_deadline)
+    VALUES
+      (p_conversation_id, p_student_id, v_source, p_category,
+       p_signature_id, p_model_confidence, v_deadline)
+    RETURNING id, status INTO v_case_id, v_status;
+
+    RETURN jsonb_build_object(
+      'case_id',          v_case_id,
+      'sla_deadline',     v_deadline,
+      'already_existed',  false,
+      'case_status',      v_status,
+      'persisted_source', v_source
+    );
+
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- An active case already exists. Return it; the flag stands.
+      SELECT c.id, c.sla_deadline, c.status
+        INTO v_case_id, v_found_at, v_status
+        FROM public.crisis_review_cases c
+       WHERE c.conversation_id = p_conversation_id
+         AND c.status IN ('open', 'in_review')
+       LIMIT 1;
+
+      IF v_case_id IS NULL THEN
+        -- A unique violation with nothing to find is not a state this
+        -- function understands. Propagate and roll the flag back with it.
+        RAISE;
+      END IF;
+
+      RETURN jsonb_build_object(
+        'case_id',          v_case_id,
+        'sla_deadline',     v_found_at,
+        'already_existed',  true,
+        'case_status',      v_status,
+        'persisted_source', NULL
+      );
+
+    WHEN check_violation THEN
+      v_fallback := public.crisis_source_fallback(p_source);
+      IF v_fallback IS NULL THEN
+        RAISE;   -- a real CHECK violation, not a schema-version mismatch
+      END IF;
+      v_source := v_fallback;
+  END;
+
+  -- Only reached via the check_violation fallback above. Unwrapped on
+  -- purpose: if this fails too, everything rolls back, flag included.
+  INSERT INTO public.crisis_review_cases
+    (conversation_id, student_id, source, category,
+     signature_id, model_confidence, sla_deadline)
+  VALUES
+    (p_conversation_id, p_student_id, v_source, p_category,
+     p_signature_id, p_model_confidence, v_deadline)
+  RETURNING id, status INTO v_case_id, v_status;
+
+  RETURN jsonb_build_object(
+    'case_id',          v_case_id,
+    'sla_deadline',     v_deadline,
+    'already_existed',  false,
+    'case_status',      v_status,
+    'persisted_source', v_source
+  );
+END;
+$$;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) IS 'Doc 03 §21.2/§21.3, owner ruling D1 2026-09-22: sets tutor_conversations.crisis_flagged AND creates the review case in ONE transaction, so a flagged conversation with no case in the queue is not a reachable state. Returns {case_id, sla_deadline, already_existed, case_status, persisted_source}. `case_status` is read back from the row rather than assumed, so the caller''s notification policy (Doc 03 §21.3 throttling) sees what the table actually holds. Does NOT notify — Cloud Tasks cannot join the transaction; the caller notifies after this returns.';
 
 
 --
@@ -14947,6 +15095,22 @@ GRANT ALL ON FUNCTION public.crisis_review_cases_updated_at() TO service_role;
 
 
 --
+-- Name: FUNCTION crisis_review_sla_hours(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_review_sla_hours() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_review_sla_hours() TO service_role;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_source_fallback(p_source text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_source_fallback(p_source text) TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14976,6 +15140,14 @@ GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_ro
 
 REVOKE ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) TO service_role;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) TO service_role;
 
 
 --

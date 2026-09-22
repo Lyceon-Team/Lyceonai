@@ -168,7 +168,7 @@ s = s.replace(a, "  if (false) {", 1)'
 plant "U8" "remove the Review entry from the live global nav" \
   "client/src/review-entry-points.test.ts" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "    { href: \"/review\", label: \"Review\", icon: RotateCcw },\n"
+  'a = "  { href: \"/review\", label: \"Review\", icon: RotateCcw },\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 

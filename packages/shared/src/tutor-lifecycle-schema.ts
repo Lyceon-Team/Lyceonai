@@ -37,7 +37,7 @@ export const createConversationRequestSchema = z.object({
   source_session_item_id: z.string().uuid().nullable().optional(),
   source_question_row_id: z.string().min(1).nullable().optional(),
   source_question_canonical_id: z.string().min(1).nullable().optional(),
-  idempotency_key: z.string().uuid(),
+  idempotency_key: z.string().uuid().optional(),
 });
 export type CreateConversationRequest = z.infer<
   typeof createConversationRequestSchema

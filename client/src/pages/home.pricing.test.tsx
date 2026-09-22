@@ -33,8 +33,27 @@ vi.mock("@/contexts/SupabaseAuthContext", () => ({
   }),
 }));
 
+// THE DOUBLE RENDERS AN ANCHOR, because the real `Link` does.
+//
+// This used to be `({ children }) => <>{children}</>` — every prop discarded. That was
+// faithful ONLY while the app used the wouter v2 idiom and put `href` and `data-testid`
+// on a nested `<a>` CHILD, which the fragment passed through by accident. Once #829 moved
+// those props onto `<Link>` itself, the double swallowed them and two tests failed for a
+// defect the app does not have: the testid was present in every browser and absent only
+// here. A fake that does not model the thing it stands for reports on itself.
 vi.mock("wouter", () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Link: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children: React.ReactNode;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
   useLocation: () => ["/", vi.fn()],
 }));
 

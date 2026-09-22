@@ -267,6 +267,31 @@
   display: flex;
   gap: 4px;
 }
+/* The back control and its divider. Declarations are the prototype's own, scoped
+   under .lyceon-calendar like every other rule in this file. */
+.lyceon-calendar .back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: #fff;
+  text-decoration: none;
+}
+.lyceon-calendar .back:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.lyceon-calendar .topdiv {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 0 2px;
+}
 .lyceon-calendar .btn {
   padding: 6px 12px;
   border-radius: 8px;

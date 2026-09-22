@@ -125,6 +125,7 @@ export default function CalendarPage(): JSX.Element {
   if (response.status === "setup_required") {
     return (
       <CalendarView
+        backHref="/dashboard"
         model={null}
         setup={{
           defaults: response.defaults,
@@ -151,6 +152,7 @@ export default function CalendarPage(): JSX.Element {
 
   return (
     <CalendarView
+      backHref="/dashboard"
       model={model}
       today={today}
       viewerName={user?.display_name ?? "Your plan"}

@@ -26,8 +26,12 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 /* ---------- shell ---------- */
 .app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
 .rail{background:var(--rail);color:#E8EAF2;display:flex;flex-direction:column;gap:22px;padding:18px 16px;overflow-y:auto}
-.brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;letter-spacing:-.02em}
+.brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:8px;padding:2px 4px;margin:-2px -4px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;letter-spacing:-.02em}
 .brand i{width:9px;height:9px;border-radius:50%;background:var(--math);box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+.brand:hover{background:rgba(255,255,255,.08)}
+.back{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-weight:500;color:var(--ink-2);background:#fff;text-decoration:none}
+.back:hover{background:var(--surface);color:var(--ink)}
+.topdiv{width:1px;height:22px;background:var(--line);margin:0 2px}
 .who{padding:11px 12px;border-radius:var(--r);background:rgba(255,255,255,.06)}
 .who b{font-weight:600;display:block}
 .who span{color:#98A0B8;font-size:12.5px}
@@ -221,7 +225,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 <div class="app">
   <!-- ============ left rail ============ -->
   <aside class="rail">
-    <div class="brand"><i></i> Lyceon</div>
+    <a class="brand" href="#" id="brandHome" title="Back to dashboard"><i></i> Lyceon</a>
     <div class="who"><b id="whoName">Karl Nkemzi</b><span id="whoSub">SAT · 7 November</span></div>
     <div class="schedcard" id="schedCard"><b>Your schedule</b><span id="schedSum">Mon–Sat · 1 hr a day · tests on Saturdays</span><button id="schedEdit">Change schedule</button></div>
 
@@ -247,6 +251,8 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <!-- ============ main ============ -->
   <div class="main">
     <div class="top">
+      <a class="back" href="#" id="backHome"><span aria-hidden="true">←</span> Dashboard</a>
+      <span class="topdiv"></span>
       <div class="arrows">
         <button class="btn icon" id="prev" aria-label="Previous">‹</button>
         <button class="btn icon" id="next" aria-label="Next">›</button>
@@ -729,6 +735,8 @@ function paintSched(){const n=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],d=[...
   const days=d.length===7?"Every day":d.length&&d.join()==="1,2,3,4,5"?"Mon–Fri":d.length&&d.join()==="1,2,3,4,5,6"?"Mon–Sat":d.map(x=>n[x]).join(", ");
   const m=PROFILE.minutes%60===0?(PROFILE.minutes/60)+" hr":PROFILE.minutes>60?(PROFILE.minutes/60)+" hr":PROFILE.minutes+" min";
   document.getElementById("schedSum").textContent=days+" · "+m+" a day · "+(PROFILE.fl===null?"no auto tests":"tests on "+DOW_FULL[PROFILE.fl]+"s");}
+document.getElementById("backHome").onclick=e=>{e.preventDefault();toast("Back to dashboard");};
+document.getElementById("brandHome").onclick=e=>{e.preventDefault();toast("Back to dashboard");};
 document.getElementById("gear").onclick=openSettings;
 document.getElementById("schedEdit").onclick=openSettings;
 document.getElementById("sCancel").onclick=closeSettings;
