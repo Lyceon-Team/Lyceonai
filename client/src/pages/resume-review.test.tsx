@@ -66,6 +66,12 @@ vi.mock("@/lib/api-error", () => ({ isApiError: () => false }));
 import ResumeReviewPage from "./resume-review";
 
 const SESSION_ID = "rev-sess-001";
+/**
+ * A create must hand back a DIFFERENT id from the one in the URL. With both the same,
+ * "resumed the URL's session" and "created a fresh one" produce identical request
+ * URLs, and U3's plant cannot be seen — which is why it was a no-op in CI on 4d5187f.
+ */
+const CREATED_SESSION_ID = "rev-sess-CREATED";
 const ITEM_ID = "rev-item-001";
 
 const CORRECT_EXPLANATION =
@@ -115,7 +121,7 @@ function installFetchMock(): Calls {
     }
     if (url === "/api/review/sessions" && init?.method === "POST") {
       calls.createCount += 1;
-      return jsonResponse({ sessionId: SESSION_ID }, 201);
+      return jsonResponse({ sessionId: CREATED_SESSION_ID }, 201);
     }
     if (url.includes("/api/review/sessions/") && url.includes("/resume")) {
       return jsonResponse({ sessionId: SESSION_ID, sessionItemId: ITEM_ID });
@@ -279,15 +285,34 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
       expect(screen.getByText("Solve 2x + 3 = 7.")).not.toBeNull();
     });
 
+    /**
+     * THE LOAD-BEARING ASSERTION, and why it is phrased this way.
+     *
+     * `createCount === 0` alone is NOT enough. `useCanonicalPractice` de-duplicates
+     * concurrent creates through a MODULE-GLOBAL map (`inflightEnsureSession`,
+     * useCanonicalPractice.ts:326) that survives between tests in this file and is
+     * cleared 100ms after resolution. With the id removed from the URL, an earlier
+     * test's in-flight entry can satisfy this mount without a second POST, so the
+     * counter stays 0 and the plant looks harmless. That is a race, and it is what
+     * made U3 pass under its own plant in CI on 4d5187f while going red locally.
+     *
+     * Which session `/next` was asked for cannot be laundered that way: whether the
+     * loop creates a session here or reuses a cached promise, the id it gets back is
+     * CREATED_SESSION_ID, never the one in the URL.
+     */
+    const nextCalls = calls.urls.filter((u) => u.includes("/next"));
+    expect(nextCalls.length).toBeGreaterThan(0);
+    for (const call of nextCalls) {
+      expect(
+        call,
+        "the loop asked for an item on a session the URL did not name",
+      ).toContain(`/api/review/sessions/${SESSION_ID}/next`);
+      expect(call).not.toContain(CREATED_SESSION_ID);
+    }
     expect(
       calls.createCount,
       "a reload must resume, not create a second session",
     ).toBe(0);
-    expect(
-      calls.urls.filter((u) =>
-        u.includes(`/api/review/sessions/${SESSION_ID}/`),
-      ).length,
-    ).toBeGreaterThan(0);
   });
 
   it("U2b: no user-visible 'practice' copy survives on a review session", async () => {
