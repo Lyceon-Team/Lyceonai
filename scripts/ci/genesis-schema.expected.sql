@@ -735,6 +735,15 @@ BEGIN
         SELECT greatest((r.queued_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
                count(*)::integer AS n
         FROM public.review_schedule r
+        -- H5: the ONLY change from the 20260921000000 body. A queue entry whose question
+        -- has been retired or issue-flagged since it was queued is not servable, so it must
+        -- not be PLANNED either -- the queue stores no question metadata (ruling 19), and
+        -- review's own prefill joins this same view at serve time. Without the join the
+        -- generator sizes a review block against rows the engine will then refuse to serve,
+        -- and the student gets a block that runs short with nothing to explain it.
+        -- INNER join, deliberately: a missing row means not servable, which is the same
+        -- answer as a retired one.
+        JOIN public.servable_questions sq ON sq.id = r.question_id
         WHERE r.student_id = p_student_id
           AND r.status = 'active'
           AND (r.queued_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi

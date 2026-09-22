@@ -9,7 +9,11 @@
  * CHECKs list the same three strings), so there is no mapping and no default arm
  * that could silently swallow a fourth engine.
  */
-import { engineOfBlock, type CalendarEngine, type PlanBlock } from "@lyceon/shared";
+import {
+  engineOfBlock,
+  type CalendarEngine,
+  type PlanBlock,
+} from "@lyceon/shared";
 import type { CalendarEngineAdapter } from "./types";
 import { practiceAdapter } from "./practice";
 import { fullLengthAdapter, reviewAdapter } from "./stub";

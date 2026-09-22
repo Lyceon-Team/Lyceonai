@@ -77,7 +77,9 @@ function startOfLocalDay(localDate: string, timeZone: string): Date {
 
   // Pass one: offset at the naive instant. Pass two: re-measure after applying it,
   // which is what makes a DST boundary land on the right side.
-  const firstGuess = new Date(naiveUtc - offsetMinutesAt(new Date(naiveUtc), timeZone) * 60_000);
+  const firstGuess = new Date(
+    naiveUtc - offsetMinutesAt(new Date(naiveUtc), timeZone) * 60_000,
+  );
   const secondOffset = offsetMinutesAt(firstGuess, timeZone);
   return new Date(naiveUtc - secondOffset * 60_000);
 }
@@ -95,7 +97,10 @@ export type LocalDayWindow = {
  * Computed from the day's own start and the NEXT day's start rather than
  * start + 24h, so a 23-hour or 25-hour DST day is the length it actually is.
  */
-export function localDayWindowUtc(localDate: string, timeZone: string): LocalDayWindow {
+export function localDayWindowUtc(
+  localDate: string,
+  timeZone: string,
+): LocalDayWindow {
   const match = ISO_DATE.exec(localDate);
   if (match === null) {
     throw new Error(`localDayWindowUtc: ${localDate} is not a YYYY-MM-DD date`);
@@ -153,7 +158,9 @@ export function localTodayIn(timeZone: string, now: Date = new Date()): string {
   const day = field("day").padStart(2, "0");
   const localDate = `${year}-${month}-${day}`;
   if (!ISO_DATE.test(localDate)) {
-    throw new Error(`localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`);
+    throw new Error(
+      `localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`,
+    );
   }
   return localDate;
 }

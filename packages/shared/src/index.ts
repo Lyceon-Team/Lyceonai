@@ -22,3 +22,5 @@ export * from "./review-schema.js";
 
 // Doc 05F Study Calendar — shared layer (schemas, allocator, read model).
 export * from "./calendar/index.js";
+export * from "./practice-response-schema.js";
+export * from "./review-schema.js";

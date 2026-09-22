@@ -14,7 +14,7 @@
  * is asserted PRESENT there, so a version of the page that rendered nothing at all could
  * not pass both.
  */
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type {
   CalendarReadyResponse,
@@ -116,6 +116,9 @@ const STUDENT_RESPONSE: CalendarReadyResponse = {
 /** The guardian payload as the SERVER builds it — sanitised, with no explanation keys. */
 const GUARDIAN_RESPONSE: GuardianCalendarReadyResponse = {
   status: "ready",
+  // Owner ruling 2026-09-22: minutes are NOT among §16's exclusions, so the guardian
+  // payload carries the same estimates the student's does.
+  estimates: ESTIMATES,
   days: [
     {
       local_date: TODAY,
@@ -434,5 +437,60 @@ describe("a started block is not draggable (§12.2)", () => {
     );
     // And no Move field, because §12.2 would refuse it.
     expect(sheet.querySelector('input[type="date"]')).toBeNull();
+  });
+});
+
+/**
+ * A1, owner ruling 2026-09-22. Minutes are NOT among §16's exclusions (controls,
+ * explanation copy, target score), so the guardian sees them. This is the POSITIVE
+ * assertion for that ruling, and it is also the regression guard for the "Full sitting"
+ * bug: with no estimate the card fell back to that label for every block type, so a
+ * guardian reading a 15-question Math set was told it was a full sitting.
+ */
+describe("the guardian sees the minute estimate (§17.1, owner ruling)", () => {
+  it("renders `~N min` on a practice block, the same figure the student sees", () => {
+    const guardian = render(
+      <CalendarView
+        model={guardianViewModel(GUARDIAN_RESPONSE)}
+        today={TODAY}
+        viewerName="Study plan"
+        targetExamDate={null}
+        streak={STREAK}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />,
+    ).container;
+
+    // 15 questions x 90s = 1350s = 23 min, from the payload's own estimates.
+    expect(guardian.textContent).toContain("~23 min");
+    // And NEVER the old fallback, which is what the bug looked like.
+    expect(guardian.textContent).not.toContain("Full sitting");
+  });
+
+  it("agrees with the student surface block for block", () => {
+    const guardian = render(
+      <CalendarView
+        model={guardianViewModel(GUARDIAN_RESPONSE)}
+        today={TODAY}
+        viewerName="Study plan"
+        targetExamDate={null}
+        streak={STREAK}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />,
+    ).container;
+    const guardianMinutes = [
+      ...(guardian.textContent ?? "").matchAll(/~(\d+) min/g),
+    ].map((match) => match[1]);
+
+    cleanup();
+
+    const student = renderStudent();
+    const studentMinutes = [
+      ...(student.textContent ?? "").matchAll(/~(\d+) min/g),
+    ].map((match) => match[1]);
+
+    expect(guardianMinutes.length).toBeGreaterThan(0);
+    expect(guardianMinutes).toEqual(studentMinutes);
   });
 });
