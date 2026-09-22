@@ -53,11 +53,14 @@ export function BlockCard({
   const complete = block.target > 0 && block.actual >= block.target;
 
   /*
-   * "Full sitting" belongs to a FULL-LENGTH block, not to every block without a minute
-   * estimate. `minutes` is null for two different reasons — a full-length block has no
-   * per-question figure, and the GUARDIAN payload carries no `estimates` at all (§16) — and
-   * a bare `?? "Full sitting"` conflated them, labelling every block on the guardian surface
-   * as a full sitting. Keyed off the tone, which is the fact that actually decides it.
+   * "Full sitting" belongs to a FULL-LENGTH block and nothing else.
+   *
+   * `minutes` now has exactly ONE reason to be null: a full-length block has no
+   * per-question figure to derive minutes from. The second reason is gone — the guardian
+   * payload carries `estimates` too (owner ruling 2026-09-22), so there is no longer a
+   * surface on which a practice block has no estimate. Keyed off the tone, which is the
+   * fact that decides it, rather than off the absence of a number, which used to have two
+   * meanings and silently conflated them.
    */
   const progressText =
     block.actual > 0 && !complete

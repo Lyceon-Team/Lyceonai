@@ -473,6 +473,38 @@ describe("§16 — the guardian read", () => {
     expect(guardian.value.facts).toEqual(student.value.facts);
   });
 
+  /**
+   * A1, owner ruling 2026-09-22. §16's exclusions are controls, explanation copy and the
+   * target score; a minute estimate is none of them. Asserted as EQUALITY with the
+   * student's rather than as mere presence — two payloads that both had estimates but
+   * disagreed would be worse than one that withheld them, because a parent and a student
+   * would be reading different numbers off the same plan.
+   */
+  it("serves the SAME estimates the student gets (§17.1)", async () => {
+    scenario({ acceptedVersions: 1 });
+    const student = await read();
+    scenario({ acceptedVersions: 1 });
+    const guardian = await readGuardianCalendar({
+      student_id: STUDENT,
+      query: {},
+      now: NOW,
+    });
+
+    expect(student.ok && guardian.ok).toBe(true);
+    if (!student.ok || !guardian.ok) return;
+    if (student.value.status !== "ready" || guardian.value.status !== "ready") {
+      throw new Error(
+        "both reads must be ready for this comparison to mean anything",
+      );
+    }
+    expect(guardian.value.estimates).toEqual(student.value.estimates);
+    // And they trace to the seeded config rows, not to a default someone wrote in code.
+    expect(guardian.value.estimates).toEqual({
+      practice_seconds_per_unit: 90,
+      review_seconds_per_unit: 120,
+    });
+  });
+
   it("carries no profile, no version_no and no override flag", async () => {
     scenario({ acceptedVersions: 1 });
 
@@ -486,6 +518,11 @@ describe("§16 — the guardian read", () => {
     if (!result.ok) return;
     expect(Object.keys(result.value).sort()).toEqual([
       "days",
+      // §17.1's minute estimate, added by the owner ruling of 2026-09-22. Listed here
+      // EXPLICITLY rather than by loosening the assertion: this list is the guardian
+      // chokepoint, and a key that arrives without someone naming it here is the leak
+      // this test exists to catch.
+      "estimates",
       "facts",
       "status",
       "streak",

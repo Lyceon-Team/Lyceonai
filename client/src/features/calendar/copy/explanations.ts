@@ -18,11 +18,12 @@
  *   [P]  the approved prototype, `docs/design/calendar-prototype.html` — its `WHY` map is
  *        written against the CURRENT vocabulary and is the design of record for this screen.
  *   [S]  Doc 05F §17.6, for the one key the re-key left unchanged.
- *   [?]  PROPOSED HERE, awaiting an owner ruling. Neither source covers these four.
+ *   [O]  OWNER RULING 2026-09-22, which closed the gap item 16 left open.
  *
- * The [?] entries are the only invented copy in this feature. They are written to match the
- * voice of the [P] entries and are deliberately plain; if the owner wants different words,
- * this is the one file that changes and nothing else moves.
+ * Nothing here is invented any more. The four strings that were proposed in this file
+ * pending a decision have been replaced by the owner's wording, and `weighted` was ruled to
+ * have NO block-level copy at all — see the note beside it. The ruling is recorded in
+ * `docs/plans/Doc_05F_Change_Record_Addendum.md` as item 16.
  * ────────────────────────────────────────────────────────────────────────────
  *
  * trade-offs: the lookup is TOTAL over `string | null`, not an exhaustive switch over the
@@ -46,13 +47,17 @@ const BLOCK_COPY: Readonly<Record<string, string>> = {
   /** [P] */ final_rehearsal: "Your last full rehearsal before test day.",
   /** [S] */ cold_start:
     "We're still learning where you stand — this balances the sections.",
-  /** [?] */ exam_review:
-    "Working back through the questions you missed on your practice test.",
-  /** [?] */ taper: "Easing off as test day gets close, so you arrive fresh.",
-  /** [?] */ weighted:
-    "Built around where your practice will count for most right now.",
-  /** [?] */ fallback:
-    "A steady session while we catch up on your latest results.",
+  /** [O] */ exam_review:
+    "Going over what you missed on your last full-length.",
+  /** [O] */ taper: "Test week: lighter days so you arrive rested.",
+  /** [O] */ fallback:
+    "A balanced session while we catch up on your progress data.",
+  // `weighted` is DELIBERATELY ABSENT, by the same ruling. It is the block-level key on a
+  // practice block that has a domain mix, and the mix's own per-domain reasons are both
+  // more specific and already shown — `explanationLines` prefers them. A generic sentence
+  // above them would say less and take more room. `blockExplanation("weighted")` returns
+  // null, which renders no panel, and a `section`-level practice block carries `cold_start`
+  // rather than `weighted`, so nothing is left unexplained.
 };
 
 /** Per-domain copy — `DOMAIN_EXPLANATION_KEYS` in the same module. */

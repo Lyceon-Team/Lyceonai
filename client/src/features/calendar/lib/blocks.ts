@@ -164,3 +164,24 @@ export function primaryActionLabel(entry: {
   if (entry.status === "completed") return "Done";
   return isStarted(entry) ? "Resume" : "Start";
 }
+
+/**
+ * §15.1 + formula sheet item 12: which engines a student can actually START today.
+ *
+ * ONE DEFINITION. This used to exist twice — `isLaunchable` in `api/launch.ts` for the
+ * launch path, and a hand-written `block.block_type === "practice"` in `view-model.ts` for
+ * the button. They agreed by coincidence, and the moment review shipped the launch path
+ * accepted it while the view model still drew "Coming soon" on it. It lives here, next to
+ * `isDraggable`, because this is where block rules live.
+ *
+ * It is about the ENGINE being real, not about `enabled_block_types`. The flag decides
+ * whether a review block is ever PLANNED; this decides whether one the student already
+ * holds — from a hand-edited day, say — can be started. Full-length is still a fail-open
+ * stub, so its control reads "Coming soon" and never calls launch: asking and being refused
+ * is a worse experience than a control that tells the truth up front.
+ */
+export function isLaunchableBlockType(
+  blockType: PlanBlock["block_type"],
+): boolean {
+  return blockType === "practice" || blockType === "review";
+}

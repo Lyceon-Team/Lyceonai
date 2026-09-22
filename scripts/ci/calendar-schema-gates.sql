@@ -311,12 +311,29 @@ BEGIN
   END IF;
   RAISE NOTICE '    OK C-06 canonical_domain_order is the canonical eight, Math then Reading & Writing';
 
-  -- Launch value: practice only (sheet §8 item 12 / V-03).
+  -- Sheet §8 item 12 / V-03. This used to pin the LAUNCH value, `["practice"]`. Review
+  -- shipped on 2026-09-22 and was enabled, so pinning that literal would now assert a
+  -- state the product has deliberately left -- the test pushing against the truth rather
+  -- than protecting it.
+  --
+  -- What is still worth asserting, and is the part that can actually go wrong, is that
+  -- nothing is enabled whose ADAPTER is a fail-open stub. Enabling an engine before its
+  -- engine exists puts live Start controls on blocks with nothing behind them, which is
+  -- the one failure this gate was really there to prevent. full_length is that engine
+  -- today; it joins the list when its contract test passes against a real engine, and
+  -- this line moves with it.
   IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-     <> '["practice"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 enabled_block_types is not the launch value ["practice"]';
+       @> '["full_length"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its adapter is still the fail-open stub (enabled_block_types = %)',
+      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK C-07 enabled_block_types is the launch value ["practice"]';
+  IF NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
+         @> '["practice"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 practice is not enabled, which no release has ever intended (enabled_block_types = %)',
+      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
+  END IF;
+  RAISE NOTICE '    OK C-07 enabled_block_types = % — practice on, no stub engine enabled',
+    (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
 
   -- The config history trigger pair is wired exactly as the other thirteen
   -- *_runtime_config tables (sheet §8 item 9).

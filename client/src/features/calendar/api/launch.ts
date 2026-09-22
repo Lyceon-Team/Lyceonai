@@ -30,6 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { LaunchResponse, PlanBlock } from "@lyceon/shared/calendar";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
+import { isLaunchableBlockType } from "../lib/blocks";
 import { calendarKeys } from "./keys";
 import { useLaunchMutation } from "./mutations";
 
@@ -45,18 +46,63 @@ export function practiceStateKey(
 }
 
 /**
- * §15.1 + formula sheet item 12: only practice can be launched today. Review and full-length
- * adapters ship as fail-open stubs that answer `engine_unavailable`, so their control reads
- * "Coming soon", is disabled, and never calls launch — asking and being refused is a worse
- * experience than a control that tells the truth up front.
+ * The EXACT key `resume-review.tsx` uses (its line 65). Same rule, same reason: a
+ * structured key would warm a slot nothing reads and the spinner would come back silently.
  */
-export function isLaunchable(block: Pick<PlanBlock, "block_type">): boolean {
-  return block.block_type === "practice";
+export function reviewStateKey(
+  sessionId: string,
+  clientInstanceId: string,
+): string {
+  return `/api/review/sessions/${sessionId}/state?client_instance_id=${clientInstanceId}`;
 }
 
-/** Warms the lazy practice-session chunk. Idempotent — the browser caches the module. */
+/**
+ * The state key for whichever engine this launch belongs to. One function, so a third
+ * engine is a row here rather than an `if` at the call site that someone forgets.
+ */
+export function stateKeyForEngine(
+  blockType: PlanBlock["block_type"],
+  sessionId: string,
+  clientInstanceId: string,
+): string | null {
+  if (blockType === "practice")
+    return practiceStateKey(sessionId, clientInstanceId);
+  if (blockType === "review")
+    return reviewStateKey(sessionId, clientInstanceId);
+  // full_length has no resume shell to warm yet. Null means "navigate without
+  // prefetching", never "prefetch the wrong key".
+  return null;
+}
+
+/**
+ * §15.1 + formula sheet item 12. Review joined practice on 2026-09-22; full-length is still
+ * a fail-open stub, so its control reads "Coming soon", is disabled, and never calls launch
+ * — asking and being refused is a worse experience than a control that tells the truth up
+ * front.
+ *
+ * This is about the ENGINE being real, not about the flag. `enabled_block_types` decides
+ * whether a review block is ever PLANNED; this decides whether one a student holds can be
+ * started. A student can hold a review block from a hand-edited day with the flag off, and
+ * it should work.
+ */
+export function isLaunchable(block: Pick<PlanBlock, "block_type">): boolean {
+  // Delegated, not restated. See `isLaunchableBlockType` for why this rule has exactly
+  // one home.
+  return isLaunchableBlockType(block.block_type);
+}
+
+/**
+ * Warms the lazy resume chunk for the engine the student is about to land on. Idempotent —
+ * the browser caches the module.
+ */
+export function prefetchEngineChunk(blockType: PlanBlock["block_type"]): void {
+  if (blockType === "practice") void import("@/pages/resume-practice");
+  if (blockType === "review") void import("@/pages/resume-review");
+}
+
+/** @deprecated Use `prefetchEngineChunk`. Kept so no call site breaks mid-change. */
 export function prefetchPracticeChunk(): void {
-  void import("@/pages/resume-practice");
+  prefetchEngineChunk("practice");
 }
 
 export type LaunchOutcome =
@@ -69,7 +115,10 @@ export type LaunchOutcome =
  * here so the hook is testable without a router, and so the page owns routing.
  */
 export function useLaunchBlock(navigate: (to: string) => void): {
-  launch: (blockId: string) => Promise<LaunchOutcome>;
+  launch: (
+    blockId: string,
+    blockType?: PlanBlock["block_type"],
+  ) => Promise<LaunchOutcome>;
   isPending: boolean;
   pendingBlockId: string | null;
 } {
@@ -81,7 +130,10 @@ export function useLaunchBlock(navigate: (to: string) => void): {
   const [pendingBlockId, setPendingBlockId] = useState<string | null>(null);
 
   const launch = useCallback(
-    async (blockId: string): Promise<LaunchOutcome> => {
+    async (
+      blockId: string,
+      blockType: PlanBlock["block_type"] = "practice",
+    ): Promise<LaunchOutcome> => {
       setPendingBlockId(blockId);
       const clientInstanceId = getClientInstanceId();
       try {
@@ -93,9 +145,14 @@ export function useLaunchBlock(navigate: (to: string) => void): {
 
         // THE PREFETCH. Awaited, so the navigation happens with the state already in cache;
         // a fire-and-forget would race the route change and lose roughly as often as it won.
-        await queryClient.prefetchQuery({
-          queryKey: [practiceStateKey(response.session_id, clientInstanceId)],
-        });
+        const stateKey = stateKeyForEngine(
+          blockType,
+          response.session_id,
+          clientInstanceId,
+        );
+        if (stateKey !== null) {
+          await queryClient.prefetchQuery({ queryKey: [stateKey] });
+        }
 
         navigate(response.next);
         return { kind: "navigated", response };

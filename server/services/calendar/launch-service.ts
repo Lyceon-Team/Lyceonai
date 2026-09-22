@@ -106,10 +106,20 @@ export type LaunchSuccess = {
  */
 export type LaunchFailure =
   | { kind: "not_found" }
-  | { kind: "not_today"; when: "past" | "future"; scheduled_date: string; local_today: string }
+  | {
+      kind: "not_today";
+      when: "past" | "future";
+      scheduled_date: string;
+      local_today: string;
+    }
   | { kind: "already_complete"; target: number; actual: number }
   | { kind: "engine_unavailable"; engine: CalendarEngine }
-  | { kind: "engine_error"; engine: CalendarEngine; status?: number; detail?: string }
+  | {
+      kind: "engine_error";
+      engine: CalendarEngine;
+      status?: number;
+      detail?: string;
+    }
   | { kind: "link_failed"; detail: string };
 
 export type LaunchResult = Result<LaunchSuccess, LaunchFailure>;
@@ -120,7 +130,10 @@ export type LaunchResult = Result<LaunchSuccess, LaunchFailure>;
  * `calendar:block:<block_id>:<seq>` (§15.1 step 4). Exported for the tests and for
  * nobody else: adapters receive it, they never build it.
  */
-export function launchIdempotencyKey(blockId: string, sequence: number): string {
+export function launchIdempotencyKey(
+  blockId: string,
+  sequence: number,
+): string {
   return `calendar:block:${blockId}:${sequence}`;
 }
 
@@ -133,7 +146,10 @@ export async function launchBlock(
   deps: LaunchDeps,
 ): Promise<LaunchResult> {
   // 1. Load the block.
-  const context = await deps.loadBlockContext(request.student_id, request.block_id);
+  const context = await deps.loadBlockContext(
+    request.student_id,
+    request.block_id,
+  );
   if (context === null) return err({ kind: "not_found" });
 
   const { block, dayBlocks, timezone, localToday } = context;
@@ -182,11 +198,17 @@ export async function launchBlock(
     units,
     launches: [],
   });
-  const allocated = allocation.blocks.find((b) => b.block_id === block.block_id);
+  const allocated = allocation.blocks.find(
+    (b) => b.block_id === block.block_id,
+  );
   const actual = allocated?.actual ?? 0;
   const remaining = block.target_count - actual;
   if (remaining <= 0) {
-    return err({ kind: "already_complete", target: block.target_count, actual });
+    return err({
+      kind: "already_complete",
+      target: block.target_count,
+      actual,
+    });
   }
 
   // 5. §15.1 step 4 continued: the engine decides the size, the calendar decides the
@@ -210,8 +232,12 @@ export async function launchBlock(
     return err({
       kind: "engine_error",
       engine,
-      ...(created.error.status === undefined ? {} : { status: created.error.status }),
-      ...(created.error.detail === undefined ? {} : { detail: created.error.detail }),
+      ...(created.error.status === undefined
+        ? {}
+        : { status: created.error.status }),
+      ...(created.error.detail === undefined
+        ? {}
+        : { detail: created.error.detail }),
     });
   }
 

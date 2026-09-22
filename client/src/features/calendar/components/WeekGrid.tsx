@@ -17,6 +17,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { dayOfMonth, shortWeekday } from "../lib/dates";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 import { BlockCard } from "./BlockCard";
+import { DayMenu, DayOffCard, type DayActions } from "./DayMenu";
+import { canControlDay, isBlockedOut } from "../lib/day-state";
 
 export type WeekGridProps = {
   dates: readonly string[];
@@ -27,9 +29,8 @@ export type WeekGridProps = {
   onOpen: (blockId: string) => void;
   /** Absent on the guardian surface, so no column renders an add affordance. */
   onAddBlock?: (date: string) => void;
-  /** §17.2's day footer, as a header menu. Absent on the guardian surface. */
-  onRegenerateDay?: (date: string) => void;
-  onResetDay?: (date: string) => void;
+  /** §17.2's day controls, as a ⋯ menu. Absent on the guardian surface. */
+  dayActions?: DayActions;
 };
 
 function DayColumn({
@@ -40,8 +41,7 @@ function DayColumn({
   canDrag,
   onOpen,
   onAddBlock,
-  onRegenerateDay,
-  onResetDay,
+  dayActions,
 }: {
   date: string;
   day: ViewDay | null;
@@ -50,8 +50,7 @@ function DayColumn({
   canDrag: (day: ViewDay, block: ViewBlock) => boolean;
   onOpen: (blockId: string) => void;
   onAddBlock?: (date: string) => void;
-  onRegenerateDay?: (date: string) => void;
-  onResetDay?: (date: string) => void;
+  dayActions?: DayActions;
 }): JSX.Element {
   const { setNodeRef, isOver } = useDroppable({
     id: `day:${date}`,
@@ -60,21 +59,27 @@ function DayColumn({
 
   const blocks = day?.blocks ?? [];
   const shown = blocks.filter(visible);
-  const isRest = day !== null && blocks.length === 0;
+  // A cleared day the STUDENT owns, told apart from a rest day the mask produced — see
+  // lib/day-state. They look alike and mean opposite things.
+  const blockedOut = isBlockedOut(day);
+  const isRest = day !== null && blocks.length === 0 && !blockedOut;
   const planned = day?.plannedCount ?? 0;
   const done = day?.actualCount ?? 0;
 
-  const meta = isRest
-    ? "Rest day"
-    : done >= planned && planned > 0
-      ? `Done · ${planned} done`
-      : done > 0
-        ? `${done} of ${planned}`
-        : `${planned} planned`;
+  const meta = blockedOut
+    ? "Day off"
+    : isRest
+      ? "Rest day"
+      : done >= planned && planned > 0
+        ? `Done · ${planned} done`
+        : done > 0
+          ? `${done} of ${planned}`
+          : `${planned} planned`;
 
   const className = [
     "col",
     isRest ? "rest" : "",
+    blockedOut ? "off" : "",
     date === today ? "today" : "",
     isOver ? "drop" : "",
   ]
@@ -96,28 +101,30 @@ function DayColumn({
         </div>
         <div className="dmeta">
           {meta}
-          {day?.isOverride === true ? " · edited" : ""}
+          {day?.isOverride === true && !blockedOut ? " · edited" : ""}
         </div>
         {/*
-          §17.2's day footer, sited in the header because the agenda column has no footer.
-          Only on a present-or-future day: §12.2 never replans a past date, so offering it
-          there would be offering a control the server refuses with a 409.
+          §17.2's day controls. Only on a present-or-future day: §12.2 never owns a past
+          date, so offering them there would be offering a control the server refuses.
         */}
-        {onRegenerateDay !== undefined && date >= today ? (
-          <div className="daymenu">
-            <button type="button" onClick={() => onRegenerateDay(date)}>
-              Regenerate day
-            </button>
-            {onResetDay !== undefined && day?.isOverride === true ? (
-              <button type="button" onClick={() => onResetDay(date)}>
-                Reset to auto
-              </button>
-            ) : null}
-          </div>
+        {canControlDay(date, today) ? (
+          <DayMenu
+            date={date}
+            blockedOut={blockedOut}
+            isOverride={day?.isOverride === true}
+            {...(dayActions === undefined ? {} : { actions: dayActions })}
+          />
         ) : null}
       </div>
       <div className="stack">
-        {shown.length === 0 ? (
+        {blockedOut ? (
+          <DayOffCard
+            date={date}
+            {...(dayActions === undefined
+              ? {}
+              : { onUndo: dayActions.onUndoBlockOut })}
+          />
+        ) : shown.length === 0 ? (
           <div className="empty">
             {isRest ? "No study planned" : "Nothing to show"}
           </div>
@@ -150,8 +157,7 @@ export function WeekGrid({
   canDrag,
   onOpen,
   onAddBlock,
-  onRegenerateDay,
-  onResetDay,
+  dayActions,
 }: WeekGridProps): JSX.Element {
   return (
     <div className="week" data-testid="calendar-week-grid">
@@ -165,8 +171,7 @@ export function WeekGrid({
           canDrag={canDrag}
           onOpen={onOpen}
           {...(onAddBlock === undefined ? {} : { onAddBlock })}
-          {...(onRegenerateDay === undefined ? {} : { onRegenerateDay })}
-          {...(onResetDay === undefined ? {} : { onResetDay })}
+          {...(dayActions === undefined ? {} : { dayActions })}
         />
       ))}
     </div>
