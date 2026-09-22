@@ -15,6 +15,7 @@ import {
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
+import { sweepOperationalLogRetention } from "../lib/retention/operational-logs.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -353,13 +354,30 @@ router.get(
  *        on every run); Doc-06D_V1.0 §9 (retention drift); owner brief 2026-09-15 Part A]
  *        | @implemented [2026-09-15]
  *
- * plain English: the retention mechanism for the notification tables. Deletes events older
- * than `notification_retention_days()` (one definition, in SQL), bounded per call; messages
- * and delivery events go by FK cascade. The lib logs the outcome on EVERY run, zero rows
- * included, with the cutoff — a run that deleted nothing and a run that never happened must
- * be distinguishable from the logs alone, because cron registration cannot be verified from
- * tooling. Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every
- * other endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
+ * plain English: the daily retention pass. Two sweeps run here, each owning its own window
+ * in SQL and each logging on EVERY run, zero rows included — a run that deleted nothing and
+ * a run that never happened must be distinguishable from the logs alone, because cron
+ * registration cannot be verified from tooling.
+ *
+ *   1. NOTIFICATIONS — deletes events older than `notification_retention_days()`; messages
+ *      and delivery events go by FK cascade.
+ *   2. OPERATIONAL LOGS — deletes rows older than `operational_log_retention_days()` from
+ *      the four identity-bearing operational tables. This is the mechanism behind Privacy
+ *      Policy v3 §6.7, which SCL-101 recorded as a commitment with nothing behind it.
+ *
+ * WHY THE SECOND SWEEP LIVES BEHIND THIS PATH. The owner brief asked for new sweeps to run
+ * inside an existing cron pass rather than behind a new route, and this is the only existing
+ * pass whose job already IS retention. The consequence is that the path name is now narrower
+ * than what it does. Renaming it to `/retention-sweep` means editing vercel.json and
+ * re-registering the cron, which is a deployment concern rather than a code one — proposed,
+ * not done here.
+ *
+ * ORDERING IS DELIBERATE BUT NOT LOAD-BEARING: the two sweeps touch disjoint tables. The
+ * notification sweep runs first only so an operational failure cannot mask a notification
+ * one. Both are idempotent, so the 500-and-retry path re-runs both harmlessly.
+ *
+ * Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every other
+ * endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
  */
 router.get(
   "/notification-retention-sweep",
@@ -369,16 +387,17 @@ router.get(
       return;
     }
     try {
-      const summary = await sweepNotificationRetention();
-      res.json({ ok: true, ...summary });
+      const notifications = await sweepNotificationRetention();
+      const operationalLogs = await sweepOperationalLogRetention();
+      res.json({ ok: true, notifications, operationalLogs });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",
         "retention_sweep_job_error",
-        "Scheduled notification retention sweep failed",
+        "Scheduled retention pass failed",
         err,
       );
-      res.status(500).json({ error: "notification_retention_sweep_failed" });
+      res.status(500).json({ error: "retention_sweep_failed" });
     }
   },
 );
