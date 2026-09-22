@@ -44,6 +44,23 @@ jobs:
       - name: Validate Route Registry
         run: pnpm run route:validate
 
+      # ZERO NESTED ANCHORS (issue #829). Sixteen files carried the wouter v2 idiom —
+      # a bare `<a>` child inside `<Link>` — which under wouter 3 renders `<a href><a
+      # data-testid>`, leaving the inner anchor (the one with the testid, the label and
+      # the click target) with no href at all. Middle-click, ⌘-click, open-in-new-tab,
+      # copy-link and screen-reader link announcement were dead on every tab in the
+      # product; a plain left click worked, which is why nobody noticed.
+      #
+      # `--selftest` runs FIRST and on its own line. A gate whose own matcher has rotted
+      # reports zero occurrences and reads exactly like a clean tree, so the fixtures are
+      # exercised before the scan is believed. The `asChild` exemption is by SHAPE, never
+      # by filename — see the script's header for why that distinction is load-bearing.
+      - name: "No nested anchors (issue #829)"
+        run: |
+          set -euo pipefail
+          node scripts/ci/nested-anchor-gate.mjs --selftest
+          node scripts/ci/nested-anchor-gate.mjs
+
       # No SCL id may head two entries in the register. Three collisions
       # (SCL-021, SCL-024, SCL-042) reached it despite every author having read
       # the register first — reading does not reserve a number, so only a

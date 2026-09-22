@@ -25,6 +25,7 @@ import {
   getPublicMonthlyPrice,
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
+import { ctaClickHandlers } from "@/lib/cta-click";
 
 type DemoState = "idle" | "thinking" | "answered";
 type HeroVariant = "A" | "B";
@@ -178,33 +179,37 @@ export default function HomePage() {
               )}
 
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                <Link href="/practice">
-                  <a
-                    className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
-                    data-testid="button-start-demo"
-                    onClick={() =>
-                      trackCtaClick(
-                        variant === "A"
-                          ? "Start free practice"
-                          : "See how Lyceon works",
-                      )
-                    }
-                  >
-                    {variant === "A"
-                      ? "Start free practice"
-                      : "See how Lyceon works"}
-                  </a>
+                {/* The hero CTA counts a middle-click and a ⌘-click as well as a plain
+                    one. Before #829 the inner anchor had no href, so a ⌘-click did not
+                    navigate but still fired onClick and was counted; with a real href,
+                    wouter hands that click to the browser and skips onClick, which would
+                    have dropped those conversions in silence. `ctaClickHandlers` covers
+                    all three paths exactly once — see its module note. */}
+                <Link
+                  href="/practice"
+                  className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                  data-testid="button-start-demo"
+                  {...ctaClickHandlers(() =>
+                    trackCtaClick(
+                      variant === "A"
+                        ? "Start free practice"
+                        : "See how Lyceon works",
+                    ),
+                  )}
+                >
+                  {variant === "A"
+                    ? "Start free practice"
+                    : "See how Lyceon works"}
                 </Link>
                 {isAuthenticated ? (
                   <>
-                    <Link href="/dashboard">
-                      <a
-                        className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
-                        data-testid="button-go-to-dashboard"
-                      >
-                        <LayoutDashboard className="w-4 h-4" />
-                        Go to dashboard
-                      </a>
+                    <Link
+                      href="/dashboard"
+                      className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
+                      data-testid="button-go-to-dashboard"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      Go to dashboard
                     </Link>
                     <button
                       onClick={handleSignOut}
@@ -217,14 +222,13 @@ export default function HomePage() {
                     </button>
                   </>
                 ) : (
-                  <Link href="/login">
-                    <a
-                      className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
-                      data-testid="button-sign-in-dashboard"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      Sign in to your dashboard
-                    </a>
+                  <Link
+                    href="/login"
+                    className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
+                    data-testid="button-sign-in-dashboard"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Sign in to your dashboard
                   </Link>
                 )}
               </div>
@@ -625,13 +629,12 @@ export default function HomePage() {
                 </li>
               </ul>
 
-              <Link href="/login">
-                <a
-                  className="block w-full px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
-                  data-testid="button-get-started-free"
-                >
-                  Get started free
-                </a>
+              <Link
+                href="/login"
+                className="block w-full px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                data-testid="button-get-started-free"
+              >
+                Get started free
               </Link>
             </Card>
 
@@ -702,13 +705,12 @@ export default function HomePage() {
                 intended (owner ruling 2026-09-03): the destination is one auth
                 page, and the two labels name which plan the visitor came for.
               */}
-              <Link href="/signup">
-                <a
-                  className="block w-full px-6 py-3 bg-background text-foreground rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
-                  data-testid="button-get-started-paid"
-                >
-                  Get Started
-                </a>
+              <Link
+                href="/signup"
+                className="block w-full px-6 py-3 bg-background text-foreground rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                data-testid="button-get-started-paid"
+              >
+                Get Started
               </Link>
             </Card>
           </div>
@@ -799,24 +801,22 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/practice">
-                <a
-                  className="px-8 py-4 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center text-lg"
-                  data-testid="button-footer-start"
-                >
-                  Start a free SAT session
-                </a>
+              <Link
+                href="/practice"
+                className="px-8 py-4 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center text-lg"
+                data-testid="button-footer-start"
+              >
+                Start a free SAT session
               </Link>
               {isAuthenticated ? (
                 <>
-                  <Link href="/dashboard">
-                    <a
-                      className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2"
-                      data-testid="button-footer-dashboard"
-                    >
-                      <LayoutDashboard className="w-5 h-5" />
-                      Go to dashboard
-                    </a>
+                  <Link
+                    href="/dashboard"
+                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2"
+                    data-testid="button-footer-dashboard"
+                  >
+                    <LayoutDashboard className="w-5 h-5" />
+                    Go to dashboard
                   </Link>
                   <button
                     onClick={handleSignOut}
@@ -829,13 +829,12 @@ export default function HomePage() {
                   </button>
                 </>
               ) : (
-                <Link href="/login">
-                  <a
-                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg"
-                    data-testid="button-footer-signin"
-                  >
-                    Sign in to your dashboard
-                  </a>
+                <Link
+                  href="/login"
+                  className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg"
+                  data-testid="button-footer-signin"
+                >
+                  Sign in to your dashboard
                 </Link>
               )}
             </div>

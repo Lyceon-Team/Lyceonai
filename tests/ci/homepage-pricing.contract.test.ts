@@ -47,7 +47,13 @@ describe("homepage paid card", () => {
   it('routes "Get Started" to signup', () => {
     const home = readCode(HOME);
     expect(home).toContain('data-testid="button-get-started-paid"');
-    expect(home).toMatch(/<Link href="\/signup">[\s\S]{0,400}button-get-started-paid/);
+    // Attribute ORDER and line breaks are not the claim; the destination is. The old
+    // form pinned `<Link href="/signup">` as one literal token, which #829's fix broke by
+    // putting the className and the testid on the same tag — a red that said nothing
+    // about reachability. This matches a Link tag carrying that href, however it wraps.
+    expect(home).toMatch(
+      /<Link\b[^>]*?href="\/signup"[\s\S]{0,400}button-get-started-paid/,
+    );
   });
 
   /**
@@ -100,7 +106,9 @@ describe("free-tier claims agree across every public surface", () => {
     expect(allowance).not.toBe("");
 
     const meta = read(META);
-    const answer = meta.match(/"What is free vs paid\?",\s*answer:\s*"([^"]+)"/);
+    const answer = meta.match(
+      /"What is free vs paid\?",\s*answer:\s*"([^"]+)"/,
+    );
     expect(answer).not.toBeNull();
     expect(answer?.[1]).toContain(`${allowance} practice questions per day`);
   });

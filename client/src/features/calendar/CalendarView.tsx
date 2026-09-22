@@ -121,6 +121,16 @@ export type CalendarViewProps = {
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
   /** Called when the visible range changes, so the page can re-query. */
   onRangeChange: (view: "week" | "month", cursor: string) => void;
+  /**
+   * Where the back control goes: `/dashboard` for a student, `/guardian` for a guardian.
+   *
+   * A PROP, NOT A BRANCH ON `readOnly`. This file's own rule — "the guardian difference is
+   * in the props, not in a flag" — and it is load-bearing here rather than stylistic: the
+   * two surfaces have genuinely different homes, so a flag would have to encode a route
+   * mapping inside a view component that otherwise knows nothing about routing. Each page
+   * names its own.
+   */
+  backHref: string;
   mutations?: CalendarMutations;
 };
 
@@ -133,6 +143,7 @@ export function CalendarView({
   streak,
   planUpdate,
   onRangeChange,
+  backHref,
   mutations,
 }: CalendarViewProps): JSX.Element {
   const [view, setView] = useState<"week" | "month">("week");
@@ -334,6 +345,7 @@ export function CalendarView({
 
         <div className="main">
           <TopBar
+            backHref={backHref}
             rangeLabelText={rangeLabel(view, cursor)}
             view={view}
             onView={(next) => move(next, cursor)}

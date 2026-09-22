@@ -82,6 +82,7 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
 
   return (
     <CalendarView
+      backHref="/guardian"
       model={guardianViewModel(calendar.data)}
       today={today}
       viewerName="Study plan"
