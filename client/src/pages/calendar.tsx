@@ -228,7 +228,7 @@ export default function CalendarPage(): JSX.Element {
         blockOutDay: (date) =>
           editDay.mutate(newIntent({ date, members: membersCleared() })),
         doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
-        launch: (blockId) => void launch(blockId),
+        launch: (blockId, blockType) => void launch(blockId, blockType),
         // §12.7 is monotonic, so this route takes no idempotency key.
         acknowledge: (versionNo) =>
           acknowledge.mutate({ version_no: versionNo }),

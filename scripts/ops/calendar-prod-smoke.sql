@@ -167,6 +167,83 @@ servable_queue AS (
   FROM public.review_schedule r
   JOIN public.servable_questions sq ON sq.id = r.question_id
   WHERE r.student_id = :'student' AND r.status = 'active'
+),
+-- The per-unit seconds the GENERATOR budgeted against, read from the same two config
+-- rows calendar_build_plan_input snapshots into engine_planning. Never literals: a
+-- hard-coded 90 here would keep saying PASS after the constant moved.
+secs AS (
+  SELECT
+    (SELECT (value #>> '{}')::integer FROM public.practice_runtime_config
+      WHERE key = 'target_seconds_per_question') AS practice,
+    (SELECT (value #>> '{}')::integer FROM public.calendar_runtime_config
+      WHERE key = 'review_estimated_seconds_per_item') AS review
+),
+budget AS (
+  SELECT daily_minutes * 60 AS secs, study_days_mask AS mask
+  FROM public.student_study_profile WHERE student_id = :'student'
+),
+-- What each STUDY day in the plan actually holds, in seconds. A day the student
+-- overrode is excluded: they own it, and it is not the generator's to fill.
+day_secs AS (
+  SELECT d.scheduled_date AS d,
+         COALESCE(sum(
+           b.target_count * CASE b.block_type
+             WHEN 'practice' THEN (SELECT practice FROM secs)
+             WHEN 'review'   THEN (SELECT review FROM secs)
+             ELSE 0 END), 0)::integer AS planned
+  FROM public.calendar_plan_dates d
+  JOIN v ON v.plan_version_id = d.plan_version_id
+  LEFT JOIN blocks b ON b.scheduled_date = d.scheduled_date
+  WHERE ((SELECT mask FROM budget) >> EXTRACT(DOW FROM d.scheduled_date)::integer) & 1 = 1
+    AND NOT EXISTS (
+      SELECT 1 FROM public.calendar_current_plan cp
+      WHERE cp.student_id = :'student' AND cp.scheduled_date = d.scheduled_date
+        AND cp.is_user_override)
+    -- A full-length day holds one exam and nothing else, so it has no per-question
+    -- budget to compare. Excluded rather than special-cased into the arithmetic.
+    AND NOT EXISTS (
+      SELECT 1 FROM blocks fb
+      WHERE fb.scheduled_date = d.scheduled_date AND fb.block_type = 'full_length')
+  GROUP BY 1
+),
+short_days AS (
+  SELECT count(*)::integer AS n, min(d) AS first_short
+  FROM day_secs
+  -- Within ONE granule: the allocator works in whole 5-question blocks, so a day can
+  -- fall short by up to one and still be correctly planned. More than that is the
+  -- under-planning 20260925000000 fixed.
+  WHERE planned < (SELECT secs FROM budget)
+                  - ((SELECT n FROM granularity) * (SELECT practice FROM secs))
+),
+-- Dates the student BLOCKED OUT, read from HISTORY rather than from the current plan.
+--
+-- The obvious definition -- "overridden and currently empty" -- cannot fail, and that is
+-- not a figure of speech. The regression this assertion exists to catch is a date the
+-- student cleared coming back with work on it; the moment it does, it stops being empty,
+-- stops matching, and the check SKIPs. A gate that goes quiet exactly when the defect
+-- appears is worse than no gate, because it reads as a pass.
+--
+-- So the block-out is identified by what the STUDENT DID: the most recent accepted
+-- `day_edit` version that owned this date owned it with no members at all. That is what
+-- §12.4 writes when a day is cleared, and history is append-only (INV-08-05), so it stays
+-- true whatever a later version does. A11 then asks whether anything has appeared there
+-- since -- which is the actual question.
+last_day_edit AS (
+  SELECT DISTINCT ON (d.scheduled_date)
+         d.scheduled_date AS d, d.plan_version_id AS pv, pv.version_no
+  FROM public.calendar_plan_dates d
+  JOIN public.calendar_plan_versions pv ON pv.plan_version_id = d.plan_version_id
+  WHERE pv.student_id = :'student'
+    AND pv.trigger = 'day_edit'
+    AND pv.validator_result = 'accepted'
+  ORDER BY d.scheduled_date, pv.version_no DESC
+),
+blocked_dates AS (
+  SELECT e.d
+  FROM last_day_edit e
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.calendar_plan_block_memberships m
+    WHERE m.plan_version_id = e.pv AND m.scheduled_date = e.d)
 )
 SELECT * FROM (
   SELECT 1 AS ord,
@@ -261,6 +338,35 @@ SELECT * FROM (
                 EXISTS (SELECT 1 FROM enabled WHERE block_type = 'review'),
                 (SELECT n FROM servable_queue),
                 (SELECT count(*) FROM blocks WHERE block_type = 'review'))
+  UNION ALL
+  -- A10 catches 20260925000000 regressing. Before it, the generator reserved budget for
+  -- review and full-length blocks that enabled_block_types then filtered out, and days
+  -- were served at half their length with nothing anywhere to say so -- 20 questions
+  -- where 40 fit, and an empty Saturday. The symptom is arithmetic, so the assertion is.
+  SELECT 10, 'A10 every open study day is planned to the daily budget, within one granule',
+         CASE WHEN (SELECT n FROM short_days) = 0 THEN 'PASS' ELSE 'FAIL' END,
+         format('budget %s s/day | granule %s s | short days = %s%s',
+                (SELECT secs FROM budget),
+                (SELECT n FROM granularity) * (SELECT practice FROM secs),
+                (SELECT n FROM short_days),
+                COALESCE(' | first short: ' || (SELECT first_short FROM short_days)::text, ''))
+  UNION ALL
+  -- A11 is CONDITIONAL: most accounts have blocked out nothing, and asserting a day off
+  -- would fail for an account that simply has none. When there IS one, the CURRENT plan
+  -- must still hold nothing there -- a blocked day that came back with work is the weekly
+  -- job or a profile change taking a date the student owns (§12.1). See `blocked_dates`
+  -- for why this is read from history and not from "currently empty".
+  SELECT 11, 'A11 a blocked-out date is still empty',
+         CASE
+           WHEN NOT EXISTS (SELECT 1 FROM blocked_dates) THEN 'SKIP'
+           WHEN EXISTS (
+             SELECT 1 FROM blocked_dates bd
+             JOIN blocks b ON b.scheduled_date = bd.d) THEN 'FAIL'
+           ELSE 'PASS'
+         END,
+         format('blocked-out dates = %s%s',
+                (SELECT count(*) FROM blocked_dates),
+                COALESCE(' | ' || (SELECT string_agg(d::text, ', ') FROM blocked_dates), ''))
 ) t ORDER BY ord;
 
 \echo ''

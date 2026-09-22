@@ -38,6 +38,7 @@ import {
 } from "@dnd-kit/core";
 import type {
   CalendarSetupDefaults,
+  PlanBlock,
   PlanTrigger,
   PlanningEstimates,
   StreakSummary,
@@ -104,7 +105,8 @@ export type CalendarMutations = {
   /** §12.4. A block-out is an edit to an EMPTY member list, not a status of its own. */
   blockOutDay: (date: string) => void;
   doItNow: (blockId: string) => void;
-  launch: (blockId: string) => void;
+  /** The block type travels with it: the prefetch key differs per engine (§15.1). */
+  launch: (blockId: string, blockType: PlanBlock["block_type"]) => void;
   acknowledge: (versionNo: number) => void;
   refreshPending: boolean;
   launchPending: boolean;
@@ -330,7 +332,11 @@ export function CalendarView({
         });
         setOpenBlockId(null);
       },
-      onLaunch: () => mutations.launch(block.blockId),
+      onLaunch: () => {
+        // `plan` is null only on the guardian surface, which has no onLaunch at all.
+        if (block.plan === null) return;
+        mutations.launch(block.blockId, block.plan.block_type);
+      },
       onDoItNow: () => {
         mutations.doItNow(block.blockId);
         setOpenBlockId(null);

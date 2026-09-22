@@ -16,7 +16,8 @@ import {
 } from "@lyceon/shared";
 import type { CalendarEngineAdapter } from "./types";
 import { practiceAdapter } from "./practice";
-import { fullLengthAdapter, reviewAdapter } from "./stub";
+import { reviewAdapter } from "./review";
+import { fullLengthAdapter } from "./stub";
 
 const ADAPTERS: Readonly<Record<CalendarEngine, CalendarEngineAdapter>> = {
   practice: practiceAdapter,
