@@ -157,6 +157,16 @@ jobs:
       # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
       # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
       # cannot see it — only a text search over the committed tree can.
+      # R4's review UI shares practice's question loop through an engine config, so a
+      # careless edit to the loop can silently break one engine while the other's tests
+      # stay green. This gate plants ten mutations in PRODUCT SOURCE — a wrong endpoint,
+      # a pre-submit reveal, a session id kept out of the URL, a missing entry mode, a
+      # UTC day header, an error state for an empty pool, both halves of "abandoned
+      # sessions never appear", a removed nav entry, a removed allowlist entry — and
+      # fails unless each one turns its own U-test red and reverts byte-identically.
+      - name: Review UI mutation gate (proves U1-U9 are load-bearing)
+        run: bash scripts/ci/review-ui-gate.mutations.sh
+
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs
 

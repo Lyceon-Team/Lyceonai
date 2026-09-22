@@ -28,6 +28,8 @@ const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const Review = lazy(() => import("@/pages/review"));
+const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 
@@ -182,6 +184,23 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "admin"]}>
               <UpgradePage />
+            </RequireRole>
+          )}
+        />
+        {/* Review vertical — the mistake queue. Same gate as practice. */}
+        <Route
+          path="/review"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <Review />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/review/session/:sessionId"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ResumeReview />
             </RequireRole>
           )}
         />

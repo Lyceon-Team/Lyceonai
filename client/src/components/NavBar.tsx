@@ -20,7 +20,7 @@ export default function NavBar() {
     try {
       await signOut();
       toast({ title: "Signed out successfully" });
-      navigate('/');
+      navigate("/");
     } catch (error) {
       toast({
         title: "Sign out failed",
@@ -30,22 +30,29 @@ export default function NavBar() {
   };
 
   const navTabs = [
-    { label: 'Practice', path: '/practice' },
-    { label: 'Progress', path: '/dashboard' },
+    { label: "Practice", path: "/practice" },
+    { label: "Review", path: "/review" },
+    { label: "Progress", path: "/dashboard" },
   ];
 
   return (
-    <nav className="fixed top-0 w-full backdrop-blur-md bg-background/90 border-b border-border shadow-sm z-50 flex items-center justify-between px-6 h-14" data-testid="lyceon-navbar">
-      <h1 className="text-lg font-poppins font-semibold text-foreground" data-testid="app-title">
+    <nav
+      className="fixed top-0 w-full backdrop-blur-md bg-background/90 border-b border-border shadow-sm z-50 flex items-center justify-between px-6 h-14"
+      data-testid="lyceon-navbar"
+    >
+      <h1
+        className="text-lg font-poppins font-semibold text-foreground"
+        data-testid="app-title"
+      >
         Lyceon
       </h1>
 
       <div className="flex space-x-8 text-foreground">
-        {navTabs.map(tab => (
+        {navTabs.map((tab) => (
           <Link
             key={tab.label}
             href={tab.path}
-            className={`hover:text-foreground transition-colors ${location === tab.path ? 'text-foreground font-medium' : ''}`}
+            className={`hover:text-foreground transition-colors ${location === tab.path ? "text-foreground font-medium" : ""}`}
             data-testid={`nav-${tab.label.toLowerCase()}`}
           >
             {tab.label}
@@ -57,28 +64,48 @@ export default function NavBar() {
         {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center space-x-2 hover:opacity-80 transition-opacity" data-testid="user-menu-trigger">
+              <button
+                className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+                data-testid="user-menu-trigger"
+              >
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-secondary text-foreground font-medium">
-                    {user?.display_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                    {user?.display_name?.charAt(0) ||
+                      user?.email?.charAt(0) ||
+                      "U"}
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-sm text-foreground" data-testid="user-id">
-                  {user?.display_name || user?.email || 'Student'}
+                  {user?.display_name || user?.email || "Student"}
                 </span>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 bg-card border-border">
-              <DropdownMenuItem onClick={() => navigate('/profile')} data-testid="menu-profile" className="hover:bg-secondary focus:bg-secondary">
+            <DropdownMenuContent
+              align="end"
+              className="w-48 bg-card border-border"
+            >
+              <DropdownMenuItem
+                onClick={() => navigate("/profile")}
+                data-testid="menu-profile"
+                className="hover:bg-secondary focus:bg-secondary"
+              >
                 <UserCircle className="mr-2 h-4 w-4" />
                 Profile
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/profile')} data-testid="menu-settings" className="hover:bg-secondary focus:bg-secondary">
+              <DropdownMenuItem
+                onClick={() => navigate("/profile")}
+                data-testid="menu-settings"
+                className="hover:bg-secondary focus:bg-secondary"
+              >
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-muted" />
-              <DropdownMenuItem onClick={handleSignOut} data-testid="menu-logout" className="hover:bg-secondary focus:bg-secondary">
+              <DropdownMenuItem
+                onClick={handleSignOut}
+                data-testid="menu-logout"
+                className="hover:bg-secondary focus:bg-secondary"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign Out
               </DropdownMenuItem>
@@ -86,7 +113,7 @@ export default function NavBar() {
           </DropdownMenu>
         ) : (
           <button
-            onClick={() => navigate('/login')}
+            onClick={() => navigate("/login")}
             className="text-sm text-foreground hover:text-foreground transition-colors font-medium"
             data-testid="button-signin"
           >
