@@ -4487,7 +4487,6 @@ CREATE FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_pri
 DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
-  v_op_ref   record;
   v_actor_id  uuid;
 BEGIN
   -- ========================================================================
@@ -4527,66 +4526,6 @@ BEGIN
         p_profile_id;
     END IF;
   END IF;
-
-  -- ========================================================================
-  -- OPERATOR-FK PREFLIGHT GUARD (fail-closed, before ANY destructive step)
-  -- ========================================================================
-  -- 36 operator-identity FK edges (updated_by_profile_id / changed_by_profile_id
-  -- across 18 *_config + 18 *_config_history governance tables). Operator
-  -- attribution is governance data — must BLOCK deletion until consciously
-  -- reassigned. The guard refuses cascade with a clear error BEFORE any rows
-  -- are deleted. LYCEON-MIGRATION-REVIEWED
-  FOR v_op_ref IN
-    SELECT * FROM (VALUES
-      ('abuse_score_runtime_config'::text,              'updated_by_profile_id'::text),
-      ('abuse_score_runtime_config_history',            'changed_by_profile_id'),
-      ('account_deletion_runtime_config',               'updated_by_profile_id'),
-      ('account_deletion_runtime_config_history',       'changed_by_profile_id'),
-      ('auth_mfa_config',                               'updated_by_profile_id'),
-      ('auth_mfa_config_history',                       'changed_by_profile_id'),
-      ('auth_runtime_config',                           'updated_by_profile_id'),
-      ('auth_runtime_config_history',                   'changed_by_profile_id'),
-      ('caching_runtime_config',                        'updated_by_profile_id'),
-      ('caching_runtime_config_history',                'changed_by_profile_id'),
-      ('consent_runtime_config',                        'updated_by_profile_id'),
-      ('consent_runtime_config_history',                'changed_by_profile_id'),
-      ('entitlement_runtime_config',                    'updated_by_profile_id'),
-      ('entitlement_runtime_config_history',            'changed_by_profile_id'),
-      ('exam_runtime_config',                           'updated_by_profile_id'),
-      ('exam_runtime_config_history',                   'changed_by_profile_id'),
-      ('full_length_adaptive_config',                   'updated_by_profile_id'),
-      ('full_length_adaptive_config_history',           'changed_by_profile_id'),
-      ('idempotency_runtime_config',                    'updated_by_profile_id'),
-      ('idempotency_runtime_config_history',            'changed_by_profile_id'),
-      ('internal_service_auth_config',                  'updated_by_profile_id'),
-      ('internal_service_auth_config_history',          'changed_by_profile_id'),
-      ('mastery_constants',                             'updated_by_profile_id'),
-      ('mastery_constants_history',                     'changed_by_profile_id'),
-      ('mobile_auth_config',                            'updated_by_profile_id'),
-      ('mobile_auth_config_history',                    'changed_by_profile_id'),
-      ('observability_runtime_config',                  'updated_by_profile_id'),
-      ('observability_runtime_config_history',          'changed_by_profile_id'),
-      ('practice_runtime_config',                       'updated_by_profile_id'),
-      ('practice_runtime_config_history',               'changed_by_profile_id'),
-      ('rate_limit_runtime_config',                     'updated_by_profile_id'),
-      ('rate_limit_runtime_config_history',             'changed_by_profile_id'),
-      ('review_runtime_config',                         'updated_by_profile_id'),
-      ('review_runtime_config_history',                 'changed_by_profile_id'),
-      ('tutor_context_runtime_config',                  'updated_by_profile_id'),
-      ('tutor_context_runtime_config_history',          'changed_by_profile_id')
-    ) AS t(tbl, col)
-  LOOP
-    EXECUTE format(
-      'SELECT count(*) FROM public.%I WHERE %I = $1',
-      v_op_ref.tbl, v_op_ref.col
-    ) INTO v_count USING p_profile_id;
-    IF v_count > 0 THEN
-      RAISE EXCEPTION 'PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES: '
-        'profile % is referenced as an operator in %.% '
-        '— reassign config attributions before deletion',
-        p_profile_id, v_op_ref.tbl, v_op_ref.col;
-    END IF;
-  END LOOP;
 
   -- ========================================================================
   -- PRE-CLEAR: RESTRICT + NO ACTION FKs that block profile deletion
@@ -4715,10 +4654,6 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('student_skill_mastery', v_count);
 
-  -- L1-11. review_schedule (Q3 ruling: L1 — identity-linked SM-2 state, not event data)
-  DELETE FROM public.review_schedule WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('review_schedule', v_count);
 
   -- L1-12. student_kpi_rollups_current (SCL-004: was missing from L1 in both modes)
   DELETE FROM public.student_kpi_rollups_current WHERE student_id = p_profile_id;
@@ -4837,35 +4772,28 @@ BEGIN
 
     -- L2-01. practice_session_items (identity + fingerprint)
     UPDATE public.practice_session_items
-       SET user_id = NULL, client_attempt_id = NULL
+       SET client_attempt_id = NULL
      WHERE user_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('practice_session_items', v_count);
 
     -- L2-02. practice_sessions (identity + fingerprint)
     UPDATE public.practice_sessions
-       SET user_id = NULL, client_instance_id = NULL
+       SET client_instance_id = NULL
      WHERE user_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('practice_sessions', v_count);
 
     -- L2-03. review_error_attempts (identity + fingerprint)
     UPDATE public.review_error_attempts
-       SET student_id = NULL, client_attempt_id = NULL
+       SET client_attempt_id = NULL
      WHERE student_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
 
-    -- L2-04. review_session_items (identity only — no fingerprint columns)
-    UPDATE public.review_session_items
-       SET student_id = NULL
-     WHERE student_id = p_profile_id;
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('review_session_items', v_count);
-
     -- L2-05. review_sessions (identity + fingerprint)
     UPDATE public.review_sessions
-       SET student_id = NULL, client_instance_id = NULL
+       SET client_instance_id = NULL
      WHERE student_id = p_profile_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('review_sessions', v_count);
@@ -4920,7 +4848,8 @@ BEGIN
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
-  -- Operator-FK edges (36 config/history) were preflight-guarded above.
+  -- Operator-FK edges (36 config/history) are ON DELETE SET NULL — Postgres severs
+  -- the attribution as the profile row goes; no enumeration here.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
   -- from those tables blocks this DELETE (FKs are NO ACTION, nullable).
 
@@ -4940,6 +4869,25 @@ BEGIN
   );
 END;
 $_$;
+
+
+--
+-- Name: financial_record_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.financial_record_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 2557;   -- 7 years, leap-inclusive (365*7 + 2)
+$$;
+
+
+--
+-- Name: FUNCTION financial_record_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.financial_record_retention_days() IS 'Privacy Policy v3 §6.2: how long payment records are kept, in days. THE single definition for that sentence; sweep_financial_record_retention reads it. Deliberately separate from configuration_record_retention_days even though both are 7 years — the two sentences rest on different bases and are separately amendable.';
 
 
 --
@@ -5522,6 +5470,25 @@ $$;
 
 
 --
+-- Name: operational_log_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.operational_log_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 90;
+$$;
+
+
+--
+-- Name: FUNCTION operational_log_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.operational_log_retention_days() IS 'Privacy Policy v3 §6.7: the ceiling on operational records not covered by an enumerated category, in days. THE single definition; the sweep reads it.';
+
+
+--
 -- Name: pg_notify_memory_summary(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5954,6 +5921,61 @@ BEGIN
   RETURN v_rows;
 END;
 $$;
+
+
+--
+-- Name: record_deletion_verification(uuid, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid DEFAULT NULL::uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_canonical text;
+  v_hash      text;
+BEGIN
+  IF p_outcome NOT IN ('pass', 'fail') THEN
+    RAISE EXCEPTION 'record_deletion_verification: outcome must be pass or fail (got %)', p_outcome
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.deletion_request_log l WHERE l.log_id = p_log_id) THEN
+    RAISE EXCEPTION 'record_deletion_verification: no deletion_request_log row for %', p_log_id
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF jsonb_typeof(p_layers_verified) <> 'object' THEN
+    RAISE EXCEPTION 'record_deletion_verification: layers_verified must be a JSON object'
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_canonical := p_log_id::text
+              || E'\n' || p_outcome
+              || E'\n' || p_layers_verified::text
+              || E'\n' || COALESCE(p_deleted_profile_id::text, '');
+  v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');
+
+  INSERT INTO public.deletion_verification_records
+    (log_id, verification_outcome, layers_verified, proof_manifest_ref, deleted_profile_id)
+  VALUES
+    (p_log_id, p_outcome, p_layers_verified, v_hash, p_deleted_profile_id)
+  ON CONFLICT (log_id) DO UPDATE
+    SET verification_outcome = EXCLUDED.verification_outcome,
+        layers_verified      = EXCLUDED.layers_verified,
+        proof_manifest_ref   = EXCLUDED.proof_manifest_ref,
+        deleted_profile_id   = EXCLUDED.deleted_profile_id;
+
+  RETURN p_log_id;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail) — there is no in_progress state because verification runs inside T3. proof_manifest_ref is a SHA-256 over the canonical record per owner ruling B3; the manifest IS the record.';
 
 
 --
@@ -7310,6 +7332,30 @@ $$;
 
 
 --
+-- Name: sever_crisis_audit_conversation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sever_crisis_audit_conversation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  UPDATE public.crisis_review_audit_log
+     SET conversation_id = NULL
+   WHERE conversation_id = OLD.id;
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sever_crisis_audit_conversation(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sever_crisis_audit_conversation() IS 'Severs the denormalized crisis_review_audit_log.conversation_id when the conversation it names is deleted. That column carries no foreign key, so no ON DELETE action can reach it, and a copy that outlives the severance on crisis_review_cases.conversation_id restores the link with one join. Owner ruling A6 + the chokepoint rule in CLAUDE.md.';
+
+
+--
 -- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7398,6 +7444,74 @@ $$;
 
 
 --
+-- Name: sweep_financial_record_retention(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_financial_record_retention(p_batch_size integer) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  -- (table, age column). Named, not catalog-driven: "payment records" is a
+  -- closed set the policy names, and a new financial table should have to be
+  -- classified by a person rather than captured by a name pattern.
+  v_targets CONSTANT text[][] := ARRAY[
+    ['deletion_billing_record', 'cancelled_on'],
+    ['stripe_webhook_events',   'created_at']
+  ];
+  v_cutoff  timestamptz;
+  v_tbl     text;
+  v_col     text;
+  v_deleted integer;
+  i         integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_financial_record_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.financial_record_retention_days());
+
+  FOR i IN 1 .. array_length(v_targets, 1) LOOP
+    v_tbl := v_targets[i][1];
+    v_col := v_targets[i][2];
+
+    -- ctid, as in the 90-day sweep: deletion_billing_record is keyed on
+    -- log_id and stripe_webhook_events on its own id, so no single key column
+    -- name spans both. The subselect and the delete share one snapshot.
+    EXECUTE format(
+      'WITH doomed AS (
+         SELECT t.ctid FROM public.%I t
+          WHERE t.%I < $1
+          ORDER BY t.%I ASC
+          LIMIT $2
+       ), gone AS (
+         DELETE FROM public.%I d WHERE d.ctid IN (SELECT doomed.ctid FROM doomed)
+         RETURNING 1
+       )
+       SELECT count(*)::integer FROM gone',
+      v_tbl, v_col, v_col, v_tbl
+    )
+    INTO v_deleted
+    USING v_cutoff, p_batch_size;
+
+    swept_table   := v_tbl;
+    deleted_count := v_deleted;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_financial_record_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) IS 'Privacy Policy v3 §6.2 / SCL-101: deletes payment records older than financial_record_retention_days(), oldest first, at most p_batch_size per table per call. Returns one row per table including zero-row tables.';
+
+
+--
 -- Name: sweep_notification_retention(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7473,6 +7587,117 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sweep_notification_retention(p_batch_size integer) IS 'contracts/notifications.contract.md C11.2: ONE window (notification_retention_days()), two branches in one transaction — (1) notification_events older than the window, oldest first, at most p_batch_size per call, messages and matched delivery events by FK cascade; (2) unmatched delivery events (message_id IS NULL) whose received_at is older than the same window, at most p_batch_size per call. Returns both counts and the cutoff so every run can be logged.';
+
+
+--
+-- Name: sweep_operational_log_retention(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_operational_log_retention(p_batch_size integer) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  -- (table, time column). The ONLY place the set is written down.
+  v_targets CONSTANT text[][] := ARRAY[
+    ['usage_rate_limit_ledger',      'created_at'],
+    ['rate_limit_ledger',            'window_end'],
+    ['tutor_turn_metrics',           'recorded_at'],
+    ['tutor_context_resolution_log', 'resolved_at']
+  ];
+  v_cutoff  timestamptz;
+  v_tbl     text;
+  v_col     text;
+  v_deleted integer;
+  i         integer;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 THEN
+    RAISE EXCEPTION 'sweep_operational_log_retention: p_batch_size must be >= 1 (got %)', p_batch_size
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_cutoff := now() - make_interval(days => public.operational_log_retention_days());
+
+  FOR i IN 1 .. array_length(v_targets, 1) LOOP
+    v_tbl := v_targets[i][1];
+    v_col := v_targets[i][2];
+
+    -- ctid is the only key every one of these tables shares: rate_limit_ledger
+    -- has a composite primary key and no id column, so a DELETE ... WHERE id IN
+    -- (...) would not compile against it. Deleting by ctid within one statement
+    -- is safe here because the subselect and the delete see the same snapshot.
+    EXECUTE format(
+      'WITH doomed AS (
+         SELECT t.ctid FROM public.%I t
+          WHERE t.%I < $1
+          ORDER BY t.%I ASC
+          LIMIT $2
+       ), gone AS (
+         DELETE FROM public.%I d WHERE d.ctid IN (SELECT doomed.ctid FROM doomed)
+         RETURNING 1
+       )
+       SELECT count(*)::integer FROM gone',
+      v_tbl, v_col, v_col, v_tbl
+    )
+    INTO v_deleted
+    USING v_cutoff, p_batch_size;
+
+    swept_table   := v_tbl;
+    deleted_count := v_deleted;
+    cutoff        := v_cutoff;
+    RETURN NEXT;   -- emitted even when v_deleted = 0; see the edge-case note.
+  END LOOP;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_operational_log_retention(p_batch_size integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) IS 'Privacy Policy v3 §6.7 / SCL-101: deletes rows older than operational_log_retention_days() from the four identity-bearing operational tables, oldest first, at most p_batch_size per table per call. Returns one row per table INCLUDING zero-row tables, with the cutoff, so every run is loggable.';
+
+
+--
+-- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_tutor_conversations_on_entitlement_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_active boolean;
+BEGIN
+  -- The single evaluator. Not a re-listed status set.
+  v_active := public.entitlement_active(NEW.profile_id);
+
+  IF v_active THEN
+    -- Restored. Clear the stamp so the 7-day sweep stops seeing these rows.
+    -- Owner ruling 2026-09-22 C1: without this a returning student loses their
+    -- tutor history on day seven of a lapse they already ended.
+    UPDATE public.tutor_conversations
+       SET deleted_at = NULL
+     WHERE student_id = NEW.profile_id
+       AND deleted_at IS NOT NULL;
+  ELSE
+    -- Lapsed. Start the clock, but only on conversations not already stamped.
+    UPDATE public.tutor_conversations
+       SET deleted_at = now()
+     WHERE student_id = NEW.profile_id
+       AND deleted_at IS NULL;
+  END IF;
+
+  RETURN NULL;   -- AFTER trigger; return value is ignored.
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
 
 
 --
@@ -8232,7 +8457,7 @@ CREATE TABLE public.crisis_review_audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     case_id uuid,
     conversation_id uuid,
-    reviewer_id uuid NOT NULL,
+    reviewer_id uuid,
     action text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     ip inet,
@@ -8248,8 +8473,8 @@ CREATE TABLE public.crisis_review_audit_log (
 
 CREATE TABLE public.crisis_review_cases (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    conversation_id uuid,
+    student_id uuid,
     source text NOT NULL,
     signature_id uuid,
     model_confidence numeric,
@@ -8276,8 +8501,8 @@ CREATE TABLE public.crisis_review_cases (
 CREATE TABLE public.crisis_review_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     case_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    conversation_id uuid,
+    student_id uuid,
     event_type text NOT NULL,
     message_id uuid,
     source text,
@@ -8291,6 +8516,20 @@ CREATE TABLE public.crisis_review_events (
     CONSTRAINT crisis_review_events_event_type_check CHECK ((event_type = ANY (ARRAY['case_opened'::text, 'signal_received'::text, 'notification_sent'::text, 'assigned'::text, 'resolved'::text]))),
     CONSTRAINT crisis_review_events_source_check CHECK (((source IS NULL) OR (source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))))
 );
+
+
+--
+-- Name: COLUMN crisis_review_events.conversation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_events.conversation_id IS 'The conversation the signal came from. NULL once that conversation is hard-deleted by the 7-day tutor sweep (Privacy Policy v4 §6.1). RESTRICT here would have made that sweep fail on the first conversation carrying a crisis event.';
+
+
+--
+-- Name: COLUMN crisis_review_events.student_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_events.student_id IS 'The student the crisis signal concerned. NULL once that account is deleted: owner ruling A6 keeps the safety record and severs the identity, exactly as crisis_review_cases.student_id does.';
 
 
 --
@@ -8393,6 +8632,27 @@ COMMENT ON COLUMN public.deletion_request_log.requester_email IS 'Who asked; equ
 --
 
 COMMENT ON COLUMN public.deletion_request_log.suppression_status IS 'Outcome of the Resend suppression call for a request whose suppression_requested is true. NULL = not attempted. applied = Resend accepted it. failed_manual = the call failed and the executor''s retry sweep re-attempts it each pass, as it does a row left NULL. Stays applied after a subject re-consents and the entry is removed at Resend, so the sweep cannot silently re-suppress them.';
+
+
+--
+-- Name: deletion_verification_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deletion_verification_records (
+    log_id uuid NOT NULL,
+    verification_outcome text NOT NULL,
+    layers_verified jsonb NOT NULL,
+    proof_manifest_ref text NOT NULL,
+    deleted_profile_id uuid,
+    CONSTRAINT deletion_verification_records_verification_outcome_check CHECK ((verification_outcome = ANY (ARRAY['pass'::text, 'fail'::text])))
+);
+
+
+--
+-- Name: TABLE deletion_verification_records; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4 (the account_deletion_requests row it originally keyed on is deleted by the cascade at PS-5 and cannot be the correlation surface). Evidence side: no timestamp column, no uuid but log_id and the deliberate deleted_profile_id carve-out. Written terminal inside T3 by public.record_deletion_verification; direct writes are a defect.';
 
 
 --
@@ -9185,6 +9445,13 @@ CREATE TABLE public.observability_runtime_config (
     CONSTRAINT observability_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
     CONSTRAINT observability_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
 );
+
+
+--
+-- Name: TABLE observability_runtime_config; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.observability_runtime_config IS 'Doc 01A App A.5. Holds the two Legal-owned retention periods the published Privacy Policy states and the build enforces (SCL-101). NO CODE READS THIS TABLE: the rows are declarative, and tests/ci/observability-retention-config.pg.ci.test.ts holds each one to the function that actually enforces it. cold_log_retention_days is deliberately absent — no cold archive exists (SCL-101 (iii)).';
 
 
 --
@@ -10545,6 +10812,14 @@ ALTER TABLE ONLY public.deletion_consent_evidence
 
 ALTER TABLE ONLY public.deletion_request_log
     ADD CONSTRAINT deletion_request_log_pkey PRIMARY KEY (log_id);
+
+
+--
+-- Name: deletion_verification_records deletion_verification_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_verification_records
+    ADD CONSTRAINT deletion_verification_records_pkey PRIMARY KEY (log_id);
 
 
 --
@@ -12168,6 +12443,13 @@ CREATE TRIGGER entitlement_runtime_config_notify AFTER INSERT OR UPDATE ON publi
 
 
 --
+-- Name: entitlements entitlements_sync_tutor_conversations; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF status ON public.entitlements FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
+
+
+--
 -- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12352,6 +12634,13 @@ CREATE TRIGGER tutor_context_runtime_config_notify AFTER INSERT OR UPDATE ON pub
 
 
 --
+-- Name: tutor_conversations tutor_conversations_sever_crisis_audit; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_conversations_sever_crisis_audit AFTER DELETE ON public.tutor_conversations FOR EACH ROW EXECUTE FUNCTION public.sever_crisis_audit_conversation();
+
+
+--
 -- Name: tutor_conversations tutor_conversations_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12385,7 +12674,7 @@ ALTER TABLE ONLY public.abuse_score_incidents
 --
 
 ALTER TABLE ONLY public.abuse_score_runtime_config_history
-    ADD CONSTRAINT abuse_score_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT abuse_score_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12393,7 +12682,7 @@ ALTER TABLE ONLY public.abuse_score_runtime_config_history
 --
 
 ALTER TABLE ONLY public.abuse_score_runtime_config
-    ADD CONSTRAINT abuse_score_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT abuse_score_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12425,7 +12714,7 @@ ALTER TABLE ONLY public.account_deletion_requests
 --
 
 ALTER TABLE ONLY public.account_deletion_runtime_config_history
-    ADD CONSTRAINT account_deletion_runtime_config_hist_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT account_deletion_runtime_config_hist_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12433,7 +12722,7 @@ ALTER TABLE ONLY public.account_deletion_runtime_config_history
 --
 
 ALTER TABLE ONLY public.account_deletion_runtime_config
-    ADD CONSTRAINT account_deletion_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT account_deletion_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12441,7 +12730,7 @@ ALTER TABLE ONLY public.account_deletion_runtime_config
 --
 
 ALTER TABLE ONLY public.auth_mfa_config_history
-    ADD CONSTRAINT auth_mfa_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_mfa_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12449,7 +12738,7 @@ ALTER TABLE ONLY public.auth_mfa_config_history
 --
 
 ALTER TABLE ONLY public.auth_mfa_config
-    ADD CONSTRAINT auth_mfa_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_mfa_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12457,7 +12746,7 @@ ALTER TABLE ONLY public.auth_mfa_config
 --
 
 ALTER TABLE ONLY public.auth_runtime_config_history
-    ADD CONSTRAINT auth_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12465,7 +12754,7 @@ ALTER TABLE ONLY public.auth_runtime_config_history
 --
 
 ALTER TABLE ONLY public.auth_runtime_config
-    ADD CONSTRAINT auth_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT auth_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12473,7 +12762,7 @@ ALTER TABLE ONLY public.auth_runtime_config
 --
 
 ALTER TABLE ONLY public.caching_runtime_config_history
-    ADD CONSTRAINT caching_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT caching_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12481,7 +12770,7 @@ ALTER TABLE ONLY public.caching_runtime_config_history
 --
 
 ALTER TABLE ONLY public.caching_runtime_config
-    ADD CONSTRAINT caching_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT caching_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12585,7 +12874,7 @@ ALTER TABLE ONLY public.calendar_plan_versions
 --
 
 ALTER TABLE ONLY public.calendar_runtime_config_history
-    ADD CONSTRAINT calendar_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT calendar_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12593,7 +12882,7 @@ ALTER TABLE ONLY public.calendar_runtime_config_history
 --
 
 ALTER TABLE ONLY public.calendar_runtime_config
-    ADD CONSTRAINT calendar_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT calendar_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12601,7 +12890,7 @@ ALTER TABLE ONLY public.calendar_runtime_config
 --
 
 ALTER TABLE ONLY public.consent_runtime_config_history
-    ADD CONSTRAINT consent_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT consent_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12609,7 +12898,7 @@ ALTER TABLE ONLY public.consent_runtime_config_history
 --
 
 ALTER TABLE ONLY public.consent_runtime_config
-    ADD CONSTRAINT consent_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT consent_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12625,7 +12914,7 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 --
 
 ALTER TABLE ONLY public.crisis_review_audit_log
-    ADD CONSTRAINT crisis_review_audit_log_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_audit_log_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12633,7 +12922,7 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 --
 
 ALTER TABLE ONLY public.crisis_review_cases
-    ADD CONSTRAINT crisis_review_cases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_cases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE SET NULL;
 
 
 --
@@ -12649,7 +12938,7 @@ ALTER TABLE ONLY public.crisis_review_cases
 --
 
 ALTER TABLE ONLY public.crisis_review_cases
-    ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12665,7 +12954,7 @@ ALTER TABLE ONLY public.crisis_review_events
 --
 
 ALTER TABLE ONLY public.crisis_review_events
-    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE SET NULL;
 
 
 --
@@ -12681,7 +12970,7 @@ ALTER TABLE ONLY public.crisis_review_events
 --
 
 ALTER TABLE ONLY public.crisis_review_events
-    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12701,6 +12990,14 @@ ALTER TABLE ONLY public.deletion_consent_evidence
 
 
 --
+-- Name: deletion_verification_records deletion_verification_records_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deletion_verification_records
+    ADD CONSTRAINT deletion_verification_records_log_id_fkey FOREIGN KEY (log_id) REFERENCES public.deletion_request_log(log_id) ON DELETE CASCADE;
+
+
+--
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_section_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12713,7 +13010,7 @@ ALTER TABLE ONLY public.distractor_taxonomy_v1
 --
 
 ALTER TABLE ONLY public.entitlement_runtime_config_history
-    ADD CONSTRAINT entitlement_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT entitlement_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12721,7 +13018,7 @@ ALTER TABLE ONLY public.entitlement_runtime_config_history
 --
 
 ALTER TABLE ONLY public.entitlement_runtime_config
-    ADD CONSTRAINT entitlement_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT entitlement_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12737,7 +13034,7 @@ ALTER TABLE ONLY public.entitlements
 --
 
 ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12745,7 +13042,7 @@ ALTER TABLE ONLY public.exam_runtime_config_history
 --
 
 ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12753,7 +13050,7 @@ ALTER TABLE ONLY public.exam_runtime_config
 --
 
 ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12761,7 +13058,7 @@ ALTER TABLE ONLY public.full_length_adaptive_config_history
 --
 
 ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12817,7 +13114,7 @@ ALTER TABLE ONLY public.guardian_links
 --
 
 ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12825,7 +13122,7 @@ ALTER TABLE ONLY public.idempotency_runtime_config_history
 --
 
 ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12833,7 +13130,7 @@ ALTER TABLE ONLY public.idempotency_runtime_config
 --
 
 ALTER TABLE ONLY public.internal_service_auth_config_history
-    ADD CONSTRAINT internal_service_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT internal_service_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12841,7 +13138,7 @@ ALTER TABLE ONLY public.internal_service_auth_config_history
 --
 
 ALTER TABLE ONLY public.internal_service_auth_config
-    ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12857,7 +13154,7 @@ ALTER TABLE ONLY public.legal_acceptances
 --
 
 ALTER TABLE ONLY public.mastery_constants_history
-    ADD CONSTRAINT mastery_constants_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mastery_constants_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12865,7 +13162,7 @@ ALTER TABLE ONLY public.mastery_constants_history
 --
 
 ALTER TABLE ONLY public.mastery_constants
-    ADD CONSTRAINT mastery_constants_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mastery_constants_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12873,7 +13170,7 @@ ALTER TABLE ONLY public.mastery_constants
 --
 
 ALTER TABLE ONLY public.mobile_auth_config_history
-    ADD CONSTRAINT mobile_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mobile_auth_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12881,7 +13178,7 @@ ALTER TABLE ONLY public.mobile_auth_config_history
 --
 
 ALTER TABLE ONLY public.mobile_auth_config
-    ADD CONSTRAINT mobile_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT mobile_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12921,7 +13218,7 @@ ALTER TABLE ONLY public.notification_messages
 --
 
 ALTER TABLE ONLY public.observability_runtime_config_history
-    ADD CONSTRAINT observability_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT observability_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12929,7 +13226,7 @@ ALTER TABLE ONLY public.observability_runtime_config_history
 --
 
 ALTER TABLE ONLY public.observability_runtime_config
-    ADD CONSTRAINT observability_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT observability_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12937,7 +13234,7 @@ ALTER TABLE ONLY public.observability_runtime_config
 --
 
 ALTER TABLE ONLY public.practice_runtime_config_history
-    ADD CONSTRAINT practice_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12945,7 +13242,7 @@ ALTER TABLE ONLY public.practice_runtime_config_history
 --
 
 ALTER TABLE ONLY public.practice_runtime_config
-    ADD CONSTRAINT practice_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12969,7 +13266,7 @@ ALTER TABLE ONLY public.practice_session_items
 --
 
 ALTER TABLE ONLY public.practice_session_items
-    ADD CONSTRAINT practice_session_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_session_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -12977,7 +13274,7 @@ ALTER TABLE ONLY public.practice_session_items
 --
 
 ALTER TABLE ONLY public.practice_sessions
-    ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13009,7 +13306,7 @@ ALTER TABLE ONLY public.rate_limit_ledger
 --
 
 ALTER TABLE ONLY public.rate_limit_runtime_config_history
-    ADD CONSTRAINT rate_limit_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT rate_limit_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13017,7 +13314,7 @@ ALTER TABLE ONLY public.rate_limit_runtime_config_history
 --
 
 ALTER TABLE ONLY public.rate_limit_runtime_config
-    ADD CONSTRAINT rate_limit_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT rate_limit_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13041,7 +13338,7 @@ ALTER TABLE ONLY public.review_error_attempts
 --
 
 ALTER TABLE ONLY public.review_error_attempts
-    ADD CONSTRAINT review_error_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_error_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13049,7 +13346,7 @@ ALTER TABLE ONLY public.review_error_attempts
 --
 
 ALTER TABLE ONLY public.review_runtime_config_history
-    ADD CONSTRAINT review_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13057,7 +13354,7 @@ ALTER TABLE ONLY public.review_runtime_config_history
 --
 
 ALTER TABLE ONLY public.review_runtime_config
-    ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13105,7 +13402,7 @@ ALTER TABLE ONLY public.review_session_items
 --
 
 ALTER TABLE ONLY public.review_session_items
-    ADD CONSTRAINT review_session_items_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_session_items_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13113,7 +13410,7 @@ ALTER TABLE ONLY public.review_session_items
 --
 
 ALTER TABLE ONLY public.review_sessions
-    ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13137,7 +13434,7 @@ ALTER TABLE ONLY public.tutor_context_resolution_log
 --
 
 ALTER TABLE ONLY public.tutor_context_runtime_config_history
-    ADD CONSTRAINT tutor_context_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT tutor_context_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13145,7 +13442,7 @@ ALTER TABLE ONLY public.tutor_context_runtime_config_history
 --
 
 ALTER TABLE ONLY public.tutor_context_runtime_config
-    ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+    ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13161,7 +13458,7 @@ ALTER TABLE ONLY public.tutor_conversations
 --
 
 ALTER TABLE ONLY public.tutor_conversations
-    ADD CONSTRAINT tutor_conversations_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_conversations_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13185,7 +13482,7 @@ ALTER TABLE ONLY public.tutor_injection_log
 --
 
 ALTER TABLE ONLY public.tutor_injection_log
-    ADD CONSTRAINT tutor_injection_log_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_injection_log_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13209,7 +13506,7 @@ ALTER TABLE ONLY public.tutor_instruction_assignments
 --
 
 ALTER TABLE ONLY public.tutor_instruction_assignments
-    ADD CONSTRAINT tutor_instruction_assignments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_instruction_assignments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13233,7 +13530,7 @@ ALTER TABLE ONLY public.tutor_instruction_exposures
 --
 
 ALTER TABLE ONLY public.tutor_instruction_exposures
-    ADD CONSTRAINT tutor_instruction_exposures_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_instruction_exposures_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13241,7 +13538,7 @@ ALTER TABLE ONLY public.tutor_instruction_exposures
 --
 
 ALTER TABLE ONLY public.tutor_memory_summaries
-    ADD CONSTRAINT tutor_memory_summaries_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_memory_summaries_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13265,7 +13562,7 @@ ALTER TABLE ONLY public.tutor_messages
 --
 
 ALTER TABLE ONLY public.tutor_messages
-    ADD CONSTRAINT tutor_messages_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_messages_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13297,7 +13594,7 @@ ALTER TABLE ONLY public.tutor_question_links
 --
 
 ALTER TABLE ONLY public.tutor_question_links
-    ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -13626,6 +13923,12 @@ ALTER TABLE public.deletion_consent_evidence ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.deletion_request_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: deletion_verification_records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deletion_verification_records ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15143,6 +15446,14 @@ GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid,
 
 
 --
+-- Name: FUNCTION financial_record_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.financial_record_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.financial_record_retention_days() TO service_role;
+
+
+--
 -- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15302,6 +15613,14 @@ GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
 
 
 --
+-- Name: FUNCTION operational_log_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.operational_log_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.operational_log_retention_days() TO service_role;
+
+
+--
 -- Name: FUNCTION pg_notify_memory_summary(p_student_id uuid, p_summary_type text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15384,6 +15703,14 @@ GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
 
 REVOKE ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, p_status text) TO service_role;
+
+
+--
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) TO service_role;
 
 
 --
@@ -15837,11 +16164,34 @@ GRANT ALL ON FUNCTION public.sweep_deletion_evidence(p_batch_size integer) TO se
 
 
 --
+-- Name: FUNCTION sweep_financial_record_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_financial_record_retention(p_batch_size integer) TO service_role;
+
+
+--
 -- Name: FUNCTION sweep_notification_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_notification_retention(p_batch_size integer) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_operational_log_retention(p_batch_size integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer) TO service_role;
+
+
+--
+-- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
 
 
 --

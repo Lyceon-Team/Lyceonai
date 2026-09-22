@@ -23,9 +23,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^3.10.0
         version: 3.10.0(react-hook-form@7.73.1(react@18.3.1))
-      '@microsoft/clarity':
-        specifier: ^1.0.2
-        version: 1.0.2
       '@napi-rs/canvas':
         specifier: ^0.1.99
         version: 0.1.99
@@ -1247,9 +1244,6 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
-
-  '@microsoft/clarity@1.0.2':
-    resolution: {integrity: sha512-9EZYROFpJxEGmQpHvUFqvD3ZJ7QQSqnibYSWmS+1xusoZfG1QQ1/Al9yVBBc11DWMbJrs1pe1hLT273it/skJg==}
 
   '@napi-rs/canvas-android-arm64@0.1.99':
     resolution: {integrity: sha512-9OCRt8VVxA17m32NWZKyNC2qamdaS/SC5CEOIQwFngRq0DIeVm4PDal+6Ljnhqm2whZiC63DNuKZ4xSp2nbj9w==}
@@ -6451,8 +6445,6 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
-
-  '@microsoft/clarity@1.0.2': {}
 
   '@napi-rs/canvas-android-arm64@0.1.99':
     optional: true
