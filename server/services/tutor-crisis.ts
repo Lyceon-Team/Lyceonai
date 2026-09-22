@@ -68,7 +68,67 @@ type ClassifierResult = {
   confidence: number;
 };
 
+export type NotificationPolicyInput = {
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  currentCategory: CrisisCategory;
+  priorEvents: Array<{ category: string; created_at: string }>;
+  nowMs: number;
+  throttleWindowMs: number;
+};
+
+export type NotificationPolicyResult = {
+  shouldNotify: boolean;
+  suppressionReason: string | null;
+};
+
+const SEVERITY_RANK: Record<string, number> = {
+  safeguarding: 1,
+  crisis: 2,
+};
+
+export function evaluateNotificationPolicy(
+  input: NotificationPolicyInput,
+): NotificationPolicyResult {
+  const currentSeverity = SEVERITY_RANK[input.currentCategory] ?? 0;
+
+  if (input.isNewCase) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const maxPriorSeverity = input.priorEvents.reduce(
+    (max, e) => Math.max(max, SEVERITY_RANK[e.category] ?? 0),
+    0,
+  );
+
+  if (input.caseStatus === "in_review") {
+    if (currentSeverity > maxPriorSeverity) {
+      return { shouldNotify: true, suppressionReason: null };
+    }
+    return { shouldNotify: false, suppressionReason: "case_claimed" };
+  }
+
+  // Open (unclaimed) case
+  if (currentSeverity > maxPriorSeverity) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  const mostRecentMs = input.priorEvents.reduce((latest, e) => {
+    const t = new Date(e.created_at).getTime();
+    return t > latest ? t : latest;
+  }, 0);
+
+  const msSinceLast = mostRecentMs > 0 ? input.nowMs - mostRecentMs : Infinity;
+
+  if (msSinceLast >= input.throttleWindowMs) {
+    return { shouldNotify: true, suppressionReason: null };
+  }
+
+  return { shouldNotify: false, suppressionReason: "throttled_same_severity" };
+}
+
 export type { CrisisResult, CrisisCategory };
+export { notifyCrisisEvent };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
 
@@ -155,6 +215,9 @@ export function normalizeCrisisText(raw: string): string {
 
   // §7.4 step 5: normalize self-harm variants to canonical "self harm"
   t = t.replace(/\bself[-\s]?harm/g, "self harm");
+
+  // §7.4 step 5b: normalize "my self" → "myself" (compound split variant)
+  t = t.replace(/\bmy\s+self\b/g, "myself");
 
   // §7.4 step 6: collapse whitespace + trim
   t = t.replace(/\s+/g, " ").trim();
@@ -585,6 +648,14 @@ export function getCrisisResponse(
  *     failure (idempotency is NOT required here; duplicate calls indicate
  *     a retry scenario that should be investigated).
  */
+
+export type FlagForReviewResult = {
+  caseId: string;
+  isNewCase: boolean;
+  caseStatus: "open" | "in_review" | "resolved";
+  slaDeadline: string;
+};
+
 export async function flagConversationForReview(
   conversationId: string,
   studentId: string,
@@ -598,7 +669,7 @@ export async function flagConversationForReview(
   signatureId: string | null,
   modelConfidence: number | null,
   category: CrisisCategory = "crisis",
-): Promise<string> {
+): Promise<FlagForReviewResult> {
   // Step 1: Set crisis_flagged on tutor_conversations (BLOCKING)
   const { error } = await supabaseServer
     .from("tutor_conversations")
@@ -628,6 +699,8 @@ export async function flagConversationForReview(
   // error, etc.) still throw and block the turn.
   let caseId: string;
   let slaDeadline: string;
+  let isNewCase = true;
+  let caseStatus: "open" | "in_review" | "resolved" = "open";
   try {
     const result = await createCrisisReviewCase({
       conversationId,
@@ -666,7 +739,7 @@ export async function flagConversationForReview(
     // Active case already exists — query it
     const { data: existingCase, error: lookupError } = await supabaseServer
       .from("crisis_review_cases")
-      .select("id, sla_deadline")
+      .select("id, sla_deadline, status")
       .eq("conversation_id", conversationId)
       .in("status", ["open", "in_review"])
       .limit(1)
@@ -687,6 +760,8 @@ export async function flagConversationForReview(
 
     caseId = existingCase.id as string;
     slaDeadline = existingCase.sla_deadline as string;
+    caseStatus = existingCase.status as "open" | "in_review";
+    isNewCase = false;
 
     logger.warn(
       "TUTOR_CRISIS",
@@ -701,20 +776,8 @@ export async function flagConversationForReview(
     "TUTOR_CRISIS",
     "conversation_crisis_flagged",
     "conversation flagged for safety review queue (48h SLA at launch)",
-    { conversationId, caseId, source, slaDeadline },
+    { conversationId, caseId, source, slaDeadline, isNewCase, caseStatus },
   );
 
-  // Step 3: Ops notification via Cloud Tasks (§21.2 step 5).
-  // Awaited so the async continuation completes before Cloud Run
-  // reclaims CPU after the HTTP response is sent.
-  // Metadata only — no conversation content, no student name per SCL-025(c).
-  await notifyCrisisEvent({
-    caseId,
-    conversationId,
-    source,
-    slaDeadline,
-    timestamp: new Date().toISOString(),
-  });
-
-  return caseId;
+  return { caseId, isNewCase, caseStatus, slaDeadline };
 }
