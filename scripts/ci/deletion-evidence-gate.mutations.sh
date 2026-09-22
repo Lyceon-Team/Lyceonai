@@ -34,6 +34,7 @@ GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
 MIG8="supabase/migrations/20260922000000_seven_year_retention.sql"
+MIG9="supabase/migrations/20260922010000_tutor_lapse_severance.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -48,6 +49,7 @@ cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
 cp "$MIG8" "$BACKUP/mig8.sql"
+cp "$MIG9" "$BACKUP/mig9.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -64,6 +66,7 @@ restore() {
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
   cp "$BACKUP/mig8.sql" "$MIG8"
+  cp "$BACKUP/mig9.sql" "$MIG9"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -401,6 +404,44 @@ echo "==> (M44) the sweep becomes callable by authenticated"
 plant M44 "$MIG8" "s.replace('GRANT EXECUTE ON FUNCTION public.sweep_financial_record_retention(integer)       TO service_role;', 'GRANT EXECUTE ON FUNCTION public.sweep_financial_record_retention(integer)       TO service_role, authenticated;', 1)"
 expect_red M44 "B2.8 — the sweep is not callable by anon or authenticated"
 
+# =============================================================================
+# Tutor lapse severance (Doc 03 §14.2 / owner ruling C1) — the writer that makes
+# Privacy Policy v4's seven-day line publishable.
+# =============================================================================
+# Every one of these mutations produces a mechanism that LOOKS like it works.
+# That is the whole hazard: v3 could not publish the seven-day line because the
+# writer was missing, and a writer that silently does the wrong thing is worse
+# than a missing one.
+SUITE="tests/ci/tutor-lapse-severance.pg.ci.test.ts"
+
+echo "==> (M45) the lapse branch stops stamping deleted_at"
+plant M45 "$MIG9" "s.replace('       SET deleted_at = now()', '       SET deleted_at = deleted_at', 1)"
+expect_red M45 "C1.2 — a lapse stamps deleted_at"
+
+echo "==> (M46) the restore branch stops clearing — returning students lose history"
+plant M46 "$MIG9" "s.replace('       SET deleted_at = NULL', '       SET deleted_at = deleted_at', 1)"
+expect_red M46 "C1.4 — resubscribing CLEARS the stamp (owner ruling C1)"
+
+echo "==> (M47) the stamp is rewritten on every lapse, pushing the clock out forever"
+plant M47 "$MIG9" "s.replace('       AND deleted_at IS NULL;', '       AND TRUE;', 1)"
+expect_red M47 "C1.3 — FIRST LAPSE WINS: a second inactive transition does not move the clock"
+
+echo "==> (M48) the trigger re-lists statuses instead of calling the canonical predicate"
+# Double-quoted outer with escaped inner double quotes, like M34 and M41: the
+# replacement text contains SQL single quotes, which a single-quoted shell
+# string cannot carry.
+plant M48 "$MIG9" "s.replace('v_active := public.entitlement_active(NEW.profile_id);', \"v_active := NEW.status IN ('active','past_due','trialing');\", 1)"
+expect_red M48 "C1.8 — the trigger calls the canonical predicate, not a re-listed status set"
+
+echo "==> (M49) the trigger watches the wrong column"
+plant M49 "$MIG9" "s.replace('AFTER INSERT OR UPDATE OF status ON public.entitlements', 'AFTER INSERT OR UPDATE OF tier ON public.entitlements', 1)"
+expect_red M49 "C1.7 — the predicate reads only status, which is what makes UPDATE OF status sufficient"
+
+echo "==> (29f) restored: the tutor-lapse suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: tutor-lapse suite not green after restore"; fails=1; else echo "  ok   tutor-lapse suite green after restore"; fi
+
+SUITE="tests/ci/financial-record-retention.pg.ci.test.ts"
 echo "==> (29e) restored: the financial-record suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: financial-record suite not green after restore"; fails=1; else echo "  ok   financial-record suite green after restore"; fi

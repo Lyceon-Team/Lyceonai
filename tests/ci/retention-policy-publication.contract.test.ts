@@ -194,6 +194,21 @@ describe("Phase 7 A — published Privacy Policy is structurally sound", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("the tutor retention line matches the mechanism that enforces it", () => {
+    // v3 could only publish "deleted when your account is deleted", because
+    // nothing set tutor_conversations.deleted_at and the seven-day sweep had a
+    // permanently empty input (SCL-101 addendum finding 1). v4 restores the
+    // seven-day promise because the entitlements trigger now writes that
+    // column — proved in tests/ci/tutor-lapse-severance.pg.ci.test.ts.
+    //
+    // All three populations must be covered, because a student who never
+    // subscribed has no "subscription ends" event and the sentence would
+    // otherwise say nothing true about them.
+    expect(body).toMatch(/seven days later/);
+    expect(body).toMatch(/resubscribe within those seven days/);
+    expect(body).toMatch(/never subscribed/);
+  });
+
   it("the analytics disclosure names the provider actually running", () => {
     // §6.6 and the §5.2 sub-processor table have to agree with the code.
     // Trust & Safety promises every provider that processes your data is
