@@ -528,8 +528,9 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
   }
 
   for (const enumCheck of REQUIRED_ENUMS) {
+    const colPattern = new RegExp(`\\b${enumCheck.column}\\b`);
     const matchingCheck = proof.checks[enumCheck.table].find((check) =>
-      check.constraint_def.includes(`${enumCheck.column}`),
+      colPattern.test(check.constraint_def),
     );
     if (!matchingCheck) {
       failures.push(
