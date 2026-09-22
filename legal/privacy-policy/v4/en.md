@@ -190,7 +190,7 @@ LYCEON is not intended for children under 13. If we identify an account belongin
 
 Records of sign-ins, security events and administrative actions are kept for 365 days. When you delete your account, your identity is removed from these records immediately; the records themselves remain for the rest of that period.
 
-Records of how our systems were configured are kept for 7 years. These describe our operations, not you.
+Records of how our systems were configured are kept permanently, as an operational record. These describe our operations, not you.
 
 ### **6.6 Analytics**
 
