@@ -101,20 +101,48 @@ BEGIN
   RAISE NOTICE '    OK Z-04 version_no is MAX+1 per student and independent between students';
 
   ---------------------------------------------------------------- Z-05
-  -- The newest accepted version owns every date: the older one owns none.
+  -- WHICH version owns which date, after setup (v1) then weekly (v2).
+  --
+  -- This gate used to assert "exactly one version owns every date". That was
+  -- true until the 2026-09-22 ruling, and is deliberately false now: weekly is
+  -- system-initiated and owns dates from TOMORROW, so today stays on the setup
+  -- version and the rest moves to the weekly one. calendar_current_plan
+  -- resolves per date -- MAX(version_no) among accepted versions owning that
+  -- date -- so two versions composing one plan is the designed behaviour, not
+  -- a leak.
+  --
+  -- Asserting the exact ownership rather than a count keeps everything the old
+  -- gate caught: a stale version lingering over a date it no longer owns still
+  -- reddens this, and so does a third version appearing from nowhere.
   SELECT count(DISTINCT version_no) INTO v_n FROM public.calendar_current_plan WHERE student_id = S1;
-  IF v_n <> 1 THEN
-    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-05 % versions own dates at once; expected 1', v_n;
+  IF v_n <> 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-05 % version(s) own dates after setup+weekly; expected exactly 2 (today on setup, the rest on weekly)', v_n;
   END IF;
-  RAISE NOTICE '    OK Z-05 exactly one version owns the plan after a regeneration';
+  IF (SELECT DISTINCT version_no FROM public.calendar_current_plan
+      WHERE student_id = S1 AND scheduled_date = v_today) <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-05 today is not owned by the setup version -- a system trigger took today';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.calendar_current_plan
+             WHERE student_id = S1 AND scheduled_date > v_today AND version_no <> 2) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-05 a future date is still owned by a superseded version';
+  END IF;
+  RAISE NOTICE '    OK Z-05 today stays on the setup version, every future date moves to the weekly one';
 
   ---------------------------------------------------------------- Z-06
   -- §12.2 protected state: a started block is carried onto the next version of
   -- its date, with the same identity, and V-12 would reject a plan that dropped
   -- it. Start one, regenerate, and look for the SAME block_id.
+  --
+  -- The block is chosen from a STRICTLY FUTURE date. It used to be today's, and
+  -- that stopped testing the carry mechanism after the 2026-09-22 ruling: a
+  -- weekly run no longer produces a later version of today, so today's block is
+  -- not carried -- it is never touched at all. Carrying is what protects a
+  -- started block on a date the system version DOES own, which is tomorrow
+  -- onward, so that is where this has to look. The today case is its own
+  -- assertion, Z-38 below.
   SELECT cp.block_id INTO v_block
   FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
-  WHERE cp.student_id = S1 AND cp.scheduled_date >= v_today AND b.block_type = 'practice'
+  WHERE cp.student_id = S1 AND cp.scheduled_date > v_today AND b.block_type = 'practice'
   ORDER BY cp.scheduled_date, cp.display_ordinal LIMIT 1;
   IF v_block IS NULL THEN
     RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-06 fixture produced no practice block to start';
@@ -634,5 +662,162 @@ BEGIN
   RAISE NOTICE '    OK Z-32 unfinished setup is outside the population, and period_key is the local Monday (R-08-30)';
 END;
 $weekly$;
+
+-- ----------------------------------------------------------------------------
+-- Z-33 .. Z-37 — system triggers own from TOMORROW (Doc 05F §12.1)
+--
+-- Owner ruling 2026-09-22, addendum item 29. weekly and post_exam are
+-- system-initiated and must not replace a block on the student`s today.
+-- setup, profile_change, student_refresh and rollback keep owning today.
+--
+-- Z-34 IS THE ONE THAT MATTERS AND IT IS NOT THE OBVIOUS ONE. Asserting only
+-- "weekly does not own today" passes just as well when the weekly version was
+-- REJECTED and owns nothing at all -- which is exactly what the first attempt
+-- at this change produced: narrowing the input generate_series made V-01 reject
+-- today as "outside generated_for.dates", the fallback was rejected for the
+-- same reason, and calendar_current_plan (accepted only) never saw the version.
+-- So Z-34 asserts accepted + deterministic_v1 + a non-empty date set FIRST.
+-- ----------------------------------------------------------------------------
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('dddddddd-0000-0000-0000-000000000001', 'sysdates@example.test', '{}'::jsonb);
+
+INSERT INTO public.student_study_profile
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+VALUES ('dddddddd-0000-0000-0000-000000000001', 'America/Chicago', 127, 60, 6, 1400, now());
+
+INSERT INTO public.student_domain_mastery
+  (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+VALUES ('dddddddd-0000-0000-0000-000000000001', 'M',  'Algebra',             0, 0, 0, 10, 'h'),
+       ('dddddddd-0000-0000-0000-000000000001', 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+DO $sysdates$
+DECLARE
+  S CONSTANT uuid := 'dddddddd-0000-0000-0000-000000000001';
+  v_today    date;
+  v_r        jsonb;
+  v_ver      integer;
+  v_before   text;
+  v_after    text;
+  v_n        integer;
+  v_gen      text;
+  v_val      text;
+  v_blk      uuid;
+BEGIN
+  v_today := (now() AT TIME ZONE 'America/Chicago')::date;
+
+  ------------------------------------------------------------------- Z-33
+  -- A student-initiated setup seeds the plan and owns today.
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1');
+  IF (v_r ->> 'validator_result') <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-33 setup was not accepted: %', v_r;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_current_plan
+                 WHERE student_id = S AND scheduled_date = v_today) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-33 setup did not own today';
+  END IF;
+  SELECT string_agg(block_id::text, ',' ORDER BY block_id) INTO v_before
+  FROM public.calendar_current_plan WHERE student_id = S AND scheduled_date = v_today;
+  IF v_before IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-33 today carries no block, so the test that follows proves nothing';
+  END IF;
+  RAISE NOTICE '    OK Z-33 setup owns today and today carries an unstarted block';
+
+  ------------------------------------------------------------------- Z-34
+  -- The weekly run. Accepted and deterministic FIRST -- a rejected version owns
+  -- nothing and would pass the "does not own today" test vacuously.
+  v_r := public.calendar_persist_version(S, 'weekly', 'system', 'v1');
+  SELECT (v_r ->> 'version_no')::integer INTO v_ver;
+  SELECT generator, validator_result INTO v_gen, v_val
+  FROM public.calendar_plan_versions WHERE student_id = S AND version_no = v_ver;
+  IF v_val <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-34 the weekly version was NOT accepted (%) -- the plan would never refresh: %', v_val, v_r;
+  END IF;
+  IF v_gen <> 'deterministic_v1' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-34 the weekly version fell back to % -- the primary generator was rejected', v_gen;
+  END IF;
+  SELECT count(*) INTO v_n FROM public.calendar_plan_dates d
+  JOIN public.calendar_plan_versions v USING (plan_version_id)
+  WHERE v.student_id = S AND v.version_no = v_ver;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-34 the weekly version owns ZERO dates';
+  END IF;
+  RAISE NOTICE '    OK Z-34 the weekly version is accepted, deterministic_v1 and owns % date(s)', v_n;
+
+  ------------------------------------------------------------------- Z-35
+  -- It owns from TOMORROW, and today is untouched.
+  IF EXISTS (SELECT 1 FROM public.calendar_plan_dates d
+             JOIN public.calendar_plan_versions v USING (plan_version_id)
+             WHERE v.student_id = S AND v.version_no = v_ver AND d.scheduled_date = v_today) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-35 a weekly version owns today';
+  END IF;
+  IF (SELECT min(d.scheduled_date) FROM public.calendar_plan_dates d
+      JOIN public.calendar_plan_versions v USING (plan_version_id)
+      WHERE v.student_id = S AND v.version_no = v_ver) <> v_today + 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-35 the weekly version does not start at tomorrow';
+  END IF;
+  SELECT string_agg(block_id::text, ',' ORDER BY block_id) INTO v_after
+  FROM public.calendar_current_plan WHERE student_id = S AND scheduled_date = v_today;
+  IF v_after IS DISTINCT FROM v_before THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-35 today''s unstarted block changed across a weekly run: % -> %', v_before, v_after;
+  END IF;
+  RAISE NOTICE '    OK Z-35 weekly owns from tomorrow and today''s unstarted block survives byte-identical';
+
+  ------------------------------------------------------------------- Z-36
+  -- post_exam is the other system trigger and behaves the same way.
+  v_r := public.calendar_persist_version(S, 'post_exam', 'system', 'v1');
+  SELECT (v_r ->> 'version_no')::integer INTO v_ver;
+  IF (v_r ->> 'validator_result') <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-36 the post_exam version was not accepted: %', v_r;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.calendar_plan_dates d
+             JOIN public.calendar_plan_versions v USING (plan_version_id)
+             WHERE v.student_id = S AND v.version_no = v_ver AND d.scheduled_date = v_today) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-36 a post_exam version owns today';
+  END IF;
+  RAISE NOTICE '    OK Z-36 post_exam is accepted and also owns from tomorrow';
+
+  ------------------------------------------------------------------- Z-37
+  -- THE CONTROL. A student-initiated refresh still owns today and replaces it.
+  -- Without this, deleting the trigger list from the helper would go unnoticed.
+  v_r := public.calendar_persist_version(S, 'student_refresh', 'student', 'v1');
+  SELECT (v_r ->> 'version_no')::integer INTO v_ver;
+  IF (v_r ->> 'validator_result') <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-37 student_refresh was not accepted: %', v_r;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_plan_dates d
+                 JOIN public.calendar_plan_versions v USING (plan_version_id)
+                 WHERE v.student_id = S AND v.version_no = v_ver AND d.scheduled_date = v_today) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-37 student_refresh did NOT own today -- the trigger list is wrong';
+  END IF;
+  IF (SELECT DISTINCT version_no FROM public.calendar_current_plan
+      WHERE student_id = S AND scheduled_date = v_today) <> v_ver THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-37 today did not move to the student_refresh version';
+  END IF;
+  RAISE NOTICE '    OK Z-37 student_refresh still owns today and replaces it (the control)';
+
+  ------------------------------------------------------------------- Z-38
+  -- A STARTED block on today survives a weekly run too -- not by being carried
+  -- (there is no later version of today to carry it onto) but by the system
+  -- version never owning today. Belt and braces with V-12, which protects it
+  -- on any date a version DOES take.
+  SELECT cp.block_id INTO v_blk
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND b.block_type = 'practice'
+  ORDER BY cp.display_ordinal LIMIT 1;
+  IF v_blk IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-38 no practice block on today to start';
+  END IF;
+  PERFORM public.calendar_link_launch(S, v_blk, 'practice', 'eeeeeeee-0000-4000-8000-000000000001');
+
+  PERFORM public.calendar_persist_version(S, 'weekly', 'system', 'v1');
+
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_current_plan
+                 WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-38 a STARTED block on today did not survive a weekly run';
+  END IF;
+  RAISE NOTICE '    OK Z-38 a started block on today survives a weekly run, identity unchanged';
+END;
+$sysdates$;
 
 ROLLBACK;

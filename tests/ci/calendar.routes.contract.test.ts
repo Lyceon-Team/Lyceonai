@@ -145,6 +145,7 @@ beforeEach(() => {
   readCalendarMock.mockResolvedValue({
     ok: true,
     value: {
+      status: "ready",
       profile: {},
       days: [OK_DAY],
       facts: {},
@@ -269,6 +270,7 @@ describe("§15 — the happy paths and their shapes", () => {
     const res = await request(buildApp()).get("/api/calendar");
 
     expect(res.status).toBe(200);
+    expect(res.body.status).toBe("ready");
     expect(res.body.days).toHaveLength(1);
     expect(res.body.requestId).toBe("req-test");
   });
@@ -374,7 +376,7 @@ describe("§15's error list — every failure gets its own status", () => {
   const planCases: { kind: string; extra?: Record<string, unknown>; status: number; code: string }[] = [
     { kind: "past_date", extra: { date: "2026-09-01" }, status: 409, code: "CALENDAR_PAST_DATE" },
     { kind: "beyond_horizon", extra: { date: "2027-01-01" }, status: 404, code: "CALENDAR_BEYOND_HORIZON" },
-    { kind: "no_profile", status: 404, code: "CALENDAR_SETUP_REQUIRED" },
+    { kind: "no_profile", status: 404, code: "CALENDAR_NO_PROFILE" },
     { kind: "not_found", status: 404, code: "CALENDAR_NOT_FOUND" },
     { kind: "rejected", extra: { violations: ["V-05"] }, status: 500, code: "CALENDAR_PLAN_REJECTED" },
     { kind: "write_failed", extra: { detail: "boom" }, status: 500, code: "CALENDAR_ERROR" },
@@ -447,13 +449,43 @@ describe("§15's error list — every failure gets its own status", () => {
     expect(res.body.error.details).toEqual({ when: "past" });
   });
 
-  it("a pre-setup read is 404 CALENDAR_SETUP_REQUIRED, not a 500", async () => {
-    readCalendarMock.mockResolvedValue({ ok: false, error: { kind: "setup_required" } });
+  it("a pre-setup read is a 200 carrying the state, not a 404", async () => {
+    // Owner ruling on addendum item 26. A student who has not set up has an EMPTY
+    // calendar, not a missing one; a 404 makes every fetch hook treat the most common
+    // first visit as an error and log it as one.
+    readCalendarMock.mockResolvedValue({
+      ok: true,
+      value: {
+        status: "setup_required",
+        defaults: {
+          timezone: "America/Chicago",
+          daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+          daily_minutes_min: 15,
+          daily_minutes_max: 180,
+          target_exam_date_max_days: 540,
+        },
+      },
+    });
 
     const res = await request(buildApp()).get("/api/calendar");
 
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("setup_required");
+    expect(res.body.defaults.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
+    expect(res.body.error).toBeUndefined();
+  });
+
+  it("the 404 that remains is the MUTATION path, under its own code", async () => {
+    // A write against a student with no study profile at all. A correct client never
+    // issues it, and it must not be conflated with the pre-setup read.
+    regenerateDayMock.mockResolvedValue({ ok: false, error: { kind: "no_profile" } });
+
+    const res = await request(buildApp())
+      .post(`/api/calendar/days/${TODAY}/regenerate`)
+      .send({ idempotency_key: KEY });
+
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe("CALENDAR_SETUP_REQUIRED");
+    expect(res.body.error.code).toBe("CALENDAR_NO_PROFILE");
   });
 
   it("a thrown service is a 500 with a correlation id and no detail", async () => {

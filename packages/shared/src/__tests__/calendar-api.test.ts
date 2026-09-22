@@ -105,6 +105,7 @@ describe("GET /api/calendar", () => {
 
   it("round-trips the full response", () => {
     const payload = {
+      status: "ready" as const,
       profile: PROFILE,
       days: [DAY],
       facts: FACTS,
@@ -126,9 +127,48 @@ describe("GET /api/calendar", () => {
     expect(parsed.data).toEqual(payload);
   });
 
+  it("round-trips the PRE-SETUP arm, and it carries no plan fields", () => {
+    // Owner ruling on addendum item 26. The union is discriminated on `status`, so a
+    // client cannot read `days` without first proving the calendar is ready — and the
+    // pre-setup arm is `.strict()`, so a stray `profile` or `days` is refused outright.
+    const payload = {
+      status: "setup_required" as const,
+      defaults: {
+        timezone: "America/Chicago",
+        daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+        daily_minutes_min: 15,
+        daily_minutes_max: 180,
+        target_exam_date_max_days: 540,
+      },
+    };
+    const parsed = calendarResponseSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).toEqual(payload);
+
+    expect(
+      calendarResponseSchema.safeParse({ ...payload, days: [DAY] }).success,
+    ).toBe(false);
+    expect(calendarResponseSchema.safeParse({ status: "setup_required" }).success).toBe(false);
+  });
+
+  it("refuses a payload with no status at all", () => {
+    expect(
+      calendarResponseSchema.safeParse({
+        profile: PROFILE,
+        days: [DAY],
+        facts: FACTS,
+        streak: STREAK,
+        latest_unacknowledged_nonstudent_change: null,
+        diagnostic_state: "baseline_ready",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a null latest_unacknowledged_nonstudent_change (§12.7)", () => {
     expect(
       calendarResponseSchema.safeParse({
+        status: "ready",
         profile: PROFILE,
         days: [],
         facts: FACTS,
@@ -142,6 +182,7 @@ describe("GET /api/calendar", () => {
   it("refuses an unknown trigger on the plan-updated banner", () => {
     expect(
       calendarResponseSchema.safeParse({
+        status: "ready",
         profile: PROFILE,
         days: [],
         facts: FACTS,
@@ -322,14 +363,39 @@ describe("guardian read (§16, R-08-22)", () => {
 
   it("round-trips the guardian response and refuses the student's day shape", () => {
     const payload = {
+      status: "ready" as const,
       days: [toGuardianCalendarDay(DAY)],
       facts: FACTS,
       streak: STREAK,
     };
     expect(guardianCalendarResponseSchema.safeParse(payload).success).toBe(true);
     expect(
-      guardianCalendarResponseSchema.safeParse({ days: [DAY], facts: FACTS, streak: STREAK })
-        .success,
+      guardianCalendarResponseSchema.safeParse({
+        status: "ready",
+        days: [DAY],
+        facts: FACTS,
+        streak: STREAK,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("the guardian pre-setup arm carries NO defaults — a guardian cannot run setup", () => {
+    expect(
+      guardianCalendarResponseSchema.safeParse({ status: "setup_required" }).success,
+    ).toBe(true);
+    // `.strict()` refuses the student's defaults block on the guardian arm, so the chips
+    // cannot reach a caller who has no write path to use them with.
+    expect(
+      guardianCalendarResponseSchema.safeParse({
+        status: "setup_required",
+        defaults: {
+          timezone: "America/Chicago",
+          daily_minutes_presets: [15],
+          daily_minutes_min: 15,
+          daily_minutes_max: 180,
+          target_exam_date_max_days: 540,
+        },
+      }).success,
     ).toBe(false);
   });
 

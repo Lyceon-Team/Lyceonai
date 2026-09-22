@@ -138,8 +138,32 @@ export const calendarQuerySchema = z
   );
 export type CalendarQuery = z.infer<typeof calendarQuerySchema>;
 
-export const calendarResponseSchema = z
+/**
+ * §8.1's bounds, echoed to a student who has not set up yet, so the setup sheet can render
+ * its chips without a second round trip. Every value comes from `calendar_runtime_config`;
+ * none is a literal (§17).
+ *
+ * `timezone` is a SUGGESTION, not a stored value — the device zone if the database
+ * recognises it, `America/Chicago` otherwise (sheet §8 item 19). Nothing is written until
+ * the student saves, so this is what the form should be PREFILLED with.
+ */
+export const calendarSetupDefaultsSchema = z
   .object({
+    timezone: z.string().min(1),
+    daily_minutes_presets: z.array(z.number().int().positive()).min(1),
+    daily_minutes_min: z.number().int().positive(),
+    daily_minutes_max: z.number().int().positive(),
+    target_exam_date_max_days: z.number().int().positive(),
+  })
+  .strict();
+export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
+
+/**
+ * The READY payload — everything §15 lists, under `status: "ready"`.
+ */
+export const calendarReadyResponseSchema = z
+  .object({
+    status: z.literal("ready"),
     profile: studyProfileSchema,
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
@@ -151,6 +175,37 @@ export const calendarResponseSchema = z
     device_timezone_mismatch: deviceTimezoneMismatchSchema.optional(),
   })
   .strict();
+export type CalendarReadyResponse = z.infer<typeof calendarReadyResponseSchema>;
+
+/**
+ * The PRE-SETUP payload (owner ruling on addendum item 26, 2026-09-22).
+ *
+ * WHY THIS IS A 200 AND NOT A 404. A student who has not set up has an EMPTY calendar, not
+ * a missing one — R-08-04 puts the first generation on the first entitled open *after setup
+ * completes*, so having no `student_study_profile` row is the ordinary first visit, not an
+ * error. A 404 makes every fetch hook treat the most common first visit as a failure and
+ * log it as one. §17.5's "pre-setup" state is a STATE of the calendar screen, so it is a
+ * state in the payload.
+ */
+export const calendarSetupRequiredResponseSchema = z
+  .object({
+    status: z.literal("setup_required"),
+    defaults: calendarSetupDefaultsSchema,
+  })
+  .strict();
+export type CalendarSetupRequiredResponse = z.infer<
+  typeof calendarSetupRequiredResponseSchema
+>;
+
+/**
+ * §15 GET `/api/calendar`. A discriminated union on `status`, so the client branches on a
+ * value rather than on a status code, and TypeScript refuses to read `days` without first
+ * proving the calendar is ready.
+ */
+export const calendarResponseSchema = z.discriminatedUnion("status", [
+  calendarReadyResponseSchema,
+  calendarSetupRequiredResponseSchema,
+]);
 export type CalendarResponse = z.infer<typeof calendarResponseSchema>;
 
 // ── PUT /api/calendar/profile ───────────────────────────────────────────────
@@ -285,11 +340,33 @@ export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
  * shape is narrower than the student's by construction rather than by sanitising a wider one
  * on the way out — a `.strict()` object that never had the keys cannot leak them.
  */
-export const guardianCalendarResponseSchema = z
+export const guardianCalendarReadyResponseSchema = z
   .object({
+    status: z.literal("ready"),
     days: z.array(guardianCalendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
   })
   .strict();
+export type GuardianCalendarReadyResponse = z.infer<
+  typeof guardianCalendarReadyResponseSchema
+>;
+
+/**
+ * The guardian's pre-setup payload. Same `status`, and deliberately **no `defaults`**: the
+ * defaults exist to prefill a setup form, and §16 gives a guardian no write path — a
+ * guardian cannot run setup for their student. Serving them the chips would be offering a
+ * control that does not exist.
+ */
+export const guardianCalendarSetupRequiredResponseSchema = z
+  .object({ status: z.literal("setup_required") })
+  .strict();
+export type GuardianCalendarSetupRequiredResponse = z.infer<
+  typeof guardianCalendarSetupRequiredResponseSchema
+>;
+
+export const guardianCalendarResponseSchema = z.discriminatedUnion("status", [
+  guardianCalendarReadyResponseSchema,
+  guardianCalendarSetupRequiredResponseSchema,
+]);
 export type GuardianCalendarResponse = z.infer<typeof guardianCalendarResponseSchema>;

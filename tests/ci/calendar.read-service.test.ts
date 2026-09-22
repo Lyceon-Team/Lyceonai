@@ -107,6 +107,8 @@ const { readCalendar, readGuardianCalendar } = await import(
 
 type ScenarioOptions = {
   profile?: typeof PROFILE | null;
+  /** The zones `calendar_is_known_timezone` answers true for. */
+  knownZones?: readonly string[];
   acceptedVersions?: number;
   planRows?: (typeof PLAN_ROW)[];
   units?: number;
@@ -142,6 +144,8 @@ function scenario(options: ScenarioOptions = {}): void {
     rpcs: {
       calendar_persist_version: () => okReply({ version_no: 1, validator_result: "accepted" }),
       student_diagnostic_state: () => okReply("baseline_ready"),
+      calendar_is_known_timezone: (args) =>
+        okReply((options.knownZones ?? ["America/Chicago"]).includes(String(args.p_timezone))),
     },
   });
 }
@@ -191,13 +195,82 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
     expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
   });
 
-  it("answers `setup_required` for a student with no profile row at all", async () => {
+  it("answers a 200-shaped `setup_required` for a student with no profile row", async () => {
+    // Owner ruling on addendum item 26: pre-setup is a STATE, not a failure. It comes back
+    // as an ok value so the route can serve 200 and the client can branch on `status`.
     scenario({ profile: null });
 
     const result = await read();
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.kind).toBe("setup_required");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("setup_required");
+  });
+
+  it("fills the setup defaults from CONFIG, with no literal in the service", async () => {
+    scenario({ profile: null });
+
+    const result = await read();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "setup_required") return;
+    // Every value traces to a `calendar_runtime_config` row in CONFIG_ROWS. Change a row
+    // and this changes with it, which is the property that keeps the setup sheet's chips
+    // and the server's own validation from disagreeing.
+    expect(result.value.defaults.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
+    expect(result.value.defaults.daily_minutes_min).toBe(15);
+    expect(result.value.defaults.daily_minutes_max).toBe(180);
+    expect(result.value.defaults.target_exam_date_max_days).toBe(540);
+  });
+
+  it("suggests the device zone when the database recognises it", async () => {
+    scenario({ profile: null, knownZones: ["Asia/Tokyo"] });
+
+    const result = await readCalendar({
+      student_id: STUDENT,
+      query: { device_timezone: "Asia/Tokyo" },
+      now: NOW,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "setup_required") return;
+    expect(result.value.defaults.timezone).toBe("Asia/Tokyo");
+  });
+
+  it("falls back to Chicago for a device zone the database does not know", async () => {
+    scenario({ profile: null, knownZones: [] });
+
+    const result = await readCalendar({
+      student_id: STUDENT,
+      query: { device_timezone: "Mars/Olympus" },
+      now: NOW,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "setup_required") return;
+    expect(result.value.defaults.timezone).toBe("America/Chicago");
+  });
+
+  it("falls back to Chicago when the client sends no device zone at all", async () => {
+    scenario({ profile: null });
+
+    const result = await read();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "setup_required") return;
+    expect(result.value.defaults.timezone).toBe("America/Chicago");
+  });
+
+  it("gives the GUARDIAN the same status and NO defaults — a guardian cannot run setup", async () => {
+    scenario({ profile: null });
+
+    const result = await readGuardianCalendar({ student_id: STUDENT, query: {}, now: NOW });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("setup_required");
+    expect(Object.keys(result.value)).toEqual(["status"]);
+    expect(JSON.stringify(result.value)).not.toContain("daily_minutes");
   });
 });
 
@@ -366,7 +439,7 @@ describe("§16 — the guardian read", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(Object.keys(result.value).sort()).toEqual(["days", "facts", "streak"]);
+    expect(Object.keys(result.value).sort()).toEqual(["days", "facts", "status", "streak"]);
     const serialized = JSON.stringify(result.value);
     expect(serialized).not.toContain("version_no");
     expect(serialized).not.toContain("is_user_override");
