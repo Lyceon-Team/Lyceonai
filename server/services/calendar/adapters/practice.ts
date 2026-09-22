@@ -25,7 +25,10 @@
  * the shape the generator emits before any mastery exists, not a degenerate case.
  */
 import { supabaseServer } from "../../../../apps/api/src/lib/supabase-server";
-import { startOrReplaySession, loadPracticeConfig } from "../../../routes/practice-canonical";
+import {
+  startOrReplaySession,
+  loadPracticeConfig,
+} from "../../../routes/practice-canonical";
 import { logger } from "../../../logger";
 import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
 import { localDayWindowUtc } from "./local-day";
@@ -85,13 +88,15 @@ async function create(
       {
         status: result.status,
         // The engine's own error CODE, never its prose and never the block scope.
-        code: typeof result.body.error === "string" ? result.body.error : "unknown",
+        code:
+          typeof result.body.error === "string" ? result.body.error : "unknown",
       },
     );
     return err({
       reason: "engine_error",
       status: result.status,
-      detail: typeof result.body.error === "string" ? result.body.error : undefined,
+      detail:
+        typeof result.body.error === "string" ? result.body.error : undefined,
     });
   }
 
@@ -103,9 +108,22 @@ async function create(
 }
 
 /**
- * §9.2: one unit per answered item on the local date, carrying its section and
- * domain. `answered_at` is the timestamp — the moment of retrieval — and the local
- * date is resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ * §9.2: one unit per ANSWERED item on the local date, carrying its section and domain.
+ * `answered_at` is the timestamp — the moment of retrieval — and the local date is
+ * resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ *
+ * AN ACTIVITY UNIT IS RETRIEVAL, AND A SKIP IS NOT RETRIEVAL. The predicate is
+ * `status = 'answered'`, NOT `answered_at IS NOT NULL`. Those read as synonyms and are not:
+ * a SKIPPED item also carries a non-null `answered_at` — review's live data has two such
+ * rows right now (`status='skipped'`, `outcome='skipped'`, `answered_at` set), and review's
+ * handoff says practice skips now enter the queue too. On the old predicate every skip
+ * would have counted as a unit, so a student could clear a block by skipping through it and
+ * §13's progress would say they had done the work.
+ *
+ * Changed BEFORE practice has any skips rather than after, because the moment it has one
+ * this is silent data corruption in the mastery-adjacent direction, not a visible error.
+ * `answered_at` stays the unit's `occurred_at` — it is still the right timestamp, it was
+ * just the wrong FILTER.
  */
 async function activityUnits(
   studentId: string,
@@ -116,9 +134,10 @@ async function activityUnits(
 
   const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .select("id, question_section, question_domain, answered_at")
+    .select("id, question_section, question_domain, answered_at, status")
     .eq("user_id", studentId)
-    .not("answered_at", "is", null)
+    // See the note above: retrieval, never a skip.
+    .eq("status", "answered")
     .gte("answered_at", window.startUtc)
     .lt("answered_at", window.endUtc);
 
@@ -137,7 +156,8 @@ async function activityUnits(
   const rows = data ?? [];
   const units: ActivityUnit[] = [];
   for (const row of rows) {
-    if (typeof row.id !== "string" || typeof row.answered_at !== "string") continue;
+    if (typeof row.id !== "string" || typeof row.answered_at !== "string")
+      continue;
     const section = row.question_section;
     units.push({
       engine: "practice",
@@ -145,7 +165,8 @@ async function activityUnits(
       occurred_at: row.answered_at,
       local_date: localDate,
       section: section === "M" || section === "RW" ? section : null,
-      domain: typeof row.question_domain === "string" ? row.question_domain : null,
+      domain:
+        typeof row.question_domain === "string" ? row.question_domain : null,
       form_id: null,
     });
   }
@@ -172,7 +193,10 @@ async function progress(sessionId: string): Promise<EngineLifecycle | null> {
  * ceiling is `max_session_count_premium` from practice's own config, read at call
  * time rather than cached here — one owner, one value.
  */
-async function nextLaunchSize(_block: PlanBlock, remaining: number): Promise<number> {
+async function nextLaunchSize(
+  _block: PlanBlock,
+  remaining: number,
+): Promise<number> {
   const config = await loadPracticeConfig();
   return Math.max(1, Math.min(remaining, config.maxSessionCountPremium));
 }

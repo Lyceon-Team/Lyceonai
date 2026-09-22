@@ -415,6 +415,16 @@ export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
 export const guardianCalendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
+    /**
+     * §17.1's "~N min", the SAME object the student gets (owner ruling 2026-09-22).
+     *
+     * An earlier read of §16 withheld it. That was wrong on both counts: §16's exclusions
+     * are controls, explanation copy and the target score, and a minute estimate is none of
+     * the three — it is a fact about the plan, exactly like the counts a guardian already
+     * sees. Withholding it also produced a bug rather than a protection, because the card
+     * fell back to "Full sitting" for every block type.
+     */
+    estimates: planningEstimatesSchema,
     days: z.array(guardianCalendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,

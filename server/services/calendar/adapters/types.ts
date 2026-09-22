@@ -24,7 +24,12 @@
  * one fewer result type in the codebase — CLAUDE.md's single-source rule outranks
  * the sketch. The reason is `result.error.reason`.
  */
-import type { ActivityUnit, CalendarEngine, PlanBlock, Result } from "@lyceon/shared";
+import type {
+  ActivityUnit,
+  CalendarEngine,
+  PlanBlock,
+  Result,
+} from "@lyceon/shared";
 
 /** What a launch needs from the request, plus the key `CalendarLaunchService` owns. */
 export type EngineCreateContext = {

@@ -784,6 +784,9 @@ export async function readGuardianCalendar(
   // future edit to `toGuardianCalendarDay` might let through.
   const response = guardianCalendarResponseSchema.safeParse({
     status: "ready",
+    // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
+    // parent view is identical to the student's, and minutes are not among §16's exclusions.
+    estimates: config.estimates,
     days: built.days.map(toGuardianCalendarDay),
     facts: built.facts,
     streak,

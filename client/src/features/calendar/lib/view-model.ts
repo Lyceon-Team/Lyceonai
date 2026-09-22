@@ -133,13 +133,19 @@ function toViewBlock(
 }
 
 /**
- * The guardian block. Note what is NOT here: no `explanations` lookup (there is no key to
- * look up), and no `minutes` (§16 gives a guardian counts, and the minute estimate is a
- * planning affordance for the person doing the work, which is why the server does not send
- * `estimates` on this payload at all).
+ * The guardian block. Note what is NOT here: no `explanations` lookup — there is no key to
+ * look one up with, because the guardian payload never carried an `explanation_key` at
+ * either level (§16, R-08-22).
+ *
+ * `minutes` IS here now, from the SAME `estimates` the student's payload carries (owner
+ * ruling 2026-09-22). Withholding it was not a protection: §16's exclusions are controls,
+ * explanation copy and the target score, and a minute estimate is none of the three. It
+ * also produced a bug rather than preventing one — with no estimate, the card fell back to
+ * "Full sitting" for every block type on this surface.
  */
 function toGuardianViewBlock(
   entry: GuardianCalendarDay["blocks"][number],
+  estimates: PlanningEstimates,
 ): ViewBlock {
   const block = entry.block;
   const mix =
@@ -159,7 +165,13 @@ function toGuardianViewBlock(
       block_type: block.block_type,
       target_count: block.target_count,
     } as Parameters<typeof titleOf>[0]),
-    minutes: null,
+    minutes: minutesLabel(
+      {
+        block_type: block.block_type,
+        target_count: block.target_count,
+      } as Parameters<typeof minutesLabel>[0],
+      estimates,
+    ),
     mix,
     target: block.target_count,
     actual: entry.actual,
@@ -204,7 +216,9 @@ export function guardianViewModel(
       // The guardian payload has no `is_user_override` (§16: which version owns a date is a
       // control). False, not "unknown" — the day header simply never shows the edited marker.
       isOverride: false,
-      blocks: day.blocks.map(toGuardianViewBlock),
+      blocks: day.blocks.map((entry) =>
+        toGuardianViewBlock(entry, response.estimates),
+      ),
       plannedCount: day.planned_count,
       actualCount: day.actual_count,
       extraCount: day.extra_count,

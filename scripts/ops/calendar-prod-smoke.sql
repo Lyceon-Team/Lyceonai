@@ -151,6 +151,22 @@ rw_mix AS (
   SELECT jsonb_array_elements(b.scope -> 'mix') ->> 'domain' AS domain
   FROM blocks b, firstday f
   WHERE b.scheduled_date = f.d AND b.section = 'RW' AND b.scope ->> 'level' = 'domain'
+),
+-- The LIVE launch set, one row per type. Never a literal list: this script has to keep
+-- telling the truth on the day the flag flips, and a hard-coded ["practice"] would start
+-- failing the moment review is enabled while claiming the plan was wrong.
+enabled AS (
+  SELECT t AS block_type
+  FROM jsonb_array_elements_text(
+    (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')) t
+),
+-- Does this account have review work the engine could actually serve? Active queue rows
+-- joined to servable_questions, which is the same join the planner makes (addendum 32).
+servable_queue AS (
+  SELECT count(*)::integer AS n
+  FROM public.review_schedule r
+  JOIN public.servable_questions sq ON sq.id = r.question_id
+  WHERE r.student_id = :'student' AND r.status = 'active'
 )
 SELECT * FROM (
   SELECT 1 AS ord,
@@ -165,18 +181,28 @@ SELECT * FROM (
          CASE WHEN (SELECT n FROM dates) = (SELECT n FROM horizon) THEN 'PASS' ELSE 'FAIL' END,
          format('dates=%s horizon_days=%s', (SELECT n FROM dates), (SELECT n FROM horizon))
   UNION ALL
-  SELECT 3, 'A3  only practice blocks (enabled_block_types is ["practice"])',
-         CASE WHEN NOT EXISTS (SELECT 1 FROM blocks WHERE block_type <> 'practice')
+  SELECT 3, 'A3  every block type is in the LIVE enabled_block_types',
+         CASE WHEN NOT EXISTS (
+                SELECT 1 FROM blocks b
+                WHERE b.block_type NOT IN (SELECT block_type FROM enabled))
               THEN 'PASS' ELSE 'FAIL' END,
-         format('block types = %s',
-                (SELECT string_agg(DISTINCT block_type, ',') FROM blocks))
+         format('planned = %s | enabled = %s',
+                COALESCE((SELECT string_agg(DISTINCT block_type, ',') FROM blocks), '(none)'),
+                (SELECT string_agg(block_type, ',' ORDER BY block_type) FROM enabled))
   UNION ALL
-  SELECT 4, 'A4  every block carries exactly one section',
-         CASE WHEN NOT EXISTS (SELECT 1 FROM blocks WHERE section IS NULL)
+  -- A PRACTICE block carries a section; review and full_length carry NULL, and the table
+  -- CHECK requires exactly that. Before review was enabled these were the same assertion;
+  -- they are not any more, and the looser one would have passed a practice block with no
+  -- section on it.
+  SELECT 4, 'A4  every practice block has a section, every other type has none',
+         CASE WHEN NOT EXISTS (
+                SELECT 1 FROM blocks
+                WHERE (block_type = 'practice' AND section IS NULL)
+                   OR (block_type <> 'practice' AND section IS NOT NULL))
               THEN 'PASS' ELSE 'FAIL' END,
-         format('%s block(s), %s with a null section',
-                (SELECT count(*) FROM blocks),
-                (SELECT count(*) FROM blocks WHERE section IS NULL))
+         format('%s practice with no section, %s non-practice with one',
+                (SELECT count(*) FROM blocks WHERE block_type = 'practice' AND section IS NULL),
+                (SELECT count(*) FROM blocks WHERE block_type <> 'practice' AND section IS NOT NULL))
   UNION ALL
   SELECT 5, 'A5  every mix has at most max_domains_per_block entries',
          CASE WHEN NOT EXISTS (
@@ -220,6 +246,21 @@ SELECT * FROM (
          format('first study day %s, R&W mix = %s',
                 (SELECT d FROM firstday),
                 COALESCE((SELECT string_agg(domain, ' | ') FROM rw_mix), '(no domain-level R&W block)'))
+  UNION ALL
+  -- A9 is CONDITIONAL on both facts, and says which one let it off. Asserting a review
+  -- block unconditionally would fail for an account with an empty queue, and asserting it
+  -- while review is still disabled would fail for a reason that is not a defect.
+  SELECT 9, 'A9  with review enabled and servable queue work, the horizon has a review block',
+         CASE
+           WHEN NOT EXISTS (SELECT 1 FROM enabled WHERE block_type = 'review') THEN 'SKIP'
+           WHEN (SELECT n FROM servable_queue) = 0 THEN 'SKIP'
+           WHEN EXISTS (SELECT 1 FROM blocks WHERE block_type = 'review') THEN 'PASS'
+           ELSE 'FAIL'
+         END,
+         format('review enabled = %s | servable queue rows = %s | review blocks planned = %s',
+                EXISTS (SELECT 1 FROM enabled WHERE block_type = 'review'),
+                (SELECT n FROM servable_queue),
+                (SELECT count(*) FROM blocks WHERE block_type = 'review'))
 ) t ORDER BY ord;
 
 \echo ''
