@@ -15,6 +15,7 @@
  * The scene is chosen by `?scene=` so one build serves every state.
  */
 import { createRoot } from "react-dom/client";
+import { SettingsSheet } from "@/features/calendar/components/SettingsSheet";
 import type {
   CalendarReadyResponse,
   GuardianCalendarReadyResponse,
@@ -38,6 +39,14 @@ const TODAY = "2026-09-21";
 const ESTIMATES = {
   practice_seconds_per_unit: 90,
   review_seconds_per_unit: 120,
+};
+
+/** §8.1 bounds, served on the ready payload since 2026-09-22 so §17.3 can build its chips. */
+const BOUNDS = {
+  daily_minutes_min: 15,
+  daily_minutes_max: 180,
+  daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+  target_exam_date_max_days: 540,
 };
 
 function addDays(date: string, days: number): string {
@@ -231,10 +240,20 @@ function statusFor(
   return { actual: 0, status: "scheduled" };
 }
 
-function buildDays(from: string, to: string): CalendarReadyResponse["days"] {
+/**
+ * `blockedOut` is a date the STUDENT cleared: overridden, and holding nothing. It is not a
+ * rest day — that is the mask — and the two must not look alike, which is exactly what the
+ * day-off scenes exist to check.
+ */
+function buildDays(
+  from: string,
+  to: string,
+  blockedOut?: string,
+): CalendarReadyResponse["days"] {
   const days: CalendarReadyResponse["days"] = [];
   for (let date = from; date <= to; date = addDays(date, 1)) {
-    const blocks = (PLAN[date] ?? []).map((block, index) => {
+    const cleared = date === blockedOut;
+    const blocks = (cleared ? [] : (PLAN[date] ?? [])).map((block, index) => {
       const { actual, status } = statusFor(date, block, index + 1);
       return {
         block,
@@ -251,7 +270,7 @@ function buildDays(from: string, to: string): CalendarReadyResponse["days"] {
     days.push({
       local_date: date,
       timezone: "America/Chicago",
-      is_user_override: false,
+      is_user_override: cleared,
       is_study_day: blocks.length > 0,
       version_no: 1,
       status: (blocks.length === 0
@@ -289,7 +308,11 @@ const FACTS = {
 
 const STREAK = { current: 6, longest: null, history_complete: false };
 
-function readyResponse(from: string, to: string): CalendarReadyResponse {
+function readyResponse(
+  from: string,
+  to: string,
+  blockedOut?: string,
+): CalendarReadyResponse {
   return {
     status: "ready",
     profile: {
@@ -302,8 +325,9 @@ function readyResponse(from: string, to: string): CalendarReadyResponse {
       planner_mode: "auto",
       setup_completed_at: "2026-09-01T00:00:00Z",
     },
+    bounds: BOUNDS,
     estimates: ESTIMATES,
-    days: buildDays(from, to),
+    days: buildDays(from, to, blockedOut),
     facts: FACTS,
     streak: STREAK,
     latest_unacknowledged_nonstudent_change: {
@@ -317,6 +341,7 @@ function readyResponse(from: string, to: string): CalendarReadyResponse {
 
 const NOOP_MUTATIONS = {
   editDay: () => {},
+  blockOutDay: () => {},
   moveBlock: () => {},
   regeneratePlan: () => {},
   regenerateDay: () => {},
@@ -461,16 +486,55 @@ function Scene(): JSX.Element {
     );
   }
 
-  const range = scene === "month" ? MONTH : WEEK;
+  // The settings sheet is opened by internal state, so the scene renders the component
+  // itself. That is the honest screenshot: it is the shipped component with the served
+  // bounds, not a mock of one.
+  if (scene === "settings") {
+    const response = readyResponse(WEEK.from, WEEK.to);
+    return (
+      <div className="lyceon-calendar" style={{ height: "100vh" }}>
+        <SettingsSheet
+          profile={response.profile}
+          bounds={BOUNDS}
+          estimates={ESTIMATES}
+          today={TODAY}
+          onSave={() => {}}
+          onClose={() => {}}
+          pending={false}
+          error={null}
+          replanOffer={null}
+        />
+      </div>
+    );
+  }
+
+  // A day the student BLOCKED OUT, in each grid. Wednesday, two days out.
+  const dayOff = addDays(TODAY, 2);
+  const isDayOff = scene === "dayoff-week" || scene === "dayoff-month";
+
+  const range = scene === "month" || scene === "dayoff-month" ? MONTH : WEEK;
   return (
     <CalendarView
-      model={studentViewModel(readyResponse(range.from, range.to))}
+      model={studentViewModel(
+        readyResponse(range.from, range.to, isDayOff ? dayOff : undefined),
+      )}
       today={TODAY}
       viewerName="Karl Nkemzi"
       targetExamDate="2026-11-07"
       streak={STREAK}
       planUpdate={{ versionNo: 2, trigger: "weekly" }}
       onRangeChange={() => {}}
+      schedule={{
+        profile: readyResponse(range.from, range.to).profile,
+        bounds: BOUNDS,
+        estimates: ESTIMATES,
+        onSave: () => {},
+        pending: false,
+        error: null,
+        offerReplan: false,
+        onConfirmReplan: () => {},
+        onDismissReplan: () => {},
+      }}
       mutations={NOOP_MUTATIONS}
     />
   );
