@@ -1090,8 +1090,17 @@ BEGIN
   FROM generate_series(1, 76) i;
 
   ------------------------------------------------------------------- Z-45
-  -- The SNAPSHOT itself, before any plan is computed. enabled_block_types is
-  -- ["practice"] at launch, so neither other engine may appear as work to do.
+  -- PRACTICE ONLY, set here rather than assumed. These three gates are about what the
+  -- snapshot says when an engine is OFF, so the fixture states that condition itself. It
+  -- used to lean on the seeded launch value; the moment review was enabled
+  -- (20260928000000) the gate began asserting a state the product had left, and went red
+  -- for the one reason a gate must never go red — being out of date.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  -- The SNAPSHOT itself, before any plan is computed. With only practice enabled,
+  -- neither other engine may appear as work to do.
   -- Asserted on the input rather than only on the plan because this is the
   -- statement the migration actually makes; the plan is the consequence.
   v_input := public.calendar_build_plan_input(S, ARRAY[v_today]);
