@@ -7989,6 +7989,30 @@ CREATE TABLE public.crisis_review_cases (
 
 
 --
+-- Name: crisis_review_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crisis_review_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    event_type text NOT NULL,
+    message_id uuid,
+    source text,
+    signature_id uuid,
+    model_confidence numeric,
+    category text,
+    notification_suppressed boolean DEFAULT false NOT NULL,
+    suppression_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT crisis_review_events_category_check CHECK (((category IS NULL) OR (category = ANY (ARRAY['crisis'::text, 'safeguarding'::text])))),
+    CONSTRAINT crisis_review_events_event_type_check CHECK ((event_type = ANY (ARRAY['case_opened'::text, 'signal_received'::text, 'notification_sent'::text, 'assigned'::text, 'resolved'::text]))),
+    CONSTRAINT crisis_review_events_source_check CHECK (((source IS NULL) OR (source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))))
+);
+
+
+--
 -- Name: deletion_billing_record; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9632,11 +9656,16 @@ CREATE TABLE public.tutor_conversations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     closed_at timestamp with time zone,
+    title text DEFAULT 'New session'::text,
+    surface text,
+    crisis_paused_at timestamp with time zone,
+    ended_at timestamp with time zone,
     CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
     CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
     CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
     CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
-    CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text])))
+    CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text, 'ended'::text]))),
+    CONSTRAINT tutor_conversations_surface_check CHECK (((surface IS NULL) OR (surface = ANY (ARRAY['standalone'::text, 'practice'::text, 'review'::text]))))
 );
 
 
@@ -9813,8 +9842,10 @@ CREATE TABLE public.tutor_messages (
     injection_flag boolean DEFAULT false NOT NULL,
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'completed'::text NOT NULL,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
-    CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text])))
+    CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
+    CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
 
 
@@ -10201,6 +10232,14 @@ ALTER TABLE ONLY public.crisis_review_audit_log
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crisis_review_events crisis_review_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -11078,6 +11117,20 @@ CREATE INDEX idx_crisis_review_cases_status ON public.crisis_review_cases USING 
 
 
 --
+-- Name: idx_crisis_review_events_case; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_events_case ON public.crisis_review_events USING btree (case_id, created_at);
+
+
+--
+-- Name: idx_crisis_review_events_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_events_conversation ON public.crisis_review_events USING btree (conversation_id, created_at);
+
+
+--
 -- Name: idx_entitlements_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11435,6 +11488,13 @@ CREATE INDEX idx_tutor_conversations_reuse_envelope ON public.tutor_conversation
 
 
 --
+-- Name: idx_tutor_conversations_standalone_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_standalone_active ON public.tutor_conversations USING btree (student_id, updated_at DESC) WHERE ((surface = 'standalone'::text) AND (status = 'active'::text) AND (deleted_at IS NULL));
+
+
+--
 -- Name: idx_tutor_conversations_student_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11530,6 +11590,13 @@ CREATE INDEX idx_tutor_messages_conversation ON public.tutor_messages USING btre
 --
 
 CREATE INDEX idx_tutor_messages_injection ON public.tutor_messages USING btree (injection_flag, created_at DESC) WHERE (injection_flag = true);
+
+
+--
+-- Name: idx_tutor_messages_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_messages_status ON public.tutor_messages USING btree (conversation_id, status) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]));
 
 
 --
@@ -12302,6 +12369,38 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 ALTER TABLE ONLY public.crisis_review_cases
     ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.crisis_review_cases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.tutor_messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: crisis_review_events crisis_review_events_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_events
+    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -13201,6 +13300,19 @@ ALTER TABLE public.crisis_review_audit_log ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.crisis_review_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.crisis_review_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_events crisis_review_events_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY crisis_review_events_service_role ON public.crisis_review_events TO service_role USING (true);
+
 
 --
 -- Name: crisis_review_audit_log crisis_review_writer insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -

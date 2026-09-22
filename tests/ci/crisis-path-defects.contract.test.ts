@@ -182,8 +182,9 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
     resetCallTracking();
   });
 
-  // §5 Test 4: Case creation invokes the crisis notification dispatcher
-  it("flagConversationForReview awaits notifyCrisisEvent", async () => {
+  // §5 Test 4: Case creation returns FlagForReviewResult — notification
+  // dispatch moved to route handler per PagerDuty-style policy (§1).
+  it("flagConversationForReview returns FlagForReviewResult and does NOT call notifyCrisisEvent", async () => {
     mockSupabaseFrom.mockImplementation((table: string) => {
       mockFromCalls.push(table);
       const chain = makeChain();
@@ -214,7 +215,7 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
       return chain;
     });
 
-    await flagConversationForReview(
+    const result = await flagConversationForReview(
       "conv-789",
       "student-321",
       "signature",
@@ -223,15 +224,15 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
       "crisis",
     );
 
-    expect(mockNotifyCrisisEvent).toHaveBeenCalledTimes(1);
-    const payload = mockNotifyCrisisEvent.mock.calls[0]![0] as Record<
-      string,
-      unknown
-    >;
-    expect(payload.caseId).toBe("case-001");
-    expect(payload.conversationId).toBe("conv-789");
-    expect(payload.source).toBe("signature");
-    expect(typeof payload.slaDeadline).toBe("string");
-    expect(typeof payload.timestamp).toBe("string");
+    // Notification dispatch is now the route handler's responsibility,
+    // gated by evaluateNotificationPolicy(). flagConversationForReview
+    // must NOT call notifyCrisisEvent directly.
+    expect(mockNotifyCrisisEvent).not.toHaveBeenCalled();
+
+    // Instead it returns the data the route handler needs.
+    expect(result.caseId).toBe("case-001");
+    expect(result.isNewCase).toBe(true);
+    expect(result.caseStatus).toBe("open");
+    expect(typeof result.slaDeadline).toBe("string");
   });
 });
