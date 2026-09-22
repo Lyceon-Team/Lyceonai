@@ -6,6 +6,11 @@ import {
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
 import { isSubmittableAnswer } from "@/lib/practice-submission";
+import {
+  type EngineConfig,
+  type ReviewSessionSpec,
+  PRACTICE_ENGINE_CONFIG,
+} from "@/lib/engine-config";
 
 const inflightEnsureSession = new Map<string, Promise<string>>();
 
@@ -121,6 +126,12 @@ export type PracticeSessionSpecInput = {
   targetMinutes?: number;
   targetQuestionCount?: number;
   mode?: string;
+  /**
+   * Review only. Practice never sets this; review's create body is built from it by
+   * `REVIEW_ENGINE_CONFIG.buildCreateBody` (engine-config.ts). Carried on the same spec
+   * object so the loop has one input, not two.
+   */
+  review?: ReviewSessionSpec;
 };
 
 function mergeStats(
@@ -230,6 +241,7 @@ export function useCanonicalPractice(
   section: PracticeSectionParam,
   sessionSpec?: PracticeSessionSpecInput,
   initialSessionId?: string | null,
+  engine: EngineConfig = PRACTICE_ENGINE_CONFIG,
 ) {
   const [sessionId, setSessionId] = useState<string | null>(
     initialSessionId ?? null,
@@ -308,8 +320,8 @@ export function useCanonicalPractice(
 
     // Deduplicate strict-mode or concurrent calls for the same session setup
     const lockKey = initialSessionId
-      ? `resume-${initialSessionId}`
-      : `start-${section}-${sessionSpec?.mode ?? "balanced"}`;
+      ? `resume-${engine.domain}-${initialSessionId}`
+      : `start-${engine.domain}-${section}-${sessionSpec?.mode ?? "balanced"}`;
 
     if (inflightEnsureSession.has(lockKey)) {
       const id = await inflightEnsureSession.get(lockKey)!;
@@ -320,21 +332,18 @@ export function useCanonicalPractice(
     const promise = (async () => {
       // If we have an initialSessionId, we use the resume endpoint
       if (sessionId) {
-        const resumeRes = await csrfFetch(
-          `/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              client_instance_id: clientInstanceId,
-              force_takeover: forceTakeover,
-            }),
+        const resumeRes = await csrfFetch(engine.endpoints.resume(sessionId), {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
           },
-        );
+          body: JSON.stringify({
+            client_instance_id: clientInstanceId,
+            force_takeover: forceTakeover,
+          }),
+        });
 
         const resumeBody = await resumeRes.json().catch(() => null);
         if (resumeRes.status === 409) {
@@ -362,24 +371,13 @@ export function useCanonicalPractice(
         return resumeBody.sessionId;
       }
 
-      const startPayload: Record<string, unknown> = {
+      const startPayload = engine.buildCreateBody({
         section,
-        mode: sessionSpec?.mode ?? "balanced",
-        client_instance_id: clientInstanceId,
-      };
+        clientInstanceId,
+        spec: sessionSpec ?? {},
+      });
 
-      if (Array.isArray(sessionSpec?.sections))
-        startPayload.sections = sessionSpec.sections;
-      if (Array.isArray(sessionSpec?.domains))
-        startPayload.domains = sessionSpec.domains;
-      if (Array.isArray(sessionSpec?.difficulties))
-        startPayload.difficulties = sessionSpec.difficulties;
-      if (typeof sessionSpec?.targetMinutes === "number")
-        startPayload.target_minutes = sessionSpec.targetMinutes;
-      if (typeof sessionSpec?.targetQuestionCount === "number")
-        startPayload.target_question_count = sessionSpec.targetQuestionCount;
-
-      const startRes = await csrfFetch("/api/practice/sessions", {
+      const startRes = await csrfFetch(engine.endpoints.create(), {
         method: "POST",
         credentials: "include",
         headers: {
@@ -402,7 +400,7 @@ export function useCanonicalPractice(
       }
 
       const disabled = parseRuntimeContractDisabledFromPayload(
-        "practice",
+        engine.domain,
         startRes.status,
         startPayloadBody,
       );
@@ -414,7 +412,7 @@ export function useCanonicalPractice(
       if (!startRes.ok) {
         throw new Error(
           startPayloadBody?.message ||
-            `Failed to start practice session (${startRes.status})`,
+            `${engine.labels.startFailure} (${startRes.status})`,
         );
       }
 
@@ -442,14 +440,17 @@ export function useCanonicalPractice(
     }
   }, [
     clientInstanceId,
+    engine,
     forceTakeover,
     initialSessionId,
     runtimeDisabled,
     section,
     sessionId,
+    sessionSpec,
     sessionSpec?.difficulties,
     sessionSpec?.domains,
     sessionSpec?.mode,
+    sessionSpec?.review,
     sessionSpec?.sections,
     sessionSpec?.targetMinutes,
     sessionSpec?.targetQuestionCount,
@@ -463,7 +464,7 @@ export function useCanonicalPractice(
     try {
       const effectiveSessionId = await ensureSession();
       const nextRes = await csrfFetch(
-        `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/next?client_instance_id=${encodeURIComponent(clientInstanceId)}`,
+        engine.endpoints.next(effectiveSessionId, clientInstanceId),
         {
           method: "GET",
           credentials: "include",
@@ -473,7 +474,7 @@ export function useCanonicalPractice(
 
       const nextPayloadBody = await nextRes.json().catch(() => null);
       const disabled = parseRuntimeContractDisabledFromPayload(
-        "practice",
+        engine.domain,
         nextRes.status,
         nextPayloadBody,
       );
@@ -522,7 +523,13 @@ export function useCanonicalPractice(
     } finally {
       setIsLoading(false);
     }
-  }, [clientInstanceId, ensureSession, resetPerQuestionState, runtimeDisabled]);
+  }, [
+    clientInstanceId,
+    engine,
+    ensureSession,
+    resetPerQuestionState,
+    runtimeDisabled,
+  ]);
 
   const submitAnswer = useCallback(
     async (opts: { skipped: boolean }) => {
@@ -554,8 +561,8 @@ export function useCanonicalPractice(
         }
 
         const endpoint = opts.skipped
-          ? `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/skip`
-          : "/api/practice/answer";
+          ? engine.endpoints.skip(effectiveSessionId)
+          : engine.endpoints.answer(effectiveSessionId);
 
         const gridIn = isGridIn(question);
         const payload = opts.skipped
@@ -582,7 +589,7 @@ export function useCanonicalPractice(
 
         const payloadBody = await res.json().catch(() => null);
         const disabled = parseRuntimeContractDisabledFromPayload(
-          "practice",
+          engine.domain,
           res.status,
           payloadBody,
         );
@@ -650,6 +657,7 @@ export function useCanonicalPractice(
       clientInstanceId,
       clientAttemptId,
       currentAnswer,
+      engine,
       ensureSession,
       fetchNextQuestion,
       question,
@@ -675,23 +683,20 @@ export function useCanonicalPractice(
     if (sessionState === "completed" || sessionState === "abandoned")
       return { state: sessionState };
 
-    const res = await csrfFetch(
-      `/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`,
-      {
-        method: "POST",
-        credentials: "include",
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ client_instance_id: clientInstanceId }),
+    const res = await csrfFetch(engine.endpoints.terminate(sessionId), {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
-    );
+      body: JSON.stringify({ client_instance_id: clientInstanceId }),
+    });
 
     const payloadBody = await res.json().catch(() => null);
     const disabled = parseRuntimeContractDisabledFromPayload(
-      "practice",
+      engine.domain,
       res.status,
       payloadBody,
     );
@@ -712,7 +717,7 @@ export function useCanonicalPractice(
       setCalculatorState(null);
     }
     return data;
-  }, [clientInstanceId, runtimeDisabled, sessionId, sessionState]);
+  }, [clientInstanceId, engine, runtimeDisabled, sessionId, sessionState]);
 
   const persistCalculatorState = useCallback(
     async (nextCalculatorState: unknown | null) => {
@@ -721,25 +726,22 @@ export function useCanonicalPractice(
       if (sessionState === "completed" || sessionState === "abandoned")
         return null;
 
-      const res = await csrfFetch(
-        `/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            client_instance_id: clientInstanceId,
-            calculator_state: nextCalculatorState,
-          }),
+      const res = await csrfFetch(engine.endpoints.calculatorState(sessionId), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      );
+        body: JSON.stringify({
+          client_instance_id: clientInstanceId,
+          calculator_state: nextCalculatorState,
+        }),
+      });
 
       const payloadBody = await res.json().catch(() => null);
       const disabled = parseRuntimeContractDisabledFromPayload(
-        "practice",
+        engine.domain,
         res.status,
         payloadBody,
       );
@@ -763,7 +765,7 @@ export function useCanonicalPractice(
       setCalculatorState(value ?? null);
       return value ?? null;
     },
-    [clientInstanceId, runtimeDisabled, sessionId, sessionState],
+    [clientInstanceId, engine, runtimeDisabled, sessionId, sessionState],
   );
 
   useEffect(() => {

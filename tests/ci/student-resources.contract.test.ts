@@ -67,6 +67,8 @@ function resetRows() {
   // (`00000000000000_genesis.sql:206`): premium, and enabled.
   rows.entitlement_features = [
     { feature_key: "mastery_detail", required_tier: "premium", enabled: true },
+    // Doc 05F §16. Seeded by genesis (`00000000000000_genesis.sql:226`): premium, enabled.
+    { feature_key: "calendar_access", required_tier: "premium", enabled: true },
   ];
   rows.canonical_skill_catalog = [
     { section: "M", domain: "Algebra", skill: "Linear Equations in One Variable" },
@@ -107,9 +109,96 @@ function resetRows() {
   // which would 500 every KPI case here — so the seed mirrors the WS-2 config seed.
   rows.practice_runtime_config = [
     { key: "quota_reset_timezone", value: "America/Chicago" },
+    // Doc 05F §17.1's "~N min" readout. Doc 02B §41 owns practice timing, so the calendar
+    // READS this row rather than copying the value into its own config table (§20's audit
+    // rule). `loadCalendarConfig` throws when it is missing — a loud failure at the
+    // accessor (§18) — which would 500 the calendar cases below.
+    { key: "target_seconds_per_question", value: 90 },
   ];
   rows.audit_logs = [];
+
+  // -- Doc 05F calendar (the /calendar resource) -----------------------------
+  // Every row carries POISON, exactly as the tables do, so a pass proves the route strips
+  // it. The profile row additionally carries `last_acknowledged_nonstudent_version_no` —
+  // a real column the SELECT does not name — because this fake ignores column projection,
+  // and a read that handed the row object to a `.strict()` parser would break on it.
+  rows.calendar_runtime_config = [
+    { key: "daily_minutes_min", value: 15 },
+    { key: "daily_minutes_max", value: 180 },
+    { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
+    { key: "target_exam_date_max_days", value: 540 },
+    { key: "weekly_job_interval_minutes", value: 1440 },
+    { key: "horizon_days", value: 14 },
+    { key: "generator_version", value: "20260917140000" },
+    // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
+    // counterpart above.
+    { key: "review_estimated_seconds_per_item", value: 120 },
+  ];
+  rows.student_study_profile = [
+    {
+      timezone: "America/Chicago",
+      target_exam_date: null,
+      target_score: 1400,
+      study_days_mask: 127,
+      daily_minutes: 60,
+      full_length_weekday: 6,
+      planner_mode: "auto",
+      setup_completed_at: "2026-08-01T00:00:00.000Z",
+      last_acknowledged_nonstudent_version_no: 0,
+      ...POISON,
+    },
+  ];
+  rows.calendar_plan_versions = [
+    { version_no: 3, input_snapshot: { profile: { study_days_mask: 127 } }, ...POISON },
+  ];
+  rows.calendar_current_plan = [
+    {
+      scheduled_date: CALENDAR_DATE,
+      timezone: "America/Chicago",
+      is_user_override: false,
+      version_no: 3,
+      block_id: CALENDAR_BLOCK_ID,
+      display_ordinal: 1,
+      membership_type: "created",
+      ...POISON,
+    },
+  ];
+  rows.calendar_blocks = [
+    {
+      block_id: CALENDAR_BLOCK_ID,
+      scheduled_date: CALENDAR_DATE,
+      block_type: "practice",
+      section: "M",
+      // `explanation_key` at BOTH levels, which is what §16 withholds — the block's own key
+      // and the per-domain one inside the mix. The guardian projection must drop both.
+      scope: { level: "domain", mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }] },
+      target_count: 20,
+      source: "auto",
+      derived_from_block_id: null,
+      explanation_key: "weighted",
+      ...POISON,
+    },
+  ];
+  rows.calendar_block_launches = [];
+  rows.practice_session_items = [];
 }
+
+const CALENDAR_BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+/**
+ * TODAY, SO THE BLOCK IS ACTUALLY IN THE PAYLOAD.
+ *
+ * The route takes `from`/`to` from the query and this suite sends none, so the window is the
+ * student`s local today … +13. A fixed date would fall outside it, the day list would be
+ * fourteen EMPTY days, and every anti-leak assertion below would pass because there was
+ * nothing to leak — the vacuous-coverage failure this file`s header exists to prevent.
+ *
+ * The UTC date is used rather than the Chicago one because the two differ by at most a day
+ * and BOTH are inside a fourteen-day window that starts today. The suite therefore does not
+ * depend on what hour it runs at, only that the block lands somewhere in the window — which
+ * `the guardian payload really contains the block` below asserts outright.
+ */
+const CALENDAR_DATE = new Date().toISOString().slice(0, 10);
 
 /** A query builder that ignores filters and hands back the table's fixture rows. */
 function fakeClient() {
@@ -120,6 +209,15 @@ function fakeClient() {
       Object.assign(builder, {
         select: () => builder,
         eq: () => builder,
+        neq: () => builder,
+        gt: () => builder,
+        // The calendar read filters a date range and a non-null answered_at. They ignore
+        // their arguments like every other filter here: this fake is the ROW layer, and a
+        // fake that filtered would hide the stripping these cases exist to prove.
+        gte: () => builder,
+        lte: () => builder,
+        lt: () => builder,
+        not: () => builder,
         in: () => builder,
         order: () => builder,
         limit: () => builder,
@@ -188,6 +286,38 @@ describe("subject-scoped resources — one route, two callers", () => {
       expect(findRule4Keys(res.body)).toEqual([]);
     });
   }
+
+  // -- §16: the calendar payload is NARROW, and really is a payload ----------
+  it("the guardian payload really contains the block, and none of §16`s withheld keys", async () => {
+    const res = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+
+    expect(res.status).toBe(200);
+    // NON-VACUITY FIRST. Without this, every assertion below passes on an empty day list.
+    const day = res.body.days.find(
+      (d: { local_date: string }) => d.local_date === CALENDAR_DATE,
+    );
+    expect(day, `no day for ${CALENDAR_DATE} in the payload`).toBeDefined();
+    expect(day.blocks).toHaveLength(1);
+    expect(day.blocks[0].block.block_id).toBe(CALENDAR_BLOCK_ID);
+    expect(day.blocks[0].block.target_count).toBe(20);
+
+    // Now the withholding, at BOTH levels — the block`s own key and the per-domain one
+    // inside the practice mix, which is the leak a spread-based projection reopens.
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain("explanation_key");
+    expect(body).not.toContain("weighted");
+    expect(body).not.toContain("version_no");
+    expect(body).not.toContain("is_user_override");
+    expect(body).not.toContain("target_score");
+    expect(body).not.toContain("membership_type");
+    // §16 gives a guardian the same FACTS, so those are present rather than withheld.
+    expect(res.body.facts.blocks_total).toBe(1);
+    expect(Object.keys(res.body.streak).sort()).toEqual([
+      "current",
+      "history_complete",
+      "longest",
+    ]);
+  });
 
   it("the walk itself can see a leak (gate self-check)", () => {
     // A gate that cannot fail is not a gate. This proves `findRule4Keys` reports a nested
@@ -328,12 +458,13 @@ describe("subject-scoped resources — one route, two callers", () => {
         [
           STUDENT_RESOURCE_PATHS.masteryDomains,
           STUDENT_RESOURCE_PATHS.masterySkills,
+          // Doc 05F §16: the calendar is premium, gated on the SUBJECT`s entitlement.
+          STUDENT_RESOURCE_PATHS.calendar,
         ].sort(),
       );
-      expect(gated.map(([, key]) => key)).toEqual([
-        "mastery_detail",
-        "mastery_detail",
-      ]);
+      expect(gated.map(([, key]) => key).sort()).toEqual(
+        ["calendar_access", "mastery_detail", "mastery_detail"].sort(),
+      );
       expect(open.map(([path]) => path).sort()).toEqual(
         [
           STUDENT_RESOURCE_PATHS.kpiSections,

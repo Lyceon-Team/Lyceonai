@@ -1,0 +1,5 @@
+# `docs/design/*.html` are published design artifacts, committed byte-identical to the
+# artifact they came from so a reviewer can diff the two and get silence. Prettier
+# reformats them into something that is no longer that file — which is a silent change
+# to a reference, not a formatting improvement. (Caught doing exactly this, 2026-09-22.)
+docs/design/*.html

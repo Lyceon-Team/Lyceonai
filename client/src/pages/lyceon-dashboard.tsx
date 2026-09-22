@@ -16,7 +16,7 @@ import {
   Loader2,
   MessageCircle,
   Play,
-  Target,
+  RotateCcw,
 } from "lucide-react";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
@@ -390,48 +390,49 @@ export default function LyceonDashboard() {
         </section>
 
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-10">
-          <Link href="/practice">
-            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-                <Play className="h-5 w-5" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight mb-1">
-                Practice
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Start a focused SAT block
-              </p>
-            </a>
+          <Link
+            href="/practice"
+            className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]"
+          >
+            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+              <Play className="h-5 w-5" />
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight mb-1">
+              Practice
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Start a focused SAT block
+            </p>
           </Link>
 
-          <Link href="/full-test">
-            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-                <FileText className="h-5 w-5" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight mb-1">
-                Full-Length Exam
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Run a timed SAT simulation.
-              </p>
-            </a>
+          <Link
+            href="/review"
+            className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]"
+          >
+            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+              <RotateCcw className="h-5 w-5" />
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight mb-1">
+              Review Queue
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Redo the questions you missed until they stick.
+            </p>
           </Link>
 
-          <Link href="/review-errors">
-            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-                <Target className="h-5 w-5" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight mb-1">
-                Review Errors
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {weekQuestions > 0
-                  ? "Analyze misses from your recent attempts."
-                  : "Complete practice first to populate your error queue."}
-              </p>
-            </a>
+          <Link
+            href="/full-test"
+            className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]"
+          >
+            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+              <FileText className="h-5 w-5" />
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight mb-1">
+              Full-Length Exam
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Run a timed SAT simulation.
+            </p>
           </Link>
         </section>
 

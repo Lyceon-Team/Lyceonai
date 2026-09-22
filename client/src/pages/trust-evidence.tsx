@@ -1,8 +1,20 @@
 import { Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronRight, FileCheck2, Lock, Shield, AlertTriangle } from "lucide-react";
+import {
+  ChevronRight,
+  FileCheck2,
+  Lock,
+  Shield,
+  AlertTriangle,
+} from "lucide-react";
 import Footer from "@/components/layout/Footer";
 
 export default function TrustEvidencePage() {
@@ -14,9 +26,12 @@ export default function TrustEvidencePage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
               <FileCheck2 className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-3">Trust Evidence</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-3">
+              Trust Evidence
+            </h1>
             <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Public, implementation-grounded evidence for how Lyceon protects student data and enforces server-side authorization.
+              Public, implementation-grounded evidence for how Lyceon protects
+              student data and enforces server-side authorization.
             </p>
           </div>
 
@@ -24,8 +39,9 @@ export default function TrustEvidencePage() {
             <CardContent className="py-4 text-sm text-amber-900 dark:text-amber-200 flex gap-2 items-start">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <p>
-                This page does not make third-party certification claims (for example SOC 2 or ISO 27001) unless those claims are
-                explicitly published by Lyceon.
+                This page does not make third-party certification claims (for
+                example SOC 2 or ISO 27001) unless those claims are explicitly
+                published by Lyceon.
               </p>
             </CardContent>
           </Card>
@@ -33,9 +49,12 @@ export default function TrustEvidencePage() {
           <div className="grid sm:grid-cols-2 gap-4 mb-10">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2"><Lock className="h-4 w-4" /> Cookie-Only Auth</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Lock className="h-4 w-4" /> Cookie-Only Auth
+                </CardTitle>
                 <CardDescription>
-                  For routes using Supabase auth middleware, auth is resolved from secure cookies and bearer headers are ignored.
+                  For routes using Supabase auth middleware, auth is resolved
+                  from secure cookies and bearer headers are ignored.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -45,9 +64,12 @@ export default function TrustEvidencePage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2"><Shield className="h-4 w-4" /> Route Authorization</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Shield className="h-4 w-4" /> Route Authorization
+                </CardTitle>
                 <CardDescription>
-                  Admin, guardian, and student access is enforced by server middleware and route-level guards.
+                  Admin, guardian, and student access is enforced by server
+                  middleware and route-level guards.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -59,7 +81,8 @@ export default function TrustEvidencePage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Data Isolation</CardTitle>
                 <CardDescription>
-                  Supabase migrations enable RLS on core student-data tables with policies tied to auth identity (auth.uid()).
+                  Supabase migrations enable RLS on core student-data tables
+                  with policies tied to auth identity (auth.uid()).
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -69,9 +92,13 @@ export default function TrustEvidencePage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Privacy-Safe Observability</CardTitle>
+                <CardTitle className="text-base">
+                  Privacy-Safe Observability
+                </CardTitle>
                 <CardDescription>
-                  Server request/error logging and monitor forwarding redact cookies, tokens, authorization data, and sensitive payload fields.
+                  Server request/error logging and monitor forwarding redact
+                  cookies, tokens, authorization data, and sensitive payload
+                  fields.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -81,17 +108,26 @@ export default function TrustEvidencePage() {
           </div>
 
           <section className="mb-10">
-            <h2 className="text-xl font-semibold text-foreground mb-4">Related Public Pages</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-4">
+              Related Public Pages
+            </h2>
             <div className="grid sm:grid-cols-2 gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Trust &amp; Safety Hub</CardTitle>
-                  <CardDescription>Overview of policy commitments and safety posture.</CardDescription>
+                  <CardTitle className="text-base">
+                    Trust &amp; Safety Hub
+                  </CardTitle>
+                  <CardDescription>
+                    Overview of policy commitments and safety posture.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/trust">
-                      <a className="inline-flex items-center gap-1">Open /trust <ChevronRight className="h-4 w-4" /></a>
+                    <Link
+                      href="/trust"
+                      className="inline-flex items-center gap-1"
+                    >
+                      Open /trust <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </CardContent>
@@ -99,26 +135,42 @@ export default function TrustEvidencePage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Legal &amp; Policy Hub</CardTitle>
-                  <CardDescription>Privacy policy, terms, trust &amp; safety, and community guidelines.</CardDescription>
+                  <CardTitle className="text-base">
+                    Legal &amp; Policy Hub
+                  </CardTitle>
+                  <CardDescription>
+                    Privacy policy, terms, trust &amp; safety, and community
+                    guidelines.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/legal">
-                      <a className="inline-flex items-center gap-1">Open /legal <ChevronRight className="h-4 w-4" /></a>
+                    <Link
+                      href="/legal"
+                      className="inline-flex items-center gap-1"
+                    >
+                      Open /legal <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Tutor Transparency</CardTitle>
-                  <CardDescription>Safety, privacy, and pedagogy details for the tutor experience.</CardDescription>
+                  <CardTitle className="text-base">
+                    Tutor Transparency
+                  </CardTitle>
+                  <CardDescription>
+                    Safety, privacy, and pedagogy details for the tutor
+                    experience.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/tutor">
-                      <a className="inline-flex items-center gap-1">Open /tutor <ChevronRight className="h-4 w-4" /></a>
+                    <Link
+                      href="/tutor"
+                      className="inline-flex items-center gap-1"
+                    >
+                      Open /tutor <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </CardContent>

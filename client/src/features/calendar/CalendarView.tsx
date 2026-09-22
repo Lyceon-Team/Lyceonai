@@ -1,0 +1,468 @@
+/**
+ * @spec [Doc_05F_Study_Calendar, §17.1 layout, §17.5 states, §17.7 interaction rules,
+ *        §12.2, §12.4, §12.6, §16 guardian read]
+ * @implemented [2026-09-23]
+ *
+ * plain English: the calendar screen. Expected outcome: the approved prototype, backed by
+ * the live API, for a student who can change their plan and for a guardian who can only
+ * look at it.
+ *
+ * ONE COMPONENT, TWO SURFACES, AND THE DIFFERENCE IS DATA. The guardian page renders this
+ * with `mutations: undefined`. Everything that writes — the Refresh control, the day menu,
+ * the add affordance, drag-and-drop, the sheet's footer — is conditioned on that ONE value
+ * being present, and the view model it is given has `controls: { kind: "read_only" }`,
+ * `plan: null` on every block and `explanations: []`. So there is no Start button to hide:
+ * there is no handler to build one from and no key to look copy up with.
+ *
+ * NO BUSINESS LOGIC LIVES HERE (Coding Standards §11.1). Dates come from `lib/dates`,
+ * descriptions from `lib/blocks`, member lists from `lib/members`, copy from `copy/`, and
+ * every server interaction from `api/`. This file decides what is on screen and nothing else.
+ *
+ * trade-offs: view (week/month) and cursor are `useState`, not URL state. §17.7 puts local
+ * UI state in `useState` and keeps the query layer for server state; a student paging through
+ * weeks is not navigating.
+ *
+ * edge cases: switching Week↔Month inside the same month does NOT refetch — the month query
+ * covers the week, TanStack serves the wider range from cache, and the grid slices it. That
+ * is why `rangeForView` exists and why the query key carries the range.
+ */
+import { useCallback, useMemo, useState } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import type {
+  CalendarSetupDefaults,
+  PlanTrigger,
+  StreakSummary,
+} from "@lyceon/shared/calendar";
+import {
+  monthGridDates,
+  rangeLabel,
+  shortDate,
+  startOfMonth,
+  startOfWeek,
+  weekDates,
+} from "./lib/dates";
+import { daysBetween } from "./lib/dates";
+import { domainsForSection, isDraggable } from "./lib/blocks";
+import {
+  MIX_GRANULARITY,
+  isValidMix,
+  membersWithEdit,
+  membersWithNewPracticeBlock,
+  membersWithout,
+} from "./lib/members";
+import {
+  blockAt,
+  dayAt,
+  type CalendarViewModel,
+  type ViewBlock,
+  type ViewDay,
+} from "./lib/view-model";
+import {
+  ALL_TONES_VISIBLE,
+  FactsStrip,
+  LeftRail,
+  PlanUpdatedBanner,
+  TopBar,
+  type ToneFilter,
+} from "./components/Chrome";
+import { WeekGrid } from "./components/WeekGrid";
+import { MonthGrid } from "./components/MonthGrid";
+import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import { SetupSheet } from "./components/SetupSheet";
+
+/**
+ * Everything this screen can do to the server. A guardian caller passes `undefined`, which
+ * is what removes every control — see the module note.
+ */
+export type CalendarMutations = {
+  editDay: (
+    date: string,
+    members: ReturnType<typeof membersWithout>,
+    hint: EditHint,
+  ) => void;
+  moveBlock: (blockId: string, toDate: string) => void;
+  regeneratePlan: () => void;
+  regenerateDay: (date: string) => void;
+  resetDay: (date: string) => void;
+  doItNow: (blockId: string) => void;
+  launch: (blockId: string) => void;
+  acknowledge: (versionNo: number) => void;
+  refreshPending: boolean;
+  launchPending: boolean;
+};
+
+export type EditHint =
+  | { blockId: string; edited: NonNullable<ViewBlock["plan"]> }
+  | { removeBlockId: string };
+
+export type CalendarViewProps = {
+  model: CalendarViewModel | null;
+  /** Present only when the student has not set up. Never passed on the guardian surface. */
+  setup?: {
+    defaults: CalendarSetupDefaults;
+    onSubmit: (profile: Record<string, unknown>) => void;
+    pending: boolean;
+    error: string | null;
+  };
+  today: string;
+  viewerName: string;
+  /** The student's exam date, for the countdown. Null when they have not set one. */
+  targetExamDate: string | null;
+  streak: StreakSummary | undefined;
+  /** §17.4. Null when there is nothing unacknowledged. */
+  planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
+  /** Called when the visible range changes, so the page can re-query. */
+  onRangeChange: (view: "week" | "month", cursor: string) => void;
+  /**
+   * Where the back control goes: `/dashboard` for a student, `/guardian` for a guardian.
+   *
+   * A PROP, NOT A BRANCH ON `readOnly`. This file's own rule — "the guardian difference is
+   * in the props, not in a flag" — and it is load-bearing here rather than stylistic: the
+   * two surfaces have genuinely different homes, so a flag would have to encode a route
+   * mapping inside a view component that otherwise knows nothing about routing. Each page
+   * names its own.
+   */
+  backHref: string;
+  mutations?: CalendarMutations;
+};
+
+export function CalendarView({
+  model,
+  setup,
+  today,
+  viewerName,
+  targetExamDate,
+  streak,
+  planUpdate,
+  onRangeChange,
+  backHref,
+  mutations,
+}: CalendarViewProps): JSX.Element {
+  const [view, setView] = useState<"week" | "month">("week");
+  const [cursor, setCursor] = useState(() => startOfWeek(today));
+  const [miniMonth, setMiniMonth] = useState(() => startOfMonth(today));
+  const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
+  const [openBlockId, setOpenBlockId] = useState<string | null>(null);
+
+  const readOnly = mutations === undefined;
+
+  // §17.7 forbids `useEffect` for derived state, so the range is derived inline and the
+  // parent is told about a change by the handlers that cause one.
+  const dates = useMemo(
+    () => (view === "week" ? weekDates(cursor) : monthGridDates(cursor)),
+    [view, cursor],
+  );
+
+  const move = useCallback(
+    (nextView: "week" | "month", nextCursor: string) => {
+      setView(nextView);
+      setCursor(nextCursor);
+      setMiniMonth(startOfMonth(nextCursor));
+      onRangeChange(nextView, nextCursor);
+    },
+    [onRangeChange],
+  );
+
+  const dayFor = useCallback(
+    (date: string): ViewDay | null =>
+      model === null ? null : dayAt(model, date),
+    [model],
+  );
+
+  const visible = useCallback(
+    (block: ViewBlock) => filters[block.tone],
+    [filters],
+  );
+
+  /**
+   * Mirrors `calendar_move_block`'s refusals (§12.2) so an illegal drag never leaves the
+   * pointer. The server still decides — the two clocks can disagree about "today" — which is
+   * why the drop handler also handles a refusal coming back.
+   */
+  const canDrag = useCallback(
+    (day: ViewDay, block: ViewBlock): boolean =>
+      // The rule itself lives in `lib/blocks`, where it is unit-tested and where the sheet
+      // and the grids all read it. A second copy here would be a second rule to keep in
+      // step with `calendar_move_block`'s refusals.
+      isDraggable({
+        status: block.status,
+        actual: block.actual,
+        date: day.date,
+        today,
+        readOnly,
+      }),
+    [readOnly, today],
+  );
+
+  const sensors = useSensors(
+    // A small activation distance so a tap that opens the sheet is not read as a drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 180, tolerance: 6 },
+    }),
+    useSensor(KeyboardSensor),
+  );
+
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (mutations === undefined) return;
+      const over = event.over;
+      if (over === null) return;
+      const toDate = (over.data.current as { date?: string } | undefined)?.date;
+      const blockId = String(event.active.id);
+      if (toDate === undefined) return;
+      const found = model === null ? null : blockAt(model, blockId);
+      if (found === null || found.day.date === toDate) return;
+      if (toDate < today) return;
+      mutations.moveBlock(blockId, toDate);
+    },
+    [model, mutations, today],
+  );
+
+  const opened = useMemo(
+    () =>
+      model === null || openBlockId === null
+        ? null
+        : blockAt(model, openBlockId),
+    [model, openBlockId],
+  );
+
+  const sheetActions: BlockSheetActions | undefined = useMemo(() => {
+    if (mutations === undefined || opened === null) return undefined;
+    const { block, day } = opened;
+    return {
+      onEditMix: (mix) => {
+        if (
+          !isValidMix(mix) ||
+          block.plan === null ||
+          block.plan.block_type !== "practice"
+        )
+          return;
+        const target = mix.reduce((sum, entry) => sum + entry.count, 0);
+        const edited = {
+          ...block.plan,
+          target_count: target,
+          scope: {
+            level: "domain" as const,
+            mix: mix.map((entry) => ({
+              domain: entry.domain,
+              count: entry.count,
+              // The existing per-domain reason is kept where the domain is unchanged, so a
+              // student adjusting a count does not erase the generator's explanation.
+              explanation_key:
+                block.plan?.block_type === "practice" &&
+                block.plan.scope.level === "domain"
+                  ? (block.plan.scope.mix.find(
+                      (old) => old.domain === entry.domain,
+                    )?.explanation_key ?? "student_choice")
+                  : "student_choice",
+            })),
+          },
+        };
+        mutations.editDay(
+          day.date,
+          membersWithEdit(day, block.blockId, {
+            scope: edited.scope,
+            targetCount: target,
+          }),
+          { blockId: block.blockId, edited },
+        );
+      },
+      onEditReviewCount: (count) => {
+        // Narrowed rather than spread: `PlanBlock` is a discriminated union in which a
+        // full_length block's `target_count` is the literal 1, so spreading the union and
+        // overriding the count produces a shape that is not a `PlanBlock` at all.
+        if (block.plan === null || block.plan.block_type !== "review") return;
+        const edited = { ...block.plan, target_count: count };
+        mutations.editDay(
+          day.date,
+          membersWithEdit(day, block.blockId, { targetCount: count }),
+          { blockId: block.blockId, edited },
+        );
+      },
+      onRemove: () => {
+        mutations.editDay(day.date, membersWithout(day, block.blockId), {
+          removeBlockId: block.blockId,
+        });
+        setOpenBlockId(null);
+      },
+      onLaunch: () => mutations.launch(block.blockId),
+      onDoItNow: () => {
+        mutations.doItNow(block.blockId);
+        setOpenBlockId(null);
+      },
+      onMove: (toDate) => {
+        mutations.moveBlock(block.blockId, toDate);
+        setOpenBlockId(null);
+      },
+      launchPending: mutations.launchPending,
+    };
+  }, [mutations, opened]);
+
+  const daysToTest =
+    targetExamDate === null
+      ? null
+      : Math.max(0, daysBetween(today, targetExamDate));
+
+  return (
+    <div className="lyceon-calendar">
+      <div className="app">
+        <LeftRail
+          name={viewerName}
+          subtitle={
+            readOnly
+              ? "Viewing only"
+              : targetExamDate === null
+                ? "No test date set"
+                : `SAT · ${shortDate(targetExamDate)}`
+          }
+          miniMonth={miniMonth}
+          cursor={cursor}
+          today={today}
+          hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+          filters={filters}
+          onToggleFilter={(tone, next) =>
+            setFilters((prev) => ({ ...prev, [tone]: next }))
+          }
+          onPickDate={(date) => move("week", startOfWeek(date))}
+          onMonthStep={(delta) => {
+            const next = new Date(`${miniMonth}T00:00:00Z`);
+            next.setUTCMonth(next.getUTCMonth() + delta);
+            setMiniMonth(next.toISOString().slice(0, 10));
+          }}
+          footer={
+            readOnly ? "Read-only view" : "Your plan updates itself each week"
+          }
+        />
+
+        <div className="main">
+          <TopBar
+            backHref={backHref}
+            rangeLabelText={rangeLabel(view, cursor)}
+            view={view}
+            onView={(next) => move(next, cursor)}
+            onStep={(delta) => {
+              if (view === "week") {
+                move("week", startOfWeek(shiftDays(cursor, delta * 7)));
+              } else {
+                move("month", shiftMonths(cursor, delta));
+              }
+            }}
+            onToday={() => move("week", startOfWeek(today))}
+            streak={streak}
+            daysToTest={daysToTest}
+            {...(mutations === undefined
+              ? {}
+              : {
+                  onRefresh: mutations.regeneratePlan,
+                  refreshPending: mutations.refreshPending,
+                })}
+          />
+
+          {planUpdate !== null && mutations !== undefined ? (
+            <PlanUpdatedBanner
+              trigger={planUpdate.trigger}
+              onDismiss={() => mutations.acknowledge(planUpdate.versionNo)}
+            />
+          ) : null}
+
+          <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+            <div className="scroll">
+              {view === "week" ? (
+                <WeekGrid
+                  dates={dates}
+                  dayFor={dayFor}
+                  today={today}
+                  visible={visible}
+                  canDrag={canDrag}
+                  onOpen={setOpenBlockId}
+                  {...(mutations === undefined
+                    ? {}
+                    : {
+                        onRegenerateDay: mutations.regenerateDay,
+                        onResetDay: mutations.resetDay,
+                        onAddBlock: (date: string) => {
+                          const day = dayFor(date);
+                          if (day === null) return;
+                          mutations.editDay(
+                            date,
+                            // The opening mix comes from the shared section map, so even
+                            // the default is not a domain name typed into this file.
+                            membersWithNewPracticeBlock(
+                              day,
+                              "M",
+                              domainsForSection("M")
+                                .slice(0, 2)
+                                .map((domain) => ({
+                                  domain,
+                                  count: MIX_GRANULARITY,
+                                })),
+                            ),
+                            // No optimistic hint: a created block has no id to predict, and
+                            // the settle-invalidate brings back the server's version.
+                            { removeBlockId: "" },
+                          );
+                        },
+                      })}
+                />
+              ) : (
+                <MonthGrid
+                  dates={dates}
+                  cursor={cursor}
+                  dayFor={dayFor}
+                  today={today}
+                  visible={visible}
+                  canDrag={canDrag}
+                  onOpen={setOpenBlockId}
+                />
+              )}
+            </div>
+          </DndContext>
+
+          {model === null ? null : <FactsStrip facts={model.facts} />}
+        </div>
+      </div>
+
+      {opened === null ? null : (
+        <BlockSheet
+          block={opened.block}
+          day={opened.day}
+          today={today}
+          open
+          onClose={() => setOpenBlockId(null)}
+          {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+        />
+      )}
+
+      {setup === undefined ? null : (
+        <SetupSheet
+          defaults={setup.defaults}
+          today={today}
+          onSubmit={setup.onSubmit}
+          pending={setup.pending}
+          error={setup.error}
+        />
+      )}
+    </div>
+  );
+}
+
+function shiftDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function shiftMonths(date: string, months: number): string {
+  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return value.toISOString().slice(0, 10);
+}

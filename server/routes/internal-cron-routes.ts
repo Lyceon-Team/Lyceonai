@@ -12,6 +12,7 @@ import {
   sweepStalePracticeSessions,
   STALE_PRACTICE_SESSION_TTL_DAYS,
 } from "../lib/stale-session-sweep.js";
+import { sweepStaleReviewSessions } from "../lib/review-stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
@@ -19,6 +20,7 @@ import {
   sweepOperationalLogRetention,
   sweepFinancialRecordRetention,
 } from "../lib/retention/sweeps.js";
+import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -190,10 +192,18 @@ router.get(
  * @spec [Doc-02B_V4 §14 session lifecycle; owner rulings Q1 + Q4, 2026-08-17]
  * @implemented 2026-08-17
  *
- * plain English: closes practice sessions nobody has touched in
+ * plain English: closes practice AND review sessions nobody has touched in
  * STALE_PRACTICE_SESSION_TTL_DAYS days. Diagnostics are never swept — the rule and
  * the reason live in server/lib/stale-session-sweep.ts, and this handler is
  * transport only.
+ *
+ * @rescoped [2026-09-21, brief R3 §2.5] Review sweeps from this same job rather than
+ * a seventh cron entry: the two sweeps share a TTL and a cadence, and one scheduler
+ * entry is one thing to misconfigure instead of two. Review has no diagnostic mode,
+ * so its predicate is status + last_activity_at only — see
+ * server/lib/review-stale-session-sweep.ts for why it is a sibling function and not
+ * a flag on practice's. A review sweep NEVER touches review_schedule: abandoning a
+ * session leaves its queue entries open, which is the point.
  *
  * Managed-service first: this is a Vercel cron entry in vercel.json, the same
  * scheduler already driving legal-acceptance-drain and execute-deletions. No
@@ -210,17 +220,27 @@ router.get(
       return;
     }
     try {
+      const now = new Date();
       const { sweptCount, cutoff } = await sweepStalePracticeSessions(
         getSupabaseAdmin(),
-        { now: new Date() },
+        { now },
+      );
+      const { sweptCount: reviewSweptCount } = await sweepStaleReviewSessions(
+        getSupabaseAdmin(),
+        { now },
       );
       logger.info(
         "SESSION_LIFECYCLE",
         "stale_session_sweep_job",
         "Scheduled stale practice-session sweep completed",
-        { sweptCount, cutoff, ttlDays: STALE_PRACTICE_SESSION_TTL_DAYS },
+        {
+          sweptCount,
+          reviewSweptCount,
+          cutoff,
+          ttlDays: STALE_PRACTICE_SESSION_TTL_DAYS,
+        },
       );
-      res.json({ ok: true, sweptCount, cutoff });
+      res.json({ ok: true, sweptCount, reviewSweptCount, cutoff });
     } catch (err) {
       logger.error(
         "SESSION_LIFECYCLE",
@@ -408,6 +428,53 @@ router.get(
         err,
       );
       res.status(500).json({ error: "retention_sweep_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/calendar-weekly-regen
+ * @spec [Doc-05F_V1.0 §12.5 (weekly job, R-08-30), §12.1 (`weekly` trigger), §18 (job
+ *        outcomes); `calendar_runtime_config.weekly_job_interval_minutes` = 1440]
+ *        | @implemented [2026-09-21]
+ *
+ * plain English: the once-per-local-week plan refresh. Scheduled DAILY, not weekly, because
+ * §12.5 says "once per local week, never at 00:00" — a cron fires in one timezone and the
+ * students are in all of them, so the schedule wakes the job and
+ * `calendar_weekly_candidates` decides who is actually due in their OWN Monday-anchored
+ * week. A student in Auckland and one in Los Angeles both get exactly one refresh a week.
+ *
+ * Safe to rerun: the idempotency key is derived from (student, local week), so a second call
+ * the same day replays the ledger rather than writing a second version — and the predicate
+ * would answer `skipped_fresh` even without it.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which
+ * reveals nothing and fails closed. No pg_cron (installed, unused, stays so).
+ */
+router.get(
+  "/calendar-weekly-regen",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runWeeklyRegeneration(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      // NESTED, not spread. The summary is keyed by `calendar_job_runs.outcome` and one of
+      // those values IS `ok` — spreading it would overwrite the envelope's `ok: true` with
+      // a COUNT, so a run that generated nothing would report `ok: 0` and read to every
+      // caller and every log scraper as a failure. tsc caught it (TS2783).
+      res.json({ ok: true, job: "weekly_regen", summary });
+    } catch (err) {
+      logger.error(
+        "CALENDAR_JOB",
+        "weekly_regen_job_error",
+        "Scheduled calendar weekly regeneration failed",
+        err,
+      );
+      res.status(500).json({ error: "calendar_weekly_regen_failed" });
     }
   },
 );

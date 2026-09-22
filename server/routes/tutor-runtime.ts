@@ -6,11 +6,12 @@
  * `ragLimiter -> requireSupabaseAuth -> requireStudentOnly -> doubleCsrfProtection`
  * (server/index.ts), so every handler in this file already has an authenticated,
  * student-role `req.user`. This file implements:
- *   - POST   /conversations                        (§5 start/reuse conversation)
+ *   - POST   /conversations                         (§5 create conversation)
  *   - POST   /messages                              (§6 append turn — the 19-step pipeline)
  *   - GET    /conversations/:conversationId         (§7 replay)
  *   - GET    /conversations                         (§8 list)
- *   - POST   /conversations/:conversationId/close   (§9 close)
+ *   - POST   /conversations/:conversationId/end     (end session)
+ *   - POST   /conversations/:conversationId/resume  (resume from crisis pause)
  *
  * expected outcome: every route follows auth -> entitlement -> parse -> domain -> serialize
  * (Coding Standards §8.1). The append-turn pipeline (§6.5) is the anti-leak chokepoint:
@@ -60,7 +61,10 @@ import {
   runCrisisClassifier,
   getCrisisResponse,
   flagConversationForReview,
+  notifyCrisisEvent,
+  evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
+import type { FlagForReviewResult } from "../services/tutor-crisis";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -105,6 +109,7 @@ const createConversationSchema = z.object({
   source_session_item_id: z.string().uuid().nullable().optional(),
   source_question_row_id: z.string().min(1).nullable().optional(),
   source_question_canonical_id: z.string().min(1).nullable().optional(),
+  idempotency_key: z.string().uuid().optional(),
 });
 
 const clientScopeSchema = z.object({
@@ -122,15 +127,22 @@ const appendTurnSchema = z.object({
   client_scope: clientScopeSchema.optional(),
 });
 
-const closeConversationSchema = z.object({
-  status: z.enum(["closed", "abandoned"]),
+const endConversationSchema = z.object({
+  idempotency_key: z.string().uuid().optional(),
 });
+
+const resumeConversationSchema = z.object({
+  idempotency_key: z.string().uuid().optional(),
+});
+
+const surfaceSchema = z.enum(["standalone", "practice", "review"]);
 
 const listConversationsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional(),
   cursor: z.string().min(1).optional(),
   source_surface: sourceSurfaceSchema.optional(),
-  status: z.enum(["active", "closed", "abandoned"]).optional(),
+  surface: surfaceSchema.optional(),
+  status: z.enum(["active", "ended"]).optional(),
 });
 
 const fetchConversationQuerySchema = z.object({
@@ -156,12 +168,16 @@ type TutorConversationRow = {
   source_session_item_id: string | null;
   source_question_row_id: string | null;
   source_question_canonical_id: string | null;
-  status: "active" | "closed" | "abandoned";
+  status: "active" | "closed" | "abandoned" | "ended";
   crisis_flagged: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+  title: string | null;
+  surface: "standalone" | "practice" | "review" | null;
+  crisis_paused_at: string | null;
+  ended_at: string | null;
 };
 
 // isPreSubmitForSurface is now imported directly from ../services/tutor-antileak
@@ -295,7 +311,7 @@ async function loadOwnedConversation(
   const { data, error } = await supabaseServer
     .from("tutor_conversations")
     .select(
-      "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
+      "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
     )
     .eq("id", conversationId)
     .eq("student_id", studentId)
@@ -463,73 +479,150 @@ router.post(
         input.source_question_canonical_id ?? null,
       );
 
-      // ── domain: reuse rule (§5.6) ──
-      const freshnessCutoff = new Date();
-      freshnessCutoff.setDate(freshnessCutoff.getDate() - 7);
+      // ── domain: derive surface from source_surface ──
+      const surface: "standalone" | "practice" | "review" =
+        input.source_surface === "dashboard"
+          ? "standalone"
+          : input.source_surface === "test_review"
+            ? "review"
+            : (input.source_surface as "practice" | "review");
 
-      let reuseQuery = supabaseServer
-        .from("tutor_conversations")
-        .select(
-          "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
-        )
-        .eq("student_id", studentId)
-        .eq("source_surface", input.source_surface)
-        .eq("entry_mode", input.entry_mode)
-        .eq("status", "active")
-        .is("deleted_at", null)
-        .gte("updated_at", freshnessCutoff.toISOString())
-        .order("updated_at", { ascending: false })
-        .limit(1);
+      // ── domain: reuse rule ──
+      // CC Brief §5.2: general/dashboard ("standalone") conversations ALWAYS
+      // create a new row. Idempotency is handled by idempotency_key, not by
+      // conversation-level reuse. Scoped conversations (practice/review) still
+      // reuse — there IS only one conversation per practice/review session.
+      let reusedRow: TutorConversationRow | null = null;
 
-      reuseQuery = resolvedScope.source_session_id
-        ? reuseQuery.eq("source_session_id", resolvedScope.source_session_id)
-        : reuseQuery.is("source_session_id", null);
-      reuseQuery = resolvedScope.source_session_item_id
-        ? reuseQuery.eq(
-            "source_session_item_id",
-            resolvedScope.source_session_item_id,
+      if (input.entry_mode !== "general") {
+        const freshnessCutoff = new Date();
+        freshnessCutoff.setDate(freshnessCutoff.getDate() - 7);
+
+        let reuseQuery = supabaseServer
+          .from("tutor_conversations")
+          .select(
+            "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
           )
-        : reuseQuery.is("source_session_item_id", null);
-      reuseQuery = resolvedScope.source_question_row_id
-        ? reuseQuery.eq(
-            "source_question_row_id",
-            resolvedScope.source_question_row_id,
-          )
-        : reuseQuery.is("source_question_row_id", null);
+          .eq("student_id", studentId)
+          .eq("source_surface", input.source_surface)
+          .eq("entry_mode", input.entry_mode)
+          .eq("status", "active")
+          .is("deleted_at", null)
+          .gte("updated_at", freshnessCutoff.toISOString())
+          .order("updated_at", { ascending: false })
+          .limit(1);
 
-      const { data: reusable, error: reuseError } =
-        await reuseQuery.maybeSingle();
+        reuseQuery = resolvedScope.source_session_id
+          ? reuseQuery.eq("source_session_id", resolvedScope.source_session_id)
+          : reuseQuery.is("source_session_id", null);
+        reuseQuery = resolvedScope.source_session_item_id
+          ? reuseQuery.eq(
+              "source_session_item_id",
+              resolvedScope.source_session_item_id,
+            )
+          : reuseQuery.is("source_session_item_id", null);
+        reuseQuery = resolvedScope.source_question_row_id
+          ? reuseQuery.eq(
+              "source_question_row_id",
+              resolvedScope.source_question_row_id,
+            )
+          : reuseQuery.is("source_question_row_id", null);
 
-      if (reuseError) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "reuse_lookup_failed",
-          "Conversation reuse lookup failed",
-          { message: reuseError.message, code: reuseError.code },
-        );
+        const { data: reusable, error: reuseError } =
+          await reuseQuery.maybeSingle();
+
+        if (reuseError) {
+          logger.error(
+            "TUTOR_RUNTIME",
+            "reuse_lookup_failed",
+            "Conversation reuse lookup failed",
+            { message: reuseError.message, code: reuseError.code },
+          );
+        }
+
+        if (reusable) {
+          reusedRow = reusable as TutorConversationRow;
+        }
       }
 
-      if (reusable) {
-        const row = reusable as TutorConversationRow;
+      if (reusedRow) {
         res.status(200).json({
           data: {
-            conversation_id: row.id,
+            conversation_id: reusedRow.id,
             reused: true,
-            entry_mode: row.entry_mode,
-            source_surface: row.source_surface,
-            status: row.status,
-            crisis_flagged: row.crisis_flagged,
+            entry_mode: reusedRow.entry_mode,
+            source_surface: reusedRow.source_surface,
+            surface: reusedRow.surface,
+            status: reusedRow.status,
+            title: reusedRow.title,
+            crisis_flagged: reusedRow.crisis_flagged,
+            crisis_paused_at: reusedRow.crisis_paused_at,
             resolved_scope: {
-              source_session_id: row.source_session_id,
-              source_session_item_id: row.source_session_item_id,
-              source_question_row_id: row.source_question_row_id,
-              source_question_canonical_id: row.source_question_canonical_id,
+              source_session_id: reusedRow.source_session_id,
+              source_session_item_id: reusedRow.source_session_item_id,
+              source_question_row_id: reusedRow.source_question_row_id,
+              source_question_canonical_id:
+                reusedRow.source_question_canonical_id,
             },
-            created_at: row.created_at,
-            updated_at: row.updated_at,
+            created_at: reusedRow.created_at,
+            updated_at: reusedRow.updated_at,
           },
         });
         return;
+      }
+
+      // ── domain: idempotency check on idempotency_key ──
+      // Prevents double-click creating duplicate conversations.
+      // Skipped when key is absent — real enforcement (column + unique index)
+      // lands in PR B; until then the key is optional so the deployed client
+      // (which sends no key) is not broken.
+      if (input.idempotency_key) {
+        const { data: existingByKey, error: idempotencyError } =
+          await supabaseServer
+            .from("tutor_conversations")
+            .select(
+              "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
+            )
+            .eq("student_id", studentId)
+            .eq("assignment_key", input.idempotency_key)
+            .maybeSingle();
+
+        if (idempotencyError) {
+          logger.error(
+            "TUTOR_RUNTIME",
+            "idempotency_lookup_failed",
+            "Idempotency key lookup failed",
+            { message: idempotencyError.message, code: idempotencyError.code },
+          );
+          sendTutorError(res, "idempotency_lookup_failed");
+          return;
+        }
+
+        if (existingByKey) {
+          const row = existingByKey as TutorConversationRow;
+          res.status(200).json({
+            data: {
+              conversation_id: row.id,
+              reused: true,
+              entry_mode: row.entry_mode,
+              source_surface: row.source_surface,
+              surface: row.surface,
+              status: row.status,
+              title: row.title,
+              crisis_flagged: row.crisis_flagged,
+              crisis_paused_at: row.crisis_paused_at,
+              resolved_scope: {
+                source_session_id: row.source_session_id,
+                source_session_item_id: row.source_session_item_id,
+                source_question_row_id: row.source_question_row_id,
+                source_question_canonical_id: row.source_question_canonical_id,
+              },
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+            },
+          });
+          return;
+        }
       }
 
       // ── domain: create new conversation ──
@@ -539,14 +632,18 @@ router.post(
           student_id: studentId,
           entry_mode: input.entry_mode,
           source_surface: input.source_surface,
+          surface,
           source_session_id: resolvedScope.source_session_id,
           source_session_item_id: resolvedScope.source_session_item_id,
           source_question_row_id: resolvedScope.source_question_row_id,
           source_question_canonical_id:
             resolvedScope.source_question_canonical_id,
+          ...(input.idempotency_key
+            ? { assignment_key: input.idempotency_key }
+            : {}),
         })
         .select(
-          "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
+          "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
         )
         .single();
 
@@ -568,8 +665,11 @@ router.post(
           reused: false,
           entry_mode: row.entry_mode,
           source_surface: row.source_surface,
+          surface: row.surface,
           status: row.status,
+          title: row.title,
           crisis_flagged: row.crisis_flagged,
+          crisis_paused_at: row.crisis_paused_at,
           resolved_scope: {
             source_session_id: row.source_session_id,
             source_session_item_id: row.source_session_item_id,
@@ -645,8 +745,16 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sendTutorError(res, "conversation_not_found");
       return;
     }
+    if (conversation.status === "ended") {
+      sendTutorError(res, "conversation_already_ended");
+      return;
+    }
     if (conversation.status !== "active") {
       sendTutorError(res, "conversation_closed");
+      return;
+    }
+    if (conversation.crisis_paused_at) {
+      sendTutorError(res, "conversation_crisis_paused");
       return;
     }
 
@@ -890,6 +998,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           client_turn_id: input.client_turn_id,
           injection_flag: injectionDetected,
           injection_signature_matched: signatureScan.signatureId,
+          status: "pending",
         })
         .select("id, created_at")
         .single();
@@ -925,10 +1034,20 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Set title on first student message (§4.2: first student message becomes
+    // the title, truncated to 60 chars, immutable after initial set).
+    if (conversation.title === "New session" || conversation.title === null) {
+      const titleText = input.message.slice(0, 60);
+      await supabaseServer
+        .from("tutor_conversations")
+        .update({ title: titleText })
+        .eq("id", conversation.id);
+    }
+
     // Crisis path: bypass model generation entirely; respond with the
     // regional crisis resource and flag for the safety review queue.
     if (crisisResult.crisis) {
-      await flagConversationForReview(
+      const flagResult: FlagForReviewResult = await flagConversationForReview(
         conversation.id,
         studentId,
         crisisResult.source,
@@ -936,6 +1055,70 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         crisisResult.modelConfidence,
         crisisResult.category,
       );
+
+      // Set crisis_paused_at — conversation is now paused for tutoring.
+      // The student must explicitly resume before sending more messages.
+      const crisisPausedAt = new Date().toISOString();
+      await supabaseServer
+        .from("tutor_conversations")
+        .update({ crisis_paused_at: crisisPausedAt })
+        .eq("id", conversation.id);
+
+      // ── PagerDuty-style notification policy ──
+      // @spec [CC Brief "LISA Session Lifecycle" §1]
+      const THROTTLE_WINDOW_MS = 2 * 60 * 1000;
+
+      const { data: priorEvents } = flagResult.isNewCase
+        ? { data: [] as Array<{ category: string; created_at: string }> }
+        : await supabaseServer
+            .from("crisis_review_events")
+            .select("category, created_at")
+            .eq("case_id", flagResult.caseId)
+            .eq("event_type", "signal_received");
+
+      const { shouldNotify, suppressionReason } = evaluateNotificationPolicy({
+        isNewCase: flagResult.isNewCase,
+        caseStatus: flagResult.caseStatus,
+        currentCategory: crisisResult.category,
+        priorEvents: (priorEvents ?? []) as Array<{
+          category: string;
+          created_at: string;
+        }>,
+        nowMs: Date.now(),
+        throttleWindowMs: THROTTLE_WINDOW_MS,
+      });
+
+      // Insert crisis_review_event for this signal.
+      await supabaseServer.from("crisis_review_events").insert({
+        case_id: flagResult.caseId,
+        conversation_id: conversation.id,
+        student_id: studentId,
+        event_type: "signal_received",
+        message_id: studentMessageRow.id,
+        source: crisisResult.source,
+        signature_id: crisisResult.signatureId,
+        model_confidence: crisisResult.modelConfidence,
+        category: crisisResult.category,
+        notification_suppressed: !shouldNotify,
+        suppression_reason: suppressionReason,
+      });
+
+      // Dispatch notification only when the policy says to.
+      if (shouldNotify) {
+        await notifyCrisisEvent({
+          caseId: flagResult.caseId,
+          conversationId: conversation.id,
+          source: crisisResult.source,
+          slaDeadline: flagResult.slaDeadline,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Mark student message as completed — crisis detection is a valid response.
+      await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "completed" })
+        .eq("id", studentMessageRow.id);
 
       const { data: profileRow } = await supabaseServer
         .from("profiles")
@@ -1041,13 +1224,16 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           response: {
             content: crisisSerialized.content,
             content_kind: "message",
+            crisis_category: crisisResult.category,
             suggested_action: { type: "none", label: null },
             ui_hints: {
               show_accept_decline: false,
-              allow_freeform_reply: true,
+              allow_freeform_reply: false,
               suggested_chip: null,
             },
           },
+          crisis_paused: true,
+          crisis_paused_at: crisisPausedAt,
           conversation_updated_at: new Date().toISOString(),
         },
       });
@@ -1057,13 +1243,21 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
     // force-enqueued to the §21.3 review queue with classifier_degraded.
     if (!crisisResult.crisis && crisisResult.forceReview) {
-      await flagConversationForReview(
+      const degradedResult = await flagConversationForReview(
         conversation.id,
         studentId,
         "classifier_degraded",
         null,
         null,
       );
+      // Degraded path always notifies — it's a force-review enqueue.
+      await notifyCrisisEvent({
+        caseId: degradedResult.caseId,
+        conversationId: conversation.id,
+        source: "classifier_degraded",
+        slaDeadline: degradedResult.slaDeadline,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
@@ -1108,6 +1302,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           ? "classifier_degraded"
           : "no_crisis",
       });
+      await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "failed" })
+        .eq("id", studentMessageRow.id);
+
       sendTutorError(res, "canonical_write_failed");
       return;
     }
@@ -1212,6 +1411,12 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           ? "classifier_degraded"
           : "no_crisis",
       });
+      // Mark student message as failed — orchestration did not produce a reply.
+      await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "failed" })
+        .eq("id", studentMessageRow.id);
+
       sendTutorError(res, orchestrationResult.errorCode, {
         retry_after_ms: 2000,
         failure_layer: "orchestrator",
@@ -1294,9 +1499,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           ? "classifier_degraded"
           : "no_crisis",
       });
+      // Tutor reply failed to persist — mark student message as failed.
+      await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "failed" })
+        .eq("id", studentMessageRow.id);
+
       sendTutorError(res, "canonical_write_failed");
       return;
     }
+
+    // Mark student message as completed — orchestration succeeded and tutor
+    // reply persisted.
+    await supabaseServer
+      .from("tutor_messages")
+      .update({ status: "completed" })
+      .eq("id", studentMessageRow.id);
 
     // Step 17: Persist question links, if any.
     if (orchestration.question_links.length > 0) {
@@ -1610,19 +1828,22 @@ router.get(
       let query = supabaseServer
         .from("tutor_conversations")
         .select(
-          "id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, created_at, updated_at",
+          "id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, created_at, updated_at, title, surface, crisis_paused_at",
         )
         .eq("student_id", studentId)
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
         .limit(limit);
 
+      if (parsedQuery.data.surface) {
+        query = query.eq("surface", parsedQuery.data.surface);
+      }
       if (parsedQuery.data.source_surface) {
         query = query.eq("source_surface", parsedQuery.data.source_surface);
       }
       query = parsedQuery.data.status
         ? query.eq("status", parsedQuery.data.status)
-        : query.in("status", ["active", "closed"]);
+        : query.in("status", ["active", "ended"]);
 
       const { data: rows, error } = await query;
 
@@ -1683,7 +1904,11 @@ router.get(
             conversation_id: conv.id,
             entry_mode: conv.entry_mode,
             source_surface: conv.source_surface,
+            surface: conv.surface,
             status: conv.status,
+            title: conv.title,
+            crisis_flagged: conv.crisis_flagged,
+            crisis_paused_at: conv.crisis_paused_at,
             resolved_scope: {
               source_session_id: conv.source_session_id,
               source_session_item_id: conv.source_session_item_id,
@@ -1723,11 +1948,13 @@ router.get(
 );
 
 // ============================================================================
-// POST /conversations/:conversationId/close — §9 Close
+// POST /conversations/:conversationId/end — End a session
+// @spec [CC Brief "LISA Session Lifecycle" §5.1]
+// Replaces the broken /close endpoint. No body required. Sets status='ended'.
 // ============================================================================
 
 router.post(
-  "/conversations/:conversationId/close",
+  "/conversations/:conversationId/end",
   async (req: Request, res: Response): Promise<void> => {
     if (!req.user) {
       sendTutorError(res, "unauthenticated");
@@ -1738,7 +1965,103 @@ router.post(
     if (await denyIfNotEntitled(studentId, res)) return;
 
     const conversationId = req.params.conversationId;
-    const parsed = closeConversationSchema.safeParse(req.body);
+    const parsed = endConversationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendTutorError(res, "invalid_input", parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const conversation = await loadOwnedConversation(
+        conversationId,
+        studentId,
+      );
+      if (!conversation) {
+        sendTutorError(res, "conversation_not_found");
+        return;
+      }
+      if (conversation.status === "ended") {
+        sendTutorError(res, "conversation_already_ended");
+        return;
+      }
+      if (conversation.status !== "active") {
+        sendTutorError(res, "conversation_already_closed");
+        return;
+      }
+
+      const endedAt = new Date().toISOString();
+      const { error } = await supabaseServer
+        .from("tutor_conversations")
+        .update({ status: "ended", ended_at: endedAt, closed_at: endedAt })
+        .eq("id", conversation.id);
+
+      if (error) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "end_conversation_failed",
+          "Failed to update tutor_conversations status to ended",
+          { message: error.message, code: error.code },
+        );
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
+      const compactionRequestId = crypto.randomUUID();
+      const compactionTargetUrl = `${(process.env.PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "")}/api/internal/memory/compact-writeback`;
+
+      void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
+        job_type: "compaction",
+        conversation_id: conversation.id,
+        trigger_reason: "end",
+        request_id: compactionRequestId,
+      });
+
+      logger.info(
+        "TUTOR_RUNTIME",
+        "conversation_ended",
+        "Session ended; compaction task enqueued to Cloud Tasks",
+        { conversationId: conversation.id, requestId: compactionRequestId },
+      );
+
+      res.status(200).json({
+        data: {
+          conversation_id: conversation.id,
+          status: "ended",
+          ended_at: endedAt,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "end_error",
+        "Unexpected error in POST /conversations/:conversationId/end",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
+);
+
+// ============================================================================
+// POST /conversations/:conversationId/resume — Resume from crisis pause
+// @spec [CC Brief "LISA Session Lifecycle" §5.4]
+// Clears crisis_paused_at so the student can continue chatting.
+// ============================================================================
+
+router.post(
+  "/conversations/:conversationId/resume",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+
+    if (await denyIfNotEntitled(studentId, res)) return;
+
+    const conversationId = req.params.conversationId;
+    const parsed = resumeConversationSchema.safeParse(req.body);
     if (!parsed.success) {
       sendTutorError(res, "invalid_input", parsed.error.flatten());
       return;
@@ -1754,62 +2077,49 @@ router.post(
         return;
       }
       if (conversation.status !== "active") {
-        sendTutorError(res, "conversation_already_closed");
+        sendTutorError(res, "conversation_closed");
+        return;
+      }
+      if (!conversation.crisis_paused_at) {
+        sendTutorError(res, "conversation_not_paused");
         return;
       }
 
-      const closedAt = new Date().toISOString();
       const { error } = await supabaseServer
         .from("tutor_conversations")
-        .update({ status: parsed.data.status, closed_at: closedAt })
+        .update({ crisis_paused_at: null })
         .eq("id", conversation.id);
 
       if (error) {
         logger.error(
           "TUTOR_RUNTIME",
-          "close_conversation_failed",
-          "Failed to update tutor_conversations status",
+          "resume_conversation_failed",
+          "Failed to clear crisis_paused_at on tutor_conversations",
           { message: error.message, code: error.code },
         );
         sendTutorError(res, "canonical_write_failed");
         return;
       }
 
-      // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
-      // Enqueue to Cloud Tasks — fire-and-forget. The compaction handler
-      // gates on message count (recent_message_window threshold) and will
-      // skip conversations that are too short to merit compaction.
-      const compactionRequestId = crypto.randomUUID();
-      const compactionTargetUrl = `${(process.env.PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "")}/api/internal/memory/compact-writeback`;
-
-      // Fire-and-forget: do not await in the response path. The enqueue
-      // itself is async but does not block the close response.
-      void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
-        job_type: "compaction",
-        conversation_id: conversation.id,
-        trigger_reason: "close",
-        request_id: compactionRequestId,
-      });
-
       logger.info(
         "TUTOR_RUNTIME",
-        "memory_compaction_enqueued",
-        "Conversation closed; compaction task enqueued to Cloud Tasks",
-        { conversationId: conversation.id, requestId: compactionRequestId },
+        "conversation_resumed",
+        "Session resumed after crisis pause",
+        { conversationId: conversation.id },
       );
 
       res.status(200).json({
         data: {
           conversation_id: conversation.id,
-          status: parsed.data.status,
-          closed_at: closedAt,
+          status: "active",
+          crisis_paused_at: null,
         },
       });
     } catch (err) {
       logger.error(
         "TUTOR_RUNTIME",
-        "close_error",
-        "Unexpected error in POST /conversations/:conversationId/close",
+        "resume_error",
+        "Unexpected error in POST /conversations/:conversationId/resume",
         err instanceof Error ? err : undefined,
       );
       sendTutorError(res, "canonical_write_failed");

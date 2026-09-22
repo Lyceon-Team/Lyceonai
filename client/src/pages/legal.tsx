@@ -148,11 +148,12 @@ export default function LegalHub() {
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <Button asChild variant="outline" size="sm">
-                    <Link href="/legal/trust-and-safety">
-                      <a className="inline-flex items-center gap-1">
-                        Read Full Policy
-                        <ChevronRight className="h-4 w-4" />
-                      </a>
+                    <Link
+                      href="/legal/trust-and-safety"
+                      className="inline-flex items-center gap-1"
+                    >
+                      Read Full Policy
+                      <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </div>
@@ -203,11 +204,12 @@ export default function LegalHub() {
                         size="sm"
                         className="flex-1"
                       >
-                        <Link href={`/legal/${doc.slug}`}>
-                          <a className="inline-flex items-center gap-1">
-                            Read
-                            <ChevronRight className="h-4 w-4" />
-                          </a>
+                        <Link
+                          href={`/legal/${doc.slug}`}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Read
+                          <ChevronRight className="h-4 w-4" />
                         </Link>
                       </Button>
                     </div>
