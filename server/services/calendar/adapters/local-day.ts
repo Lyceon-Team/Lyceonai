@@ -6,7 +6,7 @@
  * | @implemented [2026-09-18]
  *
  * plain English: the adapters ask "what did this student answer on 2026-09-13, in
- * the timezone that date was planned in". Postgres stores `answered_at` as an
+ * the timezone that date was planned in". Postgres stores `occurred_at` as an
  * instant, so that question is a half-open instant range, and this computes it.
  *
  * WHY HERE AND NOT IN `@lyceon/shared`. The shared calendar layer is deliberately
@@ -173,7 +173,7 @@ export function localTodayIn(timeZone: string, now: Date = new Date()): string {
  *
  * WHY THIS EXISTS. supabase-js speaks PostgREST over JSON, so a `timestamptz` arrives as a
  * STRING. `node-postgres` parses the same column into a `Date`. An adapter that guards with
- * `typeof row.answered_at !== "string"` is therefore correct in production and silently
+ * `typeof row.occurred_at !== "string"` is therefore correct in production and silently
  * wrong against a pg-backed harness — it drops every row, returns no activity units, and
  * reports it as "the student did nothing today" rather than as an error.
  *

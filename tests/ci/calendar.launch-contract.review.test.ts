@@ -347,6 +347,70 @@ describe.skipIf(!PG_AVAILABLE)(
       });
     });
 
+    it("counts a resolved row whose answered_at is NULL — THE PLANT", async () => {
+      const session = await testPg!.query(
+        `SELECT id FROM public.review_sessions WHERE student_id = $1 LIMIT 1`,
+        [STUDENT],
+      );
+      const sessionId = session.rows[0].id;
+
+      // The row the ruling is about, written into the REAL table so the REAL constraint
+      // gets a vote: answered, dated by `occurred_at`, with `answered_at` left NULL.
+      // `rsi_resolved_requires_occurred_at` accepts it — it constrains `occurred_at` and
+      // says nothing about `answered_at` — which is precisely why the window moved.
+      await testPg!.query(
+        `UPDATE public.review_session_items
+            SET status = 'answered',
+                selected_answer = 'C',
+                is_correct = false,
+                outcome = 'incorrect',
+                answered_at = NULL,
+                occurred_at = '2026-09-19T16:30:00Z'
+          WHERE session_id = $1 AND ordinal = 3`,
+        [sessionId],
+      );
+
+      const units = await reviewAdapter.activityUnits(
+        STUDENT,
+        "2026-09-19",
+        "America/Chicago",
+      );
+
+      // Revert the adapter to `answered_at` and this is 0 twice over: the SQL window
+      // excludes the row, and the mapping would have nothing to date it by either. A
+      // student who answered is reported as having done no work, with no error anywhere.
+      expect(units).toHaveLength(1);
+      expect(units[0]).toMatchObject({
+        engine: "review",
+        occurred_at: "2026-09-19T16:30:00.000Z",
+        local_date: "2026-09-19",
+      });
+    });
+
+    it("the constraint really does guarantee only one of the two columns", async () => {
+      const session = await testPg!.query(
+        `SELECT id FROM public.review_sessions WHERE student_id = $1 LIMIT 1`,
+        [STUDENT],
+      );
+      const sessionId = session.rows[0].id;
+
+      // The asymmetry, exercised rather than quoted. Resolving without `occurred_at` is
+      // refused by the database; resolving without `answered_at` was accepted above.
+      await expect(
+        testPg!.query(
+          `UPDATE public.review_session_items
+              SET status = 'answered',
+                  selected_answer = 'A',
+                  is_correct = true,
+                  outcome = 'correct',
+                  answered_at = '2026-09-19T17:00:00Z',
+                  occurred_at = NULL
+            WHERE session_id = $1 AND ordinal = 1`,
+          [sessionId],
+        ),
+      ).rejects.toThrow(/rsi_resolved_requires_occurred_at/);
+    });
+
     it("reports the session lifecycle, so §13 can call the block in progress", async () => {
       const session = await testPg!.query(
         `SELECT id FROM public.review_sessions WHERE student_id = $1 LIMIT 1`,

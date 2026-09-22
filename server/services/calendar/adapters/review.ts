@@ -106,27 +106,28 @@ async function create(
 /**
  * §9.3: one unit per ANSWERED review item on the local date.
  *
- * `status = 'answered'`, never `answered_at IS NOT NULL`. A SKIPPED review item carries a
- * non-null `answered_at` too -- production has such rows today -- and a skip is not
- * retrieval. This is the same predicate the practice adapter uses and for the same reason;
- * the two are deliberately identical so neither can drift into counting skips as work.
+ * `status = 'answered'`, never a nullness test on a timestamp. A SKIPPED review item is
+ * resolved, so it carries both timestamps too -- production has such rows today -- and a
+ * skip is not retrieval. This is the same predicate the practice adapter uses and for the
+ * same reason; the two are deliberately identical so neither can drift into counting skips
+ * as work.
  *
- * `occurred_at` is `answered_at`, the moment of retrieval, which is what §22.4's midnight
- * split is defined on. `served_at` is not used.
+ * `occurred_at` is the `occurred_at` COLUMN, the moment of retrieval, which is what §22.4's
+ * midnight split is defined on. `served_at` is not used.
  *
- * WHICH TIMESTAMP, AND A TRADE-OFF WORTH NAMING. `review_session_items` also has its own
- * `occurred_at` column, and it is the STRONGER column: `rsi_resolved_requires_occurred_at`
- * CHECKs that every answered or skipped row carries one, while nothing guarantees
- * `answered_at`. 20260921000000's own comment makes the point about practice's identical
- * constraint -- "occurred_at, not answered_at: psi_resolved_requires_occurred_at guarantees
- * the former on every resolved row, and nothing guarantees the latter" -- and review's
- * trigger feeds mastery from `occurred_at` for exactly that reason.
+ * WHICH TIMESTAMP — RESOLVED (owner ruling 2026-09-22). This adapter shipped windowing on
+ * `answered_at` with a note saying `occurred_at` was the stronger column and that changing
+ * both adapters was a contract decision, not this change's to make. It has now been made,
+ * and both adapters window on `occurred_at`.
  *
- * This adapter still windows on `answered_at`, because adapters/types.ts states the rule
- * for BOTH engines ("`occurred_at` is `answered_at` for both real engines") and the practice
- * adapter does the same. Today the two never differ: `submitReviewAnswer` writes both from
- * one `now`. Diverging the two adapters silently would be worse than either choice, and
- * changing both is a contract decision rather than this change's to make. Reported.
+ * `rsi_resolved_requires_occurred_at` CHECKs that every answered or skipped row carries an
+ * `occurred_at`; `answered_at` is plain nullable `timestamptz` with nothing enforcing it.
+ * 20260921000000's own comment makes the identical point about practice's constraint --
+ * "occurred_at, not answered_at: psi_resolved_requires_occurred_at guarantees the former on
+ * every resolved row, and nothing guarantees the latter" -- and review's own
+ * `trg_review_item_resolve` feeds `review_error_attempts` from `occurred_at`, which is what
+ * orders `canonical_mastery_events`. A review unit is now dated by the same instant mastery
+ * is, rather than by a column that merely agrees with it on today's writers.
  */
 async function activityUnits(
   studentId: string,
@@ -137,11 +138,11 @@ async function activityUnits(
 
   const { data, error } = await supabaseServer
     .from("review_session_items")
-    .select("id, question_section, question_domain, answered_at, status")
+    .select("id, question_section, question_domain, occurred_at, status")
     .eq("student_id", studentId)
     .eq("status", "answered")
-    .gte("answered_at", window.startUtc)
-    .lt("answered_at", window.endUtc);
+    .gte("occurred_at", window.startUtc)
+    .lt("occurred_at", window.endUtc);
 
   if (error) {
     // Fail OPEN, exactly as practice does: a read that cannot see today's activity shows
@@ -162,7 +163,7 @@ async function activityUnits(
     // Normalised rather than type-guarded: the same column is a STRING over PostgREST and
     // a Date over node-postgres, and a `typeof === "string"` guard silently drops every
     // row under the second. See `toIsoTimestamp`.
-    const occurredAt = toIsoTimestamp(row.answered_at);
+    const occurredAt = toIsoTimestamp(row.occurred_at);
     if (occurredAt === null) continue;
     const section = row.question_section;
     units.push({

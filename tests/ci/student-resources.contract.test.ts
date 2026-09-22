@@ -211,7 +211,7 @@ function fakeClient() {
         eq: () => builder,
         neq: () => builder,
         gt: () => builder,
-        // The calendar read filters a date range and a non-null answered_at. They ignore
+        // The calendar read filters a date range on occurred_at. They ignore
         // their arguments like every other filter here: this fake is the ROW layer, and a
         // fake that filtered would hide the stripping these cases exist to prove.
         gte: () => builder,

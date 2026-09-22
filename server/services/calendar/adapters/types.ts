@@ -92,9 +92,31 @@ export type CalendarEngineAdapter = {
   /**
    * The atomic units the §13 allocator consumes, for one student-local date.
    *
-   * `occurred_at` is `answered_at` for both real engines — the moment of retrieval,
-   * which is what §22.4's midnight split is defined on. Practice's own `occurred_at`
-   * column is NOT used by the calendar, and neither engine's `served_at` is.
+   * `occurred_at` IS THE `occurred_at` COLUMN, for both real engines — the column both
+   * tables actually guarantee. `psi_resolved_requires_occurred_at` and
+   * `rsi_resolved_requires_occurred_at` are the same CHECK on each:
+   *
+   *     CHECK (status <> ALL (ARRAY['answered','skipped']) OR occurred_at IS NOT NULL)
+   *
+   * so every row this contract can return HAS one. `answered_at` is plain nullable
+   * `timestamptz` on both tables with nothing enforcing it, and a row that resolves
+   * without it would be dropped from the window silently and reported as "the student
+   * did nothing today" — the same shape of failure as counting a skip.
+   *
+   * The two columns agree on every resolved row in production today (owner's count:
+   * 156 of 156), because
+   * `submitPracticeAnswer`, `submitReviewAnswer` and both skip paths write them from one
+   * `now`. That equality is a fact about today's writers, not an invariant; the CHECK is
+   * the invariant, so the CHECK is what the calendar reads. (Owner ruling 2026-09-22,
+   * superseding "`occurred_at` is `answered_at` for both real engines".)
+   *
+   * It is also the column review's own mastery trigger feeds from — `trg_review_item_resolve`
+   * copies `occurred_at` into `review_error_attempts`, which is what orders
+   * `canonical_mastery_events`. The calendar now dates a unit by the same instant
+   * mastery does, rather than by a column that merely agrees with it.
+   *
+   * Neither engine's `served_at` is used: §22.4's midnight split is defined on the moment
+   * of RETRIEVAL, not the moment the question was shown.
    */
   activityUnits(
     studentId: string,
