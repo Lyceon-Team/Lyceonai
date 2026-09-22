@@ -1329,7 +1329,14 @@ async function updateSessionLifecycle(
   }
 }
 
-async function startOrReplaySession(args: {
+/**
+ * Exported for the calendar's practice adapter (Doc 05F §9.2), which launches a
+ * block into a real practice session and must go through THIS function so the
+ * idempotency key, the session limit and the client-instance binding all behave
+ * exactly as they do for a student pressing Start on the practice page. A second
+ * create path would be a second contract.
+ */
+export async function startOrReplaySession(args: {
   userId: string;
   actorId: string;
   role: string | undefined;

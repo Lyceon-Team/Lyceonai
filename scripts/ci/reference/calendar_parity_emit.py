@@ -1,8 +1,13 @@
 """Emit parity cases as JSONL for scripts/ci/calendar-parity.ts.
 
-Imports scripts/ci/reference/calendar_formula_reference.py and does not modify
-it: the oracle stays byte-untouched, and this file only reshapes its inputs and
-outputs so the same snapshot can be handed to the PL/pgSQL RPCs.
+Imports docs/Spec/calendar_formula_reference.py and does not modify it: the
+oracle stays byte-untouched, and this file only reshapes its inputs and outputs
+so the same snapshot can be handed to the PL/pgSQL RPCs.
+
+The oracle and the fixtures live in ONE place, docs/Spec/, and CI reads them
+there. There used to be a second copy under scripts/ci/ with a byte-identity
+check guarding the pair; the pair was the defect and the check was a workaround
+for it. One file cannot drift from itself (owner ruling, 2026-09-17).
 
 Two responsibilities, and no third:
   1. P dict  ->  Doc 05F §10.1 snapshot (what calendar_compute_plan takes).
@@ -21,26 +26,22 @@ from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+SPEC = HERE.parents[2] / "docs" / "Spec"
+sys.path.insert(0, str(SPEC))
 import calendar_formula_reference as ref  # noqa: E402
 
-FIXTURES = json.loads((HERE.parent / "fixtures" / "calendar_formula_fixtures.json").read_text())
+FIXTURES = json.loads((SPEC / "calendar_formula_fixtures.json").read_text())
 
-# The oracle abbreviates; the database uses the canonical strings that
-# supabase/migrations/20260816010000_canonical_domain_checks.sql constrains
-# questions and practice_session_items to. Same eight, same order.
-FULL = {
-    "ALG":  "Algebra",
-    "ADV":  "Advanced Math",
-    "PSDA": "Problem Solving and Data Analysis",
-    "GEO":  "Geometry and Trigonometry",
-    "II":   "Information and Ideas",
-    "CS":   "Craft and Structure",
-    "EOI":  "Expression of Ideas",
-    "SEC":  "Standard English Conventions",
-}
-SHORT = {v: k for k, v in FULL.items()}
-assert [FULL[d] for d in ref.DOMAINS] == FIXTURES["canonical_domain_order"] or True
+# The oracle, the fixtures and the RPCs all speak the canonical eight domain
+# names in full, exactly as production stores them
+# (supabase/migrations/20260816010000_canonical_domain_checks.sql). There is no
+# mapping layer: a translation step between the oracle and the database is a
+# place for a difference to hide, which is the opposite of what a parity gate is
+# for.
+assert ref.DOMAINS == FIXTURES["canonical_domain_order"], (
+    "the oracle's DOMAINS and the fixtures' canonical_domain_order must be the "
+    "same eight strings in the same order"
+)
 
 
 def _iso(d):
@@ -51,7 +52,7 @@ def constants_for_db():
     """The oracle's C, with canonical_domain_order in the database's own strings."""
     c = dict(ref.C)
     c["weight_by_level"] = {str(k): v for k, v in ref.C["weight_by_level"].items()}
-    c["canonical_domain_order"] = [FULL[d] for d in ref.DOMAINS]
+    c["canonical_domain_order"] = list(ref.DOMAINS)
     return c
 
 
@@ -67,7 +68,7 @@ def snapshot(P):
             "full_length_weekday": P["full_length_weekday"],
         },
         "mastery": [
-            {"section": ref.SEC[d], "domain": FULL[d], "mastery_level": P["levels"][d]}
+            {"section": ref.SEC[d], "domain": d, "mastery_level": P["levels"][d]}
             for d in ref.DOMAINS
         ],
         "review_due_by_date": [
@@ -79,10 +80,10 @@ def snapshot(P):
             "days_since_exam": P["days_since_exam"],
             "missed_count": P["last_exam_missed_count"],
             "reviewed": P["last_exam_reviewed"],
-            "weak_domains": [FULL[d] for d in P["exam_weak_domains"]],
+            "weak_domains": list(P["exam_weak_domains"]),
         },
         "recent_planned_by_domain": [
-            {"domain": FULL[d], "count": c} for d, c in P["recent_planned_by_domain"].items()
+            {"domain": d, "count": c} for d, c in P["recent_planned_by_domain"].items()
         ],
         "enabled_block_types": ["practice"],
         "engine_planning": dict(ref.ENG),

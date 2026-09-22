@@ -28,49 +28,23 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Request, Response, NextFunction } from "express";
+import type { Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
   checkAndIncrement,
-  rateLimitDenialBody,
-  rateLimitDenialHeaders,
   RateLimitUnavailableError,
   rollback,
   type LedgerClient,
-  type RateLimitResult,
 } from "../../packages/shared/src/services/rate-limit-ledger";
-
-function applyHeaders(res: Response, result: RateLimitResult): void {
-  res.setHeader("X-RateLimit-Limit", String(result.limit));
-  res.setHeader("X-RateLimit-Remaining", String(result.remaining));
-  res.setHeader(
-    "X-RateLimit-Reset",
-    String(Math.floor(result.resetAt.getTime() / 1000)),
-  );
-  if (result.softWarning) {
-    // §43 — surface the approach without blocking.
-    res.setHeader(
-      "X-RateLimit-Warning",
-      `Approaching limit: ${result.remaining} remaining`,
-    );
-  }
-}
-
-function deny(
-  res: Response,
-  bucketKey: string,
-  result: RateLimitResult,
-  requestId: string | undefined,
-): void {
-  for (const [h, v] of Object.entries(rateLimitDenialHeaders(result))) {
-    res.setHeader(h, v);
-  }
-  res.status(429).json({
-    ...rateLimitDenialBody(bucketKey, result),
-    requestId,
-  });
-}
+// The header/body shapes and the one-bucket middleware moved to `rate-limit.ts` so the
+// calendar's regenerate routes could consume them instead of forking a second limiter
+// (CLAUDE.md: extend the canonical definition, never duplicate it). Behaviour unchanged.
+import {
+  applyRateLimitHeaders as applyHeaders,
+  denyRateLimited as deny,
+  singleBucketRateLimit,
+} from "./rate-limit";
 
 /**
  * SCL-080 buckets. Two distinct quantities, so two buckets rather than one shared number:
@@ -81,64 +55,6 @@ function deny(
 export const GUARDIAN_LINK_CODE_ENTRY_BUCKET = "guardian_link_code_entry";
 export const STUDENT_LINK_CODE_REGENERATION_BUCKET =
   "student_link_code_regeneration";
-
-/**
- * One bucket, keyed on the authenticated caller.
- *
- * @spec [Doc-01A_V1.0 §39–§47; SCL-080] | @implemented [2026-09-01]
- *
- * plain English: the single-control shape the two code surfaces need, built directly on the
- * `checkAndIncrement` primitive. Expected outcome: adding a
- * bucket is a config row and one line here, never a second limiter — which is what
- * `CLAUDE.md`'s "one implementation per operation" and Doc 01A's ledger ownership require.
- *
- * Fails CLOSED on an unreadable ledger, exactly as the two-control limiter does: a rate
- * limiter that opens when its own storage is down is not one.
- */
-function singleBucketRateLimit(
-  bucketKey: string,
-  component: string,
-): (req: Request, res: Response, next: NextFunction) => Promise<void> {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const requestId = req.requestId;
-    const profileId = req.user?.id;
-
-    // No authenticated profile means no bucket to key on. Auth rejects this next.
-    if (!profileId) {
-      next();
-      return;
-    }
-
-    const client = supabaseServer as unknown as LedgerClient;
-
-    try {
-      const result = await checkAndIncrement(client, { profileId, bucketKey });
-      applyHeaders(res, result);
-      if (!result.allowed) {
-        deny(res, bucketKey, result, requestId);
-        return;
-      }
-      next();
-    } catch (err: unknown) {
-      const unavailable = err instanceof RateLimitUnavailableError;
-      logger.error(
-        "RATE_LIMIT",
-        component,
-        "Rate limit check failed — blocking request",
-        {
-          requestId,
-          bucket: bucketKey,
-          reason: err instanceof Error ? err.message : "unknown",
-        },
-      );
-      res.status(unavailable ? 503 : 500).json({
-        error:
-          "Rate limit check failed. Please contact support if this persists.",
-        requestId,
-      });
-    }
-  };
-}
 
 /** A guardian submitting a code. The guessing surface. */
 export const guardianLinkCodeEntryRateLimit = singleBucketRateLimit(

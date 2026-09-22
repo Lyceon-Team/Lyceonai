@@ -9,6 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
+**Last Updated:** 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).)
 **Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
@@ -35,7 +36,8 @@ This document is the single authoritative registry of:
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
-| `/calendar` | student, admin | free | CalendarPage | none — legacy study calendar deleted 2026-09-16 (owner ruling; rebuild from Doc 08) | RETIRED |
+| `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
+| `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
