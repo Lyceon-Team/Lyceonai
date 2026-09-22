@@ -4,21 +4,26 @@
  * @implemented 2026-08-26
  *
  * plain English: Reads Postgres column definitions for the four retention
- * source tables and emits BigQuery JSON schema files. Karl runs this once
- * to generate the `bq mk` input; the output is checked in so CI can
+ * source tables and emits BigQuery JSON schema files. The output is the
+ * schema Terraform reads when it creates the archive tables, and it is
+ * checked in so CI can
  * drift-check against the live Postgres schema without BigQuery credentials.
  *
  * expected outcome: one JSON schema file per table in ./schemas/, each
  * containing the BigQuery field definitions with Postgres → BigQuery type
- * mapping applied, plus two metadata columns (_archived_at, _source_table).
+ * mapping applied, plus three metadata columns (event_date — the partition
+ * key — plus _archived_at and _source_table).
  *
  * trade-offs:
  *  - Reads from information_schema.columns (Postgres catalog). Requires a
  *    DATABASE_URL connection string. Can run against the local dev DB or
  *    the Supabase staging DB — never prod.
- *  - Output is JSON, not bq mk commands, because JSON can be version-
- *    controlled and diffed. The bq mk command per table is printed to
- *    stdout for Karl.
+ *  - Output is JSON, not DDL commands, because JSON can be version-
+ *    controlled and diffed — and because `infra/terraform/bigquery.tf`
+ *    reads these same files, so Terraform and the drift-check gate share
+ *    one schema instead of two. The `bq update` command per table (for
+ *    pushing a regenerated schema onto a table that already exists) is
+ *    printed to stdout for Karl.
  *  - Type mapping is explicit and conservative — unknown types cause an
  *    error, not a silent STRING fallback.
  *
@@ -121,6 +126,13 @@ const PG_ARRAY_BASE_TO_BQ = {
 
 const METADATA_COLUMNS = [
   {
+    name: "event_date",
+    type: "DATE",
+    mode: "REQUIRED",
+    description:
+      "UTC calendar date of the archive operation — the BigQuery partition key (Doc 07B \u00a75.3 / \u00a713). The 730-day partition expiration runs from this. Written by archiveRows() as DATE(_archived_at); see ARCHIVE_PARTITION_FIELD in server/services/retention-archive.ts",
+  },
+  {
     name: "_archived_at",
     type: "TIMESTAMP",
     mode: "REQUIRED",
@@ -155,7 +167,7 @@ async function main() {
   try {
     mkdirSync(SCHEMAS_DIR, { recursive: true });
 
-    const bqMkCommands = [];
+    const bqUpdateCommands = [];
 
     for (const table of SOURCE_TABLES) {
       console.log(`\n── ${table} ──`);
@@ -226,9 +238,12 @@ async function main() {
 
       // Append metadata columns
       bqFields.push(...METADATA_COLUMNS);
-      console.log(`  _archived_at: (metadata) → TIMESTAMP REQUIRED`);
-      console.log(`  _source_table: (metadata) → STRING REQUIRED`);
-      console.log(`  Total: ${bqFields.length} columns (${rows.length} source + 2 metadata)`);
+      for (const meta of METADATA_COLUMNS) {
+        console.log(`  ${meta.name}: (metadata) → ${meta.type} ${meta.mode}`);
+      }
+      console.log(
+        `  Total: ${bqFields.length} columns (${rows.length} source + ${METADATA_COLUMNS.length} metadata)`,
+      );
 
       // Write JSON schema file
       const bqTableName = toBqTableName(table);
@@ -236,9 +251,14 @@ async function main() {
       writeFileSync(schemaPath, JSON.stringify(bqFields, null, 2) + "\n");
       console.log(`  Written: ${schemaPath}`);
 
-      // Collect bq mk command
-      bqMkCommands.push(
-        `bq mk --table \\`,
+      // Collect the schema-update command. Table CREATION is Terraform's
+      // (`google_bigquery_table.retention_archive` in infra/terraform/bigquery.tf
+      // reads these same JSON files), so there is no `bq mk` here: a hand-created
+      // table would be a second, unpartitioned DDL path for the same table.
+      // `bq update` is for pushing a regenerated schema onto a table that already
+      // exists — the drift-check gate's fix path, step 3.
+      bqUpdateCommands.push(
+        `bq update --table \\`,
         `  "$PROJECT:$DATASET.${bqTableName}" \\`,
         `  scripts/retention/schemas/${bqTableName}.json`,
         ``,
@@ -249,10 +269,16 @@ async function main() {
     console.log(`\n${"═".repeat(60)}`);
     console.log("Commands for Karl (run from repo root):");
     console.log(`${"═".repeat(60)}\n`);
+    console.log("# To CREATE the tables: cd infra/terraform && terraform apply.");
+    console.log("# Terraform reads these same JSON files and owns the DAY");
+    console.log("# partitioning on event_date + the 730-day partition expiration,");
+    console.log("# so the tables must not be created with `bq mk`.");
+    console.log("#");
+    console.log("# To push a REGENERATED schema onto tables that already exist:\n");
     console.log("# Set these to your target:");
     console.log("PROJECT=replit-cop");
     console.log("DATASET=lyceon_analytics_archive_prod\n");
-    for (const line of bqMkCommands) {
+    for (const line of bqUpdateCommands) {
       console.log(line);
     }
   } finally {

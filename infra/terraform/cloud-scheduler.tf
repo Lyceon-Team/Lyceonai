@@ -124,18 +124,24 @@ resource "google_cloud_scheduler_job" "retention_sweep_7d" {
 # The other three tiers are deliberately NOT scheduled here.
 #
 #   90d  — archives tutor_instruction_assignments/exposures to BigQuery
-#          before deleting. `getArchiveClient()` returns undefined unless
-#          BIGQUERY_ARCHIVE_DATASET is set, and that env var appears in
-#          no output, no README row, and no deployment note. Scheduling
-#          it now would schedule a daily 200 with
-#          ok:false, reason:"archive_client_not_configured".
+#          before deleting. Two of the three prerequisites are now met
+#          (2026-09-22): the four archive tables exist in Terraform,
+#          DAY-partitioned with a 730-day partition expiration
+#          (bigquery.tf), and BIGQUERY_ARCHIVE_DATASET is emitted as the
+#          `bigquery_archive_dataset` output with a README row. The third
+#          is not: `createBigQueryArchiveClient()` requires
+#          `@google-cloud/bigquery`, which is in no package.json and
+#          absent from pnpm-lock.yaml — it appears only as `--external`
+#          in the build:vercel esbuild line. The require therefore throws,
+#          `getArchiveClient()` catches it, and the tier still returns
+#          ok:false, reason:"archive_client_not_configured" even with the
+#          env var set. Adding the dependency needs owner approval.
 #   180d — same dependency, for resolved crisis cases.
 #   365d — `sweep365d` unconditionally returns
 #          ok:false, reason:"365d_tables_not_provisioned". The tables do
-#          not exist.
+#          not exist. Reported, not built: the brief scoped them out.
 #
 # Each is a real retention gap, reported rather than papered over with a
-# job that cannot do its work. Scheduling them is a separate change that
-# starts with wiring BIGQUERY_ARCHIVE_DATASET (the dataset itself already
-# exists — see bigquery.tf).
+# job that cannot do its work. Scheduling 90d and 180d is now a one-line
+# change per tier, gated on that single approval.
 # ──────────────────────────────────────────────────────────────────────

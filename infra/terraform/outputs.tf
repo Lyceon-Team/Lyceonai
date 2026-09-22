@@ -35,6 +35,39 @@ output "cloud_tasks_sa_email" {
   value       = google_service_account.cloud_tasks.email
 }
 
+# ── BigQuery archive ─────────────────────────────────────────────────
+
+output "bigquery_archive_dataset" {
+  description = <<-EOT
+    Archive dataset ID → set this verbatim as BIGQUERY_ARCHIVE_DATASET on
+    Vercel. `getArchiveClient()` in server/routes/internal-retention-routes.ts
+    returns undefined when the var is unset, and the 90d/180d retention tiers
+    then decline to run with reason "archive_client_not_configured".
+
+    Setting it is necessary and NOT sufficient: the client also requires the
+    `@google-cloud/bigquery` package, which is in no package.json and absent
+    from pnpm-lock.yaml. Until that dependency is approved and installed, the
+    require() throws and the two tiers decline for the same reason.
+  EOT
+  value       = google_bigquery_dataset.archive.dataset_id
+}
+
+output "bigquery_archive_tables" {
+  description = <<-EOT
+    The four DAY-partitioned archive tables Terraform manages, with the
+    partition-expiration each one carries (730 days — Privacy Policy v4 §6.6).
+    Read this after apply to confirm expiration actually landed; an
+    unpartitioned pre-existing table silently accepts rows forever.
+  EOT
+  value = {
+    for name, t in google_bigquery_table.retention_archive :
+    name => {
+      partition_field        = t.time_partitioning[0].field
+      partition_expiration_d = t.time_partitioning[0].expiration_ms / 86400000
+    }
+  }
+}
+
 # ── Cloud Scheduler — retention sweep ────────────────────────────────
 
 output "retention_sweep_oidc_audience" {
