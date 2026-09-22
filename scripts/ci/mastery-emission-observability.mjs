@@ -33,21 +33,19 @@ const ROOT = path.resolve(
 
 /** Files that call applyMasteryEvent, i.e. every mastery emission call site.
  *
- * R3-PENDING (Review rebuild, brief R1 -> R3). The review entry
- * ("server/routes/review-session-routes.ts") was removed here in R1 because that
- * file was deleted: the old review runtime wrote to a schema that does not exist
- * and answered 503 in production, so it emitted no mastery at all.
- *
- * This is a list update, not a relaxation — the gate itself says so at the
- * "update EMISSION_FILES in this gate if the seam moved" violation below. The
- * requirement is NOT retired: ruled plan ruling 11 has review answers call
- * applyMasteryEvent exactly as practice does, with the review item id as the
- * event id. R3 MUST re-add its submit route here in the same PR that lands that
- * call, or this gate stops covering the review seam — which is one of the two
- * seams (with practice) that canonical_mastery_events reads.
+ * RESTORED 2026-09-21 (R3), in the same PR as the applyMasteryEvent call it covers,
+ * exactly as the R1 note required. The review entry was parked in R1 because
+ * server/routes/review-session-routes.ts was deleted with the old runtime — a file
+ * that wrote to a schema which does not exist and answered 503 in production, so it
+ * emitted no mastery at all. The seam is live again at
+ * server/routes/review-canonical.ts, which calls applyMasteryEvent with
+ * sourceFamily 'review' and the review item's id as the event id (ruled plan
+ * ruling 11). Review and practice are the two seams canonical_mastery_events reads;
+ * both are covered here again.
  */
 const EMISSION_FILES = [
   "server/routes/practice-canonical.ts",
+  "server/routes/review-canonical.ts",
   "apps/api/src/services/fullLengthExam.ts",
 ];
 
