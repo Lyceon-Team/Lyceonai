@@ -4888,6 +4888,9 @@ $$;
 --
 
 COMMENT ON FUNCTION public.financial_record_retention_days() IS 'Privacy Policy v3 §6.2: how long payment records are kept, in days. THE single definition for that sentence; sweep_financial_record_retention reads it. Deliberately separate from configuration_record_retention_days even though both are 7 years — the two sentences rest on different bases and are separately amendable.';
+
+
+--
 -- Name: flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8498,8 +8501,8 @@ CREATE TABLE public.crisis_review_cases (
 CREATE TABLE public.crisis_review_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     case_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    conversation_id uuid,
+    student_id uuid,
     event_type text NOT NULL,
     message_id uuid,
     source text,
@@ -8513,6 +8516,20 @@ CREATE TABLE public.crisis_review_events (
     CONSTRAINT crisis_review_events_event_type_check CHECK ((event_type = ANY (ARRAY['case_opened'::text, 'signal_received'::text, 'notification_sent'::text, 'assigned'::text, 'resolved'::text]))),
     CONSTRAINT crisis_review_events_source_check CHECK (((source IS NULL) OR (source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))))
 );
+
+
+--
+-- Name: COLUMN crisis_review_events.conversation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_events.conversation_id IS 'The conversation the signal came from. NULL once that conversation is hard-deleted by the 7-day tutor sweep (Privacy Policy v4 §6.1). RESTRICT here would have made that sweep fail on the first conversation carrying a crisis event.';
+
+
+--
+-- Name: COLUMN crisis_review_events.student_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_events.student_id IS 'The student the crisis signal concerned. NULL once that account is deleted: owner ruling A6 keeps the safety record and severs the identity, exactly as crisis_review_cases.student_id does.';
 
 
 --
@@ -12937,7 +12954,7 @@ ALTER TABLE ONLY public.crisis_review_events
 --
 
 ALTER TABLE ONLY public.crisis_review_events
-    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE SET NULL;
 
 
 --
@@ -12953,7 +12970,7 @@ ALTER TABLE ONLY public.crisis_review_events
 --
 
 ALTER TABLE ONLY public.crisis_review_events
-    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT crisis_review_events_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -15434,6 +15451,9 @@ GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid,
 
 REVOKE ALL ON FUNCTION public.financial_record_retention_days() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.financial_record_retention_days() TO service_role;
+
+
+--
 -- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
 --
 
