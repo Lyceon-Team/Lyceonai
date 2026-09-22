@@ -500,9 +500,14 @@ describe("LISA-FULL-007: static gate — serializer chokepoint enforcement", () 
 //   - `last_message_preview` (list endpoint preview, derived from .message)
 //
 // Exclusions:
-//   - Files that query tutor_messages but do NOT return message content (e.g.
-//     review-session-routes.ts queries tutor_messages for audit signaling
-//     but only reads id/created_at, never the message field).
+//   - Files that query tutor_messages but do NOT return message content, reading only
+//     non-content columns such as id/created_at.
+//     UPDATED 2026-09-21 (R3): the example this used to name,
+//     review-session-routes.ts, was deleted in R1 and its replacement
+//     (server/routes/review-canonical.ts) does not touch tutor_messages at all —
+//     LISA is out of review at launch (ruled plan ruling 9, used_tutor stays false).
+//     The exclusion is kept because the RULE still needs it; only the illustration
+//     was stale.
 //   - Files that return `content` in error shapes or non-tutor contexts are
 //     not false-positives because the gate requires BOTH tutor_messages read
 //     AND message content return.

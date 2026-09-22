@@ -1,4 +1,0 @@
-$kind: http-request
-url: "{{baseUrl}}/api/review-errors/sessions/{{reviewSessionId}}/state"
-method: GET
-order: 3000

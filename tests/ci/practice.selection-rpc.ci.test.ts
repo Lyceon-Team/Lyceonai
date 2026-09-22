@@ -60,15 +60,41 @@ describe("Practice selection RPC regression guard", () => {
     expect(codeLines).toHaveLength(0);
   });
 
-  it("fisherYates is ONLY used inside buildServedOptions (option shuffle, not pool selection)", () => {
-    const lines = routeSource.split("\n");
-    const fisherYatesCallLines = lines.filter(
-      (line) =>
-        line.includes("fisherYates(") && !line.trimStart().startsWith("//"),
+  // REWRITTEN 2026-09-21 (R3, brief §2.1 — "promote the shuffle into shared as the
+  // single implementation; switch practice to import it and delete its private copy").
+  //
+  // The rule is unchanged and is NOT loosened: Fisher-Yates may shuffle OPTIONS and
+  // must never shuffle the POOL. What changed is where it lives. The old version read
+  // practice-canonical.ts and required at least one `fisherYates(` call there; after
+  // the promotion there are none, so the assertion had to follow the function to its
+  // new home rather than be dropped. It is now stronger in both halves: practice must
+  // have NO call at all, and the shared module's single call must be the option one.
+  it("practice makes no fisherYates call: selection is the RPC, shuffling is shared", () => {
+    const codeLines = routeSource
+      .split("\n")
+      .filter(
+        (line) =>
+          line.includes("fisherYates(") && !line.trimStart().startsWith("//"),
+      );
+    expect(codeLines).toHaveLength(0);
+  });
+
+  it("the shared fisherYates is ONLY used inside buildServedOptions (options, not pool)", () => {
+    const contractSource = fs.readFileSync(
+      path.join(repoRoot, "shared", "question-bank-contract.ts"),
+      "utf8",
     );
-    expect(fisherYatesCallLines.length).toBeGreaterThanOrEqual(1);
-    for (const line of fisherYatesCallLines) {
-      // The only call site must be inside buildServedOptions: `fisherYates(options)`
+    const callLines = contractSource
+      .split("\n")
+      .filter(
+        (line) =>
+          line.includes("fisherYates(") &&
+          !line.trimStart().startsWith("//") &&
+          !line.trimStart().startsWith("*") &&
+          !line.includes("export function fisherYates("),
+      );
+    expect(callLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of callLines) {
       expect(line).toContain("fisherYates(options)");
     }
   });
