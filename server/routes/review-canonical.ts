@@ -460,7 +460,17 @@ type CreateResult =
  *     review session and vice versa;
  *   - a question already open in another review session is NOT excluded (ruling 15).
  */
-async function startOrReplayReviewSession(args: {
+/**
+ * EXPORTED for the calendar's review adapter (Doc 05F §9.3), and for nothing else.
+ *
+ * The calendar creates through THIS function rather than posting to its own route, for the
+ * same reason the practice adapter calls startOrReplaySession directly: a second create
+ * path is a second contract, and only one of them would get fixed. The concurrent-session
+ * cap, the idempotency replay and the client-instance binding are all in here, so a launch
+ * from a calendar block and a launch from the review page behave identically by
+ * construction rather than by two implementations agreeing.
+ */
+export async function startOrReplayReviewSession(args: {
   studentId: string;
   actorId: string;
   poolSpec: ReviewPoolSpec;

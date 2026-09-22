@@ -26,7 +26,12 @@
  * assert them against the stub, and the rebuilt engine must pass the same tests
  * with `create` succeeding instead of declining.
  */
-import { err, type ActivityUnit, type CalendarEngine, type PlanBlock } from "@lyceon/shared";
+import {
+  err,
+  type ActivityUnit,
+  type CalendarEngine,
+  type PlanBlock,
+} from "@lyceon/shared";
 import type {
   CalendarEngineAdapter,
   EngineCreateContext,
@@ -34,7 +39,9 @@ import type {
   EngineLifecycle,
 } from "./types";
 
-export function makeUnavailableAdapter(engine: CalendarEngine): CalendarEngineAdapter {
+export function makeUnavailableAdapter(
+  engine: CalendarEngine,
+): CalendarEngineAdapter {
   return {
     engine,
 
@@ -64,11 +71,19 @@ export function makeUnavailableAdapter(engine: CalendarEngine): CalendarEngineAd
       return null;
     },
 
-    async nextLaunchSize(_block: PlanBlock, remaining: number): Promise<number> {
+    async nextLaunchSize(
+      _block: PlanBlock,
+      remaining: number,
+    ): Promise<number> {
       return Math.max(1, remaining);
     },
   };
 }
 
-export const reviewAdapter = makeUnavailableAdapter("review");
+/**
+ * FULL-LENGTH ONLY, since 2026-09-22. `reviewAdapter` used to be made here too; review
+ * shipped, so its adapter is real and lives in ./review. The factory stays because the
+ * exam vertical still needs it, and because the two engines differ in what they will DO
+ * rather than in how they decline.
+ */
 export const fullLengthAdapter = makeUnavailableAdapter("full_length");

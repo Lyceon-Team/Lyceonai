@@ -109,7 +109,7 @@ const createConversationSchema = z.object({
   source_session_item_id: z.string().uuid().nullable().optional(),
   source_question_row_id: z.string().min(1).nullable().optional(),
   source_question_canonical_id: z.string().min(1).nullable().optional(),
-  idempotency_key: z.string().uuid(),
+  idempotency_key: z.string().uuid().optional(),
 });
 
 const clientScopeSchema = z.object({
@@ -573,51 +573,56 @@ router.post(
 
       // ── domain: idempotency check on idempotency_key ──
       // Prevents double-click creating duplicate conversations.
-      const { data: existingByKey, error: idempotencyError } =
-        await supabaseServer
-          .from("tutor_conversations")
-          .select(
-            "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
-          )
-          .eq("student_id", studentId)
-          .eq("assignment_key", input.idempotency_key)
-          .maybeSingle();
+      // Skipped when key is absent — real enforcement (column + unique index)
+      // lands in PR B; until then the key is optional so the deployed client
+      // (which sends no key) is not broken.
+      if (input.idempotency_key) {
+        const { data: existingByKey, error: idempotencyError } =
+          await supabaseServer
+            .from("tutor_conversations")
+            .select(
+              "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",
+            )
+            .eq("student_id", studentId)
+            .eq("assignment_key", input.idempotency_key)
+            .maybeSingle();
 
-      if (idempotencyError) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "idempotency_lookup_failed",
-          "Idempotency key lookup failed",
-          { message: idempotencyError.message, code: idempotencyError.code },
-        );
-        sendTutorError(res, "idempotency_lookup_failed");
-        return;
-      }
+        if (idempotencyError) {
+          logger.error(
+            "TUTOR_RUNTIME",
+            "idempotency_lookup_failed",
+            "Idempotency key lookup failed",
+            { message: idempotencyError.message, code: idempotencyError.code },
+          );
+          sendTutorError(res, "idempotency_lookup_failed");
+          return;
+        }
 
-      if (existingByKey) {
-        const row = existingByKey as TutorConversationRow;
-        res.status(200).json({
-          data: {
-            conversation_id: row.id,
-            reused: true,
-            entry_mode: row.entry_mode,
-            source_surface: row.source_surface,
-            surface: row.surface,
-            status: row.status,
-            title: row.title,
-            crisis_flagged: row.crisis_flagged,
-            crisis_paused_at: row.crisis_paused_at,
-            resolved_scope: {
-              source_session_id: row.source_session_id,
-              source_session_item_id: row.source_session_item_id,
-              source_question_row_id: row.source_question_row_id,
-              source_question_canonical_id: row.source_question_canonical_id,
+        if (existingByKey) {
+          const row = existingByKey as TutorConversationRow;
+          res.status(200).json({
+            data: {
+              conversation_id: row.id,
+              reused: true,
+              entry_mode: row.entry_mode,
+              source_surface: row.source_surface,
+              surface: row.surface,
+              status: row.status,
+              title: row.title,
+              crisis_flagged: row.crisis_flagged,
+              crisis_paused_at: row.crisis_paused_at,
+              resolved_scope: {
+                source_session_id: row.source_session_id,
+                source_session_item_id: row.source_session_item_id,
+                source_question_row_id: row.source_question_row_id,
+                source_question_canonical_id: row.source_question_canonical_id,
+              },
+              created_at: row.created_at,
+              updated_at: row.updated_at,
             },
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-          },
-        });
-        return;
+          });
+          return;
+        }
       }
 
       // ── domain: create new conversation ──
@@ -633,7 +638,9 @@ router.post(
           source_question_row_id: resolvedScope.source_question_row_id,
           source_question_canonical_id:
             resolvedScope.source_question_canonical_id,
-          assignment_key: input.idempotency_key,
+          ...(input.idempotency_key
+            ? { assignment_key: input.idempotency_key }
+            : {}),
         })
         .select(
           "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at, title, surface, crisis_paused_at, ended_at",

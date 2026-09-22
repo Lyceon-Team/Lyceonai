@@ -189,14 +189,13 @@ export function NotificationBell() {
           )}
         </div>
         <div className="border-t px-4 py-2">
-          <Link href="/notifications">
-            <a
-              className="text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-              onClick={() => setOpen(false)}
-              data-testid="link-notifications-see-all"
-            >
-              See all notifications
-            </a>
+          <Link
+            href="/notifications"
+            className="text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            onClick={() => setOpen(false)}
+            data-testid="link-notifications-see-all"
+          >
+            See all notifications
           </Link>
         </div>
       </PopoverContent>

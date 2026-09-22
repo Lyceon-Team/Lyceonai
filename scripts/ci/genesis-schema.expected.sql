@@ -653,6 +653,9 @@ DECLARE
   v_horizon_hi date;
   v_degraded  jsonb := '[]'::jsonb;
   v_mastery   jsonb;
+  -- Which engines the product has actually turned on. Read once, used twice below.
+  v_review_on      boolean;
+  v_full_length_on boolean;
 BEGIN
   SELECT * INTO v_profile FROM public.student_study_profile WHERE student_id = p_student_id;
   IF NOT FOUND THEN
@@ -665,6 +668,19 @@ BEGIN
     RAISE EXCEPTION 'calendar_runtime_config: no rows; the calendar cannot generate without constants'
       USING ERRCODE = '22023';
   END IF;
+
+  -- The snapshot must describe the world the OUTPUT will be filtered against.
+  -- calendar_plan_to_output drops every member whose block_type is not in
+  -- enabled_block_types (20260917130000 line 1586), but the generator allocates
+  -- budget from these inputs without consulting that list. So a disabled engine
+  -- spends the day's seconds on a block that is then thrown away, and the day
+  -- comes up short with nothing to explain it. Reading the list HERE is what
+  -- makes the two agree.
+  SELECT
+    COALESCE(bool_or(t = 'review'), false),
+    COALESCE(bool_or(t = 'full_length'), false)
+    INTO v_review_on, v_full_length_on
+  FROM jsonb_array_elements_text(COALESCE(v_constants -> 'enabled_block_types', '[]'::jsonb)) t;
 
   -- §8.2 local dates: every date in a plan is the student’s local date, and the
   -- profile’s timezone is what makes "today" mean anything.
@@ -719,7 +735,18 @@ BEGIN
       'target_score', v_profile.target_score,
       'study_days_mask', v_profile.study_days_mask,
       'daily_minutes', v_profile.daily_minutes,
-      'full_length_weekday', v_profile.full_length_weekday,
+      -- The single field that places an exam. calendar_compute_plan derives its
+      -- full-length dates from this weekday (20260917130000 line 966); with it NULL
+      -- there are no exam dates, so the "an exam day holds nothing else" CONTINUE
+      -- never fires and the day keeps its budget for practice. The same branch is
+      -- what reserves the exam_review_placeholder, so nulling this withholds the
+      -- reservation too -- both symptoms, one field.
+      --
+      -- The PROFILE still stores the student's chosen test day. This is the
+      -- SNAPSHOT: what the generator is told, not what the student asked for. When
+      -- full_length is enabled the stored value flows through untouched.
+      'full_length_weekday', CASE WHEN v_full_length_on
+                                  THEN v_profile.full_length_weekday ELSE NULL END,
       'planner_mode', v_profile.planner_mode,
       'setup_date', COALESCE(
         (v_profile.setup_completed_at AT TIME ZONE v_profile.timezone)::date,
@@ -729,24 +756,49 @@ BEGIN
 
     -- Anything already overdue folds onto today rather than being lost: the
     -- generator walks the horizon forward and never looks behind its first date.
-    'review_due_by_date', COALESCE((
+    -- Same rule as full_length_weekday above: with review disabled the generator
+    -- must not see work it is about to have filtered away. An empty list is the
+    -- honest snapshot of "no review is planned", which is true when the engine
+    -- cannot be reached. The queue itself is untouched -- the entries stay active
+    -- and are planned the moment review is enabled.
+    'review_due_by_date', CASE WHEN NOT v_review_on THEN '[]'::jsonb ELSE COALESCE((
       SELECT jsonb_agg(jsonb_build_object('date', q.d::text, 'due_count', q.n) ORDER BY q.d)
       FROM (
         SELECT greatest((r.queued_at AT TIME ZONE v_profile.timezone)::date, v_today) AS d,
                count(*)::integer AS n
         FROM public.review_schedule r
+        -- H5: the ONLY change from the 20260921000000 body. A queue entry whose question
+        -- has been retired or issue-flagged since it was queued is not servable, so it must
+        -- not be PLANNED either -- the queue stores no question metadata (ruling 19), and
+        -- review's own prefill joins this same view at serve time. Without the join the
+        -- generator sizes a review block against rows the engine will then refuse to serve,
+        -- and the student gets a block that runs short with nothing to explain it.
+        -- INNER join, deliberately: a missing row means not servable, which is the same
+        -- answer as a retired one.
+        JOIN public.servable_questions sq ON sq.id = r.question_id
         WHERE r.student_id = p_student_id
           AND r.status = 'active'
           AND (r.queued_at AT TIME ZONE v_profile.timezone)::date <= v_horizon_hi
         GROUP BY 1
-      ) q), '[]'::jsonb),
+      ) q), '[]'::jsonb) END,
 
-    'exams', jsonb_build_object(
+    -- Every field here is unconditionally NULL today: the exams seam has no table
+    -- and the adapter is a fail-open stub, which is why "exams" is in degraded[]
+    -- above. The gate is written anyway so that enabling full_length stays the ONE
+    -- switch that makes exam facts visible to the generator. Until the exam vertical
+    -- ships this CASE cannot change the result -- stated plainly rather than left for
+    -- a reader to work out, and asserted as a no-op by the parity suite.
+    'exams', CASE WHEN NOT v_full_length_on THEN jsonb_build_object(
       'last_completed_local_date', NULL,
       'days_since_exam', NULL,
       'missed_count', NULL,
       'reviewed', NULL,
-      'weak_domains', '[]'::jsonb),
+      'weak_domains', '[]'::jsonb) ELSE jsonb_build_object(
+      'last_completed_local_date', NULL,
+      'days_since_exam', NULL,
+      'missed_count', NULL,
+      'reviewed', NULL,
+      'weak_domains', '[]'::jsonb) END,
 
     -- The deficit rule measures a domain against what it has had over the
     -- window plus today (sheet §2 step 5). Only domain-level practice blocks
@@ -809,7 +861,7 @@ $$;
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1 / formula sheet §5. The only calendar function that reads canonical tables, and freezes them into the snapshot so the generator reads nothing else (INV-08-06). Raises on a missing profile or missing constants — essential inputs are never invented.';
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §9.3. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday and exam facts NULL; review off -> review_due_by_date []. The generator therefore does not reserve budget for blocks calendar_plan_to_output would filter out (§10.2 / sheet §8 item 12).';
 
 
 --
@@ -1600,6 +1652,30 @@ COMMENT ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_trig
 
 
 --
+-- Name: calendar_drop_unowned_dates(jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT jsonb_set(p_output, '{dates}', COALESCE((
+    SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+    FROM jsonb_array_elements(p_output -> 'dates') d
+    WHERE (d ->> 'scheduled_date') IN (
+      SELECT jsonb_array_elements_text(
+               COALESCE(p_input #> '{generated_for,dates}', '[]'::jsonb)))
+  ), '[]'::jsonb));
+$$;
+
+
+--
+-- Name: FUNCTION calendar_drop_unowned_dates(p_output jsonb, p_input jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) IS 'Doc 05F §12.1/§12.2. Keeps only the dates generated_for.dates names, so a generated plan never offers a date the trigger does not own -- chiefly one the student has overridden. calendar_compute_plan walks the horizon from the profile clock and never reads generated_for.dates, so without this the output carries dates the input excluded and V-01/V-14 reject the whole version. Complementary to calendar_drop_today_for_system, which removes today for system triggers; generated_for.dates still contains today.';
+
+
+--
 -- Name: calendar_edit_day(uuid, date, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1971,10 +2047,12 @@ BEGIN
     END;
 
     IF v_generator = 'deterministic_v1' THEN
-      v_output := public.calendar_drop_today_for_system(
-                    public.calendar_carry_started(v_input,
-                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
-                    p_trigger, v_today);
+      v_output := public.calendar_drop_unowned_dates(
+                    public.calendar_drop_today_for_system(
+                      public.calendar_carry_started(v_input,
+                        public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                      p_trigger, v_today),
+                    v_input);
       v_res := public.calendar_validate_plan('generated', v_input, v_output);
       IF v_res ->> 'result' <> 'accepted' THEN
         v_generator := 'fallback_v1';
@@ -1985,10 +2063,15 @@ BEGIN
 
   IF v_generator = 'fallback_v1' THEN
     v_plan := public.calendar_compute_plan_fallback(v_input);
-    v_output := public.calendar_drop_today_for_system(
-                  public.calendar_carry_started(v_input,
-                    public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
-                  p_trigger, v_today);
+    -- The fallback needs the same narrowing as the primary. Without it a student with an
+    -- overridden date whose primary plan was rejected would have the fallback rejected for
+    -- the identical reason, and the ladder would have no rung left.
+    v_output := public.calendar_drop_unowned_dates(
+                  public.calendar_drop_today_for_system(
+                    public.calendar_carry_started(v_input,
+                      public.calendar_plan_to_output(v_plan, p_generator_version, v_enabled)),
+                    p_trigger, v_today),
+                  v_input);
   END IF;
 
   v_result := public.calendar_write_version(p_student_id, p_trigger, p_initiated_by,
@@ -2010,7 +2093,7 @@ $$;
 -- Name: FUNCTION calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.3. FOR UPDATE on the profile, build, compute, validate, insert, one transaction. Falls back to fallback_v1 on degraded input, a raise, or a rejection, recording the reason on the version (sheet §5A). Since 2026-09-22 the two SYSTEM triggers, weekly and post_exam, own dates from tomorrow: the generator still reasons over the whole horizon and the OUTPUT is narrowed by calendar_drop_today_for_system.';
+COMMENT ON FUNCTION public.calendar_persist_version(p_student_id uuid, p_trigger text, p_initiated_by text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1-§12.3. Allocates a version under the profile lock, generates, validates, and persists. The plan OUTPUT is narrowed twice before validation: calendar_drop_today_for_system removes today for weekly/post_exam, and calendar_drop_unowned_dates removes any date generated_for.dates does not name -- chiefly a date the student overrode. Both are output filters, because calendar_compute_plan derives its dates from the profile clock and never reads generated_for.dates.';
 
 
 --
@@ -2199,16 +2282,66 @@ BEGIN
   SELECT public.calendar_require_int(jsonb_object_agg(key, value), 'horizon_days')
     INTO v_horizon FROM public.calendar_runtime_config;
 
-  -- Outside the horizon the generator never emits the date at all, so the
-  -- version would own nothing and the route would report a success that changed
-  -- no plan. Refuse instead of writing an empty version.
-  IF p_date > v_today + (v_horizon - 1) THEN
-    RAISE EXCEPTION 'calendar_regenerate_day: % is beyond the % day horizon and is not planned yet', p_date, v_horizon
-      USING ERRCODE = '22023';
-  END IF;
-
   SELECT array_agg(d ORDER BY d) INTO v_dates
   FROM generate_series(v_today, v_today + (v_horizon - 1), interval '1 day') g(d);
+
+  ----------------------------------------------------------------------------
+  -- BEYOND THE HORIZON: own the date, plan nothing, and leave it to the future.
+  --
+  -- This used to RAISE. The reasoning was sound as far as it went -- the generator
+  -- never emits a date outside the horizon, so running it and narrowing to that
+  -- date would produce a version owning nothing, and the route would report a
+  -- success that changed no plan.
+  --
+  -- What it missed is that a day-scoped RESET is not a request to plan a date. It
+  -- is a request to STOP owning one. A student who blocks out a concert three weeks
+  -- out creates an override at day +21; undoing it has to clear that override, and
+  -- the horizon is fourteen days, so the undo raised and the day off could not be
+  -- taken back until the date drifted into range. The control existed and could not
+  -- be reversed, which is worse than not offering it.
+  --
+  -- So the version owns the date with NO members and is_user_override false. That is
+  -- precisely "this date is the generator's again, and it has nothing to say about
+  -- it yet". When the date enters the horizon the ordinary weekly run plans it,
+  -- because there is no override left to stop it (V-14) -- which is the whole point.
+  --
+  -- The generator is NOT run here. There is nothing for it to compute: a date outside
+  -- the horizon has no budget, no mix and no cadence yet. Skipping it is why this
+  -- branch cannot disturb parity.
+  --
+  -- The snapshot is built over the horizon PLUS this date, so generated_for.dates
+  -- names it and V-01's membership test passes. Without that the version would be
+  -- rejected for owning a date its own input never mentioned.
+  ----------------------------------------------------------------------------
+  IF p_date > v_today + (v_horizon - 1) THEN
+    v_input := public.calendar_build_plan_input(p_student_id, v_dates || p_date);
+    v_output := jsonb_build_object(
+      'generator', 'deterministic_v1',
+      'generator_version', p_generator_version,
+      'dates', jsonb_build_array(jsonb_build_object(
+        'scheduled_date', p_date::text,
+        'is_user_override', false,
+        'members', '[]'::jsonb)));
+
+    v_res := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+    IF v_res ->> 'result' <> 'accepted' THEN
+      RAISE EXCEPTION 'calendar_regenerate_day: clearing % was rejected: %', p_date, v_res
+        USING ERRCODE = '22023';
+    END IF;
+
+    v_result := public.calendar_write_version(p_student_id, p_trigger, 'student',
+                  'deterministic_v1', p_generator_version, v_input, v_output, 'day_regenerate',
+                  jsonb_build_object('reason', 'beyond_horizon_cleared', 'horizon_days', v_horizon));
+
+    IF p_idempotency_key IS NOT NULL THEN
+      INSERT INTO public.calendar_mutation_ledger
+        (student_id, idempotency_key, route, response_hash, response)
+      VALUES (p_student_id, p_idempotency_key, 'calendar_regenerate_day',
+              encode(sha256(v_result::text::bytea), 'hex'), v_result);
+    END IF;
+
+    RETURN v_result;
+  END IF;
 
   v_input := public.calendar_build_plan_input(p_student_id, v_dates);
 
@@ -2271,7 +2404,7 @@ $$;
 -- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student’s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
+COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student''s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. BEYOND THE HORIZON it owns the date with no members and runs no generator, so a day blocked out past the horizon can still be undone; the date is planned by the ordinary weekly run once it comes into range. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
 
 
 --
@@ -4215,6 +4348,48 @@ $$;
 
 
 --
+-- Name: crisis_review_sla_hours(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_review_sla_hours() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 48;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_review_sla_hours(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_review_sla_hours() IS 'Doc 03 §21.3: the crisis review SLA window in hours. 48 at launch; the §21.3 target after 30 days is 24. THE single definition — flag_conversation_for_crisis_review() reads it.';
+
+
+--
+-- Name: crisis_source_fallback(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_source_fallback(p_source text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE p_source
+           WHEN 'classifier_degraded_no_floor' THEN 'classifier_degraded'
+           WHEN 'infrastructure_failure'       THEN 'classifier_degraded'
+           ELSE NULL
+         END;
+$$;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crisis_source_fallback(p_source text) IS 'WS-L8 Item 4b: source values added after the original CHECK constraint, mapped to the coarser value the old constraint accepts. NULL means no fallback — the CHECK violation is real and must propagate.';
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4765,6 +4940,112 @@ BEGIN
   );
 END;
 $_$;
+
+
+--
+-- Name: flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_deadline  timestamptz := now()
+                 + make_interval(hours => public.crisis_review_sla_hours());
+  v_source    text        := p_source;
+  v_fallback  text;
+  v_case_id   uuid;
+  v_found_at  timestamptz;
+  v_status    text;
+  v_rows      integer;
+BEGIN
+  UPDATE public.tutor_conversations
+     SET crisis_flagged = true
+   WHERE id = p_conversation_id;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION
+      'crisis flag target conversation % does not exist', p_conversation_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.crisis_review_cases
+      (conversation_id, student_id, source, category,
+       signature_id, model_confidence, sla_deadline)
+    VALUES
+      (p_conversation_id, p_student_id, v_source, p_category,
+       p_signature_id, p_model_confidence, v_deadline)
+    RETURNING id, status INTO v_case_id, v_status;
+
+    RETURN jsonb_build_object(
+      'case_id',          v_case_id,
+      'sla_deadline',     v_deadline,
+      'already_existed',  false,
+      'case_status',      v_status,
+      'persisted_source', v_source
+    );
+
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- An active case already exists. Return it; the flag stands.
+      SELECT c.id, c.sla_deadline, c.status
+        INTO v_case_id, v_found_at, v_status
+        FROM public.crisis_review_cases c
+       WHERE c.conversation_id = p_conversation_id
+         AND c.status IN ('open', 'in_review')
+       LIMIT 1;
+
+      IF v_case_id IS NULL THEN
+        -- A unique violation with nothing to find is not a state this
+        -- function understands. Propagate and roll the flag back with it.
+        RAISE;
+      END IF;
+
+      RETURN jsonb_build_object(
+        'case_id',          v_case_id,
+        'sla_deadline',     v_found_at,
+        'already_existed',  true,
+        'case_status',      v_status,
+        'persisted_source', NULL
+      );
+
+    WHEN check_violation THEN
+      v_fallback := public.crisis_source_fallback(p_source);
+      IF v_fallback IS NULL THEN
+        RAISE;   -- a real CHECK violation, not a schema-version mismatch
+      END IF;
+      v_source := v_fallback;
+  END;
+
+  -- Only reached via the check_violation fallback above. Unwrapped on
+  -- purpose: if this fails too, everything rolls back, flag included.
+  INSERT INTO public.crisis_review_cases
+    (conversation_id, student_id, source, category,
+     signature_id, model_confidence, sla_deadline)
+  VALUES
+    (p_conversation_id, p_student_id, v_source, p_category,
+     p_signature_id, p_model_confidence, v_deadline)
+  RETURNING id, status INTO v_case_id, v_status;
+
+  RETURN jsonb_build_object(
+    'case_id',          v_case_id,
+    'sla_deadline',     v_deadline,
+    'already_existed',  false,
+    'case_status',      v_status,
+    'persisted_source', v_source
+  );
+END;
+$$;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) IS 'Doc 03 §21.2/§21.3, owner ruling D1 2026-09-22: sets tutor_conversations.crisis_flagged AND creates the review case in ONE transaction, so a flagged conversation with no case in the queue is not a reachable state. Returns {case_id, sla_deadline, already_existed, case_status, persisted_source}. `case_status` is read back from the row rather than assumed, so the caller''s notification policy (Doc 03 §21.3 throttling) sees what the table actually holds. Does NOT notify — Cloud Tasks cannot join the transaction; the caller notifies after this returns.';
 
 
 --
@@ -14484,6 +14765,13 @@ REVOKE ALL ON FUNCTION public.calendar_drop_today_for_system(p_output jsonb, p_t
 
 
 --
+-- Name: FUNCTION calendar_drop_unowned_dates(p_output jsonb, p_input jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_drop_unowned_dates(p_output jsonb, p_input jsonb) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14807,6 +15095,22 @@ GRANT ALL ON FUNCTION public.crisis_review_cases_updated_at() TO service_role;
 
 
 --
+-- Name: FUNCTION crisis_review_sla_hours(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_review_sla_hours() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_review_sla_hours() TO service_role;
+
+
+--
+-- Name: FUNCTION crisis_source_fallback(p_source text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.crisis_source_fallback(p_source text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.crisis_source_fallback(p_source text) TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14836,6 +15140,14 @@ GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_ro
 
 REVOKE ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) TO service_role;
+
+
+--
+-- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) TO service_role;
 
 
 --

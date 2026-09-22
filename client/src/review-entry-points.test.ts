@@ -52,7 +52,10 @@ describe("U8 — review is reachable from normal navigation", () => {
 
   it("the dashboard carries a Review tile pointing at /review", () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    expect(dashboard).toContain('<Link href="/review">');
+    // The claim is "a tile links to /review", not "the tag is spelled this way on one
+    // line". #829 moved the className onto the same tag, which broke the literal without
+    // touching reachability.
+    expect(dashboard).toMatch(/<Link\b[^>]*?href="\/review"/);
     expect(dashboard).toContain("Review Queue");
   });
 

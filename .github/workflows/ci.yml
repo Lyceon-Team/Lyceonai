@@ -44,6 +44,23 @@ jobs:
       - name: Validate Route Registry
         run: pnpm run route:validate
 
+      # ZERO NESTED ANCHORS (issue #829). Sixteen files carried the wouter v2 idiom —
+      # a bare `<a>` child inside `<Link>` — which under wouter 3 renders `<a href><a
+      # data-testid>`, leaving the inner anchor (the one with the testid, the label and
+      # the click target) with no href at all. Middle-click, ⌘-click, open-in-new-tab,
+      # copy-link and screen-reader link announcement were dead on every tab in the
+      # product; a plain left click worked, which is why nobody noticed.
+      #
+      # `--selftest` runs FIRST and on its own line. A gate whose own matcher has rotted
+      # reports zero occurrences and reads exactly like a clean tree, so the fixtures are
+      # exercised before the scan is believed. The `asChild` exemption is by SHAPE, never
+      # by filename — see the script's header for why that distinction is load-bearing.
+      - name: "No nested anchors (issue #829)"
+        run: |
+          set -euo pipefail
+          node scripts/ci/nested-anchor-gate.mjs --selftest
+          node scripts/ci/nested-anchor-gate.mjs
+
       # No SCL id may head two entries in the register. Three collisions
       # (SCL-021, SCL-024, SCL-042) reached it despite every author having read
       # the register first — reading does not reserve a number, so only a
@@ -600,21 +617,78 @@ jobs:
       # and the idempotency key have to arrive intact. Half A runs anywhere; half B
       # needs a real schema with real rows, which is why it lives in this job and is
       # skipped in the plain `ci` job like every other *.ci.test.ts.
+      #
+      # THROUGH THE SUMMARY GATE, for the reason the review step below spells out. This
+      # step already had the environment and already passed, so nothing about it was
+      # wrong -- but nothing would have SAID so if half B stopped running. `CAN_RUN` here
+      # is `!!process.env.PGHOST`, so a renamed variable, a dropped service container or
+      # a new PG-gated case added to the file all turn 13 passed into 8 passed and 5
+      # skipped, with exit 0 either way. The gate reads vitest's own verdict and treats
+      # `numPendingTests > 0` as red, so the difference between those two outcomes stops
+      # being invisible. Same shape as the review and activity-units steps: its own
+      # report file, named explicitly, so a failure says which contract broke.
       - name: Calendar practice launch contract (real PostgreSQL)
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: pnpm exec vitest run tests/ci/calendar.launch-contract.practice.ci.test.ts
-
-      # The two stubbed engines. Separate invocations, separate files: each is the
-      # contract its rebuilt engine must pass unchanged, and a shared run would let
-      # one rebuild quietly satisfy the other's contract.
-      - name: Calendar review + full-length launch contracts (fail-open stubs)
         run: |
-          pnpm exec vitest run tests/ci/calendar.launch-contract.review.test.ts
-          pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.launch-contract.practice.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-practice-contract.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-practice-contract.json \
+            --file tests/ci/calendar.launch-contract.practice.ci.test.ts
+
+      # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
+      # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
+      # entire real-engine half -- 9 passed, 6 SKIPPED, exit 0, green from the outside.
+      # Every claim the half exists to prove (the real session create, the replay, the
+      # answered-vs-skipped predicate, the occurred_at window) was unproven in CI while
+      # the step's own name still called review a fail-open stub.
+      #
+      # It now gets the same service container the practice contract above uses, and the
+      # summary gate reads vitest's machine-readable verdict: `numPendingTests > 0` is
+      # red, so a half that stops running can never again read as a pass. Separate
+      # invocation and separate report from the activity-units file below, so a failure
+      # names which claim broke.
+      - name: Calendar review launch contract (REAL engine, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.launch-contract.review.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-review-contract.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-review-contract.json \
+            --file tests/ci/calendar.launch-contract.review.test.ts
+
+      # The occurred_at ruling, both halves. Half A/B run anywhere (recording fake client,
+      # including the plant: a resolved row with a NULL answered_at must still count); half C
+      # needs real PostgreSQL, because "the CHECK guarantees occurred_at and nothing
+      # guarantees answered_at" is a claim about the schema. Gated for the same reason as
+      # above -- half C skipping would otherwise be invisible.
+      - name: Calendar activity units — retrieval, and dated by occurred_at
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.activity-units.skip.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-activity-units.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-activity-units.json \
+            --file tests/ci/calendar.activity-units.skip.ci.test.ts
+
+      # Full-length IS still a fail-open stub, and its contract is the one its rebuilt
+      # engine must pass unchanged. Its own invocation: a shared run would let a rebuild
+      # quietly satisfy another engine's contract. No PG environment because the file has
+      # no database half to run -- not because one is being skipped.
+      - name: Calendar full-length launch contract (fail-open stub)
+        run: pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
 
       # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
       # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice
@@ -759,6 +833,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
             --file tests/ci/guardian-link-code.pg.ci.test.ts
 
+      # @spec [Doc_05F_Study_Calendar §16] | @implemented [2026-09-22]
+      # The guardian's way in to a student's calendar. Its student rows are INSERTED into
+      # the throwaway Postgres above and READ BACK rather than spelled by hand, which is
+      # what the guardian schema-truth gate (Rule B) requires — so it needs a database, and
+      # the plain `ci` job has none. Behind the summary gate because a skipped file exits 0.
+      - name: Guardian calendar link → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-calendar-link.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-calendar-link.json \
+            --file client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the
@@ -768,6 +860,40 @@ jobs:
       # 2026-09-15: the retention sweep (C11.1–C11.3: 90-day window defined once in SQL, the
       # cascade proven by message count, the zero-deletion log line) and the notifications
       # page API (archive view, mark-all-read, recipient denial) run in the same step.
+      # @spec [Doc-03_V3 §21.2 step 5, §21.3; CR-03C-V3-01 §3.4; WS-L8 Item 4b;
+      #        owner ruling 2026-09-22 D1] | @implemented [2026-09-22]
+      # Flagging a conversation for crisis review used to be two writes in sequence, and
+      # between them sat a state the system must never be in: a conversation MARKED as a
+      # crisis with NOTHING in the review queue. Nothing sweeps for that, and the 48h SLA
+      # never starts because the SLA lives on the case that was never created. Both writes
+      # are now one transaction. D1.3 is the ruling's own test — force a failure after the
+      # flag write, require that nothing survives — and it can only be shown on a real
+      # database, because the whole claim is about transaction boundaries. Verdict read from
+      # vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Crisis flag atomicity (Doc 03 §21.3 / D1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/crisis-flag-atomic.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-crisis-flag-atomic.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-crisis-flag-atomic.json \
+            --file tests/ci/crisis-flag-atomic.pg.ci.test.ts
+
+      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
+      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
+      # requires D1.3 to notice.
+      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+
       - name: Notifications rebuild → real PG proof
         env:
           PGHOST: localhost

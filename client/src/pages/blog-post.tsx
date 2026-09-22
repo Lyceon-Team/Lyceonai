@@ -1,33 +1,53 @@
-import { Link, useRoute } from 'wouter';
-import { getPostBySlug, getAllPosts, formatDate } from '@/lib/blog';
-import { Calendar, User, ArrowLeft, Tag, ArrowRight } from 'lucide-react';
-import PublicLayout from '@/components/layout/PublicLayout';
-import { Container, Breadcrumb, Card, Section } from '@/components/layout/primitives';
+import { Link, useRoute } from "wouter";
+import { getPostBySlug, getAllPosts, formatDate } from "@/lib/blog";
+import { Calendar, User, ArrowLeft, Tag, ArrowRight } from "lucide-react";
+import PublicLayout from "@/components/layout/PublicLayout";
+import {
+  Container,
+  Breadcrumb,
+  Card,
+  Section,
+} from "@/components/layout/primitives";
 
 function parseMarkdown(content: string): string {
   let html = content
-    .replace(/^## (.+)$/gm, '<h2 class="text-2xl font-semibold mt-10 mb-4">$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-xl font-semibold mt-8 mb-3">$1</h3>')
+    .replace(
+      /^## (.+)$/gm,
+      '<h2 class="text-2xl font-semibold mt-10 mb-4">$1</h2>',
+    )
+    .replace(
+      /^### (.+)$/gm,
+      '<h3 class="text-xl font-semibold mt-8 mb-3">$1</h3>',
+    )
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/^- (.+)$/gm, '<li class="ml-6 list-disc">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-6 list-decimal"><span class="font-semibold">$1.</span> $2</li>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="underline underline-offset-2 hover:opacity-80">$1</a>')
+    .replace(
+      /^(\d+)\. (.+)$/gm,
+      '<li class="ml-6 list-decimal"><span class="font-semibold">$1.</span> $2</li>',
+    )
+    .replace(
+      /\[(.+?)\]\((.+?)\)/g,
+      '<a href="$2" class="underline underline-offset-2 hover:opacity-80">$1</a>',
+    )
     .replace(/\n\n/g, '</p><p class="mb-4 leading-relaxed">')
-    .replace(/<\/li>\n<li/g, '</li><li');
-  
-  html = '<p class="mb-4 leading-relaxed">' + html + '</p>';
-  
-  html = html.replace(/<p class="mb-4 leading-relaxed">(<h[23])/g, '$1');
-  html = html.replace(/(<\/h[23]>)<\/p>/g, '$1');
-  html = html.replace(/<p class="mb-4 leading-relaxed">(<li)/g, '<ul class="mb-4 space-y-2">$1');
-  html = html.replace(/(<\/li>)<\/p>/g, '$1</ul>');
-  
+    .replace(/<\/li>\n<li/g, "</li><li");
+
+  html = '<p class="mb-4 leading-relaxed">' + html + "</p>";
+
+  html = html.replace(/<p class="mb-4 leading-relaxed">(<h[23])/g, "$1");
+  html = html.replace(/(<\/h[23]>)<\/p>/g, "$1");
+  html = html.replace(
+    /<p class="mb-4 leading-relaxed">(<li)/g,
+    '<ul class="mb-4 space-y-2">$1',
+  );
+  html = html.replace(/(<\/li>)<\/p>/g, "$1</ul>");
+
   return html;
 }
 
 export default function BlogPostPage() {
-  const [, params] = useRoute('/blog/:slug');
+  const [, params] = useRoute("/blog/:slug");
   const slug = params?.slug;
   const post = slug ? getPostBySlug(slug) : undefined;
 
@@ -36,8 +56,8 @@ export default function BlogPostPage() {
       <PublicLayout>
         <Container className="py-24 text-center">
           <h1 className="text-2xl font-bold mb-4">Post not found</h1>
-          <Link href="/blog">
-            <a className="underline">Back to blog</a>
+          <Link href="/blog" className="underline">
+            Back to blog
           </Link>
         </Container>
       </PublicLayout>
@@ -45,27 +65,37 @@ export default function BlogPostPage() {
   }
 
   const relatedPosts = getAllPosts()
-    .filter(p => p.slug !== post.slug)
-    .filter(p => p.tags.some(tag => post.tags.includes(tag)) || p.category === post.category)
+    .filter((p) => p.slug !== post.slug)
+    .filter(
+      (p) =>
+        p.tags.some((tag) => post.tags.includes(tag)) ||
+        p.category === post.category,
+    )
     .slice(0, 2);
 
   return (
     <PublicLayout>
       <Container size="narrow">
-        <Breadcrumb 
+        <Breadcrumb
           items={[
-            { label: 'Home', href: '/' },
-            { label: 'Blog', href: '/blog' },
-            { label: post.title.length > 40 ? post.title.slice(0, 40) + '...' : post.title },
-          ]} 
+            { label: "Home", href: "/" },
+            { label: "Blog", href: "/blog" },
+            {
+              label:
+                post.title.length > 40
+                  ? post.title.slice(0, 40) + "..."
+                  : post.title,
+            },
+          ]}
           className="pt-8"
         />
 
-        <Link href="/blog">
-          <a className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
-            <ArrowLeft className="w-4 h-4" />
-            Back to all posts
-          </a>
+        <Link
+          href="/blog"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to all posts
         </Link>
 
         <article className="pb-12">
@@ -98,12 +128,18 @@ export default function BlogPostPage() {
 
           {/* Inline CTA - positioned after main content */}
           <div className="my-8 p-6 bg-secondary border border-border rounded-xl">
-            <p className="text-sm text-muted-foreground mb-2">Ready to put this into practice?</p>
-            <p className="font-semibold mb-4">Start practicing SAT questions with step-by-step guided explanations.</p>
-            <Link href="/practice">
-              <a className="inline-block px-5 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
-                Start Free Practice
-              </a>
+            <p className="text-sm text-muted-foreground mb-2">
+              Ready to put this into practice?
+            </p>
+            <p className="font-semibold mb-4">
+              Start practicing SAT questions with step-by-step guided
+              explanations.
+            </p>
+            <Link
+              href="/practice"
+              className="inline-block px-5 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Start Free Practice
             </Link>
           </div>
 
@@ -125,18 +161,16 @@ export default function BlogPostPage() {
             <div className="grid md:grid-cols-2 gap-6">
               {relatedPosts.map((related) => (
                 <Card key={related.slug} hover>
-                  <Link href={`/blog/${related.slug}`}>
-                    <a className="block group">
-                      <h3 className="font-semibold mb-2 group-hover:opacity-80 transition-opacity">
-                        {related.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground mb-3">
-                        {related.description}
-                      </p>
-                      <span className="flex items-center gap-1 text-sm font-medium">
-                        Read more <ArrowRight className="w-4 h-4" />
-                      </span>
-                    </a>
+                  <Link href={`/blog/${related.slug}`} className="block group">
+                    <h3 className="font-semibold mb-2 group-hover:opacity-80 transition-opacity">
+                      {related.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      {related.description}
+                    </p>
+                    <span className="flex items-center gap-1 text-sm font-medium">
+                      Read more <ArrowRight className="w-4 h-4" />
+                    </span>
                   </Link>
                 </Card>
               ))}
@@ -146,25 +180,30 @@ export default function BlogPostPage() {
 
         <Section className="border-t border-border">
           <Card className="text-center">
-            <h2 className="text-xl font-semibold mb-3">Explore SAT Prep Resources</h2>
+            <h2 className="text-xl font-semibold mb-3">
+              Explore SAT Prep Resources
+            </h2>
             <p className="text-muted-foreground mb-4">
               Put these strategies into practice with our comprehensive guides.
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
-              <Link href="/digital-sat">
-                <a className="px-4 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90">
-                  Digital SAT Overview
-                </a>
+              <Link
+                href="/digital-sat"
+                className="px-4 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90"
+              >
+                Digital SAT Overview
               </Link>
-              <Link href="/digital-sat/math">
-                <a className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary">
-                  SAT Math
-                </a>
+              <Link
+                href="/digital-sat/math"
+                className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
+              >
+                SAT Math
               </Link>
-              <Link href="/digital-sat/reading-writing">
-                <a className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary">
-                  Reading & Writing
-                </a>
+              <Link
+                href="/digital-sat/reading-writing"
+                className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
+              >
+                Reading & Writing
               </Link>
             </div>
           </Card>
