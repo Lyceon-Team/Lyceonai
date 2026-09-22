@@ -820,4 +820,194 @@ BEGIN
 END;
 $sysdates$;
 
+-- ----------------------------------------------------------------------------
+-- Z-39 .. Z-44 — calendar_move_block (Doc 05F §12.2, §12.4)
+-- ----------------------------------------------------------------------------
+-- A move is the only mutation that writes ONE version owning TWO dates, so the
+-- thing most worth asserting is not "the block is on the new day" but that the
+-- source date was re-stated WITHOUT it in the SAME version. Drop the source-date
+-- member removal and the block is on both days at once: the target gains a
+-- created copy and the source keeps the original, because nothing in the writer
+-- or the validator objects to a block simply staying where it is. Z-40 is the
+-- arm that catches that, and it asserts BOTH ends.
+--
+-- Z-42/Z-44 assert the refusals come back as DATA. If they were raises, the
+-- route could only tell a refusal from a bug by matching on an error string.
+-- ----------------------------------------------------------------------------
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('dddddddd-0000-0000-0000-000000000002', 'writer-move@example.test', '{}'::jsonb);
+
+INSERT INTO public.student_study_profile
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+VALUES ('dddddddd-0000-0000-0000-000000000002', 'America/Chicago', 127, 60, 6, 1400, now());
+
+INSERT INTO public.student_domain_mastery
+  (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+VALUES ('dddddddd-0000-0000-0000-000000000002', 'M',  'Algebra',             0, 0, 0, 10, 'h'),
+       ('dddddddd-0000-0000-0000-000000000002', 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+DO $movegates$
+DECLARE
+  S CONSTANT uuid := 'dddddddd-0000-0000-0000-000000000002';
+  v_today   date;
+  v_to      date;
+  v_r       jsonb;
+  v_r2      jsonb;
+  v_blk     uuid;
+  v_blk2    uuid;
+  v_new     uuid;
+  v_ver     integer;
+  v_n       integer;
+  v_vcount  integer;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+  v_to := v_today + 3;
+
+  PERFORM public.calendar_persist_version(S, 'setup', 'student', 'v1',
+            'dddddddd-0000-0000-0000-00000000f001');
+
+  SELECT cp.block_id INTO v_blk
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND b.block_type = 'practice'
+  ORDER BY cp.display_ordinal LIMIT 1;
+  IF v_blk IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-39 no practice block on today, so there is nothing to move';
+  END IF;
+
+  ------------------------------------------------------------------- Z-39
+  -- ONE version, TWO dates.
+  SELECT count(*) INTO v_vcount FROM public.calendar_plan_versions WHERE student_id = S;
+  v_r := public.calendar_move_block(S, v_blk, v_to, 'v1', 'dddddddd-0000-0000-0000-00000000f002');
+  IF (v_r ->> 'validator_result') <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-39 the move was not accepted: %', v_r;
+  END IF;
+  v_ver := (v_r ->> 'version_no')::int;
+
+  SELECT count(*) INTO v_n FROM public.calendar_plan_versions WHERE student_id = S;
+  IF v_n <> v_vcount + 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-39 the move wrote % versions, expected exactly 1', v_n - v_vcount;
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM public.calendar_plan_dates d
+  JOIN public.calendar_plan_versions v USING (plan_version_id)
+  WHERE v.student_id = S AND v.version_no = v_ver;
+  IF v_n <> 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-39 the move version owns % dates, expected exactly 2', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-39 a move writes exactly ONE version owning exactly TWO dates';
+
+  ------------------------------------------------------------------- Z-40
+  -- THE LOAD-BEARING ARM. Gone from the source AND present on the target. The
+  -- source half is what a dropped member-removal breaks, and it is asserted
+  -- first so the failure names the real cause.
+  IF EXISTS (SELECT 1 FROM public.calendar_current_plan
+             WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-40 the moved block is STILL on the source date -- it is now on both days at once';
+  END IF;
+
+  SELECT cp.block_id INTO v_new
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date = v_to AND b.derived_from_block_id = v_blk;
+  IF v_new IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-40 no block on the target date has lineage back to the source';
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_blocks
+  WHERE student_id = S AND derived_from_block_id = v_blk;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-40 the move created % descendants of the source, expected exactly 1', v_n;
+  END IF;
+
+  IF (SELECT b.block_type || '/' || COALESCE(b.section,'-') || '/' || b.target_count::text
+        FROM public.calendar_blocks b WHERE b.block_id = v_new)
+     <> (SELECT b.block_type || '/' || COALESCE(b.section,'-') || '/' || b.target_count::text
+        FROM public.calendar_blocks b WHERE b.block_id = v_blk) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-40 the moved copy does not match the source type/section/target';
+  END IF;
+  RAISE NOTICE '    OK Z-40 the block left the source date and landed on the target with lineage intact';
+
+  ------------------------------------------------------------------- Z-41
+  -- §12.2: the student chose this arrangement, so BOTH dates are overrides and
+  -- a later auto-regeneration leaves them alone.
+  SELECT count(*) INTO v_n
+  FROM public.calendar_plan_dates d
+  JOIN public.calendar_plan_versions v USING (plan_version_id)
+  WHERE v.student_id = S AND v.version_no = v_ver AND d.is_user_override;
+  IF v_n <> 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-41 % of the 2 moved dates are user overrides, expected both', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-41 both the source and the target date are marked is_user_override';
+
+  ------------------------------------------------------------------- Z-42
+  -- INV-08-09 again, on the new writer.
+  SELECT count(*) INTO v_vcount FROM public.calendar_plan_versions WHERE student_id = S;
+  v_r2 := public.calendar_move_block(S, v_blk, v_to, 'v1', 'dddddddd-0000-0000-0000-00000000f002');
+  SELECT count(*) INTO v_n FROM public.calendar_plan_versions WHERE student_id = S;
+  IF v_r2 <> v_r OR v_n <> v_vcount THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-42 a replayed move key wrote % new versions and returned a % response',
+      v_n - v_vcount, CASE WHEN v_r2 = v_r THEN 'matching' ELSE 'DIFFERENT' END;
+  END IF;
+  RAISE NOTICE '    OK Z-42 a replayed move key returns the stored response and writes nothing';
+
+  ------------------------------------------------------------------- Z-43
+  -- A STARTED block is refused AS DATA, and nothing is written.
+  SELECT cp.block_id INTO v_blk2
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND b.block_type = 'practice'
+  ORDER BY cp.display_ordinal LIMIT 1;
+  IF v_blk2 IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-43 no practice block left on today to start';
+  END IF;
+  PERFORM public.calendar_link_launch(S, v_blk2, 'practice', 'eeeeeeee-0000-4000-8000-000000000002');
+
+  SELECT count(*) INTO v_vcount FROM public.calendar_plan_versions WHERE student_id = S;
+  v_r2 := public.calendar_move_block(S, v_blk2, v_to, 'v1', 'dddddddd-0000-0000-0000-00000000f003');
+  IF (v_r2 ->> 'refused') <> 'block_started' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-43 a started block was not refused as data, got %', v_r2;
+  END IF;
+  SELECT count(*) INTO v_n FROM public.calendar_plan_versions WHERE student_id = S;
+  IF v_n <> v_vcount THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-43 a refused move still wrote % versions', v_n - v_vcount;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_current_plan
+                 WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk2) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-43 the started block left its date despite the refusal';
+  END IF;
+  RAISE NOTICE '    OK Z-43 a started block is refused as data and nothing is written';
+
+  ------------------------------------------------------------------- Z-44
+  -- The past and the no-op, also as data. A refused move never touches the
+  -- ledger either, or a student who dropped a block back where it started
+  -- would burn the key their next real move needs.
+  SELECT cp.block_id INTO v_blk2
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date = v_to AND b.derived_from_block_id = v_blk;
+
+  v_r2 := public.calendar_move_block(S, v_blk2, v_today - 1, 'v1', 'dddddddd-0000-0000-0000-00000000f004');
+  IF (v_r2 ->> 'refused') <> 'date_in_past' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-44 a move into the past was not refused as data, got %', v_r2;
+  END IF;
+
+  v_r2 := public.calendar_move_block(S, v_blk2, v_to, 'v1', 'dddddddd-0000-0000-0000-00000000f005');
+  IF (v_r2 ->> 'refused') <> 'same_date' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-44 a move to the same date was not refused as data, got %', v_r2;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_mutation_ledger
+  WHERE student_id = S AND idempotency_key IN ('dddddddd-0000-0000-0000-00000000f003',
+                                               'dddddddd-0000-0000-0000-00000000f004',
+                                               'dddddddd-0000-0000-0000-00000000f005');
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-44 a refused move consumed % idempotency keys, expected 0', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-44 a past date and a same-date move are refused as data, and no key is consumed';
+END;
+$movegates$;
+
+
 ROLLBACK;

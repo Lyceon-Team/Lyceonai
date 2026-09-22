@@ -120,7 +120,9 @@ export const deviceTimezoneMismatchSchema = z
     device_timezone: z.string().min(1),
   })
   .strict();
-export type DeviceTimezoneMismatch = z.infer<typeof deviceTimezoneMismatchSchema>;
+export type DeviceTimezoneMismatch = z.infer<
+  typeof deviceTimezoneMismatchSchema
+>;
 
 // ── GET /api/calendar ───────────────────────────────────────────────────────
 
@@ -133,7 +135,10 @@ export const calendarQuerySchema = z
   })
   .strict()
   .refine(
-    (query) => query.from === undefined || query.to === undefined || query.from <= query.to,
+    (query) =>
+      query.from === undefined ||
+      query.to === undefined ||
+      query.from <= query.to,
     { message: "`from` must not be after `to`", path: ["from"] },
   );
 export type CalendarQuery = z.infer<typeof calendarQuerySchema>;
@@ -159,16 +164,39 @@ export const calendarSetupDefaultsSchema = z
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
 
 /**
+ * §17.1 renders every practice row as "Algebra · 20 questions · ~30 min" and §17.2 puts a
+ * "~N min" readout on the day editor. The client cannot derive those minutes: both
+ * seconds-per-unit constants are server-owned (`review_estimated_seconds_per_item` in
+ * `calendar_runtime_config`, `target_seconds_per_question` in `practice_runtime_config`,
+ * which Doc 02B §41 owns). They travel on the payload so the figure the student reads is the
+ * SAME budget the generator planned the day against — a client-side literal would drift from
+ * the plan the moment either constant changed, and drift silently.
+ *
+ * NOT on the guardian payload: §16 gives a guardian counts and no controls, and the minute
+ * estimate is a planning affordance for the person doing the work.
+ */
+export const planningEstimatesSchema = z
+  .object({
+    practice_seconds_per_unit: z.number().int().positive(),
+    review_seconds_per_unit: z.number().int().positive(),
+  })
+  .strict();
+export type PlanningEstimates = z.infer<typeof planningEstimatesSchema>;
+
+/**
  * The READY payload — everything §15 lists, under `status: "ready"`.
  */
 export const calendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
     profile: studyProfileSchema,
+    /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
+    estimates: planningEstimatesSchema,
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
-    latest_unacknowledged_nonstudent_change: unacknowledgedChangeSchema.nullable(),
+    latest_unacknowledged_nonstudent_change:
+      unacknowledgedChangeSchema.nullable(),
     diagnostic_state: diagnosticStateSchema,
     /** Doc 05C's band, when one exists. Consumed, never computed here. */
     projection: z.array(sectionProjectionSchema).optional(),
@@ -229,7 +257,9 @@ export type ProfileUpsertResponse = z.infer<typeof profileUpsertResponseSchema>;
 export const idempotentMutationBodySchema = z
   .object({ idempotency_key: idempotencyKeySchema })
   .strict();
-export type IdempotentMutationBody = z.infer<typeof idempotentMutationBodySchema>;
+export type IdempotentMutationBody = z.infer<
+  typeof idempotentMutationBodySchema
+>;
 
 /** `:date` for every day-scoped route. */
 export const dayParamsSchema = z.object({ date: localDateSchema }).strict();
@@ -306,6 +336,43 @@ export const doItNowResponseSchema = z
   .strict();
 export type DoItNowResponse = z.infer<typeof doItNowResponseSchema>;
 
+// ── POST /api/calendar/blocks/:id/move ──────────────────────────────────────
+
+/**
+ * §12.2/§12.4. Moving a block is a day edit of TWO dates at once, so it is its own route
+ * rather than two `PUT /days/:date` calls: two calls could half-succeed and leave the block
+ * on both days, or on neither.
+ */
+export const moveBlockBodySchema = z
+  .object({
+    to_date: localDateSchema,
+    idempotency_key: idempotencyKeySchema,
+  })
+  .strict();
+export type MoveBlockBody = z.infer<typeof moveBlockBodySchema>;
+
+/**
+ * The three ways a move legitimately does not happen. These are OUTCOMES, not errors: each
+ * one is reachable by ordinary use of a drag handle — a stale tab, a drag that crosses
+ * local midnight, a drop back where the block started — so `calendar_move_block` returns
+ * them as data and the route answers 409 with the reason, rather than raising.
+ *
+ * The client mirrors all three before it ever issues the request (an illegal drop should
+ * not leave the pointer), and still handles them on the way back, because the client's
+ * "today" and the server's are two different clocks.
+ */
+export const MOVE_REFUSAL_REASONS = [
+  "block_started",
+  "date_in_past",
+  "same_date",
+] as const;
+export const moveRefusalReasonSchema = z.enum(MOVE_REFUSAL_REASONS);
+export type MoveRefusalReason = z.infer<typeof moveRefusalReasonSchema>;
+
+/** A move that happened returns the version that owns both dates, same as every writer. */
+export const moveBlockResponseSchema = versionResponseSchema;
+export type MoveBlockResponse = z.infer<typeof moveBlockResponseSchema>;
+
 // ── POST /api/calendar/acknowledge ──────────────────────────────────────────
 
 /**
@@ -317,7 +384,9 @@ export const acknowledgeBodySchema = z
   .strict();
 export type AcknowledgeBody = z.infer<typeof acknowledgeBodySchema>;
 
-export const acknowledgeResponseSchema = z.object({ ok: z.literal(true) }).strict();
+export const acknowledgeResponseSchema = z
+  .object({ ok: z.literal(true) })
+  .strict();
 export type AcknowledgeResponse = z.infer<typeof acknowledgeResponseSchema>;
 
 // ── GET /api/guardian/students/:id/calendar ─────────────────────────────────
@@ -329,7 +398,10 @@ export const guardianCalendarQuerySchema = z
   })
   .strict()
   .refine(
-    (query) => query.from === undefined || query.to === undefined || query.from <= query.to,
+    (query) =>
+      query.from === undefined ||
+      query.to === undefined ||
+      query.from <= query.to,
     { message: "`from` must not be after `to`", path: ["from"] },
   );
 export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
@@ -369,4 +441,6 @@ export const guardianCalendarResponseSchema = z.discriminatedUnion("status", [
   guardianCalendarReadyResponseSchema,
   guardianCalendarSetupRequiredResponseSchema,
 ]);
-export type GuardianCalendarResponse = z.infer<typeof guardianCalendarResponseSchema>;
+export type GuardianCalendarResponse = z.infer<
+  typeof guardianCalendarResponseSchema
+>;

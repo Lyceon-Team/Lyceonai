@@ -33,7 +33,14 @@
  * Those arrive as PostgREST errors and are classified back into the union here, because
  * "yesterday cannot be regenerated" is a 409 the student can act on and not a 500.
  */
-import { err, ok, type PlanTrigger, type Result } from "@lyceon/shared";
+import {
+  err,
+  moveRefusalReasonSchema,
+  ok,
+  type MoveRefusalReason,
+  type PlanTrigger,
+  type Result,
+} from "@lyceon/shared";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
@@ -55,6 +62,12 @@ export type PlanFailure =
   | { kind: "no_profile" }
   /** The block named does not belong to this student. */
   | { kind: "not_found" }
+  /**
+   * §12.2: the move was refused as DATA by `calendar_move_block` — a started block, a past
+   * date at either end, or a drop back on the day it was already on. Not an error: each is
+   * reachable by ordinary use of a drag handle, so the reason travels to the client.
+   */
+  | { kind: "move_refused"; reason: MoveRefusalReason }
   /** Anything else the database refused. Operator-facing detail only. */
   | { kind: "write_failed"; detail: string };
 
@@ -77,13 +90,17 @@ type RpcEnvelope = {
  * only to log which rules fired — the route never renders it, because a rule id is
  * internal and a student cannot act on one.
  */
-function readEnvelope(data: unknown): { versionNo: number; accepted: boolean; violations: string[] } | null {
+function readEnvelope(
+  data: unknown,
+): { versionNo: number; accepted: boolean; violations: string[] } | null {
   if (typeof data !== "object" || data === null) return null;
   const envelope = data as RpcEnvelope;
   if (typeof envelope.version_no !== "number") return null;
   if (typeof envelope.validator_result !== "string") return null;
   const violations = Array.isArray(envelope.violations)
-    ? envelope.violations.filter((rule): rule is string => typeof rule === "string")
+    ? envelope.violations.filter(
+        (rule): rule is string => typeof rule === "string",
+      )
     : [];
   return {
     versionNo: envelope.version_no,
@@ -109,20 +126,42 @@ function classifyRpcError(
   if (message.includes("beyond the") && context.date !== undefined) {
     return { kind: "beyond_horizon", date: context.date };
   }
-  if (message.includes("does not belong to student")) return { kind: "not_found" };
+  if (message.includes("does not belong to student"))
+    return { kind: "not_found" };
   return { kind: "write_failed", detail: message };
+}
+
+/**
+ * A writer that can refuse AS DATA returns `{ "refused": "<reason>" }` and no `version_no`.
+ * Read here, before `readEnvelope`, because that function correctly rejects any shape
+ * without a `version_no` — without this the refusal would surface as `envelope_unexpected`,
+ * which is a 500 and an ERROR log for something the student did on purpose.
+ */
+function readRefusal(data: unknown): MoveRefusalReason | null {
+  if (typeof data !== "object" || data === null) return null;
+  const refused = (data as { refused?: unknown }).refused;
+  if (typeof refused !== "string") return null;
+  const parsed = moveRefusalReasonSchema.safeParse(refused);
+  return parsed.success ? parsed.data : null;
 }
 
 async function callWriter(
   operation: string,
   fn: string,
   args: Record<string, string | number | null>,
-  context: { studentId: string; date?: string; requestId?: string },
+  context: {
+    studentId: string;
+    date?: string;
+    requestId?: string;
+    refusable?: boolean;
+  },
 ): Promise<PlanWriteResult> {
   const { data, error } = await supabaseServer.rpc(fn, args);
 
   if (error) {
-    const failure = classifyRpcError(error, { ...(context.date === undefined ? {} : { date: context.date }) });
+    const failure = classifyRpcError(error, {
+      ...(context.date === undefined ? {} : { date: context.date }),
+    });
     // A refusal the student caused is a decision and logs at warn; anything else is an
     // operational failure and logs at error. Neither is silent, and neither carries the
     // plan scope, the timezone or the body (§18 "never logged").
@@ -131,9 +170,27 @@ async function callWriter(
       "CALENDAR_PLAN",
       `${operation}_refused`,
       `${fn} refused the write`,
-      { operation, reason: failure.kind, ...classifyError(error), requestId: context.requestId },
+      {
+        operation,
+        reason: failure.kind,
+        ...classifyError(error),
+        requestId: context.requestId,
+      },
     );
     return err(failure);
+  }
+
+  if (context.refusable === true) {
+    const refusal = readRefusal(data);
+    if (refusal !== null) {
+      logger.warn(
+        "CALENDAR_PLAN",
+        `${operation}_refused`,
+        `${fn} declined the write`,
+        { operation, reason: refusal, requestId: context.requestId },
+      );
+      return err({ kind: "move_refused", reason: refusal });
+    }
   }
 
   const envelope = readEnvelope(data);
@@ -155,7 +212,11 @@ async function callWriter(
       "CALENDAR_PLAN",
       "plan_rejected",
       "the validator rejected the generated plan; the prior plan stands",
-      { operation, rule_ids: envelope.violations, requestId: context.requestId },
+      {
+        operation,
+        rule_ids: envelope.violations,
+        requestId: context.requestId,
+      },
     );
     return err({ kind: "rejected", violations: envelope.violations });
   }
@@ -179,7 +240,12 @@ async function callWriter(
  */
 export type HorizonTrigger = Extract<
   PlanTrigger,
-  "setup" | "profile_change" | "weekly" | "student_refresh" | "post_exam" | "rollback"
+  | "setup"
+  | "profile_change"
+  | "weekly"
+  | "student_refresh"
+  | "post_exam"
+  | "rollback"
 >;
 
 export type RegenerateRequest = {
@@ -205,7 +271,10 @@ export async function regeneratePlan(
       p_generator_version: request.generator_version,
       p_idempotency_key: request.idempotency_key ?? null,
     },
-    { studentId: request.student_id, ...(requestId === undefined ? {} : { requestId }) },
+    {
+      studentId: request.student_id,
+      ...(requestId === undefined ? {} : { requestId }),
+    },
   );
 }
 
@@ -296,7 +365,53 @@ export async function doItNow(
       p_generator_version: request.generator_version,
       p_idempotency_key: request.idempotency_key,
     },
-    { studentId: request.student_id, ...(requestId === undefined ? {} : { requestId }) },
+    {
+      studentId: request.student_id,
+      ...(requestId === undefined ? {} : { requestId }),
+    },
+  );
+}
+
+// ── §12.2/§12.4 move ────────────────────────────────────────────────────────
+
+export type MoveBlockRequest = {
+  student_id: string;
+  block_id: string;
+  to_date: string;
+  generator_version: string;
+  idempotency_key: string;
+};
+
+/**
+ * @spec [Doc_05F_Study_Calendar, §12.2 protected state, §12.4 day edit]
+ * @implemented [2026-09-23]
+ * plain English: hands one block and a target date to `calendar_move_block`, which writes a
+ * single version owning both the old and the new date. Expected outcome: `{ version_no }`.
+ * Trade-off: this is `refusable`, so three outcomes reach the route as a `move_refused`
+ * failure rather than as a thrown error — the route turns each into a 409 the client can
+ * act on. Edge case: the past-date and same-date refusals are decided against the SERVER's
+ * local today, which is why the client mirroring them is an optimisation and not the check.
+ */
+export async function moveBlock(
+  request: MoveBlockRequest,
+  requestId?: string,
+): Promise<PlanWriteResult> {
+  return callWriter(
+    "move_block",
+    "calendar_move_block",
+    {
+      p_student_id: request.student_id,
+      p_block_id: request.block_id,
+      p_to_date: request.to_date,
+      p_generator_version: request.generator_version,
+      p_idempotency_key: request.idempotency_key,
+    },
+    {
+      studentId: request.student_id,
+      date: request.to_date,
+      refusable: true,
+      ...(requestId === undefined ? {} : { requestId }),
+    },
   );
 }
 
