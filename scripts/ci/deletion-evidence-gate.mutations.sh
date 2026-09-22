@@ -38,6 +38,9 @@ MIG9="supabase/migrations/20260922010000_tutor_lapse_severance.sql"
 RPOL="infra/retention-policy-registry.yaml"
 YAMLLIB="scripts/ci/lib/minimal-yaml.ts"
 SECRETGATE="scripts/ci/secret-class-inventory-check.ts"
+SWEEP="server/services/retention-sweep.ts"
+SCHEDTF="infra/terraform/cloud-scheduler.tf"
+RETROUTE="server/routes/internal-retention-routes.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -56,6 +59,9 @@ cp "$MIG9" "$BACKUP/mig9.sql"
 cp "$RPOL"       "$BACKUP/retention-policy-registry.yaml"
 cp "$YAMLLIB"    "$BACKUP/minimal-yaml.ts"
 cp "$SECRETGATE" "$BACKUP/secret-class-inventory-check.ts"
+cp "$SWEEP"      "$BACKUP/retention-sweep.ts"
+cp "$SCHEDTF"    "$BACKUP/cloud-scheduler.tf"
+cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -76,6 +82,9 @@ restore() {
   cp "$BACKUP/retention-policy-registry.yaml" "$RPOL"
   cp "$BACKUP/minimal-yaml.ts" "$YAMLLIB"
   cp "$BACKUP/secret-class-inventory-check.ts" "$SECRETGATE"
+  cp "$BACKUP/retention-sweep.ts" "$SWEEP"
+  cp "$BACKUP/cloud-scheduler.tf" "$SCHEDTF"
+  cp "$BACKUP/internal-retention-routes.ts" "$RETROUTE"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -487,6 +496,70 @@ echo "==> (M64) the parser classifies before stripping the inline comment again"
 plant M64 "$YAMLLIB" 's.replace("  const commentIdx = v.indexOf(\" #\");\n  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;\n\n  if (clean === \"\" || clean === \"null\" || clean === \"~\") return null;", "  if (v === \"\" || v === \"null\" || v === \"~\") return null;\n  const commentIdx = v.indexOf(\" #\");\n  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;\n", 1)'
 expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
 
+# =============================================================================
+# The BigQuery archive is gone (Doc 07B §5.4, owner ruling 2026-09-22) — and
+# the 90d/180d tiers are scheduled for the first time.
+# =============================================================================
+# The archive was invisible for a month because "returns ok: false" and "is not
+# scheduled" each explained the other. These mutations plant the two halves of
+# that back and require the suite to say so.
+SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
+
+echo "==> (M65) the 90d tier declines again instead of deleting"
+plant M65 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 90);', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const cutoff = retentionCutoff(opts.now, 90);', 1)"
+expect_red M65 "deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)"
+
+echo "==> (M66) an archive call comes back into the sweep module"
+plant M66 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 180);', '  const archiveTable = \"retention__crisis_review_cases\";\n  void archiveTable;\n  const cutoff = retentionCutoff(opts.now, 180);', 1)"
+expect_red M66 "retention-sweep.ts references no archive, BigQuery, or warehouse path"
+
+echo "==> (M67) the route builds an archive client again"
+plant M67 "$RETROUTE" "s.replace('const router = Router();', 'const archiveDataset = process.env.BIGQUERY_ARCHIVE_DATASET;\nvoid archiveDataset;\nconst router = Router();', 1)"
+expect_red M67 "the internal retention route constructs no archive client"
+
+SUITE="tests/ci/retention-policy-publication.contract.test.ts"
+
+echo "==> (M68) the 180d tier loses its schedule — a published period with nothing running it"
+plant M68 "$SCHEDTF" "s.replace('resource \"google_cloud_scheduler_job\" \"retention_sweep_180d\" {', 'resource \"google_cloud_scheduler_job\" \"retention_sweep_180d_DISABLED\" {', 1).replace('      retention_tier = \"180d\"', '      retention_tier = \"7d\"', 1)"
+expect_red M68 "the three runnable tiers are 7d, 90d and 180d"
+
+echo "==> (M69) 365d gains a schedule although its tables do not exist"
+plant M69 "$SCHEDTF" "s.replace('      retention_tier = \"90d\"', '      retention_tier = \"365d\"', 1)"
+expect_red M69 "365d is NOT scheduled — its tables do not exist"
+
+echo "==> (M70) two tiers share one request_id, so the second reads as a replay"
+plant M70 "$SCHEDTF" "s.replace('7b2d9f30-5e41-4c88-b0a7-3d6f8c1e9042', '0f1c6c4e-6c8f-4a6d-9a3e-0b5a1d7c2e41', 1)"
+expect_red M70 "each job carries its own request_id UUID (no cross-tier dedup)"
+
+echo "==> (M71) a job's OIDC audience drifts off its target URI (a permanent, silent 401)"
+plant M71 "$SCHEDTF" "s.replace('audience              = \"\${var.app_base_url}/api/internal/retention/sweep\"', 'audience              = \"\${var.app_base_url}/api/internal/retention/sweep/90d\"', 1)"
+expect_red M71 "every job signs an OIDC token whose audience equals its target URI"
+
+echo "==> (M72) a job runs in dry_run, so the schedule exists and deletes nothing"
+plant M72 "$SCHEDTF" "s.replace('      dry_run        = false', '      dry_run        = true', 1)"
+expect_red M72 "every job POSTs, runs dry_run = false, and pins Etc/UTC"
+
+echo "==> (M73) the HCL gate is satisfied by a comment quoting the setting it lost"
+# The M54 shape, one layer up: prove stripHclComments is what makes M72 bite.
+plant M73 "$SCHEDTF" "s.replace('      dry_run        = false', '      # dry_run        = false', 1)"
+expect_red M73 "every job POSTs, runs dry_run = false, and pins Etc/UTC"
+
+echo "==> (M74) a new tier joins the route enum with no schedule and no no-op reason"
+# The exact failure that hid for a month, in its general form: a tier the API
+# accepts, that nothing ever calls. M68 catches it for a tier we know about;
+# this catches the next one.
+plant M74 "$RETROUTE" "s.replace('z.enum([\"7d\", \"90d\", \"180d\", \"365d\"])', 'z.enum([\"7d\", \"90d\", \"180d\", \"365d\", \"730d\"])', 1)"
+expect_red M74 "every accepted tier is either scheduled or a documented no-op"
+
+echo "==> (29i) restored: the sweep and publication suites must be green again"
+SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: retention-sweep suite not green after restore"; fails=1; else echo "  ok   retention-sweep suite green after restore"; fi
+SUITE="tests/ci/retention-policy-publication.contract.test.ts"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: retention-publication suite not green after restore"; fails=1; else echo "  ok   retention-publication suite green after restore"; fi
+
+SUITE="tests/ci/retention-policy-registry.contract.test.ts"
 echo "==> (29h) restored: the retention-registry suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: retention-registry suite not green after restore"; fails=1; else echo "  ok   retention-registry suite green after restore"; fi

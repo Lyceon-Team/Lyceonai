@@ -47,7 +47,17 @@ output "retention_sweep_oidc_audience" {
   value       = google_cloud_scheduler_job.retention_sweep_7d.http_target[0].oidc_token[0].audience
 }
 
-output "retention_sweep_job_name" {
-  description = "Cloud Scheduler job name — `gcloud scheduler jobs describe` target"
-  value       = google_cloud_scheduler_job.retention_sweep_7d.name
+output "retention_sweep_job_names" {
+  description = <<-EOT
+    Every Cloud Scheduler job that calls the retention sweep, by tier —
+    `gcloud scheduler jobs describe` targets. The 90d and 180d jobs exist from
+    2026-09-22: before the archive was removed both tiers declined every call,
+    so there was nothing to schedule. 365d is absent because its tables do not
+    exist.
+  EOT
+  value = {
+    "7d"   = google_cloud_scheduler_job.retention_sweep_7d.name
+    "90d"  = google_cloud_scheduler_job.retention_sweep_90d.name
+    "180d" = google_cloud_scheduler_job.retention_sweep_180d.name
+  }
 }

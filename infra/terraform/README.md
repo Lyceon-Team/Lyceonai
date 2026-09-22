@@ -22,14 +22,19 @@ Terraform state.
 | 8 | `google_cloud_run_v2_service.tutor_orchestrator` | **import** | `lyceon-tutor-orchestrator` — CI-deployed service (Terraform manages IAM only) |
 | 9 | `google_project_service.cloudscheduler` | **create** | Enables the Cloud Scheduler API |
 | 10 | `google_cloud_scheduler_job.retention_sweep_7d` | **create** | Daily signed POST to `/api/internal/retention/sweep` (7d tier) |
+| 11 | `google_cloud_scheduler_job.retention_sweep_90d` | **create** | Same route, 90d tier — instruction assignments and exposures |
+| 12 | `google_cloud_scheduler_job.retention_sweep_180d` | **create** | Same route, 180d tier — resolved crisis cases and injection logs |
 
 **Not in Phase 1:** BigQuery tables, RAG corpus, Phase 2 Cloud Tasks
 queues, floor settings.
 
 Rows 9 and 10 were added after Phase 1 (2026-09-21, retention policy
 publication). Cloud Scheduler was on the Phase 1 exclusion list; the
-retention sweep route had no caller, so it came off. The counts below
-include them.
+retention sweep route had no caller, so it came off. Rows 11 and 12 were
+added 2026-09-22, when the owner ruling removed the BigQuery archive: until
+then the 90d and 180d tiers declined every call because their archive client
+could not load, so scheduling them would have scheduled a nightly no-op. They
+delete outright now. The counts below include all four.
 
 ---
 
@@ -138,11 +143,11 @@ any cloud resource.
 #### What a CORRECT plan looks like
 
 ```
-Plan: 7 to add, 0 to change, 0 to destroy.
+Plan: 9 to add, 0 to change, 0 to destroy.
       3 to import.
 ```
 
-The 7 "add" resources:
+The 9 "add" resources:
 - `google_project_service.modelarmor`
 - `google_model_armor_template.input`
 - `google_model_armor_template.output`
@@ -150,6 +155,8 @@ The 7 "add" resources:
 - `google_cloud_run_v2_service_iam_member.cloud_tasks_invoker`
 - `google_project_service.cloudscheduler`
 - `google_cloud_scheduler_job.retention_sweep_7d`
+- `google_cloud_scheduler_job.retention_sweep_90d`
+- `google_cloud_scheduler_job.retention_sweep_180d`
 
 The 3 "import" resources:
 - `google_bigquery_dataset.archive`
@@ -172,7 +179,7 @@ Each resource in the plan is prefixed with a symbol:
 | Changes on `google_cloud_tasks_queue` | Rate limits or retry config don't match reality | Run the `gcloud tasks queues describe` command from Step 0 and copy the values |
 | Changes on `google_bigquery_dataset` | Location mismatch | Run the `bq show` command from Step 0 |
 | "Error: resource already exists" | A resource Terraform is trying to create already exists in GCP | Add an `import` block for it (e.g. if the SA already exists) |
-| More than 7 creates or 3 imports | Unexpected — re-read the plan carefully |
+| More than 9 creates or 3 imports | Unexpected — re-read the plan carefully |
 
 ### Step 5: Apply (PROVISIONS RESOURCES)
 
@@ -182,7 +189,7 @@ Only after the plan from Step 4 is correct:
 terraform apply phase1.tfplan
 ```
 
-This creates the 7 new resources and writes the 3 imported resources
+This creates the 9 new resources and writes the 3 imported resources
 into Terraform state. After apply, Terraform prints the outputs.
 
 ### Step 6: Get the output values
