@@ -27,6 +27,19 @@ resource "google_bigquery_dataset" "archive" {
   # Doc 07B §5.1, line 173: "Partition-expiration: NOT set on event
   # tables (retention is 'forever' for the pseudonymized 13+ class)."
   # default_table_expiration_ms is intentionally omitted (no expiry).
+  #
+  # THAT JUSTIFICATION DOES NOT DESCRIBE THE RETENTION ARCHIVE, and the
+  # archive is being retired because of it (owner ruling 2026-09-22, SCL-106).
+  # The four `retention__*` tables this dataset was provisioned for hold raw
+  # rows exported straight out of Supabase — every one carries a real
+  # `student_id`, and the crisis table also carries `reviewer_id` and
+  # free-text reviewer notes about a minor. They are not pseudonymized, so
+  # the sentence above never applied to them, and Doc 07B §5.4's no-PII
+  # invariant for the archive layer forbids them outright. Nothing has ever
+  # been archived (the client's dependency was never installed), so there is
+  # nothing to migrate: the 90d and 180d tutor tiers will delete outright
+  # instead, and a follow-up PR removes the archive path, its schemas and
+  # this dataset's only consumer. No table resource is declared here.
 
   lifecycle {
     prevent_destroy = true

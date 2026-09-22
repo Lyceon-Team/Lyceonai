@@ -927,6 +927,18 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
             --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
 
+      # The gate that existed and never ran. scripts/ci/retention-archive-drift-check.mjs
+      # has been in the repo since 2026-08-27 to catch Postgres columns that the
+      # BigQuery archive schema does not have; no workflow invoked it. It was red:
+      # crisis_review_cases.category was added 2026-09-17 and never reached the
+      # schema, and conversation_id/student_id went nullable on 2026-09-18 while the
+      # schema still said REQUIRED. A schema missing a column is not cosmetic — the
+      # archive insert fails on the unknown field, and archive failure blocks the
+      # Supabase delete, so the drift silently stops the 90d/180d tiers. Needs no
+      # credentials and no database: it reads genesis-schema.expected.sql.
+      - name: BigQuery archive schema drift (Postgres columns vs checked-in schema)
+        run: node scripts/ci/retention-archive-drift-check.mjs
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost
