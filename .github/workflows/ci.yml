@@ -768,6 +768,40 @@ jobs:
       # 2026-09-15: the retention sweep (C11.1–C11.3: 90-day window defined once in SQL, the
       # cascade proven by message count, the zero-deletion log line) and the notifications
       # page API (archive view, mark-all-read, recipient denial) run in the same step.
+      # @spec [Doc-03_V3 §21.2 step 5, §21.3; CR-03C-V3-01 §3.4; WS-L8 Item 4b;
+      #        owner ruling 2026-09-22 D1] | @implemented [2026-09-22]
+      # Flagging a conversation for crisis review used to be two writes in sequence, and
+      # between them sat a state the system must never be in: a conversation MARKED as a
+      # crisis with NOTHING in the review queue. Nothing sweeps for that, and the 48h SLA
+      # never starts because the SLA lives on the case that was never created. Both writes
+      # are now one transaction. D1.3 is the ruling's own test — force a failure after the
+      # flag write, require that nothing survives — and it can only be shown on a real
+      # database, because the whole claim is about transaction boundaries. Verdict read from
+      # vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Crisis flag atomicity (Doc 03 §21.3 / D1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/crisis-flag-atomic.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-crisis-flag-atomic.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-crisis-flag-atomic.json \
+            --file tests/ci/crisis-flag-atomic.pg.ci.test.ts
+
+      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
+      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
+      # requires D1.3 to notice.
+      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+
       - name: Notifications rebuild → real PG proof
         env:
           PGHOST: localhost

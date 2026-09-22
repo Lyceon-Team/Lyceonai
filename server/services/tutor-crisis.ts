@@ -32,12 +32,18 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { getGcpCredentials } from "../lib/gcp-credentials";
 import { logger } from "../logger";
-import { createCrisisReviewCase } from "./crisis-review-queue";
 import { notifyCrisisEvent } from "./crisis-notification";
+import {
+  crisisFlagResultSchema,
+  type CrisisCategory,
+  type CrisisSource,
+} from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Types ──────────────────────────────────────────────────────────────
-
-type CrisisCategory = "crisis" | "safeguarding";
+// `CrisisCategory` and `CrisisSource` are inferred from the Zod schemas in
+// packages/shared. They were declared here AND in crisis-review-queue.ts as
+// hand-written unions; three copies of one enum drift the moment the database
+// CHECK gains a value. Coding Standards §7.2 / §17.
 
 type CrisisResult =
   | { crisis: false; forceReview: boolean }
@@ -127,6 +133,8 @@ export function evaluateNotificationPolicy(
   return { shouldNotify: false, suppressionReason: "throttled_same_severity" };
 }
 
+// Re-exported so existing consumers keep their import site; the definition
+// lives in packages/shared.
 export type { CrisisResult, CrisisCategory };
 export { notifyCrisisEvent };
 
@@ -625,28 +633,50 @@ export function getCrisisResponse(
 // ── Conversation Flagging ──────────────────────────────────────────────
 
 /**
- * Sets crisis_flagged = true on the conversation AND creates a durable
- * crisis_review_cases row with a 48h SLA deadline.
+ * Flags a conversation for crisis review: sets `crisis_flagged` on the
+ * conversation AND creates the durable review case with its SLA deadline, in
+ * ONE database transaction.
  *
- * BLOCKING: throws on failure. A failed flag write means the crisis turn
- * will not be reviewed — that is worse than a failed turn. The caller
- * MUST let the throw propagate; the student receives an error rather than
- * an untracked crisis turn.
+ * BLOCKING: throws on failure. A failed flag write means the crisis turn will
+ * not be reviewed — that is worse than a failed turn. The caller MUST let the
+ * throw propagate; the student receives an error rather than an untracked
+ * crisis turn.
  *
- * @spec [Doc-03_V3 §21.2, §21.3, SCL-025]
- * @implemented 2026-08-13 (changed from fire-and-forget to BLOCKING)
+ * @spec [Doc-03_V3 §21.2 step 5, §21.3; SCL-025; WS-L8 Item 4b;
+ *        owner ruling 2026-09-22 D1]
+ * @implemented 2026-08-13; made atomic 2026-09-22
+ *
+ * plain English: this used to do two writes in sequence, and between them sat
+ * a state the system must never be in — a conversation MARKED as a crisis with
+ * NOTHING in the review queue. The turn failed and the student saw an error,
+ * correctly, but the flag stayed set. Nothing sweeps for a flagged
+ * conversation without a case, and the 48h SLA never starts because the SLA
+ * lives on the case that was never created. Both writes are now inside
+ * `public.flag_conversation_for_crisis_review`, so either both land or
+ * neither does.
+ *
+ * expected outcome: returns the case id, whether it is new, its status and its
+ * SLA deadline — the four things `evaluateNotificationPolicy` needs from the
+ * write. Two outcomes are success-equivalent and are resolved inside the SQL
+ * function: an active case already existing for this conversation (a second
+ * signal during one sustained event), and a `source` value newer than
+ * production's CHECK constraint, which retries once at coarser precision
+ * (WS-L8 Item 4b).
  *
  * trade-offs:
- *   - Previously this function swallowed errors so the crisis response
- *     could still be delivered. The new behavior fails the turn on a flag
- *     write failure. Rationale: an unreviewed crisis turn is a safety gap
- *     that monitoring alone cannot close within the 48h SLA.
- *   - The crisis_review_cases INSERT uses a UNIQUE partial index on
- *     (conversation_id) WHERE status IN ('open', 'in_review'), so calling
- *     this twice for the same conversation is safe — the second call will
- *     throw a unique violation, which the route handler treats as a turn
- *     failure (idempotency is NOT required here; duplicate calls indicate
- *     a retry scenario that should be investigated).
+ *  - This function does NOT notify. The ops notification is the caller's
+ *    (`tutor-runtime.ts`), which first runs `evaluateNotificationPolicy` over
+ *    the result below. That split predates D1 and is kept: Cloud Tasks cannot
+ *    join a database transaction anyway, and a notification sent for a case
+ *    that then rolls back is worse than one sent a moment late.
+ *  - The RPC's payload is parsed with Zod rather than cast. It crosses a
+ *    process boundary like any other external input.
+ *
+ * edge cases:
+ *  - A conversation id that does not exist now throws. PostgREST reports no
+ *    error when a filtered UPDATE matches zero rows, so the old code reported
+ *    success and then failed on the case INSERT's foreign key — a confusing FK
+ *    error for what is really a bad conversation id.
  */
 
 export type FlagForReviewResult = {
@@ -659,116 +689,76 @@ export type FlagForReviewResult = {
 export async function flagConversationForReview(
   conversationId: string,
   studentId: string,
-  source:
-    | "signature"
-    | "model"
-    | "both"
-    | "classifier_degraded"
-    | "classifier_degraded_no_floor"
-    | "infrastructure_failure",
+  source: CrisisSource,
   signatureId: string | null,
   modelConfidence: number | null,
   category: CrisisCategory = "crisis",
 ): Promise<FlagForReviewResult> {
-  // Step 1: Set crisis_flagged on tutor_conversations (BLOCKING)
-  const { error } = await supabaseServer
-    .from("tutor_conversations")
-    .update({ crisis_flagged: true })
-    .eq("id", conversationId);
+  const { data, error } = await supabaseServer.rpc(
+    "flag_conversation_for_crisis_review",
+    {
+      p_conversation_id: conversationId,
+      p_student_id: studentId,
+      p_source: source,
+      p_signature_id: signatureId,
+      p_model_confidence: modelConfidence,
+      p_category: category,
+    },
+  );
 
   if (error) {
     logger.error(
       "TUTOR_CRISIS",
       "crisis_flag_write_failed",
-      "failed to set crisis_flagged on tutor_conversations; BLOCKING the turn",
+      "failed to flag conversation and create its review case; BLOCKING the turn. " +
+        "Both writes are one transaction, so nothing was left half-done.",
       error,
       { conversationId },
     );
     throw new Error(`crisis flag write failed: ${error.message}`);
   }
 
-  // Step 2: Create a durable review case with 48h SLA (BLOCKING)
-  //
-  // Unique-violation (23505) from idx_crisis_review_cases_conversation_active
-  // means an active case already exists for this conversation. That is not a
-  // failed write — the case IS persisted; this is a redundant signal (e.g., a
-  // second degraded turn during a sustained Vertex outage). Treat it as
-  // success-equivalent: query the existing case and proceed.
-  //
-  // This does NOT reverse B1.1d: genuine failures (FK violation, connection
-  // error, etc.) still throw and block the turn.
-  let caseId: string;
-  let slaDeadline: string;
-  let isNewCase = true;
-  let caseStatus: "open" | "in_review" | "resolved" = "open";
-  try {
-    const result = await createCrisisReviewCase({
-      conversationId,
-      studentId,
-      source,
-      signatureId,
-      modelConfidence,
-      category,
-    });
-    caseId = result.id;
-    slaDeadline = result.slaDeadline;
-  } catch (createErr: unknown) {
-    // Check for unique violation on the active-case partial index
-    const pgCode =
-      createErr instanceof Error &&
-      "code" in createErr &&
-      typeof (createErr as Record<string, unknown>).code === "string"
-        ? ((createErr as Record<string, unknown>).code as string)
-        : null;
+  const parsed = crisisFlagResultSchema.safeParse(data);
+  if (!parsed.success) {
+    // The write succeeded, so the case exists — but we cannot say which one.
+    // Blocking is still right: an unreadable result is not a reviewed turn,
+    // and a cast would hand `undefined` to the notification policy.
+    logger.error(
+      "TUTOR_CRISIS",
+      "crisis_flag_result_unparseable",
+      "flag_conversation_for_crisis_review returned a payload that does not " +
+        "match its contract; BLOCKING the turn",
+      undefined,
+      { conversationId, issues: parsed.error.flatten() },
+    );
+    throw new Error("crisis flag write returned an unreadable result");
+  }
 
-    // createCrisisReviewCase wraps the PG error in a new Error, so the
-    // code is not on the thrown error itself. Match the message instead.
-    const isUniqueViolation =
-      pgCode === "23505" ||
-      (createErr instanceof Error &&
-        createErr.message.includes("unique") &&
-        createErr.message.includes(
-          "idx_crisis_review_cases_conversation_active",
-        ));
+  const {
+    case_id: caseId,
+    sla_deadline: slaDeadline,
+    already_existed: alreadyExisted,
+    case_status: caseStatus,
+    persisted_source: persistedSource,
+  } = parsed.data;
+  const isNewCase = !alreadyExisted;
 
-    if (!isUniqueViolation) {
-      // Genuine failure — re-throw per B1.1d
-      throw createErr;
-    }
-
-    // Active case already exists — query it
-    const { data: existingCase, error: lookupError } = await supabaseServer
-      .from("crisis_review_cases")
-      .select("id, sla_deadline, status")
-      .eq("conversation_id", conversationId)
-      .in("status", ["open", "in_review"])
-      .limit(1)
-      .maybeSingle();
-
-    if (lookupError || !existingCase) {
-      // Cannot find the case that caused the violation — this is unexpected.
-      // Re-throw the original error so B1.1d holds.
-      logger.error(
-        "TUTOR_CRISIS",
-        "crisis_case_lookup_after_duplicate_failed",
-        "unique violation on crisis_review_cases but could not find the existing case",
-        lookupError,
-        { conversationId },
-      );
-      throw createErr;
-    }
-
-    caseId = existingCase.id as string;
-    slaDeadline = existingCase.sla_deadline as string;
-    caseStatus = existingCase.status as "open" | "in_review";
-    isNewCase = false;
-
+  if (alreadyExisted) {
     logger.warn(
       "TUTOR_CRISIS",
       "crisis_case_already_exists",
       "active crisis review case already exists for this conversation — " +
         "treating duplicate signal as success-equivalent per Doc 03 §21.3",
-      { conversationId, existingCaseId: caseId, source },
+      { conversationId, existingCaseId: caseId, source, caseStatus },
+    );
+  } else if (persistedSource !== source) {
+    logger.warn(
+      "TUTOR_CRISIS",
+      "crisis_case_created_degraded",
+      "crisis review case created with degraded source precision — " +
+        "production's CHECK constraint predates this source value. " +
+        "Apply the pending migration to restore full precision (WS-L8 Item 4b).",
+      { conversationId, caseId, requestedSource: source, persistedSource },
     );
   }
 

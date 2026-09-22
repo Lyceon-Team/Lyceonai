@@ -80,9 +80,32 @@ const mockSupabaseFrom = vi.fn((table: string) => {
   return makeChain();
 });
 
+/**
+ * `flagConversationForReview` calls ONE rpc now (owner ruling D1, 2026-09-22):
+ * the flag and the case insert are one transaction inside
+ * `public.flag_conversation_for_crisis_review`. The mock returns that
+ * function's contract shape. The atomicity itself cannot be shown here — a
+ * mock has no transaction — and is proved on real Postgres in
+ * `tests/ci/crisis-flag-atomic.pg.ci.test.ts` D1.3.
+ */
+const mockSupabaseRpc = vi.fn((_fn: string, _args: Record<string, unknown>) =>
+  Promise.resolve({
+    data: {
+      case_id: "00000000-0000-4000-8000-000000000001",
+      sla_deadline: "2026-09-20T12:00:00Z",
+      already_existed: false,
+      case_status: "open",
+      persisted_source: "signature",
+    },
+    error: null,
+  }),
+);
+
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (...args: unknown[]) => mockSupabaseFrom(...args),
+    rpc: (fn: string, args: Record<string, unknown>) =>
+      mockSupabaseRpc(fn, args),
   },
 }));
 
@@ -183,38 +206,10 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
   });
 
   // §5 Test 4: Case creation returns FlagForReviewResult — notification
-  // dispatch moved to route handler per PagerDuty-style policy (§1).
+  // dispatch moved to route handler per PagerDuty-style policy (§1). The two
+  // writes it reports on are one RPC now (owner ruling D1), so the result
+  // comes from the rpc mock rather than a `from()` chain per table.
   it("flagConversationForReview returns FlagForReviewResult and does NOT call notifyCrisisEvent", async () => {
-    mockSupabaseFrom.mockImplementation((table: string) => {
-      mockFromCalls.push(table);
-      const chain = makeChain();
-
-      if (table === "tutor_conversations") {
-        chain.update = () => ({
-          eq: () => ({ error: null }),
-        });
-        return chain;
-      }
-
-      if (table === "crisis_review_cases") {
-        chain.insert = () => ({
-          select: () => ({
-            single: () =>
-              Promise.resolve({
-                data: {
-                  id: "case-001",
-                  sla_deadline: "2026-09-20T12:00:00Z",
-                },
-                error: null,
-              }),
-          }),
-        });
-        return chain;
-      }
-
-      return chain;
-    });
-
     const result = await flagConversationForReview(
       "conv-789",
       "student-321",
@@ -230,9 +225,52 @@ describe("Crisis-Path Defects — Defect A: notification dispatcher", () => {
     expect(mockNotifyCrisisEvent).not.toHaveBeenCalled();
 
     // Instead it returns the data the route handler needs.
-    expect(result.caseId).toBe("case-001");
+    expect(result.caseId).toBe("00000000-0000-4000-8000-000000000001");
     expect(result.isNewCase).toBe(true);
     expect(result.caseStatus).toBe("open");
     expect(typeof result.slaDeadline).toBe("string");
+  });
+
+  it("flagConversationForReview does BOTH writes through one rpc, not two table calls", async () => {
+    // The point of D1: there is no window between the flag and the case in
+    // which the process can die. Two `.from()` calls would be that window.
+    await flagConversationForReview(
+      "conv-790",
+      "student-321",
+      "signature",
+      null,
+      null,
+      "crisis",
+    );
+
+    expect(mockSupabaseRpc).toHaveBeenCalledTimes(1);
+    expect(mockSupabaseRpc.mock.calls[0]![0]).toBe(
+      "flag_conversation_for_crisis_review",
+    );
+    expect(mockFromCalls).not.toContain("tutor_conversations");
+    expect(mockFromCalls).not.toContain("crisis_review_cases");
+  });
+
+  it("flagConversationForReview blocks the turn when the rpc returns an off-contract payload", async () => {
+    // The write succeeded, so a case exists — but we cannot say which one.
+    // Blocking is still right: an unreadable result is not a reviewed turn,
+    // and a cast would have sent `undefined` as the caseId to ops.
+    mockSupabaseRpc.mockResolvedValueOnce({
+      data: { case_id: "not-a-uuid", already_existed: false },
+      error: null,
+    } as never);
+
+    await expect(
+      flagConversationForReview(
+        "conv-791",
+        "student-321",
+        "signature",
+        null,
+        null,
+        "crisis",
+      ),
+    ).rejects.toThrow(/unreadable result/i);
+
+    expect(mockNotifyCrisisEvent).not.toHaveBeenCalled();
   });
 });
