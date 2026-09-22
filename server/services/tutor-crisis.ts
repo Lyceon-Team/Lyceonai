@@ -156,6 +156,9 @@ export function normalizeCrisisText(raw: string): string {
   // §7.4 step 5: normalize self-harm variants to canonical "self harm"
   t = t.replace(/\bself[-\s]?harm/g, "self harm");
 
+  // §7.4 step 5b: normalize "my self" → "myself" (compound split variant)
+  t = t.replace(/\bmy\s+self\b/g, "myself");
+
   // §7.4 step 6: collapse whitespace + trim
   t = t.replace(/\s+/g, " ").trim();
 
