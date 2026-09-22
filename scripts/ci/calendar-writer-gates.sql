@@ -1309,4 +1309,127 @@ END;
 $profilechange$;
 
 
+-- ============================================================================
+-- Z-49 .. Z-51 — blocking out a day, and undoing it beyond the horizon
+-- ============================================================================
+-- Doc 05F §12.4 (block-out is an edit to an empty member list), §12.1 (a day reset
+-- clears the override), §12.2 (a started block is carried, V-12).
+--
+-- Z-12 already proves an empty edit clears a day and keeps the override. These add
+-- the three things the BLOCK-OUT feature needs on top of that: a started session
+-- survives being blocked out; an undo works beyond the horizon, where it used to
+-- raise; and once the date is inside the horizon the generator really does take it
+-- back, which is the only thing that makes the undo mean anything.
+-- ============================================================================
+DO $blockout$
+DECLARE
+  S CONSTANT uuid := 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+  v_today   date;
+  v_far     date;
+  v_blk     uuid;
+  v_r       jsonb;
+  v_n       integer;
+  v_started integer;
+  v_ov      boolean;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+  v_far := v_today + 21;   -- beyond the 14-day horizon, by seven days
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-blockout@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 127, 60, NULL, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  PERFORM public.calendar_persist_version(S, 'setup', 'student', 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000001');
+
+  ------------------------------------------------------------------- Z-49
+  -- §12.2 / V-12: blocking out TODAY keeps a session already underway. A student
+  -- mid-set who clears the rest of their day must not lose the set they are in.
+  SELECT cp.block_id INTO v_blk FROM public.calendar_current_plan cp
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND cp.block_id IS NOT NULL
+  LIMIT 1;
+  IF v_blk IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 the fixture planned no block on today, so nothing can be started';
+  END IF;
+  -- Through the real writer, not an ad-hoc INSERT: calendar_carry_started reads what a
+  -- launch actually leaves behind, and a hand-built row could satisfy this gate while
+  -- differing from what the route writes.
+  PERFORM public.calendar_link_launch(S, v_blk, 'practice', gen_random_uuid());
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id IS NOT NULL;
+  IF v_n < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 today holds % block(s); the carry cannot be distinguished from a no-op with fewer than 2', v_n;
+  END IF;
+
+  PERFORM public.calendar_edit_day(S, v_today, '[]'::jsonb, 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000002');
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id IS NOT NULL;
+  SELECT count(*) INTO v_started FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk;
+  IF v_n <> 1 OR v_started <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 blocking out today left % block(s), started block present: %; expected exactly the started one',
+      v_n, v_started = 1;
+  END IF;
+  RAISE NOTICE '    OK Z-49 blocking out today clears the day and carries the STARTED block (V-12)';
+
+  ------------------------------------------------------------------- Z-50
+  -- The undo, on a date beyond the horizon. This RAISED before
+  -- 20260927000000: a day blocked out three weeks ahead could not be taken back.
+  PERFORM public.calendar_edit_day(S, v_far, '[]'::jsonb, 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000003');
+  SELECT bool_or(is_user_override) INTO v_ov FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_far;
+  IF v_ov IS NOT TRUE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 the fixture did not block out the far date';
+  END IF;
+
+  v_r := public.calendar_regenerate_day(S, v_far, 'day_reset', 'v1',
+           'bbbbbbbb-0000-0000-0000-000000000004');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 undoing a day off beyond the horizon was not accepted: %', v_r;
+  END IF;
+
+  SELECT count(*) FILTER (WHERE block_id IS NOT NULL), bool_or(is_user_override)
+    INTO v_n, v_ov
+  FROM public.calendar_current_plan WHERE student_id = S AND scheduled_date = v_far;
+  IF v_n <> 0 OR v_ov IS NOT FALSE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 after the undo the far date holds % block(s) and override=%; expected 0 and false',
+      v_n, v_ov;
+  END IF;
+  RAISE NOTICE '    OK Z-50 a day off beyond the horizon is undone into a non-override empty version';
+
+  ------------------------------------------------------------------- Z-51
+  -- And the undo MEANS something: once the date is inside the horizon the ordinary
+  -- weekly run plans it. Without this, Z-50 would prove only that a flag flipped.
+  -- The horizon is widened rather than time being moved, because the clock is not
+  -- ours to move and horizon_days is a config row that exists to be read.
+  UPDATE public.calendar_runtime_config SET value = '28'::jsonb WHERE key = 'horizon_days';
+
+  v_r := public.calendar_persist_version(S, 'weekly', 'system', 'v1',
+           'bbbbbbbb-0000-0000-0000-000000000005');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-51 the weekly run was not accepted: %', v_r;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_far AND block_id IS NOT NULL;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-51 the undone date entered the horizon and the weekly run still planned nothing on it';
+  END IF;
+  RAISE NOTICE '    OK Z-51 once inside the horizon the weekly run plans the undone date (% block(s))', v_n;
+END;
+$blockout$;
+
+
 ROLLBACK;

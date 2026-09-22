@@ -79,6 +79,7 @@ import {
 import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import type { DayActions } from "./components/DayMenu";
 import { SetupSheet } from "./components/SetupSheet";
 import {
   SettingsSheet,
@@ -100,6 +101,8 @@ export type CalendarMutations = {
   regeneratePlan: () => void;
   regenerateDay: (date: string) => void;
   resetDay: (date: string) => void;
+  /** §12.4. A block-out is an edit to an EMPTY member list, not a status of its own. */
+  blockOutDay: (date: string) => void;
   doItNow: (blockId: string) => void;
   launch: (blockId: string) => void;
   acknowledge: (versionNo: number) => void;
@@ -217,6 +220,23 @@ export function CalendarView({
       }),
     [readOnly, today],
   );
+
+  /**
+   * §17.2's four day controls, built ONCE and handed to both grids. Two copies would be
+   * two chances for Week and Month to offer different things on the same date.
+   *
+   * Undo is `resetDay`, not a second route: §12.1's day_reset is exactly "this date is the
+   * generator's again", which is what undoing a day off means.
+   */
+  const dayActions: DayActions | undefined =
+    mutations === undefined
+      ? undefined
+      : {
+          onBlockOut: mutations.blockOutDay,
+          onUndoBlockOut: mutations.resetDay,
+          onRegenerateDay: mutations.regenerateDay,
+          onResetDay: mutations.resetDay,
+        };
 
   const sensors = useSensors(
     // A small activation distance so a tap that opens the sheet is not read as a drag.
@@ -416,11 +436,10 @@ export function CalendarView({
                   visible={visible}
                   canDrag={canDrag}
                   onOpen={setOpenBlockId}
+                  {...(dayActions === undefined ? {} : { dayActions })}
                   {...(mutations === undefined
                     ? {}
                     : {
-                        onRegenerateDay: mutations.regenerateDay,
-                        onResetDay: mutations.resetDay,
                         onAddBlock: (date: string) => {
                           const day = dayFor(date);
                           if (day === null) return;
@@ -454,6 +473,7 @@ export function CalendarView({
                   visible={visible}
                   canDrag={canDrag}
                   onOpen={setOpenBlockId}
+                  {...(dayActions === undefined ? {} : { dayActions })}
                 />
               )}
             </div>

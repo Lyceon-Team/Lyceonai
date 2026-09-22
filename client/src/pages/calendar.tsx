@@ -42,6 +42,7 @@ import {
   isEntitlementDenial,
 } from "@/features/calendar/components/CalendarStates";
 import { rangeForView, startOfWeek } from "@/features/calendar/lib/dates";
+import { membersCleared } from "@/features/calendar/lib/members";
 import { studentViewModel } from "@/features/calendar/lib/view-model";
 import { toUserFacingMessage } from "@/lib/api-error";
 import "@/features/calendar/calendar.css";
@@ -220,6 +221,12 @@ export default function CalendarPage(): JSX.Element {
         regeneratePlan: () => regeneratePlan.mutate(newIntent({})),
         regenerateDay: (date) => regenerateDay.mutate(newIntent({ date })),
         resetDay: (date) => resetDay.mutate(newIntent({ date })),
+        // §12.4: blocking out a day is an edit to an empty member list, not a status of
+        // its own. No optimistic hint -- the prediction would have to guess which blocks
+        // the server carries (V-12), and guessing wrong would flash the wrong day at the
+        // student. The settle-invalidate brings back what actually happened.
+        blockOutDay: (date) =>
+          editDay.mutate(newIntent({ date, members: membersCleared() })),
         doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
         launch: (blockId) => void launch(blockId),
         // §12.7 is monotonic, so this route takes no idempotency key.

@@ -212,6 +212,13 @@ const FORBIDDEN_TEXT = [
   "Add block",
   "Add a domain",
   "Coming soon",
+  // §17.2's day menu and §17.3's settings sheet, added 2026-09-22. Every one of these is
+  // a write, so none of them may appear on a guardian's screen.
+  "Block out this day",
+  "Undo day off",
+  "Edit schedule",
+  "Change schedule",
+  "Save changes",
 ];
 
 /**
@@ -301,6 +308,32 @@ describe("guardian calendar is read-only (§16, R-08-22)", () => {
     const text = container.textContent ?? "";
     expect(text).not.toContain("1400");
     expect(text).not.toContain("days to test");
+  });
+
+  it("renders no day ⋯ menu and no day-off Undo on any date (§17.2)", () => {
+    const container = renderGuardian();
+    // By TESTID, not by label: the menu button's text is a glyph, so a text sweep would
+    // miss it entirely. This is the control that opens every day-scoped write, so its
+    // absence is the whole §16 boundary for the grid.
+    expect(
+      container.querySelectorAll('[data-testid^="day-menu-"]'),
+    ).toHaveLength(0);
+    expect(
+      container.querySelectorAll('[data-testid^="day-off-undo-"]'),
+    ).toHaveLength(0);
+  });
+
+  it("renders no schedule card and no Edit schedule button (§17.3)", () => {
+    const container = renderGuardian();
+    expect(
+      container.querySelector('[data-testid="rail-schedule-card"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="topbar-edit-schedule"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-settings-sheet"]'),
+    ).toBeNull();
   });
 
   it("renders no plan-updated banner, so there is nothing for a guardian to acknowledge", () => {

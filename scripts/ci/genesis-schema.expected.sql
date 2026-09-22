@@ -2282,16 +2282,66 @@ BEGIN
   SELECT public.calendar_require_int(jsonb_object_agg(key, value), 'horizon_days')
     INTO v_horizon FROM public.calendar_runtime_config;
 
-  -- Outside the horizon the generator never emits the date at all, so the
-  -- version would own nothing and the route would report a success that changed
-  -- no plan. Refuse instead of writing an empty version.
-  IF p_date > v_today + (v_horizon - 1) THEN
-    RAISE EXCEPTION 'calendar_regenerate_day: % is beyond the % day horizon and is not planned yet', p_date, v_horizon
-      USING ERRCODE = '22023';
-  END IF;
-
   SELECT array_agg(d ORDER BY d) INTO v_dates
   FROM generate_series(v_today, v_today + (v_horizon - 1), interval '1 day') g(d);
+
+  ----------------------------------------------------------------------------
+  -- BEYOND THE HORIZON: own the date, plan nothing, and leave it to the future.
+  --
+  -- This used to RAISE. The reasoning was sound as far as it went -- the generator
+  -- never emits a date outside the horizon, so running it and narrowing to that
+  -- date would produce a version owning nothing, and the route would report a
+  -- success that changed no plan.
+  --
+  -- What it missed is that a day-scoped RESET is not a request to plan a date. It
+  -- is a request to STOP owning one. A student who blocks out a concert three weeks
+  -- out creates an override at day +21; undoing it has to clear that override, and
+  -- the horizon is fourteen days, so the undo raised and the day off could not be
+  -- taken back until the date drifted into range. The control existed and could not
+  -- be reversed, which is worse than not offering it.
+  --
+  -- So the version owns the date with NO members and is_user_override false. That is
+  -- precisely "this date is the generator's again, and it has nothing to say about
+  -- it yet". When the date enters the horizon the ordinary weekly run plans it,
+  -- because there is no override left to stop it (V-14) -- which is the whole point.
+  --
+  -- The generator is NOT run here. There is nothing for it to compute: a date outside
+  -- the horizon has no budget, no mix and no cadence yet. Skipping it is why this
+  -- branch cannot disturb parity.
+  --
+  -- The snapshot is built over the horizon PLUS this date, so generated_for.dates
+  -- names it and V-01's membership test passes. Without that the version would be
+  -- rejected for owning a date its own input never mentioned.
+  ----------------------------------------------------------------------------
+  IF p_date > v_today + (v_horizon - 1) THEN
+    v_input := public.calendar_build_plan_input(p_student_id, v_dates || p_date);
+    v_output := jsonb_build_object(
+      'generator', 'deterministic_v1',
+      'generator_version', p_generator_version,
+      'dates', jsonb_build_array(jsonb_build_object(
+        'scheduled_date', p_date::text,
+        'is_user_override', false,
+        'members', '[]'::jsonb)));
+
+    v_res := public.calendar_validate_plan('day_regenerate', v_input, v_output);
+    IF v_res ->> 'result' <> 'accepted' THEN
+      RAISE EXCEPTION 'calendar_regenerate_day: clearing % was rejected: %', p_date, v_res
+        USING ERRCODE = '22023';
+    END IF;
+
+    v_result := public.calendar_write_version(p_student_id, p_trigger, 'student',
+                  'deterministic_v1', p_generator_version, v_input, v_output, 'day_regenerate',
+                  jsonb_build_object('reason', 'beyond_horizon_cleared', 'horizon_days', v_horizon));
+
+    IF p_idempotency_key IS NOT NULL THEN
+      INSERT INTO public.calendar_mutation_ledger
+        (student_id, idempotency_key, route, response_hash, response)
+      VALUES (p_student_id, p_idempotency_key, 'calendar_regenerate_day',
+              encode(sha256(v_result::text::bytea), 'hex'), v_result);
+    END IF;
+
+    RETURN v_result;
+  END IF;
 
   v_input := public.calendar_build_plan_input(p_student_id, v_dates);
 
@@ -2354,7 +2404,7 @@ $$;
 -- Name: FUNCTION calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student’s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
+COMMENT ON FUNCTION public.calendar_regenerate_day(p_student_id uuid, p_date date, p_trigger text, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.1 / §15: the writer behind POST /api/calendar/days/:date/regenerate and /reset. Owns exactly one date, derives it from the generator and leaves is_user_override false, which is how the student''s override clears. Validates in mode day_regenerate — generated minus V-14, because clearing that override is the operation. BEYOND THE HORIZON it owns the date with no members and runs no generator, so a day blocked out past the horizon can still be undone; the date is planned by the ordinary weekly run once it comes into range. FOR UPDATE on the profile before the ledger read, as every calendar writer does.';
 
 
 --

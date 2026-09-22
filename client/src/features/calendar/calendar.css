@@ -1067,3 +1067,144 @@
   color: var(--muted);
   margin: 0;
 }
+
+/* ==========================================================================
+ * §17.2 — the day ⋯ menu and a blocked-out day. Ported from the approved
+ * prototype. A day off is hatched in a WARM tone; a rest day the study-days
+ * mask produced stays the existing cool hatch, because the two mean opposite
+ * things and looking alike would be the whole mistake.
+ * ========================================================================== */
+
+/*
+ * The positioning context the menu anchors to. The prototype adds exactly these two
+ * rules for this; without them `.dmenu-root` would resolve against the page and the
+ * menu would open in the top-left corner of the screen.
+ */
+.lyceon-calendar .dayhead {
+  position: relative;
+}
+.lyceon-calendar .mcell {
+  position: relative;
+}
+
+.lyceon-calendar .dmenu-root {
+  position: absolute;
+  right: 8px;
+  top: 9px;
+}
+.lyceon-calendar .mcell .dmenu-root {
+  top: 5px;
+  right: 5px;
+}
+.lyceon-calendar .dmenu {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Reachable from the keyboard, not hover-only — the same rule the add affordance uses. */
+.lyceon-calendar .col:hover .dmenu,
+.lyceon-calendar .mcell:hover .dmenu,
+.lyceon-calendar .dmenu:focus-visible,
+.lyceon-calendar .dmenu[aria-expanded="true"] {
+  opacity: 1;
+}
+.lyceon-calendar .dmenu:hover {
+  background: var(--line-2);
+  color: var(--ink);
+}
+
+.lyceon-calendar .menu {
+  position: absolute;
+  right: 0;
+  top: 30px;
+  z-index: 12;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  min-width: 190px;
+  text-align: left;
+}
+.lyceon-calendar .menu button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  gap: 9px;
+  align-items: center;
+}
+.lyceon-calendar .menu button:hover {
+  background: var(--surface);
+}
+.lyceon-calendar .menu button.danger {
+  color: #9a3412;
+}
+.lyceon-calendar .menu hr {
+  border: 0;
+  border-top: 1px solid var(--line-2);
+  margin: 4px 2px;
+}
+.lyceon-calendar .menu .note {
+  padding: 4px 10px 6px;
+}
+
+/* A day the student blocked out. */
+.lyceon-calendar .col.off {
+  background: repeating-linear-gradient(
+    45deg,
+    #fff8f1,
+    #fff8f1 8px,
+    #fdf1e4 8px,
+    #fdf1e4 16px
+  );
+}
+.lyceon-calendar .col.off .dayhead {
+  background: #fff8f1;
+}
+.lyceon-calendar .mcell.off {
+  background: repeating-linear-gradient(
+    45deg,
+    #fff8f1,
+    #fff8f1 8px,
+    #fdf1e4 8px,
+    #fdf1e4 16px
+  );
+}
+.lyceon-calendar .moff {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a4309;
+}
+.lyceon-calendar .offcard {
+  margin: 2px 0;
+  padding: 12px;
+  border-radius: var(--r);
+  border: 1px dashed #f0cfa6;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12.5px;
+  color: #8a4309;
+}
+.lyceon-calendar .offcard b {
+  display: block;
+  font-family: "Bricolage Grotesque";
+  font-size: 14px;
+  color: #6b3407;
+  margin-bottom: 2px;
+}
+.lyceon-calendar .offcard button {
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #8a4309;
+  text-decoration: underline;
+}
