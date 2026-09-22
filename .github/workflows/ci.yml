@@ -889,6 +889,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-oplog-retention.json \
             --file tests/ci/operational-log-retention.pg.ci.test.ts
 
+      # Doc 01 V8 §5.1 says "retention values live in observability_runtime_config".
+      # The table has held nothing since genesis and NOTHING READS IT; the owner
+      # ruling seeds it anyway so the declared period and the enforced period can be
+      # compared. This suite IS that comparison — without it the rows are decoration
+      # that drifts from behaviour the first time a period changes. F2.4 and F2.5 are
+      # negatives: cold_log_retention_days and alert_thresholds must stay unseeded,
+      # because neither the cold archive nor the alert registry exists.
+      - name: Observability retention config (Doc 01A A.5 / F2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/observability-retention-config.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-obs-retention-config.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-obs-retention-config.json \
+            --file tests/ci/observability-retention-config.pg.ci.test.ts
+
       # v3 §6.2 publishes a seven-year period for payment records. It will delete
       # nothing until 2033, which is exactly why its behaviour is pinned now: a
       # sweep with an empty input for seven years is one nobody would notice was
@@ -906,6 +926,26 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-financial-retention.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-financial-retention.json \
             --file tests/ci/financial-record-retention.pg.ci.test.ts
+
+      # The writer that did not exist. retention-sweep.ts:113 documented
+      # tutor_conversations.deleted_at as "set when entitlement lapses" from
+      # 2026-08-20; nothing set it, so sweep7d's input was permanently empty and
+      # Privacy Policy v3 had to publish the narrower account-deletion wording.
+      # C1.6 closes the loop by showing the sweep's own predicate matching a row.
+      # C1.7 guards the coupling between the trigger's column list and the
+      # canonical predicate's body — the way this would rot silently.
+      - name: Tutor lapse severance (Doc 03 §14.2 / C1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-lapse-severance.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-lapse.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
+            --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
 
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
