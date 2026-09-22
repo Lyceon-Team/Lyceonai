@@ -23,6 +23,13 @@
  * pattern will recur in files nobody has written yet, and they should pass without anyone
  * editing this gate.
  *
+ * IT SCANS CODE, NOT PROSE. Comments and string literals are blanked before the scan —
+ * see `blankNonCode`. The first version did not do this and went red on
+ * `app-shell.calendar-nav.test.tsx:110`, where a `//` comment DESCRIBES the banned idiom
+ * in order to explain why a test queries `a[href]` instead of the testid. That is not a
+ * defect; it is documentation of the defect, and a gate that punishes writing it down
+ * teaches people to stop writing it down. (Found on PR #820, calendar → main.)
+ *
  * Exit 1 naming every offending file and line. Exit 0 prints the count it scanned, because
  * a gate that cannot tell "clean" from "scanned nothing" is not measuring anything — pass
  * `--selftest` to see it go red against fixtures on demand.
@@ -35,13 +42,77 @@ const SCAN_DIRS = ["client/src"];
 const EXT = /\.(tsx|jsx)$/;
 
 /**
+ * The source with comments and string literals replaced by spaces.
+ *
+ * LENGTH AND NEWLINES ARE PRESERVED, so every offset and line number the scanner reports
+ * still points at the real file. Blanking rather than deleting is the whole trick: a
+ * stripper that removed the text would renumber every line after the first comment, and
+ * the gate's output would name lines that are not the ones at fault.
+ *
+ * Handles `//`, `/* … *\/`, and the three literal forms. It does NOT track regular
+ * expression literals: telling `/` as division from `/` as a regex needs real parsing, and
+ * getting it wrong in that direction could blank live code and hide a true positive. The
+ * risk is bounded and was checked rather than assumed — no `.tsx`/`.jsx` under the scanned
+ * roots contains a regex literal carrying `//` or `/*`, and a comment marker cannot be
+ * confused with division because neither `a / / b` nor `a / * b` is valid JavaScript.
+ */
+function blankNonCode(src) {
+  const out = src.split("");
+  const blank = (from, to) => {
+    for (let k = from; k < to && k < out.length; k += 1) {
+      if (out[k] !== "\n") out[k] = " ";
+    }
+  };
+
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+
+    if (c === "/" && next === "/") {
+      let end = src.indexOf("\n", i);
+      if (end === -1) end = src.length;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      let end = src.indexOf("*/", i + 2);
+      end = end === -1 ? src.length : end + 2;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < src.length) {
+        if (src[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (src[j] === c) break;
+        j += 1;
+      }
+      blank(i + 1, Math.min(j, src.length));
+      i = Math.min(j + 1, src.length);
+      continue;
+    }
+    i += 1;
+  }
+  return out.join("");
+}
+
+/**
  * A `<Link …>` open tag whose next non-space character begins a bare `<a`.
  *
  * `[^>]*` is deliberately NOT used for the attributes: every `() =>` handler contains a
  * `>`, so that form stops mid-attribute and matches things it should not. Instead the
  * scanner walks the tag tracking brace depth and quotes, exactly as the codemod did.
  */
-function findNestedAnchors(src) {
+function findNestedAnchors(raw) {
+  // Prose cannot be a nested anchor. Offsets are preserved, so `raw` is still what the
+  // excerpt is sliced from — only the MATCHING runs against the blanked copy.
+  const src = blankNonCode(raw);
   const hits = [];
   const openTag = /<Link\b/g;
   let m;
@@ -80,7 +151,11 @@ function findNestedAnchors(src) {
     if (child === null) continue;
     hits.push({
       line: src.slice(0, m.index).split("\n").length,
-      excerpt: tag.replace(/\s+/g, " ").slice(0, 90),
+      // From `raw`: a reviewer needs the attributes as written, not a row of spaces.
+      excerpt: raw
+        .slice(m.index, end + 1)
+        .replace(/\s+/g, " ")
+        .slice(0, 90),
     });
   }
   return hits;
@@ -101,7 +176,11 @@ function walk(dir, out = []) {
 
 function selftest() {
   const cases = [
-    ["bare anchor child is caught", '<Link href="/a">\n  <a className="x">t</a>\n</Link>', 1],
+    [
+      "bare anchor child is caught",
+      '<Link href="/a">\n  <a className="x">t</a>\n</Link>',
+      1,
+    ],
     ["asChild is exempt", '<Link href="/a" asChild>\n  <a>t</a>\n</Link>', 0],
     ["one anchor is clean", '<Link href="/a" className="x">t</Link>', 0],
     [
@@ -109,18 +188,47 @@ function selftest() {
       '<Link href="/a" onClick={() => go()}>\n  <a>t</a>\n</Link>',
       1,
     ],
-    ["a non-anchor child is fine", '<Link href="/a">\n  <span>t</span>\n</Link>', 0],
+    [
+      "a non-anchor child is fine",
+      '<Link href="/a">\n  <span>t</span>\n</Link>',
+      0,
+    ],
     ["self-closing Link is fine", '<Link href="/a" />\n<a>t</a>', 0],
+    // THE PR #820 REGRESSION. Documenting the banned idiom is not committing it.
+    [
+      "a // comment describing the idiom is NOT flagged",
+      "const x = 1;\n// NavLink writes `<Link href><a …></Link>`, the wouter v2 idiom.\nconst y = 2;",
+      0,
+    ],
+    [
+      "a /* */ comment describing the idiom is NOT flagged",
+      '/**\n * <Link href="/a">\n *   <a>t</a>\n * </Link>\n */\nconst z = 3;',
+      0,
+    ],
+    [
+      "a string literal containing the idiom is NOT flagged",
+      'const s = "<Link href=\\"/a\\"><a>t</a></Link>";',
+      0,
+    ],
+    [
+      "real JSX on the line AFTER a comment mentioning it is still flagged",
+      '// <Link href="/a"><a>t</a></Link>\n<Link href="/b">\n  <a>t</a>\n</Link>',
+      1,
+    ],
   ];
   let bad = 0;
   for (const [label, src, expected] of cases) {
     const got = findNestedAnchors(src).length;
     const ok = got === expected;
     if (!ok) bad += 1;
-    process.stdout.write(`  ${ok ? "ok  " : "FAIL"} ${label} (expected ${expected}, got ${got})\n`);
+    process.stdout.write(
+      `  ${ok ? "ok  " : "FAIL"} ${label} (expected ${expected}, got ${got})\n`,
+    );
   }
   process.stdout.write(
-    bad ? `NESTED-ANCHOR GATE SELF-TEST: FAIL (${bad})\n` : "NESTED-ANCHOR GATE SELF-TEST: PASS\n",
+    bad
+      ? `NESTED-ANCHOR GATE SELF-TEST: FAIL (${bad})\n`
+      : "NESTED-ANCHOR GATE SELF-TEST: PASS\n",
   );
   process.exit(bad ? 1 : 0);
 }

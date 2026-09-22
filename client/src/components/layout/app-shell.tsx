@@ -42,6 +42,7 @@ export const navItems: readonly {
   icon: LucideIcon;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/practice", label: "Practice", icon: BookOpen },
   { href: "/review", label: "Review", icon: RotateCcw },
   { href: "/full-test", label: "Full Tests", icon: CreditCard },
@@ -97,15 +98,6 @@ function AppHeader() {
   //
   // Nothing here grants anything. The server decides entitlement on every request
   // (§7.12); this array only decides what is on screen.
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/calendar", label: "Calendar", icon: CalendarDays },
-    { href: "/practice", label: "Practice", icon: BookOpen },
-    { href: "/review", label: "Review", icon: RotateCcw },
-    { href: "/full-test", label: "Full Tests", icon: CreditCard },
-    { href: "/chat", label: "Lisa", icon: MessageSquare },
-  ];
-
   const NavLink = ({
     href,
     label,

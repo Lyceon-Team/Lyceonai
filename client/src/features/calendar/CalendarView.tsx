@@ -151,6 +151,7 @@ export type CalendarViewProps = {
     onConfirmReplan: () => void;
     onDismissReplan: () => void;
   };
+  /**
    * Where the back control goes: `/dashboard` for a student, `/guardian` for a guardian.
    *
    * A PROP, NOT A BRANCH ON `readOnly`. This file's own rule — "the guardian difference is
