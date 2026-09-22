@@ -16,6 +16,7 @@ import {
   Loader2,
   MessageCircle,
   Play,
+  RotateCcw,
 } from "lucide-react";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
@@ -399,6 +400,20 @@ export default function LyceonDashboard() {
               </h2>
               <p className="text-sm text-muted-foreground">
                 Start a focused SAT block
+              </p>
+            </a>
+          </Link>
+
+          <Link href="/review">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <RotateCcw className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">
+                Review Queue
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Redo the questions you missed until they stick.
               </p>
             </a>
           </Link>

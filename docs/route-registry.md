@@ -10,6 +10,7 @@ This document is the single authoritative registry of:
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
 **Last Updated:** 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).)
+**Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
 
@@ -47,6 +48,8 @@ This document is the single authoritative registry of:
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
+| `/review` | student, admin | free | Review | `/api/review/pool`, `/api/review/sessions/open`, `/api/review/sessions`, `/api/practice/topics` | ACTIVE |
+| `/review/session/:sessionId` | student, admin | free | ResumeReview | `/api/review/sessions/:sessionId/state`, `/api/review/sessions/:sessionId/next`, `/api/review/answer`, `/api/review/sessions/:sessionId/skip` | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/students/{{studentId}}/mastery/domains`, `/api/students/:studentId/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
@@ -136,6 +139,16 @@ Removed auth endpoints (must return 404):
 | `/api/practice/sessions/:sessionId/next` | GET | Yes | student/admin | entitled† | Resume practice session next |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
+| `/api/review/pool` | GET | Yes | student/admin | free | Review pool summary — counts and past sessions for the pickers |
+| `/api/review/sessions` | POST | Yes | student/admin | free | Start a review session (mode: queue / session / filter) |
+| `/api/review/sessions/open` | GET | Yes | student/admin | free | Open review sessions (created + active only) |
+| `/api/review/sessions/:sessionId/state` | GET | Yes | student/admin | free | Resume review session state |
+| `/api/review/sessions/:sessionId/next` | GET | Yes | student/admin | free | Serve the next review item |
+| `/api/review/sessions/:sessionId/resume` | POST | Yes | student/admin | free | Resume / take over a review session |
+| `/api/review/sessions/:sessionId/terminate` | POST | Yes | student/admin | free | Abandon a review session |
+| `/api/review/sessions/:sessionId/calculator-state` | POST | Yes | student/admin | free | Persist Desmos state for a review session |
+| `/api/review/sessions/:sessionId/skip` | POST | Yes | student/admin | free | Skip the served review item (requeues, no mastery) |
+| `/api/review/answer` | POST | Yes | student/admin | free | Submit a review answer (mastery source `review`) |
 | `/api/tutor/conversations` | POST | Yes | student/admin | entitled† | start/reuse tutor conversation |
 | `/api/tutor/messages` | POST | Yes | student/admin | entitled† | append tutor turn + response |
 | `/api/tutor/conversations/:conversationId` | GET | Yes | student/admin | entitled† | fetch tutor conversation + messages |

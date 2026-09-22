@@ -67,6 +67,7 @@ import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import reviewCanonicalRouter from "./routes/review-canonical";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -649,6 +650,21 @@ app.use(
   requireStudentOrAdmin,
   doubleCsrfProtection,
   practiceCanonicalRouter,
+);
+
+// Review Canonical Routes (the mistake queue — practice's loop, a different pool)
+// @spec [Doc-02B_V4 §16; ruled plan §2; brief R3 §2.2] | @implemented [2026-09-21]
+// The middleware stack is practice's, identically: auth, student-or-admin, then CSRF
+// (the middleware ignores GET/HEAD/OPTIONS, so it covers exactly the writes). There is
+// deliberately NO entitlement gate and NO usage-limit call — review is free and
+// unlimited (ruled plan ruling 10). The concurrent-session cap inside the router is a
+// resource guard, not a quota.
+app.use(
+  "/api/review",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  reviewCanonicalRouter,
 );
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)

@@ -12,6 +12,7 @@ import {
   sweepStalePracticeSessions,
   STALE_PRACTICE_SESSION_TTL_DAYS,
 } from "../lib/stale-session-sweep.js";
+import { sweepStaleReviewSessions } from "../lib/review-stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
@@ -187,10 +188,18 @@ router.get(
  * @spec [Doc-02B_V4 §14 session lifecycle; owner rulings Q1 + Q4, 2026-08-17]
  * @implemented 2026-08-17
  *
- * plain English: closes practice sessions nobody has touched in
+ * plain English: closes practice AND review sessions nobody has touched in
  * STALE_PRACTICE_SESSION_TTL_DAYS days. Diagnostics are never swept — the rule and
  * the reason live in server/lib/stale-session-sweep.ts, and this handler is
  * transport only.
+ *
+ * @rescoped [2026-09-21, brief R3 §2.5] Review sweeps from this same job rather than
+ * a seventh cron entry: the two sweeps share a TTL and a cadence, and one scheduler
+ * entry is one thing to misconfigure instead of two. Review has no diagnostic mode,
+ * so its predicate is status + last_activity_at only — see
+ * server/lib/review-stale-session-sweep.ts for why it is a sibling function and not
+ * a flag on practice's. A review sweep NEVER touches review_schedule: abandoning a
+ * session leaves its queue entries open, which is the point.
  *
  * Managed-service first: this is a Vercel cron entry in vercel.json, the same
  * scheduler already driving legal-acceptance-drain and execute-deletions. No
@@ -207,17 +216,27 @@ router.get(
       return;
     }
     try {
+      const now = new Date();
       const { sweptCount, cutoff } = await sweepStalePracticeSessions(
         getSupabaseAdmin(),
-        { now: new Date() },
+        { now },
+      );
+      const { sweptCount: reviewSweptCount } = await sweepStaleReviewSessions(
+        getSupabaseAdmin(),
+        { now },
       );
       logger.info(
         "SESSION_LIFECYCLE",
         "stale_session_sweep_job",
         "Scheduled stale practice-session sweep completed",
-        { sweptCount, cutoff, ttlDays: STALE_PRACTICE_SESSION_TTL_DAYS },
+        {
+          sweptCount,
+          reviewSweptCount,
+          cutoff,
+          ttlDays: STALE_PRACTICE_SESSION_TTL_DAYS,
+        },
       );
-      res.json({ ok: true, sweptCount, cutoff });
+      res.json({ ok: true, sweptCount, reviewSweptCount, cutoff });
     } catch (err) {
       logger.error(
         "SESSION_LIFECYCLE",

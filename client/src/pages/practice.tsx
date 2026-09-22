@@ -32,6 +32,7 @@ import {
   ArrowRight,
   AlertCircle,
   PlayCircle,
+  RotateCcw,
   Trash2,
   X,
   Hash,
@@ -296,6 +297,12 @@ function Practice() {
 
   const secondaryActions = [
     {
+      href: "/review",
+      title: "Review Queue",
+      icon: RotateCcw,
+      caption: "Redo what you missed",
+    },
+    {
       href: "/full-test",
       title: "Full-Length Exam",
       icon: Target,
@@ -366,7 +373,7 @@ function Practice() {
                           <p className="text-xs text-muted-foreground">
                             Progress: {s.answered_items} / {s.total_items}{" "}
                             questions · Started{" "}
-                            {DateTime.fromISO(s.started_at).toRelative()}
+                            {DateTime.fromISO(s.created_at).toRelative()}
                           </p>
                         </div>
                       </div>

@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 // Import + re-export from canonical-id.ts (browser-safe module) so existing
 // consumers of question-bank-contract.ts are not broken, and the local
@@ -747,6 +747,61 @@ export function buildStudentSafeOptionTokens(
     optionTokenMap[token] = key;
     safeOptions.push({ id: token, text: option.text });
   }
+
+  return { optionOrder, optionTokenMap, safeOptions };
+}
+
+/**
+ * @spec [Doc-02B_V4 §16; ruled plan §2 "Copied from practice unchanged"] | @implemented [2026-09-21]
+ *
+ * plain English: the per-serve A-D option shuffle, promoted out of
+ * practice-canonical.ts so practice and review run the SAME code rather than two
+ * copies that can drift. What it does: Fisher-Yates over the option array, then
+ * mints one opaque token per option. Expected outcome: `option_order` records the
+ * serve order and `option_token_map` maps token -> canonical key, both persisted on
+ * the session item, so a re-read reproduces the same screen without re-shuffling.
+ *
+ * trade-offs: the RNG is `crypto.randomInt`, unseeded, NOT packages/shared/src/rng.ts.
+ * That file's contract (rng.ts:3-8) is that QUESTION SELECTION be reproducible from
+ * its inputs; its `seededShuffle` derives from profile+filter+session, which the
+ * client partly knows. Deriving option order from that would make the shuffle
+ * predictable, which is the opposite of what an anti-leak shuffle is for. The
+ * determinism this shuffle owes is replay determinism, and that comes from storage:
+ * the order is written to the row once and read back thereafter. Brief R3 §2.1's
+ * "not Math.random()" constraint is met; its pointer at rng.ts is not, deliberately.
+ *
+ * edge cases: an empty or single-element array is returned as a fresh copy, unshuffled
+ * (the loop body never runs). The input is never mutated.
+ */
+export function fisherYates<T>(items: readonly T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = randomInt(0, i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/**
+ * @spec [Doc-02B_V4 §16; Coding Standards §5.2] | @implemented [2026-09-21]
+ * plain English: shuffle the options, then tokenize them. The single implementation
+ * behind both engines' serve paths. expected outcome: `{ optionOrder, optionTokenMap,
+ * safeOptions }` — safeOptions carries only `{ id: token, text }`, never the canonical
+ * letter, which is the anti-leak property. trade-offs: none; this is a verbatim move of
+ * practice's private `buildServedOptions`. edge cases: a non-canonical option set is the
+ * caller's problem — callers gate on `hasCanonicalOptionSet` before calling.
+ */
+export function buildServedOptions(options: ReadonlyArray<CanonicalMcOption>): {
+  optionOrder: string[];
+  optionTokenMap: Record<string, string>;
+  safeOptions: StudentSafeOption[];
+} {
+  const shuffled = fisherYates(options);
+  const optionOrder = shuffled.map((o) => o.key);
+  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
+    shuffled,
+    optionOrder,
+  );
 
   return { optionOrder, optionTokenMap, safeOptions };
 }
