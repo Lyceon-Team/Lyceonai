@@ -337,6 +337,30 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
     expect(body.toLowerCase()).not.toContain("practice");
   });
 
+  it("R4.1: the guidance panel states the real rule, verbatim, with no jargon", async () => {
+    installFetchMock();
+    render(<ResumeReviewPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Solve 2x + 3 = 7.")).not.toBeNull();
+    });
+
+    // Owner copy, R4.1. Asserted EXACTLY rather than by keyword: the previous
+    // wording was a plausible-sounding paraphrase that happened to state the rule
+    // wrongly, so "contains the word queue" would not have caught it.
+    expect(document.body.textContent).toContain(
+      "These are questions you missed or skipped. Get one right and it leaves your queue. Miss or skip it and it goes to the back of the line. You can leave anytime; your place is saved.",
+    );
+
+    // The two specific defects the production walk found, forbidden by name.
+    // ONE correct review answer graduates a question —
+    // 20260921000000_review_queue_runtime.sql:392, "ruling 4: one correct review
+    // answer graduates" — so any "twice" claim on this screen is false.
+    expect(document.body.textContent).not.toContain("twice");
+    expect(document.body.textContent).not.toContain("runtime session truth");
+    expect(document.body.textContent).not.toContain("unresolved state");
+  });
+
   it("U7 (review half): an abandoned session is never playable", async () => {
     installFetchMock();
     stateMock.value = {
