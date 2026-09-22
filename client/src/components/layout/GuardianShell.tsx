@@ -52,17 +52,21 @@ function GuardianHeader() {
       <SkipLink />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <Link href="/guardian">
-            <a
-              className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity"
-              data-testid="logo-link"
-            >
-              <GraduationCap className="h-6 w-6 text-foreground" />
-              <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Guardian
-              </span>
-            </a>
+          {/* The guardian's way home is /guardian, not /dashboard — a different page, so
+              the control is pointed at theirs rather than hidden from them. Same focus
+              ring and title as the student shell: the two headers are meant to behave
+              identically, and the shells test exists because they have drifted before. */}
+          <Link
+            href="/guardian"
+            className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            data-testid="logo-link"
+            title="Lyceon home — your guardian dashboard"
+          >
+            <GraduationCap className="h-6 w-6 text-foreground" />
+            <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Guardian
+            </span>
           </Link>
 
           <div className="flex items-center gap-2">
