@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONFIG_ROWS,
+  PRACTICE_CONFIG_ROW,
   makeFakeClient,
   okReply,
   type FakeClient,
@@ -101,9 +102,8 @@ vi.mock("../../server/services/calendar/adapters", () => ({
   }),
 }));
 
-const { readCalendar, readGuardianCalendar } = await import(
-  "../../server/services/calendar/read-service"
-);
+const { readCalendar, readGuardianCalendar } =
+  await import("../../server/services/calendar/read-service");
 
 type ScenarioOptions = {
   profile?: typeof PROFILE | null;
@@ -112,7 +112,11 @@ type ScenarioOptions = {
   acceptedVersions?: number;
   planRows?: (typeof PLAN_ROW)[];
   units?: number;
-  unacknowledged?: { version_no: number; trigger: string; created_at: string } | null;
+  unacknowledged?: {
+    version_no: number;
+    trigger: string;
+    created_at: string;
+  } | null;
 };
 
 function scenario(options: ScenarioOptions = {}): void {
@@ -123,6 +127,7 @@ function scenario(options: ScenarioOptions = {}): void {
   client = makeFakeClient({
     tables: {
       calendar_runtime_config: () => okReply(CONFIG_ROWS),
+      practice_runtime_config: () => okReply([PRACTICE_CONFIG_ROW]),
       student_study_profile: (state: QueryState) =>
         state.columns.includes("last_acknowledged")
           ? okReply({ last_acknowledged_nonstudent_version_no: 0 })
@@ -131,7 +136,10 @@ function scenario(options: ScenarioOptions = {}): void {
         if (state.head) return okReply(null, options.acceptedVersions ?? 0);
         if (state.columns.includes("input_snapshot")) {
           return okReply([
-            { version_no: 3, input_snapshot: { profile: { study_days_mask: 127 } } },
+            {
+              version_no: 3,
+              input_snapshot: { profile: { study_days_mask: 127 } },
+            },
           ]);
         }
         return okReply(options.unacknowledged ?? null);
@@ -139,13 +147,19 @@ function scenario(options: ScenarioOptions = {}): void {
       calendar_current_plan: () => okReply(planRows),
       calendar_blocks: () => okReply([BLOCK_ROW]),
       calendar_block_launches: () => okReply([]),
-      student_overall_kpi: () => okReply({ current_streak_days: 4, longest_streak_days: 9 }),
+      student_overall_kpi: () =>
+        okReply({ current_streak_days: 4, longest_streak_days: 9 }),
     },
     rpcs: {
-      calendar_persist_version: () => okReply({ version_no: 1, validator_result: "accepted" }),
+      calendar_persist_version: () =>
+        okReply({ version_no: 1, validator_result: "accepted" }),
       student_diagnostic_state: () => okReply("baseline_ready"),
       calendar_is_known_timezone: (args) =>
-        okReply((options.knownZones ?? ["America/Chicago"]).includes(String(args.p_timezone))),
+        okReply(
+          (options.knownZones ?? ["America/Chicago"]).includes(
+            String(args.p_timezone),
+          ),
+        ),
     },
   });
 }
@@ -159,7 +173,9 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
     const result = await read();
 
     expect(result.ok).toBe(true);
-    const persist = client.rpcs.find((call) => call.fn === "calendar_persist_version");
+    const persist = client.rpcs.find(
+      (call) => call.fn === "calendar_persist_version",
+    );
     expect(persist?.args.p_trigger).toBe("setup");
     expect(persist?.args.p_initiated_by).toBe("student");
   });
@@ -172,8 +188,12 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
     // Queries and RPCs share one counter, so this is a real ordering assertion: the
     // generate must have completed before the plan was read, or the first open would
     // render the empty fortnight that existed a moment earlier.
-    const persist = client.rpcs.find((call) => call.fn === "calendar_persist_version");
-    const planRead = client.queries.find((query) => query.table === "calendar_current_plan");
+    const persist = client.rpcs.find(
+      (call) => call.fn === "calendar_persist_version",
+    );
+    const planRead = client.queries.find(
+      (query) => query.table === "calendar_current_plan",
+    );
     expect(persist).toBeDefined();
     expect(planRead).toBeDefined();
     expect(persist?.seq).toBeLessThan(planRead?.seq ?? -1);
@@ -184,15 +204,22 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
 
     await read();
 
-    expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
+    expect(
+      client.rpcs.some((call) => call.fn === "calendar_persist_version"),
+    ).toBe(false);
   });
 
   it("generates nothing before setup completes", async () => {
-    scenario({ acceptedVersions: 0, profile: { ...PROFILE, setup_completed_at: null } });
+    scenario({
+      acceptedVersions: 0,
+      profile: { ...PROFILE, setup_completed_at: null },
+    });
 
     await read();
 
-    expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
+    expect(
+      client.rpcs.some((call) => call.fn === "calendar_persist_version"),
+    ).toBe(false);
   });
 
   it("answers a 200-shaped `setup_required` for a student with no profile row", async () => {
@@ -217,7 +244,9 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
     // Every value traces to a `calendar_runtime_config` row in CONFIG_ROWS. Change a row
     // and this changes with it, which is the property that keeps the setup sheet's chips
     // and the server's own validation from disagreeing.
-    expect(result.value.defaults.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
+    expect(result.value.defaults.daily_minutes_presets).toEqual([
+      15, 30, 45, 60, 90, 120,
+    ]);
     expect(result.value.defaults.daily_minutes_min).toBe(15);
     expect(result.value.defaults.daily_minutes_max).toBe(180);
     expect(result.value.defaults.target_exam_date_max_days).toBe(540);
@@ -264,7 +293,11 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
   it("gives the GUARDIAN the same status and NO defaults — a guardian cannot run setup", async () => {
     scenario({ profile: null });
 
-    const result = await readGuardianCalendar({ student_id: STUDENT, query: {}, now: NOW });
+    const result = await readGuardianCalendar({
+      student_id: STUDENT,
+      query: {},
+      now: NOW,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -394,15 +427,23 @@ describe("§12.7 acknowledgement state", () => {
   it("carries the highest accepted non-student version above the watermark", async () => {
     scenario({
       acceptedVersions: 1,
-      unacknowledged: { version_no: 5, trigger: "weekly", created_at: "2026-09-20T00:00:00Z" },
+      unacknowledged: {
+        version_no: 5,
+        trigger: "weekly",
+        created_at: "2026-09-20T00:00:00Z",
+      },
     });
 
     const result = await read();
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.latest_unacknowledged_nonstudent_change?.version_no).toBe(5);
-    expect(result.value.latest_unacknowledged_nonstudent_change?.trigger).toBe("weekly");
+    expect(
+      result.value.latest_unacknowledged_nonstudent_change?.version_no,
+    ).toBe(5);
+    expect(result.value.latest_unacknowledged_nonstudent_change?.trigger).toBe(
+      "weekly",
+    );
   });
 
   it("is null when there is nothing to acknowledge", async () => {
@@ -435,11 +476,20 @@ describe("§16 — the guardian read", () => {
   it("carries no profile, no version_no and no override flag", async () => {
     scenario({ acceptedVersions: 1 });
 
-    const result = await readGuardianCalendar({ student_id: STUDENT, query: {}, now: NOW });
+    const result = await readGuardianCalendar({
+      student_id: STUDENT,
+      query: {},
+      now: NOW,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(Object.keys(result.value).sort()).toEqual(["days", "facts", "status", "streak"]);
+    expect(Object.keys(result.value).sort()).toEqual([
+      "days",
+      "facts",
+      "status",
+      "streak",
+    ]);
     const serialized = JSON.stringify(result.value);
     expect(serialized).not.toContain("version_no");
     expect(serialized).not.toContain("is_user_override");
@@ -449,7 +499,11 @@ describe("§16 — the guardian read", () => {
   it("carries no explanation_key ANYWHERE — not on the block, not inside the mix", async () => {
     scenario({ acceptedVersions: 1 });
 
-    const result = await readGuardianCalendar({ student_id: STUDENT, query: {}, now: NOW });
+    const result = await readGuardianCalendar({
+      student_id: STUDENT,
+      query: {},
+      now: NOW,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -470,6 +524,8 @@ describe("§16 — the guardian read", () => {
 
     await readGuardianCalendar({ student_id: STUDENT, query: {}, now: NOW });
 
-    expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
+    expect(
+      client.rpcs.some((call) => call.fn === "calendar_persist_version"),
+    ).toBe(false);
   });
 });

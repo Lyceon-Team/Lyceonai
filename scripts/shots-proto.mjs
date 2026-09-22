@@ -1,0 +1,11 @@
+import { chromium } from "@playwright/test";
+const OUT = "/tmp/claude-0/-home-user-Lyceonai/500be707-3efa-5f3f-94af-9b09100f6f60/scratchpad/shots";
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+await page.goto("file:///home/user/Lyceonai/docs/design/calendar-prototype.html", { waitUntil: "networkidle" });
+await page.waitForTimeout(900);
+await page.screenshot({ path: `${OUT}/prototype-week.png` });
+await page.click("#vMonth");
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${OUT}/prototype-month.png` });
+await browser.close();

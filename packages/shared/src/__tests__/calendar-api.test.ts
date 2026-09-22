@@ -27,6 +27,12 @@ const KEY = "4b3f1a9c-2d5e-4c7b-9a1f-8e6d5c4b3a21";
 const BLOCK_ID = "00000000-0000-4000-8000-000000000001";
 const SESSION_ID = "6f1d2f5a-9f8a-4a1e-8f4c-0b2f1d3e4a5b";
 
+/** §17.1's "~N min" readout. Server-owned constants, so the payload carries them. */
+const ESTIMATES = {
+  practice_seconds_per_unit: 90,
+  review_seconds_per_unit: 120,
+};
+
 const PROFILE = {
   timezone: "America/Los_Angeles",
   target_exam_date: "2026-11-07",
@@ -68,7 +74,14 @@ const DAY: CalendarDay = {
       status: "partial",
     },
   ],
-  extra_work: [{ engine: "practice", section: "RW", domain: "Expression of Ideas", count: 3 }],
+  extra_work: [
+    {
+      engine: "practice",
+      section: "RW",
+      domain: "Expression of Ideas",
+      count: 3,
+    },
+  ],
   planned_count: 20,
   actual_count: 12,
   extra_count: 3,
@@ -90,23 +103,28 @@ const STREAK = { current: 4, longest: null, history_complete: false };
 
 describe("GET /api/calendar", () => {
   it("accepts a from/to query and refuses a reversed range", () => {
-    expect(calendarQuerySchema.safeParse({ from: "2026-09-17", to: "2026-09-30" }).success).toBe(
-      true,
-    );
+    expect(
+      calendarQuerySchema.safeParse({ from: "2026-09-17", to: "2026-09-30" })
+        .success,
+    ).toBe(true);
     expect(calendarQuerySchema.safeParse({}).success).toBe(true);
-    expect(calendarQuerySchema.safeParse({ from: "2026-09-30", to: "2026-09-17" }).success).toBe(
-      false,
-    );
+    expect(
+      calendarQuerySchema.safeParse({ from: "2026-09-30", to: "2026-09-17" })
+        .success,
+    ).toBe(false);
   });
 
   it("refuses a date that matches the pattern but is not a date", () => {
-    expect(calendarQuerySchema.safeParse({ from: "2026-02-31" }).success).toBe(false);
+    expect(calendarQuerySchema.safeParse({ from: "2026-02-31" }).success).toBe(
+      false,
+    );
   });
 
   it("round-trips the full response", () => {
     const payload = {
       status: "ready" as const,
       profile: PROFILE,
+      estimates: ESTIMATES,
       days: [DAY],
       facts: FACTS,
       streak: STREAK,
@@ -149,13 +167,16 @@ describe("GET /api/calendar", () => {
     expect(
       calendarResponseSchema.safeParse({ ...payload, days: [DAY] }).success,
     ).toBe(false);
-    expect(calendarResponseSchema.safeParse({ status: "setup_required" }).success).toBe(false);
+    expect(
+      calendarResponseSchema.safeParse({ status: "setup_required" }).success,
+    ).toBe(false);
   });
 
   it("refuses a payload with no status at all", () => {
     expect(
       calendarResponseSchema.safeParse({
         profile: PROFILE,
+        estimates: ESTIMATES,
         days: [DAY],
         facts: FACTS,
         streak: STREAK,
@@ -170,6 +191,7 @@ describe("GET /api/calendar", () => {
       calendarResponseSchema.safeParse({
         status: "ready",
         profile: PROFILE,
+        estimates: ESTIMATES,
         days: [],
         facts: FACTS,
         streak: STREAK,
@@ -184,6 +206,7 @@ describe("GET /api/calendar", () => {
       calendarResponseSchema.safeParse({
         status: "ready",
         profile: PROFILE,
+        estimates: ESTIMATES,
         days: [],
         facts: FACTS,
         streak: STREAK,
@@ -200,27 +223,39 @@ describe("GET /api/calendar", () => {
 
 describe("mutations", () => {
   it("every idempotent mutation body requires a uuid key", () => {
-    expect(idempotentMutationBodySchema.safeParse({ idempotency_key: KEY }).success).toBe(true);
+    expect(
+      idempotentMutationBodySchema.safeParse({ idempotency_key: KEY }).success,
+    ).toBe(true);
     expect(idempotentMutationBodySchema.safeParse({}).success).toBe(false);
-    expect(idempotentMutationBodySchema.safeParse({ idempotency_key: "abc" }).success).toBe(
+    expect(
+      idempotentMutationBodySchema.safeParse({ idempotency_key: "abc" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("day params parse a local date", () => {
+    expect(dayParamsSchema.safeParse({ date: "2026-09-17" }).success).toBe(
+      true,
+    );
+    expect(dayParamsSchema.safeParse({ date: "17-09-2026" }).success).toBe(
       false,
     );
   });
 
-  it("day params parse a local date", () => {
-    expect(dayParamsSchema.safeParse({ date: "2026-09-17" }).success).toBe(true);
-    expect(dayParamsSchema.safeParse({ date: "17-09-2026" }).success).toBe(false);
-  });
-
   it("a version response is a positive integer", () => {
-    expect(versionResponseSchema.safeParse({ version_no: 7 }).success).toBe(true);
-    expect(versionResponseSchema.safeParse({ version_no: 0 }).success).toBe(false);
+    expect(versionResponseSchema.safeParse({ version_no: 7 }).success).toBe(
+      true,
+    );
+    expect(versionResponseSchema.safeParse({ version_no: 0 }).success).toBe(
+      false,
+    );
   });
 
   it("a day edit sends the full member list, and an empty list is a cleared day", () => {
-    expect(dayEditBodySchema.safeParse({ members: [], idempotency_key: KEY }).success).toBe(
-      true,
-    );
+    expect(
+      dayEditBodySchema.safeParse({ members: [], idempotency_key: KEY })
+        .success,
+    ).toBe(true);
     const body = {
       members: [
         { kind: "carried", block_id: BLOCK_ID },
@@ -231,7 +266,13 @@ describe("mutations", () => {
             section: "RW",
             scope: {
               level: "domain",
-              mix: [{ domain: "Craft and Structure", count: 10, explanation_key: "balanced" }],
+              mix: [
+                {
+                  domain: "Craft and Structure",
+                  count: 10,
+                  explanation_key: "balanced",
+                },
+              ],
             },
             target_count: 10,
             explanation_key: "weighted",
@@ -288,22 +329,31 @@ describe("mutations", () => {
   });
 
   it("acknowledgement carries a version number and nothing else (§12.7, monotonic)", () => {
-    expect(acknowledgeBodySchema.safeParse({ version_no: 7 }).success).toBe(true);
+    expect(acknowledgeBodySchema.safeParse({ version_no: 7 }).success).toBe(
+      true,
+    );
     expect(
-      acknowledgeBodySchema.safeParse({ version_no: 7, idempotency_key: KEY }).success,
+      acknowledgeBodySchema.safeParse({ version_no: 7, idempotency_key: KEY })
+        .success,
     ).toBe(false);
   });
 
   it("a profile upsert response may or may not have triggered a regeneration", () => {
-    expect(profileUpsertResponseSchema.safeParse({ profile: PROFILE }).success).toBe(true);
     expect(
-      profileUpsertResponseSchema.safeParse({ profile: PROFILE, version_no: 8 }).success,
+      profileUpsertResponseSchema.safeParse({ profile: PROFILE }).success,
+    ).toBe(true);
+    expect(
+      profileUpsertResponseSchema.safeParse({ profile: PROFILE, version_no: 8 })
+        .success,
     ).toBe(true);
   });
 
   it("do-it-now returns the new block", () => {
     expect(
-      doItNowResponseSchema.safeParse({ version_no: 8, block: DAY.blocks[0]?.block }).success,
+      doItNowResponseSchema.safeParse({
+        version_no: 8,
+        block: DAY.blocks[0]?.block,
+      }).success,
     ).toBe(true);
   });
 });
@@ -311,7 +361,10 @@ describe("mutations", () => {
 describe("launch (§15.1)", () => {
   it("the body is the client instance and platform — never an idempotency key", () => {
     expect(
-      launchBodySchema.safeParse({ client_instance_id: "ci-1", platform: "web" }).success,
+      launchBodySchema.safeParse({
+        client_instance_id: "ci-1",
+        platform: "web",
+      }).success,
     ).toBe(true);
     expect(
       launchBodySchema.safeParse({
@@ -324,7 +377,10 @@ describe("launch (§15.1)", () => {
 
   it("refuses a platform outside the practice_sessions CHECK", () => {
     expect(
-      launchBodySchema.safeParse({ client_instance_id: "ci-1", platform: "desktop" }).success,
+      launchBodySchema.safeParse({
+        client_instance_id: "ci-1",
+        platform: "desktop",
+      }).success,
     ).toBe(false);
   });
 
@@ -368,7 +424,9 @@ describe("guardian read (§16, R-08-22)", () => {
       facts: FACTS,
       streak: STREAK,
     };
-    expect(guardianCalendarResponseSchema.safeParse(payload).success).toBe(true);
+    expect(guardianCalendarResponseSchema.safeParse(payload).success).toBe(
+      true,
+    );
     expect(
       guardianCalendarResponseSchema.safeParse({
         status: "ready",
@@ -381,7 +439,8 @@ describe("guardian read (§16, R-08-22)", () => {
 
   it("the guardian pre-setup arm carries NO defaults — a guardian cannot run setup", () => {
     expect(
-      guardianCalendarResponseSchema.safeParse({ status: "setup_required" }).success,
+      guardianCalendarResponseSchema.safeParse({ status: "setup_required" })
+        .success,
     ).toBe(true);
     // `.strict()` refuses the student's defaults block on the guardian arm, so the chips
     // cannot reach a caller who has no write path to use them with.
@@ -406,6 +465,7 @@ describe("guardian read (§16, R-08-22)", () => {
         facts: FACTS,
         streak: STREAK,
         profile: PROFILE,
+        estimates: ESTIMATES,
       }).success,
     ).toBe(false);
   });
@@ -413,12 +473,20 @@ describe("guardian read (§16, R-08-22)", () => {
 
 describe("the error envelope (Coding Standards §8.2)", () => {
   it("is {error:{message, code?, details?}}", () => {
-    expect(apiErrorSchema.safeParse({ error: { message: "Not entitled" } }).success).toBe(true);
+    expect(
+      apiErrorSchema.safeParse({ error: { message: "Not entitled" } }).success,
+    ).toBe(true);
     expect(
       apiErrorSchema.safeParse({
-        error: { message: "Invalid input", code: "bad_request", details: { field: "members" } },
+        error: {
+          message: "Invalid input",
+          code: "bad_request",
+          details: { field: "members" },
+        },
       }).success,
     ).toBe(true);
-    expect(apiErrorSchema.safeParse({ message: "Not entitled" }).success).toBe(false);
+    expect(apiErrorSchema.safeParse({ message: "Not entitled" }).success).toBe(
+      false,
+    );
   });
 });

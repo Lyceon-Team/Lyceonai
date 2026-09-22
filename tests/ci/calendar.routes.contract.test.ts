@@ -31,6 +31,7 @@ const regeneratePlanMock = vi.fn();
 const regenerateDayMock = vi.fn();
 const editDayMock = vi.fn();
 const doItNowMock = vi.fn();
+const moveBlockMock = vi.fn();
 const acknowledgeMock = vi.fn();
 const launchBlockMock = vi.fn();
 const streakMock = vi.fn();
@@ -51,6 +52,9 @@ vi.mock("../../server/services/calendar/config", () => ({
     horizonDays: 14,
     weeklyJobIntervalMinutes: 1440,
     generatorVersion: "20260917140000",
+    // §17.1's "~N min" readout. On the config object because the read service puts it on
+    // the ready payload; the route itself never reads it.
+    estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 120 },
   })),
 }));
 
@@ -70,6 +74,7 @@ vi.mock("../../server/services/calendar/plan-service", () => ({
   regenerateDay: regenerateDayMock,
   editDay: editDayMock,
   doItNow: doItNowMock,
+  moveBlock: moveBlockMock,
   acknowledgeVersion: acknowledgeMock,
 }));
 
@@ -158,6 +163,7 @@ beforeEach(() => {
   regenerateDayMock.mockResolvedValue({ ok: true, value: { version_no: 5 } });
   editDayMock.mockResolvedValue({ ok: true, value: { version_no: 6 } });
   doItNowMock.mockResolvedValue({ ok: true, value: { version_no: 7 } });
+  moveBlockMock.mockResolvedValue({ ok: true, value: { version_no: 8 } });
   acknowledgeMock.mockResolvedValue({ ok: true, value: true });
   upsertProfileMock.mockResolvedValue({ ok: true, value: { profile: {}, version_no: 8 } });
   launchBlockMock.mockResolvedValue({
@@ -181,6 +187,7 @@ const MUTATIONS: { name: string; call: (app: express.Express) => request.Test }[
   { name: "PUT /days/:date", call: (app) => request(app).put(`/api/calendar/days/${TODAY}`).send({ members: [], idempotency_key: KEY }) },
   { name: "POST /blocks/:id/launch", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/launch`).send({ client_instance_id: "c1", platform: "web" }) },
   { name: "POST /blocks/:id/do-it-now", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/do-it-now`).send({ idempotency_key: KEY }) },
+  { name: "POST /blocks/:id/move", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/move`).send({ to_date: TODAY, idempotency_key: KEY }) },
   { name: "POST /acknowledge", call: (app) => request(app).post("/api/calendar/acknowledge").send({ version_no: 3 }) },
 ];
 
@@ -523,5 +530,79 @@ describe("§8.1 step 3 — bad input is 400 before any work", () => {
 
     expect(res.status).toBe(404);
     expect(launchBlockMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /blocks/:id/move (§12.2, §12.4)", () => {
+  it("returns the single version that now owns BOTH dates", async () => {
+    const res = await request(buildApp())
+      .post(`/api/calendar/blocks/${BLOCK_ID}/move`)
+      .send({ to_date: "2026-09-25", idempotency_key: KEY });
+
+    expect(res.status).toBe(200);
+    expect(res.body.version_no).toBe(8);
+    expect(moveBlockMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        block_id: BLOCK_ID,
+        to_date: "2026-09-25",
+        idempotency_key: KEY,
+        generator_version: "20260917140000",
+      }),
+    );
+  });
+
+  it("spends the EXISTING day-scoped rate-limit bucket, not a new one", async () => {
+    await request(buildApp())
+      .post(`/api/calendar/blocks/${BLOCK_ID}/move`)
+      .send({ to_date: "2026-09-25", idempotency_key: KEY });
+
+    // A second bucket would let a caller spend twice the day-scoped budget.
+    expect(rateLimitCalls).toEqual(["calendar_day_regenerate"]);
+  });
+
+  /**
+   * The three §12.2 refusals. Each is an OUTCOME a student can reach with a drag handle, so
+   * each answers 409 under its OWN code — the client needs to tell them apart to say the
+   * right thing, and a shared code would make all three "something went wrong".
+   */
+  const REFUSALS: { reason: string; code: string }[] = [
+    { reason: "block_started", code: "CALENDAR_BLOCK_STARTED" },
+    { reason: "date_in_past", code: "CALENDAR_PAST_DATE" },
+    { reason: "same_date", code: "CALENDAR_SAME_DATE" },
+  ];
+
+  for (const refusal of REFUSALS) {
+    it(`answers 409 ${refusal.code} when the writer refuses with ${refusal.reason}`, async () => {
+      moveBlockMock.mockResolvedValue({
+        ok: false,
+        error: { kind: "move_refused", reason: refusal.reason },
+      });
+
+      const res = await request(buildApp())
+        .post(`/api/calendar/blocks/${BLOCK_ID}/move`)
+        .send({ to_date: "2026-09-25", idempotency_key: KEY });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe(refusal.code);
+    });
+  }
+
+  it("rejects a body with no target date", async () => {
+    const res = await request(buildApp())
+      .post(`/api/calendar/blocks/${BLOCK_ID}/move`)
+      .send({ idempotency_key: KEY });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_BODY");
+    expect(moveBlockMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed block id as a 404 rather than reaching the writer", async () => {
+    const res = await request(buildApp())
+      .post("/api/calendar/blocks/not-a-uuid/move")
+      .send({ to_date: "2026-09-25", idempotency_key: KEY });
+
+    expect(res.status).toBe(404);
+    expect(moveBlockMock).not.toHaveBeenCalled();
   });
 });

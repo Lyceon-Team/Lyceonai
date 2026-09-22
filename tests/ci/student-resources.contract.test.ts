@@ -109,6 +109,11 @@ function resetRows() {
   // which would 500 every KPI case here — so the seed mirrors the WS-2 config seed.
   rows.practice_runtime_config = [
     { key: "quota_reset_timezone", value: "America/Chicago" },
+    // Doc 05F §17.1's "~N min" readout. Doc 02B §41 owns practice timing, so the calendar
+    // READS this row rather than copying the value into its own config table (§20's audit
+    // rule). `loadCalendarConfig` throws when it is missing — a loud failure at the
+    // accessor (§18) — which would 500 the calendar cases below.
+    { key: "target_seconds_per_question", value: 90 },
   ];
   rows.audit_logs = [];
 
@@ -125,6 +130,9 @@ function resetRows() {
     { key: "weekly_job_interval_minutes", value: 1440 },
     { key: "horizon_days", value: 14 },
     { key: "generator_version", value: "20260917140000" },
+    // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
+    // counterpart above.
+    { key: "review_estimated_seconds_per_item", value: 120 },
   ];
   rows.student_study_profile = [
     {

@@ -39,6 +39,8 @@ import { Router, type Request, type Response } from "express";
 import {
   acknowledgeBodySchema,
   blockParamsSchema,
+  moveBlockBodySchema,
+  type MoveRefusalReason,
   dayEditBodySchema,
   dayParamsSchema,
   idempotentMutationBodySchema,
@@ -52,6 +54,7 @@ import { getStudentActivityStreak } from "../services/activity-streak";
 import { loadCalendarConfig } from "../services/calendar/config";
 import {
   acknowledgeVersion,
+  moveBlock,
   doItNow,
   editDay,
   regenerateDay,
@@ -103,7 +106,8 @@ function sendError(
   details?: unknown,
 ): Response {
   return res.status(status).json({
-    error: details === undefined ? { message, code } : { message, code, details },
+    error:
+      details === undefined ? { message, code } : { message, code, details },
     requestId,
   });
 }
@@ -120,12 +124,23 @@ function sendServerError(
   error: unknown,
   requestId: string | undefined,
 ): Response {
-  logger.error("CALENDAR_ROUTES", `${operation}_failed`, "a calendar route failed", {
-    operation,
+  logger.error(
+    "CALENDAR_ROUTES",
+    `${operation}_failed`,
+    "a calendar route failed",
+    {
+      operation,
+      requestId,
+      reason: error instanceof Error ? error.message : "unknown",
+    },
+  );
+  return sendError(
+    res,
+    500,
+    "Something went wrong.",
+    "CALENDAR_ERROR",
     requestId,
-    reason: error instanceof Error ? error.message : "unknown",
-  });
-  return sendError(res, 500, "Something went wrong.", "CALENDAR_ERROR", requestId);
+  );
 }
 
 // ── Auth and entitlement (§8.1 steps 1 and 2) ───────────────────────────────
@@ -140,7 +155,13 @@ type Caller = { studentId: string; actorId: string; role: string | undefined };
 function callerOf(req: Request, res: Response): Caller | null {
   const user = req.user;
   if (user === undefined) {
-    sendError(res, 401, "Sign in to continue.", "UNAUTHENTICATED", req.requestId);
+    sendError(
+      res,
+      401,
+      "Sign in to continue.",
+      "UNAUTHENTICATED",
+      req.requestId,
+    );
     return null;
   }
   return { studentId: user.id, actorId: user.actor_id, role: user.role };
@@ -154,8 +175,14 @@ function callerOf(req: Request, res: Response): Caller | null {
  * A denial is a decision and is logged as one — at INFO, because a free student opening the
  * calendar is normal operation and not a fault.
  */
-async function entitled(req: Request, res: Response, studentId: string): Promise<boolean> {
-  if (await EntitlementService.canAccessFeature(studentId, CALENDAR_FEATURE_KEY)) {
+async function entitled(
+  req: Request,
+  res: Response,
+  studentId: string,
+): Promise<boolean> {
+  if (
+    await EntitlementService.canAccessFeature(studentId, CALENDAR_FEATURE_KEY)
+  ) {
     return true;
   }
   logger.info(
@@ -170,6 +197,49 @@ async function entitled(req: Request, res: Response, studentId: string): Promise
 
 // ── Failure → status (§15's error list) ─────────────────────────────────────
 
+/**
+ * §12.2. Three OUTCOMES, not errors, so each carries its own code: the client already
+ * mirrors all three, and when the server disagrees the reason is what tells the UI which of
+ * its assumptions was stale. 409 rather than 400 — the request was well-formed; the plan's
+ * state is what refused it.
+ *
+ * Its own function rather than a nested switch, so the outer switch has one `return` per arm
+ * and cannot fall through — a nested switch whose every arm returns still reads as a
+ * fallthrough to both the linter and to the next person editing it.
+ */
+function sendMoveRefusal(
+  res: Response,
+  reason: MoveRefusalReason,
+  requestId: string | undefined,
+): Response {
+  switch (reason) {
+    case "block_started":
+      return sendError(
+        res,
+        409,
+        "You have already started that block, so it stays where it is.",
+        "CALENDAR_BLOCK_STARTED",
+        requestId,
+      );
+    case "date_in_past":
+      return sendError(
+        res,
+        409,
+        "Work cannot be moved into the past.",
+        "CALENDAR_PAST_DATE",
+        requestId,
+      );
+    case "same_date":
+      return sendError(
+        res,
+        409,
+        "That block is already on that day.",
+        "CALENDAR_SAME_DATE",
+        requestId,
+      );
+  }
+}
+
 function sendPlanFailure(
   res: Response,
   failure: PlanFailure,
@@ -179,23 +249,61 @@ function sendPlanFailure(
     case "past_date":
       // §12.2: a past date is never owned and never edited. The student's route out is
       // "Do it now", which is a different endpoint, so this is 409 and not 400.
-      return sendError(res, 409, "A past day cannot be replanned.", "CALENDAR_PAST_DATE", requestId);
+      return sendError(
+        res,
+        409,
+        "A past day cannot be replanned.",
+        "CALENDAR_PAST_DATE",
+        requestId,
+      );
     case "beyond_horizon":
-      return sendError(res, 404, "That day is not planned yet.", "CALENDAR_BEYOND_HORIZON", requestId);
+      return sendError(
+        res,
+        404,
+        "That day is not planned yet.",
+        "CALENDAR_BEYOND_HORIZON",
+        requestId,
+      );
     case "no_profile":
       // NOT the pre-setup read state. `GET /api/calendar` answers that with 200
       // `setup_required` (owner ruling on addendum item 26). This arm is a MUTATION —
       // regenerate, edit, do-it-now — against a student who has no study profile at all,
       // which a correct client never issues. Its own code, so the two cannot be conflated.
-      return sendError(res, 404, "Finish setting up your calendar first.", "CALENDAR_NO_PROFILE", requestId);
+      return sendError(
+        res,
+        404,
+        "Finish setting up your calendar first.",
+        "CALENDAR_NO_PROFILE",
+        requestId,
+      );
     case "not_found":
-      return sendError(res, 404, "That block is no longer on your plan.", "CALENDAR_NOT_FOUND", requestId);
+      return sendError(
+        res,
+        404,
+        "That block is no longer on your plan.",
+        "CALENDAR_NOT_FOUND",
+        requestId,
+      );
     case "rejected":
       // §18: a `generated` rejection pages and the PRIOR PLAN STANDS. The student is told
       // nothing changed; `plan-service` has already logged the rule ids for the alert.
-      return sendError(res, 500, "Your plan could not be updated. Your current plan is unchanged.", "CALENDAR_PLAN_REJECTED", requestId);
+      return sendError(
+        res,
+        500,
+        "Your plan could not be updated. Your current plan is unchanged.",
+        "CALENDAR_PLAN_REJECTED",
+        requestId,
+      );
+    case "move_refused":
+      return sendMoveRefusal(res, failure.reason, requestId);
     case "write_failed":
-      return sendError(res, 500, "Something went wrong.", "CALENDAR_ERROR", requestId);
+      return sendError(
+        res,
+        500,
+        "Something went wrong.",
+        "CALENDAR_ERROR",
+        requestId,
+      );
   }
 }
 
@@ -206,9 +314,22 @@ function sendReadFailure(
 ): Response {
   switch (failure.kind) {
     case "invalid_query":
-      return sendError(res, 400, "Invalid request.", "INVALID_QUERY", requestId, failure.details);
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_QUERY",
+        requestId,
+        failure.details,
+      );
     case "read_failed":
-      return sendError(res, 500, "Something went wrong.", "CALENDAR_ERROR", requestId);
+      return sendError(
+        res,
+        500,
+        "Something went wrong.",
+        "CALENDAR_ERROR",
+        requestId,
+      );
   }
 }
 
@@ -219,13 +340,33 @@ function sendProfileFailure(
 ): Response {
   switch (failure.kind) {
     case "invalid":
-      return sendError(res, 400, "Invalid request.", "INVALID_BODY", requestId, failure.details);
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        requestId,
+        failure.details,
+      );
     case "incomplete":
-      return sendError(res, 400, "Your study days and daily time are needed to start.", "CALENDAR_SETUP_INCOMPLETE", requestId, {
-        missing: failure.missing,
-      });
+      return sendError(
+        res,
+        400,
+        "Your study days and daily time are needed to start.",
+        "CALENDAR_SETUP_INCOMPLETE",
+        requestId,
+        {
+          missing: failure.missing,
+        },
+      );
     case "write_failed":
-      return sendError(res, 500, "Something went wrong.", "CALENDAR_ERROR", requestId);
+      return sendError(
+        res,
+        500,
+        "Something went wrong.",
+        "CALENDAR_ERROR",
+        requestId,
+      );
   }
 }
 
@@ -236,23 +377,63 @@ function sendLaunchFailure(
 ): Response {
   switch (failure.kind) {
     case "not_found":
-      return sendError(res, 404, "That block is no longer on your plan.", "CALENDAR_NOT_FOUND", requestId);
+      return sendError(
+        res,
+        404,
+        "That block is no longer on your plan.",
+        "CALENDAR_NOT_FOUND",
+        requestId,
+      );
     case "not_today":
       // §15.1 step 1. `when` travels so the client can offer the right control — "Do it
       // now" for a past day, nothing at all for a future one.
-      return sendError(res, 409, failure.when === "past" ? "That day has passed." : "That day has not started yet.", "CALENDAR_NOT_TODAY", requestId, { when: failure.when });
+      return sendError(
+        res,
+        409,
+        failure.when === "past"
+          ? "That day has passed."
+          : "That day has not started yet.",
+        "CALENDAR_NOT_TODAY",
+        requestId,
+        { when: failure.when },
+      );
     case "already_complete":
-      return sendError(res, 409, "You have already finished this one.", "CALENDAR_ALREADY_COMPLETE", requestId);
+      return sendError(
+        res,
+        409,
+        "You have already finished this one.",
+        "CALENDAR_ALREADY_COMPLETE",
+        requestId,
+      );
     case "engine_unavailable":
       // Fail OPEN as data, per §5A. The calendar rendered; this one block cannot start yet.
-      return sendError(res, 409, "This is not available yet.", "CALENDAR_ENGINE_UNAVAILABLE", requestId, { engine: failure.engine });
+      return sendError(
+        res,
+        409,
+        "This is not available yet.",
+        "CALENDAR_ENGINE_UNAVAILABLE",
+        requestId,
+        { engine: failure.engine },
+      );
     case "engine_error":
       // §18 "Engine create fails | No link; 502 retry; block `scheduled`."
-      return sendError(res, 502, "Could not start your session. Try again.", "CALENDAR_ENGINE_ERROR", requestId);
+      return sendError(
+        res,
+        502,
+        "Could not start your session. Try again.",
+        "CALENDAR_ENGINE_ERROR",
+        requestId,
+      );
     case "link_failed":
       // §18 "Created but link failed | Retry → same engine key → same session → link." The
       // engine session EXISTS, so this is retryable and the retry is free.
-      return sendError(res, 502, "Could not start your session. Try again.", "CALENDAR_ENGINE_ERROR", requestId);
+      return sendError(
+        res,
+        502,
+        "Could not start your session. Try again.",
+        "CALENDAR_ENGINE_ERROR",
+        requestId,
+      );
   }
 }
 
@@ -263,7 +444,9 @@ function sendPlanWrite(
   requestId: string | undefined,
 ): Response {
   if (!result.ok) return sendPlanFailure(res, result.error, requestId);
-  return res.status(200).json({ version_no: result.value.version_no, requestId });
+  return res
+    .status(200)
+    .json({ version_no: result.value.version_no, requestId });
 }
 
 // ── GET /api/calendar ───────────────────────────────────────────────────────
@@ -296,7 +479,11 @@ calendarRouter.put("/profile", async (req: Request, res: Response) => {
   if (!(await entitled(req, res, caller.studentId))) return;
 
   try {
-    const result = await upsertStudyProfile(caller.studentId, req.body, req.requestId);
+    const result = await upsertStudyProfile(
+      caller.studentId,
+      req.body,
+      req.requestId,
+    );
     if (!result.ok) return sendProfileFailure(res, result.error, req.requestId);
     return res.status(200).json({ ...result.value, requestId: req.requestId });
   } catch (error) {
@@ -316,7 +503,14 @@ calendarRouter.post(
 
     const body = idempotentMutationBodySchema.safeParse(req.body);
     if (!body.success) {
-      return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        req.requestId,
+        body.error.flatten(),
+      );
     }
 
     try {
@@ -358,11 +552,25 @@ function dayRegenerateHandler(trigger: "day_regenerate" | "day_reset") {
 
     const params = dayParamsSchema.safeParse(req.params);
     if (!params.success) {
-      return sendError(res, 400, "Invalid date.", "INVALID_DATE", req.requestId, params.error.flatten());
+      return sendError(
+        res,
+        400,
+        "Invalid date.",
+        "INVALID_DATE",
+        req.requestId,
+        params.error.flatten(),
+      );
     }
     const body = idempotentMutationBodySchema.safeParse(req.body);
     if (!body.success) {
-      return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        req.requestId,
+        body.error.flatten(),
+      );
     }
 
     try {
@@ -407,11 +615,25 @@ calendarRouter.put("/days/:date", async (req: Request, res: Response) => {
 
   const params = dayParamsSchema.safeParse(req.params);
   if (!params.success) {
-    return sendError(res, 400, "Invalid date.", "INVALID_DATE", req.requestId, params.error.flatten());
+    return sendError(
+      res,
+      400,
+      "Invalid date.",
+      "INVALID_DATE",
+      req.requestId,
+      params.error.flatten(),
+    );
   }
   const body = dayEditBodySchema.safeParse(req.body);
   if (!body.success) {
-    return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
+    return sendError(
+      res,
+      400,
+      "Invalid request.",
+      "INVALID_BODY",
+      req.requestId,
+      body.error.flatten(),
+    );
   }
 
   try {
@@ -444,13 +666,27 @@ calendarRouter.put("/days/:date", async (req: Request, res: Response) => {
     // `setup_required`, the profile vanished between the write and the read, which is an
     // anomaly worth a 500 and a log rather than a confident `as`.
     if (after.value.status !== "ready") {
-      return sendServerError(res, "day_edit_readback", new Error("calendar not ready after edit"), req.requestId);
+      return sendServerError(
+        res,
+        "day_edit_readback",
+        new Error("calendar not ready after edit"),
+        req.requestId,
+      );
     }
     const day = after.value.days[0];
     if (day === undefined) {
-      return sendServerError(res, "day_edit_readback", new Error("no day returned"), req.requestId);
+      return sendServerError(
+        res,
+        "day_edit_readback",
+        new Error("no day returned"),
+        req.requestId,
+      );
     }
-    return res.status(200).json({ version_no: written.value.version_no, day, requestId: req.requestId });
+    return res.status(200).json({
+      version_no: written.value.version_no,
+      day,
+      requestId: req.requestId,
+    });
   } catch (error) {
     return sendServerError(res, "day_edit", error, req.requestId);
   }
@@ -458,92 +694,211 @@ calendarRouter.put("/days/:date", async (req: Request, res: Response) => {
 
 // ── POST /api/calendar/blocks/:id/launch (§15.1) ────────────────────────────
 
-calendarRouter.post("/blocks/:id/launch", async (req: Request, res: Response) => {
-  const caller = callerOf(req, res);
-  if (caller === null) return;
-  if (!(await entitled(req, res, caller.studentId))) return;
+calendarRouter.post(
+  "/blocks/:id/launch",
+  async (req: Request, res: Response) => {
+    const caller = callerOf(req, res);
+    if (caller === null) return;
+    if (!(await entitled(req, res, caller.studentId))) return;
 
-  const params = blockParamsSchema.safeParse(req.params);
-  if (!params.success) {
-    return sendError(res, 404, "That block is no longer on your plan.", "CALENDAR_NOT_FOUND", req.requestId);
-  }
-  // §15.1: no `idempotency_key` in the body. `CalendarLaunchService` owns the engine key,
-  // and a client-supplied one would break INV-08-18.
-  const body = launchBodySchema.safeParse(req.body);
-  if (!body.success) {
-    return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
-  }
+    const params = blockParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      return sendError(
+        res,
+        404,
+        "That block is no longer on your plan.",
+        "CALENDAR_NOT_FOUND",
+        req.requestId,
+      );
+    }
+    // §15.1: no `idempotency_key` in the body. `CalendarLaunchService` owns the engine key,
+    // and a client-supplied one would break INV-08-18.
+    const body = launchBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        req.requestId,
+        body.error.flatten(),
+      );
+    }
 
-  try {
-    const result = await launchBlock(
-      {
-        student_id: caller.studentId,
-        actor_id: caller.actorId,
-        role: caller.role,
-        block_id: params.data.id,
-        client_instance_id: body.data.client_instance_id,
-        platform: body.data.platform,
-      },
-      liveLaunchDeps,
-    );
-    if (!result.ok) return sendLaunchFailure(res, result.error, req.requestId);
-    return res.status(200).json({ ...result.value, requestId: req.requestId });
-  } catch (error) {
-    return sendServerError(res, "block_launch", error, req.requestId);
-  }
-});
+    try {
+      const result = await launchBlock(
+        {
+          student_id: caller.studentId,
+          actor_id: caller.actorId,
+          role: caller.role,
+          block_id: params.data.id,
+          client_instance_id: body.data.client_instance_id,
+          platform: body.data.platform,
+        },
+        liveLaunchDeps,
+      );
+      if (!result.ok)
+        return sendLaunchFailure(res, result.error, req.requestId);
+      return res
+        .status(200)
+        .json({ ...result.value, requestId: req.requestId });
+    } catch (error) {
+      return sendServerError(res, "block_launch", error, req.requestId);
+    }
+  },
+);
 
 // ── POST /api/calendar/blocks/:id/do-it-now (§12.6) ─────────────────────────
 
-calendarRouter.post("/blocks/:id/do-it-now", async (req: Request, res: Response) => {
-  const caller = callerOf(req, res);
-  if (caller === null) return;
-  if (!(await entitled(req, res, caller.studentId))) return;
+calendarRouter.post(
+  "/blocks/:id/do-it-now",
+  async (req: Request, res: Response) => {
+    const caller = callerOf(req, res);
+    if (caller === null) return;
+    if (!(await entitled(req, res, caller.studentId))) return;
 
-  const params = blockParamsSchema.safeParse(req.params);
-  if (!params.success) {
-    return sendError(res, 404, "That block is no longer on your plan.", "CALENDAR_NOT_FOUND", req.requestId);
-  }
-  const body = idempotentMutationBodySchema.safeParse(req.body);
-  if (!body.success) {
-    return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
-  }
+    const params = blockParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      return sendError(
+        res,
+        404,
+        "That block is no longer on your plan.",
+        "CALENDAR_NOT_FOUND",
+        req.requestId,
+      );
+    }
+    const body = idempotentMutationBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        req.requestId,
+        body.error.flatten(),
+      );
+    }
 
-  try {
-    const config = await loadCalendarConfig();
-    const written = await doItNow(
-      {
+    try {
+      const config = await loadCalendarConfig();
+      const written = await doItNow(
+        {
+          student_id: caller.studentId,
+          block_id: params.data.id,
+          generator_version: config.generatorVersion,
+          idempotency_key: body.data.idempotency_key,
+        },
+        req.requestId,
+      );
+      if (!written.ok)
+        return sendPlanFailure(res, written.error, req.requestId);
+
+      // §15 returns `{ version_no, block }` — the block the RPC APPENDED to today, which only
+      // a read back can identify: it is the highest-ordinal block on today with
+      // `source = 'student'`, and the RPC clamped a review target the client never sent.
+      const today = await readCalendar({
         student_id: caller.studentId,
-        block_id: params.data.id,
-        generator_version: config.generatorVersion,
-        idempotency_key: body.data.idempotency_key,
-      },
-      req.requestId,
-    );
-    if (!written.ok) return sendPlanFailure(res, written.error, req.requestId);
+        query: {},
+        ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
+      });
+      if (!today.ok) return sendReadFailure(res, today.error, req.requestId);
+      if (today.value.status !== "ready") {
+        return sendServerError(
+          res,
+          "do_it_now_readback",
+          new Error("calendar not ready after do-it-now"),
+          req.requestId,
+        );
+      }
+      const blocks = today.value.days[0]?.blocks ?? [];
+      const appended = [...blocks]
+        .reverse()
+        .find((entry) => entry.block.source === "student");
+      if (appended === undefined) {
+        return sendServerError(
+          res,
+          "do_it_now_readback",
+          new Error("no appended block"),
+          req.requestId,
+        );
+      }
+      return res.status(200).json({
+        version_no: written.value.version_no,
+        block: appended.block,
+        requestId: req.requestId,
+      });
+    } catch (error) {
+      return sendServerError(res, "do_it_now", error, req.requestId);
+    }
+  },
+);
 
-    // §15 returns `{ version_no, block }` — the block the RPC APPENDED to today, which only
-    // a read back can identify: it is the highest-ordinal block on today with
-    // `source = 'student'`, and the RPC clamped a review target the client never sent.
-    const today = await readCalendar({
-      student_id: caller.studentId,
-      query: {},
-      ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
-    });
-    if (!today.ok) return sendReadFailure(res, today.error, req.requestId);
-    if (today.value.status !== "ready") {
-      return sendServerError(res, "do_it_now_readback", new Error("calendar not ready after do-it-now"), req.requestId);
+// ── POST /api/calendar/blocks/:id/move (§12.2, §12.4) ───────────────────────
+
+/**
+ * @spec [Doc_05F_Study_Calendar, §12.2 protected state, §12.4 day edit]
+ * @implemented [2026-09-23]
+ * plain English: moves one block to another date. Expected outcome: 200 `{ version_no }`
+ * for the single version that now owns both dates. Trade-offs: rate-limited under the
+ * EXISTING `calendar_day_regenerate` bucket rather than a new one — a move is a day-scoped
+ * plan write and shares the abuse profile of the other two, and a second bucket would let a
+ * caller spend twice the day-scoped budget. Edge cases: a started block, a past date at
+ * either end, and a move to the day the block is already on all answer 409 with their own
+ * code, because the client needs to tell them apart to say the right thing.
+ */
+calendarRouter.post(
+  "/blocks/:id/move",
+  dayRegenerateRateLimit,
+  async (req: Request, res: Response) => {
+    const caller = callerOf(req, res);
+    if (caller === null) return;
+    if (!(await entitled(req, res, caller.studentId))) return;
+
+    const params = blockParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      return sendError(
+        res,
+        404,
+        "That block is no longer on your plan.",
+        "CALENDAR_NOT_FOUND",
+        req.requestId,
+      );
     }
-    const blocks = today.value.days[0]?.blocks ?? [];
-    const appended = [...blocks].reverse().find((entry) => entry.block.source === "student");
-    if (appended === undefined) {
-      return sendServerError(res, "do_it_now_readback", new Error("no appended block"), req.requestId);
+    const body = moveBlockBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return sendError(
+        res,
+        400,
+        "Invalid request.",
+        "INVALID_BODY",
+        req.requestId,
+        body.error.flatten(),
+      );
     }
-    return res.status(200).json({ version_no: written.value.version_no, block: appended.block, requestId: req.requestId });
-  } catch (error) {
-    return sendServerError(res, "do_it_now", error, req.requestId);
-  }
-});
+
+    try {
+      const config = await loadCalendarConfig();
+      const written = await moveBlock(
+        {
+          student_id: caller.studentId,
+          block_id: params.data.id,
+          to_date: body.data.to_date,
+          generator_version: config.generatorVersion,
+          idempotency_key: body.data.idempotency_key,
+        },
+        req.requestId,
+      );
+      if (!written.ok)
+        return sendPlanFailure(res, written.error, req.requestId);
+      return res.status(200).json({
+        version_no: written.value.version_no,
+        requestId: req.requestId,
+      });
+    } catch (error) {
+      return sendServerError(res, "move_block", error, req.requestId);
+    }
+  },
+);
 
 // ── POST /api/calendar/acknowledge (§12.7) ──────────────────────────────────
 
@@ -554,11 +909,22 @@ calendarRouter.post("/acknowledge", async (req: Request, res: Response) => {
 
   const body = acknowledgeBodySchema.safeParse(req.body);
   if (!body.success) {
-    return sendError(res, 400, "Invalid request.", "INVALID_BODY", req.requestId, body.error.flatten());
+    return sendError(
+      res,
+      400,
+      "Invalid request.",
+      "INVALID_BODY",
+      req.requestId,
+      body.error.flatten(),
+    );
   }
 
   try {
-    const result = await acknowledgeVersion(caller.studentId, body.data.version_no, req.requestId);
+    const result = await acknowledgeVersion(
+      caller.studentId,
+      body.data.version_no,
+      req.requestId,
+    );
     if (!result.ok) return sendPlanFailure(res, result.error, req.requestId);
     return res.status(200).json({ ok: true, requestId: req.requestId });
   } catch (error) {
@@ -580,7 +946,10 @@ streakRouter.get("/streak", async (req: Request, res: Response) => {
   if (caller === null) return;
 
   try {
-    const streak = await getStudentActivityStreak(caller.studentId, req.requestId);
+    const streak = await getStudentActivityStreak(
+      caller.studentId,
+      req.requestId,
+    );
     return res.status(200).json({ ...streak, requestId: req.requestId });
   } catch (error) {
     return sendServerError(res, "streak_read", error, req.requestId);

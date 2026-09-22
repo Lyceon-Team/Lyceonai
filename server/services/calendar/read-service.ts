@@ -140,7 +140,9 @@ async function readCurrentPlan(
 ): Promise<CurrentPlanRow[]> {
   const { data, error } = await supabaseServer
     .from("calendar_current_plan")
-    .select("scheduled_date, timezone, is_user_override, version_no, block_id, display_ordinal, membership_type")
+    .select(
+      "scheduled_date, timezone, is_user_override, version_no, block_id, display_ordinal, membership_type",
+    )
     .eq("student_id", studentId)
     .gte("scheduled_date", from)
     .lte("scheduled_date", to);
@@ -167,7 +169,9 @@ async function readBlocks(
 
   const { data, error } = await supabaseServer
     .from("calendar_blocks")
-    .select("block_id, scheduled_date, block_type, section, scope, target_count, source, derived_from_block_id, explanation_key")
+    .select(
+      "block_id, scheduled_date, block_type, section, scope, target_count, source, derived_from_block_id, explanation_key",
+    )
     // student_id as well as the id list: the ids came from a view already scoped to this
     // student, and a second scope costs nothing and removes the possibility that a future
     // caller passes ids from somewhere else.
@@ -222,9 +226,16 @@ async function readLaunchStates(
   // Highest sequence first, so the first row seen for a block is its latest launch.
   const latest = new Map<string, { engine: string; sessionId: string }>();
   for (const row of data ?? []) {
-    if (typeof row.block_id !== "string" || typeof row.engine_session_id !== "string") continue;
+    if (
+      typeof row.block_id !== "string" ||
+      typeof row.engine_session_id !== "string"
+    )
+      continue;
     if (latest.has(row.block_id)) continue;
-    latest.set(row.block_id, { engine: String(row.engine), sessionId: row.engine_session_id });
+    latest.set(row.block_id, {
+      engine: String(row.engine),
+      sessionId: row.engine_session_id,
+    });
   }
 
   const states: BlockLaunchState[] = [];
@@ -232,7 +243,10 @@ async function readLaunchStates(
     const engine = launch.engine as CalendarEngine;
     const lifecycle = await adapterFor(engine).progress(launch.sessionId);
     if (lifecycle === null) continue;
-    const parsed = blockLaunchStateSchema.safeParse({ block_id: blockId, lifecycle });
+    const parsed = blockLaunchStateSchema.safeParse({
+      block_id: blockId,
+      lifecycle,
+    });
     if (parsed.success) states.push(parsed.data);
   }
   return states;
@@ -274,7 +288,8 @@ async function readMasksByVersion(
     if (typeof snapshot !== "object" || snapshot === null) continue;
     const profile: unknown = (snapshot as { profile?: unknown }).profile;
     if (typeof profile !== "object" || profile === null) continue;
-    const mask: unknown = (profile as { study_days_mask?: unknown }).study_days_mask;
+    const mask: unknown = (profile as { study_days_mask?: unknown })
+      .study_days_mask;
     if (typeof mask === "number") masks.set(row.version_no, mask);
   }
   return masks;
@@ -316,7 +331,8 @@ async function readUnacknowledgedChange(
     return null;
   }
   if (data === null) return null;
-  if (typeof data.version_no !== "number" || typeof data.trigger !== "string") return null;
+  if (typeof data.version_no !== "number" || typeof data.trigger !== "string")
+    return null;
   if (typeof data.created_at !== "string") return null;
 
   return {
@@ -368,7 +384,10 @@ async function assembleRange(
       // §8.2: a date no version owns has no planned zone, so it takes the profile's.
       timezone: profile.timezone,
       is_user_override: false,
-      is_study_day: isStudyDay(profile.study_days_mask, postgresDowOfLocalDate(date)),
+      is_study_day: isStudyDay(
+        profile.study_days_mask,
+        postgresDowOfLocalDate(date),
+      ),
       version_no: null,
       blocks: [],
     });
@@ -381,11 +400,18 @@ async function assembleRange(
     day.timezone = row.timezone;
     day.is_user_override = row.is_user_override;
     day.version_no = row.version_no;
-    day.is_study_day = isStudyDay(mask, postgresDowOfLocalDate(row.scheduled_date));
+    day.is_study_day = isStudyDay(
+      mask,
+      postgresDowOfLocalDate(row.scheduled_date),
+    );
 
     if (row.block_id === null) continue;
     const block = blocks.get(row.block_id);
-    if (block === undefined || row.display_ordinal === null || row.membership_type === null) {
+    if (
+      block === undefined ||
+      row.display_ordinal === null ||
+      row.membership_type === null
+    ) {
       continue;
     }
     const parsed = planBlockSchema.safeParse({
@@ -419,7 +445,8 @@ async function assembleRange(
   // §13 allocates in display order. The plan rows arrive unordered from PostgREST, so the
   // order is imposed here rather than assumed — the allocator's only tiebreak is this.
   const days = [...byDate.values()];
-  for (const day of days) day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
+  for (const day of days)
+    day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
 
   const units = await readActivityUnits(studentId, days, requestId);
   return { profile, today, days, units, launches };
@@ -437,7 +464,8 @@ async function readActivityUnits(
 ): Promise<ActivityUnit[]> {
   const engines = new Set<CalendarEngine>();
   for (const day of days) {
-    for (const block of day.blocks) engines.add(engineOfBlock(block.block_type));
+    for (const block of day.blocks)
+      engines.add(engineOfBlock(block.block_type));
   }
   // A window with no blocks at all still has activity to show as extra work (§14, and
   // owner ruling B4's rest day with activity), and practice is the engine that has it.
@@ -447,7 +475,9 @@ async function readActivityUnits(
   for (const engine of engines) {
     const adapter = adapterFor(engine);
     for (const day of days) {
-      calls.push(adapter.activityUnits(studentId, day.local_date, day.timezone));
+      calls.push(
+        adapter.activityUnits(studentId, day.local_date, day.timezone),
+      );
     }
   }
 
@@ -490,13 +520,20 @@ export async function readCalendar(
   const query = parsedQuery.data;
 
   const config = await loadCalendarConfig();
-  const profile = await readStudyProfile(request.student_id, request.request_id);
+  const profile = await readStudyProfile(
+    request.student_id,
+    request.request_id,
+  );
   // R-08-04 / §17.5's pre-setup state. An empty calendar, not a missing one — so a 200
   // carrying the state, never a 404 (owner ruling on addendum item 26).
   if (profile === null) {
     return ok({
       status: "setup_required",
-      defaults: await setupDefaults(config, query.device_timezone, request.request_id),
+      defaults: await setupDefaults(
+        config,
+        query.device_timezone,
+        request.request_id,
+      ),
     });
   }
 
@@ -505,7 +542,12 @@ export async function readCalendar(
   // §15: "default today…+13" — the horizon, less the day the horizon starts on.
   const to = query.to ?? addDaysToLocalDate(from, config.horizonDays - 1);
 
-  await generateOnFirstOpen(request.student_id, profile, config.generatorVersion, request.request_id);
+  await generateOnFirstOpen(
+    request.student_id,
+    profile,
+    config.generatorVersion,
+    request.request_id,
+  );
 
   const range = await assembleRange(
     request.student_id,
@@ -532,6 +574,10 @@ export async function readCalendar(
   return ok({
     status: "ready",
     profile,
+    // §17.1's "~N min". From the config accessor, never a literal — the same two constants
+    // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
+    // student reads is the budget the plan was built against.
+    estimates: config.estimates,
     days: built.days,
     facts: built.facts,
     streak,
@@ -557,7 +603,12 @@ export async function readCalendar(
 function mismatchOf(
   profileTimezone: string,
   deviceTimezone: string | undefined,
-): { device_timezone_mismatch: { profile_timezone: string; device_timezone: string } } | null {
+): {
+  device_timezone_mismatch: {
+    profile_timezone: string;
+    device_timezone: string;
+  };
+} | null {
   if (deviceTimezone === undefined) return null;
   if (deviceTimezone === profileTimezone) return null;
   return {
@@ -696,7 +747,10 @@ export async function readGuardianCalendar(
   const query = parsedQuery.data;
 
   const config = await loadCalendarConfig();
-  const profile = await readStudyProfile(request.student_id, request.request_id);
+  const profile = await readStudyProfile(
+    request.student_id,
+    request.request_id,
+  );
   // §16 gives a guardian no write path, so no `defaults`: the chips exist to prefill a
   // setup form, and a guardian cannot run setup for their student.
   if (profile === null) return ok({ status: "setup_required" });
@@ -720,7 +774,10 @@ export async function readGuardianCalendar(
     launches: range.launches,
   });
 
-  const streak = await getStudentActivityStreak(request.student_id, request.request_id);
+  const streak = await getStudentActivityStreak(
+    request.student_id,
+    request.request_id,
+  );
 
   // Parsed on the way out, not just typed. The guardian boundary is the one place a leak
   // is a privacy incident rather than a bug, and `.strict()` rejects an extra key that a

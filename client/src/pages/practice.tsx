@@ -28,6 +28,7 @@ import {
   Target,
   TrendingUp,
   Award,
+  Flame,
   ArrowRight,
   AlertCircle,
   PlayCircle,
@@ -58,6 +59,10 @@ import {
 import type { CanonicalSectionCode } from "@shared/question-bank-contract";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
+// Doc 05F §15 / INV-08-20. The day streak is served without a `calendar_access` check, so it
+// renders here for every student regardless of tier — this is the platform-wide streak, not
+// the in-session correct-answer streak `PracticeShell` shows during a run.
+import { useStreak } from "@/features/calendar/api";
 
 interface QuestionStats {
   total: number;
@@ -171,6 +176,10 @@ function Practice() {
     queryKey: ["/api/progress/kpis"],
     enabled: !!user && !authLoading,
   });
+
+  // Doc 05F §15, INV-08-20: the day streak has no `calendar_access` check, so it is safe to
+  // ask for on the practice page for every student, entitled or not.
+  const streak = useStreak({ enabled: !!user && !authLoading });
 
   // Diagnostic prompting gate: fetch estimateStatus to show/hide the CTA.
   // React Query deduplication ensures this shares the cache with the dashboard.
@@ -495,7 +504,9 @@ function Practice() {
                           <SelectValue placeholder="All sections" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="M">{SECTION_LABEL_MATH}</SelectItem>
+                          <SelectItem value="M">
+                            {SECTION_LABEL_MATH}
+                          </SelectItem>
                           <SelectItem value="RW">{SECTION_LABEL_RW}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -808,6 +819,34 @@ function Practice() {
                     }}
                     retryLabel="Retry summary"
                   />
+                )}
+
+                {/*
+                  Doc 05F §15. `history_complete: false` renders the CURRENT streak with no
+                  "longest" figure — G-08-11 has not cleared, so a longest we printed would
+                  be a claim the data does not support. A null `current` renders nothing at
+                  all rather than a zero, which would read as "you broke your streak".
+                */}
+                {streak.data === undefined ||
+                streak.data.current === null ? null : (
+                  <div
+                    className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between"
+                    data-testid="practice-day-streak"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-foreground/80">
+                      <Flame className="h-4 w-4" />
+                      Day streak
+                    </div>
+                    <span className="text-xl font-semibold">
+                      {streak.data.current}
+                      {streak.data.history_complete &&
+                      streak.data.longest !== null ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          best {streak.data.longest}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
                 )}
 
                 <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
