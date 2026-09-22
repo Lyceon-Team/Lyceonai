@@ -97,19 +97,33 @@ describe("Session Lifecycle — Shared schemas", () => {
   });
 
   describe("createConversationRequestSchema", () => {
-    it("requires idempotency_key", () => {
-      const valid = {
+    it("accepts the exact body the deployed client sends (no idempotency_key)", () => {
+      const clientBody = {
+        entry_mode: "general",
+        source_surface: "dashboard",
+      };
+      const parsed = createConversationRequestSchema.parse(clientBody);
+      expect(parsed.entry_mode).toBe("general");
+      expect(parsed.source_surface).toBe("dashboard");
+      expect(parsed.idempotency_key).toBeUndefined();
+    });
+
+    it("accepts idempotency_key when provided", () => {
+      const withKey = {
         entry_mode: "general",
         source_surface: "dashboard",
         idempotency_key: "550e8400-e29b-41d4-a716-446655440000",
       };
-      expect(createConversationRequestSchema.parse(valid)).toEqual(valid);
+      expect(createConversationRequestSchema.parse(withKey)).toEqual(withKey);
+    });
 
-      const missing = {
+    it("rejects malformed idempotency_key", () => {
+      const badKey = {
         entry_mode: "general",
         source_surface: "dashboard",
+        idempotency_key: "not-a-uuid",
       };
-      expect(() => createConversationRequestSchema.parse(missing)).toThrow();
+      expect(() => createConversationRequestSchema.parse(badKey)).toThrow();
     });
   });
 
