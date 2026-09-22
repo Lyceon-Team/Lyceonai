@@ -39,7 +39,10 @@ import {
 import type {
   CalendarSetupDefaults,
   PlanTrigger,
+  PlanningEstimates,
   StreakSummary,
+  StudyProfile,
+  StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import {
   monthGridDates,
@@ -77,6 +80,11 @@ import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
 import { SetupSheet } from "./components/SetupSheet";
+import {
+  SettingsSheet,
+  scheduleSummary,
+  type SettingsDraft,
+} from "./components/SettingsSheet";
 
 /**
  * Everything this screen can do to the server. A guardian caller passes `undefined`, which
@@ -121,6 +129,23 @@ export type CalendarViewProps = {
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
   /** Called when the visible range changes, so the page can re-query. */
   onRangeChange: (view: "week" | "month", cursor: string) => void;
+  /**
+   * §17.3's settings sheet. Present only for a student, which is what keeps the schedule
+   * card and the Edit schedule button off the guardian surface — §16 gives a guardian no
+   * write path, and this is a write.
+   */
+  schedule?: {
+    profile: StudyProfile;
+    bounds: StudyProfileBounds;
+    estimates: PlanningEstimates;
+    onSave: (draft: SettingsDraft) => void;
+    pending: boolean;
+    error: string | null;
+    /** True once a save in `custom` mode has landed and planned nothing. */
+    offerReplan: boolean;
+    onConfirmReplan: () => void;
+    onDismissReplan: () => void;
+  };
   mutations?: CalendarMutations;
 };
 
@@ -133,6 +158,7 @@ export function CalendarView({
   streak,
   planUpdate,
   onRangeChange,
+  schedule,
   mutations,
 }: CalendarViewProps): JSX.Element {
   const [view, setView] = useState<"week" | "month">("week");
@@ -140,6 +166,7 @@ export function CalendarView({
   const [miniMonth, setMiniMonth] = useState(() => startOfMonth(today));
   const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
   const [openBlockId, setOpenBlockId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const readOnly = mutations === undefined;
 
@@ -330,6 +357,20 @@ export function CalendarView({
           footer={
             readOnly ? "Read-only view" : "Your plan updates itself each week"
           }
+          {...(schedule === undefined
+            ? {}
+            : {
+                schedule: {
+                  // Derived from the profile and the served estimates, never stored —
+                  // the same function the sheet's live readout uses, so the card and the
+                  // sheet cannot describe the same schedule differently.
+                  summary: scheduleSummary(
+                    schedule.profile,
+                    schedule.estimates,
+                  ),
+                  onEdit: () => setSettingsOpen(true),
+                },
+              })}
         />
 
         <div className="main">
@@ -353,6 +394,9 @@ export function CalendarView({
                   onRefresh: mutations.regeneratePlan,
                   refreshPending: mutations.refreshPending,
                 })}
+            {...(schedule === undefined
+              ? {}
+              : { onEditSchedule: () => setSettingsOpen(true) })}
           />
 
           {planUpdate !== null && mutations !== undefined ? (
@@ -427,6 +471,27 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+        />
+      )}
+
+      {schedule === undefined || !settingsOpen ? null : (
+        <SettingsSheet
+          profile={schedule.profile}
+          bounds={schedule.bounds}
+          estimates={schedule.estimates}
+          today={today}
+          onSave={schedule.onSave}
+          onClose={() => setSettingsOpen(false)}
+          pending={schedule.pending}
+          error={schedule.error}
+          replanOffer={
+            schedule.offerReplan
+              ? {
+                  onConfirm: schedule.onConfirmReplan,
+                  onDismiss: schedule.onDismissReplan,
+                }
+              : null
+          }
         />
       )}
 

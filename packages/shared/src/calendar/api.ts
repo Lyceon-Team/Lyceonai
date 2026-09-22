@@ -26,7 +26,7 @@ import { diagnosticStateSchema } from "../diagnostic-state.js";
 import { sectionProjectionSchema } from "../student-resources.js";
 import { calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
-import { studyProfileSchema } from "./profile.js";
+import { studyProfileBoundsSchema, studyProfileSchema } from "./profile.js";
 import {
   calendarDaySchema,
   calendarFactsSchema,
@@ -190,6 +190,23 @@ export const calendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
     profile: studyProfileSchema,
+    /**
+     * §8.1's bounds, so §17.3's settings sheet can offer the SAME minute presets and the
+     * same furthest exam date that the server will validate the save against.
+     *
+     * They were on the pre-setup payload only, inside `defaults`. That was enough while the
+     * profile could be set exactly once — but a student who has finished setup and opens
+     * the settings sheet has no bounds on the wire at all, so the chips could only be
+     * literals, and a literal preset array is a second source of truth that drifts from
+     * `calendar_runtime_config` the first time a bound changes.
+     *
+     * This is the CANONICAL bounds schema, the one `makeStudyProfileUpsertSchema` validates
+     * with, not a second shape that happens to have the same fields.
+     *
+     * Not on the guardian payload: §16 gives a guardian no write path, and bounds exist to
+     * constrain a write.
+     */
+    bounds: studyProfileBoundsSchema,
     /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
     estimates: planningEstimatesSchema,
     days: z.array(calendarDaySchema),

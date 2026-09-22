@@ -88,6 +88,19 @@ export default function CalendarPage(): JSX.Element {
     [],
   );
 
+  /**
+   * §12.1 `profile_change` regenerates future non-overridden dates in `auto` mode ONLY --
+   * `regenerateAfterProfileChange` returns null for a `custom` student, deliberately, because
+   * silently replanning someone who turned the planner off would be the planner ignoring
+   * them. The response says which happened: it carries a version number when it regenerated
+   * and does not when it did not.
+   *
+   * So the offer is driven by the RESPONSE, not by re-deriving the mode on the client. A
+   * client that decided "custom, therefore it planned nothing" would be a second copy of the
+   * server's rule, and would be wrong the moment the rule changed.
+   */
+  const [replanOffered, setReplanOffered] = useState(false);
+
   if (calendar.isLoading) return <CalendarSkeleton />;
   if (isEntitlementDenial(calendar.error)) return <CalendarPremiumGate />;
   if (calendar.isError || calendar.data === undefined) {
@@ -148,6 +161,42 @@ export default function CalendarPage(): JSX.Element {
           : { versionNo: change.version_no, trigger: change.trigger }
       }
       onRangeChange={onRangeChange}
+      schedule={{
+        profile: response.profile,
+        // §8.1's bounds, straight off the payload -- the SAME object the server validates
+        // the save against. Never a literal preset list in the client.
+        bounds: response.bounds,
+        estimates: response.estimates,
+        onSave: (draft) =>
+          profile.mutate(
+            newIntent({
+              timezone: draft.timezone,
+              study_days_mask: draft.study_days_mask,
+              daily_minutes: draft.daily_minutes,
+              target_exam_date: draft.target_exam_date,
+              target_score: draft.target_score,
+              full_length_weekday: draft.full_length_weekday,
+              planner_mode: draft.planner_mode,
+            }),
+            {
+              onSuccess: (result) =>
+                // No version number means nothing was replanned, which in practice means a
+                // `custom` student. Offer, never act.
+                setReplanOffered(result.version_no === undefined),
+            },
+          ),
+        pending: profile.isPending,
+        error:
+          profile.error === null
+            ? null
+            : toUserFacingMessage(profile.error).message,
+        offerReplan: replanOffered,
+        onConfirmReplan: () => {
+          regeneratePlan.mutate(newIntent({}));
+          setReplanOffered(false);
+        },
+        onDismissReplan: () => setReplanOffered(false),
+      }}
       mutations={{
         // One fresh key per user intent; `newIntent` is the only minter, and TanStack reuses
         // the same variables object on retry, which is what makes a retry idempotent (§7.8).

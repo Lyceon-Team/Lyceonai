@@ -33,6 +33,15 @@ const ESTIMATES = {
   review_seconds_per_unit: 120,
 };
 
+/** §8.1's bounds, on the ready payload since 2026-09-22 so §17.3's settings sheet can
+ *  offer the same presets the server validates against. */
+const BOUNDS = {
+  daily_minutes_min: 15,
+  daily_minutes_max: 180,
+  daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+  target_exam_date_max_days: 540,
+};
+
 const PROFILE = {
   timezone: "America/Los_Angeles",
   target_exam_date: "2026-11-07",
@@ -124,6 +133,7 @@ describe("GET /api/calendar", () => {
     const payload = {
       status: "ready" as const,
       profile: PROFILE,
+      bounds: BOUNDS,
       estimates: ESTIMATES,
       days: [DAY],
       facts: FACTS,
@@ -191,6 +201,7 @@ describe("GET /api/calendar", () => {
       calendarResponseSchema.safeParse({
         status: "ready",
         profile: PROFILE,
+        bounds: BOUNDS,
         estimates: ESTIMATES,
         days: [],
         facts: FACTS,

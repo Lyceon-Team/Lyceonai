@@ -213,14 +213,31 @@ BEGIN
 
   ---------------------------------------------------------------- Z-11
   -- §12.1 / §12.2: a non-student regeneration never takes an overridden date.
-  PERFORM public.calendar_persist_version(S1, 'weekly', 'system', 'v1', NULL);
+  --
+  -- THE FIRST ASSERTION IS NEW AND IS THE POINT. Until 2026-09-22 this gate checked only
+  -- the version number on the overridden date, and passed for the wrong reason: the weekly
+  -- run it fires was REJECTED (V-01 + V-14 on the overridden date, falling to fallback_v1
+  -- and rejected again), so nothing was written anywhere and the date trivially still
+  -- carried the day_edit's version. A gate that cannot tell "left alone" from "nothing
+  -- happened at all" is not measuring the rule it names. See
+  -- 20260926000000_calendar_drop_unowned_dates.sql.
+  v_r1 := public.calendar_persist_version(S1, 'weekly', 'system', 'v1', NULL);
+  IF v_r1 ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 the weekly run was REJECTED, so it left the overridden date alone only by failing: %', v_r1;
+  END IF;
+  -- And by the PRIMARY generator. "accepted" alone would also be true of a run whose
+  -- deterministic plan was rejected and whose fallback happened to be accepted -- a silent
+  -- downgrade of the whole planning engine for every student who ever edited a day.
+  IF v_r1 ->> 'generator' <> 'deterministic_v1' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 an overridden date pushed the run onto %, not deterministic_v1: %', v_r1 ->> 'generator', v_r1;
+  END IF;
   SELECT version_no INTO v_n FROM public.calendar_current_plan
   WHERE student_id = S1 AND scheduled_date = v_today + 1 LIMIT 1;
   IF v_n <> (SELECT version_no FROM public.calendar_plan_versions
              WHERE student_id = S1 AND trigger = 'day_edit' ORDER BY version_no DESC LIMIT 1) THEN
     RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 a weekly run took over the student''s overridden date';
   END IF;
-  RAISE NOTICE '    OK Z-11 a weekly regeneration leaves an overridden date to the student (§12.1)';
+  RAISE NOTICE '    OK Z-11 an ACCEPTED weekly regeneration leaves an overridden date to the student (§12.1)';
 
   ---------------------------------------------------------------- Z-12
   -- §12.4: an empty member list is a cleared day, and the override is kept.
@@ -1167,6 +1184,129 @@ BEGIN
     v_prac_off - v_prac_on, v_rev_on;
 END;
 $inputgates$;
+
+
+-- ============================================================================
+-- Z-48 — a profile change re-plans the OPEN days and nothing else
+-- ============================================================================
+-- Doc 05F §12.1 `profile_change`. Changing the schedule regenerates future dates the
+-- generator owns. It must not touch a date the STUDENT owns -- one they edited, or one they
+-- blocked out, which is the same thing wearing a different label: block-out is an edit to
+-- an empty member list (§12.4, proved by Z-12), so it carries `is_user_override` exactly as
+-- a hand-edited day does.
+--
+-- "LEFT ALONE" IS ASSERTED AS BYTE-IDENTITY, not as "still overridden". A regeneration that
+-- re-derived an overridden day and happened to land on the same shape would pass a weaker
+-- check while having replaced the student's rows underneath them. So the gate snapshots the
+-- exact current-plan rows for both dates and compares the snapshot afterwards.
+--
+-- The EMPTY day is the load-bearing half. An implementation that skipped "days with blocks"
+-- rather than "days the student owns" would leave a hand-edited day alone and quietly
+-- re-fill a blocked-out one -- a student who cleared Saturday for a concert would find
+-- Saturday planned again, which is the defect this gate exists to prevent.
+-- ============================================================================
+DO $profilechange$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  v_today    date;
+  v_edited   date;
+  v_blocked  date;
+  v_before   jsonb;
+  v_after    jsonb;
+  v_r        jsonb;
+  v_open     integer;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+  v_edited  := v_today + 2;
+  v_blocked := v_today + 3;
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-profile@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 127, 60, NULL, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  PERFORM public.calendar_persist_version(S, 'setup', 'student', 'v1',
+            'eeeeeeee-0000-0000-0000-000000000001');
+
+  -- One day the student EDITED (one block), one they BLOCKED OUT (no blocks). Both carry
+  -- is_user_override; only the second is empty.
+  -- The member wrapper is `{kind, block}`, as Z-10 sends it. A bare block object is
+  -- accepted and stores nothing, leaving the date GENERATED -- which is how the first
+  -- draft of this gate came to compare two generated days and call it a failure.
+  PERFORM public.calendar_edit_day(S, v_edited,
+    jsonb_build_array(jsonb_build_object('kind', 'created', 'block', jsonb_build_object(
+      'block_type', 'practice', 'section', 'M',
+      'scope', jsonb_build_object('level', 'domain',
+                 'mix', jsonb_build_array(jsonb_build_object(
+                          'domain', 'Algebra', 'count', 10, 'explanation_key', 'weak'))),
+      'target_count', 10, 'explanation_key', 'weighted'))),
+    'v1', 'eeeeeeee-0000-0000-0000-000000000002');
+  PERFORM public.calendar_edit_day(S, v_blocked, '[]'::jsonb, 'v1',
+            'eeeeeeee-0000-0000-0000-000000000003');
+
+  -- Both dates must really be the student's, or the byte-identity below is vacuous --
+  -- the same mistake Z-11 made for two months.
+  IF (SELECT count(*) FROM public.calendar_current_plan cp
+      WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)
+        AND cp.is_user_override) < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the fixture did not produce two overridden dates, so nothing below is being measured';
+  END IF;
+
+  SELECT jsonb_agg(row_to_json(t) ORDER BY t.scheduled_date, t.block_id NULLS FIRST)
+    INTO v_before
+  FROM (SELECT cp.scheduled_date, cp.block_id, cp.is_user_override
+        FROM public.calendar_current_plan cp
+        WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)) t;
+
+  -- The schedule change itself: drop to weekdays only and halve the day.
+  UPDATE public.student_study_profile
+     SET study_days_mask = 62, daily_minutes = 30
+   WHERE student_id = S;
+
+  v_r := public.calendar_persist_version(S, 'profile_change', 'student', 'v1',
+           'eeeeeeee-0000-0000-0000-000000000004');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the profile_change was not accepted: %', v_r;
+  END IF;
+  -- Same reason as Z-11: accepted-by-fallback is not the behaviour this rule describes.
+  IF v_r ->> 'generator' <> 'deterministic_v1' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the profile_change fell to %, not deterministic_v1: %', v_r ->> 'generator', v_r;
+  END IF;
+
+  SELECT jsonb_agg(row_to_json(t) ORDER BY t.scheduled_date, t.block_id NULLS FIRST)
+    INTO v_after
+  FROM (SELECT cp.scheduled_date, cp.block_id, cp.is_user_override
+        FROM public.calendar_current_plan cp
+        WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)) t;
+
+  IF v_before IS DISTINCT FROM v_after THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 a profile change altered a day the student owns.
+  before: %
+  after:  %', v_before, v_after;
+  END IF;
+
+  -- And it DID do its job on the days it owns, or the comparison above would be passing
+  -- because nothing was regenerated at all.
+  SELECT count(*) INTO v_open
+  FROM public.calendar_current_plan cp
+  WHERE cp.student_id = S
+    AND cp.scheduled_date > v_today
+    AND cp.scheduled_date NOT IN (v_edited, v_blocked)
+    AND cp.is_user_override IS NOT TRUE;
+  IF v_open = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 no open date was re-planned, so the byte-identity above proves nothing';
+  END IF;
+
+  RAISE NOTICE '    OK Z-48 a profile change re-planned % open row(s) and left the edited and blocked-out days byte-identical', v_open;
+END;
+$profilechange$;
 
 
 ROLLBACK;

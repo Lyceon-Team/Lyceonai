@@ -106,6 +106,12 @@ const READY_BODY = {
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   },
+  bounds: {
+    daily_minutes_min: 15,
+    daily_minutes_max: 180,
+    daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+    target_exam_date_max_days: 540,
+  },
   estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 120 },
   days: [DAY],
   facts: FACTS,

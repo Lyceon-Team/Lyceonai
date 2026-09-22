@@ -62,6 +62,7 @@ export function LeftRail({
   onPickDate,
   onMonthStep,
   footer,
+  schedule,
 }: {
   name: string;
   subtitle: string;
@@ -74,6 +75,11 @@ export function LeftRail({
   onPickDate: (date: string) => void;
   onMonthStep: (delta: number) => void;
   footer: string;
+  /**
+   * §17.3's "Your schedule" card. ABSENT for a guardian, like every other control on this
+   * surface — the difference is the missing prop, not a `readOnly` branch inside.
+   */
+  schedule?: { summary: string; onEdit: () => void };
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
@@ -85,6 +91,16 @@ export function LeftRail({
         <b>{name}</b>
         <span>{subtitle}</span>
       </div>
+
+      {schedule === undefined ? null : (
+        <div className="schedcard" data-testid="rail-schedule-card">
+          <b>Your schedule</b>
+          <span data-testid="rail-schedule-summary">{schedule.summary}</span>
+          <button type="button" onClick={schedule.onEdit}>
+            Change schedule
+          </button>
+        </div>
+      )}
 
       <div className="mini">
         <header>
@@ -184,6 +200,7 @@ export function TopBar({
   daysToTest,
   onRefresh,
   refreshPending,
+  onEditSchedule,
 }: {
   rangeLabelText: string;
   view: "week" | "month";
@@ -195,6 +212,8 @@ export function TopBar({
   /** Absent for a guardian — §16 gives them no write path, so no Refresh control exists. */
   onRefresh?: () => void;
   refreshPending?: boolean;
+  /** §17.3. Absent for a guardian, for the same reason as `onRefresh`. */
+  onEditSchedule?: () => void;
 }): JSX.Element {
   return (
     <div className="top">
@@ -237,6 +256,16 @@ export function TopBar({
         </button>
       </div>
       <div className="spacer" />
+      {onEditSchedule === undefined ? null : (
+        <button
+          type="button"
+          className="btn sched"
+          onClick={onEditSchedule}
+          data-testid="topbar-edit-schedule"
+        >
+          <span aria-hidden="true">✎</span> Edit schedule
+        </button>
+      )}
       {streak?.current === null || streak === undefined ? null : (
         <div className="stat" title="Days in a row with study activity">
           🔥 <b>{streak.current}</b> day streak

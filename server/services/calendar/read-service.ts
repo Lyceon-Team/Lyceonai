@@ -574,6 +574,12 @@ export async function readCalendar(
   return ok({
     status: "ready",
     profile,
+    // §8.1's bounds, for §17.3's settings sheet. The SAME object the upsert schema
+    // validates against (`makeStudyProfileUpsertSchema` takes `config.bounds`), so the
+    // chips a student is offered and the rule their save is judged by are one value read
+    // once. Free: `config` is already loaded above, and unlike the pre-setup `defaults`
+    // this needs no timezone resolution, so the hot read path gains no query.
+    bounds: config.bounds,
     // §17.1's "~N min". From the config accessor, never a literal — the same two constants
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
