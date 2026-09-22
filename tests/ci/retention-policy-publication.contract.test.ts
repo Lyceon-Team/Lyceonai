@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { stripComments, stripHclComments } from "./lib/strip-comments";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -466,6 +467,131 @@ describe("Phase 7 C — Cloud Scheduler invokes the retention sweep", () => {
   it("the sweep is not ALSO scheduled by Vercel Cron (one caller, not two)", () => {
     const vercelJson = read("vercel.json");
     expect(vercelJson).not.toMatch(/retention\/sweep/);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// C2. Every tier that can run, runs (Doc 07B §5.4 ruling, 2026-09-22)
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * @spec [Doc-07B_V1.0 §5.4; Doc-03_V1.1 §14.2; owner ruling 2026-09-22]
+ *
+ * plain English: the 90d and 180d tutor tiers used to archive every expired
+ * row to BigQuery before deleting it, and returned ok: false when they could
+ * not. The archive client's dependency was never installed, so both tiers
+ * answered "not configured" on every call and neither was ever scheduled —
+ * two published retention periods with nothing enforcing them. The ruling
+ * removed the archive; the tiers delete outright; they are now schedulable
+ * and are scheduled.
+ *
+ * The assertion is coverage, not existence: the set of scheduled tiers is
+ * compared against the set of tiers the route accepts, minus the ones that
+ * are a documented no-op. Adding a tier to the route's enum without a
+ * schedule reddens this, which is the failure that hid for a month.
+ */
+describe("Phase 7 C2 — every runnable retention tier has a schedule", () => {
+  const tf = stripHclComments(
+    readOrEmpty("infra/terraform/cloud-scheduler.tf"),
+  );
+  const routeFile = read("server/routes/internal-retention-routes.ts");
+  const sweepFile = read("server/services/retention-sweep.ts");
+
+  /** Tiers the route's Zod enum accepts — the full set, read from the route. */
+  const acceptedTiers = ((): string[] => {
+    const enumMatch = /retention_tier:\s*z\.enum\(\[([^\]]+)\]\)/.exec(
+      routeFile,
+    );
+    if (!enumMatch?.[1]) throw new Error("could not read retention_tier enum");
+    return [...enumMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+  })();
+
+  /**
+   * Tiers that are a structured no-op: the sweep returns a
+   * `*_tables_not_provisioned` reason unconditionally. Read out of the sweep
+   * module so a tier that GAINS its tables stops being exempt automatically.
+   */
+  const noOpTiers = [
+    ...sweepFile.matchAll(/reason:\s*"(\d+d)_tables_not_provisioned"/g),
+  ].map((m) => m[1] as string);
+
+  /** Tiers with a Cloud Scheduler job, read from comment-stripped HCL. */
+  const scheduledTiers = [
+    ...tf.matchAll(/retention_tier\s*=\s*"([^"]+)"/g),
+  ].map((m) => m[1] as string);
+
+  it("collected a non-empty tier set from each source (guards a vacuous pass)", () => {
+    expect(acceptedTiers.length).toBeGreaterThan(0);
+    expect(scheduledTiers.length).toBeGreaterThan(0);
+    expect(noOpTiers.length).toBeGreaterThan(0);
+  });
+
+  it("every accepted tier is either scheduled or a documented no-op", () => {
+    const unaccounted = acceptedTiers.filter(
+      (t) => !scheduledTiers.includes(t) && !noOpTiers.includes(t),
+    );
+    expect(unaccounted).toEqual([]);
+  });
+
+  it("the three runnable tiers are 7d, 90d and 180d", () => {
+    expect([...scheduledTiers].sort()).toEqual(["180d", "7d", "90d"]);
+  });
+
+  it("365d is NOT scheduled — its tables do not exist", () => {
+    // A nightly job that returns ok: false is worse than no job: it produces
+    // a run record that looks like enforcement.
+    expect(noOpTiers).toContain("365d");
+    expect(scheduledTiers).not.toContain("365d");
+  });
+
+  it("no scheduled tier can decline for want of an archive", () => {
+    // The chokepoint. The tiers are scheduled because they cannot answer
+    // "not configured" any more; if an archive path returned, the schedules
+    // above would be firing into a permanent no-op again.
+    const code = stripComments(sweepFile).toLowerCase();
+    expect(code).not.toContain("archive");
+    expect(code).not.toContain("not_configured");
+  });
+
+  it("each job carries its own request_id UUID (no cross-tier dedup)", () => {
+    // request_id is the idempotency key the route logs. Two tiers sharing one
+    // would make the second look like a replay of the first.
+    const ids = [...tf.matchAll(/request_id\s*=\s*"([^"]+)"/g)].map(
+      (m) => m[1] as string,
+    );
+    expect(ids).toHaveLength(scheduledTiers.length);
+    for (const id of ids) {
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    }
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("the jobs run at distinct times (three deletes, not one thundering herd)", () => {
+    const schedules = [...tf.matchAll(/schedule\s*=\s*"([^"]+)"/g)].map(
+      (m) => m[1] as string,
+    );
+    expect(schedules).toHaveLength(scheduledTiers.length);
+    expect(new Set(schedules).size).toBe(schedules.length);
+  });
+
+  it("every job POSTs, runs dry_run = false, and pins Etc/UTC", () => {
+    const n = scheduledTiers.length;
+    expect(tf.match(/http_method\s*=\s*"POST"/g)).toHaveLength(n);
+    expect(tf.match(/dry_run\s*=\s*false/g)).toHaveLength(n);
+    expect(tf.match(/time_zone\s*=\s*"Etc\/UTC"/g)).toHaveLength(n);
+  });
+
+  it("every job signs an OIDC token whose audience equals its target URI", () => {
+    const uris = [
+      ...tf.matchAll(/uri\s*=\s*"\$\{var\.app_base_url\}([^"]*)"/g),
+    ].map((m) => m[1] as string);
+    const auds = [
+      ...tf.matchAll(/audience\s*=\s*"\$\{var\.app_base_url\}([^"]*)"/g),
+    ].map((m) => m[1] as string);
+    expect(uris).toHaveLength(scheduledTiers.length);
+    expect(auds).toEqual(uris);
   });
 });
 

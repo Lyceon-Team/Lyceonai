@@ -121,21 +121,137 @@ resource "google_cloud_scheduler_job" "retention_sweep_7d" {
 }
 
 # ──────────────────────────────────────────────────────────────────────
-# The other three tiers are deliberately NOT scheduled here.
+# Cloud Scheduler — tutor retention sweep (90d and 180d tiers)
 #
-#   90d  — archives tutor_instruction_assignments/exposures to BigQuery
-#          before deleting. `getArchiveClient()` returns undefined unless
-#          BIGQUERY_ARCHIVE_DATASET is set, and that env var appears in
-#          no output, no README row, and no deployment note. Scheduling
-#          it now would schedule a daily 200 with
-#          ok:false, reason:"archive_client_not_configured".
-#   180d — same dependency, for resolved crisis cases.
-#   365d — `sweep365d` unconditionally returns
-#          ok:false, reason:"365d_tables_not_provisioned". The tables do
-#          not exist.
+# @spec [Doc-03_V1.1 §14.2; owner ruling 2026-09-22 (Doc 07B §5.4); SCL-108]
+# @implemented [2026-09-22]
 #
-# Each is a real retention gap, reported rather than papered over with a
-# job that cannot do its work. Scheduling them is a separate change that
-# starts with wiring BIGQUERY_ARCHIVE_DATASET (the dataset itself already
-# exists — see bigquery.tf).
+# plain English: these two tiers have never run. Not once, in either sense —
+# no job existed to call them, and they would have declined if one had.
+#
+# WHY THEY COULD NOT RUN BEFORE, AND WHY THEY CAN NOW. Both tiers used to
+# export every expired row to BigQuery before deleting it, and refused to
+# delete when they could not. They could never do it: the archive client
+# `require`s `@google-cloud/bigquery`, which was in no package.json and absent
+# from pnpm-lock.yaml, so `getArchiveClient()` returned undefined and both
+# tiers answered `ok:false, reason:"archive_client_not_configured"` — the same
+# answer an unset env var produced, which is how the missing dependency stayed
+# invisible behind the missing config. The owner ruling of 2026-09-22 removed
+# the archive entirely, so the tiers delete outright and there is nothing left
+# to be unconfigured. That is what makes scheduling them honest rather than
+# scheduling a nightly no-op.
+#
+# Same authorisation as the 7d job above: not IAM, but the `aud` and `email`
+# claims the route's middleware checks. Same service account, necessarily —
+# CLOUD_TASKS_SERVICE_ACCOUNT holds exactly one address.
+#
+# trade-offs:
+#  - Staggered ten minutes apart so two sweeps never overlap: each carries a
+#    320s deadline, and they share one Postgres.
+#  - `request_id` is a fixed UUID per job, not per run, for the reason the 7d
+#    job records: Cloud Scheduler bodies are static and the route's Zod schema
+#    requires a UUID. It identifies the JOB.
+# ──────────────────────────────────────────────────────────────────────
+
+resource "google_cloud_scheduler_job" "retention_sweep_90d" {
+  name        = "lyceon-retention-sweep-90d"
+  project     = var.project
+  region      = var.region
+  description = "Tutor retention sweep, 90d tier — instruction assignments and exposures, Doc 03 §14.2"
+
+  schedule  = "40 5 * * *"
+  time_zone = "Etc/UTC"
+
+  attempt_deadline = "320s"
+
+  retry_config {
+    retry_count          = 3
+    max_retry_duration   = "600s"
+    min_backoff_duration = "30s"
+    max_backoff_duration = "300s"
+    max_doublings        = 3
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${var.app_base_url}/api/internal/retention/sweep"
+
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    body = base64encode(jsonencode({
+      retention_tier = "90d"
+      dry_run        = false
+      request_id     = "0f1c6c4e-6c8f-4a6d-9a3e-0b5a1d7c2e41"
+    }))
+
+    oidc_token {
+      service_account_email = google_service_account.cloud_tasks.email
+      audience              = "${var.app_base_url}/api/internal/retention/sweep"
+    }
+  }
+
+  depends_on = [google_project_service.cloudscheduler]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_cloud_scheduler_job" "retention_sweep_180d" {
+  name        = "lyceon-retention-sweep-180d"
+  project     = var.project
+  region      = var.region
+  description = "Tutor retention sweep, 180d tier — RESOLVED crisis cases and injection logs, Doc 03 §14.2"
+
+  schedule  = "50 5 * * *"
+  time_zone = "Etc/UTC"
+
+  attempt_deadline = "320s"
+
+  retry_config {
+    retry_count          = 3
+    max_retry_duration   = "600s"
+    min_backoff_duration = "30s"
+    max_backoff_duration = "300s"
+    max_doublings        = 3
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${var.app_base_url}/api/internal/retention/sweep"
+
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    body = base64encode(jsonencode({
+      retention_tier = "180d"
+      dry_run        = false
+      request_id     = "7b2d9f30-5e41-4c88-b0a7-3d6f8c1e9042"
+    }))
+
+    oidc_token {
+      service_account_email = google_service_account.cloud_tasks.email
+      audience              = "${var.app_base_url}/api/internal/retention/sweep"
+    }
+  }
+
+  depends_on = [google_project_service.cloudscheduler]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# ──────────────────────────────────────────────────────────────────────
+# The 365d tier is still NOT scheduled, and this one is not a config gap.
+#
+# `sweep365d` returns ok:false, reason:"365d_tables_not_provisioned"
+# unconditionally. Doc 03 §14.2 names LISA cost telemetry and quota appeal
+# records; neither table exists in genesis-schema.expected.sql nor in any
+# migration. There is nothing for a job to sweep, so scheduling one would
+# schedule a nightly no-op — the thing the 90d and 180d jobs above stopped
+# being on 2026-09-22.
 # ──────────────────────────────────────────────────────────────────────

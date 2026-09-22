@@ -10,6 +10,8 @@ import {
 import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
 import { Analytics } from "@vercel/analytics/react";
+
+import { analyticsBeforeSend } from "./lib/analytics-surface";
 import "@/styles/tokens.css";
 import "@/styles/accessibility.css";
 
@@ -338,7 +340,15 @@ function App() {
           </SupabaseAuthProvider>
         </QueryClientProvider>
       </HelmetProvider>
-      <Analytics />
+      {/*
+        Doc 06A §5.3 / Coding Standards §12.2: page views are reported from the
+        public marketing and legal surface ONLY. `analyticsBeforeSend` denies
+        by default, so every signed-in student page — and every route added
+        later — is silent unless someone deliberately makes it public. See
+        `client/src/lib/analytics-surface.ts` for why this is a predicate and
+        not a conditional mount.
+      */}
+      <Analytics beforeSend={analyticsBeforeSend} />
     </ErrorBoundary>
   );
 }
