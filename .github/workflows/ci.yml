@@ -759,6 +759,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
             --file tests/ci/guardian-link-code.pg.ci.test.ts
 
+      # @spec [Doc_05F_Study_Calendar §16] | @implemented [2026-09-22]
+      # The guardian's way in to a student's calendar. Its student rows are INSERTED into
+      # the throwaway Postgres above and READ BACK rather than spelled by hand, which is
+      # what the guardian schema-truth gate (Rule B) requires — so it needs a database, and
+      # the plain `ci` job has none. Behind the summary gate because a skipped file exits 0.
+      - name: Guardian calendar link → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-calendar-link.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-calendar-link.json \
+            --file client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the
