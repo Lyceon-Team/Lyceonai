@@ -1,0 +1,5 @@
+version: "3.0"
+effective_date: 2026-09-21
+supersedes: "2.0 (2026-09-11)"
+published: true
+content_hash: sha256:6e91f0a9ce25cacbd12f26e560406e7977a9fdf33cf6e120b701872697d1431e
