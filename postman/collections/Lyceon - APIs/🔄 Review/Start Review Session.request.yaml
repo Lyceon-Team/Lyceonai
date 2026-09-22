@@ -1,8 +1,16 @@
 $kind: http-request
-url: "{{baseUrl}}/api/review-errors/sessions"
+url: "{{baseUrl}}/api/review/sessions"
 method: POST
 headers:
   Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "mode": "queue",
+      "client_instance_id": "{{clientInstanceId}}",
+      "idempotency_key": "{{$guid}}"
+    }
 scripts:
   - type: afterResponse
     code: >-

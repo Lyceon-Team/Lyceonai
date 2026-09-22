@@ -9,6 +9,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   BookOpen,
+  RotateCcw,
   MessageSquare,
   CreditCard,
   Settings,
@@ -56,6 +57,7 @@ function AppHeader() {
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/practice", label: "Practice", icon: BookOpen },
+    { href: "/review", label: "Review", icon: RotateCcw },
     { href: "/full-test", label: "Full Tests", icon: CreditCard },
     { href: "/chat", label: "Lisa", icon: MessageSquare },
   ];

@@ -538,13 +538,13 @@
 			]
 		},
 		{
-			"name": "🔄 Review Errors",
+			"name": "🔄 Review",
 			"item": [
 				{
-					"name": "Get Incorrect Answers",
+					"name": "Get Review Pool",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/review-errors", "host": ["{{baseUrl}}"], "path": ["api","review-errors"] }
+						"url": { "raw": "{{baseUrl}}/api/review/pool?tz=America/New_York", "host": ["{{baseUrl}}"], "path": ["api","review","pool"], "query": [{ "key": "tz", "value": "America/New_York" }] }
 					}
 				},
 				{
@@ -566,14 +566,25 @@
 					"request": {
 						"method": "POST",
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"queue\",\n  \"client_instance_id\": \"{{clientInstanceId}}\",\n  \"idempotency_key\": \"{{$guid}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/review/sessions", "host": ["{{baseUrl}}"], "path": ["api","review","sessions"] }
 					}
 				},
 				{
 					"name": "Get Review Session State",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions/{{reviewSessionId}}/state", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions","{{reviewSessionId}}","state"] }
+						"url": { "raw": "{{baseUrl}}/api/review/sessions/{{reviewSessionId}}/state?client_instance_id={{clientInstanceId}}", "host": ["{{baseUrl}}"], "path": ["api","review","sessions","{{reviewSessionId}}","state"], "query": [{ "key": "client_instance_id", "value": "{{clientInstanceId}}" }] }
+					}
+				},
+				{
+					"name": "Get Next Review Item",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/review/sessions/{{reviewSessionId}}/next?client_instance_id={{clientInstanceId}}", "host": ["{{baseUrl}}"], "path": ["api","review","sessions","{{reviewSessionId}}","next"], "query": [{ "key": "client_instance_id", "value": "{{clientInstanceId}}" }] }
 					}
 				},
 				{
@@ -583,9 +594,9 @@
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"B\",\n  \"sessionId\": \"{{reviewSessionId}}\"\n}"
+							"raw": "{\n  \"sessionId\": \"{{reviewSessionId}}\",\n  \"sessionItemId\": \"{{reviewSessionItemId}}\",\n  \"selectedOptionId\": \"{{reviewOptionToken}}\"\n}"
 						},
-						"url": { "raw": "{{baseUrl}}/api/review-errors/attempt", "host": ["{{baseUrl}}"], "path": ["api","review-errors","attempt"] }
+						"url": { "raw": "{{baseUrl}}/api/review/answer", "host": ["{{baseUrl}}"], "path": ["api","review","answer"] }
 					}
 				}
 			]

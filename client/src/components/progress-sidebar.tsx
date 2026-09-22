@@ -1,7 +1,15 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Play, Shuffle, TrendingUp, Check, Upload, MessageSquare } from "lucide-react";
+import {
+  Play,
+  RotateCcw,
+  Shuffle,
+  TrendingUp,
+  Check,
+  Upload,
+  MessageSquare,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import type { ProgressStats } from "@shared/schema";
@@ -10,44 +18,44 @@ import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
 export default function ProgressSidebar() {
   // Progress stats API - DISABLED (endpoint not implemented)
   const { data: progressStats } = useQuery<ProgressStats>({
-    queryKey: ['/api/progress'],
+    queryKey: ["/api/progress"],
     enabled: false, // Disabled - endpoint not implemented
   });
-  
+
   const recentActivities = [
     {
-      id: '1',
-      type: 'complete',
-      title: 'Completed Math Section 3',
-      time: '2 hours ago',
-      icon: Check
+      id: "1",
+      type: "complete",
+      title: "Completed Math Section 3",
+      time: "2 hours ago",
+      icon: Check,
     },
     {
-      id: '2',
-      type: 'upload',
-      title: 'Uploaded new practice test',
-      time: 'Yesterday',
-      icon: Upload
+      id: "2",
+      type: "upload",
+      title: "Uploaded new practice test",
+      time: "Yesterday",
+      icon: Upload,
     },
     {
-      id: '3',
-      type: 'chat',
-      title: 'Asked tutor about geometry',
-      time: '2 days ago',
-      icon: MessageSquare
-    }
+      id: "3",
+      type: "chat",
+      title: "Asked tutor about geometry",
+      time: "2 days ago",
+      icon: MessageSquare,
+    },
   ];
 
   const getActivityIconColor = (type: string) => {
     switch (type) {
-      case 'complete':
-        return 'bg-primary/10 text-primary';
-      case 'upload':
-        return 'bg-secondary/10 text-secondary';
-      case 'chat':
-        return 'bg-accent/10 text-accent';
+      case "complete":
+        return "bg-primary/10 text-primary";
+      case "upload":
+        return "bg-secondary/10 text-secondary";
+      case "chat":
+        return "bg-accent/10 text-accent";
       default:
-        return 'bg-muted text-muted-foreground';
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -59,20 +67,22 @@ export default function ProgressSidebar() {
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
             Your Progress
           </h3>
-          
+
           <div className="space-y-4">
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-foreground">{SECTION_LABEL_MATH} Section</span>
-                <span 
+                <span className="text-sm font-medium text-foreground">
+                  {SECTION_LABEL_MATH} Section
+                </span>
+                <span
                   className="text-sm text-muted-foreground"
                   data-testid="text-math-progress"
                 >
                   {Math.round(progressStats?.mathProgress || 0)}%
                 </span>
               </div>
-              <Progress 
-                value={progressStats?.mathProgress || 0} 
+              <Progress
+                value={progressStats?.mathProgress || 0}
                 className="h-2"
                 data-testid="progress-math"
               />
@@ -80,16 +90,18 @@ export default function ProgressSidebar() {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-foreground">{SECTION_LABEL_RW}</span>
-                <span 
+                <span className="text-sm font-medium text-foreground">
+                  {SECTION_LABEL_RW}
+                </span>
+                <span
                   className="text-sm text-muted-foreground"
                   data-testid="text-reading-progress"
                 >
                   {Math.round(progressStats?.readingProgress || 0)}%
                 </span>
               </div>
-              <Progress 
-                value={progressStats?.readingProgress || 0} 
+              <Progress
+                value={progressStats?.readingProgress || 0}
                 className="h-2 [&>div]:bg-secondary"
                 data-testid="progress-reading"
               />
@@ -98,13 +110,15 @@ export default function ProgressSidebar() {
 
           <div className="mt-6 pt-4 border-t border-border">
             <div className="text-center">
-              <div 
+              <div
                 className="text-2xl font-bold text-foreground"
                 data-testid="text-total-questions"
               >
-                {progressStats?.totalQuestions?.toLocaleString() || '0'}
+                {progressStats?.totalQuestions?.toLocaleString() || "0"}
               </div>
-              <div className="text-sm text-muted-foreground">Questions Practiced</div>
+              <div className="text-sm text-muted-foreground">
+                Questions Practiced
+              </div>
             </div>
           </div>
         </CardContent>
@@ -116,7 +130,7 @@ export default function ProgressSidebar() {
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
             Quick Actions
           </h3>
-          
+
           <div className="space-y-3">
             <Button asChild className="w-full justify-center space-x-2">
               <Link href="/practice" data-testid="button-start-practice-test">
@@ -124,19 +138,33 @@ export default function ProgressSidebar() {
                 <span>Start Practice Test</span>
               </Link>
             </Button>
-            
-            <Button 
+
+            <Button
               variant="secondary"
               className="w-full justify-center space-x-2"
               asChild
             >
-              <Link href="/practice/random" data-testid="button-random-questions">
+              <Link href="/review" data-testid="button-review-queue">
+                <RotateCcw className="h-4 w-4" />
+                <span>Review Queue</span>
+              </Link>
+            </Button>
+
+            <Button
+              variant="secondary"
+              className="w-full justify-center space-x-2"
+              asChild
+            >
+              <Link
+                href="/practice/random"
+                data-testid="button-random-questions"
+              >
                 <Shuffle className="h-4 w-4" />
                 <span>Random Questions</span>
               </Link>
             </Button>
-            
-            <Button 
+
+            <Button
               variant="outline"
               className="w-full justify-center space-x-2"
               data-testid="button-view-analytics"
@@ -144,7 +172,6 @@ export default function ProgressSidebar() {
               <TrendingUp className="h-4 w-4" />
               <span>View Analytics</span>
             </Button>
-            
           </div>
         </CardContent>
       </Card>
@@ -155,27 +182,29 @@ export default function ProgressSidebar() {
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
             Recent Activity
           </h3>
-          
+
           <div className="space-y-3">
             {recentActivities.map((activity) => {
               const IconComponent = activity.icon;
               return (
-                <div 
+                <div
                   key={activity.id}
                   className="flex items-center space-x-3"
                   data-testid={`activity-item-${activity.id}`}
                 >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${getActivityIconColor(activity.type)}`}>
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center ${getActivityIconColor(activity.type)}`}
+                  >
                     <IconComponent className="h-4 w-4" />
                   </div>
                   <div className="flex-1">
-                    <p 
+                    <p
                       className="text-sm font-medium text-foreground"
                       data-testid={`text-activity-title-${activity.id}`}
                     >
                       {activity.title}
                     </p>
-                    <p 
+                    <p
                       className="text-xs text-muted-foreground"
                       data-testid={`text-activity-time-${activity.id}`}
                     >
@@ -191,4 +220,3 @@ export default function ProgressSidebar() {
     </div>
   );
 }
-

@@ -11,7 +11,14 @@ export type ActiveSession = {
   section: string;
   mode: string;
   status: string;
-  started_at: string;
+  /**
+   * The server emits `created_at` (practice-canonical.ts:2209), never `started_at`.
+   * This type said `started_at` and `practice.tsx:360` read it, so every open-session
+   * row rendered "Invalid DateTime" from `DateTime.fromISO(undefined)`. Fixed in R4
+   * while mirroring this hook for review, which returns the same field
+   * (review-schema.ts:274).
+   */
+  created_at: string;
   target_question_count: number;
   total_items: number;
   answered_items: number;
