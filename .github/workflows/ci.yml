@@ -554,7 +554,18 @@ jobs:
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+        run: |
+          psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-schema-gates.sql
+          # C-09's other half. The gate above proves generator_version LOOKS like
+          # a migration timestamp; only the filesystem can say whether it names a
+          # migration that exists, and a provenance stamp pointing at no file is
+          # worse than none at all.
+          gv="$(psql -qtAX -d calendar_parity -c "SELECT value #>> '{}' FROM public.calendar_runtime_config WHERE key = 'generator_version'")"
+          if ! ls "supabase/migrations/${gv}"_*.sql >/dev/null 2>&1; then
+            echo "CALENDAR_SCHEMA_GATE_FAILED: C-09 generator_version=${gv} names no migration under supabase/migrations/"
+            exit 1
+          fi
+          echo "    OK C-09b generator_version ${gv} names $(ls supabase/migrations/${gv}_*.sql)"
 
       - name: Calendar grant + RLS gates
         env:
@@ -584,6 +595,49 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: calendar_parity
         run: bash scripts/ci/calendar-concurrency-gate.sh
+
+      # The launch seam: a calendar block becomes a practice session, and the filter
+      # and the idempotency key have to arrive intact. Half A runs anywhere; half B
+      # needs a real schema with real rows, which is why it lives in this job and is
+      # skipped in the plain `ci` job like every other *.ci.test.ts.
+      - name: Calendar practice launch contract (real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/calendar.launch-contract.practice.ci.test.ts
+
+      # The two stubbed engines. Separate invocations, separate files: each is the
+      # contract its rebuilt engine must pass unchanged, and a shared run would let
+      # one rebuild quietly satisfy the other's contract.
+      - name: Calendar review + full-length launch contracts (fail-open stubs)
+        run: |
+          pnpm exec vitest run tests/ci/calendar.launch-contract.review.test.ts
+          pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
+
+      # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
+      # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice
+      # engine's own idempotency ledger, reached over a wire as a real service_role JWT,
+      # agree about what a repeated key means. The gate greps its own output because a
+      # self-skipping vitest file exits 0 and reads green from the outside.
+      - name: Install PostgREST (real transport)
+        run: |
+          curl -sL -o /tmp/pgrst.tar.xz \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          tar -xf /tmp/pgrst.tar.xz -C /tmp
+          sudo mv /tmp/postgrest /usr/local/bin/postgrest
+          postgrest --version
+
+      - name: Calendar launch crash-retry → REAL PostgREST proof (INV-08-18)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/calendar-postgrest-gate.sh
 
       - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
         env:

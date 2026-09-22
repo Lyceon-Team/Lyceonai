@@ -6,8 +6,12 @@ import json, random
 from datetime import date, timedelta
 from collections import Counter
 
-DOMAINS = ["ALG","ADV","PSDA","GEO","II","CS","EOI","SEC"]          # canonical order (tie-break only)
-SEC = {"ALG":"M","ADV":"M","PSDA":"M","GEO":"M","II":"RW","CS":"RW","EOI":"RW","SEC":"RW"}
+DOMAINS = ["Algebra", "Advanced Math", "Problem Solving and Data Analysis", "Geometry and Trigonometry",
+           "Information and Ideas", "Craft and Structure", "Expression of Ideas", "Standard English Conventions"]
+# The canonical eight, in full, exactly as production stores them (student_domain_mastery.domain,
+# practice_session_items.question_domain, calendar_runtime_config.canonical_domain_order).
+# No codes, no aliases, no mapping layer: the oracle, the fixtures and the RPCs speak one vocabulary.
+SEC = {d: ("M" if i < 4 else "RW") for i, d in enumerate(DOMAINS)}
 
 C = dict(   # calendar_runtime_config (launch defaults) — integers only; ratios in basis points
     horizon_days=14,
