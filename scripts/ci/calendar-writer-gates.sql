@@ -1010,4 +1010,163 @@ END;
 $movegates$;
 
 
+-- ============================================================================
+-- Z-45 .. Z-47 — the plan INPUT tells the truth about enabled engines
+-- ============================================================================
+-- Doc 05F §9.3 / §10.2 (sheet §8 item 12). calendar_plan_to_output drops every
+-- member whose block_type is absent from enabled_block_types, but the generator
+-- allocates budget from calendar_build_plan_input without consulting that list.
+-- Left alone, a disabled engine SPENDS the day's seconds on a block that is then
+-- thrown away, and the day is served short with nothing to explain it.
+--
+-- WHY THIS LIVES IN THE WRITER GATES AND NOT IN PARITY. The formula is unchanged
+-- and must stay so -- it is locked to calendar_formula_reference.py by 6018
+-- byte-exact comparisons. What changed is what the formula is TOLD. That is a
+-- property of the builder against a real database, which is this file's subject.
+--
+-- THE FIXTURE IS THE PRODUCTION CASE, 2026-09-22, student amingwa08: Mon-Sat
+-- (mask 126), 60 minutes, Saturday test day, 76 active queue entries. Before the
+-- fix that plan served 20 questions where 40 fit, 10 on a Monday, and an EMPTY
+-- Saturday.
+-- ============================================================================
+DO $inputgates$
+DECLARE
+  S CONSTANT uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  k_budget  CONSTANT integer := 60 * 60;   -- daily_minutes 60, in seconds
+  k_granule CONSTANT integer := 5 * 90;    -- 5 questions, the practice granule
+  v_today    date;
+  v_r        jsonb;
+  v_input    jsonb;
+  v_short    integer;
+  v_sat      integer;
+  v_prac_off integer;
+  v_prac_on  integer;
+  v_rev_on   integer;
+  v_n        integer;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-input@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 126, 60, 6, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  -- 76 servable questions and 76 active queue entries -- production's number.
+  INSERT INTO public.questions
+    (id, stem, item_type, options, correct_answer, explanation, section, domain, skill_codes, difficulty, status, source_type)
+  SELECT 'SATM1' || lpad(i::text, 6, '0'), 'stem ' || i, 'mcq',
+         '[{"label":"A","text":"a"},{"label":"B","text":"b"},{"label":"C","text":"c"},{"label":"D","text":"d"}]'::jsonb,
+         'A', 'because', 'M', 'Algebra', ARRAY['H.C.'], 2, 'published', 1
+  FROM generate_series(1, 76) i;
+
+  INSERT INTO public.review_schedule
+    (student_id, question_id, status, queued_at, source_engine, source_session_id, source_item_id, source_outcome)
+  SELECT S, 'SATM1' || lpad(i::text, 6, '0'), 'active', now(), 'practice',
+         gen_random_uuid(), gen_random_uuid(), 'incorrect'
+  FROM generate_series(1, 76) i;
+
+  ------------------------------------------------------------------- Z-45
+  -- The SNAPSHOT itself, before any plan is computed. enabled_block_types is
+  -- ["practice"] at launch, so neither other engine may appear as work to do.
+  -- Asserted on the input rather than only on the plan because this is the
+  -- statement the migration actually makes; the plan is the consequence.
+  v_input := public.calendar_build_plan_input(S, ARRAY[v_today]);
+
+  IF (v_input #>> '{profile,full_length_weekday}') IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 full_length is disabled but the snapshot still names a test weekday (%)',
+      v_input #>> '{profile,full_length_weekday}';
+  END IF;
+  IF (v_input -> 'review_due_by_date') <> '[]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 review is disabled but the snapshot carries review due: %',
+      v_input -> 'review_due_by_date';
+  END IF;
+  -- The PROFILE is untouched. The snapshot narrows what the generator is told;
+  -- it never edits what the student asked for.
+  SELECT full_length_weekday INTO v_n FROM public.student_study_profile WHERE student_id = S;
+  IF v_n <> 6 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 the stored profile lost its test day (got %), the snapshot must not write', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-45 with only practice enabled the snapshot reports no test day and no review due, and the profile is unchanged';
+
+  ------------------------------------------------------------------- Z-46
+  -- The consequence: no day is served short, and the test weekday is an
+  -- ordinary study day rather than a reserved-then-discarded exam.
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'cccccccc-0000-0000-0000-000000000001');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 setup was not accepted: %', v_r;
+  END IF;
+
+  -- Both figures come from the SAME unfiltered set. Filtering the rows first and
+  -- then reading Saturday off the remainder is how the first draft of this gate
+  -- read -1 for a Saturday that was in fact fully planned.
+  SELECT count(*) FILTER (WHERE ((126 >> q.dow) & 1) = 1 AND q.secs < k_budget),
+         COALESCE(min(q.secs) FILTER (WHERE q.dow = 6), -1)
+    INTO v_short, v_sat
+  FROM (
+    SELECT cp.scheduled_date AS d,
+           EXTRACT(DOW FROM cp.scheduled_date)::integer AS dow,
+           COALESCE(sum(b.target_count * 90), 0)::integer AS secs
+    FROM public.calendar_current_plan cp
+    LEFT JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+    WHERE cp.student_id = S AND cp.scheduled_date >= v_today
+    GROUP BY 1, 2
+  ) q;
+
+  IF v_short <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 % study day(s) were planned below the % s daily budget', v_short, k_budget;
+  END IF;
+  IF v_sat <> k_budget THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 the test weekday holds % s, expected a full % s of practice', v_sat, k_budget;
+  END IF;
+
+  SELECT COALESCE(sum(b.target_count * 90), 0)::integer INTO v_prac_off
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date >= v_today AND b.block_type = 'practice';
+  RAISE NOTICE '    OK Z-46 every study day is planned to the full daily budget and the test weekday gets practice (% s of practice over the horizon)', v_prac_off;
+
+  ------------------------------------------------------------------- Z-47
+  -- Enabling review must MOVE seconds, not create them: review blocks appear and
+  -- practice gives up exactly their seconds. A test that only asserted "review
+  -- blocks exist" would pass a generator that overspent the day.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  v_r := public.calendar_persist_version(S, 'student_refresh', 'student', 'v1',
+           'cccccccc-0000-0000-0000-000000000002');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 the regenerate with review on was not accepted: %', v_r;
+  END IF;
+
+  SELECT COALESCE(sum(b.target_count * 90) FILTER (WHERE b.block_type = 'practice'), 0)::integer,
+         COALESCE(sum(b.target_count * 120) FILTER (WHERE b.block_type = 'review'), 0)::integer
+    INTO v_prac_on, v_rev_on
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date >= v_today;
+
+  IF v_rev_on <= 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 review was enabled with 76 servable entries queued and no review block was planned';
+  END IF;
+  -- Conservation, to within the practice granule: the day cannot buy a sixth of
+  -- a five-question block, so the residue is bounded by one granule per day.
+  IF abs((v_prac_off - v_prac_on) - v_rev_on) > k_granule THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 budget was not conserved: practice fell by % s while review took % s (tolerance % s)',
+      v_prac_off - v_prac_on, v_rev_on, k_granule;
+  END IF;
+  RAISE NOTICE '    OK Z-47 enabling review moves seconds rather than creating them (practice -% s, review +% s)',
+    v_prac_off - v_prac_on, v_rev_on;
+END;
+$inputgates$;
+
+
 ROLLBACK;
