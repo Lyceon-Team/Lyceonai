@@ -72,14 +72,34 @@ const DOMAIN_COPY: Readonly<Record<string, string>> = {
  * not need the system to explain it back to them.
  */
 export function blockExplanation(key: string | null): string | null {
-  if (key === null) return null;
-  return BLOCK_COPY[key] ?? null;
+  return lookup(BLOCK_COPY, key);
 }
 
 /** The sentence for a PER-DOMAIN key, or null when there is none. */
 export function domainExplanation(key: string | null): string | null {
+  return lookup(DOMAIN_COPY, key);
+}
+
+/**
+ * OWN properties only. `table[key] ?? null` looks the key up the PROTOTYPE CHAIN, so
+ * `explanation_key: "toString"` returns `Object.prototype.toString` — a function, which
+ * `??` never replaces and which TypeScript believes is a `string`. It would reach the
+ * "Why this is here" panel and render as `function toString() { [native code] }`.
+ *
+ * Not hypothetical: `explanation_key` is `z.string().nullable()` on the wire precisely
+ * because V-09 constrains generated plans only and a student edit may carry ANY string,
+ * which the database stores. This lookup is the one that has to be total, so it is the one
+ * that has to be safe. `constructor`, `valueOf` and `hasOwnProperty` are the same hole.
+ */
+function lookup(
+  table: Readonly<Record<string, string>>,
+  key: string | null,
+): string | null {
   if (key === null) return null;
-  return DOMAIN_COPY[key] ?? null;
+  // `Object.hasOwn` would be clearer but needs lib ES2022; this build targets lower.
+  return Object.prototype.hasOwnProperty.call(table, key)
+    ? (table[key] ?? null)
+    : null;
 }
 
 /**

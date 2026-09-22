@@ -25,9 +25,9 @@
  * can act on — the block simply finished elsewhere. The caller refreshes the plan and shows
  * no toast (§17.5 has no "you already did that" state).
  */
-import { useCallback, useRef } from "react";
+import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { LaunchResponse, PlanBlock } from "@lyceon/shared";
+import type { LaunchResponse, PlanBlock } from "@lyceon/shared/calendar";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
 import { calendarKeys } from "./keys";
@@ -75,11 +75,14 @@ export function useLaunchBlock(navigate: (to: string) => void): {
 } {
   const queryClient = useQueryClient();
   const mutation = useLaunchMutation();
-  const pendingBlockId = useRef<string | null>(null);
+  // STATE, not a ref. This value is READ DURING RENDER and handed back as hook state, and a
+  // ref write schedules no render — the consumer would see whichever block id an unrelated
+  // re-render happened to leave behind, so the Start spinner could stick on the wrong row.
+  const [pendingBlockId, setPendingBlockId] = useState<string | null>(null);
 
   const launch = useCallback(
     async (blockId: string): Promise<LaunchOutcome> => {
-      pendingBlockId.current = blockId;
+      setPendingBlockId(blockId);
       const clientInstanceId = getClientInstanceId();
       try {
         const response = await mutation.mutateAsync({
@@ -111,7 +114,7 @@ export function useLaunchBlock(navigate: (to: string) => void): {
           error: error instanceof Error ? error : new Error("Launch failed"),
         };
       } finally {
-        pendingBlockId.current = null;
+        setPendingBlockId(null);
       }
     },
     [mutation, navigate, queryClient],
@@ -120,7 +123,7 @@ export function useLaunchBlock(navigate: (to: string) => void): {
   return {
     launch,
     isPending: mutation.isPending,
-    pendingBlockId: pendingBlockId.current,
+    pendingBlockId,
   };
 }
 

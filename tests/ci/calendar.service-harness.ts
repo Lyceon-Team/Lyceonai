@@ -77,7 +77,16 @@ export function makeFakeClient(options: {
     seq += 1;
     state.seq = seq;
     queries.push(state);
-    const resolver = options.tables[state.table];
+    // `practice_runtime_config` is read by `loadCalendarConfig` for §17.1's minute estimate
+    // (Doc 02B §41 owns practice timing, so the calendar references its table rather than
+    // copying the constant). Defaulted here rather than in every suite that builds a fake
+    // client: a test about the weekly job or the profile upsert has no opinion about it, and
+    // making each one restate it would be six copies of someone else's constant.
+    const resolver =
+      options.tables[state.table] ??
+      (state.table === "practice_runtime_config"
+        ? () => okReply([PRACTICE_CONFIG_ROW])
+        : undefined);
     if (resolver === undefined) {
       throw new Error(
         `fake supabase: no resolver registered for table ${state.table}`,

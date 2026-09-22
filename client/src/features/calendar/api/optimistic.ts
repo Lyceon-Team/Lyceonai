@@ -20,7 +20,11 @@
  * edge cases: a response in the `setup_required` state has no days at all, so every
  * function returns it untouched — there is nothing to be optimistic about before setup.
  */
-import type { CalendarDay, CalendarResponse, DayBlock } from "@lyceon/shared";
+import type {
+  CalendarDay,
+  CalendarResponse,
+  DayBlock,
+} from "@lyceon/shared/calendar";
 
 /** The id prefix a block carries while the server has not yet confirmed it. */
 export const PROVISIONAL_PREFIX = "provisional:" as const;
@@ -114,9 +118,24 @@ export function applyMove(
   if (found === null || found.date === toDate) return response;
   if (!response.days.some((day) => day.local_date === toDate)) return response;
 
+  // §13 uses `display_ordinal` as its only tiebreak, so carrying the source day's ordinal
+  // onto the target could tie the moved block with one already there and render them in an
+  // arbitrary order for one paint. Appending past the target's highest keeps it last, which
+  // is also where `calendar_move_block` puts it.
+  const targetDay = response.days.find((day) => day.local_date === toDate);
+  const nextOrdinal =
+    Math.max(
+      0,
+      ...(targetDay?.blocks ?? []).map((entry) => entry.block.display_ordinal),
+    ) + 1;
+
   const moved: DayBlock = {
     ...found.block,
-    block: { ...found.block.block, scheduled_date: toDate },
+    block: {
+      ...found.block.block,
+      scheduled_date: toDate,
+      display_ordinal: nextOrdinal,
+    },
   };
 
   return mapDays(response, (day) => {
@@ -140,17 +159,16 @@ export function applyRemoveBlock(
   date: string,
   blockId: string,
 ): CalendarResponse {
-  return mapDays(response, (day) =>
-    day.local_date === date
-      ? {
-          ...day,
-          is_user_override: true,
-          blocks: day.blocks.filter(
-            (entry) => entry.block.block_id !== blockId,
-          ),
-        }
-      : day,
-  );
+  return mapDays(response, (day) => {
+    if (day.local_date !== date) return day;
+    const blocks = day.blocks.filter(
+      (entry) => entry.block.block_id !== blockId,
+    );
+    // A stale block id — a second tab, or a block the server already moved — must not paint
+    // the "edited" marker on a day where nothing actually changed.
+    if (blocks.length === day.blocks.length) return day;
+    return { ...day, is_user_override: true, blocks };
+  });
 }
 
 /**
@@ -167,22 +185,22 @@ export function applyBlockEdit(
   blockId: string,
   edited: DayBlock["block"],
 ): CalendarResponse {
-  return mapDays(response, (day) =>
-    day.local_date === date
-      ? {
-          ...day,
-          is_user_override: true,
-          blocks: day.blocks.map((entry) =>
-            entry.block.block_id === blockId
-              ? {
-                  ...entry,
-                  block: { ...edited, block_id: nextProvisionalId() },
-                }
-              : entry,
-          ),
-        }
-      : day,
-  );
+  return mapDays(response, (day) => {
+    if (day.local_date !== date) return day;
+    // Same reasoning as `applyRemoveBlock`: no match, no edit, no marker.
+    if (!day.blocks.some((entry) => entry.block.block_id === blockId)) {
+      return day;
+    }
+    return {
+      ...day,
+      is_user_override: true,
+      blocks: day.blocks.map((entry) =>
+        entry.block.block_id === blockId
+          ? { ...entry, block: { ...edited, block_id: nextProvisionalId() } }
+          : entry,
+      ),
+    };
+  });
 }
 
 /**

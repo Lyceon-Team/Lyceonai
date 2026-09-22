@@ -69,8 +69,13 @@ export type CalendarConfigKey = (typeof CALENDAR_CONFIG_KEYS)[number];
  */
 export class CalendarConfigError extends Error {
   readonly key: string;
-  constructor(key: string, detail: string) {
-    super(`calendar_runtime_config: ${key} ${detail}`);
+  /**
+   * `table` defaults to `calendar_runtime_config` because almost every key lives there. It
+   * is a parameter because `target_seconds_per_question` does NOT (Doc 02B §41 owns it), and
+   * an error that named the wrong table would send an operator to the wrong row.
+   */
+  constructor(key: string, detail: string, table = "calendar_runtime_config") {
+    super(`${table}: ${key} ${detail}`);
     this.name = "CalendarConfigError";
     this.key = key;
   }
@@ -256,11 +261,13 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
  * front of every student, and a wrong number nobody can see is worse than a 500 somebody can.
  */
 async function loadPracticeSecondsPerQuestion(): Promise<number> {
+  // Same `.select(...).in(...)` shape as the calendar config read above, deliberately: one
+  // query style for both tables, and no reliance on `.maybeSingle()`, whose absent-row
+  // behaviour differs between the real client and the test doubles.
   const { data, error } = await supabaseServer
     .from("practice_runtime_config")
     .select("key, value")
-    .eq("key", "target_seconds_per_question")
-    .maybeSingle();
+    .in("key", ["target_seconds_per_question"]);
 
   if (error) {
     logger.error(
@@ -275,7 +282,14 @@ async function loadPracticeSecondsPerQuestion(): Promise<number> {
     );
   }
 
-  const parsed = integerValueSchema.safeParse(data?.value);
+  // Narrowed rather than trusted: this is a boundary, and `data` is whatever the client
+  // handed back. A non-array here is a malformed read, not a crash site.
+  const rows = Array.isArray(data) ? data : [];
+  const row = rows.find(
+    (candidate: { key?: unknown; value?: unknown }) =>
+      candidate.key === "target_seconds_per_question",
+  );
+  const parsed = integerValueSchema.safeParse(row?.value);
   if (!parsed.success || parsed.data <= 0) {
     logger.error(
       "CALENDAR_CONFIG",

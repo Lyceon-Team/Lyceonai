@@ -205,7 +205,11 @@ export function useMoveBlock(): UseMutationResult<
 
 // ── Regeneration ────────────────────────────────────────────────────────────
 
-export type RegenerateVariables = Intent<Record<string, never>>;
+/**
+ * The plan-wide regenerate takes nothing but its key. Spelled out rather than
+ * `Intent<Record<string, never>>`, which an empty object literal does not satisfy.
+ */
+export type RegenerateVariables = { idempotency_key: string };
 export type DayScopedVariables = Intent<{ date: string }>;
 
 /** §12.1 `student_refresh` — the student's own `Refresh plan`. */

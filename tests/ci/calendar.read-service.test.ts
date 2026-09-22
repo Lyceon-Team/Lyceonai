@@ -127,7 +127,7 @@ function scenario(options: ScenarioOptions = {}): void {
   client = makeFakeClient({
     tables: {
       calendar_runtime_config: () => okReply(CONFIG_ROWS),
-      practice_runtime_config: () => okReply(PRACTICE_CONFIG_ROW),
+      practice_runtime_config: () => okReply([PRACTICE_CONFIG_ROW]),
       student_study_profile: (state: QueryState) =>
         state.columns.includes("last_acknowledged")
           ? okReply({ last_acknowledged_nonstudent_version_no: 0 })

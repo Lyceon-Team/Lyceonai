@@ -17,7 +17,7 @@ import type {
   CalendarResponse,
   GuardianCalendarResponse,
   StreakSummary,
-} from "@lyceon/shared";
+} from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
 import { fetchCalendar, fetchGuardianCalendar, fetchStreak } from "./client";
 

@@ -40,6 +40,7 @@ import {
   acknowledgeBodySchema,
   blockParamsSchema,
   moveBlockBodySchema,
+  type MoveRefusalReason,
   dayEditBodySchema,
   dayParamsSchema,
   idempotentMutationBodySchema,
@@ -196,6 +197,49 @@ async function entitled(
 
 // ── Failure → status (§15's error list) ─────────────────────────────────────
 
+/**
+ * §12.2. Three OUTCOMES, not errors, so each carries its own code: the client already
+ * mirrors all three, and when the server disagrees the reason is what tells the UI which of
+ * its assumptions was stale. 409 rather than 400 — the request was well-formed; the plan's
+ * state is what refused it.
+ *
+ * Its own function rather than a nested switch, so the outer switch has one `return` per arm
+ * and cannot fall through — a nested switch whose every arm returns still reads as a
+ * fallthrough to both the linter and to the next person editing it.
+ */
+function sendMoveRefusal(
+  res: Response,
+  reason: MoveRefusalReason,
+  requestId: string | undefined,
+): Response {
+  switch (reason) {
+    case "block_started":
+      return sendError(
+        res,
+        409,
+        "You have already started that block, so it stays where it is.",
+        "CALENDAR_BLOCK_STARTED",
+        requestId,
+      );
+    case "date_in_past":
+      return sendError(
+        res,
+        409,
+        "Work cannot be moved into the past.",
+        "CALENDAR_PAST_DATE",
+        requestId,
+      );
+    case "same_date":
+      return sendError(
+        res,
+        409,
+        "That block is already on that day.",
+        "CALENDAR_SAME_DATE",
+        requestId,
+      );
+  }
+}
+
 function sendPlanFailure(
   res: Response,
   failure: PlanFailure,
@@ -251,36 +295,7 @@ function sendPlanFailure(
         requestId,
       );
     case "move_refused":
-      // §12.2. Three OUTCOMES, not errors, so each carries its own code: the client already
-      // mirrors all three, and when the server disagrees the reason is what tells the UI
-      // which of its assumptions was stale. 409 rather than 400 — the request was
-      // well-formed; the plan's state is what refused it.
-      switch (failure.reason) {
-        case "block_started":
-          return sendError(
-            res,
-            409,
-            "You have already started that block, so it stays where it is.",
-            "CALENDAR_BLOCK_STARTED",
-            requestId,
-          );
-        case "date_in_past":
-          return sendError(
-            res,
-            409,
-            "Work cannot be moved into the past.",
-            "CALENDAR_PAST_DATE",
-            requestId,
-          );
-        case "same_date":
-          return sendError(
-            res,
-            409,
-            "That block is already on that day.",
-            "CALENDAR_SAME_DATE",
-            requestId,
-          );
-      }
+      return sendMoveRefusal(res, failure.reason, requestId);
     case "write_failed":
       return sendError(
         res,
@@ -667,13 +682,11 @@ calendarRouter.put("/days/:date", async (req: Request, res: Response) => {
         req.requestId,
       );
     }
-    return res
-      .status(200)
-      .json({
-        version_no: written.value.version_no,
-        day,
-        requestId: req.requestId,
-      });
+    return res.status(200).json({
+      version_no: written.value.version_no,
+      day,
+      requestId: req.requestId,
+    });
   } catch (error) {
     return sendServerError(res, "day_edit", error, req.requestId);
   }
@@ -809,13 +822,11 @@ calendarRouter.post(
           req.requestId,
         );
       }
-      return res
-        .status(200)
-        .json({
-          version_no: written.value.version_no,
-          block: appended.block,
-          requestId: req.requestId,
-        });
+      return res.status(200).json({
+        version_no: written.value.version_no,
+        block: appended.block,
+        requestId: req.requestId,
+      });
     } catch (error) {
       return sendServerError(res, "do_it_now", error, req.requestId);
     }
@@ -879,12 +890,10 @@ calendarRouter.post(
       );
       if (!written.ok)
         return sendPlanFailure(res, written.error, req.requestId);
-      return res
-        .status(200)
-        .json({
-          version_no: written.value.version_no,
-          requestId: req.requestId,
-        });
+      return res.status(200).json({
+        version_no: written.value.version_no,
+        requestId: req.requestId,
+      });
     } catch (error) {
       return sendServerError(res, "move_block", error, req.requestId);
     }

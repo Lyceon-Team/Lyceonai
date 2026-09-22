@@ -256,7 +256,7 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
 });
 
 describe("§18 — a missing config is a loud failure at the accessor", () => {
-  it("reads every key it needs in one query", async () => {
+  it("reads every key it needs in ONE query PER TABLE, never one per key", async () => {
     client = makeFakeClient({ tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) } });
 
     const config = await loadCalendarConfig();
@@ -264,7 +264,22 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
     expect(config.bounds.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
     expect(config.horizonDays).toBe(14);
     expect(config.generatorVersion).toBe(GENERATOR);
-    expect(client.queries).toHaveLength(1);
+    expect(config.estimates).toEqual({
+      practice_seconds_per_unit: 90,
+      review_seconds_per_unit: 120,
+    });
+
+    // The rule this protects is "one `IN` beats seven round trips", not a literal count of
+    // one. §17.1's minute estimate needs practice_runtime_config.target_seconds_per_question
+    // — Doc 02B §41 owns practice timing and §20's audit rule says the calendar REFERENCES
+    // it rather than restating it, so a second table means a second query; copying the value
+    // into calendar_runtime_config to avoid it would be the drift §20 exists to prevent.
+    // Asserted PER TABLE, so adding a per-key round trip still reddens this.
+    const byTable = client.queries.reduce<Record<string, number>>((counts, query) => {
+      counts[query.table] = (counts[query.table] ?? 0) + 1;
+      return counts;
+    }, {});
+    expect(byTable).toEqual({ calendar_runtime_config: 1, practice_runtime_config: 1 });
   });
 
   for (const key of CALENDAR_CONFIG_KEYS) {

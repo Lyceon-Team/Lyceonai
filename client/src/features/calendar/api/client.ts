@@ -23,7 +23,6 @@ import {
   launchResponseSchema,
   profileUpsertResponseSchema,
   streakSummarySchema,
-  studentResourceUrl,
   versionResponseSchema,
   type AcknowledgeBody,
   type CalendarResponse,
@@ -38,7 +37,8 @@ import {
   type ProfileUpsertResponse,
   type StreakSummary,
   type VersionResponse,
-} from "@lyceon/shared";
+} from "@lyceon/shared/calendar";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { apiRequest } from "@/lib/queryClient";
 
 export const CALENDAR_ROOT = "/api/calendar" as const;
@@ -57,9 +57,7 @@ export const STREAK_PATH = "/api/me/streak" as const;
 async function parsed<T>(
   response: Response,
   schema: {
-    safeParse: (
-      value: unknown,
-    ) =>
+    safeParse: (value: unknown) =>
       | { success: true; data: T }
       | {
           success: false;
@@ -68,7 +66,20 @@ async function parsed<T>(
   },
   resource: string,
 ): Promise<T> {
-  const body: unknown = await response.json();
+  // A 200 whose body is not JSON at all — a proxy or CDN error page, the classic
+  // "Unexpected token <" — must take the SAME path as a body that parses but does not
+  // match. Letting `response.json()` throw raw would skip the curated message and the one
+  // ERROR log this feature has, for the failure mode most likely to hit it in production.
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    // eslint-disable-next-line no-console -- the only client-side ERROR channel; see above.
+    console.error(`[CALENDAR] ${resource}: response body was not JSON.`);
+    throw new Error(
+      `${resource}: the server returned a body this client cannot read. This is a contract mismatch, not an empty result.`,
+    );
+  }
   const payload = stripRequestId(body);
   const result = schema.safeParse(payload);
   if (!result.success) {
