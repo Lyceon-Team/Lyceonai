@@ -526,10 +526,12 @@ describe.skipIf(!PG_AVAILABLE)(
         `SELECT subject_email FROM public.deletion_request_log ORDER BY ctid`,
       );
       const evidenceOrder = ev.rows.map((r) => String(r.subject_email));
-      const evByLogId = await pg.query(
-        `SELECT subject_email FROM public.deletion_request_log ORDER BY log_id`,
+      // The remaining orderable column: the emails themselves. Alphabetical, and
+      // deterministic — unlike `ORDER BY log_id`, see below.
+      const evByEmail = await pg.query(
+        `SELECT subject_email FROM public.deletion_request_log ORDER BY subject_email`,
       );
-      const evidenceByLogId = evByLogId.rows.map((r) =>
+      const evidenceByEmail = evByEmail.rows.map((r) =>
         String(r.subject_email),
       );
 
@@ -537,12 +539,57 @@ describe.skipIf(!PG_AVAILABLE)(
         .sort((a, b) => (a.id < b.id ? -1 : 1))
         .map((u) => u.email);
       expect(executionOrder).toEqual(profileIdOrder);
+
       // the invariant: nothing retained on the evidence side reproduces execution order,
       // forwards or backwards
-      for (const order of [evidenceOrder, evidenceByLogId]) {
+      for (const order of [evidenceOrder, evidenceByEmail]) {
         expect(order).not.toEqual(executionOrder);
         expect(order).not.toEqual([...executionOrder].reverse());
       }
+
+      // WHY `ORDER BY log_id` IS NOT ONE OF THE ORDERS COMPARED ABOVE.
+      // It was, until 2026-09-22, and it failed once in CI. `log_id` defaults to
+      // gen_random_uuid(), so ordering by it is a fresh random permutation of six
+      // rows on every run: P(it equals execution order, forwards or backwards) is
+      // 2/6! = 1/360 per run. The mutation self-test runs this suite fourteen times
+      // in one job, which turns that into roughly one job in twenty-six. The
+      // assertion was testing the random number generator, not the system — a
+      // coincidence there was never evidence of a leak, and a pass was never
+      // evidence of its absence. What actually makes log_id safe is structural and
+      // C3.1 proves it deterministically: the default is gen_random_uuid(), and no
+      // column in the bundle defaults from a sequence.
+      //
+      // The deterministic replacement is below: every other column the evidence
+      // side retains is single-valued across these six rows, so no ORDER BY over
+      // any of them can reproduce execution order at all. The two dates in
+      // particular are equal, which is what the comment above meant by "the dates
+      // are equal" and now asserts instead of assuming.
+      const varying = await pg.query(
+        `SELECT column_name,
+                (SELECT count(DISTINCT t.v)
+                   FROM public.deletion_request_log l
+                   CROSS JOIN LATERAL (
+                     SELECT to_jsonb(l) -> c.column_name AS v
+                   ) t
+                ) AS distinct_values
+           FROM information_schema.columns c
+          WHERE c.table_schema = 'public'
+            AND c.table_name = 'deletion_request_log'
+            AND c.column_name NOT IN ('log_id', 'subject_email', 'requester_email')
+          ORDER BY c.column_name`,
+      );
+      // Not vacuous: the two dates — the columns the old comment assumed were equal
+      // rather than asserting it — must be among the columns actually examined. A
+      // query that stopped seeing them would otherwise report an empty violation
+      // list and pass.
+      const checked = varying.rows.map((r) => String(r.column_name));
+      expect(checked).toContain("requested_on");
+      expect(checked).toContain("responded_on");
+      expect(checked).toContain("status");
+      const orderBearing = varying.rows
+        .filter((r) => Number(r.distinct_values) > 1)
+        .map((r) => String(r.column_name));
+      expect(orderBearing).toEqual([]);
     });
 
     // ── C3.4 ────────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
+MIG8="supabase/migrations/20260922000000_seven_year_retention.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -46,6 +47,7 @@ cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
+cp "$MIG8" "$BACKUP/mig8.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -61,6 +63,7 @@ restore() {
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
+  cp "$BACKUP/mig8.sql" "$MIG8"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -364,6 +367,45 @@ echo "==> (M38) the per-table batch bound stops being honoured"
 plant M38 "$MIG7" 's.replace("          LIMIT $2", "          LIMIT GREATEST($2 - 1, 0)", 1)'
 expect_red M38 "B1.6 — the batch bound is per table, not per call"
 
+# =============================================================================
+# Seven-year payment-record retention (v3 §6.2 / SCL-101) — B2
+# =============================================================================
+# This sweep deletes nothing until 2033, so nobody would notice it broken from
+# production behaviour alone. Its red proofs are the only thing standing between
+# a published seven-year period and an unenforced one.
+SUITE="tests/ci/financial-record-retention.pg.ci.test.ts"
+
+echo "==> (M39) the seven-year window becomes seven NON-leap years"
+# 2555 vs 2557: a plausible-looking off-by-two that a bare equality on a
+# "roughly seven years" assertion would wave through.
+plant M39 "$MIG8" "s.replace('  SELECT 2557;', '  SELECT 2555;', 1)"
+expect_red M39 "B2.1 — the window is defined once, in SQL, and is seven years"
+
+echo "==> (M40) the financial window collapses onto the 90-day one"
+plant M40 "$MIG8" "s.replace('SELECT 2557;', 'SELECT public.operational_log_retention_days();', 1)"
+expect_red M40 "B2.2 — the two windows are separate definitions, not one shared constant"
+
+echo "==> (M41) deletion_billing_record ages on the wrong column"
+plant M41 "$MIG8" "s.replace(\"['deletion_billing_record', 'cancelled_on'],\", \"['deletion_billing_record', 'final_status'],\", 1)"
+expect_red M41 "B2.3 — a row past its window goes"
+
+echo "==> (M42) the sweep stops emitting a row for a table it deleted nothing from"
+plant M42 "$MIG8" "s.replace('    RETURN NEXT;', '    IF v_deleted > 0 THEN RETURN NEXT; END IF;', 1)"
+expect_red M42 "B2.6 — a zero-row run still reports every table, with its cutoff"
+
+echo "==> (M43) the sweep deletes newest-first instead of oldest-first"
+plant M43 "$MIG8" "s.replace('ORDER BY t.%I ASC', 'ORDER BY t.%I DESC', 1)"
+expect_red M43 "B2.7 — oldest goes first"
+
+echo "==> (M44) the sweep becomes callable by authenticated"
+plant M44 "$MIG8" "s.replace('GRANT EXECUTE ON FUNCTION public.sweep_financial_record_retention(integer)       TO service_role;', 'GRANT EXECUTE ON FUNCTION public.sweep_financial_record_retention(integer)       TO service_role, authenticated;', 1)"
+expect_red M44 "B2.8 — the sweep is not callable by anon or authenticated"
+
+echo "==> (29e) restored: the financial-record suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: financial-record suite not green after restore"; fails=1; else echo "  ok   financial-record suite green after restore"; fi
+
+SUITE="tests/ci/operational-log-retention.pg.ci.test.ts"
 echo "==> (29d) restored: the operational-log suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: operational-log suite not green after restore"; fails=1; else echo "  ok   operational-log suite green after restore"; fi
