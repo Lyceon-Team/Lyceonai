@@ -287,6 +287,81 @@ describe("Session Lifecycle — Notification suppression policy (§5)", () => {
   });
 });
 
+// ── Turn-level idempotency structural tests (§2) ────────────────────
+
+import fs from "node:fs";
+import path from "node:path";
+
+describe("Session Lifecycle — Turn-level idempotency (§2)", () => {
+  it("appendTurnSchema requires client_turn_id as UUID", () => {
+    // The schema is inlined in tutor-runtime.ts — verify structurally
+    // by reading the source and confirming client_turn_id is required.
+    const routeSource = fs.readFileSync(
+      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
+      "utf-8",
+    );
+    expect(routeSource).toContain("client_turn_id: z.string().uuid()");
+  });
+
+  it("unique index enforces one row per (student, conversation, client_turn_id, role)", () => {
+    const migrationSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../supabase/migrations/20260812010000_tutor_messages_idempotency_role.sql",
+      ),
+      "utf-8",
+    );
+    expect(migrationSource).toContain(
+      "idx_tutor_messages_client_turn_idempotency",
+    );
+    expect(migrationSource).toContain(
+      "(student_id, conversation_id, client_turn_id, role)",
+    );
+    expect(migrationSource).toContain("WHERE client_turn_id IS NOT NULL");
+  });
+
+  it("step 8 returns cached response on replay (idempotency_replay path exists)", () => {
+    const routeSource = fs.readFileSync(
+      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
+      "utf-8",
+    );
+    // The replay path returns 200 with the existing response and logs
+    // modelName: "idempotency_replay" so it's distinguishable from new turns.
+    expect(routeSource).toContain('modelName: "idempotency_replay"');
+    expect(routeSource).toContain("cacheHit: true");
+  });
+});
+
+// ── Notification dispatch type safety (§3) ──────────────────────────
+
+describe("Session Lifecycle — notifyCrisisEvent is awaitable (§3)", () => {
+  it("notifyCrisisEvent returns a Promise (not void/fire-and-forget)", () => {
+    // If notifyCrisisEvent were changed to return void instead of
+    // Promise<void>, `await notifyCrisisEvent(...)` would silently
+    // become a no-op in Cloud Run's request-scoped CPU. This structural
+    // test catches that regression.
+    const notifySource = fs.readFileSync(
+      path.resolve(__dirname, "../../server/services/crisis-notification.ts"),
+      "utf-8",
+    );
+    // Must be async function (returns Promise<void>)
+    expect(notifySource).toMatch(
+      /export\s+async\s+function\s+notifyCrisisEvent/,
+    );
+  });
+
+  it("route handler awaits notifyCrisisEvent (not void-cast)", () => {
+    const routeSource = fs.readFileSync(
+      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
+      "utf-8",
+    );
+    // The route must `await notifyCrisisEvent(...)`, not `void notifyCrisisEvent(...)`
+    expect(routeSource).toMatch(/await\s+notifyCrisisEvent\s*\(/);
+    // Must NOT have `void notifyCrisisEvent` in the crisis path
+    expect(routeSource).not.toMatch(/void\s+notifyCrisisEvent\s*\(/);
+  });
+});
+
 // ── Error code existence tests ────────────────────────────────────────
 
 import { TUTOR_ERROR_CODES } from "../../server/services/tutor-error-codes";
