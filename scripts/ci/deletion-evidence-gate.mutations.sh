@@ -35,10 +35,6 @@ MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
 MIG8="supabase/migrations/20260922000000_seven_year_retention.sql"
 MIG9="supabase/migrations/20260922010000_tutor_lapse_severance.sql"
-ARCH="server/services/retention-archive.ts"
-BQTF="infra/terraform/bigquery.tf"
-SCHED="infra/terraform/cloud-scheduler.tf"
-DRIFT="scripts/ci/retention-archive-drift-check.mjs"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -54,10 +50,6 @@ cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
 cp "$MIG8" "$BACKUP/mig8.sql"
 cp "$MIG9" "$BACKUP/mig9.sql"
-cp "$ARCH"  "$BACKUP/archive.ts"
-cp "$BQTF"  "$BACKUP/bigquery.tf"
-cp "$SCHED" "$BACKUP/cloud-scheduler.tf"
-cp "$DRIFT" "$BACKUP/drift-check.mjs"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -75,10 +67,6 @@ restore() {
   cp "$BACKUP/mig7.sql" "$MIG7"
   cp "$BACKUP/mig8.sql" "$MIG8"
   cp "$BACKUP/mig9.sql" "$MIG9"
-  cp "$BACKUP/archive.ts" "$ARCH"
-  cp "$BACKUP/bigquery.tf" "$BQTF"
-  cp "$BACKUP/cloud-scheduler.tf" "$SCHED"
-  cp "$BACKUP/drift-check.mjs" "$DRIFT"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -449,62 +437,6 @@ echo "==> (M49) the trigger watches the wrong column"
 plant M49 "$MIG9" "s.replace('AFTER INSERT OR UPDATE OF status ON public.entitlements', 'AFTER INSERT OR UPDATE OF tier ON public.entitlements', 1)"
 expect_red M49 "C1.7 — the predicate reads only status, which is what makes UPDATE OF status sufficient"
 
-# =============================================================================
-# BigQuery archive partition expiry (Privacy Policy v4 §6.6 / owner ruling B3) —
-# the 24-month promise, and the three files that have to agree for it to be true.
-# =============================================================================
-# The mechanism is native, which is exactly why it fails quietly: BigQuery drops
-# expired partitions with no job to fail, no log line and no row count. Nothing
-# observable distinguishes "expiring correctly" from "never expiring" until the
-# day someone queries two-year-old data and finds it. So every part of it is
-# pinned here — the writer's column, the table's expiration, the dataset's
-# restraint, and the schema the gate guards.
-SUITE="tests/ci/bigquery-archive-partitioning.contract.test.ts"
-
-echo "==> (M50) the writer stops stamping the partition column"
-plant M50 "$ARCH" 's.replace("    [ARCHIVE_PARTITION_FIELD]: archivedAtIso.slice(0, 10),\n", "", 1)'
-expect_red M50 "B3.1 — every archived row carries the partition column"
-
-echo "==> (M51) the partition key is taken from a different instant than _archived_at"
-plant M51 "$ARCH" 's.replace("[ARCHIVE_PARTITION_FIELD]: archivedAtIso.slice(0, 10),", "[ARCHIVE_PARTITION_FIELD]: new Date().toISOString().slice(0, 10),", 1)'
-expect_red M51 "B3.3 — the partition key and _archived_at describe the same instant"
-
-echo "==> (M52) the table's expiration drifts off the constant the writer documents"
-plant M52 "$BQTF" 's.replace("retention_archive_partition_expiration_ms = 63072000000", "retention_archive_partition_expiration_ms = 126144000000", 1)'
-expect_red M52 "B3.8 — the declared expiration is the constant the writer documents"
-
-echo "==> (M53) a dataset default expiration starts eating the §13 aggregates too"
-plant M53 "$BQTF" 's.replace("  location = \"us-central1\"\n", "  location = \"us-central1\"\n  default_partition_expiration_ms = 63072000000\n", 1)'
-expect_red M53 "B3.10 — no dataset-level default expiration silently expires §13 aggregates"
-
-echo "==> (M54) the partition-required discipline is dropped (§14.2)"
-plant M54 "$BQTF" 's.replace("  require_partition_filter = true\n", "", 1)'
-expect_red M54 "B3.11 — the partition-required discipline is on (§14.2)"
-
-echo "==> (M55) the drift gate stops requiring the partition column in the schema"
-plant M55 "$DRIFT" 's.replace("  \"event_date\",\n", "", 1)'
-expect_red M55 "B3.15 — the drift gate treats the partition column as required metadata"
-
-echo "==> (M56) the 90d tier is scheduled while its archive client still cannot load"
-plant M56 "$SCHED" 's + "resource \"google_cloud_scheduler_job\" \"retention_sweep_90d\" {\n  http_target {\n    body = base64encode(jsonencode({\n      retention_tier = \"90d\"\n    }))\n  }\n}\n"'
-expect_red M56 "B3.19 — 90d and 180d are scheduled if and only if the archive client can load"
-
-echo "==> (M57) one mapped table is dropped from the Terraform list"
-# Added after M54 caught this suite being satisfied by its own prose: the first
-# version of B3.6 and B3.11 read the whole .tf file, and the trade-offs comment
-# quotes both the table names and `require_partition_filter = true`. Deleting the
-# real setting left the comment, and the gate stayed green. The suite now reads
-# comment-stripped HCL, and this mutation is the proof that the coverage half of
-# it bites — a table archiveRows() writes to but Terraform never creates would
-# take rows into an unpartitioned table that never expires.
-plant M57 "$BQTF" 's.replace("    \"retention__crisis_review_cases\",\n", "", 1)'
-expect_red M57 "B3.6 — every mapped archive table is declared in Terraform"
-
-echo "==> (29g) restored: the archive-partitioning suite must be green again"
-again="$(run_suite)"
-if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: archive-partitioning suite not green after restore"; fails=1; else echo "  ok   archive-partitioning suite green after restore"; fi
-
-SUITE="tests/ci/tutor-lapse-severance.pg.ci.test.ts"
 echo "==> (29f) restored: the tutor-lapse suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: tutor-lapse suite not green after restore"; fails=1; else echo "  ok   tutor-lapse suite green after restore"; fi

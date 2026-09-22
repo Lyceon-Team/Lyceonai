@@ -45,12 +45,6 @@
     "mode": "REQUIRED"
   },
   {
-    "name": "event_date",
-    "type": "DATE",
-    "mode": "REQUIRED",
-    "description": "UTC calendar date of the archive operation — the BigQuery partition key (Doc 07B §5.3 / §13). The 730-day partition expiration runs from this. Written by archiveRows() as DATE(_archived_at); see ARCHIVE_PARTITION_FIELD in server/services/retention-archive.ts"
-  },
-  {
     "name": "_archived_at",
     "type": "TIMESTAMP",
     "mode": "REQUIRED",

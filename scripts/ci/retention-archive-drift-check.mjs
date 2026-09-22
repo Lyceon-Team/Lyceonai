@@ -16,8 +16,8 @@
  *  - WARN (but not fail) if a JSON schema column is absent from Postgres
  *    (column dropped from Postgres — historical archived rows still have
  *    the data; the archive schema should keep it until Karl confirms).
- *  - Metadata columns (event_date, _archived_at, _source_table) are expected
- *    in the JSON only and are excluded from the drift comparison.
+ *  - Metadata columns (_archived_at, _source_table) are expected in the
+ *    JSON only and are excluded from the drift comparison.
  *
  * trade-offs:
  *  - Reads genesis-schema.expected.sql (pg_dump format) instead of a live
@@ -58,17 +58,8 @@ const TABLE_MAP = {
   tutor_injection_log: "retention__tutor_injection_log",
 };
 
-// Metadata columns added by archiveRows() — not in Postgres, expected in JSON only.
-// `event_date` is the BigQuery partition key (Doc 07B §5.3 / §13). It is listed
-// here for the same reason as the other two: archiveRows() writes it at runtime,
-// so a JSON schema missing it would produce an insert against a column BigQuery
-// does not have — and, worse, a table Terraform cannot partition. Check 3 below
-// turns that into a CI failure.
-const METADATA_COLUMNS = new Set([
-  "event_date",
-  "_archived_at",
-  "_source_table",
-]);
+// Metadata columns added by archiveRows() — not in Postgres, expected in JSON only
+const METADATA_COLUMNS = new Set(["_archived_at", "_source_table"]);
 
 // ── Postgres type → BigQuery type mapping ────────────────────────────
 // Must match PG_TO_BQ_TYPE in generate-bq-archive-schemas.mjs
