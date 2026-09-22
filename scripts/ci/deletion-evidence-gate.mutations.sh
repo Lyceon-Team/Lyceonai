@@ -39,6 +39,9 @@ ARCH="server/services/retention-archive.ts"
 BQTF="infra/terraform/bigquery.tf"
 SCHED="infra/terraform/cloud-scheduler.tf"
 DRIFT="scripts/ci/retention-archive-drift-check.mjs"
+RPOL="infra/retention-policy-registry.yaml"
+YAMLLIB="scripts/ci/lib/minimal-yaml.ts"
+SECRETGATE="scripts/ci/secret-class-inventory-check.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -58,6 +61,9 @@ cp "$ARCH"  "$BACKUP/archive.ts"
 cp "$BQTF"  "$BACKUP/bigquery.tf"
 cp "$SCHED" "$BACKUP/cloud-scheduler.tf"
 cp "$DRIFT" "$BACKUP/drift-check.mjs"
+cp "$RPOL"       "$BACKUP/retention-policy-registry.yaml"
+cp "$YAMLLIB"    "$BACKUP/minimal-yaml.ts"
+cp "$SECRETGATE" "$BACKUP/secret-class-inventory-check.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -79,6 +85,9 @@ restore() {
   cp "$BACKUP/bigquery.tf" "$BQTF"
   cp "$BACKUP/cloud-scheduler.tf" "$SCHED"
   cp "$BACKUP/drift-check.mjs" "$DRIFT"
+  cp "$BACKUP/retention-policy-registry.yaml" "$RPOL"
+  cp "$BACKUP/minimal-yaml.ts" "$YAMLLIB"
+  cp "$BACKUP/secret-class-inventory-check.ts" "$SECRETGATE"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -500,6 +509,52 @@ echo "==> (M57) one mapped table is dropped from the Terraform list"
 plant M57 "$BQTF" 's.replace("    \"retention__crisis_review_cases\",\n", "", 1)'
 expect_red M57 "B3.6 — every mapped archive table is declared in Terraform"
 
+# =============================================================================
+# Retention policy registry (Doc 06D §9.1 / owner ruling F1) — the file that
+# makes a published period traceable to the thing that performs it.
+# =============================================================================
+# A registry is data, and data rots silently: no runtime touches it, so nothing
+# fails when a number in it stops matching the SQL constant it describes. These
+# mutations are the only thing standing between "documented schedule" and
+# "documented schedule that nothing runs".
+SUITE="tests/ci/retention-policy-registry.contract.test.ts"
+
+echo "==> (M58) a registry horizon drifts off the SQL constant it describes"
+plant M58 "$RPOL" 's.replace("    retention_horizon_seconds: 7776000        # 90 days\n    partial_provable_until: null\n    purge_substrate: scheduled_job\n    purge_lag_allowance_seconds: 86400        # one missed nightly run", "    retention_horizon_seconds: 15552000        # 90 days\n    partial_provable_until: null\n    purge_substrate: scheduled_job\n    purge_lag_allowance_seconds: 86400        # one missed nightly run", 1)'
+expect_red M58 "F1.10 — the registry's horizons are the constants the mechanisms use"
+
+echo "==> (M59) a citation points at a superseded policy version"
+plant M59 "$RPOL" 's.replace("legal/privacy-policy/v4/en.md §6.7", "legal/privacy-policy/v3/en.md §6.7", 1)'
+expect_red M59 "F1.8 — every policy citation points at the CURRENT published version"
+
+echo "==> (M60) an alert id is filled in although the alert registry does not exist"
+plant M60 "$RPOL" 's.replace("    purge_alert_id: null                      # see prerequisites", "    purge_alert_id: ALERT-RETENTION-NOTIF-01", 1)'
+expect_red M60 "F1.12 — alert ids are null exactly while the alert registry is absent"
+
+echo "==> (M61) a second row goes null-horizon with no forward-ref token"
+plant M61 "$RPOL" 's.replace("    partial_provable_until: \x27FWD-07E-V1.1-CARDINALITY-BUCKETING\x27", "    partial_provable_until: null", 1)'
+expect_red M61 "F1.7 — §9.3 (i): horizon XOR forward-ref, with the one gap pinned by name"
+
+echo "==> (M62) Doc 07E's row is restated with our own substrate instead of consumed"
+plant M62 "$RPOL" 's.replace("    purge_substrate: doc05d_cascade", "    purge_substrate: scheduled_job", 1)'
+expect_red M62 "F1.11 — Doc 07E §6's two rows are consumed verbatim, not restated"
+
+echo "==> (M63) the secret-class gate forks its own copy of the scalar parser again"
+# Double-quoted outer with escaped inner double quotes, like M34/M41/M48: the
+# anchor carries a quoted import path, which a single-quoted shell string
+# cannot nest — bash closes the string early and the plant no-ops silently.
+plant M63 "$SECRETGATE" "s.replace('import { parseYamlScalar } from \"./lib/minimal-yaml\";', 'function parseYamlScalar(raw: string): string { return raw.trim(); }', 1)"
+expect_red M63 "F1.15 — no second copy of parseYamlScalar exists"
+
+echo "==> (M64) the parser classifies before stripping the inline comment again"
+plant M64 "$YAMLLIB" 's.replace("  const commentIdx = v.indexOf(\" #\");\n  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;\n\n  if (clean === \"\" || clean === \"null\" || clean === \"~\") return null;", "  if (v === \"\" || v === \"null\" || v === \"~\") return null;\n  const commentIdx = v.indexOf(\" #\");\n  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;\n", 1)'
+expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
+
+echo "==> (29h) restored: the retention-registry suite must be green again"
+again="$(run_suite)"
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: retention-registry suite not green after restore"; fails=1; else echo "  ok   retention-registry suite green after restore"; fi
+
+SUITE="tests/ci/bigquery-archive-partitioning.contract.test.ts"
 echo "==> (29g) restored: the archive-partitioning suite must be green again"
 again="$(run_suite)"
 if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: archive-partitioning suite not green after restore"; fails=1; else echo "  ok   archive-partitioning suite green after restore"; fi
