@@ -384,12 +384,14 @@ export default function CanonicalPracticePage(props: {
         </div>
         <div className="flex items-center gap-3">
           {calculatorToggle}
-          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Flag className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">
-              Review tagging is available in full-length exam mode.
-            </span>
-          </div>
+          {engine.features.examTagHint && (
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Flag className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">
+                Review tagging is available in full-length exam mode.
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -578,6 +580,7 @@ export default function CanonicalPracticePage(props: {
   return (
     <PracticeShell
       title={props.title}
+      eyebrow={engine.labels.shellEyebrow}
       backLink={engine.backHref}
       backLabel={engine.backLabel}
       score={{
@@ -638,9 +641,7 @@ export default function CanonicalPracticePage(props: {
                   Session Guidance
                 </p>
                 <p className="text-sm text-foreground/90 leading-relaxed">
-                  Responses submit directly to canonical practice endpoints. If
-                  you leave and return, Lyceon restores your unresolved state
-                  from runtime session truth.
+                  {engine.labels.sessionGuidance}
                 </p>
               </Card>
             </div>

@@ -109,6 +109,14 @@ plant "U2" "render the reveal pre-submit (force showResult in the loop)" \
 assert s.count(a) == 1
 s = s.replace(a, "            showResult={true}", 1)'
 
+# ── U2b — no practice copy on a review session ───────────────────────────────────────
+plant "U2b" "hard-code practice's eyebrow back into the shell" \
+  "client/src/pages/resume-review.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "      eyebrow={engine.labels.shellEyebrow}"
+assert s.count(a) == 1
+s = s.replace(a, "      eyebrow=\"Academic Practice Runner\"", 1)'
+
 # ── U3 — the session id lives in the URL ─────────────────────────────────────────────
 plant "U3" "keep the id out of the URL (component-local only)" \
   "client/src/pages/resume-review.test.tsx" \

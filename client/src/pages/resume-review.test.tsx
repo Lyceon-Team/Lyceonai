@@ -290,6 +290,28 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("U2b: no user-visible 'practice' copy survives on a review session", async () => {
+    installFetchMock();
+    render(<ResumeReviewPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Solve 2x + 3 = 7.")).not.toBeNull();
+    });
+
+    // Found only by looking at a screenshot: the loop's CHROME said "practice" in
+    // three places neither CanonicalPracticePage.tsx nor useCanonicalPractice.ts
+    // contains — the shell eyebrow (PracticeShell.tsx:50), the session-guidance card,
+    // and a full-length tagging hint sitting beside the word "Review". Pre-build
+    // check 1 item 7 missed them by scoping the search to the two files the brief
+    // named. They are engine config now, and this keeps them that way.
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("Review Runner");
+    expect(body).not.toContain("Academic Practice Runner");
+    expect(body).not.toContain("canonical practice endpoints");
+    expect(body).not.toContain("full-length exam mode");
+    expect(body.toLowerCase()).not.toContain("practice");
+  });
+
   it("U7 (review half): an abandoned session is never playable", async () => {
     installFetchMock();
     stateMock.value = {

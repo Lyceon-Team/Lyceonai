@@ -94,9 +94,22 @@ export type EngineConfig = {
     calculatorState: (sessionId: string) => string;
   };
   buildCreateBody: (input: EngineCreateBodyInput) => Record<string, unknown>;
-  /** User-visible strings the loop itself emits. Titles/badges stay page props. */
+  /**
+   * User-visible strings the loop itself emits. Titles and badges stay page props,
+   * because they vary per session; these do not.
+   *
+   * These exist because the loop's chrome said "practice" in three places that
+   * `CanonicalPracticePage.tsx` and `useCanonicalPractice.ts` do not contain — the
+   * shell's eyebrow (`PracticeShell.tsx:49`) and the session-guidance card. A review
+   * session headed "ACADEMIC PRACTICE RUNNER" is exactly the copy leak brief R4 §1
+   * item 7 asks about; it was missed by scoping the check to the two named files.
+   */
   labels: {
     startFailure: string;
+    /** The small uppercase line above the session title. */
+    shellEyebrow: string;
+    /** The aside card that explains what happens when you leave and come back. */
+    sessionGuidance: string;
   };
   /** Where the loop navigates when the session completes or the student ends it. */
   completionHref: string;
@@ -113,6 +126,12 @@ export type EngineConfig = {
     diagnostic: boolean;
     /** Desmos panel + persisted calculator state. On for both. */
     calculator: boolean;
+    /**
+     * The "Review tagging is available in full-length exam mode" hint above the
+     * question. Practice-only: on a review session it is both irrelevant and
+     * actively confusing, sitting a few pixels from the word "Review".
+     */
+    examTagHint: boolean;
   };
 };
 
@@ -151,11 +170,16 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
       body.target_question_count = spec.targetQuestionCount;
     return body;
   },
-  labels: { startFailure: "Failed to start practice session" },
+  labels: {
+    startFailure: "Failed to start practice session",
+    shellEyebrow: "Academic Practice Runner",
+    sessionGuidance:
+      "Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.",
+  },
   completionHref: "/practice",
   backHref: "/practice",
   backLabel: "Back to Practice",
-  features: { diagnostic: true, calculator: true },
+  features: { diagnostic: true, calculator: true, examTagHint: true },
 };
 
 /**
@@ -192,9 +216,14 @@ export const REVIEW_ENGINE_CONFIG: EngineConfig = {
     if (typeof targetCount === "number") body.target_count = targetCount;
     return body;
   },
-  labels: { startFailure: "Failed to start review session" },
+  labels: {
+    startFailure: "Failed to start review session",
+    shellEyebrow: "Review Runner",
+    sessionGuidance:
+      "These are questions you missed or skipped. Answer one correctly twice and it leaves your queue. If you leave and return, Lyceon restores your unresolved state from runtime session truth.",
+  },
   completionHref: "/review",
   backHref: "/review",
   backLabel: "Back to Review",
-  features: { diagnostic: false, calculator: true },
+  features: { diagnostic: false, calculator: true, examTagHint: false },
 };
