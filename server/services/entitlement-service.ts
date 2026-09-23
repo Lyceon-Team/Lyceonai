@@ -39,6 +39,17 @@ export type EntitlementActiveResult = {
  * Single canonical route-facing entitlement evaluator.
  * Delegates to the one SQL predicate `public.entitlement_active(p_profile_id)`.
  */
+/**
+ * Error codes already reported by `isLiveExamInProgress` in this process —
+ * see the fail-open branch there. Module-scoped: one report per cold start.
+ */
+const reportedLiveExamFailOpenCodes = new Set<string>();
+
+/** Test-only: forget which fail-open codes were reported. */
+export function _resetLiveExamFailOpenReports(): void {
+  reportedLiveExamFailOpenCodes.clear();
+}
+
 export class EntitlementService {
   /**
    * Returns true iff the profile has a canonical active entitlement
@@ -230,16 +241,26 @@ export class EntitlementService {
       .maybeSingle();
 
     if (error) {
-      // DELIBERATE FAIL-OPEN — see SCL-079. Log at warn, not error, because
-      // this is an expected condition when the exam vertical is not yet built.
-      // The gate allows the turn through; it does not silently swallow.
-      logger.warn(
-        "ENTITLEMENT",
-        "live_exam_check_failed_open",
-        "full_length_exam_sessions query failed; failing OPEN per SCL-079 " +
-          "(exam gate allows turn, logs warning)",
-        { studentId, error: error.message, code: error.code },
-      );
+      // DELIBERATE FAIL-OPEN — see SCL-079. The gate allows the turn through.
+      //
+      // @spec [Coding Standards §12.1; CC Brief "Close the LISA Vertical" PR 2.3]
+      // Logged ONCE per process per error code, and without the student id.
+      // While `full_length_exam_sessions` does not exist this branch runs on
+      // every /messages call; a per-turn warning carrying `studentId` put an
+      // identifier in the logs on every turn and buried real warnings in
+      // noise. A new code (e.g. a connection error after the table exists)
+      // is still reported the first time it appears.
+      const code = error.code ?? "unknown";
+      if (!reportedLiveExamFailOpenCodes.has(code)) {
+        reportedLiveExamFailOpenCodes.add(code);
+        logger.warn(
+          "ENTITLEMENT",
+          "live_exam_check_failed_open",
+          "full_length_exam_sessions query failed; failing OPEN per SCL-079 " +
+            "(exam gate allows turns; reported once per process per error code)",
+          { error: error.message, code },
+        );
+      }
       return false; // fail OPEN — allow tutor access (SCL-079)
     }
 

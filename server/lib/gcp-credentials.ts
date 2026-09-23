@@ -80,21 +80,47 @@ export function getGcpCredentials(): GcpServiceAccount {
 let cachedAuth: GoogleAuth | null = null;
 
 /**
- * Returns a Bearer access token for the Cloud Tasks REST API (and any
- * other GCP API that accepts OAuth2 access tokens). Uses the same
- * service-account credential as every other GCP client in the BFF —
- * no metadata-server path.
- *
- * Returns null when credentials are absent (local dev without
- * GCP_SERVICE_ACCOUNT_JSON). Never throws — callers treat null as
- * "skip this GCP call."
+ * Why an access token could not be produced. Fixed vocabulary: `detail` is the
+ * credential loader's own fixed-vocabulary message, or the error's class name
+ * for a mint failure — never an error message that could echo credential or
+ * token material.
  */
-export async function getGcpAccessToken(): Promise<string | null> {
+export type GcpAccessTokenResult =
+  | { ok: true; token: string }
+  | {
+      ok: false;
+      reason: "credentials_unavailable" | "token_mint_failed";
+      detail: string;
+    };
+
+/**
+ * @spec [Doc-06B §3 "Secrets at Runtime"; Coding Standards §3.6, §13;
+ *        CC Brief "Close the LISA Vertical" PR 2.1]
+ * @implemented 2026-09-23
+ *
+ * plain English: returns a Bearer access token for the Cloud Tasks REST API
+ * (and any other GCP API that accepts OAuth2 access tokens), minted from the
+ * same service-account credential as every other GCP client in the BFF — no
+ * metadata-server path, no env-var fallback.
+ *
+ * expected outcome: a Result that says WHY no token exists, so a caller on a
+ * safety path (crisis alerts) can log the real cause at error level instead
+ * of a generic "credentials not available". Never throws: the token endpoint
+ * call used to sit outside any guard, and a throw there escaped
+ * `notifyCrisisEvent` into the turn's catch-all — a paused student got a 500
+ * instead of the crisis resources.
+ */
+export async function getGcpAccessTokenResult(): Promise<GcpAccessTokenResult> {
   let creds: GcpServiceAccount;
   try {
     creds = getGcpCredentials();
-  } catch {
-    return null;
+  } catch (err: unknown) {
+    // getGcpCredentials throws fixed-vocabulary messages only (see above).
+    return {
+      ok: false,
+      reason: "credentials_unavailable",
+      detail: err instanceof Error ? err.message : "unknown",
+    };
   }
 
   if (!cachedAuth) {
@@ -104,11 +130,23 @@ export async function getGcpAccessToken(): Promise<string | null> {
     });
   }
 
-  const client = await cachedAuth.getClient();
-  const tokenResponse = await client.getAccessToken();
-  const token =
-    typeof tokenResponse === "string" ? tokenResponse : tokenResponse?.token;
-  return token ?? null;
+  try {
+    const client = await cachedAuth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    const token =
+      typeof tokenResponse === "string" ? tokenResponse : tokenResponse?.token;
+    if (!token) {
+      return { ok: false, reason: "token_mint_failed", detail: "empty_token" };
+    }
+    return { ok: true, token };
+  } catch (err: unknown) {
+    // Class name only: a token-endpoint error message can quote the request.
+    return {
+      ok: false,
+      reason: "token_mint_failed",
+      detail: err instanceof Error ? err.name : "unknown",
+    };
+  }
 }
 
 /**
