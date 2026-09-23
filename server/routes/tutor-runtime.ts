@@ -77,6 +77,7 @@ import {
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import type { ConversationDetail } from "../../packages/shared/src/tutor-lifecycle-schema";
 
 const router = Router();
 
@@ -798,6 +799,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    let resumableStudentRow: { id: string } | null = null;
     if (existingTurn && existingTurn.length > 0) {
       const existingStudentMsg = existingTurn.find(
         (m) => (m as { role: string }).role === "student",
@@ -806,7 +808,14 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         (m) => (m as { role: string }).role === "tutor",
       ) as { id: string; message: string } | undefined;
 
-      if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+      // The stored student text is the SANITIZED form (step 11 persists
+      // `sanitized`, HTML-escaped), so a retry must be compared in that same
+      // form — comparing raw input made every retry of "x < 5" a false 409.
+      // @spec [Doc-03B_V2 §6.5 step 8; CC Brief "Close the LISA Vertical" PR 1.2]
+      if (
+        existingStudentMsg &&
+        existingStudentMsg.message !== sanitizeInput(input.message).sanitized
+      ) {
         // LISA-GCP-007: log metrics for idempotency conflict.
         // Pre-pipeline error — message mismatch on same client_turn_id.
         await logTurnMetrics({
@@ -896,8 +905,19 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         });
         return;
       }
-      // Student message persisted but tutor response was not (prior
-      // request failed mid-flow) — fall through and complete the flow.
+      // Student message persisted but tutor response was not (prior request
+      // failed after step 11, or is still in flight). RESUME: step 11 reuses
+      // this row instead of inserting a second one — the unique index on
+      // (student_id, conversation_id, client_turn_id, role) rejects a second
+      // student row, which made every "Try again" a 500 canonical_write_failed.
+      // The discriminator is "no tutor row for this client_turn_id", NOT
+      // tutor_messages.status: rows that predate the status column carry the
+      // DB default 'completed' whether or not a reply exists, and a row left
+      // 'pending' by a crash is indistinguishable from one still in flight.
+      // @spec [Doc-03B_V2 §6.5 step 8; CC Brief "Close the LISA Vertical" PR 1.2]
+      if (existingStudentMsg && !existingTutorMsg) {
+        resumableStudentRow = { id: existingStudentMsg.id };
+      }
     }
 
     // Step 9: Re-resolve scope — stored conversation scope is authoritative;
@@ -930,7 +950,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const patternScan = scanForInjectionPatterns(sanitized);
     const signatureScan = await checkSignatureTable(sanitized);
     const injectionDetected = patternScan.detected || signatureScan.matched;
-    if (injectionDetected) {
+    // A resumed turn was already scanned and logged on its first attempt;
+    // logging again would double-count a severity-5 abuse incident.
+    if (injectionDetected && !resumableStudentRow) {
       // INV-03-13: logged, never acknowledged to the student.
       await logInjectionAttempt(
         studentId,
@@ -980,28 +1002,36 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
-    // Step 11: Persist student message.
+    // Step 11: Persist student message — or, on a resumed turn (step 8),
+    // reuse the row the first attempt persisted and mark it in flight again.
     const { data: studentMessageRow, error: studentMessageError } =
-      await supabaseServer
-        .from("tutor_messages")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: studentId,
-          role: "student",
-          content_kind: contentKind,
-          message: sanitized,
-          source_session_id: effectiveScope.source_session_id,
-          source_session_item_id: effectiveScope.source_session_item_id,
-          source_question_row_id: effectiveScope.source_question_row_id,
-          source_question_canonical_id:
-            effectiveScope.source_question_canonical_id,
-          client_turn_id: input.client_turn_id,
-          injection_flag: injectionDetected,
-          injection_signature_matched: signatureScan.signatureId,
-          status: "pending",
-        })
-        .select("id, created_at")
-        .single();
+      resumableStudentRow
+        ? await supabaseServer
+            .from("tutor_messages")
+            .update({ status: "pending" })
+            .eq("id", resumableStudentRow.id)
+            .select("id, created_at")
+            .single()
+        : await supabaseServer
+            .from("tutor_messages")
+            .insert({
+              conversation_id: conversation.id,
+              student_id: studentId,
+              role: "student",
+              content_kind: contentKind,
+              message: sanitized,
+              source_session_id: effectiveScope.source_session_id,
+              source_session_item_id: effectiveScope.source_session_item_id,
+              source_question_row_id: effectiveScope.source_question_row_id,
+              source_question_canonical_id:
+                effectiveScope.source_question_canonical_id,
+              client_turn_id: input.client_turn_id,
+              injection_flag: injectionDetected,
+              injection_signature_matched: signatureScan.signatureId,
+              status: "pending",
+            })
+            .select("id, created_at")
+            .single();
 
     if (studentMessageError || !studentMessageRow) {
       logger.error(
@@ -1495,6 +1525,56 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("id")
         .single();
 
+    // A concurrent request with the same client_turn_id (e.g. the client's
+    // 35s timeout retried while this one was still orchestrating) persisted
+    // its tutor row first; the unique index rejects ours. That turn is
+    // complete — replay the winner's reply rather than failing the student.
+    // @spec [Doc-03B_V2 §6.5 step 8, §9; CC Brief "Close the LISA Vertical" PR 1.2]
+    if (tutorMessageError?.code === "23505") {
+      const { data: winnerRow, error: winnerError } = await supabaseServer
+        .from("tutor_messages")
+        .select("id, message")
+        .eq("conversation_id", conversation.id)
+        .eq("client_turn_id", input.client_turn_id)
+        .eq("role", "tutor")
+        .maybeSingle();
+      if (!winnerError && winnerRow) {
+        const winnerSerialized = await serializeTutorOutput(
+          winnerRow.message as string,
+          appendScanContext,
+        );
+        await supabaseServer
+          .from("tutor_messages")
+          .update({ status: "completed" })
+          .eq("id", studentMessageRow.id);
+        logger.info(
+          "TUTOR_RUNTIME",
+          "concurrent_turn_replayed",
+          "tutor row already persisted by a concurrent request; replaying it",
+          { conversationId: conversation.id },
+        );
+        res.status(200).json({
+          data: {
+            conversation_id: conversation.id,
+            message_id: winnerRow.id as string,
+            client_turn_id: input.client_turn_id,
+            response: {
+              content: winnerSerialized.content,
+              content_kind: "message",
+              suggested_action: { type: "none", label: null },
+              ui_hints: {
+                show_accept_decline: false,
+                allow_freeform_reply: true,
+                suggested_chip: null,
+              },
+            },
+            conversation_updated_at: new Date().toISOString(),
+          },
+        });
+        return;
+      }
+    }
+
     if (tutorMessageError || !tutorMessageRow) {
       logger.error(
         "TUTOR_RUNTIME",
@@ -1786,33 +1866,42 @@ router.get(
         });
       }
 
-      res.status(200).json({
-        data: {
-          conversation: {
-            conversation_id: conversation.id,
-            entry_mode: conversation.entry_mode,
-            source_surface: conversation.source_surface,
-            status: conversation.status,
-            resolved_scope: {
-              source_session_id: conversation.source_session_id,
-              source_session_item_id: conversation.source_session_item_id,
-              source_question_row_id: conversation.source_question_row_id,
-              source_question_canonical_id:
-                conversation.source_question_canonical_id,
-            },
-            created_at: conversation.created_at,
-            updated_at: conversation.updated_at,
-            closed_at: conversation.closed_at,
+      // @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+      // Typed against the shared `conversationDetailSchema`: the chat page
+      // derives its paused state from `crisis_paused_at` and its header from
+      // `title`, so omitting either rendered a paused conversation as live
+      // after every reload. Legacy `closed`/`abandoned` rows (DB CHECK admits
+      // them; no code writes them) are reported as `ended` — both refuse new
+      // turns (409), and the client's contract has no third terminal state.
+      const detail: ConversationDetail = {
+        conversation: {
+          conversation_id: conversation.id,
+          entry_mode: conversation.entry_mode,
+          source_surface: conversation.source_surface,
+          surface: conversation.surface,
+          status: conversation.status === "active" ? "active" : "ended",
+          title: conversation.title,
+          crisis_paused_at: conversation.crisis_paused_at,
+          resolved_scope: {
+            source_session_id: conversation.source_session_id,
+            source_session_item_id: conversation.source_session_item_id,
+            source_question_row_id: conversation.source_question_row_id,
+            source_question_canonical_id:
+              conversation.source_question_canonical_id,
           },
-          messages: safeMessages,
-          pagination: {
-            has_more: ordered.length === messageLimit,
-            // `ordered` is oldest-first; the pagination cursor for "older
-            // messages" is the earliest (first) row in this page.
-            next_cursor: ordered.length > 0 ? ordered[0].id : null,
-          },
+          created_at: conversation.created_at,
+          updated_at: conversation.updated_at,
+          closed_at: conversation.closed_at,
         },
-      });
+        messages: safeMessages,
+        pagination: {
+          has_more: ordered.length === messageLimit,
+          // `ordered` is oldest-first; the pagination cursor for "older
+          // messages" is the earliest (first) row in this page.
+          next_cursor: ordered.length > 0 ? ordered[0].id : null,
+        },
+      };
+      res.status(200).json({ data: detail });
     } catch (err) {
       logger.error(
         "TUTOR_RUNTIME",

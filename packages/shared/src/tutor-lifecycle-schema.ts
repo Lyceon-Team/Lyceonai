@@ -87,6 +87,58 @@ export const crisisReviewEventTypeSchema = z.enum([
 ]);
 export type CrisisReviewEventType = z.infer<typeof crisisReviewEventTypeSchema>;
 
+// ── Conversation Detail (GET /api/tutor/conversations/:id) ───────────
+
+/**
+ * @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+ * @implemented 2026-09-23
+ *
+ * plain English: the replay response the chat page renders from. The client
+ * derives the paused state from `conversation.crisis_paused_at` and the header
+ * from `conversation.title`, so both are REQUIRED (nullable) fields here — a
+ * server that omits them fails this schema instead of silently rendering a
+ * paused conversation as live. `status` reuses `conversationStatusSchema`
+ * (active | ended): the DB CHECK still admits legacy closed/abandoned, but no
+ * code path writes them and production holds none (2026-09-23).
+ */
+export const conversationDetailMessageSchema = z.object({
+  message_id: z.string().uuid(),
+  role: z.enum(["student", "tutor", "system"]),
+  content_kind: z.string(),
+  message: z.string(),
+  created_at: z.string(),
+});
+export type ConversationDetailMessage = z.infer<
+  typeof conversationDetailMessageSchema
+>;
+
+export const conversationDetailSchema = z.object({
+  conversation: z.object({
+    conversation_id: z.string().uuid(),
+    entry_mode: z.enum(["scoped_question", "scoped_session", "general"]),
+    source_surface: z.enum(["practice", "review", "test_review", "dashboard"]),
+    surface: conversationSurfaceSchema.nullable(),
+    status: conversationStatusSchema,
+    title: z.string().nullable(),
+    crisis_paused_at: z.string().nullable(),
+    resolved_scope: z.object({
+      source_session_id: z.string().uuid().nullable(),
+      source_session_item_id: z.string().uuid().nullable(),
+      source_question_row_id: z.string().nullable(),
+      source_question_canonical_id: z.string().nullable(),
+    }),
+    created_at: z.string(),
+    updated_at: z.string(),
+    closed_at: z.string().nullable(),
+  }),
+  messages: z.array(conversationDetailMessageSchema),
+  pagination: z.object({
+    has_more: z.boolean(),
+    next_cursor: z.string().nullable(),
+  }),
+});
+export type ConversationDetail = z.infer<typeof conversationDetailSchema>;
+
 // ── Conversation Summary (list response item) ────────────────────────
 
 export const conversationSummarySchema = z.object({

@@ -24,6 +24,10 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import type {
+  ConversationDetail,
+  ConversationDetailMessage,
+} from "@lyceon/shared/tutor-lifecycle-schema";
 import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
 
@@ -118,34 +122,14 @@ export type SendMessageResponse = {
   conversation_updated_at: string;
 };
 
-export type TutorMessage = {
-  message_id: string;
-  role: TutorMessageRole;
-  content_kind: string;
-  message: string;
-  created_at: string;
-};
+// Detail (replay) response: inferred from the shared Zod schema so the client
+// cannot claim a field the server does not send. The hand-written copy of this
+// type declared `crisis_paused_at` and `title` for months while the server
+// omitted both, which is why a paused conversation rendered as live on reload.
+// @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+export type TutorMessage = ConversationDetailMessage;
 
-export type TutorConversationDetail = {
-  conversation: {
-    conversation_id: string;
-    entry_mode: TutorEntryMode;
-    source_surface: TutorSourceSurface;
-    surface: TutorConversationSurface | null;
-    status: TutorConversationStatus;
-    title: string | null;
-    crisis_paused_at: string | null;
-    resolved_scope: TutorResolvedScope;
-    created_at: string;
-    updated_at: string;
-    closed_at: string | null;
-  };
-  messages: TutorMessage[];
-  pagination: {
-    has_more: boolean;
-    next_cursor: string | null;
-  };
-};
+export type TutorConversationDetail = ConversationDetail;
 
 export type TutorConversationSummary = {
   conversation_id: string;
