@@ -8765,80 +8765,6 @@ COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: t
 
 
 --
--- Name: exam_runtime_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.exam_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT exam_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT exam_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: exam_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.exam_runtime_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: full_length_adaptive_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.full_length_adaptive_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT full_length_adaptive_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT full_length_adaptive_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: full_length_adaptive_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.full_length_adaptive_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: guardian_consent_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10871,38 +10797,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: exam_runtime_config exam_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_pkey PRIMARY KEY (key);
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_pkey PRIMARY KEY (key);
-
-
---
 -- Name: guardian_consent_requests guardian_consent_requests_consent_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12450,34 +12344,6 @@ CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF s
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.exam_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: exam_runtime_config exam_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_notify AFTER INSERT OR UPDATE ON public.exam_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.full_length_adaptive_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_notify AFTER INSERT OR UPDATE ON public.full_length_adaptive_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
 -- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -13027,38 +12893,6 @@ ALTER TABLE ONLY public.entitlement_runtime_config
 
 ALTER TABLE ONLY public.entitlements
     ADD CONSTRAINT entitlements_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
-
-
---
--- Name: exam_runtime_config_history exam_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: exam_runtime_config exam_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -13972,30 +13806,6 @@ ALTER TABLE public.entitlement_runtime_config_history ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exam_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.exam_runtime_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exam_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.exam_runtime_config_history ENABLE ROW LEVEL SECURITY;
-
---
--- Name: full_length_adaptive_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.full_length_adaptive_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: full_length_adaptive_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.full_length_adaptive_config_history ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -16572,34 +16382,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlement_runtime_config_his
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlements TO service_role;
-
-
---
--- Name: TABLE exam_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service_role;
-
-
---
--- Name: TABLE exam_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.exam_runtime_config_history TO service_role;
-
-
---
--- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
-
-
---
--- Name: TABLE full_length_adaptive_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.full_length_adaptive_config_history TO service_role;
 
 
 --
