@@ -33,6 +33,7 @@
  *    next stale-summary sweep.
  */
 import { logger } from "../logger";
+import { getGcpAccessToken } from "../lib/gcp-credentials";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
@@ -49,34 +50,6 @@ const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
  */
 const CLOUD_TASKS_SERVICE_ACCOUNT =
   process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
-
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
-}
 
 // ── Types ─────────────────────────────────────────────────────────────
 
