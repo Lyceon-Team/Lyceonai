@@ -236,6 +236,14 @@ export function normalizeCrisisText(raw: string): string {
   return t;
 }
 
+// ── Layer 1: Signature Category → Lane Mapping ──────────────────────────
+
+const SAFEGUARDING_CATEGORIES = new Set(["abuse"]);
+
+function mapSignatureCategoryToLane(dbCategory: string): CrisisCategory {
+  return SAFEGUARDING_CATEGORIES.has(dbCategory) ? "safeguarding" : "crisis";
+}
+
 // ── Layer 1: Deterministic Signature Match ─────────────────────────────
 
 /**
@@ -256,8 +264,8 @@ export async function checkCrisisSignatures(
 ): Promise<SignatureResult> {
   const { data, error } = await supabaseServer
     .from("tutor_injection_signatures")
-    .select("id, signature_pattern, category")
-    .or("category.eq.crisis,category.eq.safeguarding")
+    .select("id, signature_pattern, signature_type, category")
+    .eq("signature_type", "crisis")
     .eq("enabled", true);
 
   if (error) {
@@ -299,10 +307,9 @@ export async function checkCrisisSignatures(
     })();
 
     if (matched) {
-      const matchedCategory =
-        (row.category as string) === "safeguarding"
-          ? ("safeguarding" as const)
-          : ("crisis" as const);
+      const matchedCategory = mapSignatureCategoryToLane(
+        row.category as string,
+      );
       logger.info(
         "TUTOR_CRISIS",
         "crisis_signature_matched",

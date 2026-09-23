@@ -169,11 +169,19 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function notifyCrisisEvent(
   payload: CrisisNotificationPayload,
 ): Promise<void> {
+  logger.info(
+    "CRISIS_NOTIFICATION",
+    "dispatch_entered",
+    "crisis notification dispatch entered",
+    { caseId: payload.caseId, source: payload.source },
+  );
+
   if (!GCP_PROJECT_ID) {
     logger.warn(
       "CRISIS_NOTIFICATION",
       "missing_project_id",
       "GCP_PROJECT_ID not set; crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
@@ -183,16 +191,18 @@ export async function notifyCrisisEvent(
       "CRISIS_NOTIFICATION",
       "missing_target_url",
       "LYCEON_CRISIS_ALERTS not set; crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
 
   const accessToken = await getGcpAccessToken();
   if (!accessToken) {
-    logger.debug(
+    logger.warn(
       "CRISIS_NOTIFICATION",
       "no_gcp_credentials",
-      "GCP credentials not available (local dev); crisis notification skipped",
+      "GCP credentials not available; crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
