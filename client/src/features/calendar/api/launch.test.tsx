@@ -205,7 +205,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     let outcome: LaunchOutcome | undefined;
     await act(async () => {
-      outcome = await result.current.launch(BLOCK_ID);
+      outcome = await result.current.launch(BLOCK_ID, "practice");
     });
 
     expect(outcome?.kind).toBe("navigated");
@@ -232,7 +232,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     const { result } = renderHook(() => useLaunchBlock(vi.fn()), { wrapper });
     await act(async () => {
-      await result.current.launch(BLOCK_ID);
+      await result.current.launch(BLOCK_ID, "practice");
     });
 
     const launchCall = csrfFetchMock.mock.calls.find(([url]) =>
@@ -260,7 +260,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     const { result } = renderHook(() => useLaunchBlock(navigate), { wrapper });
     await act(async () => {
-      await result.current.launch(BLOCK_ID);
+      await result.current.launch(BLOCK_ID, "practice");
     });
 
     expect(cacheAtNavigate).toEqual(SESSION_STATE);
@@ -275,7 +275,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     let outcome: LaunchOutcome | undefined;
     await act(async () => {
-      outcome = await result.current.launch(BLOCK_ID);
+      outcome = await result.current.launch(BLOCK_ID, "practice");
     });
 
     expect(outcome).toEqual({ kind: "already_complete" });
@@ -291,7 +291,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     let outcome: LaunchOutcome | undefined;
     await act(async () => {
-      outcome = await result.current.launch(BLOCK_ID);
+      outcome = await result.current.launch(BLOCK_ID, "practice");
     });
 
     expect(outcome?.kind).toBe("failed");
@@ -307,7 +307,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     let outcome: LaunchOutcome | undefined;
     await act(async () => {
-      outcome = await result.current.launch(BLOCK_ID);
+      outcome = await result.current.launch(BLOCK_ID, "practice");
     });
 
     expect(outcome?.kind).toBe("failed");
@@ -320,7 +320,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     const { result } = renderHook(() => useLaunchBlock(vi.fn()), { wrapper });
     await act(async () => {
-      await result.current.launch(BLOCK_ID);
+      await result.current.launch(BLOCK_ID, "practice");
     });
 
     await waitFor(() =>
