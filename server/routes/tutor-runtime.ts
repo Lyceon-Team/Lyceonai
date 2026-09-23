@@ -722,6 +722,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // exam to detect until Doc 04 lands; the rebuild must restore this step
   // against its own session table. The `tutor_unavailable_during_live_exam`
   // error code stays in the Doc-03B §5.9 taxonomy for that reinstatement.
+  // TRACKED: G-EX-06 — restored in E9 against Doc 04A `test_sessions`
+  // (student_id, state = 'active'); the exam vertical does not close until it
+  // is. SCL-119 records the interim and restates SCL-079's table/column.
 
   // Step 6: Validate request payload (§6.4). Run before ownership so a
   // malformed body never triggers a DB lookup.
