@@ -90,12 +90,12 @@ describe("Premium CTA wiring contract", () => {
 
   it("routes entitlement denials through premium prompt UX on key premium surfaces", () => {
     const chat = read("client/src/pages/chat.tsx");
-    const fullTest = read("client/src/pages/full-test.tsx");
 
     expect(chat).toContain("PremiumUpgradePrompt");
     expect(chat).toContain("mapTutorErrorToPremiumReason");
-    expect(fullTest).toContain("PremiumUpgradePrompt");
-    expect(fullTest).toContain("getPremiumDenialReason");
+    // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+    // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,
+    // getPremiumDenialReason) went with the deleted page; the chat surface is unchanged.
   });
 
   it("keeps the guardian purchase surface wired, and OUT of the access gate", () => {
