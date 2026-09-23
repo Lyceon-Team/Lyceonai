@@ -48,7 +48,7 @@ import {
   type TutorConversationSummary,
   type CrisisCategory,
 } from "@/hooks/tutor-client";
-import { mapTutorErrorToPremiumReason } from "@/lib/api-error";
+import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
 import {
   PremiumUpgradePrompt,
   type PremiumPromptReason,
@@ -697,6 +697,18 @@ export default function ChatPage() {
   const [crisisLane, setCrisisLane] = useState<CrisisCategory | null>(null);
   const [crisisContent, setCrisisContent] = useState<string>("");
 
+  // Derive crisis content from the last tutor message when paused but
+  // crisisContent state is empty (e.g. page reload — React state is lost,
+  // but the server's crisis response is the last tutor message).
+  const lastTutorMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "tutor") return messages[i].message;
+    }
+    return "";
+  }, [messages]);
+
+  const effectiveCrisisContent = crisisContent || lastTutorMessage;
+
   // Derive crisis state from conversation detail or turn state
   const showCrisisCard = turnState.kind === "paused" || isPaused;
 
@@ -723,7 +735,9 @@ export default function ChatPage() {
   // Sync crisis state when conversation detail loads with crisis_paused_at set
   useEffect(() => {
     if (conversation?.crisis_paused_at && turnState.kind !== "paused") {
-      setTurnState({ kind: "paused", lane: crisisLane ?? "crisis" });
+      const lane: CrisisCategory = crisisLane ?? "crisis";
+      if (!crisisLane) setCrisisLane(lane);
+      setTurnState({ kind: "paused", lane });
     }
   }, [conversation?.crisis_paused_at, turnState.kind, crisisLane]);
 
@@ -801,13 +815,21 @@ export default function ChatPage() {
         } else {
           setTurnState({ kind: "idle" });
         }
-      } catch {
+      } catch (err: unknown) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        setTurnState({
-          kind: "failed",
-          clientTurnId,
-          messageText: trimmed,
-        });
+        if (
+          err instanceof HttpApiError &&
+          err.code === "conversation_crisis_paused"
+        ) {
+          const lane: CrisisCategory = crisisLane ?? "crisis";
+          setTurnState({ kind: "paused", lane });
+        } else {
+          setTurnState({
+            kind: "failed",
+            clientTurnId,
+            messageText: trimmed,
+          });
+        }
       }
     },
     [conversationId, turnState, sendMessageMutation],
@@ -1072,8 +1094,11 @@ export default function ChatPage() {
           )}
 
           {/* Crisis/Safeguarding support card */}
-          {showCrisisCard && crisisLane && crisisContent && (
-            <CrisisSupportCard lane={crisisLane} content={crisisContent} />
+          {showCrisisCard && crisisLane && effectiveCrisisContent && (
+            <CrisisSupportCard
+              lane={crisisLane}
+              content={effectiveCrisisContent}
+            />
           )}
 
           <div ref={scrollAnchorRef} />
