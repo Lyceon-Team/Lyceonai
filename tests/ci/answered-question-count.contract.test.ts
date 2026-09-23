@@ -23,7 +23,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
 const buildScoreEstimateFromCanonical = vi.fn();
-const buildStudentFullLengthReportView = vi.fn((x: unknown) => x);
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView)
+// removed; they stubbed deleted exports and fed no assertion here.
 const readDiagnosticBaseline = vi.fn();
 const readDiagnosticState = vi.fn();
 const readAnsweredQuestionCount = vi.fn();
@@ -36,7 +38,6 @@ vi.mock("../../server/services/kpi-access", () => ({
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  buildStudentFullLengthReportView,
   readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
