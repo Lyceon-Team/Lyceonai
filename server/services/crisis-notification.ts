@@ -40,7 +40,7 @@
  *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
-import { getGcpAccessToken } from "../lib/gcp-credentials";
+import { getGcpAccessToken, getGcpCredentials } from "../lib/gcp-credentials";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -65,8 +65,13 @@ export type { CrisisNotificationPayload };
 const CLOUD_TASKS_QUEUE_NAME =
   process.env.CRISIS_CLOUD_TASKS_QUEUE ?? "lisa-crisis-notification";
 
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
+function resolveGcpProjectId(): string | null {
+  try {
+    return getGcpCredentials().project_id;
+  } catch {
+    return process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID ?? null;
+  }
+}
 
 const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
 
@@ -149,11 +154,12 @@ export async function notifyCrisisEvent(
     { caseId: payload.caseId, source: payload.source },
   );
 
-  if (!GCP_PROJECT_ID) {
+  const gcpProjectId = resolveGcpProjectId();
+  if (!gcpProjectId) {
     logger.warn(
       "CRISIS_NOTIFICATION",
       "missing_project_id",
-      "GCP_PROJECT_ID not set; crisis notification skipped",
+      "GCP project ID not available (no credentials and no GCP_PROJECT_ID env var); crisis notification skipped",
       { caseId: payload.caseId },
     );
     return;
@@ -180,7 +186,7 @@ export async function notifyCrisisEvent(
     return;
   }
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
+  const queuePath = `projects/${gcpProjectId}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
   const slackPayload = buildSlackPayload(payload);

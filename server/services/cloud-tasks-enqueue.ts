@@ -33,12 +33,17 @@
  *    next stale-summary sweep.
  */
 import { logger } from "../logger";
-import { getGcpAccessToken } from "../lib/gcp-credentials";
+import { getGcpAccessToken, getGcpCredentials } from "../lib/gcp-credentials";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
+function resolveGcpProjectId(): string | null {
+  try {
+    return getGcpCredentials().project_id;
+  } catch {
+    return process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID ?? null;
+  }
+}
 
 const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
 
@@ -86,11 +91,12 @@ export async function enqueueCloudTask(
   targetUrl: string,
   payload: CloudTaskPayload,
 ): Promise<void> {
-  if (!GCP_PROJECT_ID) {
+  const gcpProjectId = resolveGcpProjectId();
+  if (!gcpProjectId) {
     logger.warn(
       "CLOUD_TASKS",
       "missing_project_id",
-      "GCP_PROJECT_ID not set; Cloud Tasks enqueue skipped",
+      "GCP project ID not available (no credentials and no GCP_PROJECT_ID env var); Cloud Tasks enqueue skipped",
       { queueName },
     );
     return;
@@ -119,7 +125,7 @@ export async function enqueueCloudTask(
 
   const payloadJson = JSON.stringify(payload);
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${queueName}`;
+  const queuePath = `projects/${gcpProjectId}/locations/${GCP_LOCATION}/queues/${queueName}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
   // ── Cloud Tasks task body with OIDC token (§9.3) ──────────────
