@@ -37,6 +37,7 @@ import {
   vi,
 } from "vitest";
 import { Client } from "pg";
+import crypto from "node:crypto";
 import {
   bootstrapPgDatabase,
   makePgSupabase,
@@ -319,6 +320,47 @@ async function xmins(sql: string, params: unknown[] = []): Promise<number[]> {
   const r = await pg.query(sql, params);
   return r.rows.map((row) => Number((row as { x: string }).x));
 }
+/**
+ * A table this suite creates at RUN TIME, holding the deleted profile's uuid in a uuid column.
+ * `public.verify_deletion_layers` asks pg_attribute what exists rather than consulting a list,
+ * so it sweeps this table although it did not exist when the migration was written — which is
+ * the property C3.10 is really pinning. Named with the suite's prefix so beforeEach can drop it.
+ */
+const RESIDUE_PROBE = "_evidence_ci_residue_probe";
+
+type VerificationRow = {
+  log_id: string;
+  verification_outcome: string;
+  layers_text: string;
+  proof_manifest_ref: string;
+  deleted_profile_id: string | null;
+  x: string;
+};
+async function verificationRows(): Promise<VerificationRow[]> {
+  const r = await pg.query(
+    `SELECT xmin::text AS x, log_id, verification_outcome, layers_verified::text AS layers_text,
+            proof_manifest_ref, deleted_profile_id
+       FROM public.deletion_verification_records ORDER BY log_id`,
+  );
+  return r.rows as VerificationRow[];
+}
+/**
+ * Owner ruling B3: the manifest IS the record, and `proof_manifest_ref` is a SHA-256 over its
+ * canonical form. Recomputed here from the stored columns, so a hash that stopped being derived
+ * from the record — or a record edited after the fact — fails rather than reads as evidence.
+ */
+function manifestHash(row: VerificationRow): string {
+  const canonical = [
+    row.log_id,
+    row.verification_outcome,
+    row.layers_text,
+    row.deleted_profile_id ?? "",
+  ].join("\n");
+  return (
+    "sha256:" +
+    crypto.createHash("sha256").update(canonical, "utf8").digest("hex")
+  );
+}
 async function evidenceXmins(): Promise<number[]> {
   const out: number[] = [];
   for (const t of EVIDENCE_TABLES) {
@@ -352,6 +394,7 @@ describe.skipIf(!PG_AVAILABLE)(
       // child → parent; evidence tables cascade from the log
       await pg.query(`DELETE FROM public.deletion_request_log`);
       await pg.query(`DROP TABLE IF EXISTS public._evidence_ci_block`);
+      await pg.query(`DROP TABLE IF EXISTS public.${RESIDUE_PROBE}`);
       await pg.query(`DELETE FROM public.account_deletion_requests`);
       await pg.query(`DELETE FROM public.practice_sessions`);
       await pg.query(`DELETE FROM public.legal_acceptances`);
@@ -379,6 +422,14 @@ describe.skipIf(!PG_AVAILABLE)(
         [[...EVIDENCE_TABLES]],
       );
       expect(cols.rowCount).toBeGreaterThan(0);
+      // Non-vacuity: a filter over zero rows passes every assertion below it. Each named table
+      // must have contributed columns, so a table that is renamed, dropped or never created
+      // fails here instead of quietly falling out of the checks that follow.
+      for (const t of EVIDENCE_TABLES) {
+        expect(
+          cols.rows.filter((c) => c.table_name === t).length,
+        ).toBeGreaterThan(0);
+      }
       const timestampCols = cols.rows.filter((c) =>
         String(c.data_type).startsWith("timestamp"),
       );
@@ -739,6 +790,29 @@ describe.skipIf(!PG_AVAILABLE)(
       const rec = await logRow(logY);
       expect(rec?.status).toBe("completed");
       expect(String(rec?.responded_on)).toContain(await todayUtc());
+
+      // (c) …and that completion cannot be proven, so it says so rather than going quiet.
+      // T3 never ran for this row, and PS-5 consumed the request row inside the cascade's own
+      // transaction, taking the deleted profile's uuid with it — there is nothing left to scan.
+      // §6.5 pages on a missing record and on a `fail` alike, but only the `fail` carries the
+      // reason. `deleted_profile_id` is NULL because inventing one would be worse than the gap.
+      const recon = (await verificationRows()).find((v) => v.log_id === logY);
+      expect(recon).toBeDefined();
+      expect(recon?.verification_outcome).toBe("fail");
+      expect(recon?.deleted_profile_id).toBeNull();
+      expect(recon?.proof_manifest_ref).toBe(manifestHash(recon!));
+      const reconLayers = JSON.parse(recon!.layers_text) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      expect(reconLayers.identity?.verified).toBe(false);
+      expect(String(reconLayers.identity?.evidence_query)).toContain(
+        "T3 did not run",
+      );
+      // and the deletion that DID go through T3 in part (a) is a pass, so the fail above is a
+      // property of this path and not of the suite
+      const passed = (await verificationRows()).find((v) => v.log_id === logX);
+      expect(passed?.verification_outcome).toBe("pass");
     });
 
     // ── C3.7 ────────────────────────────────────────────────────────────────────
@@ -822,6 +896,154 @@ describe.skipIf(!PG_AVAILABLE)(
         WHERE ip_address = '203.0.113.7' OR user_agent LIKE '%128.0.0.0%'`,
       );
       expect(raw.rows[0]?.n).toBe(0);
+    });
+
+    // ── C3.9 ────────────────────────────────────────────────────────────────────
+    // THE ONE THAT WOULD HAVE CAUGHT IT. Nothing here calls `record_deletion_verification`,
+    // and that is the entire point: `deletion_verification_records` was built, shaped
+    // correctly, and covered by tests that invoked its writer directly, while NO PATH FROM
+    // THE EXECUTOR REACHED IT. The real deletion of 2026-09-23 completed correctly in every
+    // other respect and produced zero verification rows. A test that exercises a function is
+    // not a test that the function is reachable, so this one drives `executeDueDeletions` and
+    // asks afterwards what the database holds.
+    it("C3.9 verification record: a real executor run writes one per completed deletion, keyed on log_id, terminal, hash re-derived", async () => {
+      const pair = USERS.slice(0, 2);
+      const logIds: string[] = [];
+      for (const u of pair) {
+        await seedUser(u.id, u.email);
+        await seedActivity(u.id);
+        await seedConsent(u.id);
+        logIds.push((await requestAndMakeDue(u.id)).logId);
+      }
+      const summary = await runExecutor();
+      expect(summary).toEqual({
+        executedCount: 2,
+        skippedCount: 0,
+        failedCount: 0,
+      });
+
+      const rows = await verificationRows();
+      expect(rows.length).toBe(2);
+      expect(rows.map((r) => r.log_id).sort()).toEqual([...logIds].sort());
+
+      const byLog = new Map(rows.map((r) => [r.log_id, r]));
+      for (const [i, u] of pair.entries()) {
+        const row = byLog.get(logIds[i]!)!;
+        expect(row.verification_outcome).toBe("pass");
+        // the dead key, kept so the conformance job can re-run the scan and re-derive the answer
+        expect(row.deleted_profile_id).toBe(u.id);
+        expect(row.proof_manifest_ref).toBe(manifestHash(row));
+
+        // Doc 06D §6.3: all four layers, every time. `analytics` is out of scope at V1 and must
+        // say so with a reason rather than by omission.
+        const layers = JSON.parse(row.layers_text) as Record<
+          string,
+          Record<string, unknown>
+        >;
+        expect(Object.keys(layers).sort()).toEqual([
+          "analytics",
+          "identity",
+          "lisa",
+          "mastery",
+        ]);
+        for (const layer of ["identity", "mastery", "lisa"]) {
+          expect(layers[layer]?.verified).toBe(true);
+          expect(layers[layer]?.out_of_scope).toBe(false);
+          // the scan is recorded, not just its verdict — that is what makes it re-derivable
+          expect(String(layers[layer]?.evidence_query).length).toBeGreaterThan(
+            40,
+          );
+          expect(String(layers[layer]?.result)).toContain("residual=0");
+        }
+        expect(layers.analytics?.out_of_scope).toBe(true);
+        expect(String(layers.analytics?.out_of_scope_reason)).toContain(
+          "Doc 07",
+        );
+        // and the scan really looked at the whole schema, not a handful of tables
+        const scanned = Number(
+          /uuid_columns_scanned=(\d+)/.exec(
+            String(layers.identity?.result),
+          )?.[1],
+        );
+        expect(scanned).toBeGreaterThan(100);
+      }
+
+      // Written in T3, which is the evidence-side transaction: same xmin as the log row it
+      // proves, and no xmin in common with anything on the actor_id side. C3.2 asserts the
+      // separation across every evidence table; this asserts it for the record specifically,
+      // so a future move of this write out of T3 fails here by name.
+      const actorSide = [
+        ...(await xmins(
+          `SELECT xmin::text AS x FROM public.practice_sessions`,
+        )),
+        ...(await xmins(
+          `SELECT xmin::text AS x FROM public.anonymized_actors`,
+        )),
+      ];
+      expect(actorSide.length).toBe(4);
+      for (const row of rows) {
+        const logXmin = await xmins(
+          `SELECT xmin::text AS x FROM public.deletion_request_log WHERE log_id = $1`,
+          [row.log_id],
+        );
+        expect(Number(row.x)).toBe(logXmin[0]);
+        expect(actorSide).not.toContain(Number(row.x));
+      }
+    });
+
+    // ── C3.10 ───────────────────────────────────────────────────────────────────
+    it("C3.10 a deletion that leaves residue records `fail` — a row that says so, not an absent one", async () => {
+      const u = USERS[2];
+      await seedUser(u.id, u.email);
+      await seedActivity(u.id);
+      const { logId } = await requestAndMakeDue(u.id);
+
+      // A uuid column nothing severs, in a table created after the scan was written. No foreign
+      // key, so the cascade neither blocks nor clears it; the row is still there when T3 scans.
+      await pg.query(
+        `CREATE TABLE public.${RESIDUE_PROBE} (leftover_profile_id uuid)`,
+      );
+      await pg.query(
+        `INSERT INTO public.${RESIDUE_PROBE} (leftover_profile_id) VALUES ($1)`,
+        [u.id],
+      );
+
+      // The erasure itself still succeeds and still completes — a failed VERIFICATION is not a
+      // failed deletion, and conflating the two would make the proof harness able to roll back
+      // the thing it is only supposed to observe.
+      const summary = await runExecutor();
+      expect(summary).toEqual({
+        executedCount: 1,
+        skippedCount: 0,
+        failedCount: 0,
+      });
+      expect(await profileExists(u.id)).toBe(false);
+      expect((await logRow(logId))?.status).toBe("completed");
+
+      const rows = await verificationRows();
+      expect(rows.length).toBe(1);
+      const row = rows[0]!;
+      expect(row.log_id).toBe(logId);
+      expect(row.verification_outcome).toBe("fail");
+      expect(row.proof_manifest_ref).toBe(manifestHash(row));
+
+      const layers = JSON.parse(row.layers_text) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      expect(layers.identity?.verified).toBe(false);
+      // named, so the page tells whoever is woken WHERE the residue is
+      expect(layers.identity?.residual_columns).toEqual([
+        `${RESIDUE_PROBE}.leftover_profile_id`,
+      ]);
+      expect(String(layers.identity?.result)).toContain("residual=1");
+      // the probe matches no mastery or lisa name pattern, so neither layer attributes it —
+      // and the outcome is `fail` regardless, because detection is the whole-schema sweep and
+      // not the two narrow lists
+      expect(layers.mastery?.verified).toBe(true);
+      expect(layers.lisa?.verified).toBe(true);
+
+      await pg.query(`DROP TABLE public.${RESIDUE_PROBE}`);
     });
 
     // ── B3 ──────────────────────────────────────────────────────────────────────
