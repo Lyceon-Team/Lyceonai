@@ -3286,3 +3286,31 @@ Rationale: as SCL-116. Asking another document for a field that duplicates a rec
 Why this surfaced now: the review rebuild closed out the seam and the ask was never satisfiable.
 Owner action: amend the SCL-08-B line; nothing else in §23 changes.
 Build artifact: production column list for `public.review_sessions`, verified 2026-09-22.
+
+SCL-119 | 2026-09-23 | Doc 03B §7.5's conversation detail shape omits `title`, `surface` and `crisis_paused_at`, and no locked document defines the crisis pause the client renders from them | PROPOSED
+Id: `SCL-119` re-derived at the moment of use, 2026-09-23, after `git fetch --all --prune`, across every remote ref (`git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md`) and the head of each open PR (#849 `claude/e1-exam-deletion`, #848 `claude/e2-scoring-catalogue`, #847, #846, #845, #843, #778 `claude/lucid-shannon-nmjr3n`, #728 dependabot). Highest allocated anywhere is `SCL-118`. First of two sequential allocations this session (SCL-119, SCL-120).
+Change: amend Doc 03B V4.1 §7.5 (Response shape) and add a crisis-pause subsection to the conversation lifecycle.
+WAS, verbatim (`docs/Spec/Doc 03B — LISA API and Runtime Flow.md:699-727`): the `conversation` object lists `conversation_id`, `entry_mode`, `source_surface`, `status`, `resolved_scope`, `created_at`, `updated_at`, `closed_at` — nothing else. `crisis_paused_at` appears nowhere in `docs/Spec` (full-corpus grep, 2026-09-23).
+IS, as built: `server/routes/tutor-runtime.ts` (PR #845) returns three more fields, typed by `conversationDetailSchema` in `packages/shared/src/tutor-lifecycle-schema.ts`:
+  - `title: string | null` — first student message, 60 chars, set once (migration `20260922000000_lisa_session_lifecycle.sql`, DEFAULT 'New session').
+  - `surface: 'standalone' | 'practice' | 'review' | null`.
+  - `crisis_paused_at: timestamptz | null` — set when a crisis turn returns resources; while set, `POST /messages` returns 409 `conversation_crisis_paused`; cleared only by the student via `POST /conversations/:id/resume`.
+  `status` is reported as `active | ended`; the DB CHECK still admits `closed | abandoned`, which no code writes and production holds none of.
+Rationale: the chat page derives its paused state from `crisis_paused_at`; omitting it made a paused conversation render as live after every reload, with no way to resume (flow map `docs/lisa-flow-map.md` §0.6). The behaviour exists, is load-bearing for a minor-safety surface, and traces only to CC Briefs ("LISA Session Lifecycle", "Close the LISA Vertical"), not to a locked section.
+Why this surfaced now: PR #845's spec audit found the fields cited to a section that does not contain them.
+Owner action: add the three fields to §7.5, and decide where the crisis pause lives in the spec (Doc 03B conversation lifecycle, or Doc 03 §21 crisis handling) — including the open question the code answers by default: the student alone can resume, regardless of the review case's status.
+Build artifact: `server/routes/tutor-runtime.ts` (detail handler), `packages/shared/src/tutor-lifecycle-schema.ts` (`conversationDetailSchema`), `supabase/migrations/20260922000000_lisa_session_lifecycle.sql`.
+
+SCL-120 | 2026-09-23 | Doc 03B §13.7/§14's two-phase idempotency (idempotency_records, advisory lock, reservePending/complete/markFailed) was never built; turn idempotency runs on `tutor_messages.status` | PROPOSED
+Id: `SCL-120` — second of two sequential allocations (see SCL-119).
+Change: amend Doc 03B V4.1 §13.7 and §14.1–§14.4, or record the as-built design as the V1 implementation.
+WAS (`docs/Spec/Doc 03B — LISA API and Runtime Flow.md:1662-1935`): idempotency for `POST /api/tutor/messages` is delegated to 01A `IdempotencyService` with a 03B two-phase extension — `idempotency_records` in `pending → in_progress → completed | failed`, `pg_try_advisory_xact_lock` on the `client_turn_id` hash, `reservePending/complete/markFailed`, and a 01A §35 stuck-record timer. §14.4 names the backstop constraint `tutor_messages_client_turn_unique (conversation_id, client_turn_id)`.
+IS, as built (PR #845): no `idempotency_records` table, no advisory lock, no `reservePending`/`complete`/`markFailed` anywhere in `server/`. The backstop is the unique INDEX `idx_tutor_messages_client_turn_idempotency (student_id, conversation_id, client_turn_id, role)` (migration `20260812010000`); the spec's constraint was dropped by `20260806020000`. §14.3's scenarios are applied to the student row's `tutor_messages.status`:
+  - student + tutor row → cached replay; different text → 409 `idempotency_conflict`;
+  - student row `pending` younger than 300s (01A `in_progress_timeout_seconds` default) → 409 `idempotency_in_progress`, `retry_after_ms: 2000`;
+  - `failed`, stale `pending`, or a legacy `completed` row with no reply → compare-and-set back to `pending` (§13.7's `rowCount === 0` guard; zero rows → 409 in-progress), then resume without a second insert;
+  - 23505 on the index → error log `idempotency_unique_constraint_violation` + 409 `idempotency_conflict` (§14.4).
+Rationale: the as-built design meets §14.3's observable contract for every scenario the client can produce, with one table instead of two. What it does not have: an audit trail of prior failed attempts (§14.3 "Prior failed record is archived"), and content-hash comparison (it compares the sanitized message text).
+Why this surfaced now: PR #845's spec audit.
+Owner action: either bless the `tutor_messages.status` design as the V1 implementation and amend §13.7/§14 (and §14.4's constraint name), or commission the specified design.
+Build artifact: `server/routes/tutor-runtime.ts` (`claimStudentTurnForRetry`, `sendClientTurnUniqueViolation`), `tests/ci/tutor-runtime.retry-and-detail.contract.test.ts`.
