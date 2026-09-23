@@ -34,3 +34,30 @@ output "cloud_tasks_sa_email" {
   description = "Service account email → CLOUD_TASKS_SERVICE_ACCOUNT env var"
   value       = google_service_account.cloud_tasks.email
 }
+
+# ── Cloud Scheduler — retention sweep ────────────────────────────────
+
+output "retention_sweep_oidc_audience" {
+  description = <<-EOT
+    Audience claim the retention sweep job signs with → set this verbatim
+    as RETENTION_SWEEP_OIDC_AUDIENCE on Vercel. The route compares the
+    token's `aud` to this string exactly; a mismatch is a 401, not a
+    warning.
+  EOT
+  value       = google_cloud_scheduler_job.retention_sweep_7d.http_target[0].oidc_token[0].audience
+}
+
+output "retention_sweep_job_names" {
+  description = <<-EOT
+    Every Cloud Scheduler job that calls the retention sweep, by tier —
+    `gcloud scheduler jobs describe` targets. The 90d and 180d jobs exist from
+    2026-09-22: before the archive was removed both tiers declined every call,
+    so there was nothing to schedule. 365d is absent because its tables do not
+    exist.
+  EOT
+  value = {
+    "7d"   = google_cloud_scheduler_job.retention_sweep_7d.name
+    "90d"  = google_cloud_scheduler_job.retention_sweep_90d.name
+    "180d" = google_cloud_scheduler_job.retention_sweep_180d.name
+  }
+}

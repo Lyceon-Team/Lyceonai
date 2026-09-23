@@ -1,0 +1,464 @@
+# ──────────────────────────────────────────────────────────────────────
+# infra/retention-policy-registry.yaml
+#
+# @spec [Doc-06D_V1.0 §9.1 (schema) + §9.2 (hard rules) + §9.3
+#        (ci/retention-policy-registry-parity) + §9.4
+#        (ops/retention-policy-conformance); Doc-07E_V1.0 §6 (the two
+#        analytics-layer entries, consumed verbatim); Privacy Policy v4 §6
+#        (the eleven published periods); owner ruling 2026-09-22 F1]
+# @implemented [2026-09-22]
+#
+# plain English: the machine-readable inventory Doc 06D §9.1 calls for — one
+# row per PII surface, mapping it to the period we publish for it, the thing
+# that actually performs the purge, and how late that purge may be before it
+# is a problem.
+#
+# expected outcome: every period in Privacy Policy v4 §6 has a row here, and
+# each row names a real mechanism or says plainly that none exists. A reader
+# can go from a sentence in the policy to the function that enforces it, or
+# to the reason it is a commitment rather than a description.
+#
+# WHY THIS FILE EXISTS NOW AND NOT BEFORE. SCL-093's amendment recorded that
+# "this build does not write [the registry] because the registry substrate is
+# the owner's." The owner ruling of 2026-09-22 (F1) supersedes that: "take
+# CC's proposal. Per-PII-surface as §9.1 defines it, covering what the eleven
+# periods govern, with the missing alert registry recorded as a named
+# prerequisite and an SCL rather than pretended into existence." This file is
+# that. The earlier position is noted so the reversal is visible rather than
+# looking like drift.
+#
+# HOW TO READ A ROW. `retention_horizon_*` is what we publish.
+# `purge_substrate` is what performs it. `enforced` is not a §9.1 field and
+# is not invented here — it is in the comment above each row, because a
+# registry that cannot distinguish "365 days, swept nightly" from "365 days,
+# nobody deletes anything" is the exact defect SCL-101 catalogued.
+#
+# trade-offs:
+#  - `canonical_owner_doc_and_section` cites the PUBLISHED privacy policy
+#    (`legal/privacy-policy/v4/en.md §6.x`) for every period the policy is
+#    what publishes, and a `docs/Spec` section only where a spec section is
+#    the owner of the number. §9.2 rule 2 requires the citation to resolve to
+#    "a referenced doc + § anchor"; the published policy is a versioned,
+#    immutable, section-numbered document in this repo, and it is the document
+#    users are shown and the acceptance ledger records consent against. Where
+#    the `docs/Spec` draft and the published policy disagree, the published
+#    one is the promise. Recorded in SCL-107 for ratification.
+#  - Rows are per SURFACE, not per sweep. Two tables swept by one function
+#    get two rows when the policy speaks about them separately, and one row
+#    when the policy speaks about them as a class.
+#  - `last_reviewed_at` is the date this file was written. §9.3 failure
+#    condition (f) fails any row older than 180 days, which is the intended
+#    pressure: these are review commitments, not set-and-forget values.
+#
+# edge cases / KNOWN §9.3 FAILURES, ALL DELIBERATE AND ALL RECORDED:
+#  - §9.3 (d) every `purge_alert_id` must resolve in `infra/alert-registry.yaml`
+#    (Doc 06C §7). THAT FILE DOES NOT EXIST — see `prerequisites` below. Every
+#    `purge_alert_id` here is therefore null, which is what Doc 07E §6 does for
+#    the same reason under INV-07-09.
+#  - §9.3 (g) a `manual` purge_substrate with no `purge_alert_id` fails. Six
+#    rows are `manual` because no mechanism exists, and none can carry an
+#    alert id until the alert registry does. The same prerequisite.
+#  - §9.3 (i) a null `retention_horizon_*` is permitted ONLY under a
+#    `partial_provable_until` forward-ref token. RPOL-SUPPRESS-01 has a null
+#    horizon and no token, because "held until the user revokes it" is
+#    deliberately indefinite and is not pending anything. The schema has no
+#    way to say that. SCL-107 finding (a).
+#  - RPOL-CONSENT-02's published period is "no less than three years from
+#    consent, OR one year after the subscription ends, whichever is longer."
+#    The schema holds one scalar. The floor is encoded and the compound term
+#    is lost. SCL-107 finding (b).
+#  - No `purge_substrate` value describes a NATIVE SUBSTRATE TTL — a
+#    substrate that deletes on its own, with no job, no operator and no run
+#    record for §9.4 (e) to read. `manual` is false in both directions. The
+#    row that needed it was RPOL-ANALYTICS-04, the BigQuery archive, and that
+#    surface is now deleted (below), so nothing in this file is blocked on it
+#    today. SCL-107 finding (c) stays filed: the next native-TTL substrate
+#    hits the same gap and the schema will still have nothing to say.
+# ──────────────────────────────────────────────────────────────────────
+
+# Not a §9.1 field. Named here because §9.3 cannot run without it, and
+# because "the alert registry is missing" is otherwise invisible in a file
+# whose every alert id is null.
+prerequisites:
+  - path: infra/alert-registry.yaml
+    owning_doc_and_section: Doc 06C V1.0 §7
+    required_by: Doc 06D V1.0 §9.3 failure conditions (d) and (g)
+    status: absent
+    # One line, deliberately: scripts/ci/lib/minimal-yaml.ts does not read block
+    # scalars, and it throws rather than mis-parsing one.
+    consequence: 'Every purge_alert_id in this file is null, and the manual-substrate rows cannot satisfy 9.3(g) at all. ci/retention-policy-registry-parity cannot be implemented until this file exists. Filed as SCL-107; not created here, because an alert registry with no rotation owner and no runbook is the condition Doc 07 Parent 4 gives as the reason for the INV-07-09 negative invariant.'
+
+retention_policies:
+  # ── Privacy Policy v4 §6.1 — in-app notifications, 90 days ──────────
+  # ENFORCED. public.notification_retention_days() returns a literal 90 and
+  # public.sweep_notification_retention(p_batch_size) reads it; called daily
+  # by GET /api/internal/notification-retention-sweep (vercel.json, 0 5 * * *).
+  # One definition, and the sweep reads it.
+  - policy_id: RPOL-NOTIF-01
+    pii_surface_name: 'notification_messages.body'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.1'
+    classification: content
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 7776000        # 90 days
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400        # one missed nightly run
+    purge_alert_id: null                      # see prerequisites
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.1 — tutor conversations, 7 days after lapse ─
+  # ENFORCED as of 2026-09-22 (owner ruling C1). The entitlements AFTER
+  # INSERT OR UPDATE OF status trigger stamps tutor_conversations.deleted_at
+  # via public.entitlement_active(); sweep7d hard-deletes 7 days later, and
+  # the Cloud Scheduler job in infra/terraform/cloud-scheduler.tf is the
+  # caller. Before C1 nothing set deleted_at, so the sweep's input was
+  # permanently empty — which is why v3 could not publish this sentence.
+  - policy_id: RPOL-LISA-01
+    pii_surface_name: 'tutor_conversations.body'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.1'
+    classification: content
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 604800         # 7 days from deleted_at
+    partial_provable_until: null
+    purge_substrate: doc03_lisa_cron
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — the 7-day grace window ─────────────────
+  # ENFORCED. The soft-delete envelope plus GET /api/internal/execute-deletions
+  # (vercel.json, 0 2 * * *). This is the §9.1 `doc01v6_t_plus_7` substrate.
+  - policy_id: RPOL-DELETE-01
+    pii_surface_name: 'account_deletion_requests.subject_email'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: identifier
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 604800         # 7 days
+    partial_provable_until: null
+    purge_substrate: doc01v6_t_plus_7
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — deletion-request evidence, 24 months ────
+  # ENFORCED. public.deletion_evidence_retention_months() returns 24 and the
+  # sweep STRIPS the identity rather than deleting the row: subject_email and
+  # requester_email go null, the date and outcome survive. Per SCL-085 and
+  # SCL-095 — which replaced Doc 01 V8 §5.1's uncited seven-year/one-year
+  # tiers with the single 24-month strip this row encodes.
+  - policy_id: RPOL-DELETE-02
+    pii_surface_name: 'deletion_request_log.subject_email'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: identifier
+    retention_horizon_months: 24
+    calendar_month_semantics: true
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — guardian consent record, 3 years ───────
+  # NOT ENFORCED. No config key, no function and no sweep names a
+  # consent-evidence period. The row exists so the gap is inventoried rather
+  # than absent; `manual` is the truthful substrate and it is precisely the
+  # §9.3 (g) failure the alert-registry prerequisite blocks.
+  - policy_id: RPOL-CONSENT-01
+    pii_surface_name: 'deletion_consent_evidence.minor'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: pii
+    retention_horizon_months: 36
+    calendar_month_semantics: true
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — payment records, 7 years (Lyceon side) ──
+  # ENFORCED as of 2026-09-22. public.financial_record_retention_days()
+  # returns 2557 (365x7 + 2 leap days) and
+  # public.sweep_financial_record_retention sweeps deletion_billing_record
+  # on cancelled_on and stripe_webhook_events on created_at. It will delete
+  # nothing until 2033, which is exactly why its behaviour is pinned by a
+  # test now.
+  - policy_id: RPOL-BILLING-01
+    pii_surface_name: 'deletion_billing_record.stripe_customer_id'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: identifier
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 220924800      # 2557 days
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — payment records, 7 years (Stripe side) ──
+  # NOT ENFORCED BY LYCEON. The payer's name, email, billing address and
+  # payment method live in Stripe and are governed by Stripe's retention.
+  # Published as a period anyway because a user asking "how long do you keep
+  # my payment data" deserves a number rather than a pointer to a vendor.
+  - policy_id: RPOL-BILLING-02
+    pii_surface_name: 'stripe.customer.billing_details'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: pii
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 220924800      # 2557 days
+    partial_provable_until: null
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.2 — do-not-contact list, until revoked ─────
+  # ENFORCED, and deliberately has NO expiry: the address is the only thing
+  # that lets the request be honoured, so deleting it would break the promise
+  # it records. Held at Resend as a suppression, ordered after the completion
+  # notice (SCL-090), clearable from account settings.
+  #
+  # SCL-107 FINDING (a): §9.3 (i) permits a null horizon ONLY with a
+  # `partial_provable_until` forward-ref token. This period is not pending a
+  # forward-ref — it is indefinite by design. Both fields are therefore null,
+  # which §9.3 (i) fails. No token is invented to silence it.
+  - policy_id: RPOL-SUPPRESS-01
+    pii_surface_name: 'resend.suppression.email'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.2'
+    classification: identifier
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.3 — Billing Terms consent ──────────────────
+  # NOT ENFORCED. No mechanism reads a billing-consent period.
+  #
+  # SCL-107 FINDING (b): the published period is "no less than three years
+  # from the date of consent, or one year after the subscription ends,
+  # whichever is longer." The schema holds one scalar horizon. The 36-month
+  # floor is encoded; the subscription-relative term is not representable and
+  # is lost. §6.3 exists as its own subsection precisely because this clock
+  # runs differently from §6.2's, and the registry cannot yet say so.
+  - policy_id: RPOL-CONSENT-02
+    pii_surface_name: 'legal_acceptances.billing_terms'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.3'
+    classification: pii
+    retention_horizon_months: 36
+    calendar_month_semantics: true
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.5 — security and administrative records ────
+  # ENFORCED. public.audit_logs_retention_days() reads the
+  # anonymization_retention_days config value and defaults to 365;
+  # apply_audit_logs_retention('strip_identity', ...) performs the IMMEDIATE
+  # severance on deletion, and the record itself survives the rest of the
+  # window. audit_logs is append-only and has its own guard with a single
+  # transaction-local GUC exemption (SCL-087) — the shared guard is not
+  # widened.
+  - policy_id: RPOL-AUDIT-01
+    pii_surface_name: 'audit_logs.target_profile_id'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.5'
+    classification: operational
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 31536000       # 365 days
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.5 — configuration records, PERMANENT ───────
+  # PERMANENT BY RULING, and that is now what the policy says. SCL-105 put two
+  # options to the owner — sweep the tables by extending the SCL-087 exemption,
+  # or amend §6.5 — and the ruling of 2026-09-22 took the amendment: "those 19
+  # tables are tamper-evident governance records, they carry no student
+  # identity after SCL-093, and weakening their guard to honour a deletion
+  # promise about operator records is backwards."
+  #
+  # So there is no period to enforce and nothing is blocked. Eighteen
+  # *_config_history tables plus mastery_constants_history and
+  # abuse_score_incidents keep the shared public.prevent_update_delete()
+  # trigger (Doc 01A §5, "History is append-only") intact.
+  #
+  # IT IS STILL A PII SURFACE, which is why the row stays. The column named
+  # here holds the profile id of the STAFF MEMBER who made a change. SCL-093
+  # severs it when that person's own account is deleted (ON DELETE SET NULL),
+  # but until then it is personal data about an identifiable person — which is
+  # why v4 §6.5 says these records "describe our operations, not you" and does
+  # NOT claim they contain no personal information at all.
+  #
+  # SCL-107 FINDING (a), SECOND INSTANCE: permanent-by-design, not pending a
+  # forward-ref, so both horizon fields and the token are null — which §9.3 (i)
+  # fails. The first instance was RPOL-SUPPRESS-01, filed hours earlier. Two
+  # rows in one registry is no longer an edge case in the schema; it is a
+  # missing value.
+  - policy_id: RPOL-CONFIG-01
+    pii_surface_name: 'auth_runtime_config_history.changed_by_profile_id'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.5'
+    classification: operational
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Doc 07E §6.1 — analytics lifecycle class 1 ──────────────────────
+  # CONSUMED VERBATIM from Doc 07E V1.0 §6.1, not restated with different
+  # values. 07E is the canonical owner of the horizon and the trigger
+  # declaration for this class; Doc 01 V6 §19 and Doc 05D §10 own the
+  # surface-level substrate behaviour. The 12-month inactivity trigger this
+  # row's horizon describes is V1.1+ and does not exist in the build — see
+  # SCL-092, which is open and which this row does not close.
+  - policy_id: RPOL-ANALYTICS-01
+    pii_surface_name: 'analytics.user_identifying_data.lifecycle_class_1'
+    canonical_owner_doc_and_section: 'Doc 07E V1.0 §5.1'
+    classification: pii
+    retention_horizon_months: 12
+    calendar_month_semantics: true
+    retention_horizon_seconds: null
+    partial_provable_until: null
+    purge_substrate: doc05d_cascade
+    purge_lag_allowance_seconds: 604800       # Doc 05D §10.1 7-day envelope
+    purge_alert_id: null                      # INV-07-09 negative invariant
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-05-26              # 07E's own date, not this file's
+
+  # ── Doc 07E §6.2 — analytics lifecycle class 2 ──────────────────────
+  # CONSUMED VERBATIM from Doc 07E V1.0 §6.2. Note `classification:
+  # pseudonymized_personal_data`, not `analytics` — RB-07E-V1-02 corrected
+  # the original as an overclaim: pseudonymized data is still personal data
+  # with safeguards. The `partial_provable_until` token carries the legal
+  # caveat and is 07E's, not invented here.
+  - policy_id: RPOL-ANALYTICS-02
+    pii_surface_name: 'analytics.pseudonymized_indefinite_retention.lifecycle_class_2'
+    canonical_owner_doc_and_section: 'Doc 07E V1.0 §5.2'
+    classification: pseudonymized_personal_data
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: null
+    partial_provable_until: 'FWD-07E-V1.1-CARDINALITY-BUCKETING'
+    purge_substrate: manual
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null                      # INV-07-09 negative invariant
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-05-26              # 07E's own date, not this file's
+
+  # ── Privacy Policy v4 §6.6 — product analytics, 12 months ───────────
+  # NOT ENFORCED BY LYCEON. Vercel Analytics retention is a vendor dashboard
+  # setting; nothing in this repo reads or asserts it. Microsoft Clarity was
+  # removed entirely on 2026-09-21 (Phase 7 Part B), so Vercel is the only
+  # analytics vendor and this is the only vendor row.
+  - policy_id: RPOL-ANALYTICS-03
+    pii_surface_name: 'vercel.analytics.page_events'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.6'
+    classification: analytics
+    retention_horizon_months: 12
+    calendar_month_semantics: true
+    retention_horizon_seconds: null
+    purge_substrate: manual
+    partial_provable_until: null
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22
+
+  # ── Privacy Policy v4 §6.6 — the BigQuery retention archive: REMOVED ─
+  # There is no RPOL-ANALYTICS-04. The row existed in the first draft of this
+  # file, for the four `retention__*` tables the 90d and 180d sweeps used to
+  # export to, with a 730-day partition expiration.
+  #
+  # The owner ruling of 2026-09-22 removed the archive instead: "stop
+  # archiving, delete outright ... the archive carries student_id, reviewer_id
+  # and free-text notes about minors in crisis. BigQuery is the worst home for
+  # those. Nothing has ever been archived, so there's nothing to migrate."
+  #
+  # The row is deleted rather than kept with a null horizon because the surface
+  # itself is gone. Nothing was ever written to it — the archive client's
+  # dependency was never installed — and `server/services/retention-archive.ts`,
+  # its generator, its drift gate and its four schema files are deleted as of
+  # 2026-09-22. Registering a retention policy for a surface that never held a
+  # row and no longer exists would be the registry documenting something that
+  # does not exist: the failure mode this file is meant to end, pointed the
+  # other way.
+  #
+  # No coverage is lost. RPOL-ANALYTICS-04 described the BigQuery COPY of
+  # those rows, not the Postgres originals; the originals are deleted by the
+  # sweeps themselves and were never a row in this file — their four tables
+  # (tutor_instruction_assignments, tutor_instruction_exposures,
+  # crisis_review_cases, tutor_injection_log) are not surfaces the published
+  # policy names a period for, so they sit under §6.7's catch-all like every
+  # other operational table. With the copy gone there is one location fewer,
+  # not one policy fewer.
+  #
+  # §6.6 is still covered: RPOL-ANALYTICS-03 above carries the Vercel
+  # analytics surface, which is what §6.6 actually governs now. See SCL-106.
+  #
+  # ── Privacy Policy v4 §6.7 — the catch-all, 90 days ─────────────────
+  # ENFORCED as of 2026-09-21. public.operational_log_retention_days()
+  # returns a literal 90 and public.sweep_operational_log_retention sweeps
+  # four tables, each on the column the migration names:
+  # usage_rate_limit_ledger.created_at, rate_limit_ledger.window_end (it has
+  # no created_at and its updated_at moves on every increment),
+  # tutor_turn_metrics.recorded_at, tutor_context_resolution_log.resolved_at.
+  # §6.7 remains a BUILD COMMITMENT in one respect: there is no gate that
+  # would notice a NEW identity-bearing table accumulating outside the ten
+  # enumerated categories. SCL-101 records that.
+  - policy_id: RPOL-OPS-01
+    pii_surface_name: 'tutor_context_resolution_log.student_id'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v4/en.md §6.7'
+    classification: operational
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 7776000        # 90 days
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-09-22

@@ -413,8 +413,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # THIS JOB HAD NEVER PASSED. It ran `vitest run tests/integration` against the
+      # DEFAULT config, which excludes `tests/integration/**` so the unit suite stays
+      # hermetic -- so the filter selected a directory the config had already excluded and
+      # vitest exited 1 with "No test files found" on every push to main. Both tests are
+      # real and all three secrets were already wired; nothing ran them.
+      #
+      # `test:integration` now names `vitest.integration.config.ts`, which does not carry
+      # that exclusion. The summary gate is the other half: these tests `describe.skipIf`
+      # themselves when a Supabase secret is absent, so without it a missing secret would
+      # turn the job from loudly broken into silently green -- testing nothing and saying
+      # so to nobody. If it goes red naming skipped tests, a secret is missing, and the
+      # message says which.
       - name: Run Integration Tests
-        run: pnpm test:integration
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run --config vitest.integration.config.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-integration.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-integration.json \
+            --file tests/integration
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -583,6 +600,25 @@ jobs:
             exit 1
           fi
           echo "    OK C-09b generator_version ${gv} names $(ls supabase/migrations/${gv}_*.sql)"
+          # C-09c. The stamp must name the NEWEST migration that redefines a generator
+          # function -- not merely one that exists, and NOT the newest calendar migration.
+          #
+          # The distinction is the whole point of the stamp. Doc 05F §10.2 makes
+          # generator_version the provenance on every calendar_plan_versions row, and the
+          # seed's own comment names the five functions that matter: calendar_compute_plan,
+          # calendar_compute_plan_fallback, calendar_place_full_lengths,
+          # calendar_plan_to_output, calendar_validate_plan. A calendar migration that
+          # changes RLS, a config row or calendar_build_plan_input does not change the plan
+          # a given input produces, so bumping the stamp for it would make every stored
+          # version claim a revision that never touched the formula.
+          newest="$(grep -lE 'FUNCTION public\.(calendar_compute_plan|calendar_compute_plan_fallback|calendar_place_full_lengths|calendar_plan_to_output|calendar_validate_plan)\(' supabase/migrations/*.sql \
+            | xargs -n1 basename | cut -d_ -f1 | sort | tail -1)"
+          if [ "${gv}" != "${newest}" ]; then
+            echo "CALENDAR_SCHEMA_GATE_FAILED: C-09c generator_version=${gv} but the newest migration redefining a generator function is ${newest}."
+            echo "  A migration changed the formula without updating the provenance stamp, or the stamp was bumped for a migration that did not."
+            exit 1
+          fi
+          echo "    OK C-09c generator_version ${gv} is the newest migration redefining a generator function"
 
       - name: Calendar grant + RLS gates
         env:
@@ -725,7 +761,10 @@ jobs:
 
   practice-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10. Observed runs on this job: 5m14s, 10m04s (killed), 10m14s (killed),
+    # 7m20s. The work fits; the margin did not, and GitHub reports a timeout kill as
+    # "cancelled", which reads like an infrastructure hiccup rather than a budget.
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -998,6 +1037,144 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phases.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phases.json \
             --file tests/ci/deletion-phases-235.pg.ci.test.ts
+
+      # @spec [Doc 03 §14.2; Doc 05E §3 Rule 4 + §5; Doc 01 V8 §40.5; owner brief 2026-09-17
+      #        "Declarative FK Actions, Not an Enumerated Cascade" steps 3-4]
+      #        | @implemented [2026-09-17]
+      # The cascade used to enumerate table names by hand and nine foreign keys into `profiles`
+      # were never added to it, so `DELETE FROM profiles` raised for anyone who had used the
+      # tutor. The migration fixes those nine. THIS is what stops the tenth: the guard reads
+      # `pg_constraint`, not a list, so a table added tomorrow is in scope the moment it has a
+      # foreign key — whether or not anybody remembered the guard file. It also checks the
+      # allowlist in both directions and refuses an edge handled both declaratively and
+      # procedurally.
+      - name: FK delete-action guard (catalog-driven, on a genesis fresh-apply)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/fk-delete-action-guard.sh
+
+      # The behaviour behind the guard, on real Postgres: the seven tutor tables go with the
+      # profile, a config row survives its attributor with a NULL, an activity row survives with
+      # the identity severed and `actor_id` intact, and a brand-new unclassified foreign key
+      # turns the guard red.
+      - name: Declarative FK delete actions → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-fk-actions.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-fk.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-fk.json \
+            --file tests/ci/deletion-fk-actions.pg.ci.test.ts
+
+      # @spec [Doc 03 §21/§14.2 via owner ruling A6; Doc 06D §6.2/§6.5 INV-06-08 as amended by
+      #        owner rulings A2/A4/B2/B3; owner brief 2026-09-17 "Deletion Vertical — Owner
+      #        Rulings + Phase 6"] | @implemented [2026-09-18]
+      # Phase 6: the last account-deletion blocker and the proof that a deletion happened.
+      # A student whose tutor conversation was flagged for crisis review could not be deleted —
+      # three crisis edges were still RESTRICT behind the tutor CASCADE. They are SET NULL now,
+      # the case survives with both links severed, and the denormalized conversation_id copy is
+      # severed by trigger so no deletion path can leave it behind. P6.6 sweeps every uuid
+      # column in the schema to prove the verification record's dead-profile uuid is the only
+      # place that uuid survives.
+      - name: Deletion phase 6 (crisis severance + verification record) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-phase-6.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phase6.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phase6.json \
+            --file tests/ci/deletion-phase-6.pg.ci.test.ts
+
+      # Privacy Policy v3 §6.7 published a 90-day ceiling on operational records that
+      # name you and fall outside the ten enumerated categories. SCL-101 filed that
+      # sentence as a BUILD COMMITMENT because nothing enforced it. This suite is the
+      # enforcement: a row past its window goes, a row inside it stays, and a run that
+      # deleted nothing still reports every table — the last one because Vercel's cron
+      # registration cannot be read back from tooling, so an unscheduled sweep and an
+      # empty sweep are otherwise indistinguishable.
+      - name: Operational-log retention (v3 §6.7 catch-all) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/operational-log-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-oplog-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-oplog-retention.json \
+            --file tests/ci/operational-log-retention.pg.ci.test.ts
+
+      # Doc 01 V8 §5.1 says "retention values live in observability_runtime_config".
+      # The table has held nothing since genesis and NOTHING READS IT; the owner
+      # ruling seeds it anyway so the declared period and the enforced period can be
+      # compared. This suite IS that comparison — without it the rows are decoration
+      # that drifts from behaviour the first time a period changes. F2.4 and F2.5 are
+      # negatives: cold_log_retention_days and alert_thresholds must stay unseeded,
+      # because neither the cold archive nor the alert registry exists.
+      - name: Observability retention config (Doc 01A A.5 / F2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/observability-retention-config.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-obs-retention-config.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-obs-retention-config.json \
+            --file tests/ci/observability-retention-config.pg.ci.test.ts
+
+      # v3 §6.2 publishes a seven-year period for payment records. It will delete
+      # nothing until 2033, which is exactly why its behaviour is pinned now: a
+      # sweep with an empty input for seven years is one nobody would notice was
+      # broken. B2.9 additionally pins the append-only blocker that kept §6.5's
+      # configuration sweep out of the same migration.
+      - name: Seven-year payment-record retention (v3 §6.2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/financial-record-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-financial-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-financial-retention.json \
+            --file tests/ci/financial-record-retention.pg.ci.test.ts
+
+      # The writer that did not exist. retention-sweep.ts:113 documented
+      # tutor_conversations.deleted_at as "set when entitlement lapses" from
+      # 2026-08-20; nothing set it, so sweep7d's input was permanently empty and
+      # Privacy Policy v3 had to publish the narrower account-deletion wording.
+      # C1.6 closes the loop by showing the sweep's own predicate matching a row.
+      # C1.7 guards the coupling between the trigger's column list and the
+      # canonical predicate's body — the way this would rot silently.
+      - name: Tutor lapse severance (Doc 03 §14.2 / C1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-lapse-severance.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-lapse.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
+            --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
 
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:

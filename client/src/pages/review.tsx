@@ -206,7 +206,7 @@ export default function ReviewPage() {
           </h1>
           <p className="text-muted-foreground max-w-2xl">
             Every question you miss or skip comes back here until you get it
-            right twice. Nothing is chosen at random.
+            right. Nothing is chosen at random.
           </p>
         </header>
 
@@ -384,73 +384,7 @@ export default function ReviewPage() {
                 )}
               </PageCard>
 
-              {/* ── 2. Review a past session ────────────────────────────────── */}
-              {total > 0 && (
-                <PageCard
-                  title="Review a past session"
-                  description="Redo what you missed in one sitting."
-                >
-                  {poolLoading ? (
-                    <Skeleton className="h-24 w-full rounded-xl" />
-                  ) : dayGroups.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No past sessions with open questions.
-                    </p>
-                  ) : (
-                    <div
-                      className="space-y-6"
-                      data-testid="review-session-picker"
-                    >
-                      {dayGroups.map((group) => (
-                        <div key={group.key}>
-                          <h4 className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                            {group.label}
-                          </h4>
-                          <div className="grid gap-2">
-                            {group.rows.map((row) => (
-                              <button
-                                key={`${row.source_engine}:${row.source_session_id}`}
-                                type="button"
-                                disabled={isStarting || atSessionLimit}
-                                onClick={() =>
-                                  start({
-                                    mode: "session",
-                                    filters: {
-                                      source_engine: row.source_engine,
-                                      source_session_id: row.source_session_id,
-                                    },
-                                  })
-                                }
-                                className="flex items-center justify-between w-full text-left p-4 rounded-xl border border-border/50 bg-card hover:border-primary/30 transition-colors disabled:opacity-50"
-                              >
-                                <div>
-                                  <p className="font-medium text-sm">
-                                    {sourceHeadline(
-                                      row.source_engine,
-                                      row.local_time,
-                                    )}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {sourceFiltersLine(row.mode, row.filters)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <Badge variant="secondary">
-                                    {row.open_count} to review
-                                  </Badge>
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </PageCard>
-              )}
-
-              {/* ── 3. Review by topic ──────────────────────────────────────── */}
+              {/* ── 2. Review by topic ────────────────────────────────────── */}
               {total > 0 && (
                 <PageCard
                   title="Review by topic"
@@ -576,6 +510,72 @@ export default function ReviewPage() {
                   </div>
                 </PageCard>
               )}
+
+              {/* ── 3. Review a past session ──────────────────────────────── */}
+              {total > 0 && (
+                <PageCard
+                  title="Review a past session"
+                  description="Redo what you missed in one sitting."
+                >
+                  {poolLoading ? (
+                    <Skeleton className="h-24 w-full rounded-xl" />
+                  ) : dayGroups.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No past sessions with open questions.
+                    </p>
+                  ) : (
+                    <div
+                      className="space-y-6"
+                      data-testid="review-session-picker"
+                    >
+                      {dayGroups.map((group) => (
+                        <div key={group.key}>
+                          <h4 className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                            {group.label}
+                          </h4>
+                          <div className="grid gap-2">
+                            {group.rows.map((row) => (
+                              <button
+                                key={`${row.source_engine}:${row.source_session_id}`}
+                                type="button"
+                                disabled={isStarting || atSessionLimit}
+                                onClick={() =>
+                                  start({
+                                    mode: "session",
+                                    filters: {
+                                      source_engine: row.source_engine,
+                                      source_session_id: row.source_session_id,
+                                    },
+                                  })
+                                }
+                                className="flex items-center justify-between w-full text-left p-4 rounded-xl border border-border/50 bg-card hover:border-primary/30 transition-colors disabled:opacity-50"
+                              >
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {sourceHeadline(
+                                      row.source_engine,
+                                      row.local_time,
+                                    )}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {sourceFiltersLine(row.mode, row.filters)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <Badge variant="secondary">
+                                    {row.open_count} to review
+                                  </Badge>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </PageCard>
+              )}
             </div>
 
             {/* ── Aside: what's waiting, by section ──────────────────────────── */}
@@ -614,7 +614,10 @@ export default function ReviewPage() {
               <PageCard title="How review works">
                 <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-4">
                   <li>Miss or skip a question and it joins this queue.</li>
-                  <li>Get it right twice and it graduates out.</li>
+                  <li>Get it right once and it leaves your queue.</li>
+                  <li>
+                    Miss or skip it again and it goes to the back of the line.
+                  </li>
                   <li>Review is free and unlimited.</li>
                 </ul>
               </PageCard>

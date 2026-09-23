@@ -97,8 +97,8 @@ async function create(
 
   return ok({
     session_id: result.session.id,
-    // Mirrors practice's `/practice/session/:id`. The route registry lists both.
-    next: `/review/session/${result.session.id}`,
+    // From `resumeHref`, not a template: create and resume must not be able to disagree.
+    next: resumeHref(result.session.id),
     resumed: result.replayed,
   });
 }
@@ -209,10 +209,21 @@ async function nextLaunchSize(
   return Math.max(1, remaining);
 }
 
+/**
+ * §9.1: review's own session route. Mirrors practice's `/practice/session/:id`; the route
+ * registry lists both, and `/review/session/:sessionId` mounts `resume-review.tsx`, which
+ * reads `GET /api/review/sessions/:id/state`. Sending a review id to practice's page is
+ * what the 2026-09-22 production defect did.
+ */
+function resumeHref(sessionId: string): string {
+  return `/review/session/${sessionId}`;
+}
+
 export const reviewAdapter: CalendarEngineAdapter = {
   engine: "review",
   create,
   activityUnits,
+  resumeHref,
   progress,
   nextLaunchSize,
 };
