@@ -126,7 +126,7 @@ export type SendMessageResponse = {
 // cannot claim a field the server does not send. The hand-written copy of this
 // type declared `crisis_paused_at` and `title` for months while the server
 // omitted both, which is why a paused conversation rendered as live on reload.
-// @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+// @spec [Doc-03B_V4.1 §7.5 + fields beyond it: title, crisis_paused_at, surface come from CC Brief "LISA Session Lifecycle" and CC Brief "Close the LISA Vertical" PR 1.1 — not in §7.5; spec gap reported to owner]
 export type TutorMessage = ConversationDetailMessage;
 
 export type TutorConversationDetail = ConversationDetail;

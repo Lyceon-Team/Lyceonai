@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+ * @spec [Doc-03B_V4.1 §7.5 + fields beyond it: title, crisis_paused_at, surface come from CC Brief "LISA Session Lifecycle" and CC Brief "Close the LISA Vertical" PR 1.1 — not in §7.5; spec gap reported to owner]
  * @implemented 2026-09-23
  *
  * plain English: loads a crisis-paused conversation COLD — no send in this

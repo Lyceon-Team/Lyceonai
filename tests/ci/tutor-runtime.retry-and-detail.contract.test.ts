@@ -1,5 +1,5 @@
 /**
- * @spec [Doc-03B_V2 §6.5 step 8, §7; CC Brief "Close the LISA Vertical" PR 1.1, 1.2]
+ * @spec [Doc-03B_V4.1 §7.5, §14.3, §14.4; CC Brief "Close the LISA Vertical" PR 1.1, 1.2]
  * @implemented 2026-09-23
  *
  * plain English: drives the REAL `server/routes/tutor-runtime.ts` router over HTTP
@@ -9,11 +9,13 @@
  *   1.1 GET /conversations/:id returns crisis_paused_at, title and surface, and the
  *       body parses against the shared `conversationDetailSchema`.
  *   1.2 A turn that failed after the student message was persisted can be retried
- *       with the SAME client_turn_id: the retry resumes the existing student row
+ *       with the SAME client_turn_id: the retry re-claims the existing student row
  *       (exactly one student row), orchestrates, and returns 200.
- * Edge cases covered: retry of a message containing `<`/`&` (the stored text is
- * HTML-escaped), and a concurrent duplicate whose tutor insert loses the unique-index
- * race (replays the winner's reply instead of a 500).
+ * Edge cases covered (Doc 03B V4.1 §14.3/§14.4): retry of a message containing
+ * `<`/`&` (the stored text is HTML-escaped); a retry while the first attempt is
+ * still running (409 idempotency_in_progress); a turn stuck 'pending' past the
+ * in-progress timeout (re-owned); an unexpected throw (turn released as 'failed');
+ * a duplicate caught only by the unique index (409 idempotency_conflict + error log).
  */
 import express from "express";
 import request from "supertest";
@@ -102,6 +104,8 @@ vi.mock("../../server/services/cloud-tasks-enqueue", () => ({
 }));
 
 import tutorRuntimeRouter from "../../server/routes/tutor-runtime";
+import { resolveFullEnvelope } from "../../server/services/tutor-context";
+import { logger } from "../../server/logger";
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
@@ -191,9 +195,10 @@ describe("fake DB models the real idempotency index", () => {
       ),
       "utf-8",
     );
-    const key = UNIQUE_KEYS.tutor_messages?.[0] ?? [];
+    const index = UNIQUE_KEYS.tutor_messages?.[0];
+    expect(index).toBeDefined();
     expect(sql).toContain(
-      `ON public.tutor_messages (${key.join(", ")})\n  WHERE client_turn_id IS NOT NULL`,
+      `CREATE UNIQUE INDEX ${index?.name}\n  ON public.tutor_messages (${index?.columns.join(", ")})\n  WHERE client_turn_id IS NOT NULL`,
     );
   });
 });
@@ -333,7 +338,81 @@ describe("PR 1.2 — retry with the same client_turn_id resumes the persisted tu
     expect(orchestrateTurn).toHaveBeenCalledTimes(1);
   });
 
-  it("a concurrent duplicate that loses the tutor-row race replays the winner instead of returning 500", async () => {
+  it("a retry while the first attempt is still running gets 409 idempotency_in_progress and does not orchestrate", async () => {
+    const id = seedConversation();
+    db.current.seed("tutor_messages", {
+      conversation_id: id,
+      student_id: STUDENT_ID,
+      role: "student",
+      content_kind: "message",
+      message: "still thinking",
+      client_turn_id: CLIENT_TURN_ID,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    });
+
+    const res = await request(makeApp()).post("/api/tutor/messages").send({
+      conversation_id: id,
+      message: "still thinking",
+      client_turn_id: CLIENT_TURN_ID,
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("idempotency_in_progress");
+    expect(res.body.error.details).toEqual({ retry_after_ms: 2000 });
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+  });
+
+  it("a turn stuck 'pending' past the in-progress timeout is re-owned and resumed", async () => {
+    const id = seedConversation();
+    db.current.seed("tutor_messages", {
+      conversation_id: id,
+      student_id: STUDENT_ID,
+      role: "student",
+      content_kind: "message",
+      message: "crashed turn",
+      client_turn_id: CLIENT_TURN_ID,
+      status: "pending",
+      created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    });
+    orchestrateTurn.mockResolvedValueOnce(okOrchestration("Recovered."));
+
+    const res = await request(makeApp()).post("/api/tutor/messages").send({
+      conversation_id: id,
+      message: "crashed turn",
+      client_turn_id: CLIENT_TURN_ID,
+    });
+
+    expect(res.status).toBe(200);
+    expect(studentRowsFor(CLIENT_TURN_ID)).toHaveLength(1);
+    expect(studentRowsFor(CLIENT_TURN_ID)[0]?.status).toBe("completed");
+  });
+
+  it("an unexpected throw after step 11 releases the turn ('failed'), so the next retry resumes", async () => {
+    const id = seedConversation();
+    const app = makeApp();
+    const body = {
+      conversation_id: id,
+      message: "envelope blows up",
+      client_turn_id: CLIENT_TURN_ID,
+    };
+    vi.mocked(resolveFullEnvelope).mockRejectedValueOnce(
+      new Error("envelope validation failed"),
+    );
+
+    const first = await request(app).post("/api/tutor/messages").send(body);
+    expect(first.status).toBe(500);
+    expect(studentRowsFor(CLIENT_TURN_ID)[0]?.status).toBe("failed");
+
+    orchestrateTurn.mockResolvedValueOnce(
+      okOrchestration("Second time lucky."),
+    );
+    const second = await request(app).post("/api/tutor/messages").send(body);
+    expect(second.status).toBe(200);
+    expect(studentRowsFor(CLIENT_TURN_ID)).toHaveLength(1);
+  });
+
+  it("a concurrent duplicate caught by the unique index is 409 idempotency_conflict with a high-severity log (§14.4), never a silent replay", async () => {
     const id = seedConversation();
     const app = makeApp();
     const body = {
@@ -342,14 +421,7 @@ describe("PR 1.2 — retry with the same client_turn_id resumes the persisted tu
       client_turn_id: CLIENT_TURN_ID,
     };
 
-    // First attempt fails after persisting the student row.
-    orchestrateTurn.mockResolvedValueOnce({
-      ok: false,
-      errorCode: "orchestration_failed_recoverable",
-    });
-    await request(app).post("/api/tutor/messages").send(body);
-
-    // While this retry is orchestrating, a concurrent request completes the turn.
+    // While this request is orchestrating, a concurrent one persists the reply.
     orchestrateTurn.mockImplementationOnce(async () => {
       db.current.seed("tutor_messages", {
         conversation_id: id,
@@ -363,12 +435,18 @@ describe("PR 1.2 — retry with the same client_turn_id resumes the persisted tu
     });
     const res = await request(app).post("/api/tutor/messages").send(body);
 
-    expect(res.status).toBe(200);
-    expect(res.body.data.response.content).toBe("Winner's reply.");
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("idempotency_conflict");
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      "TUTOR_RUNTIME",
+      "idempotency_unique_constraint_violation",
+      expect.any(String),
+      undefined,
+      expect.objectContaining({ conversationId: id, role: "tutor" }),
+    );
     const tutorRows = db.current
       .rows("tutor_messages")
       .filter((r) => r.client_turn_id === CLIENT_TURN_ID && r.role === "tutor");
     expect(tutorRows).toHaveLength(1);
-    expect(studentRowsFor(CLIENT_TURN_ID)[0]?.status).toBe("completed");
   });
 });

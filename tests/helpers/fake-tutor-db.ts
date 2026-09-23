@@ -1,7 +1,7 @@
 /**
  * In-memory `supabaseServer` stand-in for LISA tutor-runtime route tests.
  *
- * @spec [Doc-03B_V2 §6.5 step 8, §7] | @implemented [2026-09-23]
+ * @spec [Doc-03B_V4.1 §7.5, §14.3, §14.4] | @implemented [2026-09-23]
  *
  * plain English: implements the subset of the Supabase query-builder chain that
  * `server/routes/tutor-runtime.ts` uses (select/insert/update with eq/is/in/lt/gte/
@@ -30,8 +30,16 @@ type Result = {
 type Filter = (row: Row) => boolean;
 
 /** Partial unique indexes modelled per table (NULL in any key column exempts the row). */
-export const UNIQUE_KEYS: Record<string, readonly string[][]> = {
-  tutor_messages: [["student_id", "conversation_id", "client_turn_id", "role"]],
+export const UNIQUE_KEYS: Record<
+  string,
+  ReadonlyArray<{ name: string; columns: readonly string[] }>
+> = {
+  tutor_messages: [
+    {
+      name: "idx_tutor_messages_client_turn_idempotency",
+      columns: ["student_id", "conversation_id", "client_turn_id", "role"],
+    },
+  ],
 };
 
 let idCounter = 0;
@@ -256,14 +264,17 @@ export class FakeTutorDb {
     table: string,
     row: Row,
   ): { message: string; code: string } | null {
-    for (const key of UNIQUE_KEYS[table] ?? []) {
-      if (key.some((c) => row[c] === null || row[c] === undefined)) continue;
+    for (const { name, columns } of UNIQUE_KEYS[table] ?? []) {
+      if (columns.some((c) => row[c] === null || row[c] === undefined)) {
+        continue;
+      }
       const clash = this.rows(table).some((existing) =>
-        key.every((c) => existing[c] === row[c]),
+        columns.every((c) => existing[c] === row[c]),
       );
       if (clash) {
+        // PostgreSQL's wording; PostgREST passes it through as `message`.
         return {
-          message: `duplicate key value violates unique constraint (${key.join(", ")})`,
+          message: `duplicate key value violates unique constraint "${name}"`,
           code: "23505",
         };
       }

@@ -445,6 +445,107 @@ async function getCorrectAnswerForScope(
   };
 }
 
+// ── Turn-level idempotency (Doc-03B_V4.1 §14.3, §14.4) ─────────────────
+
+type ExistingStudentTurnRow = {
+  id: string;
+  message: string;
+  status: "pending" | "completed" | "failed";
+  created_at: string;
+};
+
+/**
+ * 01A `in_progress_timeout_seconds` default (300s): a turn still 'pending'
+ * after this is treated as crashed and may be re-owned by a retry.
+ * @spec [Doc-03B_V4.1 §14.3 "Worker crash mid-flow"; Doc-01A in_progress_timeout_seconds]
+ */
+const TURN_IN_PROGRESS_TIMEOUT_MS = 300_000;
+
+/**
+ * @spec [Doc-03B_V4.1 §13.7, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
+ * @implemented 2026-09-23
+ *
+ * plain English: a retry found this turn's student row but no tutor reply.
+ * Decide whether the retry may take the turn over. A row that is 'pending'
+ * and younger than the in-progress timeout belongs to an attempt that is
+ * still running → "in_progress". Otherwise ('failed', a 'pending' row past
+ * the timeout, or a legacy 'completed' row with no reply — the status column
+ * defaulted existing rows to 'completed') the retry claims it with a
+ * compare-and-set back to 'pending'. Zero rows updated means another retry
+ * claimed it first → "in_progress" (§13.7's `rowCount === 0` guard).
+ *
+ * trade-offs: this is §13.7's guard applied to `tutor_messages.status`; the
+ * spec's `idempotency_records` table and advisory lock do not exist in this
+ * codebase. The unique index remains the hard backstop (§14.4). Edge case:
+ * a re-claimed row keeps its original created_at, so a retry that itself
+ * runs past the timeout can be re-owned by a third attempt; the index then
+ * rejects the loser's reply with 409 idempotency_conflict.
+ */
+async function claimStudentTurnForRetry(
+  row: ExistingStudentTurnRow,
+): Promise<"claimed" | "in_progress" | "error"> {
+  const ageMs = Date.now() - Date.parse(row.created_at);
+  if (row.status === "pending" && ageMs < TURN_IN_PROGRESS_TIMEOUT_MS) {
+    return "in_progress";
+  }
+
+  let claim = supabaseServer
+    .from("tutor_messages")
+    .update({ status: "pending" })
+    .eq("id", row.id)
+    .eq("status", row.status);
+  if (row.status === "pending") {
+    claim = claim.lt(
+      "created_at",
+      new Date(Date.now() - TURN_IN_PROGRESS_TIMEOUT_MS).toISOString(),
+    );
+  }
+  const { data, error } = await claim.select("id").maybeSingle();
+  if (error) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "turn_claim_failed",
+      "could not re-claim student turn for retry; failing closed",
+      { code: error.code },
+    );
+    return "error";
+  }
+  return data ? "claimed" : "in_progress";
+}
+
+/** The idempotency index named in supabase/migrations/20260812010000. */
+const CLIENT_TURN_UNIQUE_INDEX = "idx_tutor_messages_client_turn_idempotency";
+
+function isClientTurnUniqueViolation(
+  err: { code?: string; message?: string } | null,
+): boolean {
+  return (
+    err?.code === "23505" &&
+    (err.message ?? "").includes(CLIENT_TURN_UNIQUE_INDEX)
+  );
+}
+
+/**
+ * @spec [Doc-03B_V4.1 §14.4 "Constraint violation handling"]
+ * The unique index caught a duplicate client_turn_id that the step-8 check
+ * did not (a concurrent request). The spec treats this as a bug signal:
+ * high-severity log, 409 idempotency_conflict. Never a silent replay.
+ */
+function sendClientTurnUniqueViolation(
+  res: Response,
+  conversationId: string,
+  role: "student" | "tutor",
+): void {
+  logger.error(
+    "TUTOR_RUNTIME",
+    "idempotency_unique_constraint_violation",
+    "duplicate client_turn_id rejected by the unique index; step-8 idempotency did not catch it",
+    undefined,
+    { conversationId, role },
+  );
+  sendTutorError(res, "idempotency_conflict");
+}
+
 // ============================================================================
 // POST /conversations — §5 Start / reuse a conversation
 // ============================================================================
@@ -735,6 +836,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   }
   const input = parsed.data;
   const contentKind = input.content_kind ?? "message";
+  // Set once step 11 has persisted (or re-claimed) the student row, so the
+  // catch-all can release the turn for retry instead of leaving it 'pending'.
+  let persistedStudentMessageId: string | null = null;
 
   try {
     // Step 5: Verify conversation ownership (§3.3).
@@ -767,7 +871,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const { data: existingTurn, error: existingTurnError } =
       await supabaseServer
         .from("tutor_messages")
-        .select("id, role, message, created_at")
+        .select("id, role, message, status, created_at")
         .eq("conversation_id", conversation.id)
         .eq("client_turn_id", input.client_turn_id)
         .order("created_at", { ascending: true });
@@ -803,7 +907,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     if (existingTurn && existingTurn.length > 0) {
       const existingStudentMsg = existingTurn.find(
         (m) => (m as { role: string }).role === "student",
-      ) as { id: string; message: string } | undefined;
+      ) as ExistingStudentTurnRow | undefined;
       const existingTutorMsg = existingTurn.find(
         (m) => (m as { role: string }).role === "tutor",
       ) as { id: string; message: string } | undefined;
@@ -811,7 +915,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       // The stored student text is the SANITIZED form (step 11 persists
       // `sanitized`, HTML-escaped), so a retry must be compared in that same
       // form — comparing raw input made every retry of "x < 5" a false 409.
-      // @spec [Doc-03B_V2 §6.5 step 8; CC Brief "Close the LISA Vertical" PR 1.2]
+      // @spec [Doc-03B_V4.1 §6.5 step 8, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
       if (
         existingStudentMsg &&
         existingStudentMsg.message !== sanitizeInput(input.message).sanitized
@@ -905,17 +1009,27 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         });
         return;
       }
-      // Student message persisted but tutor response was not (prior request
-      // failed after step 11, or is still in flight). RESUME: step 11 reuses
-      // this row instead of inserting a second one — the unique index on
-      // (student_id, conversation_id, client_turn_id, role) rejects a second
-      // student row, which made every "Try again" a 500 canonical_write_failed.
-      // The discriminator is "no tutor row for this client_turn_id", NOT
-      // tutor_messages.status: rows that predate the status column carry the
-      // DB default 'completed' whether or not a reply exists, and a row left
-      // 'pending' by a crash is indistinguishable from one still in flight.
-      // @spec [Doc-03B_V2 §6.5 step 8; CC Brief "Close the LISA Vertical" PR 1.2]
+      // Student message persisted but no tutor reply: the first attempt
+      // failed after step 11, crashed, or is still running. Per §14.3:
+      //   - still running        → 409 idempotency_in_progress (retry, same id)
+      //   - failed / stuck       → this attempt RE-OWNS the turn and resumes it
+      // Resuming reuses the persisted student row (step 11 does not insert
+      // again): the unique index on (student_id, conversation_id,
+      // client_turn_id, role) rejects a second student row, which is what
+      // made every "Try again" a 500 canonical_write_failed.
+      // @spec [Doc-03B_V4.1 §6.5 step 8, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
       if (existingStudentMsg && !existingTutorMsg) {
+        const claim = await claimStudentTurnForRetry(existingStudentMsg);
+        if (claim === "error") {
+          sendTutorError(res, "idempotency_lookup_failed");
+          return;
+        }
+        if (claim === "in_progress") {
+          sendTutorError(res, "idempotency_in_progress", {
+            retry_after_ms: 2000,
+          });
+          return;
+        }
         resumableStudentRow = { id: existingStudentMsg.id };
       }
     }
@@ -1002,16 +1116,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
-    // Step 11: Persist student message — or, on a resumed turn (step 8),
-    // reuse the row the first attempt persisted and mark it in flight again.
+    // Step 11: Persist student message — or, on a resumed turn, reuse the row
+    // step 8 already re-claimed (set back to 'pending').
     const { data: studentMessageRow, error: studentMessageError } =
       resumableStudentRow
-        ? await supabaseServer
-            .from("tutor_messages")
-            .update({ status: "pending" })
-            .eq("id", resumableStudentRow.id)
-            .select("id, created_at")
-            .single()
+        ? { data: resumableStudentRow, error: null }
         : await supabaseServer
             .from("tutor_messages")
             .insert({
@@ -1033,6 +1142,10 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
             .select("id, created_at")
             .single();
 
+    if (isClientTurnUniqueViolation(studentMessageError)) {
+      sendClientTurnUniqueViolation(res, conversation.id, "student");
+      return;
+    }
     if (studentMessageError || !studentMessageRow) {
       logger.error(
         "TUTOR_RUNTIME",
@@ -1063,6 +1176,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sendTutorError(res, "canonical_write_failed");
       return;
     }
+
+    persistedStudentMessageId = studentMessageRow.id as string;
 
     // Set title on first student message (§4.2: first student message becomes
     // the title, truncated to 60 chars, immutable after initial set).
@@ -1525,54 +1640,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("id")
         .single();
 
-    // A concurrent request with the same client_turn_id (e.g. the client's
-    // 35s timeout retried while this one was still orchestrating) persisted
-    // its tutor row first; the unique index rejects ours. That turn is
-    // complete — replay the winner's reply rather than failing the student.
-    // @spec [Doc-03B_V2 §6.5 step 8, §9; CC Brief "Close the LISA Vertical" PR 1.2]
-    if (tutorMessageError?.code === "23505") {
-      const { data: winnerRow, error: winnerError } = await supabaseServer
-        .from("tutor_messages")
-        .select("id, message")
-        .eq("conversation_id", conversation.id)
-        .eq("client_turn_id", input.client_turn_id)
-        .eq("role", "tutor")
-        .maybeSingle();
-      if (!winnerError && winnerRow) {
-        const winnerSerialized = await serializeTutorOutput(
-          winnerRow.message as string,
-          appendScanContext,
-        );
-        await supabaseServer
-          .from("tutor_messages")
-          .update({ status: "completed" })
-          .eq("id", studentMessageRow.id);
-        logger.info(
-          "TUTOR_RUNTIME",
-          "concurrent_turn_replayed",
-          "tutor row already persisted by a concurrent request; replaying it",
-          { conversationId: conversation.id },
-        );
-        res.status(200).json({
-          data: {
-            conversation_id: conversation.id,
-            message_id: winnerRow.id as string,
-            client_turn_id: input.client_turn_id,
-            response: {
-              content: winnerSerialized.content,
-              content_kind: "message",
-              suggested_action: { type: "none", label: null },
-              ui_hints: {
-                show_accept_decline: false,
-                allow_freeform_reply: true,
-                suggested_chip: null,
-              },
-            },
-            conversation_updated_at: new Date().toISOString(),
-          },
-        });
-        return;
-      }
+    if (isClientTurnUniqueViolation(tutorMessageError)) {
+      sendClientTurnUniqueViolation(res, conversation.id, "tutor");
+      return;
     }
 
     if (tutorMessageError || !tutorMessageRow) {
@@ -1763,6 +1833,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         },
       );
     }
+    // Release the turn: a student row left 'pending' would make every retry
+    // wait out the in-progress timeout (§14.3) before it could resume.
+    // @spec [Doc-03B_V4.1 §14.3 "Retry after failed handler"]
+    if (persistedStudentMessageId) {
+      const { error: releaseError } = await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "failed" })
+        .eq("id", persistedStudentMessageId);
+      if (releaseError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "turn_release_failed",
+          "could not mark student message failed after an unexpected error; retry waits for the in-progress timeout",
+          { code: releaseError.code },
+        );
+      }
+    }
     sendTutorError(res, "orchestration_failed");
   }
 });
@@ -1866,7 +1953,7 @@ router.get(
         });
       }
 
-      // @spec [Doc-03B_V2 §7; CC Brief "Close the LISA Vertical" PR 1.1]
+      // @spec [Doc-03B_V4.1 §7.5 + fields beyond it: title, crisis_paused_at, surface come from CC Brief "LISA Session Lifecycle" and CC Brief "Close the LISA Vertical" PR 1.1 — not in §7.5; spec gap reported to owner]
       // Typed against the shared `conversationDetailSchema`: the chat page
       // derives its paused state from `crisis_paused_at` and its header from
       // `title`, so omitting either rendered a paused conversation as live
