@@ -110,7 +110,7 @@ BEGIN
     GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT, v_con = CONSTRAINT_NAME;
   END;
   IF NOT v_raised THEN
-    RAISE EXCEPTION 'SCG FAIL [C1 single-active-race-index]: two concurrent active versions both committed';
+    RAISE EXCEPTION 'SCG FAIL [C1 single-active-race-index]: a second active version was accepted while another activation was in flight';
   END IF;
   IF v_state <> '23505' OR v_con IS DISTINCT FROM 'one_active_scoring_model_version' THEN
     RAISE EXCEPTION 'SCG FAIL [C1 single-active-race-index]: wrong error % % "%"', v_state, v_con, v_msg;
