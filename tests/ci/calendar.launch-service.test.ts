@@ -94,6 +94,9 @@ function harness(options: {
       return ok({ session_id: id, next: `/practice/session/${id}`, resumed: false });
     },
     async activityUnits() { return []; },
+    // §9.1: the route is the ADAPTER's to give. The service has nothing to build one from,
+    // which is the point — see `CalendarEngineAdapter.resumeHref`.
+    resumeHref(sessionId) { return `/practice/session/${sessionId}`; },
     async progress(sessionId) { return sessions.get(sessionId) ?? null; },
     async nextLaunchSize(_b, remaining) { return remaining; },
   };
@@ -176,6 +179,29 @@ describe("§15.1 step 3 — a live session is handed back", () => {
     expect(second.value.session_id).toBe("sess-1");
     expect(h.createCalls).toHaveLength(1);
     expect(h.launches).toHaveLength(1);
+    // WHERE the resume sends the student, not only that it resumed. This branch used to
+    // build its own `/practice/session/<id>` for every engine, so it was right here and
+    // wrong for review — the assertion that was missing when that shipped.
+    expect(second.value.next).toBe("/practice/session/sess-1");
+  });
+
+  it("the resume branch takes its route from the adapter, whatever the adapter says", async () => {
+    const h = harness();
+    // A deliberately unlike-practice route: if the service were building the path itself,
+    // this would still come back as `/practice/session/sess-1` and the test would fail.
+    // Engine-agnostic by construction rather than by inspection.
+    const spied: CalendarEngineAdapter = {
+      ...(h.deps.adapterFor("practice")),
+      resumeHref: (sessionId) => `/some-other-engine/session/${sessionId}`,
+    };
+    const deps = { ...h.deps, adapterFor: () => spied };
+
+    await launchBlock(REQ, deps);
+    const second = await launchBlock(REQ, deps);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.resumed).toBe(true);
+    expect(second.value.next).toBe("/some-other-engine/session/sess-1");
   });
 
   it("a finished session does NOT resume — it launches the next sequence", async () => {

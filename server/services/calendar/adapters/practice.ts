@@ -102,7 +102,8 @@ async function create(
 
   return ok({
     session_id: result.session.id,
-    next: `/practice/session/${result.session.id}`,
+    // From `resumeHref`, not a template: create and resume must not be able to disagree.
+    next: resumeHref(result.session.id),
     resumed: result.replayed,
   });
 }
@@ -221,10 +222,16 @@ async function nextLaunchSize(
   return Math.max(1, Math.min(remaining, config.maxSessionCountPremium));
 }
 
+/** §9.1: practice's own session route. The route registry lists `/practice/session/:id`. */
+function resumeHref(sessionId: string): string {
+  return `/practice/session/${sessionId}`;
+}
+
 export const practiceAdapter: CalendarEngineAdapter = {
   engine: "practice",
   create,
   activityUnits,
+  resumeHref,
   progress,
   nextLaunchSize,
 };

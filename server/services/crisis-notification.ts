@@ -40,6 +40,7 @@
  *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
+import { getGcpAccessToken, getGcpCredentials } from "../lib/gcp-credentials";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -64,8 +65,13 @@ export type { CrisisNotificationPayload };
 const CLOUD_TASKS_QUEUE_NAME =
   process.env.CRISIS_CLOUD_TASKS_QUEUE ?? "lisa-crisis-notification";
 
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
+function resolveGcpProjectId(): string | null {
+  try {
+    return getGcpCredentials().project_id;
+  } catch {
+    return process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID ?? null;
+  }
+}
 
 const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
 
@@ -125,34 +131,6 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
   return JSON.stringify(slackBody);
 }
 
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
-}
-
 // ── Cloud Tasks Enqueue ───────────────────────────────────────────────
 
 /**
@@ -169,11 +147,20 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function notifyCrisisEvent(
   payload: CrisisNotificationPayload,
 ): Promise<void> {
-  if (!GCP_PROJECT_ID) {
+  logger.info(
+    "CRISIS_NOTIFICATION",
+    "dispatch_entered",
+    "crisis notification dispatch entered",
+    { caseId: payload.caseId, source: payload.source },
+  );
+
+  const gcpProjectId = resolveGcpProjectId();
+  if (!gcpProjectId) {
     logger.warn(
       "CRISIS_NOTIFICATION",
       "missing_project_id",
-      "GCP_PROJECT_ID not set; crisis notification skipped",
+      "GCP project ID not available (no credentials and no GCP_PROJECT_ID env var); crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
@@ -183,21 +170,23 @@ export async function notifyCrisisEvent(
       "CRISIS_NOTIFICATION",
       "missing_target_url",
       "LYCEON_CRISIS_ALERTS not set; crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
 
   const accessToken = await getGcpAccessToken();
   if (!accessToken) {
-    logger.debug(
+    logger.warn(
       "CRISIS_NOTIFICATION",
       "no_gcp_credentials",
-      "GCP credentials not available (local dev); crisis notification skipped",
+      "GCP credentials not available; crisis notification skipped",
+      { caseId: payload.caseId },
     );
     return;
   }
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
+  const queuePath = `projects/${gcpProjectId}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
   const slackPayload = buildSlackPayload(payload);

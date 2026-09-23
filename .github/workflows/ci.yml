@@ -413,8 +413,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # THIS JOB HAD NEVER PASSED. It ran `vitest run tests/integration` against the
+      # DEFAULT config, which excludes `tests/integration/**` so the unit suite stays
+      # hermetic -- so the filter selected a directory the config had already excluded and
+      # vitest exited 1 with "No test files found" on every push to main. Both tests are
+      # real and all three secrets were already wired; nothing ran them.
+      #
+      # `test:integration` now names `vitest.integration.config.ts`, which does not carry
+      # that exclusion. The summary gate is the other half: these tests `describe.skipIf`
+      # themselves when a Supabase secret is absent, so without it a missing secret would
+      # turn the job from loudly broken into silently green -- testing nothing and saying
+      # so to nobody. If it goes red naming skipped tests, a secret is missing, and the
+      # message says which.
       - name: Run Integration Tests
-        run: pnpm test:integration
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run --config vitest.integration.config.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-integration.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-integration.json \
+            --file tests/integration
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -583,6 +600,25 @@ jobs:
             exit 1
           fi
           echo "    OK C-09b generator_version ${gv} names $(ls supabase/migrations/${gv}_*.sql)"
+          # C-09c. The stamp must name the NEWEST migration that redefines a generator
+          # function -- not merely one that exists, and NOT the newest calendar migration.
+          #
+          # The distinction is the whole point of the stamp. Doc 05F §10.2 makes
+          # generator_version the provenance on every calendar_plan_versions row, and the
+          # seed's own comment names the five functions that matter: calendar_compute_plan,
+          # calendar_compute_plan_fallback, calendar_place_full_lengths,
+          # calendar_plan_to_output, calendar_validate_plan. A calendar migration that
+          # changes RLS, a config row or calendar_build_plan_input does not change the plan
+          # a given input produces, so bumping the stamp for it would make every stored
+          # version claim a revision that never touched the formula.
+          newest="$(grep -lE 'FUNCTION public\.(calendar_compute_plan|calendar_compute_plan_fallback|calendar_place_full_lengths|calendar_plan_to_output|calendar_validate_plan)\(' supabase/migrations/*.sql \
+            | xargs -n1 basename | cut -d_ -f1 | sort | tail -1)"
+          if [ "${gv}" != "${newest}" ]; then
+            echo "CALENDAR_SCHEMA_GATE_FAILED: C-09c generator_version=${gv} but the newest migration redefining a generator function is ${newest}."
+            echo "  A migration changed the formula without updating the provenance stamp, or the stamp was bumped for a migration that did not."
+            exit 1
+          fi
+          echo "    OK C-09c generator_version ${gv} is the newest migration redefining a generator function"
 
       - name: Calendar grant + RLS gates
         env:
@@ -725,7 +761,10 @@ jobs:
 
   practice-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10. Observed runs on this job: 5m14s, 10m04s (killed), 10m14s (killed),
+    # 7m20s. The work fits; the margin did not, and GitHub reports a timeout kill as
+    # "cancelled", which reads like an infrastructure hiccup rather than a budget.
+    timeout-minutes: 20
     permissions:
       contents: read
     services:

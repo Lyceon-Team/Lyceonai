@@ -48,7 +48,11 @@ export type EngineCreateContext = {
 
 export type EngineLaunch = {
   session_id: string;
-  /** Where the client navigates. For practice, `/practice/session/<id>`. */
+  /**
+   * Where the client navigates. ALWAYS `adapter.resumeHref(session_id)` — never a
+   * template written at the call site. See `resumeHref` for why that is a contract rule
+   * rather than a style preference.
+   */
   next: string;
   /** True when an already-live session was handed back rather than a new one made. */
   resumed: boolean;
@@ -123,6 +127,29 @@ export type CalendarEngineAdapter = {
     localDate: string,
     timeZone: string,
   ): Promise<ActivityUnit[]>;
+
+  /**
+   * §9.1: the client route that opens ONE session of this engine.
+   *
+   * THIS EXISTS SO A HARDCODED TEMPLATE IS UNREPRESENTABLE, NOT MERELY DISCOURAGED.
+   * `create` and the launch service's resume branch both have to answer "where does the
+   * student go now", and until 2026-09-23 only `create` asked the adapter. The resume
+   * branch built its own string — `/practice/session/<id>` — for EVERY engine, so a
+   * student resuming a live REVIEW session from a calendar block was sent to the practice
+   * page with a review session id, which 404s (production 2026-09-22, dep
+   * dpl_HzcSpFbn8J58G7rAonUzsNRATch8). The first launch worked, because that one goes
+   * through `create`; every launch after it took the broken branch.
+   *
+   * Changing that one string would have fixed review and left the next engine free to
+   * repeat it. Making the route an adapter method means the launch service CANNOT know a
+   * path: it has nothing to build one from. A new engine supplies its own route or it
+   * does not compile. (Owner ruling 2026-09-23.)
+   *
+   * Pure and synchronous: it is a route, not a lookup. It must agree with the `next` this
+   * adapter's own `create` returns, and the launch contract tests assert that for every
+   * engine on both branches.
+   */
+  resumeHref(sessionId: string): string;
 
   /** The lifecycle of one engine session, for Resume and for `in_progress` (§13). */
   progress(sessionId: string): Promise<EngineLifecycle | null>;

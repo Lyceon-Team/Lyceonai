@@ -117,7 +117,7 @@ export type LaunchOutcome =
 export function useLaunchBlock(navigate: (to: string) => void): {
   launch: (
     blockId: string,
-    blockType?: PlanBlock["block_type"],
+    blockType: PlanBlock["block_type"],
   ) => Promise<LaunchOutcome>;
   isPending: boolean;
   pendingBlockId: string | null;
@@ -132,7 +132,12 @@ export function useLaunchBlock(navigate: (to: string) => void): {
   const launch = useCallback(
     async (
       blockId: string,
-      blockType: PlanBlock["block_type"] = "practice",
+      // REQUIRED, not defaulted. This used to read `= "practice"`, which is the same
+      // "practice is the default" habit that produced the 2026-09-22 routing defect: one
+      // caller forgetting the argument silently prefetches practice's state key for a
+      // review launch. The single call site already passes it, so making it required
+      // costs nothing today and makes the omission a compile error tomorrow.
+      blockType: PlanBlock["block_type"],
     ): Promise<LaunchOutcome> => {
       setPendingBlockId(blockId);
       const clientInstanceId = getClientInstanceId();
