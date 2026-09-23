@@ -27,6 +27,7 @@ import {
   WEEKDAY_HEADERS,
 } from "../lib/dates";
 import type { CalendarViewModel, ViewBlock } from "../lib/view-model";
+import { Link } from "wouter";
 
 // ── Left rail ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export function LeftRail({
   onPickDate,
   onMonthStep,
   footer,
+  schedule,
 }: {
   name: string;
   subtitle: string;
@@ -74,6 +76,11 @@ export function LeftRail({
   onPickDate: (date: string) => void;
   onMonthStep: (delta: number) => void;
   footer: string;
+  /**
+   * §17.3's "Your schedule" card. ABSENT for a guardian, like every other control on this
+   * surface — the difference is the missing prop, not a `readOnly` branch inside.
+   */
+  schedule?: { summary: string; onEdit: () => void };
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
@@ -85,6 +92,16 @@ export function LeftRail({
         <b>{name}</b>
         <span>{subtitle}</span>
       </div>
+
+      {schedule === undefined ? null : (
+        <div className="schedcard" data-testid="rail-schedule-card">
+          <b>Your schedule</b>
+          <span data-testid="rail-schedule-summary">{schedule.summary}</span>
+          <button type="button" onClick={schedule.onEdit}>
+            Change schedule
+          </button>
+        </div>
+      )}
 
       <div className="mini">
         <header>
@@ -175,6 +192,7 @@ function addSevenDays(date: string): string {
 // ── Top bar ─────────────────────────────────────────────────────────────────
 
 export function TopBar({
+  backHref,
   rangeLabelText,
   view,
   onView,
@@ -184,7 +202,10 @@ export function TopBar({
   daysToTest,
   onRefresh,
   refreshPending,
+  onEditSchedule,
 }: {
+  /** `/dashboard` for a student, `/guardian` for a guardian — the page decides. */
+  backHref: string;
   rangeLabelText: string;
   view: "week" | "month";
   onView: (next: "week" | "month") => void;
@@ -195,9 +216,19 @@ export function TopBar({
   /** Absent for a guardian — §16 gives them no write path, so no Refresh control exists. */
   onRefresh?: () => void;
   refreshPending?: boolean;
+  /** §17.3. Absent for a guardian, for the same reason as `onRefresh`. */
+  onEditSchedule?: () => void;
 }): JSX.Element {
   return (
     <div className="top">
+      {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping the
+          history stack lands wherever the student happened to arrive from, including an
+          external referrer, and it cannot be middle-clicked or opened in a new tab. A
+          link to the dashboard is deterministic and behaves like every other link. */}
+      <Link href={backHref} className="back" data-testid="calendar-back-link">
+        <span aria-hidden="true">←</span> Dashboard
+      </Link>
+      <span className="topdiv" aria-hidden="true" />
       <div className="arrows">
         <button
           type="button"
@@ -237,6 +268,16 @@ export function TopBar({
         </button>
       </div>
       <div className="spacer" />
+      {onEditSchedule === undefined ? null : (
+        <button
+          type="button"
+          className="btn sched"
+          onClick={onEditSchedule}
+          data-testid="topbar-edit-schedule"
+        >
+          <span aria-hidden="true">✎</span> Edit schedule
+        </button>
+      )}
       {streak?.current === null || streak === undefined ? null : (
         <div className="stat" title="Days in a row with study activity">
           🔥 <b>{streak.current}</b> day streak

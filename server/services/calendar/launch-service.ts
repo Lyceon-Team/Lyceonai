@@ -106,10 +106,20 @@ export type LaunchSuccess = {
  */
 export type LaunchFailure =
   | { kind: "not_found" }
-  | { kind: "not_today"; when: "past" | "future"; scheduled_date: string; local_today: string }
+  | {
+      kind: "not_today";
+      when: "past" | "future";
+      scheduled_date: string;
+      local_today: string;
+    }
   | { kind: "already_complete"; target: number; actual: number }
   | { kind: "engine_unavailable"; engine: CalendarEngine }
-  | { kind: "engine_error"; engine: CalendarEngine; status?: number; detail?: string }
+  | {
+      kind: "engine_error";
+      engine: CalendarEngine;
+      status?: number;
+      detail?: string;
+    }
   | { kind: "link_failed"; detail: string };
 
 export type LaunchResult = Result<LaunchSuccess, LaunchFailure>;
@@ -120,7 +130,10 @@ export type LaunchResult = Result<LaunchSuccess, LaunchFailure>;
  * `calendar:block:<block_id>:<seq>` (§15.1 step 4). Exported for the tests and for
  * nobody else: adapters receive it, they never build it.
  */
-export function launchIdempotencyKey(blockId: string, sequence: number): string {
+export function launchIdempotencyKey(
+  blockId: string,
+  sequence: number,
+): string {
   return `calendar:block:${blockId}:${sequence}`;
 }
 
@@ -133,7 +146,10 @@ export async function launchBlock(
   deps: LaunchDeps,
 ): Promise<LaunchResult> {
   // 1. Load the block.
-  const context = await deps.loadBlockContext(request.student_id, request.block_id);
+  const context = await deps.loadBlockContext(
+    request.student_id,
+    request.block_id,
+  );
   if (context === null) return err({ kind: "not_found" });
 
   const { block, dayBlocks, timezone, localToday } = context;
@@ -156,12 +172,27 @@ export async function launchBlock(
   //    session is handed back rather than joined by a second one.
   const latest = await deps.latestLaunch(block.block_id);
   if (latest !== null) {
-    const lifecycle = await adapter.progress(latest.engine_session_id);
+    // THE LAUNCH ROW'S OWN ADAPTER, not the block's. `engine` above is derived from the
+    // block's CURRENT type; `latest.engine` is the engine that actually owns this session
+    // id. They differ when a day was edited after a launch — a practice block changed to
+    // review still has a practice session on its last launch row — and asking the wrong
+    // engine about a session id it has never heard of is how a live session gets reported
+    // as dead. Same object then answers `resumeHref`, so the route always belongs to the
+    // engine whose session it names.
+    const sessionAdapter = deps.adapterFor(latest.engine);
+    const lifecycle = await sessionAdapter.progress(latest.engine_session_id);
     if (lifecycle !== null && LIVE.includes(lifecycle)) {
       return ok({
         engine: latest.engine,
         session_id: latest.engine_session_id,
-        next: `/practice/session/${latest.engine_session_id}`,
+        // THE ROUTE COMES FROM THE ADAPTER, on this branch exactly as on the create
+        // branch below. This line used to read `/practice/session/${...}` for every
+        // engine, so resuming a live REVIEW block sent the student to practice's page
+        // with a review session id — a 404 on `/api/practice/sessions/:id/state`, in
+        // production on 2026-09-22. Only resume was affected: `create` already asked the
+        // adapter, which is why the FIRST launch of a block worked and every one after
+        // it did not.
+        next: sessionAdapter.resumeHref(latest.engine_session_id),
         resumed: true,
       });
     }
@@ -182,11 +213,17 @@ export async function launchBlock(
     units,
     launches: [],
   });
-  const allocated = allocation.blocks.find((b) => b.block_id === block.block_id);
+  const allocated = allocation.blocks.find(
+    (b) => b.block_id === block.block_id,
+  );
   const actual = allocated?.actual ?? 0;
   const remaining = block.target_count - actual;
   if (remaining <= 0) {
-    return err({ kind: "already_complete", target: block.target_count, actual });
+    return err({
+      kind: "already_complete",
+      target: block.target_count,
+      actual,
+    });
   }
 
   // 5. §15.1 step 4 continued: the engine decides the size, the calendar decides the
@@ -210,8 +247,12 @@ export async function launchBlock(
     return err({
       kind: "engine_error",
       engine,
-      ...(created.error.status === undefined ? {} : { status: created.error.status }),
-      ...(created.error.detail === undefined ? {} : { detail: created.error.detail }),
+      ...(created.error.status === undefined
+        ? {}
+        : { status: created.error.status }),
+      ...(created.error.detail === undefined
+        ? {}
+        : { detail: created.error.detail }),
     });
   }
 

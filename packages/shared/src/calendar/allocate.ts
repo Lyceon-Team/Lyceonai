@@ -42,11 +42,12 @@ import { instantSchema, instantSortKey, localDateSchema } from "./time.js";
  * One atomic thing the student did, as an engine reports it (§9.1). Identity is
  * `(engine, unit_id)`.
  *
- * `occurred_at` is the moment of RETRIEVAL — `answered_at` for both the practice and the
- * review engine (owner ruling, 2026-09-17). §22.4's midnight split is defined on it.
- * `practice_session_items` also has its own `occurred_at` column; the calendar does not use
- * it. That mapping is a line in the Brief 3 adapter contract so the server cannot map it
- * some other way.
+ * `occurred_at` is the moment of RETRIEVAL — the `occurred_at` COLUMN for both the practice
+ * and the review engine (owner ruling 2026-09-22, superseding the 2026-09-17 ruling that
+ * mapped it to `answered_at`). §22.4's midnight split is defined on it. Both item tables
+ * CHECK that a resolved row has an `occurred_at` and guarantee nothing about `answered_at`,
+ * so the calendar reads the column the schema enforces. That mapping is a line in the
+ * adapter contract so the server cannot map it some other way.
  *
  * `domain` is a plain string, not the canonical enum. A unit whose domain is not one of the
  * canonical eight simply matches no block scope and lands in extra work, which is the right

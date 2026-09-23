@@ -574,6 +574,12 @@ export async function readCalendar(
   return ok({
     status: "ready",
     profile,
+    // §8.1's bounds, for §17.3's settings sheet. The SAME object the upsert schema
+    // validates against (`makeStudyProfileUpsertSchema` takes `config.bounds`), so the
+    // chips a student is offered and the rule their save is judged by are one value read
+    // once. Free: `config` is already loaded above, and unlike the pre-setup `defaults`
+    // this needs no timezone resolution, so the hot read path gains no query.
+    bounds: config.bounds,
     // §17.1's "~N min". From the config accessor, never a literal — the same two constants
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
@@ -784,6 +790,9 @@ export async function readGuardianCalendar(
   // future edit to `toGuardianCalendarDay` might let through.
   const response = guardianCalendarResponseSchema.safeParse({
     status: "ready",
+    // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
+    // parent view is identical to the student's, and minutes are not among §16's exclusions.
+    estimates: config.estimates,
     days: built.days.map(toGuardianCalendarDay),
     facts: built.facts,
     streak,

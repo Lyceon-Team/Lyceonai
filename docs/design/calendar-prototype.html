@@ -26,8 +26,12 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 /* ---------- shell ---------- */
 .app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
 .rail{background:var(--rail);color:#E8EAF2;display:flex;flex-direction:column;gap:22px;padding:18px 16px;overflow-y:auto}
-.brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;letter-spacing:-.02em}
+.brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:8px;padding:2px 4px;margin:-2px -4px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;letter-spacing:-.02em}
 .brand i{width:9px;height:9px;border-radius:50%;background:var(--math);box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+.brand:hover{background:rgba(255,255,255,.08)}
+.back{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-weight:500;color:var(--ink-2);background:#fff;text-decoration:none}
+.back:hover{background:var(--surface);color:var(--ink)}
+.topdiv{width:1px;height:22px;background:var(--line);margin:0 2px}
 .who{padding:11px 12px;border-radius:var(--r);background:rgba(255,255,255,.06)}
 .who b{font-weight:600;display:block}
 .who span{color:#98A0B8;font-size:12.5px}
@@ -63,6 +67,12 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .btn:hover{background:var(--surface)}
 .btn.icon{width:30px;padding:0;display:grid;place-items:center;height:30px}
 .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn.sched{border-color:var(--math);color:var(--math);font-weight:600;display:inline-flex;gap:6px;align-items:center}
+.btn.sched:hover{background:var(--math-t)}
+.schedcard{padding:11px 12px;border-radius:var(--r);background:rgba(255,255,255,.06);font-size:12.5px;color:#C7CCDC}
+.schedcard b{display:block;color:#E8EAF2;font-weight:600;margin-bottom:3px}
+.schedcard button{margin-top:8px;width:100%;padding:7px;border-radius:8px;background:var(--math);color:#fff;font-size:12.5px;font-weight:600}
+.schedcard button:hover{background:#1D4ED8}
 .btn.primary:hover{background:#1C2440}
 .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{padding:6px 13px;font-size:13px;font-weight:500;color:var(--muted)}
@@ -124,6 +134,40 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .col:hover .add{opacity:1}
 .add:hover{border-color:var(--math);color:var(--math);background:var(--math-t)}
 
+/* day menu + day off */
+.dayhead{position:relative}
+.dmenu{position:absolute;right:8px;top:9px;width:26px;height:26px;border-radius:7px;color:var(--muted);font-size:16px;line-height:1;opacity:0;transition:opacity .12s}
+.col:hover .dmenu,.dmenu:focus-visible,.dmenu[aria-expanded=true]{opacity:1}
+.dmenu:hover{background:var(--line-2);color:var(--ink)}
+.menu{position:fixed;z-index:12;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;min-width:190px}
+.menu button{display:flex;width:100%;text-align:left;padding:8px 10px;border-radius:7px;font-size:13px;gap:9px;align-items:center}
+.menu button:hover{background:var(--surface)}
+.menu button.danger{color:#9A3412}
+.menu hr{border:0;border-top:1px solid var(--line-2);margin:4px 2px}
+.col.off{background:repeating-linear-gradient(45deg,#FFF8F1,#FFF8F1 8px,#FDF1E4 8px,#FDF1E4 16px)}
+.col.off .dayhead{background:#FFF8F1}
+.offcard{margin:2px 0;padding:12px;border-radius:var(--r);border:1px dashed #F0CFA6;background:rgba(255,255,255,.7);font-size:12.5px;color:#8A4309}
+.offcard b{display:block;font-family:'Bricolage Grotesque';font-size:14px;color:#6B3407;margin-bottom:2px}
+.offcard button{margin-top:8px;font-size:12.5px;font-weight:600;color:#8A4309;text-decoration:underline}
+.mcell.off{background:repeating-linear-gradient(45deg,#FFF8F1,#FFF8F1 8px,#FDF1E4 8px,#FDF1E4 16px)}
+.mcell .offtag{font-size:11px;color:#8A4309;font-weight:600}
+.mcell{position:relative}
+.mcell .dmenu{top:5px;right:5px}
+.mcell:hover .dmenu{opacity:1}
+
+/* settings */
+.set .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:6px 11px;border:1px solid var(--line);border-radius:999px;font-size:12.5px;color:var(--ink-2);background:#fff}
+.chips button[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:var(--r)}
+.toggle small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.switch{width:38px;height:22px;border-radius:999px;background:#CBD2E0;position:relative;flex:none;transition:background .15s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.switch[aria-checked=true]{background:var(--math)}
+.switch[aria-checked=true]::after{left:19px}
+.note{font-size:12px;color:var(--muted)}
+
 /* month grid */
 .month{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(112px,1fr);min-height:100%}
 .mhead{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}
@@ -181,8 +225,9 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 <div class="app">
   <!-- ============ left rail ============ -->
   <aside class="rail">
-    <div class="brand"><i></i> Lyceon</div>
+    <a class="brand" href="#" id="brandHome" title="Back to dashboard"><i></i> Lyceon</a>
     <div class="who"><b id="whoName">Karl Nkemzi</b><span id="whoSub">SAT · 7 November</span></div>
+    <div class="schedcard" id="schedCard"><b>Your schedule</b><span id="schedSum">Mon–Sat · 1 hr a day · tests on Saturdays</span><button id="schedEdit">Change schedule</button></div>
 
     <div class="mini">
       <header>
@@ -206,6 +251,8 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <!-- ============ main ============ -->
   <div class="main">
     <div class="top">
+      <a class="back" href="#" id="backHome"><span aria-hidden="true">←</span> Dashboard</a>
+      <span class="topdiv"></span>
       <div class="arrows">
         <button class="btn icon" id="prev" aria-label="Previous">‹</button>
         <button class="btn icon" id="next" aria-label="Next">›</button>
@@ -223,6 +270,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
         <button id="asStudent" aria-pressed="true">Student</button>
         <button id="asParent" aria-pressed="false">Parent</button>
       </div>
+      <button class="btn sched" id="gear"><span aria-hidden="true">✎</span> Edit schedule</button>
       <button class="btn primary" id="refresh">Refresh plan</button>
     </div>
 
@@ -247,6 +295,28 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <div class="body" id="sBody"></div>
   <footer id="sFoot"></footer>
 </aside>
+<aside class="sheet set" id="settings" aria-hidden="true">
+  <header>
+    <span class="kind" style="background:var(--surface);color:var(--ink-2)">Study settings</span>
+    <h3>Your schedule</h3>
+    <div class="when">Changes re-plan your open days. Days you edited or blocked out stay as they are.</div>
+  </header>
+  <div class="body">
+    <div class="field"><label>Study days</label><div class="chips" id="sDays"></div></div>
+    <div class="field"><label>Time per day</label><div class="chips" id="sMins"></div></div>
+    <div class="row">
+      <div class="field"><label>SAT date</label><input type="date" id="sExam"></div>
+      <div class="field"><label>Target score</label><select id="sScore"></select></div>
+    </div>
+    <div class="field"><label>Practice test day</label><div class="chips" id="sFl"></div></div>
+    <div class="field"><label>Timezone</label><select id="sTz"></select></div>
+    <div class="toggle"><div><b>Auto plan</b><small>Refreshes your open days every Monday.</small></div>
+      <button class="switch" id="sAuto" role="switch" aria-checked="true" aria-label="Auto plan"></button></div>
+    <p class="note" id="sNote"></p>
+  </div>
+  <footer><button class="btn" id="sCancel">Cancel</button><button class="btn primary" id="sSave">Save changes</button></footer>
+</aside>
+<div class="menu" id="menu" hidden></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -327,8 +397,10 @@ const title=b=>b.type==="review"?"Review · "+b.count+" items":b.type==="full_le
               (b.section==="M"?"Math":"Reading & Writing")+" · "+b.count+" questions";
 const mins=b=>b.type==="full_length"?140:Math.round(b.count*(b.type==="review"?SEC_PER_REV:SEC_PER_Q)/60);
 const isRest=d=>DAYS[d] && DAYS[d].blocks.length===0;
-const daysTo=s=>Math.round((parse(TEST_DATE)-parse(s))/864e5);
+const daysTo=s=>Math.round((parse(typeof PROFILE!=='undefined'?PROFILE.exam:TEST_DATE)-parse(s))/864e5);
 
+const PROFILE={days:[1,2,3,4,5,6],minutes:60,exam:TEST_DATE,score:1400,fl:6,tz:"America/Chicago",auto:true};
+const DOW_FULL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 let view="week", cursor=weekStart(TODAY), miniMonth="2026-09-01", parentMode=false;
 let filters={math:1,rw:1,rev:1,exam:1}, openId=null, dragId=null;
 
@@ -341,20 +413,29 @@ function renderWeek(){
   for(let i=0;i<7;i++){
     const d=add(cursor,i), day=DAYS[d]||{blocks:[]}, past=d<TODAY, rest=isRest(d);
     const col=document.createElement("div");
-    col.className="col"+(rest?" rest":"")+(d===TODAY?" today":"");
+    const off=!!(DAYS[d]&&DAYS[d].blocked);
+    col.className="col"+(off?" off":rest?" rest":"")+(d===TODAY?" today":"");
     col.dataset.date=d;
     const planned=day.blocks.reduce((a,b)=>a+b.count,0), done=day.blocks.reduce((a,b)=>a+b.done,0);
     col.innerHTML=`<div class="dayhead">
         <div class="dow">${DW[dow(d)]}</div>
         <div class="dnum">${parse(d).getUTCDate()}${d===TODAY?'<em>Today</em>':''}</div>
-        <div class="dmeta">${rest?"Rest day":(done>=planned&&planned>0?"Done · "+planned+" done":
-          done>0?done+" of "+planned:planned+" planned")}${day.override?" · edited":""}</div>
+        <div class="dmeta">${off?"Day off":rest?"Rest day":(done>=planned&&planned>0?"Done · "+planned+" done":
+          done>0?done+" of "+planned:planned+" planned")}${day.override&&!off?" · edited":""}</div>
+        ${!parentMode&&d>=TODAY?'<button class="dmenu" aria-label="Day options" aria-haspopup="menu">⋯</button>':''}
       </div><div class="stack"></div>`;
     const stack=col.querySelector(".stack");
     const shown=day.blocks.filter(b=>filters[klass(b)]);
-    if(!shown.length) stack.innerHTML=`<div class="empty">${rest?"No study planned":"Nothing to show"}</div>`;
+    if(off){
+      const card=document.createElement("div"); card.className="offcard";
+      card.innerHTML=`<b>Blocked out</b>Nothing will be planned this day.${day.blocks.length?" Work you already started stays.":""}`
+        +(parentMode?"":`<br><button>Undo</button>`);
+      if(!parentMode) card.querySelector("button").onclick=()=>unblock(d);
+      stack.appendChild(card);
+    } else if(!shown.length) stack.innerHTML=`<div class="empty">${rest?"No study planned":"Nothing to show"}</div>`;
     shown.forEach(b=>stack.appendChild(blockEl(b,d,past)));
-    if(!parentMode && d>=TODAY){
+    const mb=col.querySelector(".dmenu"); if(mb) mb.onclick=e=>{e.stopPropagation();openMenu(mb,d);};
+    if(!parentMode && d>=TODAY && !off){
       const a=document.createElement("button"); a.className="add"; a.textContent="+ Add block";
       a.onclick=()=>addBlock(d); col.appendChild(a);
     }
@@ -400,8 +481,10 @@ function renderMonth(){
       `<div class="mchip ${klass(b)}" draggable="${!(b.started||d<TODAY||parentMode)}" data-id="${b.id}">
          <i style="background:currentColor"></i><span>${b.type==="full_length"?"Practice test":
            b.type==="review"?"Review "+b.count:(b.section==="M"?"Math ":"R&W ")+b.count}</span></div>`).join("");
-    html+=`<div class="mcell${inMonth?"":" out"}${day&&isRest(d)?" rest":""}${d===TODAY?" today":""}" data-date="${d}">
-      <span class="mnum">${parse(d).getUTCDate()}</span>${chips}</div>`;
+    const off=!!(day&&day.blocked);
+    html+=`<div class="mcell${inMonth?"":" out"}${off?" off":day&&isRest(d)?" rest":""}${d===TODAY?" today":""}" data-date="${d}">
+      <span class="mnum">${parse(d).getUTCDate()}</span>${off?'<span class="offtag">Day off</span>':chips}
+      ${!parentMode&&d>=TODAY?'<button class="dmenu" aria-label="Day options">⋯</button>':''}</div>`;
   }
   wrap.innerHTML=html+"</div>";
   wrap.querySelectorAll(".mchip[draggable=true]").forEach(c=>{
@@ -410,6 +493,7 @@ function renderMonth(){
   });
   wrap.querySelectorAll(".mchip").forEach(c=>c.onclick=()=>{
     const d=c.closest(".mcell").dataset.date; openSheet(c.dataset.id,d);});
+  wrap.querySelectorAll(".mcell .dmenu").forEach(b=>b.onclick=e=>{e.stopPropagation();openMenu(b,b.closest(".mcell").dataset.date);});
   wrap.querySelectorAll(".mcell").forEach(cell=>{
     cell.addEventListener("dragover",e=>{if(dragId&&!parentMode){e.preventDefault();cell.classList.add("drop");}});
     cell.addEventListener("dragleave",()=>cell.classList.remove("drop"));
@@ -557,6 +641,107 @@ function addBlock(d){
   openSheet(day.blocks[day.blocks.length-1].id,d);
 }
 
+/* ------------------------------ day menu ------------------------------ */
+function ensureDay(d){ return DAYS[d]||(DAYS[d]={date:d,override:false,blocks:[]}); }
+function openMenu(btn,d){
+  const m=document.getElementById("menu"), day=ensureDay(d);
+  btn.setAttribute("aria-expanded","true");
+  m.innerHTML = (day.blocked
+      ? `<button data-a="unblock">↺ Undo day off</button>`
+      : `<button class="danger" data-a="block">⊘ Block out this day</button>`)
+    + `<hr><button data-a="regen">⟳ Regenerate day</button><button data-a="reset">⤺ Reset to auto</button>`;
+  const r=btn.getBoundingClientRect();
+  m.style.top=(r.bottom+6)+"px"; m.style.left=Math.max(8,Math.min(window.innerWidth-206,r.right-190))+"px";
+  m.hidden=false;
+  m.querySelectorAll("button").forEach(b=>b.onclick=()=>{closeMenu();
+    ({block:()=>blockOut(d),unblock:()=>unblock(d),
+      regen:()=>{if(day.blocked){toast("Undo the day off first");return;}toast("Day regenerated — "+fmt(d));},
+      reset:()=>{if(day.blocked){unblock(d);return;}day.override=false;render();toast(fmt(d)+" is back on auto");}})[b.dataset.a]();});
+}
+function closeMenu(){const m=document.getElementById("menu");m.hidden=true;
+  document.querySelectorAll(".dmenu[aria-expanded=true]").forEach(b=>b.setAttribute("aria-expanded","false"));}
+document.addEventListener("click",e=>{if(!e.target.closest("#menu"))closeMenu();});
+function blockOut(d){
+  const day=ensureDay(d);
+  day.saved=day.blocks.filter(b=>!b.started);
+  day.blocks=day.blocks.filter(b=>b.started);
+  day.blocked=true; day.override=true; render();
+  toast(fmt(d)+" blocked out"+(day.blocks.length?" — your started session stays":""));
+}
+function unblock(d){
+  const day=ensureDay(d);
+  day.blocks=day.blocks.concat(day.saved||[]); day.saved=null; day.blocked=false; day.override=false;
+  render(); toast(fmt(d)+" is back in your plan");
+}
+
+/* ------------------------------ settings ------------------------------ */
+function chipGroup(el,items,isOn,onTap){
+  el.innerHTML=items.map(([v,l])=>`<button data-v="${v}" aria-pressed="${isOn(v)}">${l}</button>`).join("");
+  el.querySelectorAll("button").forEach(b=>b.onclick=()=>{onTap(b.dataset.v);});
+}
+let draft=null;
+function openSettings(){
+  draft=JSON.parse(JSON.stringify(PROFILE));
+  const paint=()=>{
+    chipGroup(document.getElementById("sDays"),[[0,"Sun"],[1,"Mon"],[2,"Tue"],[3,"Wed"],[4,"Thu"],[5,"Fri"],[6,"Sat"]],
+      v=>draft.days.includes(+v),v=>{v=+v;
+        if(draft.days.includes(v)){ if(draft.days.length===1){toast("Keep at least one study day");return;} draft.days=draft.days.filter(x=>x!==v);}
+        else draft.days.push(v); paint();});
+    chipGroup(document.getElementById("sMins"),[[15,"15 min"],[30,"30 min"],[45,"45 min"],[60,"1 hr"],[90,"1.5 hr"],[120,"2 hr"]],
+      v=>+v===draft.minutes,v=>{draft.minutes=+v;paint();});
+    chipGroup(document.getElementById("sFl"),[[-1,"None"],[0,"Sun"],[1,"Mon"],[2,"Tue"],[3,"Wed"],[4,"Thu"],[5,"Fri"],[6,"Sat"]],
+      v=>+v===(draft.fl===null?-1:draft.fl),v=>{draft.fl=+v<0?null:+v;paint();});
+    const n=draft.days.length, q=Math.floor(draft.minutes*60/SEC_PER_Q/5)*5;
+    document.getElementById("sNote").textContent=
+      `${n} study day${n===1?"":"s"} a week · about ${q} questions a day`+(draft.fl===null?" · no automatic practice tests":` · practice tests on ${DOW_FULL[draft.fl]}s`);
+  };
+  paint();
+  document.getElementById("sExam").value=draft.exam;
+  const sc=document.getElementById("sScore");
+  sc.innerHTML=Array.from({length:121},(_,i)=>400+i*10).map(v=>`<option ${v===draft.score?"selected":""}>${v}</option>`).join("");
+  const tz=document.getElementById("sTz");
+  tz.innerHTML=["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"]
+    .map(z=>`<option ${z===draft.tz?"selected":""}>${z}</option>`).join("");
+  const sw=document.getElementById("sAuto"); sw.setAttribute("aria-checked",draft.auto);
+  sw.onclick=()=>{draft.auto=!draft.auto;sw.setAttribute("aria-checked",draft.auto);};
+  document.getElementById("settings").classList.add("on");
+  document.getElementById("settings").setAttribute("aria-hidden","false");
+  document.getElementById("scrim").classList.add("on");
+}
+function closeSettings(){document.getElementById("settings").classList.remove("on");
+  document.getElementById("settings").setAttribute("aria-hidden","true");document.getElementById("scrim").classList.remove("on");}
+function saveSettings(){
+  draft.exam=document.getElementById("sExam").value||draft.exam;
+  draft.score=+document.getElementById("sScore").value; draft.tz=document.getElementById("sTz").value;
+  Object.assign(PROFILE,draft);
+  // re-plan open days: future, not edited, not blocked, nothing started
+  const q=Math.floor(PROFILE.minutes*60/SEC_PER_Q/5)*5, half=Math.floor(q/10)*5;
+  for(let i=0;i<14;i++){
+    const d=add(TODAY,i), day=ensureDay(d);
+    if(day.override||day.blocked||day.blocks.some(b=>b.started)) continue;
+    const study=PROFILE.days.includes(dow(d));
+    if(PROFILE.fl!==null && dow(d)===PROFILE.fl && i>=3 && i<=6){ day.blocks=[{id:"b"+(++UID),type:"full_length",section:null,count:1,mix:null,key:"exam_cadence",done:0,started:false}]; continue; }
+    day.blocks = study&&q>=5 ? [
+      {id:"b"+(++UID),type:"practice",section:"M",count:q-half,mix:[{domain:"Advanced Math",count:Math.max(5,q-half-5),why:"weak"},{domain:"Algebra",count:5,why:"balanced"}].filter(m=>m.count>0),key:"weighted",done:0,started:false},
+      ...(half?[{id:"b"+(++UID),type:"practice",section:"RW",count:half,mix:[{domain:"Expression of Ideas",count:half,why:"weak"}],key:"weighted",done:0,started:false}]:[])
+    ] : [];
+  }
+  document.getElementById("countdown").textContent=daysTo(TODAY);
+  document.getElementById("whoSub").textContent="SAT · "+parse(PROFILE.exam).getUTCDate()+" "+MON[parse(PROFILE.exam).getUTCMonth()];
+  closeSettings(); paintSched(); render();
+  toast("Plan updated — days you edited or blocked out were left alone");
+}
+function paintSched(){const n=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],d=[...PROFILE.days].sort();
+  const days=d.length===7?"Every day":d.length&&d.join()==="1,2,3,4,5"?"Mon–Fri":d.length&&d.join()==="1,2,3,4,5,6"?"Mon–Sat":d.map(x=>n[x]).join(", ");
+  const m=PROFILE.minutes%60===0?(PROFILE.minutes/60)+" hr":PROFILE.minutes>60?(PROFILE.minutes/60)+" hr":PROFILE.minutes+" min";
+  document.getElementById("schedSum").textContent=days+" · "+m+" a day · "+(PROFILE.fl===null?"no auto tests":"tests on "+DOW_FULL[PROFILE.fl]+"s");}
+document.getElementById("backHome").onclick=e=>{e.preventDefault();toast("Back to dashboard");};
+document.getElementById("brandHome").onclick=e=>{e.preventDefault();toast("Back to dashboard");};
+document.getElementById("gear").onclick=openSettings;
+document.getElementById("schedEdit").onclick=openSettings;
+document.getElementById("sCancel").onclick=closeSettings;
+document.getElementById("sSave").onclick=saveSettings;
+
 /* ------------------------------ chrome ------------------------------ */
 function setView(){
   document.getElementById("vWeek").setAttribute("aria-pressed",view==="week");
@@ -577,19 +762,21 @@ document.getElementById("refresh").onclick=()=>{document.getElementById("banner"
   toast("Plan refreshed — days you edited were left alone");};
 document.getElementById("ack").onclick=()=>document.getElementById("banner").hidden=true;
 document.querySelectorAll(".legend input").forEach(i=>i.onchange=()=>{filters[i.dataset.f]=i.checked;render();});
-document.getElementById("scrim").onclick=closeSheet;
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet();});
+document.getElementById("scrim").onclick=()=>{closeSheet();closeSettings();};
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeSheet();closeSettings();closeMenu();}});
 function setMode(p){parentMode=p;
   document.getElementById("asStudent").setAttribute("aria-pressed",!p);
   document.getElementById("asParent").setAttribute("aria-pressed",p);
   document.getElementById("refresh").style.display=p?"none":"";
+  document.getElementById("gear").style.display=p?"none":"";
+  document.getElementById("schedEdit").style.display=p?"none":"";
   document.getElementById("whoSub").textContent=p?"Parent view · read only":"SAT · 7 November";
   closeSheet(); render(); toast(p?"Parent view — same plan, nothing editable":"Student view");}
 document.getElementById("asStudent").onclick=()=>setMode(false);
 document.getElementById("asParent").onclick=()=>setMode(true);
 
 document.getElementById("countdown").textContent=daysTo(TODAY);
-setView(); render();
+setView(); paintSched(); render();
 </script>
 </body>
 </html>

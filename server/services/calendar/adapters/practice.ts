@@ -25,10 +25,13 @@
  * the shape the generator emits before any mastery exists, not a degenerate case.
  */
 import { supabaseServer } from "../../../../apps/api/src/lib/supabase-server";
-import { startOrReplaySession, loadPracticeConfig } from "../../../routes/practice-canonical";
+import {
+  startOrReplaySession,
+  loadPracticeConfig,
+} from "../../../routes/practice-canonical";
 import { logger } from "../../../logger";
 import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
-import { localDayWindowUtc } from "./local-day";
+import { localDayWindowUtc, toIsoTimestamp } from "./local-day";
 import type {
   CalendarEngineAdapter,
   EngineCreateContext,
@@ -85,27 +88,57 @@ async function create(
       {
         status: result.status,
         // The engine's own error CODE, never its prose and never the block scope.
-        code: typeof result.body.error === "string" ? result.body.error : "unknown",
+        code:
+          typeof result.body.error === "string" ? result.body.error : "unknown",
       },
     );
     return err({
       reason: "engine_error",
       status: result.status,
-      detail: typeof result.body.error === "string" ? result.body.error : undefined,
+      detail:
+        typeof result.body.error === "string" ? result.body.error : undefined,
     });
   }
 
   return ok({
     session_id: result.session.id,
-    next: `/practice/session/${result.session.id}`,
+    // From `resumeHref`, not a template: create and resume must not be able to disagree.
+    next: resumeHref(result.session.id),
     resumed: result.replayed,
   });
 }
 
 /**
- * §9.2: one unit per answered item on the local date, carrying its section and
- * domain. `answered_at` is the timestamp — the moment of retrieval — and the local
- * date is resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ * §9.2: one unit per ANSWERED item on the local date, carrying its section and domain.
+ * `occurred_at` is the timestamp — the moment of retrieval — and the local date is
+ * resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ *
+ * AN ACTIVITY UNIT IS RETRIEVAL, AND A SKIP IS NOT RETRIEVAL. The predicate is
+ * `status = 'answered'`, NOT `occurred_at IS NOT NULL`. Those read as synonyms and are not:
+ * a SKIPPED item is resolved too, so the CHECK guarantees it an `occurred_at` exactly as it
+ * guarantees one to an answered item — review's live data has two such rows right now
+ * (`status='skipped'`, `outcome='skipped'`, both timestamps set), and review's handoff says
+ * practice skips now enter the queue too. On a nullness predicate every skip would count as
+ * a unit, so a student could clear a block by skipping through it and §13's progress would
+ * say they had done the work. The predicate is on `status` for that reason and no other.
+ *
+ * WHICH TIMESTAMP, AND WHY IT CHANGED (owner ruling 2026-09-22). This windowed on
+ * `answered_at` until now. `occurred_at` is the column the table actually guarantees:
+ *
+ *     CONSTRAINT psi_resolved_requires_occurred_at
+ *       CHECK (status <> ALL (ARRAY['answered','skipped']) OR occurred_at IS NOT NULL)
+ *
+ * `answered_at` is plain nullable `timestamptz` with nothing enforcing it. The two agree on
+ * every resolved row in production today because `submitPracticeAnswer` and the skip path
+ * write both from one `now` — but that is a property of today's writers, not of the schema,
+ * and a resolved row that ever lands without `answered_at` falls out of this window with no
+ * error anywhere. Under-reporting a student's work silently is the same failure mode the
+ * skip predicate had; this closes the other half of it.
+ *
+ * 20260921000000 made exactly this argument about mastery's read of the same table —
+ * "occurred_at, not answered_at: psi_resolved_requires_occurred_at guarantees the former on
+ * every resolved row, and nothing guarantees the latter" — and the calendar now dates a unit
+ * by the same instant mastery does rather than by a column that merely agrees with it.
  */
 async function activityUnits(
   studentId: string,
@@ -116,11 +149,12 @@ async function activityUnits(
 
   const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .select("id, question_section, question_domain, answered_at")
+    .select("id, question_section, question_domain, occurred_at, status")
     .eq("user_id", studentId)
-    .not("answered_at", "is", null)
-    .gte("answered_at", window.startUtc)
-    .lt("answered_at", window.endUtc);
+    // See the note above: retrieval, never a skip.
+    .eq("status", "answered")
+    .gte("occurred_at", window.startUtc)
+    .lt("occurred_at", window.endUtc);
 
   if (error) {
     // Fail OPEN. A read that cannot see today's activity must show a plan with no
@@ -137,15 +171,23 @@ async function activityUnits(
   const rows = data ?? [];
   const units: ActivityUnit[] = [];
   for (const row of rows) {
-    if (typeof row.id !== "string" || typeof row.answered_at !== "string") continue;
+    if (typeof row.id !== "string") continue;
+    // Normalised rather than type-guarded, for the same reason the review adapter does it:
+    // the same column is a STRING over PostgREST and a Date over node-postgres, and a
+    // `typeof === "string"` guard silently drops every row under the second. See
+    // `toIsoTimestamp`. This adapter carried that guard until now and was correct only
+    // because nothing had yet read it through a pg-backed harness.
+    const occurredAt = toIsoTimestamp(row.occurred_at);
+    if (occurredAt === null) continue;
     const section = row.question_section;
     units.push({
       engine: "practice",
       unit_id: row.id,
-      occurred_at: row.answered_at,
+      occurred_at: occurredAt,
       local_date: localDate,
       section: section === "M" || section === "RW" ? section : null,
-      domain: typeof row.question_domain === "string" ? row.question_domain : null,
+      domain:
+        typeof row.question_domain === "string" ? row.question_domain : null,
       form_id: null,
     });
   }
@@ -172,15 +214,24 @@ async function progress(sessionId: string): Promise<EngineLifecycle | null> {
  * ceiling is `max_session_count_premium` from practice's own config, read at call
  * time rather than cached here — one owner, one value.
  */
-async function nextLaunchSize(_block: PlanBlock, remaining: number): Promise<number> {
+async function nextLaunchSize(
+  _block: PlanBlock,
+  remaining: number,
+): Promise<number> {
   const config = await loadPracticeConfig();
   return Math.max(1, Math.min(remaining, config.maxSessionCountPremium));
+}
+
+/** §9.1: practice's own session route. The route registry lists `/practice/session/:id`. */
+function resumeHref(sessionId: string): string {
+  return `/practice/session/${sessionId}`;
 }
 
 export const practiceAdapter: CalendarEngineAdapter = {
   engine: "practice",
   create,
   activityUnits,
+  resumeHref,
   progress,
   nextLaunchSize,
 };

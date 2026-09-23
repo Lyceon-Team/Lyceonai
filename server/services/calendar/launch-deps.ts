@@ -101,11 +101,14 @@ async function loadBlockContext(
 
   const scheduledDate = located.scheduled_date;
   const timezone = located.timezone;
-  if (typeof scheduledDate !== "string" || typeof timezone !== "string") return null;
+  if (typeof scheduledDate !== "string" || typeof timezone !== "string")
+    return null;
 
   const { data: planRows, error: planError } = await supabaseServer
     .from("calendar_current_plan")
-    .select("scheduled_date, timezone, block_id, display_ordinal, membership_type")
+    .select(
+      "scheduled_date, timezone, block_id, display_ordinal, membership_type",
+    )
     .eq("student_id", studentId)
     .eq("scheduled_date", scheduledDate);
 
@@ -127,7 +130,9 @@ async function loadBlockContext(
 
   const { data: blockRows, error: blockError } = await supabaseServer
     .from("calendar_blocks")
-    .select("block_id, scheduled_date, block_type, section, scope, target_count, source, derived_from_block_id, explanation_key")
+    .select(
+      "block_id, scheduled_date, block_type, section, scope, target_count, source, derived_from_block_id, explanation_key",
+    )
     .eq("student_id", studentId)
     .in("block_id", blockIds);
 
@@ -138,15 +143,22 @@ async function loadBlockContext(
       "the day's blocks could not be read",
       { blockId, ...classifyError(blockError) },
     );
-    throw new Error(`calendar_launch_blocks_read_failed: ${blockError.message}`);
+    throw new Error(
+      `calendar_launch_blocks_read_failed: ${blockError.message}`,
+    );
   }
 
   const byId = new Map<string, BlockRow>();
-  for (const row of (blockRows ?? []) as BlockRow[]) byId.set(row.block_id, row);
+  for (const row of (blockRows ?? []) as BlockRow[])
+    byId.set(row.block_id, row);
 
   const dayBlocks: PlanBlock[] = [];
   for (const row of rows) {
-    if (row.block_id === null || row.display_ordinal === null || row.membership_type === null) {
+    if (
+      row.block_id === null ||
+      row.display_ordinal === null ||
+      row.membership_type === null
+    ) {
       continue;
     }
     const stored = byId.get(row.block_id);
@@ -199,7 +211,9 @@ async function activityUnits(
   engines: readonly CalendarEngine[],
 ): Promise<ActivityUnit[]> {
   const settled = await Promise.allSettled(
-    engines.map((engine) => adapterFor(engine).activityUnits(studentId, localDate, timezone)),
+    engines.map((engine) =>
+      adapterFor(engine).activityUnits(studentId, localDate, timezone),
+    ),
   );
   const units: ActivityUnit[] = [];
   for (const result of settled) {
@@ -284,9 +298,11 @@ async function linkLaunch(
     return err(error.message);
   }
 
-  if (typeof data !== "object" || data === null) return err("link_envelope_unexpected");
+  if (typeof data !== "object" || data === null)
+    return err("link_envelope_unexpected");
   const envelope = data as { launch_sequence?: unknown; replayed?: unknown };
-  if (typeof envelope.launch_sequence !== "number") return err("link_envelope_unexpected");
+  if (typeof envelope.launch_sequence !== "number")
+    return err("link_envelope_unexpected");
 
   // §18 `calendar.block_launched {engine, resumed}`. The session id is not logged: it is
   // the handle to a student's work, and the block id is enough to correlate.

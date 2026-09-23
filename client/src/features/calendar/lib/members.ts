@@ -106,6 +106,18 @@ export function membersWithEdit(
   });
 }
 
+/**
+ * §12.4: a BLOCKED-OUT day is the same call with nothing named at all.
+ *
+ * A named function rather than a bare `[]` at the call site, because an empty array there
+ * reads like a placeholder someone forgot to fill in. It is the whole operation: the wire
+ * shape for "this day holds nothing". The server still carries any STARTED block (V-12), so
+ * this asks for a cleared day and does not promise one.
+ */
+export function membersCleared(): readonly PlanMember[] {
+  return [];
+}
+
 /** §12.4: removing a block is the same call with that block simply not named. */
 export function membersWithout(
   day: ViewDay,

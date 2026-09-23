@@ -213,14 +213,31 @@ BEGIN
 
   ---------------------------------------------------------------- Z-11
   -- §12.1 / §12.2: a non-student regeneration never takes an overridden date.
-  PERFORM public.calendar_persist_version(S1, 'weekly', 'system', 'v1', NULL);
+  --
+  -- THE FIRST ASSERTION IS NEW AND IS THE POINT. Until 2026-09-22 this gate checked only
+  -- the version number on the overridden date, and passed for the wrong reason: the weekly
+  -- run it fires was REJECTED (V-01 + V-14 on the overridden date, falling to fallback_v1
+  -- and rejected again), so nothing was written anywhere and the date trivially still
+  -- carried the day_edit's version. A gate that cannot tell "left alone" from "nothing
+  -- happened at all" is not measuring the rule it names. See
+  -- 20260926000000_calendar_drop_unowned_dates.sql.
+  v_r1 := public.calendar_persist_version(S1, 'weekly', 'system', 'v1', NULL);
+  IF v_r1 ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 the weekly run was REJECTED, so it left the overridden date alone only by failing: %', v_r1;
+  END IF;
+  -- And by the PRIMARY generator. "accepted" alone would also be true of a run whose
+  -- deterministic plan was rejected and whose fallback happened to be accepted -- a silent
+  -- downgrade of the whole planning engine for every student who ever edited a day.
+  IF v_r1 ->> 'generator' <> 'deterministic_v1' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 an overridden date pushed the run onto %, not deterministic_v1: %', v_r1 ->> 'generator', v_r1;
+  END IF;
   SELECT version_no INTO v_n FROM public.calendar_current_plan
   WHERE student_id = S1 AND scheduled_date = v_today + 1 LIMIT 1;
   IF v_n <> (SELECT version_no FROM public.calendar_plan_versions
              WHERE student_id = S1 AND trigger = 'day_edit' ORDER BY version_no DESC LIMIT 1) THEN
     RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-11 a weekly run took over the student''s overridden date';
   END IF;
-  RAISE NOTICE '    OK Z-11 a weekly regeneration leaves an overridden date to the student (§12.1)';
+  RAISE NOTICE '    OK Z-11 an ACCEPTED weekly regeneration leaves an overridden date to the student (§12.1)';
 
   ---------------------------------------------------------------- Z-12
   -- §12.4: an empty member list is a cleared day, and the override is kept.
@@ -1008,6 +1025,420 @@ BEGIN
   RAISE NOTICE '    OK Z-44 a past date and a same-date move are refused as data, and no key is consumed';
 END;
 $movegates$;
+
+
+-- ============================================================================
+-- Z-45 .. Z-47 — the plan INPUT tells the truth about enabled engines
+-- ============================================================================
+-- Doc 05F §9.3 / §10.2 (sheet §8 item 12). calendar_plan_to_output drops every
+-- member whose block_type is absent from enabled_block_types, but the generator
+-- allocates budget from calendar_build_plan_input without consulting that list.
+-- Left alone, a disabled engine SPENDS the day's seconds on a block that is then
+-- thrown away, and the day is served short with nothing to explain it.
+--
+-- WHY THIS LIVES IN THE WRITER GATES AND NOT IN PARITY. The formula is unchanged
+-- and must stay so -- it is locked to calendar_formula_reference.py by 6018
+-- byte-exact comparisons. What changed is what the formula is TOLD. That is a
+-- property of the builder against a real database, which is this file's subject.
+--
+-- THE FIXTURE IS THE PRODUCTION CASE, 2026-09-22, student amingwa08: Mon-Sat
+-- (mask 126), 60 minutes, Saturday test day, 76 active queue entries. Before the
+-- fix that plan served 20 questions where 40 fit, 10 on a Monday, and an EMPTY
+-- Saturday.
+-- ============================================================================
+DO $inputgates$
+DECLARE
+  S CONSTANT uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  k_budget  CONSTANT integer := 60 * 60;   -- daily_minutes 60, in seconds
+  k_granule CONSTANT integer := 5 * 90;    -- 5 questions, the practice granule
+  v_today    date;
+  v_r        jsonb;
+  v_input    jsonb;
+  v_short    integer;
+  v_sat      integer;
+  v_prac_off integer;
+  v_prac_on  integer;
+  v_rev_on   integer;
+  v_n        integer;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-input@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 126, 60, 6, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  -- 76 servable questions and 76 active queue entries -- production's number.
+  INSERT INTO public.questions
+    (id, stem, item_type, options, correct_answer, explanation, section, domain, skill_codes, difficulty, status, source_type)
+  SELECT 'SATM1' || lpad(i::text, 6, '0'), 'stem ' || i, 'mcq',
+         '[{"label":"A","text":"a"},{"label":"B","text":"b"},{"label":"C","text":"c"},{"label":"D","text":"d"}]'::jsonb,
+         'A', 'because', 'M', 'Algebra', ARRAY['H.C.'], 2, 'published', 1
+  FROM generate_series(1, 76) i;
+
+  INSERT INTO public.review_schedule
+    (student_id, question_id, status, queued_at, source_engine, source_session_id, source_item_id, source_outcome)
+  SELECT S, 'SATM1' || lpad(i::text, 6, '0'), 'active', now(), 'practice',
+         gen_random_uuid(), gen_random_uuid(), 'incorrect'
+  FROM generate_series(1, 76) i;
+
+  ------------------------------------------------------------------- Z-45
+  -- PRACTICE ONLY, set here rather than assumed. These three gates are about what the
+  -- snapshot says when an engine is OFF, so the fixture states that condition itself. It
+  -- used to lean on the seeded launch value; the moment review was enabled
+  -- (20260928000000) the gate began asserting a state the product had left, and went red
+  -- for the one reason a gate must never go red — being out of date.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  -- The SNAPSHOT itself, before any plan is computed. With only practice enabled,
+  -- neither other engine may appear as work to do.
+  -- Asserted on the input rather than only on the plan because this is the
+  -- statement the migration actually makes; the plan is the consequence.
+  v_input := public.calendar_build_plan_input(S, ARRAY[v_today]);
+
+  IF (v_input #>> '{profile,full_length_weekday}') IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 full_length is disabled but the snapshot still names a test weekday (%)',
+      v_input #>> '{profile,full_length_weekday}';
+  END IF;
+  IF (v_input -> 'review_due_by_date') <> '[]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 review is disabled but the snapshot carries review due: %',
+      v_input -> 'review_due_by_date';
+  END IF;
+  -- The PROFILE is untouched. The snapshot narrows what the generator is told;
+  -- it never edits what the student asked for.
+  SELECT full_length_weekday INTO v_n FROM public.student_study_profile WHERE student_id = S;
+  IF v_n <> 6 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-45 the stored profile lost its test day (got %), the snapshot must not write', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-45 with only practice enabled the snapshot reports no test day and no review due, and the profile is unchanged';
+
+  ------------------------------------------------------------------- Z-46
+  -- The consequence: no day is served short, and the test weekday is an
+  -- ordinary study day rather than a reserved-then-discarded exam.
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'cccccccc-0000-0000-0000-000000000001');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 setup was not accepted: %', v_r;
+  END IF;
+
+  -- Both figures come from the SAME unfiltered set. Filtering the rows first and
+  -- then reading Saturday off the remainder is how the first draft of this gate
+  -- read -1 for a Saturday that was in fact fully planned.
+  SELECT count(*) FILTER (WHERE ((126 >> q.dow) & 1) = 1 AND q.secs < k_budget),
+         COALESCE(min(q.secs) FILTER (WHERE q.dow = 6), -1)
+    INTO v_short, v_sat
+  FROM (
+    SELECT cp.scheduled_date AS d,
+           EXTRACT(DOW FROM cp.scheduled_date)::integer AS dow,
+           COALESCE(sum(b.target_count * 90), 0)::integer AS secs
+    FROM public.calendar_current_plan cp
+    LEFT JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+    WHERE cp.student_id = S AND cp.scheduled_date >= v_today
+    GROUP BY 1, 2
+  ) q;
+
+  IF v_short <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 % study day(s) were planned below the % s daily budget', v_short, k_budget;
+  END IF;
+  IF v_sat <> k_budget THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-46 the test weekday holds % s, expected a full % s of practice', v_sat, k_budget;
+  END IF;
+
+  SELECT COALESCE(sum(b.target_count * 90), 0)::integer INTO v_prac_off
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date >= v_today AND b.block_type = 'practice';
+  RAISE NOTICE '    OK Z-46 every study day is planned to the full daily budget and the test weekday gets practice (% s of practice over the horizon)', v_prac_off;
+
+  ------------------------------------------------------------------- Z-47
+  -- Enabling review must MOVE seconds, not create them: review blocks appear and
+  -- practice gives up exactly their seconds. A test that only asserted "review
+  -- blocks exist" would pass a generator that overspent the day.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  v_r := public.calendar_persist_version(S, 'student_refresh', 'student', 'v1',
+           'cccccccc-0000-0000-0000-000000000002');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 the regenerate with review on was not accepted: %', v_r;
+  END IF;
+
+  SELECT COALESCE(sum(b.target_count * 90) FILTER (WHERE b.block_type = 'practice'), 0)::integer,
+         COALESCE(sum(b.target_count * 120) FILTER (WHERE b.block_type = 'review'), 0)::integer
+    INTO v_prac_on, v_rev_on
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+  WHERE cp.student_id = S AND cp.scheduled_date >= v_today;
+
+  IF v_rev_on <= 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 review was enabled with 76 servable entries queued and no review block was planned';
+  END IF;
+  -- Conservation, to within the practice granule: the day cannot buy a sixth of
+  -- a five-question block, so the residue is bounded by one granule per day.
+  IF abs((v_prac_off - v_prac_on) - v_rev_on) > k_granule THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-47 budget was not conserved: practice fell by % s while review took % s (tolerance % s)',
+      v_prac_off - v_prac_on, v_rev_on, k_granule;
+  END IF;
+  RAISE NOTICE '    OK Z-47 enabling review moves seconds rather than creating them (practice -% s, review +% s)',
+    v_prac_off - v_prac_on, v_rev_on;
+END;
+$inputgates$;
+
+
+-- ============================================================================
+-- Z-48 — a profile change re-plans the OPEN days and nothing else
+-- ============================================================================
+-- Doc 05F §12.1 `profile_change`. Changing the schedule regenerates future dates the
+-- generator owns. It must not touch a date the STUDENT owns -- one they edited, or one they
+-- blocked out, which is the same thing wearing a different label: block-out is an edit to
+-- an empty member list (§12.4, proved by Z-12), so it carries `is_user_override` exactly as
+-- a hand-edited day does.
+--
+-- "LEFT ALONE" IS ASSERTED AS BYTE-IDENTITY, not as "still overridden". A regeneration that
+-- re-derived an overridden day and happened to land on the same shape would pass a weaker
+-- check while having replaced the student's rows underneath them. So the gate snapshots the
+-- exact current-plan rows for both dates and compares the snapshot afterwards.
+--
+-- The EMPTY day is the load-bearing half. An implementation that skipped "days with blocks"
+-- rather than "days the student owns" would leave a hand-edited day alone and quietly
+-- re-fill a blocked-out one -- a student who cleared Saturday for a concert would find
+-- Saturday planned again, which is the defect this gate exists to prevent.
+-- ============================================================================
+DO $profilechange$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  v_today    date;
+  v_edited   date;
+  v_blocked  date;
+  v_before   jsonb;
+  v_after    jsonb;
+  v_r        jsonb;
+  v_open     integer;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+  v_edited  := v_today + 2;
+  v_blocked := v_today + 3;
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-profile@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 127, 60, NULL, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  PERFORM public.calendar_persist_version(S, 'setup', 'student', 'v1',
+            'eeeeeeee-0000-0000-0000-000000000001');
+
+  -- One day the student EDITED (one block), one they BLOCKED OUT (no blocks). Both carry
+  -- is_user_override; only the second is empty.
+  -- The member wrapper is `{kind, block}`, as Z-10 sends it. A bare block object is
+  -- accepted and stores nothing, leaving the date GENERATED -- which is how the first
+  -- draft of this gate came to compare two generated days and call it a failure.
+  PERFORM public.calendar_edit_day(S, v_edited,
+    jsonb_build_array(jsonb_build_object('kind', 'created', 'block', jsonb_build_object(
+      'block_type', 'practice', 'section', 'M',
+      'scope', jsonb_build_object('level', 'domain',
+                 'mix', jsonb_build_array(jsonb_build_object(
+                          'domain', 'Algebra', 'count', 10, 'explanation_key', 'weak'))),
+      'target_count', 10, 'explanation_key', 'weighted'))),
+    'v1', 'eeeeeeee-0000-0000-0000-000000000002');
+  PERFORM public.calendar_edit_day(S, v_blocked, '[]'::jsonb, 'v1',
+            'eeeeeeee-0000-0000-0000-000000000003');
+
+  -- Both dates must really be the student's, or the byte-identity below is vacuous --
+  -- the same mistake Z-11 made for two months.
+  IF (SELECT count(*) FROM public.calendar_current_plan cp
+      WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)
+        AND cp.is_user_override) < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the fixture did not produce two overridden dates, so nothing below is being measured';
+  END IF;
+
+  SELECT jsonb_agg(row_to_json(t) ORDER BY t.scheduled_date, t.block_id NULLS FIRST)
+    INTO v_before
+  FROM (SELECT cp.scheduled_date, cp.block_id, cp.is_user_override
+        FROM public.calendar_current_plan cp
+        WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)) t;
+
+  -- The schedule change itself: drop to weekdays only and halve the day.
+  UPDATE public.student_study_profile
+     SET study_days_mask = 62, daily_minutes = 30
+   WHERE student_id = S;
+
+  v_r := public.calendar_persist_version(S, 'profile_change', 'student', 'v1',
+           'eeeeeeee-0000-0000-0000-000000000004');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the profile_change was not accepted: %', v_r;
+  END IF;
+  -- Same reason as Z-11: accepted-by-fallback is not the behaviour this rule describes.
+  IF v_r ->> 'generator' <> 'deterministic_v1' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 the profile_change fell to %, not deterministic_v1: %', v_r ->> 'generator', v_r;
+  END IF;
+
+  SELECT jsonb_agg(row_to_json(t) ORDER BY t.scheduled_date, t.block_id NULLS FIRST)
+    INTO v_after
+  FROM (SELECT cp.scheduled_date, cp.block_id, cp.is_user_override
+        FROM public.calendar_current_plan cp
+        WHERE cp.student_id = S AND cp.scheduled_date IN (v_edited, v_blocked)) t;
+
+  IF v_before IS DISTINCT FROM v_after THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 a profile change altered a day the student owns.
+  before: %
+  after:  %', v_before, v_after;
+  END IF;
+
+  -- And it DID do its job on the days it owns, or the comparison above would be passing
+  -- because nothing was regenerated at all.
+  SELECT count(*) INTO v_open
+  FROM public.calendar_current_plan cp
+  WHERE cp.student_id = S
+    AND cp.scheduled_date > v_today
+    AND cp.scheduled_date NOT IN (v_edited, v_blocked)
+    AND cp.is_user_override IS NOT TRUE;
+  IF v_open = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-48 no open date was re-planned, so the byte-identity above proves nothing';
+  END IF;
+
+  RAISE NOTICE '    OK Z-48 a profile change re-planned % open row(s) and left the edited and blocked-out days byte-identical', v_open;
+END;
+$profilechange$;
+
+
+-- ============================================================================
+-- Z-49 .. Z-51 — blocking out a day, and undoing it beyond the horizon
+-- ============================================================================
+-- Doc 05F §12.4 (block-out is an edit to an empty member list), §12.1 (a day reset
+-- clears the override), §12.2 (a started block is carried, V-12).
+--
+-- Z-12 already proves an empty edit clears a day and keeps the override. These add
+-- the three things the BLOCK-OUT feature needs on top of that: a started session
+-- survives being blocked out; an undo works beyond the horizon, where it used to
+-- raise; and once the date is inside the horizon the generator really does take it
+-- back, which is the only thing that makes the undo mean anything.
+-- ============================================================================
+DO $blockout$
+DECLARE
+  S CONSTANT uuid := 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+  v_today   date;
+  v_far     date;
+  v_blk     uuid;
+  v_r       jsonb;
+  v_n       integer;
+  v_started integer;
+  v_ov      boolean;
+BEGIN
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
+  v_far := v_today + 21;   -- beyond the 14-day horizon, by seven days
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (S, 'writer-blockout@example.test', '{}'::jsonb);
+
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 127, 60, NULL, 1400, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h');
+
+  PERFORM public.calendar_persist_version(S, 'setup', 'student', 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000001');
+
+  ------------------------------------------------------------------- Z-49
+  -- §12.2 / V-12: blocking out TODAY keeps a session already underway. A student
+  -- mid-set who clears the rest of their day must not lose the set they are in.
+  SELECT cp.block_id INTO v_blk FROM public.calendar_current_plan cp
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND cp.block_id IS NOT NULL
+  LIMIT 1;
+  IF v_blk IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 the fixture planned no block on today, so nothing can be started';
+  END IF;
+  -- Through the real writer, not an ad-hoc INSERT: calendar_carry_started reads what a
+  -- launch actually leaves behind, and a hand-built row could satisfy this gate while
+  -- differing from what the route writes.
+  PERFORM public.calendar_link_launch(S, v_blk, 'practice', gen_random_uuid());
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id IS NOT NULL;
+  IF v_n < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 today holds % block(s); the carry cannot be distinguished from a no-op with fewer than 2', v_n;
+  END IF;
+
+  PERFORM public.calendar_edit_day(S, v_today, '[]'::jsonb, 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000002');
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id IS NOT NULL;
+  SELECT count(*) INTO v_started FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk;
+  IF v_n <> 1 OR v_started <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-49 blocking out today left % block(s), started block present: %; expected exactly the started one',
+      v_n, v_started = 1;
+  END IF;
+  RAISE NOTICE '    OK Z-49 blocking out today clears the day and carries the STARTED block (V-12)';
+
+  ------------------------------------------------------------------- Z-50
+  -- The undo, on a date beyond the horizon. This RAISED before
+  -- 20260927000000: a day blocked out three weeks ahead could not be taken back.
+  PERFORM public.calendar_edit_day(S, v_far, '[]'::jsonb, 'v1',
+            'bbbbbbbb-0000-0000-0000-000000000003');
+  SELECT bool_or(is_user_override) INTO v_ov FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_far;
+  IF v_ov IS NOT TRUE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 the fixture did not block out the far date';
+  END IF;
+
+  v_r := public.calendar_regenerate_day(S, v_far, 'day_reset', 'v1',
+           'bbbbbbbb-0000-0000-0000-000000000004');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 undoing a day off beyond the horizon was not accepted: %', v_r;
+  END IF;
+
+  SELECT count(*) FILTER (WHERE block_id IS NOT NULL), bool_or(is_user_override)
+    INTO v_n, v_ov
+  FROM public.calendar_current_plan WHERE student_id = S AND scheduled_date = v_far;
+  IF v_n <> 0 OR v_ov IS NOT FALSE THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-50 after the undo the far date holds % block(s) and override=%; expected 0 and false',
+      v_n, v_ov;
+  END IF;
+  RAISE NOTICE '    OK Z-50 a day off beyond the horizon is undone into a non-override empty version';
+
+  ------------------------------------------------------------------- Z-51
+  -- And the undo MEANS something: once the date is inside the horizon the ordinary
+  -- weekly run plans it. Without this, Z-50 would prove only that a flag flipped.
+  -- The horizon is widened rather than time being moved, because the clock is not
+  -- ours to move and horizon_days is a config row that exists to be read.
+  UPDATE public.calendar_runtime_config SET value = '28'::jsonb WHERE key = 'horizon_days';
+
+  v_r := public.calendar_persist_version(S, 'weekly', 'system', 'v1',
+           'bbbbbbbb-0000-0000-0000-000000000005');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-51 the weekly run was not accepted: %', v_r;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND scheduled_date = v_far AND block_id IS NOT NULL;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-51 the undone date entered the horizon and the weekly run still planned nothing on it';
+  END IF;
+  RAISE NOTICE '    OK Z-51 once inside the horizon the weekly run plans the undone date (% block(s))', v_n;
+END;
+$blockout$;
 
 
 ROLLBACK;

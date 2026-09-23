@@ -24,7 +24,12 @@
  * one fewer result type in the codebase — CLAUDE.md's single-source rule outranks
  * the sketch. The reason is `result.error.reason`.
  */
-import type { ActivityUnit, CalendarEngine, PlanBlock, Result } from "@lyceon/shared";
+import type {
+  ActivityUnit,
+  CalendarEngine,
+  PlanBlock,
+  Result,
+} from "@lyceon/shared";
 
 /** What a launch needs from the request, plus the key `CalendarLaunchService` owns. */
 export type EngineCreateContext = {
@@ -43,7 +48,11 @@ export type EngineCreateContext = {
 
 export type EngineLaunch = {
   session_id: string;
-  /** Where the client navigates. For practice, `/practice/session/<id>`. */
+  /**
+   * Where the client navigates. ALWAYS `adapter.resumeHref(session_id)` — never a
+   * template written at the call site. See `resumeHref` for why that is a contract rule
+   * rather than a style preference.
+   */
   next: string;
   /** True when an already-live session was handed back rather than a new one made. */
   resumed: boolean;
@@ -87,15 +96,60 @@ export type CalendarEngineAdapter = {
   /**
    * The atomic units the §13 allocator consumes, for one student-local date.
    *
-   * `occurred_at` is `answered_at` for both real engines — the moment of retrieval,
-   * which is what §22.4's midnight split is defined on. Practice's own `occurred_at`
-   * column is NOT used by the calendar, and neither engine's `served_at` is.
+   * `occurred_at` IS THE `occurred_at` COLUMN, for both real engines — the column both
+   * tables actually guarantee. `psi_resolved_requires_occurred_at` and
+   * `rsi_resolved_requires_occurred_at` are the same CHECK on each:
+   *
+   *     CHECK (status <> ALL (ARRAY['answered','skipped']) OR occurred_at IS NOT NULL)
+   *
+   * so every row this contract can return HAS one. `answered_at` is plain nullable
+   * `timestamptz` on both tables with nothing enforcing it, and a row that resolves
+   * without it would be dropped from the window silently and reported as "the student
+   * did nothing today" — the same shape of failure as counting a skip.
+   *
+   * The two columns agree on every resolved row in production today (owner's count:
+   * 156 of 156), because
+   * `submitPracticeAnswer`, `submitReviewAnswer` and both skip paths write them from one
+   * `now`. That equality is a fact about today's writers, not an invariant; the CHECK is
+   * the invariant, so the CHECK is what the calendar reads. (Owner ruling 2026-09-22,
+   * superseding "`occurred_at` is `answered_at` for both real engines".)
+   *
+   * It is also the column review's own mastery trigger feeds from — `trg_review_item_resolve`
+   * copies `occurred_at` into `review_error_attempts`, which is what orders
+   * `canonical_mastery_events`. The calendar now dates a unit by the same instant
+   * mastery does, rather than by a column that merely agrees with it.
+   *
+   * Neither engine's `served_at` is used: §22.4's midnight split is defined on the moment
+   * of RETRIEVAL, not the moment the question was shown.
    */
   activityUnits(
     studentId: string,
     localDate: string,
     timeZone: string,
   ): Promise<ActivityUnit[]>;
+
+  /**
+   * §9.1: the client route that opens ONE session of this engine.
+   *
+   * THIS EXISTS SO A HARDCODED TEMPLATE IS UNREPRESENTABLE, NOT MERELY DISCOURAGED.
+   * `create` and the launch service's resume branch both have to answer "where does the
+   * student go now", and until 2026-09-23 only `create` asked the adapter. The resume
+   * branch built its own string — `/practice/session/<id>` — for EVERY engine, so a
+   * student resuming a live REVIEW session from a calendar block was sent to the practice
+   * page with a review session id, which 404s (production 2026-09-22, dep
+   * dpl_HzcSpFbn8J58G7rAonUzsNRATch8). The first launch worked, because that one goes
+   * through `create`; every launch after it took the broken branch.
+   *
+   * Changing that one string would have fixed review and left the next engine free to
+   * repeat it. Making the route an adapter method means the launch service CANNOT know a
+   * path: it has nothing to build one from. A new engine supplies its own route or it
+   * does not compile. (Owner ruling 2026-09-23.)
+   *
+   * Pure and synchronous: it is a route, not a lookup. It must agree with the `next` this
+   * adapter's own `create` returns, and the launch contract tests assert that for every
+   * engine on both branches.
+   */
+  resumeHref(sessionId: string): string;
 
   /** The lifecycle of one engine session, for Resume and for `in_progress` (§13). */
   progress(sessionId: string): Promise<EngineLifecycle | null>;
