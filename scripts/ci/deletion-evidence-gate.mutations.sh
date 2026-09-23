@@ -44,6 +44,7 @@ RETROUTE="server/routes/internal-retention-routes.ts"
 OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
 ANASURF="client/src/lib/analytics-surface.ts"
 APPTSX="client/src/App.tsx"
+VERIF="supabase/migrations/20260930000000_deletion_verification_in_t3.sql"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -68,6 +69,7 @@ cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
 cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
 cp "$APPTSX"     "$BACKUP/App.tsx"
+cp "$VERIF"      "$BACKUP/deletion_verification_in_t3.sql"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -94,6 +96,7 @@ restore() {
   cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
   cp "$BACKUP/analytics-surface.ts" "$ANASURF"
   cp "$BACKUP/App.tsx" "$APPTSX"
+  cp "$BACKUP/deletion_verification_in_t3.sql" "$VERIF"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -240,8 +243,13 @@ echo "==> (M16) the audit_logs guard silently swallows the mutation instead of r
 plant M16 "$MIG3" 's.replace("  RAISE EXCEPTION \x27Table % is append-only; UPDATE and DELETE are not permitted\x27, TG_TABLE_NAME;", "  RETURN NULL;", 1)'
 expect_red M16 "P3.1 audit_logs refuses"
 
+# Targets VERIF, not MIG3: migration 20260930000000 REPLACES complete_deletion_log to add the
+# T3 verification write, so this audit insert now lives there. Caught by this harness on the
+# same day the replacement landed — the third time a mutation has been left pointing at a body
+# a later migration overwrites (see M2 and M9). The rule is the same each time: plant into the
+# LAST migration that defines the function, not the one that first did.
 echo "==> (M17) profile_hard_deleted written WITH the deleted profile ids"
-plant M17 "$MIG3" 's.replace("  SELECT NULL, NULL, \x27profile_hard_deleted\x27, NULL,", "  SELECT c.profile_id, c.profile_id, \x27profile_hard_deleted\x27, NULL,", 1)'
+plant M17 "$VERIF" 's.replace("  SELECT NULL, NULL, \x27profile_hard_deleted\x27, NULL,", "  SELECT c.profile_id, c.profile_id, \x27profile_hard_deleted\x27, NULL,", 1)'
 expect_red M17 "P3.5 profile_hard_deleted"
 
 echo "==> (M18) the evidence sweep DELETES the row instead of stripping it"
@@ -352,8 +360,10 @@ expect_red M30 "P6.2 the crisis case survives the deletion"
 
 # The manifest hash must be DERIVED from the record, not stamped. A constant passes every
 # other assertion in the file and proves nothing about the record's integrity.
+# Targets VERIF, not MIG6, for the same reason as M17: 20260930000000 replaces
+# record_deletion_verification to add the §6.3 shape validation, so the hash line is there now.
 echo "==> (M31) proof_manifest_ref is a constant instead of a digest of the record"
-plant M31 "$MIG6" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
+plant M31 "$VERIF" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
 expect_red M31 "P6.5 a verification record is written"
 
 # The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
@@ -633,6 +643,33 @@ expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
 echo "==> (M89) /tutor is allowed although its SPA route is role-gated"
 plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
 expect_red M89 "E1.11 — /tutor is public AND role-gated, and deny wins"
+
+# ── The verification record's wiring ────────────────────────────────────────────
+# These four exist because the mechanism they guard was BUILT, SHAPED CORRECTLY AND TESTED,
+# and still produced nothing in production: `deletion_verification_records` had a table, a
+# validated writer and a passing Phase 6 suite, and no path from the executor ever reached the
+# writer. M90 is that defect, planted deliberately — the mutation that would have caught the
+# 2026-09-23 deletion instead of the deletion catching us.
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+echo "==> (M90) T3 scans and then throws the result away (the 2026-09-23 defect, planted)"
+plant M90 "$VERIF" 's.replace("    PERFORM public.record_deletion_verification(\n      v_comp.log_id, v_layers, v_outcome, v_comp.profile_id\n    );\n", "", 1)'
+expect_red M90 "C3.9 verification record"
+
+echo "==> (M91) the outcome stops depending on the identity sweep"
+plant M91 "$VERIF" 's.replace("      WHEN (v_layers -> \x27identity\x27 ->> \x27verified\x27) = \x27true\x27", "      WHEN true", 1)'
+expect_red M91 "C3.10 a deletion that leaves residue"
+
+echo "==> (M92) the reconciler completes a row and records nothing for it"
+plant M92 "$VERIF" 's.replace("PERFORM public.record_deletion_verification(v_id, v_unverifiable, \x27fail\x27, NULL);", "PERFORM 1;", 1)'
+expect_red M92 "C3.6 rolled-back cascade"
+
+SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
+echo "==> (M93) the write path accepts a pass whose in-scope layers are not verified"
+plant M93 "$VERIF" 's.replace("  IF p_outcome = \x27pass\x27 THEN", "  IF false THEN", 1)'
+expect_red M93 "P6.7 the write path refuses a pass"
+
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 
 echo "==> (29k) restored: the analytics-surface suite must be green again"
 again="$(run_suite)"
