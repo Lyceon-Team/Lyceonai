@@ -25,6 +25,7 @@
  *    metadata server and must not receive a key.
  */
 import { z } from "zod";
+import { GoogleAuth } from "google-auth-library";
 
 const serviceAccountSchema = z.object({
   type: z.literal("service_account"),
@@ -69,13 +70,45 @@ export function getGcpCredentials(): GcpServiceAccount {
   if (!result.success) {
     // Key paths only. Never result.error, never the received values.
     const failed = result.error.issues.map((i) => i.path.join(".")).join(", ");
-    throw new Error(
-      `GCP_SERVICE_ACCOUNT_JSON failed validation on: ${failed}`,
-    );
+    throw new Error(`GCP_SERVICE_ACCOUNT_JSON failed validation on: ${failed}`);
   }
 
   cached = result.data;
   return cached;
+}
+
+let cachedAuth: GoogleAuth | null = null;
+
+/**
+ * Returns a Bearer access token for the Cloud Tasks REST API (and any
+ * other GCP API that accepts OAuth2 access tokens). Uses the same
+ * service-account credential as every other GCP client in the BFF —
+ * no metadata-server path.
+ *
+ * Returns null when credentials are absent (local dev without
+ * GCP_SERVICE_ACCOUNT_JSON). Never throws — callers treat null as
+ * "skip this GCP call."
+ */
+export async function getGcpAccessToken(): Promise<string | null> {
+  let creds: GcpServiceAccount;
+  try {
+    creds = getGcpCredentials();
+  } catch {
+    return null;
+  }
+
+  if (!cachedAuth) {
+    cachedAuth = new GoogleAuth({
+      credentials: creds,
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+  }
+
+  const client = await cachedAuth.getClient();
+  const tokenResponse = await client.getAccessToken();
+  const token =
+    typeof tokenResponse === "string" ? tokenResponse : tokenResponse?.token;
+  return token ?? null;
 }
 
 /**
@@ -84,4 +117,5 @@ export function getGcpCredentials(): GcpServiceAccount {
  */
 export function _resetGcpCredentialsCache(): void {
   cached = null;
+  cachedAuth = null;
 }
