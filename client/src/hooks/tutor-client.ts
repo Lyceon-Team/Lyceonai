@@ -1,28 +1,20 @@
 /**
- * @spec [Doc-03B_V2 §4–§5]
- * @implemented 2026-08-09
+ * @spec [CC Brief "PR B: Standalone LISA Chat UI" §1–§5]
+ * @implemented 2026-09-23
  *
- * plain English: TanStack Query hooks for the LISA tutor API endpoints.
- * All server communication flows through these hooks — no ad-hoc fetch calls.
+ * plain English: TanStack Query hooks for the LISA tutor API — standalone
+ * session lifecycle. Consumes the lifecycle endpoints (create, end, resume,
+ * list, detail) and the message endpoint. All server state flows through
+ * these hooks — no ad-hoc fetch calls.
  *
- * expected outcome: components use useCreateConversation, useSendMessage,
- * useConversation, useConversations to interact with the tutor API.
+ * trade-offs: no optimistic updates for tutor messages — the server must
+ * anti-leak scan first. Messages appear only after server confirmation.
  *
- * trade-offs: optimistic updates are NOT used for tutor messages because
- * the server response includes the tutor's reply and anti-leak scanning
- * must happen server-side. Messages are appended only after server confirmation.
- *
- * edge cases: `useConversation` is disabled (no request fired) when
- * `conversationId` is null/undefined, so pages can render before a
- * conversation is selected without triggering a 404. `useSendMessage`
- * invalidates the affected conversation's query on success so the newly
- * persisted student + tutor turn is refetched from the server rather than
- * spliced in locally.
- *
- * wire contract note: the append-turn idempotency field is named
- * `client_turn_id` on the wire (Doc 03B §6.3, matching the live
- * `appendTurnSchema` in server/routes/tutor-runtime.ts) — NOT
- * `idempotency_key`. Verified directly against that route file.
+ * edge cases: `useConversation` is disabled when `conversationId` is
+ * null/undefined. `useSendMessage` invalidates the affected conversation
+ * and the list on success (title changes after first message). Crisis
+ * responses include `crisis_paused`, `crisis_paused_at`, and
+ * `crisis_category` — the UI reads these to enter the paused state.
  */
 
 import {
@@ -36,7 +28,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — aligned with server route schemas (tutor-runtime.ts)
 // ---------------------------------------------------------------------------
 
 export type TutorEntryMode = "scoped_question" | "scoped_session" | "general";
@@ -47,7 +39,9 @@ export type TutorSourceSurface =
   | "test_review"
   | "dashboard";
 
-export type TutorConversationStatus = "active" | "closed" | "abandoned";
+export type TutorConversationStatus = "active" | "ended";
+
+export type TutorConversationSurface = "standalone" | "practice" | "review";
 
 export type TutorMessageRole = "student" | "tutor" | "system";
 
@@ -65,6 +59,7 @@ export type CreateConversationInput = {
   source_session_item_id?: string | null;
   source_question_row_id?: string | null;
   source_question_canonical_id?: string | null;
+  idempotency_key?: string;
 };
 
 export type TutorConversation = {
@@ -72,8 +67,11 @@ export type TutorConversation = {
   reused: boolean;
   entry_mode: TutorEntryMode;
   source_surface: TutorSourceSurface;
+  surface: TutorConversationSurface | null;
   status: TutorConversationStatus;
+  title: string | null;
   crisis_flagged: boolean;
+  crisis_paused_at: string | null;
   resolved_scope: TutorResolvedScope;
   created_at: string;
   updated_at: string;
@@ -102,6 +100,8 @@ export type TutorUiHints = {
   suggested_chip: string | null;
 };
 
+export type CrisisCategory = "crisis" | "safeguarding";
+
 export type SendMessageResponse = {
   conversation_id: string;
   message_id: string;
@@ -109,9 +109,12 @@ export type SendMessageResponse = {
   response: {
     content: string;
     content_kind: string;
+    crisis_category?: CrisisCategory;
     suggested_action: TutorSuggestedAction;
     ui_hints: TutorUiHints;
   };
+  crisis_paused?: boolean;
+  crisis_paused_at?: string;
   conversation_updated_at: string;
 };
 
@@ -128,7 +131,10 @@ export type TutorConversationDetail = {
     conversation_id: string;
     entry_mode: TutorEntryMode;
     source_surface: TutorSourceSurface;
+    surface: TutorConversationSurface | null;
     status: TutorConversationStatus;
+    title: string | null;
+    crisis_paused_at: string | null;
     resolved_scope: TutorResolvedScope;
     created_at: string;
     updated_at: string;
@@ -145,7 +151,11 @@ export type TutorConversationSummary = {
   conversation_id: string;
   entry_mode: TutorEntryMode;
   source_surface: TutorSourceSurface;
+  surface: TutorConversationSurface | null;
   status: TutorConversationStatus;
+  title: string | null;
+  crisis_flagged: boolean;
+  crisis_paused_at: string | null;
   resolved_scope: TutorResolvedScope;
   last_message_preview: string | null;
   message_count: number;
@@ -161,11 +171,20 @@ export type TutorConversationsList = {
   };
 };
 
+export type EndConversationResponse = {
+  conversation_id: string;
+  status: "ended";
+  ended_at: string;
+};
+
+export type ResumeConversationResponse = {
+  conversation_id: string;
+  status: "active";
+  crisis_paused_at: null;
+};
+
 // ---------------------------------------------------------------------------
-// Fetch helper — thin wrapper over the canonical `apiRequest` (queryClient.ts).
-// `apiRequest` already attaches credentials, CSRF token, and Content-Type;
-// this helper only adds the `/api/tutor` prefix and unwraps the `{ data }`
-// envelope every endpoint in Doc 03B §5–§8 uses.
+// Fetch helper
 // ---------------------------------------------------------------------------
 
 const TUTOR_API_BASE = "/api/tutor";
@@ -183,8 +202,7 @@ async function tutorRequest<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Query keys — single source of truth so mutations can invalidate the exact
-// key a query hook subscribes to.
+// Query keys
 // ---------------------------------------------------------------------------
 
 export function tutorConversationQueryKey(
@@ -199,31 +217,27 @@ export const tutorConversationsQueryKey = ["tutor", "conversations"] as const;
 // Hooks
 // ---------------------------------------------------------------------------
 
-/**
- * Creates a new tutor conversation, or resolves/reuses an eligible active one
- * per the server's reuse rule (Doc 03B §5.6). Callers should read
- * `data.conversation_id` and navigate to the chat surface with it.
- */
 export function useCreateConversation(): UseMutationResult<
   TutorConversation,
   HttpApiError,
   CreateConversationInput
 > {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (input: CreateConversationInput) =>
       tutorRequest<TutorConversation>("/conversations", {
         method: "POST",
         body: input,
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationsQueryKey,
+      });
+    },
   });
 }
 
-/**
- * Sends a student turn on an existing conversation. On success, invalidates
- * that conversation's query so the persisted student message and the
- * server-generated tutor reply are loaded from the server — never appended
- * client-side (anti-leak scanning happens server-side, post-generation).
- */
 export function useSendMessage(): UseMutationResult<
   SendMessageResponse,
   HttpApiError,
@@ -248,11 +262,6 @@ export function useSendMessage(): UseMutationResult<
   });
 }
 
-/**
- * Fetches a single conversation with its message history. Disabled (no
- * network request) while `conversationId` is null/undefined so pages can
- * render a "select a conversation" state without a spurious request.
- */
 export function useConversation(
   conversationId: string | null | undefined,
 ): UseQueryResult<TutorConversationDetail, HttpApiError> {
@@ -266,25 +275,21 @@ export function useConversation(
   });
 }
 
-/**
- * Lists the authenticated student's recent conversations, most recent first.
- */
 export function useConversations(): UseQueryResult<
   TutorConversationsList,
   HttpApiError
 > {
   return useQuery({
     queryKey: tutorConversationsQueryKey,
-    queryFn: () => tutorRequest<TutorConversationsList>("/conversations"),
+    queryFn: () =>
+      tutorRequest<TutorConversationsList>(
+        "/conversations?surface=standalone&status=active",
+      ),
   });
 }
 
-/**
- * Closes an active conversation. On success, invalidates the conversation
- * detail query and the conversations list so the UI reflects the new state.
- */
-export function useCloseConversation(): UseMutationResult<
-  { conversation_id: string; status: string; closed_at: string },
+export function useEndConversation(): UseMutationResult<
+  EndConversationResponse,
   HttpApiError,
   string
 > {
@@ -292,14 +297,34 @@ export function useCloseConversation(): UseMutationResult<
 
   return useMutation({
     mutationFn: (conversationId: string) =>
-      tutorRequest<{
-        conversation_id: string;
-        status: string;
-        closed_at: string;
-      }>(`/conversations/${encodeURIComponent(conversationId)}/close`, {
-        method: "POST",
-        body: {},
-      }),
+      tutorRequest<EndConversationResponse>(
+        `/conversations/${encodeURIComponent(conversationId)}/end`,
+        { method: "POST", body: {} },
+      ),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationQueryKey(conversationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: tutorConversationsQueryKey,
+      });
+    },
+  });
+}
+
+export function useResumeConversation(): UseMutationResult<
+  ResumeConversationResponse,
+  HttpApiError,
+  string
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      tutorRequest<ResumeConversationResponse>(
+        `/conversations/${encodeURIComponent(conversationId)}/resume`,
+        { method: "POST", body: {} },
+      ),
     onSuccess: (_data, conversationId) => {
       queryClient.invalidateQueries({
         queryKey: tutorConversationQueryKey(conversationId),
