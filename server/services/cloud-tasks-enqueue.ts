@@ -33,11 +33,17 @@
  *    next stale-summary sweep.
  */
 import { logger } from "../logger";
+import { getGcpAccessToken, getGcpCredentials } from "../lib/gcp-credentials";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
+function resolveGcpProjectId(): string | null {
+  try {
+    return getGcpCredentials().project_id;
+  } catch {
+    return process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID ?? null;
+  }
+}
 
 const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
 
@@ -49,34 +55,6 @@ const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
  */
 const CLOUD_TASKS_SERVICE_ACCOUNT =
   process.env.CLOUD_TASKS_SERVICE_ACCOUNT ?? "";
-
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
-}
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -113,11 +91,12 @@ export async function enqueueCloudTask(
   targetUrl: string,
   payload: CloudTaskPayload,
 ): Promise<void> {
-  if (!GCP_PROJECT_ID) {
+  const gcpProjectId = resolveGcpProjectId();
+  if (!gcpProjectId) {
     logger.warn(
       "CLOUD_TASKS",
       "missing_project_id",
-      "GCP_PROJECT_ID not set; Cloud Tasks enqueue skipped",
+      "GCP project ID not available (no credentials and no GCP_PROJECT_ID env var); Cloud Tasks enqueue skipped",
       { queueName },
     );
     return;
@@ -146,7 +125,7 @@ export async function enqueueCloudTask(
 
   const payloadJson = JSON.stringify(payload);
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${queueName}`;
+  const queuePath = `projects/${gcpProjectId}/locations/${GCP_LOCATION}/queues/${queueName}`;
   const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
 
   // ── Cloud Tasks task body with OIDC token (§9.3) ──────────────

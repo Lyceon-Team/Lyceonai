@@ -12051,6 +12051,13 @@ CREATE INDEX idx_tutor_conversations_standalone_active ON public.tutor_conversat
 
 
 --
+-- Name: idx_tutor_conversations_student_assignment_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_tutor_conversations_student_assignment_key ON public.tutor_conversations USING btree (student_id, assignment_key) WHERE (assignment_key IS NOT NULL);
+
+
+--
 -- Name: idx_tutor_conversations_student_status; Type: INDEX; Schema: public; Owner: -
 --
 

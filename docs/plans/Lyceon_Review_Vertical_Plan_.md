@@ -93,14 +93,13 @@
 | R4 | UI: **share practice's loop** (`CanonicalPracticePage` + `useCanonicalPractice`) fed review's endpoints, with small differences as props; a **new review landing page** for the pool picker; open-sessions list with abandoned hidden, in both engines. Pre-build: count the practice-only branches in the loop. If they don't separate cleanly, stop and report. | R3 deployed |
 | R5 | Calendar: the held items H1–H7 in `Brief_Calendar_Review_Seam.md`, landed once, together | R3, R4 |
 
-**Status (2026-09-22):**
-- R1–R4 are on `main` and deployed.
-- R4.1 is PR #815 into `review`: CI green. It fixes the landing order, the guidance copy, and the duplicate `pool_mode`.
-- **Production walk done and verified.** Every queue transition held on real data: wrong → superseded + a `review` entry; right once → graduated; skip → requeued, no attempt. So did End Session from both surfaces, with queue entries left active. Six review mastery events are keyed to the item ids.
-- Open: the owner's manual check of the ended-session URL redirect, in both engines.
-- Spec amendments: SCL-109 to SCL-118 written as PROPOSED in PR #827 (Doc 02B: 109–114; Doc 05F: 115–118). The owner rules and applies them under the change log's rules.
-- Spec change log file findings: its two status-value lists disagree, and its "newest at top" rule contradicts its append-at-end practice.
-- Next: hand the calendar team `Brief_Calendar_Review_Seam.md` (R5, items H1–H7).
+**Status: COMPLETE (2026-09-22).**
+- R1–R4.2 merged to `main`, deployed, and verified in production.
+- SCL-109 to SCL-118 approved.
+- The plan, the change-log entries and the citation corrections are all merged; `genesis-fresh-apply` green on `main`.
+- **End-to-end verified in production, including the calendar path:** the calendar generated review blocks (scope `{"mode":"queue"}`, target 15), launched one with the key `calendar:block:<id>:1`, and review prefilled and served it. 85 queue entries from 85 practice misses and skips (three from live practice, not the backfill); 14 answered items, 14 attempts with `id` = item id, 14 mastery events; 78 active, 4 graduated, 15 superseded, with no duplicate open entry, no unservable active entry, and no answered item missing an attempt.
+- Remaining: the owner's manual check of the ended-session URL redirect, and filing the Doc 05F §9.2 practice-bullet defect as an SCL (calendar-owned).
+- Post-launch: LISA in review (the answer-withholding rule is written and marked deferred) and SM-2 spacing. Exams need only call `review_queue_record` for each miss or skip; "review a past session" then covers exams with no review-side change.
 
 **Carried from R1 (PR #794):**
 - **R2:** correct the false comment at `practice-canonical.ts:2416-2421`; delete `tmp/table_reference_audit.json`.
@@ -133,6 +132,10 @@ Logged in `SPEC_CHANGES_LOG.md` as `PROPOSED` (PR #827). The owner rules and app
 ---
 
 ## 6. Findings for other owners
+
+- **Production is ahead of every mergeable branch (2026-09-22).** The calendar's review adapter and its DDL (`20260925000000`, `20260928000000`) are applied in production but exist only on the open PR #825 branch. Production already has `enabled_block_types = ["practice","review"]`, the `servable_questions` join in `calendar_build_plan_input`, and 3 review blocks. If #825 is closed unmerged, no branch reproduces production.
+- **The migration ledger is not authoritative.** `supabase_migrations.schema_migrations` holds 16 rows and stops at `20260624020000`, because DDL is applied by hand. `genesis-fresh-apply` is the only proof that a branch reproduces production.
+- **Doc 05F §9.2:** the practice activity-unit bullet claims a `skills` field that `activityUnitSchema` (`.strict()`) has no room for. Same defect the review bullet had; 05F-owned.
 
 - **Calendar:** the review launch-contract test exists (added 2026-09-18) but asserts against the stub adapter; the calendar team points it at the real review API (SCL-117). `review_estimated_seconds_per_item = 120` assumed LISA.
 - **Practice:** Fisher–Yates is private (review's copy died with R1). R3 promotes it verbatim. Two dead Fisher–Yates bodies remain: `rng.ts:42` and `apps/api/src/services/exams/seeded.ts:10`. `SESSION_ITEM_SELECT` (`practice-canonical.ts:253-254`) omits `question_assets` and `question_estimated_time_seconds`, so practice serves `assets: null` on read-back.

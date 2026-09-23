@@ -30,6 +30,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Client } from "pg";
 import type { PlanBlock } from "@lyceon/shared";
 import { bootstrapPgDatabase, makePgSupabase } from "../helpers/pg-supabase";
+import {
+  assertSessionIdResolves,
+  launchResumingExistingSession,
+} from "../helpers/launch-landing";
 
 const PG_AVAILABLE =
   process.env.PGHOST !== undefined && process.env.PGHOST !== "";
@@ -122,6 +126,29 @@ describe("review adapter — the §9.1 contract", () => {
       "/review/session/5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b",
     );
     expect(result.value.resumed).toBe(false);
+  });
+
+  it("(2f) create's `next` IS `resumeHref` — the two can never disagree", async () => {
+    const result = await reviewAdapter.create(BLOCK, 5, CTX);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Not "both happen to be /review/session/<id>" — the SAME function produced both, so
+    // a future edit to one cannot silently diverge from the other. This is the assertion
+    // that makes `resumeHref` the single owner of review's route rather than a second
+    // copy of it.
+    expect(result.value.next).toBe(
+      reviewAdapter.resumeHref(result.value.session_id),
+    );
+  });
+
+  it("(2g) resumeHref is review's own route, never practice's", () => {
+    const href = reviewAdapter.resumeHref(
+      "5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b",
+    );
+    expect(href).toBe("/review/session/5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b");
+    // The production defect, stated as an assertion: a review launch must never hand the
+    // student a practice URL carrying a review session id.
+    expect(href.startsWith("/practice/")).toBe(false);
   });
 
   it("(2a) passes the QUEUE pool spec — a bare discriminant, nothing else", async () => {
@@ -432,6 +459,76 @@ describe.skipIf(!PG_AVAILABLE)(
       await expect(
         reviewAdapter.progress("00000000-0000-0000-0000-000000000000"),
       ).resolves.toBeNull();
+    });
+
+    // ── Where the student lands (§15.1 step 3) ──────────────────────────────
+    //
+    // THE REGRESSION TEST FOR THE 2026-09-22 PRODUCTION DEFECT. Every assertion above
+    // this line passed while a student resuming a review block was being sent to
+    // practice's page. None of them asked where the launch pointed.
+
+    it("the RESUME branch lands in REVIEW's route — the production defect", async () => {
+      const session = await testPg!.query(
+        `SELECT id FROM public.review_sessions WHERE student_id = $1 LIMIT 1`,
+        [STUDENT],
+      );
+      const sessionId = session.rows[0].id as string;
+
+      const result = await launchResumingExistingSession({
+        adapter: reviewAdapter,
+        engine: "review",
+        sessionId,
+        block: BLOCK,
+        studentId: STUDENT,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // `resumed: true` proves the branch under test is the one that ran. Without it a
+      // green result could mean the create path answered and the resume branch was never
+      // exercised at all.
+      expect(result.value.resumed).toBe(true);
+      expect(result.value.engine).toBe("review");
+      expect(result.value.session_id).toBe(sessionId);
+      expect(result.value.next).toBe(`/review/session/${sessionId}`);
+      // Until 2026-09-23 this line read `/practice/session/${sessionId}` in production.
+      expect(result.value.next.startsWith("/practice/")).toBe(false);
+    });
+
+    it("the id in `next` resolves in REVIEW's table and in no other", async () => {
+      const session = await testPg!.query(
+        `SELECT id FROM public.review_sessions WHERE student_id = $1 LIMIT 1`,
+        [STUDENT],
+      );
+      const sessionId = session.rows[0].id as string;
+
+      const result = await launchResumingExistingSession({
+        adapter: reviewAdapter,
+        engine: "review",
+        sessionId,
+        block: BLOCK,
+        studentId: STUDENT,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Parse the id back OUT of `next` rather than reusing the variable: the claim is
+      // that the URL the student is handed names a row, not that some id we already had
+      // does.
+      const idInNext = result.value.next.split("/").pop() ?? "";
+      expect(idInNext).toBe(sessionId);
+
+      const counts = await assertSessionIdResolves(
+        testPg!,
+        idInNext,
+        "review_sessions",
+        "practice_sessions",
+      );
+      expect(counts.own).toBe(1);
+      // The defect's signature: a real id, in the wrong engine's page. `practice_sessions`
+      // has never heard of it, which is precisely why production returned 404.
+      expect(counts.foreign).toBe(0);
     });
   },
 );

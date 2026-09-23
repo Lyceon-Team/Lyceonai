@@ -1103,8 +1103,20 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         suppression_reason: suppressionReason,
       });
 
-      // Dispatch notification only when the policy says to.
+      // Every notification decision must leave a trace — a safety
+      // notification that produces no log cannot be verified.
       if (shouldNotify) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_notification_dispatching",
+          "notification policy: dispatching ops alert",
+          {
+            caseId: flagResult.caseId,
+            conversationId: conversation.id,
+            source: crisisResult.source,
+            isNewCase: flagResult.isNewCase,
+          },
+        );
         await notifyCrisisEvent({
           caseId: flagResult.caseId,
           conversationId: conversation.id,
@@ -1112,6 +1124,17 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           slaDeadline: flagResult.slaDeadline,
           timestamp: new Date().toISOString(),
         });
+      } else {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_notification_suppressed",
+          "notification policy: alert suppressed",
+          {
+            caseId: flagResult.caseId,
+            conversationId: conversation.id,
+            suppressionReason,
+          },
+        );
       }
 
       // Mark student message as completed — crisis detection is a valid response.
