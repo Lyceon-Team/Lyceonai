@@ -518,6 +518,128 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
   });
 
+  // ── Test D1: 409 crisis_paused renders paused, not failed ──────────
+  it("D1. 409 conversation_crisis_paused enters paused state (not failed)", async () => {
+    const { HttpApiError: HttpApiErrorClass } = await import("@/lib/api-error");
+
+    const { sendMut } = setupDefaultMocks({
+      messages: [sampleMessage("student", "I need help")],
+    });
+
+    sendMut.mutateAsync = vi.fn().mockRejectedValue(
+      new HttpApiErrorClass({
+        status: 409,
+        code: "conversation_crisis_paused",
+        message:
+          "This session is paused because a crisis response was provided.",
+      }),
+    );
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    const textarea = screen.getByRole("textbox", { name: /message/i });
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "hello again" } });
+    });
+    const sendButton = screen.getByRole("button", { name: /send message/i });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tutoring is paused")).toBeTruthy();
+    });
+
+    expect(screen.queryByText(/couldn.t respond/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+
+    const continueBtn = screen.getByRole("button", {
+      name: /continue with lisa/i,
+    });
+    expect(continueBtn).toBeTruthy();
+  });
+
+  // ── Test D2: Crisis support card renders on reload ────────────────
+  it("D2. crisis support card renders from last tutor message on reload (effectiveCrisisContent)", async () => {
+    const crisisMsg =
+      "If you or someone you know is in crisis, please call 988.";
+
+    setupDefaultMocks({
+      messages: [
+        sampleMessage("student", "I feel terrible"),
+        sampleMessage("tutor", crisisMsg, "msg-crisis-resp"),
+      ],
+      crisisPausedAt: "2026-09-23T10:03:00Z",
+    });
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByText("Support")).toBeTruthy();
+    });
+
+    expect(screen.getAllByText(/call 988/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Tutoring is paused")).toBeTruthy();
+
+    const textareas = screen.queryAllByRole("textbox", { name: /message/i });
+    expect(textareas.length).toBe(0);
+  });
+
+  // ── Test D3: Crisis response renders support card, not normal bubble ─
+  it("D3. crisis response from sendMessage renders support card (not normal message bubble)", async () => {
+    const { sendMut } = setupDefaultMocks({
+      messages: [sampleMessage("student", "I need help")],
+    });
+
+    const crisisResponse = {
+      conversation_id: "conv-123",
+      message_id: "msg-crisis",
+      client_turn_id: "turn-1",
+      response: {
+        content: "If you or someone you know is in crisis, please call 988.",
+        content_kind: "text",
+        crisis_category: "crisis" as const,
+        suggested_action: { type: "none" as const, label: null },
+        ui_hints: {
+          show_accept_decline: false,
+          allow_freeform_reply: false,
+          suggested_chip: null,
+        },
+      },
+      crisis_paused: true,
+      crisis_paused_at: "2026-09-23T10:03:00Z",
+      conversation_updated_at: "2026-09-23T10:03:00Z",
+    };
+
+    sendMut.mutateAsync = vi.fn().mockResolvedValue(crisisResponse);
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    const textarea = screen.getByRole("textbox", { name: /message/i });
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "I need help" } });
+    });
+    const sendButton = screen.getByRole("button", { name: /send message/i });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Support")).toBeTruthy();
+    });
+
+    expect(screen.getByText("Tutoring is paused")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /continue with lisa/i }),
+    ).toBeTruthy();
+
+    const textareas = screen.queryAllByRole("textbox", { name: /message/i });
+    expect(textareas.length).toBe(0);
+  });
+
   // ── Test 8: Empty state renders correctly ──────────────────────────
   it("8. empty state with no sessions renders without looking broken", async () => {
     mockSearch = "";
