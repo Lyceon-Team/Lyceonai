@@ -2206,13 +2206,22 @@ router.post(
       }
 
       // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
+      // @spec [Doc-03C_V3 §8.3 task payload; CC Brief "Close the LISA Vertical" PR 3.2]
+      // - trigger_reason is "close": §8.3 fixes the enum as close | threshold |
+      //   stale, and this endpoint IS the spec's conversation-close trigger.
+      //   It used to send "end", which the writeback handler (correctly, per
+      //   the spec) rejects with 400 — so no summary was ever written.
+      // - AWAITED: on Vercel the function may be frozen once the response is
+      //   sent, so a `void` enqueue could be dropped before the Cloud Tasks
+      //   call left the process. enqueueCloudTask never throws and times out
+      //   at 5s, so awaiting adds at most that to /end.
       const compactionRequestId = crypto.randomUUID();
       const compactionTargetUrl = `${(process.env.PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "")}/api/internal/memory/compact-writeback`;
 
-      void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
+      await enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
         job_type: "compaction",
         conversation_id: conversation.id,
-        trigger_reason: "end",
+        trigger_reason: "close",
         request_id: compactionRequestId,
       });
 
