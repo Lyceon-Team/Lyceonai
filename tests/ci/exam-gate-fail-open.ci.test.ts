@@ -59,7 +59,10 @@ vi.mock("../../server/logger", () => ({
   },
 }));
 
-import { EntitlementService } from "../../server/services/entitlement-service";
+import {
+  EntitlementService,
+  _resetLiveExamFailOpenReports,
+} from "../../server/services/entitlement-service";
 
 // ---------------------------------------------------------------------------
 // SCL-079: exam gate fail-open contract
@@ -68,6 +71,7 @@ import { EntitlementService } from "../../server/services/entitlement-service";
 describe("SCL-079: isLiveExamInProgress fail-open contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetLiveExamFailOpenReports();
   });
 
   afterEach(() => {
@@ -91,11 +95,34 @@ describe("SCL-079: isLiveExamInProgress fail-open contract", () => {
       "ENTITLEMENT",
       "live_exam_check_failed_open",
       expect.stringContaining("failing OPEN per SCL-079"),
-      expect.objectContaining({
-        studentId: "student-123",
-        code: "42P01",
-      }),
+      expect.objectContaining({ code: "42P01" }),
     );
+    // CC Brief "Close the LISA Vertical" PR 2.3: no student identifier.
+    const payload = warnSpy.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("studentId");
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("student-123");
+  });
+
+  // PR 2.3: the fail-open branch runs on every turn while the table is
+  // absent — it must report once per process per error code, not per turn.
+  it("repeated failures with the same code warn once; a new code warns again", async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: "relation does not exist", code: "42P01" },
+    });
+    for (let i = 0; i < 5; i++) {
+      expect(await EntitlementService.isLiveExamInProgress(`s-${i}`)).toBe(
+        false,
+      );
+    }
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    mockMaybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: "connection refused", code: "ECONNREFUSED" },
+    });
+    expect(await EntitlementService.isLiveExamInProgress("s-x")).toBe(false);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
   // Case 2: Table present, active exam row → BLOCK (INV-03-02)

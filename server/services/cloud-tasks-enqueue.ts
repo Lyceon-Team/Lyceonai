@@ -33,19 +33,69 @@
  *    next stale-summary sweep.
  */
 import { logger } from "../logger";
-import { getGcpAccessToken, getGcpCredentials } from "../lib/gcp-credentials";
+import {
+  getGcpAccessTokenResult,
+  getGcpCredentials,
+} from "../lib/gcp-credentials";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
-function resolveGcpProjectId(): string | null {
+/**
+ * @spec [Doc-03C_V3 §8; infra/terraform/cloud-tasks.tf, variables.tf `region`;
+ *        CC Brief "Close the LISA Vertical" PR 2.1]
+ * @implemented 2026-09-23
+ *
+ * Region of every LISA Cloud Tasks queue: `var.region` in Terraform
+ * (us-central1), where `lisa-crisis-notification` is provisioned and
+ * imported (imports.tf). This was previously read from VERTEX_LOCATION, a
+ * VERTEX setting whose worker value is `global` — a queue path under
+ * `locations/global` does not exist, so any runtime that copied the worker's
+ * value would fail every enqueue. The queue region is infrastructure, not a
+ * model setting, so it is a constant tied to the Terraform variable.
+ */
+export const CLOUD_TASKS_LOCATION = "us-central1";
+
+/** Everything needed to call the Cloud Tasks REST API, or why it is missing. */
+export type CloudTasksAccess =
+  | { ok: true; projectId: string; accessToken: string }
+  | {
+      ok: false;
+      reason: "credentials_unavailable" | "token_mint_failed";
+      detail: string;
+    };
+
+/**
+ * @spec [Doc-06B §3; Coding Standards §3.6; CC Brief "Close the LISA Vertical" PR 2.1]
+ * @implemented 2026-09-23
+ *
+ * plain English: the ONE credential source for Cloud Tasks calls in the BFF —
+ * project id and access token both come from GCP_SERVICE_ACCOUNT_JSON via
+ * `server/lib/gcp-credentials.ts`, the same source as the orchestrator OIDC
+ * client and the crisis classifier. No env-var fallback for the project: a
+ * fallback only let the call proceed to a token mint that needs the same
+ * missing credential, turning one clear failure into a second, vaguer one.
+ * Never throws.
+ */
+export async function resolveCloudTasksAccess(): Promise<CloudTasksAccess> {
+  let projectId: string;
   try {
-    return getGcpCredentials().project_id;
-  } catch {
-    return process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID ?? null;
+    projectId = getGcpCredentials().project_id;
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      reason: "credentials_unavailable",
+      detail: err instanceof Error ? err.message : "unknown",
+    };
   }
+  const token = await getGcpAccessTokenResult();
+  if (!token.ok) return token;
+  return { ok: true, projectId, accessToken: token.token };
 }
 
-const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
+/** `projects/{p}/locations/{region}/queues/{q}/tasks` REST endpoint. */
+export function cloudTasksApiUrl(projectId: string, queueName: string): string {
+  return `https://cloudtasks.googleapis.com/v2/projects/${projectId}/locations/${CLOUD_TASKS_LOCATION}/queues/${queueName}/tasks`;
+}
 
 /**
  * Service account email for Cloud Tasks OIDC token.
@@ -91,17 +141,6 @@ export async function enqueueCloudTask(
   targetUrl: string,
   payload: CloudTaskPayload,
 ): Promise<void> {
-  const gcpProjectId = resolveGcpProjectId();
-  if (!gcpProjectId) {
-    logger.warn(
-      "CLOUD_TASKS",
-      "missing_project_id",
-      "GCP project ID not available (no credentials and no GCP_PROJECT_ID env var); Cloud Tasks enqueue skipped",
-      { queueName },
-    );
-    return;
-  }
-
   if (!CLOUD_TASKS_SERVICE_ACCOUNT) {
     logger.warn(
       "CLOUD_TASKS",
@@ -112,21 +151,20 @@ export async function enqueueCloudTask(
     return;
   }
 
-  const accessToken = await getGcpAccessToken();
-  if (!accessToken) {
-    logger.debug(
+  const access = await resolveCloudTasksAccess();
+  if (!access.ok) {
+    logger.warn(
       "CLOUD_TASKS",
-      "no_gcp_credentials",
-      "GCP credentials not available (local dev); Cloud Tasks enqueue skipped",
-      { queueName },
+      "gcp_access_unavailable",
+      "GCP credentials or access token unavailable; Cloud Tasks enqueue skipped",
+      { queueName, reason: access.reason, detail: access.detail },
     );
     return;
   }
 
   const payloadJson = JSON.stringify(payload);
 
-  const queuePath = `projects/${gcpProjectId}/locations/${GCP_LOCATION}/queues/${queueName}`;
-  const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
+  const apiUrl = cloudTasksApiUrl(access.projectId, queueName);
 
   // ── Cloud Tasks task body with OIDC token (§9.3) ──────────────
   // Cloud Tasks mints the OIDC token at DELIVERY time using the
@@ -153,7 +191,7 @@ export async function enqueueCloudTask(
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${access.accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(taskBody),
