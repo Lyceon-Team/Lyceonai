@@ -113,7 +113,12 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.scoring_constant(text, text, text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'SCG FAIL [G1 privileges]: scoring_constant() EXECUTE is not service_role-only';
   END IF;
-  RAISE NOTICE 'ok   [G1 privileges] RLS on both; service_role SELECT only; helper EXECUTE service_role only';
+  IF has_function_privilege('anon', 'public.scoring_constants_sha256(text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.scoring_constants_sha256(text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.scoring_constants_sha256(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'SCG FAIL [G1 privileges]: scoring_constants_sha256() EXECUTE is not service_role-only';
+  END IF;
+  RAISE NOTICE 'ok   [G1 privileges] RLS on both; service_role SELECT only; helpers EXECUTE service_role only';
 END $$;
 ROLLBACK;
 
@@ -418,6 +423,50 @@ BEGIN
     RAISE EXCEPTION 'SCG FAIL [S2 value-nonneg]: raised=% state=% constraint=%', v_raised, v_state, v_con;
   END IF;
   RAISE NOTICE 'ok   [S2 value-nonneg] 23514 scoring_constants_value_nonneg';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------------------
+-- H1 — canonical constants_sha256 (owner ruling 2026-09-23): the in-database
+-- serializer reproduces the ruled v1.0 hash; value scale does not affect it
+-- (0.5 and 0.50 hash identically, via trim_scale); a version with no constants
+-- raises P0002 rather than hashing an empty payload. The literal below is the
+-- value E4 writes into scoring_model_versions.constants_sha256 at activation.
+-- ---------------------------------------------------------------------------
+BEGIN;
+DO $$
+DECLARE
+  k_expected CONSTANT text := '5a51132234b2d1654b5362943af2d1fef59eadbc57ed6af50a44211a735680d1';
+  v_hash text;
+  v_state text;
+BEGIN
+  v_hash := public.scoring_constants_sha256('v1.0');
+  IF v_hash IS DISTINCT FROM k_expected THEN
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: v1.0 hashed to %, expected %', v_hash, k_expected;
+  END IF;
+
+  -- v1.0 is a candidate, so its constants are writable here (rolled back below).
+  UPDATE public.scoring_constants SET value = 0.50
+   WHERE scoring_model_version = 'v1.0' AND key = 'alpha_ceiling_exponent' AND section IS NULL;
+  IF (SELECT value::text FROM public.scoring_constants
+       WHERE scoring_model_version = 'v1.0' AND key = 'alpha_ceiling_exponent') <> '0.50' THEN
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: could not stage a scale-2 value for the scale check';
+  END IF;
+  v_hash := public.scoring_constants_sha256('v1.0');
+  IF v_hash IS DISTINCT FROM k_expected THEN
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: 0.50 hashed differently from 0.5 (%): scale leaks into the hash', v_hash;
+  END IF;
+
+  BEGIN
+    PERFORM public.scoring_constants_sha256('no_such_version');
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: unknown version returned a hash instead of raising';
+  EXCEPTION WHEN no_data_found THEN
+    GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+  END;
+  IF v_state IS DISTINCT FROM 'P0002' THEN
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: unknown version raised % not P0002', v_state;
+  END IF;
+  RAISE NOTICE 'ok   [H1 constants-sha256] v1.0 = % ; scale-invariant ; unknown version P0002', k_expected;
 END $$;
 ROLLBACK;
 

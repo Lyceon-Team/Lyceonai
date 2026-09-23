@@ -93,6 +93,7 @@
 --   DROP TABLE public.scoring_constants;
 --   DROP TABLE public.scoring_model_versions;
 --   DROP FUNCTION public.scoring_constant(text, text, text);
+--   DROP FUNCTION public.scoring_constants_sha256(text);
 --   DROP FUNCTION public.prevent_active_scoring_constants_mutation();
 --   DROP FUNCTION public.enforce_single_active_scoring_version();
 --   DROP FUNCTION public.enforce_scoring_version_status_machine();
@@ -241,6 +242,55 @@ $$ LANGUAGE plpgsql STABLE SECURITY DEFINER
    SET search_path = public, pg_temp;
 
 -- ---------------------------------------------------------------------------
+-- §7.2 / §7.3 — canonical constants_sha256 serializer.
+-- @spec [Doc-04B_V4.3, §7.2 ("computed by hashing the sorted (key, section,
+--        value) tuples"), §7.3, §8.4(a) ("a real, stable hash that any reader
+--        can recompute against the live table and verify")]
+-- @implemented [2026-09-23]
+-- plain English: the ONE implementation of constants_sha256. The spec names the
+--   inputs but no byte format; owner ruling 2026-09-23 fixes it here, in the
+--   database, so §8.4(a)'s "any reader can recompute" is literally true — a
+--   reader runs this function against the live table rather than trusting a
+--   script. Format: one line per row, `key|section|trim_scale(value)::text`,
+--   section NULL rendered as the empty string; rows ordered by key COLLATE "C",
+--   then section COLLATE "C" NULLS FIRST; lines joined by a single LF; UTF-8;
+--   SHA-256; lowercase hex.
+-- trade-offs / edge cases:
+--   * trim_scale(): numeric's text form preserves stored scale, so 0.5 and 0.50
+--     would hash differently while being the same number. The hash exists to
+--     detect drift in VALUE, not in how a literal was typed.
+--   * COLLATE "C" pins byte order independent of the database's collation.
+--   * core sha256(bytea) (PG11+), not pgcrypto digest(): no dependency on the
+--     `extensions` schema being on search_path.
+--   * a version with no constant rows raises no_data_found (P0002), matching
+--     scoring_constant(); an empty attestation is never a valid hash.
+--   * E4 writes this function's output into scoring_model_versions.
+--     constants_sha256 at activation, and the E4 gate asserts the recomputed
+--     value equals the stored one.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.scoring_constants_sha256(p_version text) RETURNS text AS $$
+DECLARE
+  v_payload text;
+BEGIN
+  SELECT string_agg(
+           key || '|' || COALESCE(section, '') || '|' || trim_scale(value)::text,
+           E'\n'
+           ORDER BY key COLLATE "C", section COLLATE "C" NULLS FIRST)
+    INTO v_payload
+    FROM scoring_constants
+   WHERE scoring_model_version = p_version;
+
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'scoring_constants_sha256: no constants for version=%', p_version
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$ LANGUAGE plpgsql STABLE
+   SET search_path = public, pg_temp;
+
+-- ---------------------------------------------------------------------------
 -- §8.4 — seal an active/superseded version's constants against INSERT, UPDATE
 -- and DELETE. (verbatim)
 -- ---------------------------------------------------------------------------
@@ -294,6 +344,8 @@ REVOKE ALL ON FUNCTION public.enforce_scoring_version_status_machine()      FROM
 REVOKE ALL ON FUNCTION public.enforce_single_active_scoring_version()       FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prevent_active_scoring_constants_mutation()   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.scoring_constant(text, text, text)         TO service_role;
+REVOKE ALL ON FUNCTION public.scoring_constants_sha256(text)             FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.scoring_constants_sha256(text)          TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- §7.3 / Appendix A — v1.0 catalogue row. status = 'candidate' per the OWNER

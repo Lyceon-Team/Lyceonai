@@ -7341,6 +7341,35 @@ $$;
 
 
 --
+-- Name: scoring_constants_sha256(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_sha256(p_version text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_payload text;
+BEGIN
+  SELECT string_agg(
+           key || '|' || COALESCE(section, '') || '|' || trim_scale(value)::text,
+           E'\n'
+           ORDER BY key COLLATE "C", section COLLATE "C" NULLS FIRST)
+    INTO v_payload
+    FROM scoring_constants
+   WHERE scoring_model_version = p_version;
+
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'scoring_constants_sha256: no constants for version=%', p_version
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$;
+
+
+--
 -- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -16376,6 +16405,14 @@ GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO s
 
 REVOKE ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constants_sha256(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_sha256(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service_role;
 
 
 --

@@ -10,7 +10,7 @@
 #     C1  a real two-session race — the partial unique index, not the trigger,
 #         is what stops a second concurrent activation (run here, in bash,
 #         because it needs two connections);
-#     C2..C9, P1, P2, G1, S1, S2  scripts/ci/scoring-catalogue-gates.sql.
+#     C2..C9, P1, P2, G1, S1, S2, H1  scripts/ci/scoring-catalogue-gates.sql.
 #   The gate passes only if EVERY expected check id prints its own `ok` line
 #   and no ERROR appears. A check that errors for an unrelated reason prints no
 #   `ok` and is reported red by name — it cannot pass by accident.
@@ -37,7 +37,7 @@ DB=scoring_catalogue_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-EXPECTED_IDS="P1 G1 S1 C1 C2 C3 C4 C5 C6 C7 C8 C9 S2 P2"
+EXPECTED_IDS="P1 G1 S1 C1 C2 C3 C4 C5 C6 C7 C8 C9 S2 H1 P2"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 
