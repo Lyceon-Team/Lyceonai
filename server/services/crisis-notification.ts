@@ -40,6 +40,7 @@
  *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
+import { getGcpAccessToken } from "../lib/gcp-credentials";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -123,34 +124,6 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
   };
 
   return JSON.stringify(slackBody);
-}
-
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
 }
 
 // ── Cloud Tasks Enqueue ───────────────────────────────────────────────
