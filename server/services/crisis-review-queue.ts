@@ -12,7 +12,7 @@
  *   - getOpenCases / getCaseById: admin review surface reads with mandatory
  *     audit log entry per SCL-025.
  *   - updateCaseDisposition: admin sets true_positive / false_positive + notes.
- *   - getBreachedCases: SLA sweep finds open cases past deadline.
+ *   - getBreachedCases: SLA sweep finds unresolved (open or in_review) cases past deadline.
  *
  * trade-offs:
  *   - SLA_HOURS is a constant (48) matching §21.3 V1 launch. When the 24h target
@@ -440,7 +440,10 @@ export async function getBreachedCases(params?: {
   const { data, error } = await supabaseServer
     .from("crisis_review_cases")
     .select("*")
-    .eq("status", "open")
+    // Open AND claimed (in_review): a claimed case past its deadline is
+    // still a breach — being claimed is not being resolved. Closure plan
+    // W2-2a, owner view 2026-09-24. Resolved cases are never breached.
+    .in("status", ["open", "in_review"])
     .lt("sla_deadline", now)
     .order("sla_deadline", { ascending: true });
 
