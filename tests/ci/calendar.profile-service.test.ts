@@ -264,12 +264,17 @@ describe("setup_completed_at is derived, never sent", () => {
     expect(storedRow().setup_completed_at).toBeUndefined();
   });
 
-  it("stays unset while the row still has no target score", async () => {
+  // INVERTED 2026-09-24 (SCL-130, R-08-17 reversed). This asserted that setup stayed
+  // incomplete until a target score arrived. Nothing in setup is required now, so the
+  // opposite is the rule: reaching the end of the flow completes it, whatever was
+  // answered. Leaving the old assertion would strand every student who skips the field —
+  // no stamp, so the read keeps answering `setup_required` and the popup reopens forever.
+  it("IS stamped by the first write, with no target score anywhere in it", async () => {
     scenario({ existing: { ...COMPLETE, target_score: null, setup_completed_at: null } });
 
     await upsertStudyProfile(STUDENT, { daily_minutes: 45, idempotency_key: KEY });
 
-    expect(storedRow().setup_completed_at).toBeUndefined();
+    expect(storedRow().setup_completed_at).toEqual(expect.any(String));
   });
 });
 

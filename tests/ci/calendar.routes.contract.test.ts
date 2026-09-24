@@ -27,6 +27,7 @@ const TODAY = "2026-09-21";
 let entitled = true;
 const readCalendarMock = vi.fn();
 const upsertProfileMock = vi.fn();
+const readProfileMock = vi.fn();
 const regeneratePlanMock = vi.fn();
 const regenerateDayMock = vi.fn();
 const editDayMock = vi.fn();
@@ -65,7 +66,7 @@ vi.mock("../../server/services/calendar/read-service", () => ({
 
 vi.mock("../../server/services/calendar/profile-service", () => ({
   upsertStudyProfile: upsertProfileMock,
-  readStudyProfile: vi.fn(),
+  readStudyProfile: readProfileMock,
   FALLBACK_TIMEZONE: "America/Chicago",
 }));
 
@@ -147,6 +148,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   rateLimitCalls.length = 0;
   entitled = true;
+  // A profile EXISTS by default, so the §16 cases below still exercise the gated path.
+  // Setup-before-the-gate is the exception and says so explicitly.
+  readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
   readCalendarMock.mockResolvedValue({
     ok: true,
     value: {
@@ -178,9 +182,15 @@ beforeEach(() => {
   streakMock.mockResolvedValue({ current: 3, longest: null, history_complete: false });
 });
 
-/** Every mutating route, so a new one cannot quietly skip the gates below. */
+/**
+ * Every mutating route that is GATED, so a new one cannot quietly skip the checks below.
+ *
+ * `PUT /profile` is deliberately NOT here since 2026-09-24 (SCL-130): setup runs before the
+ * entitlement gate, so a free student's answers are saved. Its own behaviour is asserted in
+ * "setup runs before the entitlement gate" — removed from this list rather than deleted,
+ * because an ungated route with no assertion at all is how a gate goes missing.
+ */
 const MUTATIONS: { name: string; call: (app: express.Express) => request.Test }[] = [
-  { name: "PUT /profile", call: (app) => request(app).put("/api/calendar/profile").send({ daily_minutes: 60, idempotency_key: KEY }) },
   { name: "POST /plan/regenerate", call: (app) => request(app).post("/api/calendar/plan/regenerate").send({ idempotency_key: KEY }) },
   { name: "POST /days/:date/regenerate", call: (app) => request(app).post(`/api/calendar/days/${TODAY}/regenerate`).send({ idempotency_key: KEY }) },
   { name: "POST /days/:date/reset", call: (app) => request(app).post(`/api/calendar/days/${TODAY}/reset`).send({ idempotency_key: KEY }) },
@@ -604,5 +614,65 @@ describe("POST /blocks/:id/move (§12.2, §12.4)", () => {
 
     expect(res.status).toBe(404);
     expect(moveBlockMock).not.toHaveBeenCalled();
+  });
+});
+
+
+// ── Setup before the gate (owner ruling 2026-09-24, SCL-130) ────────────────
+
+describe("setup runs before the entitlement gate", () => {
+  it("GET /api/calendar answers setup_required to a FREE student with no profile", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue(null);
+    readCalendarMock.mockResolvedValue({
+      ok: true,
+      value: { status: "setup_required", defaults: { timezone: "America/Chicago" } },
+    });
+
+    const res = await request(buildApp()).get("/api/calendar");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("setup_required");
+    // The popup needs its bounds, and they come from config rather than from the client.
+    expect(res.body.defaults).toBeDefined();
+  });
+
+  it("GET /api/calendar still answers 402 to a free student who HAS a profile — the plan is gated", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
+
+    const res = await request(buildApp()).get("/api/calendar");
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("PAYMENT_REQUIRED");
+    // The whole point of checking the profile directly: `readCalendar` runs
+    // `generateOnFirstOpen`, and an unentitled student must not get a plan generated.
+    expect(readCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it("PUT /profile SAVES a free student's answers rather than answering 402", async () => {
+    entitled = false;
+    upsertProfileMock.mockResolvedValue({ ok: true, value: { status: "ready" } });
+
+    const res = await request(buildApp())
+      .put("/api/calendar/profile")
+      .send({ daily_minutes: 60, idempotency_key: KEY });
+
+    expect(res.status).toBe(200);
+    // "their answers are saved either way" — a popup that discards what it collects is
+    // worse than no popup, because the student answers twice and notices.
+    expect(upsertProfileMock).toHaveBeenCalled();
+  });
+
+  it("a free student pressing straight through — no target score, no exam date — is still saved", async () => {
+    entitled = false;
+    upsertProfileMock.mockResolvedValue({ ok: true, value: { status: "ready" } });
+
+    const res = await request(buildApp())
+      .put("/api/calendar/profile")
+      .send({ target_score: null, target_exam_date: null, idempotency_key: KEY });
+
+    expect(res.status).toBe(200);
+    expect(upsertProfileMock).toHaveBeenCalled();
   });
 });

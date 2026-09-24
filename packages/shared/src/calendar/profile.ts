@@ -109,16 +109,16 @@ export const studyProfileSchema = z
     planner_mode: plannerModeSchema,
     setup_completed_at: z.string().nullable(),
   })
-  .strict()
-  .refine(
-    (profile) => profile.setup_completed_at === null || profile.target_score !== null,
-    {
-      // `setup_requires_target_score`, restated. A completed setup without a target score
-      // cannot exist in the database and must not be constructible here either.
-      message: "a completed setup must carry a target score",
-      path: ["target_score"],
-    },
-  );
+  .strict();
+// NO CROSS-FIELD REFINEMENT. This schema used to restate `setup_requires_target_score` --
+// "a completed setup must carry a target score" -- so that a profile the database forbade
+// was also unconstructible here. That CHECK is dropped by 20261002000000 (SCL-130,
+// R-08-17 reversed): nothing in setup is required, so a completed setup with both target
+// fields null is now the ordinary case rather than an impossible one. The refinement goes
+// with the constraint deliberately; leaving it would have kept the field required in the
+// one layer every client parses through, which is where a student would actually have met
+// it. `targetScoreSchema` still bounds a value that IS supplied -- optional is about
+// existence, never about which values are legal.
 export type StudyProfile = z.infer<typeof studyProfileSchema>;
 
 // ── Bounds (§8.1, from `calendar_runtime_config` — passed in, never inlined) ─
