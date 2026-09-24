@@ -286,8 +286,31 @@ function sendPlanFailure(
         requestId,
       );
     case "rejected":
-      // §18: a `generated` rejection pages and the PRIOR PLAN STANDS. The student is told
-      // nothing changed; `plan-service` has already logged the rule ids for the alert.
+      // The PRIOR PLAN STANDS either way, so the message is the same. The STATUS is not.
+      //
+      // §15: "A policy denial is a decision, not a fault", and its 409 list already covers
+      // the neighbouring case ("editing a past date"). A day edit the validator refuses is
+      // the same kind of answer — the student described a day the rules do not allow — so
+      // it settles at 409 with the violations, the way every other refusal on this surface
+      // already does. Serving it as 500 told the client to retry something that can only
+      // fail again, and told the operator an outage was in progress.
+      //
+      // A `system`-authored rejection stays 500: there the generator WE run produced an
+      // invalid plan, the student asked for nothing wrong, and §18's alert should fire.
+      if (failure.authored === "student") {
+        return sendError(
+          res,
+          409,
+          "That day could not be saved as described. Your current plan is unchanged.",
+          "CALENDAR_PLAN_REJECTED",
+          requestId,
+          // The rule id AND the sentence, because a rule id alone is unactionable and the
+          // detail is what says which day and by how much. No plan scope, no target score,
+          // no timezone — §18's "never logged" list is about logs, but the same fields are
+          // the ones worth not echoing.
+          { violations: failure.violations },
+        );
+      }
       return sendError(
         res,
         500,
