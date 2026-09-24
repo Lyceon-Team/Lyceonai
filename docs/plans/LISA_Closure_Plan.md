@@ -68,6 +68,7 @@ Both are toggles. Neither loses a control — floor settings are inspect-only an
 | **W2-1** | Retry after a failed turn | Force a turn failure, press Try again: exactly one student message row, successful second attempt | CC + Karl |
 | **W2-2** | SLA sweep runs | `gcloud scheduler jobs describe` shows `status.code: 0` and a `lastAttemptTime` | Karl |
 | **W2-3** | Compaction runs | End a session; a task appears in `lisa-compaction`; a compaction row is written | Karl |
+| **W2-2a** | SLA sweep detects but never notifies — **IN PROGRESS** (code in the W2-2a PR, awaiting deploy). Found 09-24 by the W2-2 forced sweep: `sla_breach_detected` at ERROR with 3 case ids, then nothing | A forced `POST /crisis-sla-sweep` produces **one** message in `#lyceon-crisis` naming every breached case. The message shows each case's claimed/unclaimed state and hours past SLA, and links to the admin review. Paste the Slack message and the `CRISIS_NOTIFICATION enqueued` log line with `alert: "sla_breach"` | CC + Karl |
 | **W2-4** | Eight UI states | Screenshot each against the mockup. Needs a preview past Vercel SSO and an entitled test student | Karl provides access, CC walks |
 | **W2-5** | Smoke test passes | `scripts/probe/crisis-smoke.ts` — all seven steps green | CC |
 
