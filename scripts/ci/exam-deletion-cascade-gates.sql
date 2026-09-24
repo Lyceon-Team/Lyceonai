@@ -203,10 +203,11 @@ DO $$
 DECLARE v_state text; v_msg text; v_hits int := 0;
 BEGIN
   BEGIN
-    INSERT INTO public.test_sessions (student_id, test_form_id, state, mode, grace_expires_at,
+    -- valid in every other respect, so only the missing actor_id can refuse it
+    INSERT INTO public.test_sessions (student_id, test_form_id, state, mode, abandoned_at, grace_expires_at,
                                       attempt_number_for_form, is_first_seen_form_attempt)
     VALUES ('00000000-0000-0000-0000-000000e6b0c3', 'e6bf0000-0000-4000-8000-000000000001',
-            'abandoned_final', 'strict', now(), 9, false);
+            'abandoned_final', 'strict', now(), now(), 9, false);
   EXCEPTION WHEN not_null_violation THEN
     GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
     IF v_msg LIKE '%"actor_id"%test_sessions%' THEN v_hits := v_hits + 1; END IF;
