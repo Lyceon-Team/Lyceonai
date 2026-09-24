@@ -164,6 +164,20 @@ export const TUTOR_IDEMPOTENCY_CONFLICT: TutorErrorCode = {
     "A conflicting request with the same idempotency key was already processed.",
 } as const;
 
+/**
+ * @spec [Doc-03B_V4.1 §14.2, §14.3 "Retry during in_progress execution"]
+ * @implemented 2026-09-23
+ * A retry arrived while the first attempt for this client_turn_id is still
+ * running. The client waits `retry_after_ms` and retries with the SAME id;
+ * it must not rotate (§14.2).
+ */
+export const TUTOR_IDEMPOTENCY_IN_PROGRESS: TutorErrorCode = {
+  httpStatus: 409,
+  code: "idempotency_in_progress",
+  message:
+    "This message is still being processed. Wait a moment and try again.",
+} as const;
+
 /** @spec [Doc-03B_V2 §6.9, AUDIT-007] */
 export const TUTOR_IDEMPOTENCY_LOOKUP_FAILED: TutorErrorCode = {
   httpStatus: 500,
@@ -229,6 +243,7 @@ export const TUTOR_ERROR_CODES = {
   conversation_crisis_paused: TUTOR_CONVERSATION_CRISIS_PAUSED,
   conversation_not_paused: TUTOR_CONVERSATION_NOT_PAUSED,
   idempotency_conflict: TUTOR_IDEMPOTENCY_CONFLICT,
+  idempotency_in_progress: TUTOR_IDEMPOTENCY_IN_PROGRESS,
   idempotency_lookup_failed: TUTOR_IDEMPOTENCY_LOOKUP_FAILED,
   canonical_write_failed: TUTOR_CANONICAL_WRITE_FAILED,
   orchestration_auth_failed: TUTOR_ORCHESTRATION_AUTH_FAILED,

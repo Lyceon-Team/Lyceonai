@@ -236,6 +236,14 @@ export function normalizeCrisisText(raw: string): string {
   return t;
 }
 
+// ── Layer 1: Signature Category → Lane Mapping ──────────────────────────
+
+const SAFEGUARDING_CATEGORIES = new Set(["abuse"]);
+
+function mapSignatureCategoryToLane(dbCategory: string): CrisisCategory {
+  return SAFEGUARDING_CATEGORIES.has(dbCategory) ? "safeguarding" : "crisis";
+}
+
 // ── Layer 1: Deterministic Signature Match ─────────────────────────────
 
 /**
@@ -256,8 +264,8 @@ export async function checkCrisisSignatures(
 ): Promise<SignatureResult> {
   const { data, error } = await supabaseServer
     .from("tutor_injection_signatures")
-    .select("id, signature_pattern, category")
-    .or("category.eq.crisis,category.eq.safeguarding")
+    .select("id, signature_pattern, signature_type, category")
+    .eq("signature_type", "crisis")
     .eq("enabled", true);
 
   if (error) {
@@ -299,10 +307,9 @@ export async function checkCrisisSignatures(
     })();
 
     if (matched) {
-      const matchedCategory =
-        (row.category as string) === "safeguarding"
-          ? ("safeguarding" as const)
-          : ("crisis" as const);
+      const matchedCategory = mapSignatureCategoryToLane(
+        row.category as string,
+      );
       logger.info(
         "TUTOR_CRISIS",
         "crisis_signature_matched",
@@ -505,18 +512,6 @@ async function invokeClassifier(
  * @spec [Doc-03_V3 §21, SCL-023, INV-03-16]
  */
 export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
-  // TEMPORARY DIAGNOSTIC — remove once GCP_PROJECT_ID issue is resolved
-  logger.warn("TUTOR_CRISIS", "env_diagnostic", "ENV DIAGNOSTIC", {
-    matchingKeys: Object.keys(process.env)
-      .filter((k) => /PROJECT|VERTEX|GCP|MODEL_ARMOR/i.test(k))
-      .sort(),
-    gcpProjectIdType: typeof process.env.GCP_PROJECT_ID,
-    gcpProjectIdLength: process.env.GCP_PROJECT_ID?.length ?? -1,
-    vertexProjectIdLength: process.env.VERTEX_PROJECT_ID?.length ?? -1,
-    classifierModelLength:
-      process.env.VERTEX_CLASSIFIER_CLASS_MODEL?.length ?? -1,
-  });
-
   // Run both layers in parallel per SCL-023
   const [signatureResult, classifierResult] = await Promise.all([
     checkCrisisSignatures(text),

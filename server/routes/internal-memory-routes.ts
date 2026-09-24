@@ -79,7 +79,7 @@ const readOidcConfig: OidcConfigReader = () => ({
 /**
  * Cloud Tasks compaction payload per Doc 03C §8.3.
  */
-const compactionTaskSchema = z.object({
+export const compactionTaskSchema = z.object({
   job_type: z.literal("compaction"),
   conversation_id: z.string().uuid(),
   trigger_reason: z.enum(["close", "threshold", "stale"]),
