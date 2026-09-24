@@ -35,15 +35,21 @@
 | C-08 | Worker configuration | Revision `00030-klv`: `global`, both aliases `gemini-3.5-flash` | 09-23 |
 | C-09 | Terraform creates resources | Three retention jobs exist | 09-23 |
 | C-10 | Schema alignment | 84 of 86 post-ledger migrations applied | 09-23 |
+| W0-1 | Floor-setting Cloud Logging wrote student crisis disclosures verbatim | Agent Platform logging disabled in console; `sanitize_operations` empty across 2h spanning a live crisis turn at 07:34:19Z | 09-24 |
+| W0-2 | Agent Platform logging wrote every prompt and response verbatim | Same toggle — Agent Platform *is* the Vertex AI floor setting | 09-24 |
+| W1-1 | `gemini-3.5-flash` serving | `turn_metrics_logged` 08:46:47Z — `gemini-3.5-flash`, orchestration 3,359ms (prior `gemini-2.5-pro` 10,460ms) | 09-24 |
+| W1-2 | SLA sweep job, compaction queue, `actAs` grant | `terraform apply` 3 added / 0 changed / 0 destroyed; `lyceon-crisis-sla-sweep` ENABLED, `lisa-compaction` RUNNING | 09-24 |
+| W1-3 | Vercel environment | `CRISIS_SLA_SWEEP_OIDC_AUDIENCE` set; `VERTEX_LOCATION`, `VERTEX_PROJECT_ID`, `GCP_PROJECT_ID` removed; redeployed | 09-24 |
+| W2-2 | SLA sweep runs | Forced run 08:01:22Z — `POST /crisis-sla-sweep 200`, 900ms, OIDC accepted, 3 breaches detected | 09-24 |
+| W2-2a | Sweep detected but never notified | Forced sweep produced Slack breach alert naming 3 cases with claim status and hours past SLA | 09-24 |
+| W2-3 | Compaction runs | 4 sessions ended 08:05:12–08:05:33Z — each enqueued to `lisa-compaction`, delivered, `compact-writeback 200`, correctly skipped below threshold | 09-24 |
+| W4-3 | `TutorConfig.loadAll()` never called | `cache_loaded`, 24 keys, Model Armor IDs now read from DB; prior deployment shows `cache_not_loaded` in the same log window | 09-24 |
 
 ---
 
 ## Wave 0 — Stop active harm. Console only, today.
 
-| ID | Item | Proof | Owner |
-|---|---|---|---|
-| **W0-1** | Floor-setting Cloud Logging writes student crisis disclosures verbatim — **CLOSED 09-24** | Agent Platform floor logging disabled; `sanitize_operations` returned **zero** entries across a 2h window that spanned a live crisis turn | Karl |
-| **W0-2** | Agent Platform logging writes every prompt and response verbatim — **CLOSED 09-24** | Same check: zero new entries across the 2h window, including one live turn | Karl |
+**All rows closed 2026-09-24** — see *Already closed*.
 
 Both are toggles. Neither loses a control — floor settings are inspect-only and block nothing.
 
@@ -51,11 +57,7 @@ Both are toggles. Neither loses a control — floor settings are inspect-only an
 
 ## Wave 1 — Prove what is actually running.
 
-| ID | Item | Proof | Owner |
-|---|---|---|---|
-| **W1-1** | Is `gemini-3.5-flash` serving? — **CLOSED 09-24** | `tutor_turn_metrics` at 07:34:44Z: `model_name = gemini-3.5-flash`, orchestration **4,731 ms**. The prior turn (09-23 06:29Z) was `gemini-2.5-pro` at 10,460 ms | Karl |
-| **W1-2** | `terraform apply` — **CLOSED 09-24** | `terraform apply`: 3 added, 0 changed, 0 destroyed. `lyceon-crisis-sla-sweep` ENABLED; `lisa-compaction` RUNNING | Karl |
-| **W1-3** | Vercel environment — **CLOSED 09-24** | Env updated as specified and production redeployed | Karl |
+**All rows closed 2026-09-24** — see *Already closed*.
 
 **Nothing in Wave 2 starts until Wave 1 is closed.** Every failure this month began with not knowing what was deployed.
 
@@ -65,56 +67,54 @@ Both are toggles. Neither loses a control — floor settings are inspect-only an
 
 | ID | Item | Proof | Owner |
 |---|---|---|---|
-| **W2-1** | Retry after a failed turn — **OPEN, blocked on access** (checklist below) | Force a turn failure on a **preview** (method below), press Try again: exactly **one** student `tutor_messages` row for the `client_turn_id`, and a completed tutor reply on the second attempt. Paste the row-count query output | CC + Karl |
-| **W2-2** | SLA sweep runs — **CLOSED 09-24** | Forced sweep 08:01:22Z: `POST /crisis-sla-sweep` **200**, 900 ms, OIDC accepted, 3 breaches detected. That run exposed W2-2a and W2-2b | Karl |
-| **W2-2a** | SLA sweep detects but never notifies — **IN PROGRESS** (code: #866, awaiting deploy). Found 09-24 by the W2-2 forced sweep: `sla_breach_detected` at ERROR with 3 case ids, then nothing | A forced `POST /crisis-sla-sweep` produces **one** message in `#lyceon-crisis` naming every breached case. The message shows each case's claimed/unclaimed state and hours past SLA, and links to the admin review. Paste the Slack message and the `CRISIS_NOTIFICATION enqueued` log line with `alert: "sla_breach"` | CC + Karl |
-| **W2-2b** | Three legacy cases breach on every sweep — **OPEN, Karl applies** | All three resolved with a disposition and a matching `crisis_review_audit_log` row. Then a forced sweep logs `sla_sweep_clean`. Queries in *W2-2b detail*; the admin dashboard is preferred | Karl |
-| **W2-6** | *New 09-24.* Case ids in logs are hashed, so a log line cannot be traced to its row. The sweep logged `e0819662`, `3cc599af`, `6ffc13ff`; the rows are `78d6a7ae…`, `10e8e78f…`, `3d06effb…`, and no table holds the logged values. The logger shortens ids the same way elsewhere (`conversationId: "a33473de"` for `d3e4dba1…`) | An operator can go from a crisis log line to the case row. Either full case ids are logged (they are opaque UUIDs, not PII), or the hash is documented with a lookup. Decide which | CC + Karl |
-| **W2-3** | Compaction runs — **CLOSED 09-24** | Four sessions ended 08:05:12–08:05:33Z. Each was enqueued and delivered, `compact-writeback` returned **200**, and each was correctly skipped below the threshold | Karl |
-| **W2-4** | Eight UI states — **OPEN, blocked on access** (checklist below) | Eight screenshots, each against the mockup. A state that cannot be reached becomes a new row | Karl provides access, CC walks |
-| **W2-5** | Smoke test passes — **OPEN, blocked on access** (checklist below) | `scripts/probe/crisis-smoke.ts` against production: all seven steps green, output pasted. **Step 6 proves only that the Cloud Tasks enqueue was attempted, not that Slack received it.** A human confirms the message in `#lyceon-crisis` by the case id the script prints | CC |
+| **W2-1** | Retry after a failed turn — **OPEN** (ruling 09-24: verify in production) | Force a turn failure in **production** (method below), press Try again: exactly **one** student `tutor_messages` row for the conversation's turn, and a completed tutor reply on the second attempt. Paste the row-count query output | Karl, CC confirms method |
+| **W2-2b** | Three legacy cases breach every hour | OPEN — `78d6a7ae…` and `10e8e78f…` are outage artifacts from `classifier_degraded_no_floor`; `3d06effb…` (09-17) is real. Resolve via the dashboard; **sign in first** (W2-8). Proof: the identification query in *W2-2b detail* returns zero rows and the next sweep logs `sla_sweep_clean` | Karl |
+| **W2-6** | New-case Slack alert shows the conversation ID, not the case ID | OPEN — the breach alert prints full case UUIDs correctly; make the new-case alert match. Also: the structured logger truncates IDs, so log lines cannot be traced to database rows | CC |
+| **W2-7** | Nothing in the app links to `/admin/crisis-review` | OPEN — an admin needs the URL or a Slack alert to reach it | CC |
+| **W2-8** | Return-path allowlist excludes `/admin` | OPEN — a signed-out admin clicking a Slack alert lands on `/dashboard`, not the case. **This breaks the last step of the escalation path** | CC |
+| **W2-9** | Admin claim/disposition POSTs skip `doubleCsrfProtection` | OPEN — not exploitable under `SameSite=Lax`; missing second layer, and the mount comment still says "read-only" | CC |
+| **W2-4** | Eight UI states — **OPEN** (ruling 09-24: verify in production) | Walk the UI on Karl's signed-in account with Claude in Chrome; eight screenshots, each against the mockup. A state that cannot be reached becomes a new row | Karl + Claude in Chrome |
+| **W2-5** | Smoke test — **OPEN** (ruling 09-24: done in the UI, script skipped) | The script's seven steps done in the production UI, each verified from the database and logs: a conversation, a normal turn, a crisis turn, the `crisis_review_cases` row, the `crisis_review_events` row, the Slack message, and a clean end. **Slack delivery is proven only by a human seeing the message in `#lyceon-crisis`** — nothing in the logs proves receipt | Karl |
 
 
-### Access checklist for W2-1, W2-4 and W2-5 — one pass, Karl
+### Ruling 2026-09-24 — Wave 2 verification runs in production, not a preview
 
-Provide these in the environment's settings (never paste secrets into chat):
+The preview route needed seven setup items to verify three rows. Production is pre-launch with no student traffic, and it is where every proof this morning came from. The access checklist is retired.
 
-1. **Preview access past Vercel SSO.** Either a *Protection Bypass for Automation* secret (Vercel → Project → Settings → Deployment Protection), set as `VERCEL_AUTOMATION_BYPASS_SECRET`, or a preview served on a custom domain.
-2. **An entitled test student**, 13 or older, with no real data. Set `STUDENT_TEST_EMAIL` and `STUDENT_TEST_PASSWORD`.
-3. **Which Supabase project Preview points at.** If it is production (`hncolwkccbbjkfithhlo`), say so: the walkthrough and W2-1 then write test rows to the production database.
-4. **Crisis alerts.** Confirm the walkthrough's paused state and the smoke test may post to `#lyceon-crisis`, or point Preview's `LYCEON_CRISIS_ALERTS` at a test channel. The smoke test runs against **production**, and it opens a real case and posts a real alert.
-5. **Preview env.** Set `TUTOR_ORCHESTRATOR_WORKER_URL` and `GCP_SERVICE_ACCOUNT_JSON` on the Preview environment.
-6. **For W2-5 only**, set `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` for production, and `BFF_BASE_URL=https://lyceon.ai`. The script never prints the key or the student credential.
-7. **For W2-1,** allow one Preview-only env change and one redeploy (see the method below).
+### W2-1 detail — forcing a failed turn in production (method confirmed by CC, 09-24)
 
-### W2-1 detail — how to force a failed turn (preview only)
-
-**Recommended: a Preview-scoped worker URL change.** Production reads its own copy of this env var, so production never sees it.
-
-1. Deploy the branch preview. Set **Preview-only** `TUTOR_ORCHESTRATOR_WORKER_URL=https://127.0.0.1.invalid` and redeploy the preview.
-2. Open the preview on its **branch alias URL**. Start a session and send one message. `orchestrateTurn` fails, the route returns the failed-turn error, and the student row is marked `failed`. The UI shows **Try again** and keeps the same `client_turn_id` in memory.
-3. **Leave the tab open.** Restore the real Preview `TUTOR_ORCHESTRATOR_WORKER_URL` and redeploy. The branch alias now serves the fixed deployment.
-4. Press **Try again**. The route finds the `failed` student row, compare-and-sets it back to `pending`, and orchestrates **without a second insert**. The tutor reply arrives.
-5. Paste the output of:
+1. In Vercel **Production**, set `TUTOR_ORCHESTRATOR_WORKER_URL=https://lyceon-w2-1.invalid` and **redeploy**. An env var change takes effect only in a new deployment.
+2. Open `/chat`, start a new session, send one ordinary (non-crisis) message. The turn fails and the UI shows **Try again**. **Do not reload the tab**: the retry keeps the same `client_turn_id` only in page memory.
+3. Restore the real `TUTOR_ORCHESTRATOR_WORKER_URL` and **redeploy**. Wait for the deployment to be Ready.
+4. Press **Try again** in the same tab. The tutor reply arrives.
+5. Paste:
    ```sql
    select role, status, count(*) from tutor_messages
    where conversation_id = '<conversation id>' group by role, status order by role;
-   -- expected: student|completed|1  and  tutor|completed|1
+   -- expected: student | completed | 1   and   tutor | completed | 1
    ```
 
-**Rejected alternatives:**
-- **Bad model alias.** The worker is one Cloud Run service shared by preview and production, so changing an alias breaks production.
-- **Lowering `tutor_request_timeout_seconds` in the database.** After W4-3 it is read from the shared database, and a preview pointed at production would slow production too.
-- **An injected fault flag.** It adds a fault path to production code.
+**Why this takes the retry path and not some other branch.**
+- **The worker call never throws.** In `postToWorker` (`server/lib/tutor-orchestrator-client.ts`), every failure returns `ok: false`: a DNS failure (`fetch` throws, logs `worker_unreachable`, `orchestration_failed_recoverable`), a timeout, a 5xx after one retry, another non-2xx, bad JSON, or a schema mismatch.
+- **The `https://` URL adds one earlier step.** The client first mints an OIDC identity token for that URL. With the service-account credential, minting for any audience succeeds. If it ever failed, it would return `orchestration_auth_failed`, which is also `ok: false`.
+- **Every `ok: false` takes the same route branch.** The student row is set to `failed` and the route answers with the error code plus `retry_after_ms` (`tutor-runtime.ts`, step 14). All three codes are registered in `tutor-error-codes.ts`, so none of them falls through to the catch-all.
+- **The UI treats any non-pause error as a failed turn,** keeps `client_turn_id`, and offers Try again.
+- **On retry,** step 8 finds the `failed` student row, compare-and-sets it back to `pending`, and orchestrates with **no second insert**.
+- **A DNS failure and a 500 do not take different paths here.** Both end in the same failed-turn branch. `.invalid` is reserved and never resolves, so the failure is immediate and not a 30s timeout.
 
-**The §14.3 paths:**
-- **In flight, returns 409 `idempotency_in_progress`.** The UI disables Send while a turn is in flight, so this needs a direct request: the same `client_turn_id` posted twice about 1s apart with the session cookie and CSRF token. On the preview, with the worker restored, the second call returns 409 with `retry_after_ms: 2000`. CC can run this once item 1 of the checklist exists.
-- **Failed, resumes.** Covered by steps 1–4 above.
-- **Pending past 300s, resumes.** **Not cheaply forceable.** The BFF's 30s worker timeout marks a hung turn `failed`, not `pending`, so a stale `pending` row only arises when the function is killed mid-turn. Its proof is the CI contract test (`tests/ci/tutor-runtime.retry-and-detail.contract.test.ts`). The production check is a query that should stay empty unless it happens:
-  ```sql
-  select id, created_at from tutor_messages
-  where role = 'student' and status = 'pending' and created_at < now() - interval '300 seconds';
-  ```
+**What else breaks during the window, about 2–4 minutes:**
+- **Normal tutor turns** fail and can be retried.
+- **Crisis turns are unaffected.** They never call the worker.
+- **Do not end a session during the window.** Compaction's writeback calls the worker's `/compact`, and would fail and retry through Cloud Tasks.
+- **Nothing else reads the variable.**
+
+**§14.3 in-flight 409.** The UI disables Send while a turn is in flight, so production UI testing cannot reach this path. It stays proven by `tests/ci/tutor-runtime.retry-and-detail.contract.test.ts`.
+
+**Pending past 300s.** A stale `pending` row only arises if the function dies mid-turn, because the 30s worker timeout marks a turn `failed` instead. This query should stay empty:
+```sql
+select id, created_at from tutor_messages
+where role = 'student' and status = 'pending' and created_at < now() - interval '300 seconds';
+```
 
 ### W2-2b detail — the three standing breaches (not applied; Karl applies)
 
@@ -243,7 +243,6 @@ student's message); output-only scanning is the fallback.
 |---|---|---|---|
 | **W4-1** | LISA in practice and review | A scoped turn from each surface, anti-leak holding pre-submit | CC |
 | **W4-2** | Golden set Phase B | The judge reproduces Karl's verdicts on all ten gold responses, then scores the remaining 25 | CC + Karl |
-| **W4-3** | `TutorConfig.loadAll()` — **IN PROGRESS** (Karl ruled *enable*, 09-24; code in the W4-3 PR, awaiting deploy) | Production logs show `TUTOR_CONFIG cache_loaded` with `effective.model_armor_input_template_id = "lyceon-lisa-input-v1"` (a database value; the default is `null`), and a tutor request with **no** `cache_not_loaded` line. See *W4-3 detail* below | CC |
 
 
 ### W4-3 detail — before/after of every key the runtime reads
@@ -270,9 +269,7 @@ The other 16 keys in the schema are not read by any code path, and their databas
 - The per-call `cache_not_loaded` warning is removed.
 - `cache_loaded` now logs the effective value of every key.
 
-**Proof to paste here after deploy:**
-1. The `cache_loaded` line with its `effective` values.
-2. One `POST /api/tutor/messages` request log with no `cache_not_loaded` line.
+**Closed 09-24** — see *Already closed*.
 
 ---
 

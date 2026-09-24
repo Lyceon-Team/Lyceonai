@@ -15,7 +15,7 @@
  * the subject, so a free student's read fails by design; rendering the generic error card
  * with a Try-again button for an entitlement denial gives them a button that can never work.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -28,6 +28,7 @@ import {
   useEditDay,
   useLaunchBlock,
   useMoveBlock,
+  usePrefetchAdjacentRange,
   useRegenerateDay,
   useRegeneratePlan,
   useResetDay,
@@ -65,11 +66,24 @@ export default function CalendarPage(): JSX.Element {
   const queryClient = useQueryClient();
   const { user } = useSupabaseAuth();
 
-  const [range, setRange] = useState(() =>
-    rangeForView("week", startOfWeek(today)),
-  );
+  /**
+   * The VIEW and CURSOR are the state; the range is derived. It used to be the other way
+   * round — `setRange(rangeForView(...))` threw the view and cursor away the moment they
+   * arrived — which left nothing to name the week either side with, and so nothing to
+   * prefetch. Deriving costs one `useMemo` and keeps the two in step by construction.
+   */
+  const [view, setView] = useState<"week" | "month">("week");
+  const [cursor, setCursor] = useState(() => startOfWeek(today));
+  const range = useMemo(() => rangeForView(view, cursor), [view, cursor]);
 
   const calendar = useCalendar(range.from, range.to);
+
+  // §17.7. Warm the neighbouring ranges once the browser is idle, so the NEXT arrow press
+  // has its rows already. Held back while this range is still resolving or has failed —
+  // see the hook's note.
+  usePrefetchAdjacentRange(view, cursor, {
+    enabled: calendar.isSuccess,
+  });
   const streak = useStreak();
 
   const editDay = useEditDay();
@@ -83,8 +97,9 @@ export default function CalendarPage(): JSX.Element {
   const { launch, isPending: launchPending } = useLaunchBlock(navigate);
 
   const onRangeChange = useCallback(
-    (view: "week" | "month", cursor: string) => {
-      setRange(rangeForView(view, cursor));
+    (nextView: "week" | "month", nextCursor: string) => {
+      setView(nextView);
+      setCursor(nextCursor);
     },
     [],
   );

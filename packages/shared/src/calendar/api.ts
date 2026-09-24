@@ -24,7 +24,7 @@
 import { z } from "zod";
 import { diagnosticStateSchema } from "../diagnostic-state.js";
 import { sectionProjectionSchema } from "../student-resources.js";
-import { calendarEngineSchema } from "./scope.js";
+import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
 import { studyProfileBoundsSchema, studyProfileSchema } from "./profile.js";
 import {
@@ -218,6 +218,21 @@ export const calendarReadyResponseSchema = z
     /** Doc 05C's band, when one exists. Consumed, never computed here. */
     projection: z.array(sectionProjectionSchema).optional(),
     device_timezone_mismatch: deviceTimezoneMismatchSchema.optional(),
+    /**
+     * §17.2's engine picker. The block types the planner may PLAN, from
+     * `calendar_runtime_config.enabled_block_types` — the same list `calendar_validate_plan`
+     * checks a created block against (V-03).
+     *
+     * On the wire because "+ Add block" has to offer exactly what the server will accept.
+     * A literal in the client would be a second copy of the flag, and the copy would still
+     * say full-length was unavailable on the day it shipped — or, worse, offer it the day
+     * before. It is NOT the same question as `isLaunchableBlockType`, which asks whether an
+     * engine exists for a block the student already holds.
+     *
+     * Not on the guardian payload: §16 gives a guardian no write path, and this list exists
+     * to constrain a write.
+     */
+    enabled_block_types: z.array(calendarBlockTypeSchema).min(1),
   })
   .strict();
 export type CalendarReadyResponse = z.infer<typeof calendarReadyResponseSchema>;

@@ -47,20 +47,22 @@ import type {
 } from "@lyceon/shared/calendar";
 import type { SectionProjectionDto } from "@lyceon/shared";
 import {
+  daysBetween,
   monthGridDates,
   rangeLabel,
+  shiftDays,
+  shiftMonths,
   shortDate,
   startOfMonth,
   startOfWeek,
   weekDates,
 } from "./lib/dates";
-import { daysBetween } from "./lib/dates";
 import { domainsForSection, isDraggable } from "./lib/blocks";
 import {
   MIX_GRANULARITY,
   isValidMix,
   membersWithEdit,
-  membersWithNewPracticeBlock,
+  membersWithNewBlock,
   membersWithout,
 } from "./lib/members";
 import {
@@ -81,6 +83,9 @@ import {
 import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import { CreateBlockSheet } from "./components/CreateBlockSheet";
+import { DayStrip } from "./components/DayStrip";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup } from "./components/SetupPopup";
 import {
@@ -201,6 +206,17 @@ export function CalendarView({
   const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
   const [openBlockId, setOpenBlockId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The date whose "+ Add block" is open, or null. §17.2: opening writes nothing. */
+  const [addOnDate, setAddOnDate] = useState<string | null>(null);
+
+  /**
+   * §17.7 phone layout. Below `useIsMobile`'s breakpoint the week is ONE day plus a strip,
+   * not seven columns behind a sideways swipe — see `DayStrip`'s note for the measurement.
+   * Month stays a grid at every width: a month IS a grid, and collapsing it would leave
+   * nothing to navigate with.
+   */
+  const isMobile = useIsMobile();
+  const [agendaDate, setAgendaDate] = useState<string | null>(null);
 
   const readOnly = mutations === undefined;
 
@@ -210,6 +226,18 @@ export function CalendarView({
     () => (view === "week" ? weekDates(cursor) : monthGridDates(cursor)),
     [view, cursor],
   );
+
+  /**
+   * The open day: whatever the student last tapped, as long as the week still holds it.
+   * Stepping the week resets to today when today is in view and to the first day
+   * otherwise, so the agenda never shows a date the strip above it cannot reach.
+   */
+  const agendaDay =
+    agendaDate !== null && dates.includes(agendaDate)
+      ? agendaDate
+      : dates.includes(today)
+        ? today
+        : (dates[0] ?? today);
 
   const move = useCallback(
     (nextView: "week" | "month", nextCursor: string) => {
@@ -423,7 +451,6 @@ export function CalendarView({
                     schedule.profile,
                     schedule.estimates,
                   ),
-                  onEdit: () => setSettingsOpen(true),
                 },
               })}
         />
@@ -466,7 +493,32 @@ export function CalendarView({
 
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div className="scroll">
-              {view === "week" ? (
+              {view === "week" && isMobile ? (
+                <>
+                  <DayStrip
+                    dates={dates}
+                    selected={agendaDay}
+                    today={today}
+                    hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+                    onSelect={setAgendaDate}
+                  />
+                  {/* The SAME WeekGrid, given one date. Every affordance a column carries —
+                      the droppable, the day menu, the block cards, "+ Add block" — comes
+                      with it, so the phone layout cannot drift from the desktop one. */}
+                  <WeekGrid
+                    dates={[agendaDay]}
+                    dayFor={dayFor}
+                    today={today}
+                    visible={visible}
+                    canDrag={canDrag}
+                    onOpen={setOpenBlockId}
+                    {...(dayActions === undefined ? {} : { dayActions })}
+                    {...(mutations === undefined
+                      ? {}
+                      : { onAddBlock: (date: string) => setAddOnDate(date) })}
+                  />
+                </>
+              ) : view === "week" ? (
                 <WeekGrid
                   dates={dates}
                   dayFor={dayFor}
@@ -478,28 +530,9 @@ export function CalendarView({
                   {...(mutations === undefined
                     ? {}
                     : {
-                        onAddBlock: (date: string) => {
-                          const day = dayFor(date);
-                          if (day === null) return;
-                          mutations.editDay(
-                            date,
-                            // The opening mix comes from the shared section map, so even
-                            // the default is not a domain name typed into this file.
-                            membersWithNewPracticeBlock(
-                              day,
-                              "M",
-                              domainsForSection("M")
-                                .slice(0, 2)
-                                .map((domain) => ({
-                                  domain,
-                                  count: MIX_GRANULARITY,
-                                })),
-                            ),
-                            // No optimistic hint: a created block has no id to predict, and
-                            // the settle-invalidate brings back the server's version.
-                            { removeBlockId: "" },
-                          );
-                        },
+                        // §17.2: Add OPENS the create sheet. It writes nothing — the
+                        // write happens on confirm, in `onCreate` below.
+                        onAddBlock: (date: string) => setAddOnDate(date),
                       })}
                 />
               ) : (
@@ -529,6 +562,31 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+        />
+      )}
+
+      {addOnDate === null ||
+      mutations === undefined ||
+      model === null ||
+      model.controls.kind !== "editable" ? null : (
+        <CreateBlockSheet
+          open
+          date={addOnDate}
+          enabledBlockTypes={model.controls.enabledBlockTypes}
+          pending={false}
+          onClose={() => setAddOnDate(null)}
+          onCreate={(draft) => {
+            const day = dayFor(addOnDate);
+            if (day === null) return;
+            mutations.editDay(
+              addOnDate,
+              membersWithNewBlock(day, draft),
+              // No optimistic hint: a created block has no id to predict, and the
+              // settle-invalidate brings back the server's version.
+              { removeBlockId: "" },
+            );
+            setAddOnDate(null);
+          }}
         />
       )}
 
@@ -572,14 +630,3 @@ export function CalendarView({
   );
 }
 
-function shiftDays(date: string, days: number): string {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-
-function shiftMonths(date: string, months: number): string {
-  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
-  value.setUTCMonth(value.getUTCMonth() + months);
-  return value.toISOString().slice(0, 10);
-}

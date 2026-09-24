@@ -81,8 +81,14 @@ export function LeftRail({
   /**
    * §17.3's "Your schedule" card. ABSENT for a guardian, like every other control on this
    * surface — the difference is the missing prop, not a `readOnly` branch inside.
+   *
+   * SUMMARY ONLY — no control. The card used to carry its own "Change schedule" button, a
+   * second way into the settings sheet that the design dropped two revisions ago; the
+   * prototype's rail has the summary and no button (`docs/design/calendar-prototype.html`,
+   * the `plancard`). "Edit schedule" in the header is the single entry point, so there is
+   * one place to look for it and one control to keep working.
    */
-  schedule?: { summary: string; onEdit: () => void };
+  schedule?: { summary: string };
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
@@ -99,9 +105,6 @@ export function LeftRail({
         <div className="schedcard" data-testid="rail-schedule-card">
           <b>Your schedule</b>
           <span data-testid="rail-schedule-summary">{schedule.summary}</span>
-          <button type="button" onClick={schedule.onEdit}>
-            Change schedule
-          </button>
         </div>
       )}
 

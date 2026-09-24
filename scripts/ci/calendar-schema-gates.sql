@@ -578,3 +578,118 @@ BEGIN
   RAISE NOTICE '    OK B-01 the live calendar_build_plan_input reads review_schedule.queued_at and not next_review_at';
 END;
 $builder$;
+
+-- ----------------------------------------------------------------------------
+-- B-02 — every calendar function body is PINNED to a recorded checksum
+--
+-- THE GAP THIS FILLS. calendar-parity proves the SOURCE matches the Python
+-- oracle. genesis-fresh-apply proves the pipeline reproduces a schema dump.
+-- Neither can prove that what is DEPLOYED matches source, because migrations
+-- reach production out of band -- supabase_migrations.schema_migrations stops
+-- at 20260624020000 while the calendar is live, so the ledger cannot answer it
+-- either. Comparing function BODIES is the only method that works, and this is
+-- the half of it CI can own.
+--
+-- WHAT IT ACTUALLY CATCHES, since the pipeline builds these bodies from the
+-- very files it compares against: EDITING A MIGRATION THAT HAS ALREADY BEEN
+-- APPLIED. That edit is the act that creates drift. The file changes, the
+-- deployed body does not, and nothing downstream notices -- the dump still
+-- matches, the oracle still matches, and the two databases quietly differ.
+-- Pinning turns that edit into a red gate, so it becomes a decision someone
+-- makes on purpose and re-records, rather than one nobody sees.
+--
+-- Proven on calendar_compute_plan, 2026-09-24. Deployed body vs source:
+--   4 lines differed out of 416, all of them inside  comments
+--   line 161  source "here, and canonical..."  deployed "here; canonical..."
+--   line 281  "...needs it,"                   "...needs it;"
+--   line 355  "...its share. Once..."          "...its share; once..."
+--   line 357  Math<U+2019>s                            Math's
+-- Applying exactly those four substitutions to the source body reproduces the
+-- deployed md5 (2087563ccd150d51421e633399d7bbb2, 19389 chars) exactly, so the
+-- divergence is comment-only and accounted for in full. Its cause: commit
+-- 6f7f78b6 "make the migration safe for statement-splitting SQL runners"
+-- rewrote those comments AFTER the body had been deployed. Production is
+-- therefore OLDER than source, by that commit, in comments alone.
+--
+-- NORMALISATION: carriage returns are stripped before hashing. The deployed
+-- copies store CRLF (415 CRs in calendar_compute_plan) purely because of how
+-- they were applied; that is not drift and must not read as drift.
+--
+-- TO RE-RECORD after deliberately changing a calendar function, run this
+-- against the pipeline database and paste the result over the list below:
+--
+--   SELECT format('      (%L, %s, %L),', p.proname,
+--                 length(replace(p.prosrc, chr(13), '')),
+--                 md5(replace(p.prosrc, chr(13), '')))
+--   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--   WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%'
+--   ORDER BY p.proname;
+--
+-- THE OTHER HALF IS OWNER-RUN, because CI holds no production credentials by
+-- design (genesis-fresh-apply: "No prod creds -- throwaway PG"). The same
+-- query against production, diffed against this list, answers "is deployed
+-- still source?" in one read-only round trip.
+-- ----------------------------------------------------------------------------
+DO $bodies$
+DECLARE
+  v_bad text;
+BEGIN
+  WITH expected(name, len, md5) AS (VALUES
+      ('calendar_acknowledge_version', 709, 'efea435c708ffec687802c7df28c0ee2'),
+      ('calendar_build_plan_input', 10839, '1d1e89a5e80cf30716508092eed1560b'),
+      ('calendar_carry_started', 882, '1a34b4dec6664e8c13028098d7563ea0'),
+      ('calendar_compute_plan', 19393, '0567edbbd7b034ba7d54bd89942f526d'),
+      ('calendar_compute_plan_fallback', 7994, 'ed231d0bcf1c26e57d52cd7de11e8c5d'),
+      ('calendar_do_it_now', 3921, 'cb08df2b79ae17e0b17e11af2cebcd33'),
+      ('calendar_drop_today_for_system', 325, 'a037c331145e3afc8c94dc17b18a4cf4'),
+      ('calendar_drop_unowned_dates', 336, 'afa423c5bf6382097610133e64707412'),
+      ('calendar_edit_day', 2323, 'd03883155de01a174fd761426518ec36'),
+      ('calendar_is_known_timezone', 91, '946a562369e4d62e7ed74d83a529e890'),
+      ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
+      ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),
+      ('calendar_persist_version', 5225, '8769894020580f0525c4e817af4860e3'),
+      ('calendar_place_full_lengths', 3375, '5d75f39c96396a22d6d4276ad2833d27'),
+      ('calendar_plan_to_output', 729, 'aa6f7e9f331a5f9dfac05f855ac7f84d'),
+      ('calendar_regenerate_day', 7306, '6875bfde324a4b153899cd2d61696ae1'),
+      ('calendar_regenerate_day_only', 199, '5d0b0a15caca7ea867cda145a35f2fec'),
+      ('calendar_require_int', 238, '907d3f984f1b8c8f1b12384c574f0bd6'),
+      ('calendar_scope_is_valid', 3177, '3279a87f58e47efb8e8f38b74babefcd'),
+      ('calendar_validate_plan', 17209, '628372c06c754574ecf5b5f262f14518'),
+      ('calendar_viewer_is_admin', 130, 'd0707346dc5e5486d8dd014ee386b79d'),
+      ('calendar_weekly_candidates', 884, '562c5433b509895852bcb2462c87e955'),
+      ('calendar_write_version', 3806, '6da5b170ec14ee5c9c7eab0f311ed7ef')
+  ),
+  live AS (
+    SELECT p.proname::text AS name,
+           length(replace(p.prosrc, chr(13), '')) AS len,
+           md5(replace(p.prosrc, chr(13), '')) AS md5
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%'
+  )
+  SELECT string_agg(msg, '; ' ORDER BY msg) INTO v_bad
+  FROM (
+    -- Pinned but absent: a function the manifest names no longer exists.
+    SELECT format('%s is pinned but does not exist', e.name) AS msg
+    FROM expected e LEFT JOIN live l USING (name) WHERE l.name IS NULL
+    UNION ALL
+    -- Present but unpinned: a NEW calendar function. Recording it is the point;
+    -- an unpinned body is one this gate cannot speak for.
+    SELECT format('%s exists but is not pinned', l.name)
+    FROM live l LEFT JOIN expected e USING (name) WHERE e.name IS NULL
+    UNION ALL
+    -- Pinned and present, but the body moved.
+    SELECT format('%s body changed (pinned %s chars/%s, live %s chars/%s)',
+                  e.name, e.len, left(e.md5, 8), l.len, left(l.md5, 8))
+    FROM expected e JOIN live l USING (name)
+    WHERE e.len IS DISTINCT FROM l.len OR e.md5 IS DISTINCT FROM l.md5
+  ) d;
+
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-02 calendar function bodies diverge from the pinned manifest: %. If the change was deliberate, re-record the list in this gate (query in the header) AND make sure the deployed copy is updated too -- the pin is what tells you production is behind.', v_bad;
+  END IF;
+
+  RAISE NOTICE '    OK B-02 all % calendar function bodies match the pinned manifest',
+    (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%');
+END;
+$bodies$;

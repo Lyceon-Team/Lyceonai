@@ -7,6 +7,7 @@ export {
   deviceTimezone,
   useCalendar,
   useGuardianCalendar,
+  usePrefetchAdjacentRange,
   useStreak,
 } from "./queries";
 export {

@@ -28,14 +28,9 @@
 import { useState } from "react";
 import { prefetchEngineChunk } from "../api/launch";
 import type { CanonicalDomain, PlanBlock } from "@lyceon/shared/calendar";
-import { domainsForSection } from "../lib/blocks";
 import { longDate } from "../lib/dates";
-import {
-  MAX_DOMAINS_PER_BLOCK,
-  MIX_GRANULARITY,
-  mixCountChoices,
-  reviewCountChoices,
-} from "../lib/members";
+import { reviewCountChoices } from "../lib/members";
+import { MixRows, type MixEntry } from "./MixRows";
 import { TONE_LABEL } from "../lib/blocks";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 
@@ -61,6 +56,11 @@ export type BlockSheetProps = {
   actions?: BlockSheetActions;
 };
 
+/**
+ * The editing path's wrapper over the shared rows: it pulls the mix out of the stored block
+ * and hands the control what it needs. The rows themselves live in `MixRows` so §17.2's
+ * create form renders exactly the same editor — see that file's note.
+ */
 function MixEditor({
   block,
   disabled,
@@ -68,9 +68,7 @@ function MixEditor({
 }: {
   block: PlanBlock & { block_type: "practice" };
   disabled: boolean;
-  onChange: (
-    mix: readonly { domain: CanonicalDomain; count: number }[],
-  ) => void;
+  onChange: (mix: readonly MixEntry[]) => void;
 }): JSX.Element {
   const mix =
     block.scope.level === "domain"
@@ -79,76 +77,13 @@ function MixEditor({
           count: entry.count,
         }))
       : [];
-  const available = domainsForSection(block.section);
-  const used = new Set(mix.map((entry) => entry.domain));
-  const nextUnused = available.find((domain) => !used.has(domain));
-
   return (
-    <div className="field">
-      <label>What this session covers</label>
-      {mix.map((entry, index) => (
-        <div className="mixrow" key={entry.domain}>
-          <select
-            disabled={disabled}
-            value={entry.domain}
-            aria-label={`Domain ${index + 1}`}
-            onChange={(event) => {
-              const domain = event.target.value as CanonicalDomain;
-              onChange(
-                mix.map((row, i) => (i === index ? { ...row, domain } : row)),
-              );
-            }}
-          >
-            {/* Only this block's own section. Offering a Math domain on a Reading & Writing
-                block would offer a choice the database CHECK refuses. */}
-            {available.map((domain) => (
-              <option key={domain} value={domain}>
-                {domain}
-              </option>
-            ))}
-          </select>
-          <select
-            disabled={disabled}
-            value={entry.count}
-            aria-label={`Questions for ${entry.domain}`}
-            onChange={(event) => {
-              const count = Number(event.target.value);
-              onChange(
-                mix.map((row, i) => (i === index ? { ...row, count } : row)),
-              );
-            }}
-          >
-            {mixCountChoices().map((count) => (
-              <option key={count} value={count}>
-                {count} questions
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={disabled || mix.length <= 1}
-            aria-label={`Remove ${entry.domain}`}
-            onClick={() => onChange(mix.filter((_, i) => i !== index))}
-          >
-            ✕
-          </button>
-        </div>
-      ))}
-      {!disabled &&
-      mix.length < MAX_DOMAINS_PER_BLOCK &&
-      nextUnused !== undefined ? (
-        <button
-          type="button"
-          className="btn"
-          style={{ width: "100%" }}
-          onClick={() =>
-            onChange([...mix, { domain: nextUnused, count: MIX_GRANULARITY }])
-          }
-        >
-          + Add a domain
-        </button>
-      ) : null}
-    </div>
+    <MixRows
+      section={block.section}
+      mix={mix}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
