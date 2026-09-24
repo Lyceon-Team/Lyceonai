@@ -963,6 +963,12 @@
   background: var(--exam-t);
   color: #26324a;
 }
+/* §17.2's create sheet. Deliberately NOT one of the four block tones: nothing has been
+   chosen yet, so borrowing a colour would name an engine the student has not picked. */
+.lyceon-calendar .kind-new {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+}
 
 /* The mini-month marks today even when it is not the selected week. */
 .lyceon-calendar .mgrid button.is-today {

@@ -148,6 +148,8 @@ describe("GET /api/calendar", () => {
         profile_timezone: "America/Los_Angeles",
         device_timezone: "America/New_York",
       },
+      // §17.2's engine picker. Production's own list on 2026-09-24.
+      enabled_block_types: ["practice", "review"],
     };
     const parsed = calendarResponseSchema.safeParse(payload);
     expect(parsed.success).toBe(true);
@@ -208,8 +210,28 @@ describe("GET /api/calendar", () => {
         streak: STREAK,
         latest_unacknowledged_nonstudent_change: null,
         diagnostic_state: "baseline_ready",
+        enabled_block_types: ["practice", "review"],
       }).success,
     ).toBe(true);
+  });
+
+  it("REFUSES a ready payload with no enabled_block_types — §17.2 has nothing to offer", () => {
+    // The picker is built from this list. Optional would mean "no engines" on a surface
+    // that should have been given the list, and an empty picker reads as a broken button
+    // rather than as a missing field.
+    expect(
+      calendarResponseSchema.safeParse({
+        status: "ready",
+        profile: PROFILE,
+        bounds: BOUNDS,
+        estimates: ESTIMATES,
+        days: [],
+        facts: FACTS,
+        streak: STREAK,
+        latest_unacknowledged_nonstudent_change: null,
+        diagnostic_state: "baseline_ready",
+      }).success,
+    ).toBe(false);
   });
 
   it("refuses an unknown trigger on the plan-updated banner", () => {

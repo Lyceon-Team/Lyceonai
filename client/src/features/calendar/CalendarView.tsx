@@ -60,7 +60,7 @@ import {
   MIX_GRANULARITY,
   isValidMix,
   membersWithEdit,
-  membersWithNewPracticeBlock,
+  membersWithNewBlock,
   membersWithout,
 } from "./lib/members";
 import {
@@ -81,6 +81,7 @@ import {
 import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import { CreateBlockSheet } from "./components/CreateBlockSheet";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup } from "./components/SetupPopup";
 import {
@@ -201,6 +202,8 @@ export function CalendarView({
   const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
   const [openBlockId, setOpenBlockId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The date whose "+ Add block" is open, or null. §17.2: opening writes nothing. */
+  const [addOnDate, setAddOnDate] = useState<string | null>(null);
 
   const readOnly = mutations === undefined;
 
@@ -423,7 +426,6 @@ export function CalendarView({
                     schedule.profile,
                     schedule.estimates,
                   ),
-                  onEdit: () => setSettingsOpen(true),
                 },
               })}
         />
@@ -478,28 +480,9 @@ export function CalendarView({
                   {...(mutations === undefined
                     ? {}
                     : {
-                        onAddBlock: (date: string) => {
-                          const day = dayFor(date);
-                          if (day === null) return;
-                          mutations.editDay(
-                            date,
-                            // The opening mix comes from the shared section map, so even
-                            // the default is not a domain name typed into this file.
-                            membersWithNewPracticeBlock(
-                              day,
-                              "M",
-                              domainsForSection("M")
-                                .slice(0, 2)
-                                .map((domain) => ({
-                                  domain,
-                                  count: MIX_GRANULARITY,
-                                })),
-                            ),
-                            // No optimistic hint: a created block has no id to predict, and
-                            // the settle-invalidate brings back the server's version.
-                            { removeBlockId: "" },
-                          );
-                        },
+                        // §17.2: Add OPENS the create sheet. It writes nothing — the
+                        // write happens on confirm, in `onCreate` below.
+                        onAddBlock: (date: string) => setAddOnDate(date),
                       })}
                 />
               ) : (
@@ -529,6 +512,31 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+        />
+      )}
+
+      {addOnDate === null ||
+      mutations === undefined ||
+      model === null ||
+      model.controls.kind !== "editable" ? null : (
+        <CreateBlockSheet
+          open
+          date={addOnDate}
+          enabledBlockTypes={model.controls.enabledBlockTypes}
+          pending={false}
+          onClose={() => setAddOnDate(null)}
+          onCreate={(draft) => {
+            const day = dayFor(addOnDate);
+            if (day === null) return;
+            mutations.editDay(
+              addOnDate,
+              membersWithNewBlock(day, draft),
+              // No optimistic hint: a created block has no id to predict, and the
+              // settle-invalidate brings back the server's version.
+              { removeBlockId: "" },
+            );
+            setAddOnDate(null);
+          }}
         />
       )}
 
