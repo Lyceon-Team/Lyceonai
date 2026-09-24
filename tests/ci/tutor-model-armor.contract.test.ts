@@ -1,5 +1,5 @@
 /**
- * @spec [Doc-03_V3 §18.2 Layers 3-4; closure plan W3-1] | @implemented 2026-09-24
+ * @spec [closure plan W3-1; owner ruling 2026-09-24 (fail open)] | @implemented 2026-09-24
  *
  * plain English: pins Model Armor enforcement in the BFF.
  *

@@ -194,6 +194,14 @@ The crisis path returns before either scan. Dead code deleted: the worker's
 `sanitizeOutput`, `_buildInputModelArmorConfig`, `armorOutputBlocked: false`,
 `getModelArmorConfig` in the BFF.
 
+**Spec status — Karl to rule:** `docs/Spec` never mentions Model Armor. Doc 03 §18.2
+Layer 4 and INV-03-12 ("failed scans block the response… scans are not optional") name
+the deterministic output scans in `serializeTutorOutput`. Those are unchanged, run on
+every reply, and still fail closed. Model Armor sits on top as an additional layer, and
+fails open by your ruling. The code cites the closure plan, not §18.2. Whether Model Armor
+and its fail-open posture should be written into Doc 03 through an SCL entry is your call.
+CC has not allocated an SCL number.
+
 **Student copy on a block (both points):** *"I can't help with that one. Let's get back
 to your SAT prep — what would you like to work on next?"*
 

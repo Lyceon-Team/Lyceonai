@@ -1,7 +1,16 @@
 /**
- * @spec [Doc-03_V3 §18.2 Layer 3 (input) and Layer 4 (output) — Model Armor
- *        scanning; Doc-03B_V4.1 §12B.8 (template IDs from runtime config);
- *        closure plan W3-1] | @implemented 2026-09-24
+ * @spec [closure plan W3-1 + owner ruling 2026-09-24 (fail open); Doc-03B_V4.1 §12B.8 (template IDs from runtime config)]
+ *        | @implemented 2026-09-24
+ *
+ * SPEC STATUS: Model Armor is NOT in the locked docs/Spec corpus. Its
+ * authority is the closure plan (W3-1) and the owner's brief, including the
+ * fail-open ruling. It is an ADDITIONAL, model-backed layer on top of — not a
+ * replacement for — Doc 03 §18.2 Layer 4 / INV-03-12, which are the
+ * deterministic output scans in tutor-output-serializer.ts. Those still run on
+ * every reply, including when a Model Armor scan is skipped, and still fail
+ * CLOSED. So a skipped Model Armor scan never leaves a reply without the
+ * INV-03-12 scans. Recording Model Armor in Doc 03 is an open SCL question
+ * for Karl, not settled here.
  *
  * plain English: the BFF's Model Armor client. Two scan points around the
  * worker call — `sanitizeUserPrompt` on the student's message against the

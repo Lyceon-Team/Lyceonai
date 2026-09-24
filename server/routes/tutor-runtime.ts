@@ -1585,13 +1585,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // the before/after latency measurement for W3-1.
     const turnStartedAt = Date.now();
 
-    // Step 13b: Model Armor input scan (Doc 03 §18.2 Layer 3; closure plan
-    // W3-1). Runs on the student's message as typed, immediately before the
-    // worker call. The crisis path returned above and never reaches this
+    // Step 13b: Model Armor input scan (closure plan W3-1 — an additional
+    // layer, not in docs/Spec; see the tutor-model-armor.ts header). Runs on
+    // the student's message as typed, immediately before the worker call. The crisis path returned above and never reaches this
     // line — Model Armor cannot suppress a crisis response. Fail open: a
     // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
     // model entirely and answers with the neutral substitution.
-    // @spec [Doc-03_V3 §18.2; closure plan W3-1] | @implemented 2026-09-24
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
     const armorInput = await scanWithModelArmor(
       "input",
       input.message,
@@ -1674,12 +1674,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
-    // Step 14b: Model Armor output scan (Doc 03 §18.2 Layer 4; closure plan
-    // W3-1) on LISA's reply, before the serializer. The verdict is carried
+    // Step 14b: Model Armor output scan (closure plan W3-1) on LISA's reply,
+    // before the serializer. Additional to the INV-03-12 scans in
+    // serializeTutorOutput, which still run on every reply and fail closed. The verdict is carried
     // into serializeTutorOutput as `armorOutputBlocked`, which substitutes.
     // Not run when the input scan blocked — the reply is then server copy,
     // not model output. Fail open, as for the input scan.
-    // @spec [Doc-03_V3 §18.2; closure plan W3-1] | @implemented 2026-09-24
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
     const armorOutput =
       armorInput.kind === "blocked"
         ? null

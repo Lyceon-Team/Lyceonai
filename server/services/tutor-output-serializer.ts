@@ -100,7 +100,8 @@ export type OutputScanContext = {
    * detection like any other blocking scan class. Omitted or false = clean,
    * or the scan was skipped (fail open — the skip is logged at ERROR by the
    * scanner, not here).
-   * @spec [Doc-03_V3 §18.2 Layer 4; closure plan W3-1] | @implemented 2026-09-24
+   * @spec [closure plan W3-1 — additional to the §18.2 Layer 4 / INV-03-12
+   *        scans above, which are unchanged] | @implemented 2026-09-24
    */
   armorOutputBlocked?: boolean;
 };
