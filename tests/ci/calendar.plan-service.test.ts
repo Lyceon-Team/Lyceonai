@@ -137,13 +137,38 @@ describe("§12.1 — each trigger reaches its own writer", () => {
   });
 });
 
+/**
+ * The shape `calendar_validate_plan` ACTUALLY returns. Verified against the function in
+ * a database with the migration pipeline applied, 2026-09-24:
+ *
+ *   select public.calendar_validate_plan('generated', <input>, <two dates the same>);
+ *   {"result":"rejected","violations":[{"date":"2026-09-25","rule":"V-08",
+ *     "detail":"the date appears 2 times in the output; display ordinals would collide"}]}
+ *
+ * The previous fixture here was `violations: ["V-05", "V-10"]` — a list of STRINGS, which
+ * the validator has never produced. That is why this suite stayed green through fifteen
+ * production rejections that logged `rule_ids=[]`: the code was filtering for strings, and
+ * the only strings it ever saw were the ones this file handed it. A fixture invented to
+ * match the implementation cannot falsify the implementation.
+ */
+const V05 = {
+  rule: "V-05",
+  date: "2026-09-25",
+  detail: "planned seconds 5400 exceed the day budget 3600",
+} as const;
+const V10 = {
+  rule: "V-10",
+  date: null,
+  detail: "the horizon creates 3 full-lengths, above max_full_length_per_horizon 2",
+} as const;
+
 describe("§18 — a rejected plan is a rejection, never a retry", () => {
   it("returns the rule ids and writes nothing else", async () => {
     withRpc({
       calendar_persist_version: okReply({
         version_no: 4,
         validator_result: "rejected",
-        violations: ["V-05", "V-10"],
+        violations: [V05, V10],
       }),
     });
 
@@ -158,9 +183,86 @@ describe("§18 — a rejected plan is a rejection, never a retry", () => {
     if (result.ok) return;
     expect(result.error.kind).toBe("rejected");
     if (result.error.kind !== "rejected") return;
-    expect(result.error.violations).toEqual(["V-05", "V-10"]);
+    expect(result.error.violations).toEqual([V05, V10]);
+    expect(result.error.unreadable).toBe(0);
     // One call. A second would be a second generator with different inputs.
     expect(client.rpcs).toHaveLength(1);
+  });
+
+  it("a day edit is STUDENT-authored; a regeneration is not", async () => {
+    withRpc({
+      calendar_edit_day: okReply({
+        version_no: 5,
+        validator_result: "rejected",
+        violations: [V05],
+      }),
+    });
+
+    const edit = await editDay({
+      student_id: STUDENT,
+      date: "2026-09-25",
+      members: [],
+      generator_version: GENERATOR,
+      idempotency_key: KEY,
+    });
+
+    expect(edit.ok).toBe(false);
+    if (edit.ok || edit.error.kind !== "rejected") return;
+    // The student supplied the member list, so the refusal is about what THEY asked for.
+    expect(edit.error.authored).toBe("student");
+
+    withRpc({
+      calendar_persist_version: okReply({
+        version_no: 6,
+        validator_result: "rejected",
+        violations: [V05],
+      }),
+    });
+    const weekly = await regeneratePlan({
+      student_id: STUDENT,
+      trigger: "weekly",
+      initiated_by: "system",
+      generator_version: GENERATOR,
+    });
+    expect(weekly.ok).toBe(false);
+    if (weekly.ok || weekly.error.kind !== "rejected") return;
+    // Nobody asked for anything wrong here — our generator produced an invalid plan.
+    expect(weekly.error.authored).toBe("system");
+  });
+
+  it("COUNTS a violation it cannot parse instead of dropping it", async () => {
+    // The regression guard. Anything unreadable used to vanish; now it is visible, so a
+    // future change to the SQL shape surfaces as a number rather than as silence.
+    withRpc({
+      calendar_persist_version: okReply({
+        version_no: 7,
+        validator_result: "rejected",
+        violations: [V05, "V-05", { rule: "", date: null, detail: "x" }, 42],
+      }),
+    });
+
+    const result = await regeneratePlan({
+      student_id: STUDENT,
+      trigger: "weekly",
+      initiated_by: "system",
+      generator_version: GENERATOR,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== "rejected") return;
+    expect(result.error.violations).toEqual([V05]);
+    expect(result.error.unreadable).toBe(3);
+  });
+
+  it("PLANT: the old string filter empties a real validator payload", () => {
+    // What the code did before, run against what the database actually sends. This is the
+    // defect, reproduced in four lines: no error, no warning, just nothing.
+    const fromTheDatabase: unknown[] = [V05, V10];
+    const asTheOldCodeReadThem = fromTheDatabase.filter(
+      (rule): rule is string => typeof rule === "string",
+    );
+    expect(asTheOldCodeReadThem).toEqual([]);
+    expect(fromTheDatabase).toHaveLength(2);
   });
 
   it("refuses an envelope it does not recognise rather than guessing a version", async () => {

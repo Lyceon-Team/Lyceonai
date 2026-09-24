@@ -213,6 +213,8 @@ const READY: CalendarResponse = {
     created_at: "2026-09-15T09:00:00Z",
   },
   diagnostic_state: "baseline_ready",
+  // §17.2. Production's own list on 2026-09-24 — full-length absent until it ships.
+  enabled_block_types: ["practice", "review"],
 };
 
 const SETUP_REQUIRED: CalendarResponse = {

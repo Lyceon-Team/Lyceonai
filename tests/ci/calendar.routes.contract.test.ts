@@ -395,7 +395,10 @@ describe("§15's error list — every failure gets its own status", () => {
     { kind: "beyond_horizon", extra: { date: "2027-01-01" }, status: 404, code: "CALENDAR_BEYOND_HORIZON" },
     { kind: "no_profile", status: 404, code: "CALENDAR_NO_PROFILE" },
     { kind: "not_found", status: 404, code: "CALENDAR_NOT_FOUND" },
-    { kind: "rejected", extra: { violations: ["V-05"] }, status: 500, code: "CALENDAR_PLAN_REJECTED" },
+    // SYSTEM-authored: the student asked for a fresh day, but WE composed it
+    // (`calendar_regenerate_day` validates in `day_regenerate` mode). Our generator
+    // emitting an invalid plan is a fault, so this one stays 500 and keeps §18's alert.
+    { kind: "rejected", extra: { authored: "system", violations: [], unreadable: 0 }, status: 500, code: "CALENDAR_PLAN_REJECTED" },
     { kind: "write_failed", extra: { detail: "boom" }, status: 500, code: "CALENDAR_ERROR" },
   ];
 
@@ -416,16 +419,95 @@ describe("§15's error list — every failure gets its own status", () => {
     });
   }
 
+  /** The shape the validator really returns — objects, never strings. See SCL-137. */
+  const V05 = {
+    rule: "V-05",
+    date: "2026-09-25",
+    detail: "planned seconds 5400 exceed the day budget 3600",
+  } as const;
+
   it("a rejected plan tells the student their CURRENT plan is unchanged", async () => {
-    regenerateDayMock.mockResolvedValue({ ok: false, error: { kind: "rejected", violations: ["V-05"] } });
+    regenerateDayMock.mockResolvedValue({
+      ok: false,
+      error: { kind: "rejected", authored: "system", violations: [V05], unreadable: 0 },
+    });
 
     const res = await request(buildApp())
       .post(`/api/calendar/days/${TODAY}/regenerate`)
       .send({ idempotency_key: KEY });
 
     expect(res.body.error.message).toContain("unchanged");
-    // §18: the rule ids are for the alert, not the student. plan-service logged them.
+    // Still withheld HERE, and for the original reason: this rejection is ours, not the
+    // student's, so there is nothing for them to act on. The student-authored case below
+    // is the one the ruling changed.
     expect(JSON.stringify(res.body)).not.toContain("V-05");
+  });
+
+  describe("a refused DAY EDIT is a decision, not a fault (§15; SCL-137)", () => {
+    it("answers 409, not 500 — the request was understood and declined", async () => {
+      editDayMock.mockResolvedValue({
+        ok: false,
+        error: { kind: "rejected", authored: "student", violations: [V05], unreadable: 0 },
+      });
+
+      const res = await request(buildApp())
+        .put(`/api/calendar/days/${TODAY}`)
+        .send({ members: [], idempotency_key: KEY });
+
+      // Production on 2026-09-24 answered 500 here, fifteen times. A 500 tells the client
+      // to retry, and this can only fail again until the student changes the day.
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("CALENDAR_PLAN_REJECTED");
+    });
+
+    it("carries the violations, so the refusal can be explained", async () => {
+      editDayMock.mockResolvedValue({
+        ok: false,
+        error: { kind: "rejected", authored: "student", violations: [V05], unreadable: 0 },
+      });
+
+      const res = await request(buildApp())
+        .put(`/api/calendar/days/${TODAY}`)
+        .send({ members: [], idempotency_key: KEY });
+
+      expect(res.body.error.details.violations).toEqual([V05]);
+      // The rule id alone is unactionable; the detail is what names the day and the budget.
+      expect(res.body.error.details.violations[0].detail).toContain("budget");
+    });
+
+    it("PLANT: an empty violations list still answers 409 and says so", async () => {
+      // The pre-fix production shape. It must not read as success, and must not read as a
+      // fault either — the status is decided by WHO authored the plan, never by whether we
+      // managed to parse the reasons.
+      editDayMock.mockResolvedValue({
+        ok: false,
+        error: { kind: "rejected", authored: "student", violations: [], unreadable: 2 },
+      });
+
+      const res = await request(buildApp())
+        .put(`/api/calendar/days/${TODAY}`)
+        .send({ members: [], idempotency_key: KEY });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.details.violations).toEqual([]);
+    });
+
+    it("a REAL fault on the same route is still 500", async () => {
+      // The other half of the validation: 409 must not have swallowed the fault case.
+      editDayMock.mockResolvedValue({
+        ok: false,
+        error: { kind: "write_failed", detail: "connection reset" },
+      });
+
+      const res = await request(buildApp())
+        .put(`/api/calendar/days/${TODAY}`)
+        .send({ members: [], idempotency_key: KEY });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error.code).toBe("CALENDAR_ERROR");
+      // And the operator detail never reaches the student.
+      expect(JSON.stringify(res.body)).not.toContain("connection reset");
+    });
   });
 
   const launchCases: { kind: string; extra?: Record<string, unknown>; status: number; code: string }[] = [

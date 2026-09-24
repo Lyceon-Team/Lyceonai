@@ -252,6 +252,10 @@ export const orchestrateRequestSchema = z.object({
   correct_answer: z.string().nullable(),
   // ── Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless) ──
   // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
+  // Unused by the worker since W3-1 (2026-09-24): Model Armor runs in the BFF
+  // (server/services/tutor-model-armor.ts). Still required here because the
+  // deployed worker's copy of this schema requires them; removing them is a
+  // two-step change (worker schema first, then the BFF) — closure plan W3-4.
   model_armor_input_template_id: z.string().nullable(),
   model_armor_output_template_id: z.string().nullable(),
 });
