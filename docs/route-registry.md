@@ -39,7 +39,6 @@ This document is the single authoritative registry of:
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
 | `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
-| `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
 | `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -85,7 +84,7 @@ This document is the single authoritative registry of:
 - `/signup`
 - `/privacy` (301 to `/legal/privacy-policy`)
 - `/terms` (301 to `/legal/student-terms`)
-- authenticated app surfaces (dashboard, practice, full-test, mastery, guardian)
+- authenticated app surfaces (dashboard, practice, mastery, guardian)
 
 ### Dead/Stale Public Routes
 - none (legacy ingestion/admin-deprecated routes remain removed)
@@ -165,16 +164,9 @@ Removed auth endpoints (must return 404):
 | `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
 
-### Full-Length Exam Endpoints (Bluebook SAT)
-| Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
-|----------|--------|--------------|------|-------------|---------|
-| `/api/full-length/sessions` | POST | Yes | student/admin | free | Create new exam session |
-| `/api/full-length/sessions/current` | GET | Yes | student/admin | free | Get current session state |
-| `/api/full-length/sessions/:id/start` | POST | Yes | student/admin | free | Start exam (begin RW Module 1) |
-| `/api/full-length/sessions/:id/answer` | POST | Yes | student/admin | free | Submit answer to question (idempotent) |
-| `/api/full-length/sessions/:id/module/submit` | POST | Yes | student/admin | free | End module, compute score, set adaptive difficulty |
-| `/api/full-length/sessions/:id/break/continue` | POST | Yes | student/admin | free | Continue from break to Math Module 1 |
-| `/api/full-length/sessions/:id/complete` | POST | Yes | student/admin | free | Complete exam, get final results |
+### Full-Length Exam Endpoints
+None mounted. The pre-baseline `/api/full-length/*` runtime and the `/full-test` page were
+removed by the E1 exam deletion ruling (2026-09-23) pending the Doc 04 rebuild.
 
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |

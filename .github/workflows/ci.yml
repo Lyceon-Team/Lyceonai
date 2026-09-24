@@ -491,6 +491,43 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/guardian-view-decision-gate.sh
 
+      # Doc 04B V4.3 §7.2/§8.1/§8.2/§8.4 — every scoring-catalogue constraint is made
+      # to FIRE on a fresh apply: the INSERT/UPDATE/DELETE seal on an active version's
+      # constants, the attestation CHECK, the no-downgrade trigger, the (version, key,
+      # section) unique index, the raise-on-miss helper, and the partial unique index
+      # under a real two-session race (the friendly trigger cannot see the other
+      # transaction, so only the index can refuse it). Each check asserts its own
+      # SQLSTATE and constraint/message and must print its own `ok` line.
+      # @spec [Doc-04B_V4.3, §7.2, §8.1, §8.2, §8.4, Appendix A] | @implemented [2026-09-23]
+      - name: Scoring catalogue gates (04B §7.2/§8 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-catalogue-gates.sh
+
+      # Doc 04A V2.2 §5/§6/§9 + Doc 04B §13 as amended (owner ruling 2026-09-24,
+      # SCL-121) — every exam-runtime constraint is made to FIRE on a fresh apply,
+      # against synthetic fixtures: published-form and published-item immutability,
+      # the one-way status machine, module2_path lock, the publish gate (every
+      # publish refused while v1.0 is candidate; succeeds once active), the ruled
+      # per-module composition tallies (difficulty / grid-in / domain, each miss
+      # naming its cell), form-item uniqueness, answer-upsert idempotency, and the
+      # account-deletion cascade. Each check asserts its SQLSTATE and constraint/message.
+      # @spec [Doc-04A_V2.2, §5, §6, §9.2, §11.2; Doc-04B_V4.3, §13] | @implemented [2026-09-24]
+      - name: Exam runtime schema gates (04A §5/§6/§9 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-runtime-schema-gates.sh
+
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
   # questions into ephemeral Postgres, exercises select_practice_pool_random,
