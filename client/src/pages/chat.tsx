@@ -867,11 +867,19 @@ export default function ChatPage() {
 
   const handleResume = useCallback(() => {
     if (!conversationId) return;
+    const leavePausedState = (): void => {
+      setTurnState({ kind: "idle" });
+      setCrisisLane(null);
+      setCrisisContent("");
+    };
     resumeConversation.mutate(conversationId, {
-      onSuccess: () => {
-        setTurnState({ kind: "idle" });
-        setCrisisLane(null);
-        setCrisisContent("");
+      onSuccess: leavePausedState,
+      // 409 conversation_not_paused is the server saying the conversation is
+      // already live (e.g. resumed in another tab). Believe it and leave the
+      // paused state — useResumeConversation has already cleared the cached
+      // pause, so the sync effect above will not put it back.
+      onError: (err) => {
+        if (err.code === "conversation_not_paused") leavePausedState();
       },
     });
   }, [conversationId, resumeConversation]);
