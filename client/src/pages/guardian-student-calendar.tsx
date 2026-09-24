@@ -87,6 +87,10 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
       today={today}
       viewerName="Study plan"
       targetExamDate={null}
+      // §16 withholds the target score from a guardian, as it withholds the controls and
+      // the explanation copy. No projection either: the guardian payload does not carry
+      // Doc 05C's rows, so the header renders its absence copy rather than a stale band.
+      targetScore={null}
       streak={calendar.data.streak}
       planUpdate={null}
       onRangeChange={onRangeChange}
