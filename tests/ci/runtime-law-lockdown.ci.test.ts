@@ -22,6 +22,11 @@ describe("Runtime cutover API enforcement", () => {
     delete process.env.VITEST;
   });
 
+  // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+  // pending Doc 04 rebuild. These three paths used to assert 401 from the mounted
+  // /api/full-length router. With the mount gone they must reach NO handler: a
+  // 404, never a 401 (which would mean some auth-guarded mount still claims them)
+  // and never a 2xx.
   it.each([
     {
       method: "post",
@@ -38,7 +43,7 @@ describe("Runtime cutover API enforcement", () => {
       body: {},
     },
   ])(
-    "$method $path requires auth once full-length is unlocked",
+    "$method $path is unmounted (404) after the E1 exam deletion",
     async ({ method, path, body }) => {
       const req =
         method === "get"
@@ -48,11 +53,7 @@ describe("Runtime cutover API enforcement", () => {
               .send(body ?? {});
       const res = await req;
 
-      expect(res.status).toBe(401);
-      expect(res.body).toMatchObject({
-        error: "Authentication required",
-        message: "You must be signed in to access this resource",
-      });
+      expect(res.status).toBe(404);
     },
   );
 
@@ -76,7 +77,7 @@ describe("Runtime cutover route coverage proof", () => {
     "utf8",
   );
 
-  it("keeps practice/full-length/diagnostic unlocked with no disable-contract", () => {
+  it("keeps practice/diagnostic unlocked with no disable-contract, and full-length unmounted", () => {
     expect(indexSource).toMatch(
       /app\.use\(\s*"\/api\/practice",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*doubleCsrfProtection,\s*practiceCanonicalRouter/s,
     );
@@ -84,9 +85,12 @@ describe("Runtime cutover route coverage proof", () => {
       /runtimeContractDisableMiddleware\("practice"\)/s,
     );
 
-    expect(indexSource).toMatch(
-      /app\.use\(\s*"\/api\/full-length",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*fullLengthExamRouter/s,
-    );
+    // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+    // pending Doc 04 rebuild. Previously asserted the bare /api/full-length mount;
+    // now asserts no mount, no router import, and no disable middleware remain.
+    expect(indexSource).not.toContain("/api/full-length");
+    expect(indexSource).not.toContain("full-length-exam-routes");
+    expect(indexSource).not.toContain("fullLengthExamRouter");
     expect(indexSource).not.toMatch(
       /runtimeContractDisableMiddleware\("full-length"\)/s,
     );
@@ -123,7 +127,10 @@ describe("Runtime cutover route coverage proof", () => {
     expect(practiceSource).not.toMatch(/router\.get\(\s*"\/next"/s);
   });
 
-  it("keeps full-length runtime under a single mount with no direct app.* route leaks", () => {
+  // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+  // pending Doc 04 rebuild. Unchanged assertion (no direct app.* full-length
+  // routes); the title no longer claims a mount exists.
+  it("has no direct app.* /api/full-length route leaks", () => {
     const directFullLengthPaths = Array.from(
       indexSource.matchAll(
         /app\.(?:get|post|put|patch|delete)\(\s*"([^"]*\/api\/full-length[^"]*)"/g,

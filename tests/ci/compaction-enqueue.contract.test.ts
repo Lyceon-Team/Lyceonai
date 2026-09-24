@@ -65,7 +65,6 @@ vi.mock("../../server/logger", () => ({
 vi.mock("../../server/services/entitlement-service", () => ({
   EntitlementService: {
     isEntitlementActiveForProfile: vi.fn(async () => true),
-    isLiveExamInProgress: vi.fn(async () => false),
   },
 }));
 

@@ -11,7 +11,6 @@ import {
   BookOpen,
   RotateCcw,
   MessageSquare,
-  CreditCard,
   CalendarDays,
   Settings,
   LogOut,
@@ -45,7 +44,6 @@ export const navItems: readonly {
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/practice", label: "Practice", icon: BookOpen },
   { href: "/review", label: "Review", icon: RotateCcw },
-  { href: "/full-test", label: "Full Tests", icon: CreditCard },
   { href: "/chat", label: "Lisa", icon: MessageSquare },
 ];
 

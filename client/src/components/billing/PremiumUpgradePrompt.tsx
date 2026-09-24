@@ -52,8 +52,9 @@ import {
 } from "@/lib/billing-cta";
 
 /**
- * Kept only because `chat.tsx` and `full-test.tsx` type their own local denial
- * state with it. This component no longer accepts it as a prop.
+ * Kept only because `chat.tsx` types its own local denial state with it
+ * (`full-test.tsx` was deleted by the E1 exam deletion ruling, 2026-09-23).
+ * This component no longer accepts it as a prop.
  *
  * THE PROP IS DELETED, not deprecated (owner ruling 2026-09-03). Three of these
  * five values — `payment_past_due`, `subscription_canceled`,

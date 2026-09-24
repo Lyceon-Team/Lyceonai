@@ -8,11 +8,14 @@
  *
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
- *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
+ *   - Full-length report/view       → REMOVED (E1 exam deletion ruling, 2026-09-23:
+ *                                     pre-baseline full-length runtime removed pending
+ *                                     Doc 04 rebuild; the /report route and its builder
+ *                                     are deleted, so Surface 2 is gone)
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 
@@ -30,150 +33,13 @@ vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Surface 2: Full-length report — buildStudentFullLengthReportView is the only
-//            assembler called by the /report route.
+// Surface 2: Full-length report — DELETED 2026-09-23 (E1 exam deletion ruling:
+//   pre-baseline full-length runtime removed pending Doc 04 rebuild). Its two cases
+//   drove server/routes/full-length-exam-routes.ts /report through
+//   buildStudentFullLengthReportView; route, builder and exam service are all gone.
+//   The hoisted canonical-runtime-views / fullLengthExam / kpi-access / csrf mocks
+//   that lived in this block went with it — Surface 5 installs its own via doMock.
 // ---------------------------------------------------------------------------
-describe("Full-length report: single canonical builder", () => {
-  const kpiMocks = vi.hoisted(() => ({
-    buildStudentFullLengthReportView: vi.fn(),
-    resolvePaidKpiAccessForUser: vi.fn(),
-  }));
-
-  const examMocks = vi.hoisted(() => ({
-    getExamReport: vi.fn(),
-  }));
-
-  vi.mock("../../server/services/canonical-runtime-views", () => ({
-    buildStudentFullLengthReportView: (...args: any[]) =>
-      kpiMocks.buildStudentFullLengthReportView(...args),
-    buildStudentKpiViewFromCanonical: vi.fn(),
-    buildScoreEstimateFromCanonical: vi.fn(),
-    projectGuardianFullLengthReportView: vi.fn(),
-  }));
-
-  vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
-    getExamReport: (...args: any[]) => examMocks.getExamReport(...args),
-    createExamSession: vi.fn(),
-    getCurrentSession: vi.fn(),
-    startExam: vi.fn(),
-    submitAnswer: vi.fn(),
-    submitModule: vi.fn(),
-    continueFromBreak: vi.fn(),
-    completeExam: vi.fn(),
-    getExamReviewAfterCompletion: vi.fn(),
-    persistModuleCalculatorState: vi.fn(),
-  }));
-
-  vi.mock("../../server/services/kpi-access", async () => {
-    const actual = await vi.importActual<
-      typeof import("../../server/services/kpi-access")
-    >("../../server/services/kpi-access");
-    return {
-      ...actual,
-      resolvePaidKpiAccessForUser: (...args: any[]) =>
-        kpiMocks.resolvePaidKpiAccessForUser(...args),
-    };
-  });
-
-  vi.mock("../../server/middleware/csrf-double-submit", () => ({
-    doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
-    generateToken: () => "test-csrf-token",
-  }));
-
-  function buildReportApp() {
-    const app = express();
-    app.use(express.json());
-    app.use((req: any, _res: any, next: any) => {
-      req.user = { id: "student-1", role: "student" };
-      req.requestId = "req-test";
-      next();
-    });
-    // Inline auth stub for requireSupabaseAuth
-    app.use((req: any, _res: any, next: any) => {
-      (req as any).__authPassed = true;
-      next();
-    });
-    return app;
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-      hasPaidAccess: true,
-      reason: "active",
-      plan: "paid",
-      status: "active",
-      currentPeriodEnd: null,
-    });
-  });
-
-  it("report route calls buildStudentFullLengthReportView with exam service result", async () => {
-    const fakeReport = {
-      sessionId: "sess-1",
-      scaledScore: { total: 1400, rw: 700, math: 700 },
-      rawScore: { total: { correct: 90, total: 98 } },
-      completedAt: new Date().toISOString(),
-    };
-    examMocks.getExamReport.mockResolvedValue(fakeReport);
-    kpiMocks.buildStudentFullLengthReportView.mockReturnValue({
-      ...fakeReport,
-      kpis: [],
-      measurementModel: { official: [], weighted: [], diagnostic: [] },
-    });
-
-    // Import here to pick up the hoisted mocks
-    const { default: fullLengthRouter } =
-      await import("../../server/routes/full-length-exam-routes");
-
-    const app = buildReportApp();
-    app.use("/api/full-length", fullLengthRouter);
-
-    const res = await request(app).get(
-      "/api/full-length/sessions/sess-1/report",
-    );
-
-    expect(examMocks.getExamReport).toHaveBeenCalledWith({
-      sessionId: "sess-1",
-      userId: "student-1",
-    });
-    // The route MUST call the canonical builder, not inline-assemble
-    expect(kpiMocks.buildStudentFullLengthReportView).toHaveBeenCalledWith(
-      fakeReport,
-    );
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty("kpis");
-    expect(res.body).toHaveProperty("measurementModel");
-  }, 15000);
-
-  it("report route fails closed when buildStudentFullLengthReportView throws", async () => {
-    examMocks.getExamReport.mockResolvedValue({
-      sessionId: "sess-err",
-      scaledScore: { total: 1200, rw: 600, math: 600 },
-      rawScore: { total: { correct: 50, total: 98 } },
-      completedAt: new Date().toISOString(),
-    });
-    kpiMocks.buildStudentFullLengthReportView.mockImplementation(() => {
-      throw new Error("kpi_builder_exploded");
-    });
-
-    const { default: fullLengthRouter } =
-      await import("../../server/routes/full-length-exam-routes");
-    const app = buildReportApp();
-    app.use("/api/full-length", fullLengthRouter);
-
-    const res = await request(app).get(
-      "/api/full-length/sessions/sess-err/report",
-    );
-
-    expect(res.status).toBe(500);
-    expect(res.body).toHaveProperty("error");
-  }, 15000);
-
-  // The weakness skills route is GONE (owner ruling 2026-08-27, OQ4). Nothing specified it,
-  // and it ordered by `mastery_score` — a column Parent AC#20 confines to admin/internal.
-  // Ordering by a forbidden column is a projection of it: the ranking carries the column's
-  // information content even though the value never appeared in the body.
-});
 
 // ---------------------------------------------------------------------------
 // Surface 3: Weakness — DELETED 2026-08-27 (owner ruling, OQ4).
@@ -225,8 +91,6 @@ describe("KPI summary: canonical builder path", () => {
       buildStudentKpiViewFromCanonical:
         kpiMocks5.buildStudentKpiViewFromCanonical,
       buildScoreEstimateFromCanonical: vi.fn(),
-      buildStudentFullLengthReportView: vi.fn(),
-      projectGuardianFullLengthReportView: vi.fn(),
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 
@@ -290,8 +154,6 @@ describe("KPI summary: canonical builder path", () => {
       buildStudentKpiViewFromCanonical:
         kpiMocks5.buildStudentKpiViewFromCanonical,
       buildScoreEstimateFromCanonical: vi.fn(),
-      buildStudentFullLengthReportView: vi.fn(),
-      projectGuardianFullLengthReportView: vi.fn(),
       readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
     }));
 

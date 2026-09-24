@@ -31,7 +31,6 @@
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
     "test:all": "vitest run",
-    "exam:smoke": "vitest run tests/ci/full-length-exam.smoke.test.ts",
     "smoke:auth": "node scripts/smoke/prod-auth-smoke.mjs",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",

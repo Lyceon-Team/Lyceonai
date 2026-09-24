@@ -21,7 +21,6 @@ import rateLimit from "express-rate-limit";
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
 import { legalRouter } from "./routes/legal-routes.js";
-import fullLengthExamRouter from "./routes/full-length-exam-routes";
 import {
   getQuestions,
   getRandomQuestions,
@@ -667,15 +666,6 @@ app.use(
   reviewCanonicalRouter,
 );
 
-// Full-Length Exam Routes (Bluebook-style SAT exams)
-// All routes require Supabase auth and are student-only
-app.use(
-  "/api/full-length",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  fullLengthExamRouter,
-);
-
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
   if (process.env.NODE_ENV === "production") {
@@ -995,17 +985,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
-    console.log(`  POST   /api/full-length/sessions`);
-    console.log(`  GET    /api/full-length/sessions`);
-    console.log(`  GET    /api/full-length/sessions/current`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/start`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/answer`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/module/submit`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/break/continue`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
-    console.log(`  GET    /api/full-length/sessions/:sessionId/report`);
-    console.log(`  GET    /api/full-length/sessions/:sessionId/review`);
   });
 
   // Graceful shutdown

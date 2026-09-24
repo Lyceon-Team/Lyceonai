@@ -3,16 +3,13 @@ import request from "supertest";
 import express, { Express } from "express";
 // @ts-ignore
 import practiceCanonicalRouter from "../../server/routes/practice-canonical";
-import fullLengthExamRouter from "../../server/routes/full-length-exam-routes";
 import guardianRoutes from "../../server/routes/guardian-routes";
 
 // HOISTED MOCKS
-const examMocks = vi.hoisted(() => ({
-  submitModule: vi.fn(),
-  submitAnswer: vi.fn(),
-  persistModuleCalculatorState: vi.fn(),
-}));
-
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. The fullLengthExam service mock, the /api/full-length
+// mount and the two "Full-Length: ... delegates to service" cases are deleted with
+// the router and service they exercised. Guardian and practice cases are unchanged.
 const accountMocks = vi.hoisted(() => ({
   revokeGuardianLink: vi.fn(),
   isGuardianLinkedToStudent: vi.fn(),
@@ -39,19 +36,6 @@ const authMocks = vi.hoisted(() => ({
 }));
 
 // Apply mocks before any imports
-vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
-  submitModule: examMocks.submitModule,
-  submitAnswer: examMocks.submitAnswer,
-  persistModuleCalculatorState: examMocks.persistModuleCalculatorState,
-  createExamSession: vi.fn(),
-  startExam: vi.fn(),
-  getExamReport: vi.fn(),
-  getExamReviewAfterCompletion: vi.fn(),
-  getCurrentSession: vi.fn(),
-  continueFromBreak: vi.fn(),
-  completeExam: vi.fn(),
-}));
-
 vi.mock("../../server/lib/account", () => ({
   revokeGuardianLink: accountMocks.revokeGuardianLink,
   isGuardianLinkedToStudent: accountMocks.isGuardianLinkedToStudent,
@@ -176,7 +160,6 @@ function buildApp(): Express {
   });
   app.use(authMocks.requireSupabaseAuth);
   app.use("/api/practice", practiceCanonicalRouter);
-  app.use("/api/full-length", fullLengthExamRouter);
   app.use(
     "/api/guardian",
     (req: any, _res, next) => {
@@ -197,24 +180,6 @@ describe("Mutation Ownership Contract", () => {
   });
 
   describe("Surface Ownership Verification", () => {
-    it("Full-Length: module submit delegates to service", async () => {
-      examMocks.submitModule.mockResolvedValue({ success: true });
-      const res = await request(app)
-        .post("/api/full-length/sessions/sess-1/module/submit")
-        .send({});
-      expect(res.status).toBe(200);
-      expect(examMocks.submitModule).toHaveBeenCalled();
-    });
-
-    it("Full-Length: answer delegates to service", async () => {
-      examMocks.submitAnswer.mockResolvedValue(undefined);
-      await request(app).post("/api/full-length/sessions/sess-1/answer").send({
-        questionId: "00000000-0000-0000-0000-000000000001",
-        selectedAnswer: "B",
-      });
-      expect(examMocks.submitAnswer).toHaveBeenCalled();
-    });
-
     it("Guardian: revoke link delegates to account service", async () => {
       accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
       accountMocks.getAnyGuardianLinkForPair.mockResolvedValue({

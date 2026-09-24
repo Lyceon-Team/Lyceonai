@@ -46,7 +46,10 @@ const ROOT = path.resolve(
 const EMISSION_FILES = [
   "server/routes/practice-canonical.ts",
   "server/routes/review-canonical.ts",
-  "apps/api/src/services/fullLengthExam.ts",
+  // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+  // pending Doc 04 rebuild. apps/api/src/services/fullLengthExam.ts (the
+  // full_length_answer emission site) is deleted; the Doc 04 rebuild re-adds its
+  // own emission file here in the PR that restores the call.
 ];
 
 const SHARED_MODULE = "packages/shared/src/mastery-emission.ts";

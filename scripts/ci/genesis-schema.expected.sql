@@ -4462,6 +4462,219 @@ $$;
 
 
 --
+-- Name: enforce_form_publish_gate(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_form_publish_gate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_version_status text;
+  v_within_range   boolean;
+  v_override_set   boolean;
+BEGIN
+  -- D6: a row may not be born past draft (would bypass the whole gate).
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'draft' THEN
+      RAISE EXCEPTION 'Cannot insert test_form % with status %: forms are created as draft and published through the gate',
+        NEW.id, NEW.status
+        USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- Only fire on the draft → published transition
+  IF NOT (OLD.status = 'draft' AND NEW.status = 'published') THEN
+    RETURN NEW;
+  END IF;
+
+  -- Gate check (a): score_table_version exists and is currently active
+  SELECT status INTO v_version_status
+    FROM scoring_model_versions
+    WHERE version = NEW.score_table_version;
+
+  IF v_version_status IS NULL THEN
+    RAISE EXCEPTION 'Cannot publish: score_table_version % does not exist in scoring_model_versions',
+      NEW.score_table_version
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  IF v_version_status <> 'active' THEN
+    RAISE EXCEPTION 'Cannot publish: score_table_version % is in status % (must be active)',
+      NEW.score_table_version, v_version_status
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- Gate check (b): routing thresholds in expected range OR override recorded
+  v_within_range :=
+    NEW.routing_threshold_rw BETWEEN 18 AND 21
+    AND NEW.routing_threshold_m BETWEEN 13 AND 16;
+
+  v_override_set :=
+    NEW.routing_override_approved_by IS NOT NULL
+    AND NEW.routing_override_reason IS NOT NULL;
+
+  IF NOT (v_within_range OR v_override_set) THEN
+    RAISE EXCEPTION 'Cannot publish: routing thresholds (RW=%, M=%) outside expected range (RW 18-21, M 13-16) and no override recorded',
+      NEW.routing_threshold_rw, NEW.routing_threshold_m
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- Gate check (c) (D6): composition. The §6.3 handler still calls this first.
+  PERFORM validate_form_composition(NEW.id);
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_module2_path_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_module2_path_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.module2_path IS NOT NULL
+     AND NEW.module2_path IS DISTINCT FROM OLD.module2_path THEN
+    RAISE EXCEPTION 'module2_path is immutable once set';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_published_form_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_published_form_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status <> 'draft' THEN
+      RAISE EXCEPTION 'Cannot delete test_form %: % forms are retained for historical scoring and audit.',
+        OLD.id, OLD.status;
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status
+     AND NOT ((OLD.status = 'draft' AND NEW.status = 'published')
+           OR (OLD.status = 'published' AND NEW.status = 'archived')) THEN
+    RAISE EXCEPTION 'Illegal test_forms status transition % -> % (lifecycle is draft -> published -> archived, one-way).',
+      OLD.status, NEW.status;
+  END IF;
+
+  IF OLD.status IN ('published', 'archived') AND (
+    NEW.score_table_version IS DISTINCT FROM OLD.score_table_version OR
+    NEW.routing_threshold_rw IS DISTINCT FROM OLD.routing_threshold_rw OR
+    NEW.routing_threshold_m IS DISTINCT FROM OLD.routing_threshold_m OR
+    NEW.routing_override_approved_by IS DISTINCT FROM OLD.routing_override_approved_by OR
+    NEW.routing_override_reason IS DISTINCT FROM OLD.routing_override_reason OR
+    NEW.routing_override_ticket_id IS DISTINCT FROM OLD.routing_override_ticket_id OR
+    NEW.break_duration_ms IS DISTINCT FROM OLD.break_duration_ms OR
+    NEW.rw_module1_ms IS DISTINCT FROM OLD.rw_module1_ms OR
+    NEW.rw_module2_ms IS DISTINCT FROM OLD.rw_module2_ms OR
+    NEW.m_module1_ms IS DISTINCT FROM OLD.m_module1_ms OR
+    NEW.m_module2_ms IS DISTINCT FROM OLD.m_module2_ms
+  ) THEN
+    RAISE EXCEPTION 'Published forms are immutable. Archive and republish.';
+  END IF;
+  -- is_selectable and retired_for_new_sessions_at are intentionally mutable post-publish.
+  -- They are operational toggles for retiring a form from new selection without
+  -- archiving (which would also break historical reproducibility on running sessions).
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_published_form_items_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_published_form_items_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_form   uuid;
+  v_status text;
+BEGIN
+  FOREACH v_form IN ARRAY (
+    CASE TG_OP
+      WHEN 'INSERT' THEN ARRAY[NEW.test_form_id]
+      WHEN 'DELETE' THEN ARRAY[OLD.test_form_id]
+      ELSE ARRAY[OLD.test_form_id, NEW.test_form_id]
+    END)
+  LOOP
+    SELECT status INTO v_status FROM test_forms WHERE id = v_form FOR SHARE;
+    IF v_status IS DISTINCT FROM 'draft' AND v_status IS NOT NULL THEN
+      RAISE EXCEPTION 'test_form_items of % form % are immutable (% refused). Archive and republish.',
+        v_status, v_form, TG_OP;
+    END IF;
+  END LOOP;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+
+--
+-- Name: enforce_scoring_version_status_machine(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_scoring_version_status_machine() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Block illegal transitions
+  IF OLD.status = 'active' AND NEW.status = 'candidate' THEN
+    RAISE EXCEPTION 'Cannot downgrade scoring_model_versions from active to candidate';
+  END IF;
+  IF OLD.status = 'superseded' AND NEW.status <> 'superseded' THEN
+    RAISE EXCEPTION 'Cannot revive a superseded scoring_model_version';
+  END IF;
+
+  -- Stamp transition timestamps
+  IF OLD.status = 'candidate' AND NEW.status = 'active' THEN
+    NEW.published_at := COALESCE(NEW.published_at, now());
+  END IF;
+  IF OLD.status = 'active' AND NEW.status = 'superseded' THEN
+    NEW.superseded_at := COALESCE(NEW.superseded_at, now());
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_single_active_scoring_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_single_active_scoring_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.status = 'active' THEN
+    IF EXISTS (
+      SELECT 1 FROM scoring_model_versions
+      WHERE status = 'active' AND version <> NEW.version
+    ) THEN
+      RAISE EXCEPTION 'Only one scoring model version may be active at a time';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: entitlement_active(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5622,6 +5835,43 @@ BEGIN
   v_result := v_result || jsonb_build_object('account_deletion_requests_as_actor', v_count);
 
   RETURN jsonb_build_object('status', 'precleared', 'profile_id', p_profile_id, 'rows_affected', v_result);
+END;
+$$;
+
+
+--
+-- Name: prevent_active_scoring_constants_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_active_scoring_constants_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_status text;
+  v_target_version text;
+BEGIN
+  -- For INSERT we examine NEW (the row being inserted); for UPDATE and DELETE we
+  -- examine OLD (the row being changed). In all cases we check the parent version's
+  -- status: if the parent is active or superseded, the constants are sealed.
+  v_target_version := CASE TG_OP
+    WHEN 'INSERT' THEN NEW.scoring_model_version
+    ELSE OLD.scoring_model_version
+  END;
+
+  SELECT status INTO v_status
+  FROM scoring_model_versions
+  WHERE version = v_target_version;
+
+  IF v_status IN ('active', 'superseded') THEN
+    RAISE EXCEPTION
+      'scoring_constants rows for active/superseded scoring_model_version % are immutable. '
+      'Adding, modifying, or deleting constants requires a new scoring_model_version '
+      '(Doc 04B V4.3 §8.4 Tier 3 protocol).',
+      v_target_version
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END;
 $$;
 
@@ -7217,6 +7467,68 @@ $$;
 
 
 --
+-- Name: scoring_constant(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constant(p_version text, p_key text, p_section text DEFAULT NULL::text) RETURNS numeric
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_value numeric;
+BEGIN
+  -- Try section-specific first, then fall back to global
+  SELECT value INTO v_value FROM scoring_constants
+  WHERE scoring_model_version = p_version
+    AND key = p_key
+    AND (
+      (p_section IS NOT NULL AND section = p_section)
+      OR (section IS NULL)
+    )
+  ORDER BY (section IS NULL)  -- false (section-specific) sorts before true (global)
+  LIMIT 1;
+
+  IF v_value IS NULL THEN
+    RAISE EXCEPTION 'scoring_constant lookup failed: version=%, key=%, section=%',
+      p_version, p_key, COALESCE(p_section, '<global>')
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN v_value;
+END;
+$$;
+
+
+--
+-- Name: scoring_constants_sha256(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_sha256(p_version text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_payload text;
+BEGIN
+  SELECT string_agg(
+           key || '|' || COALESCE(section, '') || '|' || trim_scale(value)::text,
+           E'\n'
+           ORDER BY key COLLATE "C", section COLLATE "C" NULLS FIRST)
+    INTO v_payload
+    FROM scoring_constants
+   WHERE scoring_model_version = p_version;
+
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'scoring_constants_sha256: no constants for version=%', p_version
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$;
+
+
+--
 -- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7710,6 +8022,142 @@ CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_form_composition(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_form_composition(p_test_form_id uuid) RETURNS void
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r record;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM test_forms WHERE id = p_test_form_id) THEN
+    RAISE EXCEPTION 'validate_form_composition: test_form % does not exist', p_test_form_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- 1. Item integrity.
+  SELECT i.section, i.module, i.ordinal, i.question_id,
+         q.status AS q_status, q.section AS q_section
+    INTO r
+    FROM test_form_items i
+    JOIN questions q ON q.id = i.question_id
+   WHERE i.test_form_id = p_test_form_id
+     AND (q.status <> 'published' OR q.section <> i.section)
+   ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END,
+            CASE i.module WHEN '1' THEN 1 WHEN '2A' THEN 2 ELSE 3 END,
+            i.ordinal
+   LIMIT 1;
+  IF FOUND THEN
+    IF r.q_status <> 'published' THEN
+      RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=question_status value=% ordinal=% expected=published actual=%',
+        p_test_form_id, r.section, r.module, r.question_id, r.ordinal, r.q_status
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=question_section value=% ordinal=% expected=% actual=%',
+      p_test_form_id, r.section, r.module, r.question_id, r.ordinal, r.section, r.q_section
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- 2. Tallies: first mismatching cell in the stated order.
+  WITH blueprint(section, module, dimension, value, expected, value_ord) AS (
+    VALUES
+      -- ---------------- Reading & Writing ----------------
+      ('RW', '1',  'total',      '*', 27, 1),
+      ('RW', '1',  'difficulty', '1',  8, 1), ('RW', '1',  'difficulty', '2', 11, 2), ('RW', '1',  'difficulty', '3',  8, 3),
+      ('RW', '1',  'item_type',  'grid_in', 0, 1),
+      ('RW', '1',  'domain', 'Information and Ideas',         7, 1),
+      ('RW', '1',  'domain', 'Craft and Structure',           8, 2),
+      ('RW', '1',  'domain', 'Expression of Ideas',           5, 3),
+      ('RW', '1',  'domain', 'Standard English Conventions',  7, 4),
+
+      ('RW', '2A', 'total',      '*', 27, 1),
+      ('RW', '2A', 'difficulty', '1', 14, 1), ('RW', '2A', 'difficulty', '2',  9, 2), ('RW', '2A', 'difficulty', '3',  4, 3),
+      ('RW', '2A', 'item_type',  'grid_in', 0, 1),
+      ('RW', '2A', 'domain', 'Information and Ideas',         7, 1),
+      ('RW', '2A', 'domain', 'Craft and Structure',           7, 2),
+      ('RW', '2A', 'domain', 'Expression of Ideas',           6, 3),
+      ('RW', '2A', 'domain', 'Standard English Conventions',  7, 4),
+
+      ('RW', '2B', 'total',      '*', 27, 1),
+      ('RW', '2B', 'difficulty', '1',  4, 1), ('RW', '2B', 'difficulty', '2',  9, 2), ('RW', '2B', 'difficulty', '3', 14, 3),
+      ('RW', '2B', 'item_type',  'grid_in', 0, 1),
+      ('RW', '2B', 'domain', 'Information and Ideas',         7, 1),
+      ('RW', '2B', 'domain', 'Craft and Structure',           7, 2),
+      ('RW', '2B', 'domain', 'Expression of Ideas',           6, 3),
+      ('RW', '2B', 'domain', 'Standard English Conventions',  7, 4),
+
+      -- ---------------- Math ----------------
+      ('M',  '1',  'total',      '*', 22, 1),
+      ('M',  '1',  'difficulty', '1',  7, 1), ('M',  '1',  'difficulty', '2',  9, 2), ('M',  '1',  'difficulty', '3',  6, 3),
+      ('M',  '1',  'item_type',  'grid_in', 3, 1),
+      ('M',  '1',  'domain', 'Algebra',                            8, 1),
+      ('M',  '1',  'domain', 'Advanced Math',                      7, 2),
+      ('M',  '1',  'domain', 'Problem Solving and Data Analysis',  4, 3),
+      ('M',  '1',  'domain', 'Geometry and Trigonometry',          3, 4),
+
+      ('M',  '2A', 'total',      '*', 22, 1),
+      ('M',  '2A', 'difficulty', '1', 11, 1), ('M',  '2A', 'difficulty', '2',  8, 2), ('M',  '2A', 'difficulty', '3',  3, 3),
+      ('M',  '2A', 'item_type',  'grid_in', 8, 1),
+      ('M',  '2A', 'domain', 'Algebra',                            7, 1),
+      ('M',  '2A', 'domain', 'Advanced Math',                      8, 2),
+      ('M',  '2A', 'domain', 'Problem Solving and Data Analysis',  3, 3),
+      ('M',  '2A', 'domain', 'Geometry and Trigonometry',          4, 4),
+
+      ('M',  '2B', 'total',      '*', 22, 1),
+      ('M',  '2B', 'difficulty', '1',  3, 1), ('M',  '2B', 'difficulty', '2',  8, 2), ('M',  '2B', 'difficulty', '3', 11, 3),
+      ('M',  '2B', 'item_type',  'grid_in', 8, 1),
+      ('M',  '2B', 'domain', 'Algebra',                            7, 1),
+      ('M',  '2B', 'domain', 'Advanced Math',                      8, 2),
+      ('M',  '2B', 'domain', 'Problem Solving and Data Analysis',  3, 3),
+      ('M',  '2B', 'domain', 'Geometry and Trigonometry',          4, 4)
+  ),
+  items AS (
+    SELECT i.section, i.module, q.difficulty, q.item_type, q.domain
+      FROM test_form_items i
+      JOIN questions q ON q.id = i.question_id
+     WHERE i.test_form_id = p_test_form_id
+  ),
+  actual(section, module, dimension, value, cnt) AS (
+    SELECT section, module, 'total', '*', count(*) FROM items GROUP BY section, module
+    UNION ALL
+    SELECT section, module, 'difficulty', difficulty::text, count(*) FROM items GROUP BY section, module, difficulty
+    UNION ALL
+    SELECT section, module, 'item_type', item_type, count(*) FROM items WHERE item_type = 'grid_in' GROUP BY section, module, item_type
+    UNION ALL
+    SELECT section, module, 'domain', domain, count(*) FROM items GROUP BY section, module, domain
+  )
+  SELECT COALESCE(b.section, a.section)     AS section,
+         COALESCE(b.module, a.module)       AS module,
+         COALESCE(b.dimension, a.dimension) AS dimension,
+         COALESCE(b.value, a.value)         AS value,
+         COALESCE(b.expected, 0)            AS expected,
+         COALESCE(a.cnt, 0)                 AS actual
+    INTO r
+    FROM blueprint b
+    FULL JOIN actual a
+      ON a.section = b.section AND a.module = b.module
+     AND a.dimension = b.dimension AND a.value = b.value
+   WHERE COALESCE(b.expected, 0) <> COALESCE(a.cnt, 0)
+   ORDER BY CASE COALESCE(b.section, a.section) WHEN 'RW' THEN 1 ELSE 2 END,
+            CASE COALESCE(b.module, a.module) WHEN '1' THEN 1 WHEN '2A' THEN 2 ELSE 3 END,
+            CASE COALESCE(b.dimension, a.dimension)
+              WHEN 'total' THEN 1 WHEN 'difficulty' THEN 2 WHEN 'item_type' THEN 3 ELSE 4 END,
+            COALESCE(b.value_ord, 1000),
+            COALESCE(b.value, a.value)
+   LIMIT 1;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=% value=% expected=% actual=%',
+      p_test_form_id, r.section, r.module, r.dimension, r.value, r.expected, r.actual
+      USING ERRCODE = 'check_violation';
+  END IF;
 END;
 $$;
 
@@ -8765,76 +9213,22 @@ COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: t
 
 
 --
--- Name: exam_runtime_config; Type: TABLE; Schema: public; Owner: -
+-- Name: exam_runtime_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.exam_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT exam_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT exam_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: exam_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.exam_runtime_config_history (
+CREATE TABLE public.exam_runtime_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: full_length_adaptive_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.full_length_adaptive_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT full_length_adaptive_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT full_length_adaptive_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: full_length_adaptive_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.full_length_adaptive_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
+    event_type text NOT NULL,
+    aggregate_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_attempt_at timestamp with time zone,
+    published_at timestamp with time zone,
+    failure_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT exam_runtime_outbox_event_type_check CHECK ((event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text]))),
+    CONSTRAINT exam_runtime_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'published'::text, 'failed'::text])))
 );
 
 
@@ -9818,6 +10212,43 @@ CREATE TABLE public.review_sessions (
 
 
 --
+-- Name: scoring_constants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_constants (
+    scoring_model_version text NOT NULL,
+    key text NOT NULL,
+    section text,
+    value numeric NOT NULL,
+    description text NOT NULL,
+    notes text,
+    CONSTRAINT scoring_constants_section_check CHECK (((section IS NULL) OR (section = ANY (ARRAY['rw'::text, 'math'::text])))),
+    CONSTRAINT scoring_constants_value_nonneg CHECK ((value >= (0)::numeric))
+);
+
+
+--
+-- Name: scoring_model_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_model_versions (
+    version text NOT NULL,
+    formula_name text NOT NULL,
+    formula_doc_ref text NOT NULL,
+    constants_sha256 text,
+    validation_packet_sha256 text,
+    validation_packet_url text,
+    status text NOT NULL,
+    published_at timestamp with time zone,
+    superseded_at timestamp with time zone,
+    notes text,
+    CONSTRAINT active_or_superseded_attestation_complete CHECK ((((status = ANY (ARRAY['active'::text, 'superseded'::text])) AND (published_at IS NOT NULL) AND (constants_sha256 IS NOT NULL) AND (validation_packet_sha256 IS NOT NULL) AND (validation_packet_url IS NOT NULL)) OR ((status = 'candidate'::text) AND (published_at IS NULL)))),
+    CONSTRAINT scoring_model_versions_status_check CHECK ((status = ANY (ARRAY['candidate'::text, 'active'::text, 'superseded'::text]))),
+    CONSTRAINT superseded_has_superseded_at CHECK ((((status = 'superseded'::text) AND (superseded_at IS NOT NULL)) OR ((status <> 'superseded'::text) AND (superseded_at IS NULL))))
+);
+
+
+--
 -- Name: sections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10112,6 +10543,162 @@ CREATE TABLE public.taxonomy_versions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     description text,
     is_active boolean DEFAULT true
+);
+
+
+--
+-- Name: test_answer_submissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_answer_submissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    idempotency_key text NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    answer text,
+    client_latency_ms integer,
+    response_json jsonb NOT NULL,
+    response_schema_version text NOT NULL,
+    was_canonical_update boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_answer_submissions_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_answer_submissions_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_form_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_form_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_form_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    CONSTRAINT test_form_items_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_form_items_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_forms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_forms (
+    id uuid NOT NULL,
+    name text NOT NULL,
+    test_kind text NOT NULL,
+    status text NOT NULL,
+    is_selectable boolean DEFAULT true NOT NULL,
+    retired_for_new_sessions_at timestamp with time zone,
+    score_table_version text NOT NULL,
+    routing_threshold_rw integer NOT NULL,
+    routing_threshold_m integer NOT NULL,
+    routing_override_approved_by uuid,
+    routing_override_reason text,
+    routing_override_ticket_id text,
+    break_duration_ms integer NOT NULL,
+    rw_module1_ms integer NOT NULL,
+    rw_module2_ms integer NOT NULL,
+    m_module1_ms integer NOT NULL,
+    m_module2_ms integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    archived_at timestamp with time zone,
+    CONSTRAINT archived_has_archive_time CHECK ((((status = 'archived'::text) AND (archived_at IS NOT NULL)) OR (status <> 'archived'::text))),
+    CONSTRAINT override_pair_both_or_neither CHECK ((((routing_override_approved_by IS NULL) AND (routing_override_reason IS NULL) AND (routing_override_ticket_id IS NULL)) OR ((routing_override_approved_by IS NOT NULL) AND (routing_override_reason IS NOT NULL) AND (routing_override_ticket_id IS NOT NULL)))),
+    CONSTRAINT published_has_publish_time CHECK ((((status = 'published'::text) AND (published_at IS NOT NULL)) OR (status <> 'published'::text))),
+    CONSTRAINT retired_implies_not_selectable CHECK (((retired_for_new_sessions_at IS NULL) OR (is_selectable = false))),
+    CONSTRAINT retired_only_when_published CHECK (((retired_for_new_sessions_at IS NULL) OR (status = ANY (ARRAY['published'::text, 'archived'::text])))),
+    CONSTRAINT routing_override_pending_admins_g_ex_04 CHECK ((routing_override_approved_by IS NULL)),
+    CONSTRAINT test_forms_routing_threshold_m_check CHECK (((routing_threshold_m >= 0) AND (routing_threshold_m <= 22))),
+    CONSTRAINT test_forms_routing_threshold_rw_check CHECK (((routing_threshold_rw >= 0) AND (routing_threshold_rw <= 27))),
+    CONSTRAINT test_forms_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text]))),
+    CONSTRAINT test_forms_test_kind_check CHECK ((test_kind = 'full_length'::text))
+);
+
+
+--
+-- Name: test_session_answers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_answers (
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    answer text,
+    client_latency_ms integer,
+    last_submission_id uuid NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_session_answers_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_session_answers_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_session_sections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_sections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    state text NOT NULL,
+    module2_path text,
+    module1_started_at timestamp with time zone,
+    module1_submitted_at timestamp with time zone,
+    module1_submitted_by text,
+    module2_started_at timestamp with time zone,
+    module2_submitted_at timestamp with time zone,
+    module2_submitted_by text,
+    module1_expires_at timestamp with time zone,
+    module2_expires_at timestamp with time zone,
+    active_paused_ms bigint DEFAULT 0 NOT NULL,
+    last_active_at timestamp with time zone,
+    CONSTRAINT module1_submission_metadata CHECK ((((state = ANY (ARRAY['module1_submitted'::text, 'module2_active'::text, 'submitted'::text])) AND (module1_submitted_at IS NOT NULL) AND (module1_submitted_by IS NOT NULL)) OR (state <> ALL (ARRAY['module1_submitted'::text, 'module2_active'::text, 'submitted'::text])))),
+    CONSTRAINT module2_path_after_module1_submit CHECK ((((state = ANY (ARRAY['module2_active'::text, 'submitted'::text])) AND (module2_path IS NOT NULL)) OR (state <> ALL (ARRAY['module2_active'::text, 'submitted'::text])))),
+    CONSTRAINT module2_submission_metadata CHECK ((((state = 'submitted'::text) AND (module2_submitted_at IS NOT NULL) AND (module2_submitted_by IS NOT NULL)) OR (state <> 'submitted'::text))),
+    CONSTRAINT test_session_sections_module1_submitted_by_check CHECK ((module1_submitted_by = ANY (ARRAY['student'::text, 'timeout'::text]))),
+    CONSTRAINT test_session_sections_module2_path_check CHECK ((module2_path = ANY (ARRAY['A'::text, 'B'::text]))),
+    CONSTRAINT test_session_sections_module2_submitted_by_check CHECK ((module2_submitted_by = ANY (ARRAY['student'::text, 'timeout'::text]))),
+    CONSTRAINT test_session_sections_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text]))),
+    CONSTRAINT test_session_sections_state_check CHECK ((state = ANY (ARRAY['not_started'::text, 'module1_active'::text, 'module1_submitted'::text, 'module2_active'::text, 'submitted'::text])))
+);
+
+
+--
+-- Name: test_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    test_form_id uuid NOT NULL,
+    state text NOT NULL,
+    mode text NOT NULL,
+    active_section text,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    abandoned_at timestamp with time zone,
+    grace_expires_at timestamp with time zone NOT NULL,
+    attempt_number_for_form integer NOT NULL,
+    is_first_seen_form_attempt boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT abandoned_has_abandon_time CHECK ((((state = ANY (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])) AND (abandoned_at IS NOT NULL)) OR (state <> ALL (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])))),
+    CONSTRAINT active_has_active_section CHECK ((((state = 'active'::text) AND (active_section IS NOT NULL)) OR (state <> 'active'::text))),
+    CONSTRAINT break_has_no_active_section CHECK ((((state = 'section_break'::text) AND (active_section IS NULL)) OR (state <> 'section_break'::text))),
+    CONSTRAINT completed_has_completion_time CHECK ((((state = 'completed'::text) AND (completed_at IS NOT NULL)) OR (state <> 'completed'::text))),
+    CONSTRAINT started_state_has_started_at CHECK ((((state = ANY (ARRAY['active'::text, 'section_break'::text])) AND (started_at IS NOT NULL)) OR (state <> ALL (ARRAY['active'::text, 'section_break'::text])))),
+    CONSTRAINT test_sessions_active_section_check CHECK ((active_section = ANY (ARRAY['RW'::text, 'M'::text]))),
+    CONSTRAINT test_sessions_mode_check CHECK ((mode = ANY (ARRAY['strict'::text, 'lenient'::text]))),
+    CONSTRAINT test_sessions_state_check CHECK ((state = ANY (ARRAY['created'::text, 'active'::text, 'section_break'::text, 'completed'::text, 'abandoned_final'::text, 'partial_scored_abandoned'::text])))
 );
 
 
@@ -10871,35 +11458,11 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: exam_runtime_outbox exam_runtime_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: exam_runtime_config exam_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_pkey PRIMARY KEY (key);
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_pkey PRIMARY KEY (key);
+ALTER TABLE ONLY public.exam_runtime_outbox
+    ADD CONSTRAINT exam_runtime_outbox_pkey PRIMARY KEY (id);
 
 
 --
@@ -11263,6 +11826,14 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: scoring_model_versions scoring_model_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_model_versions
+    ADD CONSTRAINT scoring_model_versions_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: sections sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11396,6 +11967,86 @@ ALTER TABLE ONLY public.student_study_profile
 
 ALTER TABLE ONLY public.taxonomy_versions
     ADD CONSTRAINT taxonomy_versions_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_test_session_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_test_session_id_idempotency_key_key UNIQUE (test_session_id, idempotency_key);
+
+
+--
+-- Name: test_form_items test_form_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_question_id_key UNIQUE (test_form_id, question_id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_section_module_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_section_module_ordinal_key UNIQUE (test_form_id, section, module, ordinal);
+
+
+--
+-- Name: test_forms test_forms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_forms
+    ADD CONSTRAINT test_forms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_session_answers test_session_answers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_pkey PRIMARY KEY (test_session_id, section, module, ordinal);
+
+
+--
+-- Name: test_session_sections test_session_sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_session_sections test_session_sections_test_session_id_section_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_test_session_id_section_key UNIQUE (test_session_id, section);
+
+
+--
+-- Name: test_sessions test_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -11708,6 +12359,13 @@ CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING b
 
 
 --
+-- Name: idx_exam_runtime_outbox_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_exam_runtime_outbox_pending ON public.exam_runtime_outbox USING btree (created_at) WHERE (status = 'pending'::text);
+
+
+--
 -- Name: idx_guardian_links_guardian; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12016,6 +12674,41 @@ CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skil
 
 
 --
+-- Name: idx_test_answer_submissions_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_answer_submissions_lookup ON public.test_answer_submissions USING btree (test_session_id, section, module, ordinal, created_at);
+
+
+--
+-- Name: idx_test_form_items_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_form_items_lookup ON public.test_form_items USING btree (test_form_id, section, module, ordinal);
+
+
+--
+-- Name: idx_test_session_answers_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_answers_session ON public.test_session_answers USING btree (test_session_id, section, module);
+
+
+--
+-- Name: idx_test_session_sections_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_sections_lookup ON public.test_session_sections USING btree (test_session_id, section);
+
+
+--
+-- Name: idx_test_sessions_student_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_sessions_student_form ON public.test_sessions USING btree (student_id, test_form_id);
+
+
+--
 -- Name: idx_tutor_context_resolution_log_conversation; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12254,6 +12947,20 @@ CREATE INDEX notification_messages_provider_idx ON public.notification_messages 
 
 
 --
+-- Name: one_active_scoring_model_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX one_active_scoring_model_version ON public.scoring_model_versions USING btree (status) WHERE (status = 'active'::text);
+
+
+--
+-- Name: one_active_session_per_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX one_active_session_per_student ON public.test_sessions USING btree (student_id) WHERE (state = ANY (ARRAY['created'::text, 'active'::text, 'section_break'::text]));
+
+
+--
 -- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12272,6 +12979,13 @@ COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner 
 --
 
 CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btree (student_link_code) WHERE (student_link_code IS NOT NULL);
+
+
+--
+-- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX scoring_constants_unique_idx ON public.scoring_constants USING btree (scoring_model_version, key, COALESCE(section, '__global__'::text));
 
 
 --
@@ -12457,34 +13171,6 @@ CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF s
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.exam_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: exam_runtime_config exam_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_notify AFTER INSERT OR UPDATE ON public.exam_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.full_length_adaptive_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_notify AFTER INSERT OR UPDATE ON public.full_length_adaptive_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
 -- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12613,6 +13299,20 @@ ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_c
 
 
 --
+-- Name: test_forms trg_form_publish_gate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_form_publish_gate BEFORE INSERT OR UPDATE ON public.test_forms FOR EACH ROW EXECUTE FUNCTION public.enforce_form_publish_gate();
+
+
+--
+-- Name: test_session_sections trg_module2_path_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_module2_path_immutability BEFORE UPDATE ON public.test_session_sections FOR EACH ROW EXECUTE FUNCTION public.enforce_module2_path_immutability();
+
+
+--
 -- Name: practice_session_items trg_practice_item_enqueue_review; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12620,10 +13320,45 @@ CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_
 
 
 --
+-- Name: scoring_constants trg_prevent_active_scoring_constants_mutation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_active_scoring_constants_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.scoring_constants FOR EACH ROW EXECUTE FUNCTION public.prevent_active_scoring_constants_mutation();
+
+
+--
+-- Name: test_forms trg_published_form_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_published_form_immutability BEFORE DELETE OR UPDATE ON public.test_forms FOR EACH ROW EXECUTE FUNCTION public.enforce_published_form_immutability();
+
+
+--
+-- Name: test_form_items trg_published_form_items_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_published_form_items_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.test_form_items FOR EACH ROW EXECUTE FUNCTION public.enforce_published_form_items_immutability();
+
+
+--
 -- Name: review_session_items trg_review_item_resolve; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_review_item_resolve AFTER UPDATE ON public.review_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND (new.status = ANY (ARRAY['answered'::text, 'skipped'::text])))) EXECUTE FUNCTION public.review_item_resolve();
+
+
+--
+-- Name: scoring_model_versions trg_scoring_version_status_machine; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_scoring_version_status_machine BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_scoring_version_status_machine();
+
+
+--
+-- Name: scoring_model_versions trg_single_active_scoring_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_single_active_scoring_version BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_single_active_scoring_version();
 
 
 --
@@ -13037,38 +13772,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: exam_runtime_config exam_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
 -- Name: guardian_consent_requests guardian_consent_requests_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13421,11 +14124,91 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: scoring_constants scoring_constants_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_constants
+    ADD CONSTRAINT scoring_constants_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
 -- Name: student_study_profile student_study_profile_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.student_study_profile
     ADD CONSTRAINT student_study_profile_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_form_items test_form_items_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
+
+
+--
+-- Name: test_forms test_forms_score_table_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_forms
+    ADD CONSTRAINT test_forms_score_table_version_fkey FOREIGN KEY (score_table_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: test_session_answers test_session_answers_last_submission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_last_submission_id_fkey FOREIGN KEY (last_submission_id) REFERENCES public.test_answer_submissions(id);
+
+
+--
+-- Name: test_session_answers test_session_answers_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_session_sections test_session_sections_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_sessions test_sessions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_sessions test_sessions_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
 
 
 --
@@ -13981,28 +14764,10 @@ ALTER TABLE public.entitlement_runtime_config_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: exam_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: exam_runtime_outbox; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.exam_runtime_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exam_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.exam_runtime_config_history ENABLE ROW LEVEL SECURITY;
-
---
--- Name: full_length_adaptive_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.full_length_adaptive_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: full_length_adaptive_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.full_length_adaptive_config_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_runtime_outbox ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -14322,6 +15087,18 @@ CREATE POLICY review_sessions_select_self ON public.review_sessions FOR SELECT T
 
 
 --
+-- Name: scoring_constants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_constants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: scoring_model_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_model_versions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: sections; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -14535,6 +15312,42 @@ CREATE POLICY student_study_profile_student_read ON public.student_study_profile
 --
 
 ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_answer_submissions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_answer_submissions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_form_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_form_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_forms; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_forms ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_answers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_answers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_sections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_sections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_sessions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: tutor_context_resolution_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15448,6 +16261,48 @@ GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_ty
 
 
 --
+-- Name: FUNCTION enforce_form_publish_gate(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_form_publish_gate() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_module2_path_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_module2_path_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_published_form_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_published_form_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_published_form_items_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_published_form_items_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_scoring_version_status_machine(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_scoring_version_status_machine() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_single_active_scoring_version(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_single_active_scoring_version() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION entitlement_active(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15668,6 +16523,13 @@ GRANT ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) TO
 
 REVOKE ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION prevent_active_scoring_constants_mutation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.prevent_active_scoring_constants_mutation() FROM PUBLIC;
 
 
 --
@@ -16145,6 +17007,22 @@ GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO s
 
 
 --
+-- Name: FUNCTION scoring_constant(p_version text, p_key text, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constants_sha256(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_sha256(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service_role;
+
+
+--
 -- Name: FUNCTION select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]); Type: ACL; Schema: public; Owner: -
 --
 
@@ -16226,6 +17104,14 @@ REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() F
 --
 
 GRANT ALL ON FUNCTION public.update_updated_at_column() TO service_role;
+
+
+--
+-- Name: FUNCTION validate_form_composition(p_test_form_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.validate_form_composition(p_test_form_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.validate_form_composition(p_test_form_id uuid) TO service_role;
 
 
 --
@@ -16602,31 +17488,10 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlements TO service_role;
 
 
 --
--- Name: TABLE exam_runtime_config; Type: ACL; Schema: public; Owner: -
+-- Name: TABLE exam_runtime_outbox; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service_role;
-
-
---
--- Name: TABLE exam_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.exam_runtime_config_history TO service_role;
-
-
---
--- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
-
-
---
--- Name: TABLE full_length_adaptive_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.full_length_adaptive_config_history TO service_role;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.exam_runtime_outbox TO service_role;
 
 
 --
@@ -17327,6 +18192,20 @@ GRANT SELECT ON TABLE public.review_sessions TO authenticated;
 
 
 --
+-- Name: TABLE scoring_constants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_constants TO service_role;
+
+
+--
+-- Name: TABLE scoring_model_versions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_model_versions TO service_role;
+
+
+--
 -- Name: TABLE sections; Type: ACL; Schema: public; Owner: -
 --
 
@@ -17565,6 +18444,48 @@ GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.taxonomy_versions TO service_role;
+
+
+--
+-- Name: TABLE test_answer_submissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.test_answer_submissions TO service_role;
+
+
+--
+-- Name: TABLE test_form_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_form_items TO service_role;
+
+
+--
+-- Name: TABLE test_forms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_forms TO service_role;
+
+
+--
+-- Name: TABLE test_session_answers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_answers TO service_role;
+
+
+--
+-- Name: TABLE test_session_sections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_sections TO service_role;
+
+
+--
+-- Name: TABLE test_sessions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_sessions TO service_role;
 
 
 --

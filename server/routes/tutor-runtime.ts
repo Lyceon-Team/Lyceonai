@@ -815,17 +815,18 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // `is_under_13 !== false` (fail-closed). No additional check needed here —
   // any request reaching this handler has already passed the age gate.
 
-  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4, SCL-079).
-  // LISA must be unavailable while the student has an active full-length exam
-  // session. Blocks when a live exam IS found. Fails OPEN when the query
-  // itself fails (SCL-079, Karl ruling 2026-09-01) — see entitlement-service
-  // docblock for the threat-model justification.
-  const liveExamInProgress =
-    await EntitlementService.isLiveExamInProgress(studentId);
-  if (liveExamInProgress) {
-    sendTutorError(res, "tutor_unavailable_during_live_exam");
-    return;
-  }
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4) — REMOVED.
+  // @spec [Doc-03B_V4.1 §3.4; Doc 01 §27.3 step 6] | @implemented [2026-09-23]
+  // plain English: E1 exam deletion ruling, 2026-09-23 — the pre-baseline
+  // full-length runtime was removed pending the Doc 04 rebuild. The former gate
+  // queried `full_length_exam_sessions`, a table no migration creates, so it
+  // failed open (SCL-079) on every call and blocked nothing. There is no live
+  // exam to detect until Doc 04 lands; the rebuild must restore this step
+  // against its own session table. The `tutor_unavailable_during_live_exam`
+  // error code stays in the Doc-03B §5.9 taxonomy for that reinstatement.
+  // TRACKED: G-EX-06 — restored in E9 against Doc 04A `test_sessions`
+  // (student_id, state = 'active'); the exam vertical does not close until it
+  // is. SCL-126 (originally SCL-119) records the interim and restates SCL-079's table/column.
 
   // Step 6: Validate request payload (§6.4). Run before ownership so a
   // malformed body never triggers a DB lookup.
