@@ -253,15 +253,21 @@ describe("Crisis Layer 1 Miss — structural regression guards", () => {
     expect(notifySource).toContain("dispatch_entered");
   });
 
-  it("notifyCrisisEvent logs missing credentials at warn level, not debug", () => {
+  // Tightened 2026-09-23 (CC Brief "Close the LISA Vertical" PR 2.1): this
+  // guard originally pinned "warn, not debug" so a skipped alert was visible.
+  // WARN is not forwarded to the error monitor (server/logger.ts), so the
+  // queue received zero tasks with nobody told. A skipped crisis alert now
+  // logs at ERROR under `gcp_access_unavailable`; behaviour is proved in
+  // tests/ci/crisis-notification.dispatch.contract.test.ts.
+  it("notifyCrisisEvent logs missing credentials at error level, not warn or debug", () => {
     const notifySource = fs.readFileSync(
       path.resolve(__dirname, "../../server/services/crisis-notification.ts"),
       "utf-8",
     );
     const noGcpMatch = notifySource.match(
-      /logger\.(\w+)\(\s*"CRISIS_NOTIFICATION",\s*"no_gcp_credentials"/,
+      /logger\.(\w+)\(\s*"CRISIS_NOTIFICATION",\s*"gcp_access_unavailable"/,
     );
     expect(noGcpMatch).not.toBeNull();
-    expect(noGcpMatch![1]).toBe("warn");
+    expect(noGcpMatch![1]).toBe("error");
   });
 });
