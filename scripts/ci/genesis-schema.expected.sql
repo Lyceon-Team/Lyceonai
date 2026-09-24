@@ -10517,7 +10517,6 @@ CREATE TABLE public.student_study_profile (
     last_acknowledged_nonstudent_version_no integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT setup_requires_target_score CHECK (((setup_completed_at IS NULL) OR (target_score IS NOT NULL))),
     CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
     CONSTRAINT student_study_profile_full_length_weekday_check CHECK (((full_length_weekday >= 0) AND (full_length_weekday <= 6))),
     CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
@@ -10532,6 +10531,27 @@ CREATE TABLE public.student_study_profile (
 --
 
 COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask bit i = Postgres DOW i (0 = Sunday), and full_length_weekday uses the same convention (sheet §6 mask convention). timezone is IANA, validated at the route against pg_timezone_names.';
+
+
+--
+-- Name: COLUMN student_study_profile.target_exam_date; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'Doc 05F §8.1. OPTIONAL (owner ruling 2026-09-24, SCL-130). NULL means the student has not picked a test date -- setup offers "I haven''t picked a date yet" as a first-class answer. The countdown and the exam-cadence anchor both render an absence rather than a number when it is NULL.';
+
+
+--
+-- Name: COLUMN student_study_profile.target_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.target_score IS 'Doc 05F §8.1. OPTIONAL (owner ruling 2026-09-24, SCL-130; R-08-17 reversed). 400..1600 in steps of 10 when present. NULL means the student has not set one: every surface renders that as an absence with its own copy, never as a zero and never as an error. Not read by Doc 05C, which projects without reference to a target.';
+
+
+--
+-- Name: COLUMN student_study_profile.setup_completed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.setup_completed_at IS 'Doc 05F §17.5. Stamped by the FIRST profile write that finds no completed setup -- the student reached the end of the flow. It no longer means "a target score exists": the setup_requires_target_score CHECK that tied the two together was dropped by 20261002000000, because nothing in setup is required.';
 
 
 --
