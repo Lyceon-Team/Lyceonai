@@ -3845,6 +3845,87 @@ $$;
 
 
 --
+-- Name: compute_scaled_score_from_counts(text, integer, integer, integer, integer, integer, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) RETURNS TABLE(scaled integer, ceiling numeric, deduction numeric, raw_floor numeric, path_floor numeric, effective_floor numeric, s_raw numeric)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  c_alpha       numeric;
+  c_ceil_floor  numeric;
+  c_ceil_max    numeric;
+  c_d_easy      numeric;
+  c_d_med       numeric;
+  c_d_hard      numeric;
+  c_raw_base    numeric;
+  c_raw_mult    numeric;
+  c_path_a_fl   numeric;
+  c_path_b_base numeric;
+  c_path_b_bon  numeric;
+  c_path_b_cap  numeric;
+  c_round       int;
+
+  v_ceiling      numeric;
+  v_deduction    numeric;
+  v_raw_floor    numeric;
+  v_path_floor   numeric;
+  v_floor        numeric;
+  v_s_raw        numeric;
+  v_s_clamped    numeric;
+  v_scaled       int;
+BEGIN
+  IF p_n1 IS NULL OR p_n_total IS NULL OR p_n1 <= 0 OR p_n_total <= 0 THEN
+    RAISE EXCEPTION 'compute_scaled_score_from_counts: presented item counts must be positive (N1=%, N_total=%)',
+      p_n1, p_n_total;
+  END IF;
+
+  c_alpha       := scoring_constant(p_version, 'alpha_ceiling_exponent');
+  c_ceil_floor  := scoring_constant(p_version, 'ceiling_floor');
+  c_ceil_max    := scoring_constant(p_version, 'ceiling_max');
+  c_d_easy      := scoring_constant(p_version, 'deduction_easy');
+  c_d_med       := scoring_constant(p_version, 'deduction_medium');
+  c_d_hard      := scoring_constant(p_version, 'deduction_hard');
+  c_raw_base    := scoring_constant(p_version, 'raw_floor_base');
+  c_raw_mult    := scoring_constant(p_version, 'raw_floor_multiplier');
+  c_path_a_fl   := scoring_constant(p_version, 'path_a_floor');
+  c_path_b_base := scoring_constant(p_version, 'path_b_floor_base');
+  c_path_b_bon  := scoring_constant(p_version, 'path_b_floor_bonus_per_m1_point');
+  c_path_b_cap  := scoring_constant(p_version, 'path_b_floor_cap');
+  c_round       := scoring_constant(p_version, 'round_to_nearest')::int;
+
+  v_ceiling := GREATEST(c_ceil_floor, c_ceil_max * (p_r1::numeric / p_n1) ^ c_alpha);
+  v_deduction := c_d_easy * p_m2_easy_wrong + c_d_med * p_m2_medium_wrong + c_d_hard * p_m2_hard_wrong;
+  v_raw_floor := c_raw_base + c_raw_mult * ((p_r1 + p_r2)::numeric / p_n_total);
+
+  IF p_r1 >= p_routing_threshold THEN
+    v_path_floor := LEAST(c_path_b_cap, c_path_b_base + c_path_b_bon * (p_r1 - p_routing_threshold));
+  ELSE
+    v_path_floor := c_path_a_fl;
+  END IF;
+
+  v_floor := GREATEST(v_raw_floor, v_path_floor);
+  v_s_raw := v_ceiling - v_deduction;
+  v_s_clamped := GREATEST(v_floor, LEAST(c_ceil_max, v_s_raw));
+
+  -- §6.3 round half up to R_round. D4: half of R_round, not a literal.
+  -- MUST match Python reference: int(math.floor((s_clamped + 5) / 10) * 10)
+  v_scaled := (floor((v_s_clamped + c_round::numeric / 2) / c_round) * c_round)::int;
+
+  scaled          := v_scaled;
+  ceiling         := v_ceiling;
+  deduction       := v_deduction;
+  raw_floor       := v_raw_floor;
+  path_floor      := v_path_floor;
+  effective_floor := v_floor;
+  s_raw           := v_s_raw;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
 -- Name: student_section_projections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4159,6 +4240,158 @@ $$;
 
 
 --
+-- Name: compute_section_scaled_score(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) RETURNS TABLE(scaled integer, module1_correct integer, module2_correct integer, module2_path text, m2_easy_wrong integer, m2_medium_wrong integer, m2_hard_wrong integer, ceiling numeric, deduction numeric, raw_floor numeric, path_floor numeric, effective_floor numeric, s_raw numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_section_code        text;        -- 04A section code: 'RW' or 'M'
+  v_m2_module           text;        -- '2A' or '2B' for the routed path
+  v_test_form_id        uuid;
+  v_score_table_version text;
+  v_routing_threshold   int;
+  v_n1                  int;
+  v_n_total             int;
+  v_module2_path        text;
+  v_section_state       text;
+
+  v_r1           int;
+  v_r2           int;
+  v_n_e_m2       int;
+  v_n_m_m2       int;
+  v_n_h_m2       int;
+  v_n_unbucketed int;
+  f              record;
+BEGIN
+  -- SECTION-CODE MAPPING (§11.2 / §11.4 — derived once, used everywhere)
+  v_section_code := CASE
+    WHEN p_section = 'rw'   THEN 'RW'
+    WHEN p_section = 'math' THEN 'M'
+    ELSE NULL
+  END;
+  IF v_section_code IS NULL THEN
+    RAISE EXCEPTION 'Unknown section: %. Expected ''rw'' or ''math''.', p_section;
+  END IF;
+
+  -- LOAD FORM AND SECTION CONTEXT (from 04A's canonical schema)
+  SELECT ts.test_form_id, tf.score_table_version,
+         CASE WHEN p_section = 'rw' THEN tf.routing_threshold_rw
+              ELSE tf.routing_threshold_m END
+  INTO v_test_form_id, v_score_table_version, v_routing_threshold
+  FROM test_sessions ts
+  JOIN test_forms tf ON tf.id = ts.test_form_id
+  WHERE ts.id = p_test_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session or form not found: session_id=%', p_test_session_id;
+  END IF;
+
+  SELECT tss.state, tss.module2_path
+  INTO v_section_state, v_module2_path
+  FROM test_session_sections tss
+  WHERE tss.test_session_id = p_test_session_id
+    AND tss.section = v_section_code;
+
+  IF v_section_state IS NULL THEN
+    RAISE EXCEPTION 'Section state not found: session=%, section=%',
+                    p_test_session_id, p_section;
+  END IF;
+
+  -- Section must be in 'submitted' state to be scored (§19.1)
+  IF v_section_state <> 'submitted' THEN
+    RAISE EXCEPTION 'Section not scoreable: state=%, expected=submitted', v_section_state;
+  END IF;
+
+  -- module2_path MUST be locked at this point (04A invariant §2.3)
+  IF v_module2_path IS NULL THEN
+    RAISE EXCEPTION 'Module 2 path not locked for scoreable section';
+  END IF;
+
+  v_m2_module := '2' || v_module2_path;  -- '2A' or '2B'
+
+  -- N1 and N_total from the canonical form items (the only source, SCL-127)
+  SELECT
+    COUNT(*) FILTER (WHERE i.module = '1'),
+    COUNT(*)
+  INTO v_n1, v_n_total
+  FROM test_form_items i
+  WHERE i.test_form_id = v_test_form_id
+    AND i.section = v_section_code
+    AND i.module IN ('1', v_m2_module);
+
+  -- M1 CORRECT (LEFT JOIN from presented items — missing answers are wrong)
+  SELECT COUNT(*) FILTER (WHERE is_answer_correct(a.answer, i.question_id))
+  INTO v_r1
+  FROM test_form_items i
+  LEFT JOIN test_session_answers a
+    ON a.test_session_id = p_test_session_id
+   AND a.section         = i.section
+   AND a.module          = i.module
+   AND a.ordinal         = i.ordinal
+   AND a.question_id     = i.question_id
+  WHERE i.test_form_id = v_test_form_id
+    AND i.section      = v_section_code
+    AND i.module       = '1';
+
+  -- M2 CORRECT AND M2 WRONG BY DIFFICULTY (routed path only; LEFT JOIN).
+  -- D1 (owner ruling 2026-09-24, Doc 02A INV-02A-05): 1 = easy, 2 = medium, 3 = hard.
+  SELECT
+    COUNT(*) FILTER (WHERE c.is_correct),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 1),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 2),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 3),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty IS DISTINCT FROM 1
+                                            AND c.difficulty IS DISTINCT FROM 2
+                                            AND c.difficulty IS DISTINCT FROM 3)
+  INTO v_r2, v_n_e_m2, v_n_m_m2, v_n_h_m2, v_n_unbucketed
+  FROM (
+    SELECT q.difficulty, is_answer_correct(a.answer, i.question_id) AS is_correct
+    FROM test_form_items i
+    JOIN questions q ON q.id = i.question_id
+    LEFT JOIN test_session_answers a
+      ON a.test_session_id = p_test_session_id
+     AND a.section         = i.section
+     AND a.module          = i.module
+     AND a.ordinal         = i.ordinal
+     AND a.question_id     = i.question_id
+    WHERE i.test_form_id = v_test_form_id
+      AND i.section      = v_section_code
+      AND i.module       = v_m2_module
+  ) c;
+
+  IF v_n_unbucketed > 0 THEN
+    RAISE WARNING 'compute_section_scaled_score: % wrong M2 item(s) with a difficulty outside the bucket codes (session=%, section=%)',
+      v_n_unbucketed, p_test_session_id, p_section;
+  END IF;
+
+  -- APPLY THE CANONICAL FORMULA (locked v1.0) — D3
+  SELECT * INTO f
+  FROM compute_scaled_score_from_counts(
+    v_score_table_version, v_r1, v_r2, v_n_e_m2, v_n_m_m2, v_n_h_m2,
+    v_n1, v_n_total, v_routing_threshold);
+
+  scaled          := f.scaled;
+  module1_correct := v_r1;
+  module2_correct := v_r2;
+  module2_path    := v_module2_path;
+  m2_easy_wrong   := v_n_e_m2;
+  m2_medium_wrong := v_n_m_m2;
+  m2_hard_wrong   := v_n_h_m2;
+  ceiling         := f.ceiling;
+  deduction       := f.deduction;
+  raw_floor       := f.raw_floor;
+  path_floor      := f.path_floor;
+  effective_floor := f.effective_floor;
+  s_raw           := f.s_raw;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
 -- Name: compute_streak_days(uuid, text, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4457,6 +4690,27 @@ BEGIN
   FROM jsonb_array_elements(p_recipients) AS r
   CROSS JOIN LATERAL jsonb_array_elements_text(r -> 'channels') AS c(channel)
   ON CONFLICT (event_id, recipient_profile_id, channel) DO NOTHING;
+END;
+$$;
+
+
+--
+-- Name: emit_score_run_side_effects(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.emit_score_run_side_effects(p_score_run_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM 1 FROM score_runs WHERE id = p_score_run_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'emit_score_run_side_effects: score_run % does not exist', p_score_run_id;
+  END IF;
+
+  -- [1] projection_refresh_outbox insert — E9. (none yet)
+  -- [2] review-queue enqueue — E9 / owner ruling 4. (none yet)
+  -- [3] mastery derivation — E9 / Doc 05. (none yet; §16.1)
 END;
 $$;
 
@@ -5319,6 +5573,49 @@ $$;
 
 
 --
+-- Name: is_answer_correct(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_item_type        text;
+  v_correct_answer   text;
+  v_correct_variants text[];
+BEGIN
+  -- p_submitted = NULL means no answer / blank; always false
+  IF p_submitted IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT item_type, correct_answer, correct_variants
+    INTO v_item_type, v_correct_answer, v_correct_variants
+  FROM questions
+  WHERE id = p_question_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Question not found: %', p_question_id;
+  END IF;
+
+  -- Multiple choice: exact letter match
+  IF v_item_type = 'mcq' THEN
+    RETURN COALESCE(p_submitted = v_correct_answer, false);
+  END IF;
+
+  -- Student-produced response: variant array match
+  IF v_item_type = 'grid_in' THEN
+    RETURN COALESCE(p_submitted = ANY(v_correct_variants), false);
+  END IF;
+
+  -- Unknown question type: explicitly false rather than ambiguous
+  RETURN false;
+END;
+$$;
+
+
+--
 -- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5872,6 +6169,25 @@ BEGIN
   END IF;
 
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+
+--
+-- Name: prevent_score_runs_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_score_runs_mutation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE'
+     AND (NOT EXISTS (SELECT 1 FROM test_sessions WHERE id = OLD.test_session_id)
+          OR NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id)) THEN
+    RETURN OLD;  -- D6: the FK cascade of an account / session deletion
+  END IF;
+  RAISE EXCEPTION 'score_runs is insert-once. UPDATE and DELETE are forbidden. Use score_runs_admin_recompute for post-launch calibration audit.';
 END;
 $$;
 
@@ -7467,6 +7783,226 @@ $$;
 
 
 --
+-- Name: score_test_session_from_outbox(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_started_at      timestamptz := clock_timestamp();
+  v_event_type      text;
+  v_test_session_id uuid;
+  v_test_form_id    uuid;
+  v_student_id      uuid;
+  v_score_table_ver text;
+  v_existing_run_id uuid;
+  v_score_run_id    uuid;
+
+  v_rw_present   boolean := false;
+  v_math_present boolean := false;
+  v_rw_row       record;
+  v_math_row     record;
+  v_total        int;
+  v_partial_display int;
+BEGIN
+  -- IDEMPOTENCY CHECK (§5.17 — once, at the entrypoint)
+  SELECT score_run_id INTO v_existing_run_id
+  FROM score_run_event_ledger
+  WHERE outbox_event_id = p_outbox_event_id;
+
+  IF FOUND THEN
+    RAISE LOG '%', jsonb_build_object(
+      'event', 'scoring.session.scored',
+      'score_run_id', v_existing_run_id,
+      'source_outbox_event_id', p_outbox_event_id,
+      'idempotent_return', true,
+      'computation_ms', round(extract(epoch FROM clock_timestamp() - v_started_at) * 1000));
+    RETURN v_existing_run_id;
+  END IF;
+
+  -- READ THE OUTBOX EVENT (04A wrote this; we consume it)
+  SELECT event_type, aggregate_id
+  INTO v_event_type, v_test_session_id
+  FROM exam_runtime_outbox
+  WHERE id = p_outbox_event_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Outbox event not found: %', p_outbox_event_id;
+  END IF;
+
+  IF v_event_type NOT IN ('test_session_completed', 'test_session_partial_scored_abandoned') THEN
+    RAISE EXCEPTION 'Outbox event type not handled by scoring: %', v_event_type;
+  END IF;
+
+  -- Read session metadata (D10: a missing session raises, §21.1)
+  SELECT student_id, test_form_id
+  INTO v_student_id, v_test_form_id
+  FROM test_sessions
+  WHERE id = v_test_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Test session not found for outbox event %: session_id=%',
+      p_outbox_event_id, v_test_session_id;
+  END IF;
+
+  SELECT score_table_version
+  INTO v_score_table_ver
+  FROM test_forms
+  WHERE id = v_test_form_id;
+
+  -- VERSION-VALIDATION GATE (§12.1, §19.6). Active and superseded score;
+  -- candidate, missing or partially attested versions never do.
+  PERFORM 1
+  FROM scoring_model_versions
+  WHERE version = v_score_table_ver
+    AND status IN ('active', 'superseded')
+    AND published_at IS NOT NULL
+    AND constants_sha256 IS NOT NULL
+    AND validation_packet_sha256 IS NOT NULL
+    AND validation_packet_url IS NOT NULL;   -- D10: §19.6 lists the URL too
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Scoring blocked: scoring_model_version % is missing, candidate, or '
+      'incompletely attested. score_runs MUST NOT be inserted for an '
+      'unattested version. (Doc 04B V4.3 §12.1 + §19.6.)',
+      v_score_table_ver
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM scoring_constants
+    WHERE scoring_model_version = v_score_table_ver
+  ) THEN
+    RAISE EXCEPTION
+      'Scoring blocked: no scoring_constants rows for version %',
+      v_score_table_ver
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- DETERMINE WHICH SECTIONS ARE SCOREABLE
+  SELECT EXISTS (
+    SELECT 1 FROM test_session_sections
+    WHERE test_session_id = v_test_session_id
+      AND section = 'RW'
+      AND state = 'submitted'
+  ) INTO v_rw_present;
+
+  SELECT EXISTS (
+    SELECT 1 FROM test_session_sections
+    WHERE test_session_id = v_test_session_id
+      AND section = 'M'
+      AND state = 'submitted'
+  ) INTO v_math_present;
+
+  IF NOT v_rw_present AND NOT v_math_present THEN
+    RAISE EXCEPTION 'No scoreable sections found for session %', v_test_session_id;
+  END IF;
+
+  -- COMPUTE PRESENT SECTIONS
+  IF v_rw_present THEN
+    SELECT * INTO v_rw_row
+    FROM compute_section_scaled_score(v_test_session_id, 'rw');
+  END IF;
+
+  IF v_math_present THEN
+    SELECT * INTO v_math_row
+    FROM compute_section_scaled_score(v_test_session_id, 'math');
+  END IF;
+
+  -- TOTAL_SCALED / PARTIAL_DISPLAY_SCALED (§9.1, §15.2)
+  IF v_rw_present AND v_math_present THEN
+    v_total := v_rw_row.scaled + v_math_row.scaled;
+    v_partial_display := NULL;
+  ELSIF v_rw_present THEN
+    v_total := NULL;
+    v_partial_display := v_rw_row.scaled;
+  ELSE
+    v_total := NULL;
+    v_partial_display := v_math_row.scaled;
+  END IF;
+
+  -- INSERT score_runs ROW (with ALL intermediate values)
+  INSERT INTO score_runs (
+    test_session_id, student_id, test_form_id, scoring_model_version,
+    source_outbox_event_id, source_event_type,
+    rw_scored, rw_module1_correct, rw_module2_correct, rw_module2_path,
+    rw_m2_easy_wrong, rw_m2_medium_wrong, rw_m2_hard_wrong,
+    rw_ceiling, rw_deduction, rw_raw_floor, rw_path_floor, rw_effective_floor,
+    rw_s_raw, rw_scaled,
+    math_scored, math_module1_correct, math_module2_correct, math_module2_path,
+    math_m2_easy_wrong, math_m2_medium_wrong, math_m2_hard_wrong,
+    math_ceiling, math_deduction, math_raw_floor, math_path_floor, math_effective_floor,
+    math_s_raw, math_scaled,
+    total_scaled, partial_display_scaled, constants_snapshot
+  ) VALUES (
+    v_test_session_id, v_student_id, v_test_form_id, v_score_table_ver,
+    p_outbox_event_id, v_event_type,
+    v_rw_present,
+    CASE WHEN v_rw_present THEN v_rw_row.module1_correct END,
+    CASE WHEN v_rw_present THEN v_rw_row.module2_correct END,
+    CASE WHEN v_rw_present THEN v_rw_row.module2_path END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_easy_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_medium_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_hard_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.ceiling END,
+    CASE WHEN v_rw_present THEN v_rw_row.deduction END,
+    CASE WHEN v_rw_present THEN v_rw_row.raw_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.path_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.effective_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.s_raw END,
+    CASE WHEN v_rw_present THEN v_rw_row.scaled END,
+    v_math_present,
+    CASE WHEN v_math_present THEN v_math_row.module1_correct END,
+    CASE WHEN v_math_present THEN v_math_row.module2_correct END,
+    CASE WHEN v_math_present THEN v_math_row.module2_path END,
+    CASE WHEN v_math_present THEN v_math_row.m2_easy_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.m2_medium_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.m2_hard_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.ceiling END,
+    CASE WHEN v_math_present THEN v_math_row.deduction END,
+    CASE WHEN v_math_present THEN v_math_row.raw_floor END,
+    CASE WHEN v_math_present THEN v_math_row.path_floor END,
+    CASE WHEN v_math_present THEN v_math_row.effective_floor END,
+    CASE WHEN v_math_present THEN v_math_row.s_raw END,
+    CASE WHEN v_math_present THEN v_math_row.scaled END,
+    v_total, v_partial_display,
+    scoring_constants_snapshot_jsonb(v_score_table_ver)
+  ) RETURNING id INTO v_score_run_id;
+
+  -- WRITE THE LEDGER ENTRY (idempotency anchor)
+  INSERT INTO score_run_event_ledger (outbox_event_id, score_run_id, test_session_id)
+  VALUES (p_outbox_event_id, v_score_run_id, v_test_session_id);
+
+  -- E9 SEAM (no-op today; §16.1: no mastery emission from 04B)
+  PERFORM emit_score_run_side_effects(v_score_run_id);
+
+  -- §20.1 structured log — UUIDs and scaled values only (§20.4)
+  RAISE LOG '%', jsonb_build_object(
+    'event', 'scoring.session.scored',
+    'score_run_id', v_score_run_id,
+    'test_session_id', v_test_session_id,
+    'student_id', v_student_id,
+    'test_form_id', v_test_form_id,
+    'scoring_model_version', v_score_table_ver,
+    'source_outbox_event_id', p_outbox_event_id,
+    'source_event_type', v_event_type,
+    'rw_scored', v_rw_present,
+    'math_scored', v_math_present,
+    'rw_scaled', CASE WHEN v_rw_present THEN v_rw_row.scaled END,
+    'math_scaled', CASE WHEN v_math_present THEN v_math_row.scaled END,
+    'total_scaled', v_total,
+    'computation_ms', round(extract(epoch FROM clock_timestamp() - v_started_at) * 1000),
+    'idempotent_return', false);
+
+  RETURN v_score_run_id;
+END;
+$$;
+
+
+--
 -- Name: scoring_constant(text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7525,6 +8061,23 @@ BEGIN
 
   RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
 END;
+$$;
+
+
+--
+-- Name: scoring_constants_snapshot_jsonb(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_object_agg(
+    key || COALESCE(':' || section, ''),
+    value
+  )
+  FROM scoring_constants
+  WHERE scoring_model_version = p_version;
 $$;
 
 
@@ -10212,6 +10765,76 @@ CREATE TABLE public.review_sessions (
 
 
 --
+-- Name: score_run_event_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_run_event_ledger (
+    outbox_event_id uuid NOT NULL,
+    score_run_id uuid NOT NULL,
+    test_session_id uuid NOT NULL,
+    processed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: score_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    test_form_id uuid NOT NULL,
+    scoring_model_version text NOT NULL,
+    source_outbox_event_id uuid NOT NULL,
+    source_event_type text NOT NULL,
+    rw_scored boolean NOT NULL,
+    rw_module1_correct integer,
+    rw_module2_correct integer,
+    rw_module2_path text,
+    rw_m2_easy_wrong integer,
+    rw_m2_medium_wrong integer,
+    rw_m2_hard_wrong integer,
+    rw_ceiling numeric,
+    rw_deduction numeric,
+    rw_raw_floor numeric,
+    rw_path_floor numeric,
+    rw_effective_floor numeric,
+    rw_s_raw numeric,
+    rw_scaled integer,
+    math_scored boolean NOT NULL,
+    math_module1_correct integer,
+    math_module2_correct integer,
+    math_module2_path text,
+    math_m2_easy_wrong integer,
+    math_m2_medium_wrong integer,
+    math_m2_hard_wrong integer,
+    math_ceiling numeric,
+    math_deduction numeric,
+    math_raw_floor numeric,
+    math_path_floor numeric,
+    math_effective_floor numeric,
+    math_s_raw numeric,
+    math_scaled integer,
+    total_scaled integer,
+    partial_display_scaled integer,
+    constants_snapshot jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT score_runs_check CHECK ((rw_scored OR math_scored)),
+    CONSTRAINT score_runs_check1 CHECK (((rw_scored AND (rw_scaled IS NOT NULL) AND (rw_module1_correct IS NOT NULL)) OR ((NOT rw_scored) AND (rw_scaled IS NULL) AND (rw_module1_correct IS NULL)))),
+    CONSTRAINT score_runs_check2 CHECK (((math_scored AND (math_scaled IS NOT NULL) AND (math_module1_correct IS NOT NULL)) OR ((NOT math_scored) AND (math_scaled IS NULL) AND (math_module1_correct IS NULL)))),
+    CONSTRAINT score_runs_check3 CHECK (((rw_scored AND math_scored AND (total_scaled = (rw_scaled + math_scaled)) AND (partial_display_scaled IS NULL)) OR (rw_scored AND (NOT math_scored) AND (total_scaled IS NULL) AND (partial_display_scaled = rw_scaled)) OR (math_scored AND (NOT rw_scored) AND (total_scaled IS NULL) AND (partial_display_scaled = math_scaled)))),
+    CONSTRAINT score_runs_math_module2_path_check CHECK (((math_module2_path IS NULL) OR (math_module2_path = ANY (ARRAY['A'::text, 'B'::text])))),
+    CONSTRAINT score_runs_math_scaled_check CHECK (((math_scaled IS NULL) OR (((math_scaled >= 200) AND (math_scaled <= 800)) AND ((math_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_partial_display_scaled_check CHECK (((partial_display_scaled IS NULL) OR (((partial_display_scaled >= 200) AND (partial_display_scaled <= 800)) AND ((partial_display_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_rw_module2_path_check CHECK (((rw_module2_path IS NULL) OR (rw_module2_path = ANY (ARRAY['A'::text, 'B'::text])))),
+    CONSTRAINT score_runs_rw_scaled_check CHECK (((rw_scaled IS NULL) OR (((rw_scaled >= 200) AND (rw_scaled <= 800)) AND ((rw_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_source_event_type_check CHECK ((source_event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text]))),
+    CONSTRAINT score_runs_total_scaled_check CHECK (((total_scaled IS NULL) OR (((total_scaled >= 400) AND (total_scaled <= 1600)) AND ((total_scaled % 10) = 0))))
+);
+
+
+--
 -- Name: scoring_constants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10222,7 +10845,9 @@ CREATE TABLE public.scoring_constants (
     value numeric NOT NULL,
     description text NOT NULL,
     notes text,
+    CONSTRAINT scoring_constants_key_charset CHECK ((key ~ '^[a-z0-9_]+$'::text)),
     CONSTRAINT scoring_constants_section_check CHECK (((section IS NULL) OR (section = ANY (ARRAY['rw'::text, 'math'::text])))),
+    CONSTRAINT scoring_constants_value_finite CHECK (((value <> 'NaN'::numeric) AND (value < 'Infinity'::numeric))),
     CONSTRAINT scoring_constants_value_nonneg CHECK ((value >= (0)::numeric))
 );
 
@@ -11826,6 +12451,30 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: score_run_event_ledger score_run_event_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_pkey PRIMARY KEY (outbox_event_id);
+
+
+--
+-- Name: score_runs score_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: score_runs score_runs_test_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_session_id_key UNIQUE (test_session_id);
+
+
+--
 -- Name: scoring_model_versions scoring_model_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12604,6 +13253,41 @@ CREATE INDEX idx_review_sessions_student ON public.review_sessions USING btree (
 
 
 --
+-- Name: idx_score_run_event_ledger_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_run_event_ledger_run ON public.score_run_event_ledger USING btree (score_run_id);
+
+
+--
+-- Name: idx_score_run_event_ledger_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_run_event_ledger_session ON public.score_run_event_ledger USING btree (test_session_id);
+
+
+--
+-- Name: idx_score_runs_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_event ON public.score_runs USING btree (source_outbox_event_id);
+
+
+--
+-- Name: idx_score_runs_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_form ON public.score_runs USING btree (test_form_id, computed_at DESC);
+
+
+--
+-- Name: idx_score_runs_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id, computed_at DESC);
+
+
+--
 -- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13324,6 +14008,20 @@ CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_
 --
 
 CREATE TRIGGER trg_prevent_active_scoring_constants_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.scoring_constants FOR EACH ROW EXECUTE FUNCTION public.prevent_active_scoring_constants_mutation();
+
+
+--
+-- Name: score_runs trg_prevent_score_runs_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_score_runs_delete BEFORE DELETE ON public.score_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_score_runs_mutation();
+
+
+--
+-- Name: score_runs trg_prevent_score_runs_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_score_runs_update BEFORE UPDATE ON public.score_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_score_runs_mutation();
 
 
 --
@@ -14124,6 +14822,62 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: score_run_event_ledger score_run_event_ledger_outbox_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_outbox_event_id_fkey FOREIGN KEY (outbox_event_id) REFERENCES public.exam_runtime_outbox(id);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_score_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_score_run_id_fkey FOREIGN KEY (score_run_id) REFERENCES public.score_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: score_runs score_runs_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: score_runs score_runs_source_outbox_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_source_outbox_event_id_fkey FOREIGN KEY (source_outbox_event_id) REFERENCES public.exam_runtime_outbox(id);
+
+
+--
+-- Name: score_runs score_runs_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: score_runs score_runs_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
+
+
+--
+-- Name: score_runs score_runs_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: scoring_constants scoring_constants_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14770,6 +15524,13 @@ ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_runtime_outbox ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: exam_runtime_outbox exam_runtime_outbox_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY exam_runtime_outbox_scoring_owner_read ON public.exam_runtime_outbox FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -15005,6 +15766,13 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: questions questions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY questions_scoring_owner_read ON public.questions FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: rate_limit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -15087,16 +15855,91 @@ CREATE POLICY review_sessions_select_self ON public.review_sessions FOR SELECT T
 
 
 --
+-- Name: score_run_event_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.score_run_event_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_internal; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_internal ON public.score_run_event_ledger USING (false);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_scoring_owner_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_scoring_owner_insert ON public.score_run_event_ledger FOR INSERT TO lyceon_scoring_owner WITH CHECK (true);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_scoring_owner_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_scoring_owner_select ON public.score_run_event_ledger FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: score_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.score_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: score_runs score_runs_no_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_no_delete ON public.score_runs FOR DELETE USING (false);
+
+
+--
+-- Name: score_runs score_runs_no_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_no_update ON public.score_runs FOR UPDATE USING (false);
+
+
+--
+-- Name: score_runs score_runs_scoring_owner_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_scoring_owner_insert ON public.score_runs FOR INSERT TO lyceon_scoring_owner WITH CHECK (true);
+
+
+--
+-- Name: score_runs score_runs_scoring_owner_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_scoring_owner_select ON public.score_runs FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: scoring_constants; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.scoring_constants ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: scoring_constants scoring_constants_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY scoring_constants_scoring_owner_read ON public.scoring_constants FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: scoring_model_versions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.scoring_model_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: scoring_model_versions scoring_model_versions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY scoring_model_versions_scoring_owner_read ON public.scoring_model_versions FOR SELECT TO lyceon_scoring_owner USING (true);
+
 
 --
 -- Name: sections; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15326,10 +16169,24 @@ ALTER TABLE public.test_answer_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.test_form_items ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: test_form_items test_form_items_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_form_items_scoring_owner_read ON public.test_form_items FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: test_forms; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.test_forms ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_forms test_forms_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_forms_scoring_owner_read ON public.test_forms FOR SELECT TO lyceon_scoring_owner USING (true);
+
 
 --
 -- Name: test_session_answers; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15338,16 +16195,37 @@ ALTER TABLE public.test_forms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.test_session_answers ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: test_session_answers test_session_answers_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_answers_scoring_owner_read ON public.test_session_answers FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: test_session_sections; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.test_session_sections ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: test_session_sections test_session_sections_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_sections_scoring_owner_read ON public.test_session_sections FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: test_sessions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.test_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_sessions test_sessions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_sessions_scoring_owner_read ON public.test_sessions FOR SELECT TO lyceon_scoring_owner USING (true);
+
 
 --
 -- Name: tutor_context_resolution_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15728,6 +16606,7 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL ON SCHEMA public TO lyceon_scoring_owner;
 
 
 --
@@ -16120,6 +16999,14 @@ GRANT ALL ON FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_ent
 
 
 --
+-- Name: FUNCTION compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) TO service_role;
+
+
+--
 -- Name: TABLE student_section_projections; Type: ACL; Schema: public; Owner: -
 --
 
@@ -16191,6 +17078,14 @@ GRANT ALL ON FUNCTION public.compute_section_projection(p_student_id uuid, p_sec
 
 
 --
+-- Name: FUNCTION compute_section_scaled_score(p_test_session_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) TO service_role;
+
+
+--
 -- Name: FUNCTION compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -16258,6 +17153,13 @@ GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email 
 
 REVOKE ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION emit_score_run_side_effects(p_score_run_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.emit_score_run_side_effects(p_score_run_id uuid) FROM PUBLIC;
 
 
 --
@@ -16373,6 +17275,14 @@ GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_studen
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
+
+
+--
+-- Name: FUNCTION is_answer_correct(p_submitted text, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) TO service_role;
 
 
 --
@@ -16530,6 +17440,13 @@ GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) 
 --
 
 REVOKE ALL ON FUNCTION public.prevent_active_scoring_constants_mutation() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION prevent_score_runs_mutation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.prevent_score_runs_mutation() FROM PUBLIC;
 
 
 --
@@ -17007,11 +17924,20 @@ GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO s
 
 
 --
+-- Name: FUNCTION score_test_session_from_outbox(p_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION scoring_constant(p_version text, p_key text, p_section text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO service_role;
+GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO lyceon_scoring_owner;
 
 
 --
@@ -17020,6 +17946,14 @@ GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_sect
 
 REVOKE ALL ON FUNCTION public.scoring_constants_sha256(p_version text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constants_snapshot_jsonb(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) TO service_role;
 
 
 --
@@ -17388,6 +18322,41 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
 
 
 --
+-- Name: COLUMN questions.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.difficulty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(difficulty) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.correct_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(correct_answer) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.item_type; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(item_type) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.correct_variants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(correct_variants) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE canonical_skill_catalog; Type: ACL; Schema: public; Owner: -
 --
 
@@ -17492,6 +18461,27 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlements TO service_role;
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.exam_runtime_outbox TO service_role;
+
+
+--
+-- Name: COLUMN exam_runtime_outbox.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN exam_runtime_outbox.event_type; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(event_type) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN exam_runtime_outbox.aggregate_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(aggregate_id) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
 
 
 --
@@ -18192,6 +19182,22 @@ GRANT SELECT ON TABLE public.review_sessions TO authenticated;
 
 
 --
+-- Name: TABLE score_run_event_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.score_run_event_ledger TO service_role;
+GRANT SELECT,INSERT ON TABLE public.score_run_event_ledger TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE score_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.score_runs TO service_role;
+GRANT SELECT,INSERT ON TABLE public.score_runs TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE scoring_constants; Type: ACL; Schema: public; Owner: -
 --
 
@@ -18199,10 +19205,80 @@ GRANT SELECT ON TABLE public.scoring_constants TO service_role;
 
 
 --
+-- Name: COLUMN scoring_constants.scoring_model_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(scoring_model_version) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.key; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(key) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.value; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(value) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE scoring_model_versions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT ON TABLE public.scoring_model_versions TO service_role;
+
+
+--
+-- Name: COLUMN scoring_model_versions.version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(version) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.constants_sha256; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(constants_sha256) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.validation_packet_sha256; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(validation_packet_sha256) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.validation_packet_url; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(validation_packet_url) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.published_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(published_at) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
 
 
 --
@@ -18461,10 +19537,73 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_form_items TO service_rol
 
 
 --
+-- Name: COLUMN test_form_items.test_form_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_form_id) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.module; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE test_forms; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_forms TO service_role;
+
+
+--
+-- Name: COLUMN test_forms.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.score_table_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(score_table_version) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.routing_threshold_rw; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(routing_threshold_rw) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.routing_threshold_m; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(routing_threshold_m) ON TABLE public.test_forms TO lyceon_scoring_owner;
 
 
 --
@@ -18475,6 +19614,48 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_answers TO service_role;
 
 
 --
+-- Name: COLUMN test_session_answers.test_session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_session_id) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.module; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(answer) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE test_session_sections; Type: ACL; Schema: public; Owner: -
 --
 
@@ -18482,10 +19663,59 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_sections TO service_role
 
 
 --
+-- Name: COLUMN test_session_sections.test_session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_session_id) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_sections.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_sections.state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(state) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_path; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_path) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE test_sessions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.test_sessions TO service_role;
+
+
+--
+-- Name: COLUMN test_sessions.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.test_form_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_form_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
 
 
 --
