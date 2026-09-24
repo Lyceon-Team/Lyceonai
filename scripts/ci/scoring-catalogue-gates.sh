@@ -9,7 +9,8 @@
 #   creds), then proves every catalogue constraint by making it fire:
 #     C1  a real two-session race — the partial unique index, not the trigger,
 #         is what stops a second concurrent activation (run here, in bash,
-#         because it needs two connections);
+#         because it needs two connections; since E4 it runs LAST, after v1.0
+#         is superseded, because the pipeline now ends with v1.0 active);
 #     C2..C9, P1, P2, G1, S1, S2, H1  scripts/ci/scoring-catalogue-gates.sql.
 #   The gate passes only if EVERY expected check id prints its own `ok` line
 #   and no ERROR appears. A check that errors for an unrelated reason prints no
@@ -59,10 +60,22 @@ SQL
 echo "==> apply pipeline"
 for f in "$MIG_DIR"/*.sql; do psql_db "$DB" -q -f "$f" >/dev/null 2>&1 || { echo "FAIL: $f did not apply"; psql_db "$DB" -q -f "$f" 2>&1 | tail -5; exit 1; }; done
 
+echo "==> C2..C9 + positives"
+psql -X -d "$DB" -f "$ROOT/scripts/ci/scoring-catalogue-gates.sql" > "$WORK/sql.out" 2>&1 || true
+
 # ---------------------------------------------------------------------------
 # C1 — concurrent activation race: the partial unique index is the enforcement.
+#
+# E4 ruling (20260930050000_activate_scoring_v1.sql): the pipeline now ends with
+# v1.0 ACTIVE and committed. With an active row visible, the friendly trigger
+# would refuse session A's INSERT outright and the race could never reach the
+# index. So, AFTER every SQL check above has run against the activated v1.0,
+# v1.0 is superseded (committed — the database is throwaway) and the race runs
+# exactly as before: no committed active row, two concurrent activations, only
+# the index can refuse the second. The assertion is unchanged.
 # ---------------------------------------------------------------------------
-echo "==> C1 two-session activation race"
+echo "==> C1 two-session activation race (v1.0 superseded first; throwaway DB)"
+psql_db "$DB" -q -c "UPDATE public.scoring_model_versions SET status = 'superseded' WHERE version = 'v1.0';" >/dev/null
 PGAPPNAME=scg_c1_a psql -X -q -v ON_ERROR_STOP=1 -d "$DB" >"$WORK/c1_a.out" 2>&1 <<'SQL' &
 BEGIN;
 INSERT INTO public.scoring_model_versions
@@ -122,9 +135,6 @@ wait "$A_PID" || true
 cat "$WORK/c1_a.out" "$WORK/c1_b.out" > "$WORK/c1.out"
 # Undo C1's committed rows (versions only; no constants reference them).
 psql_db "$DB" -q -c "DELETE FROM public.scoring_model_versions WHERE version IN ('zz_race_a','zz_race_b');" >/dev/null
-
-echo "==> C2..C9 + positives"
-psql -X -d "$DB" -f "$ROOT/scripts/ci/scoring-catalogue-gates.sql" > "$WORK/sql.out" 2>&1 || true
 
 cat "$WORK/c1.out" "$WORK/sql.out" > "$WORK/all.out"
 grep -E 'ok   \[|SCG FAIL|ERROR' "$WORK/all.out" | sed 's/^psql:[^ ]* //' || true
