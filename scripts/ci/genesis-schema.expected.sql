@@ -15174,7 +15174,9 @@ REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb,
 -- Name: FUNCTION calendar_viewer_is_admin(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.calendar_viewer_is_admin() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
+GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO service_role;
 
 
 --
@@ -15260,6 +15262,7 @@ GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO s
 -- Name: FUNCTION capture_mastery_constant_change(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.capture_mastery_constant_change() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.capture_mastery_constant_change() TO service_role;
 
 
@@ -15398,6 +15401,14 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role
 
 
 --
+-- Name: FUNCTION create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION crisis_review_cases_updated_at(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15505,6 +15516,7 @@ GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_studen
 -- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
@@ -16152,6 +16164,14 @@ GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_do
 --
 
 GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
+
+
+--
+-- Name: FUNCTION sever_crisis_audit_conversation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sever_crisis_audit_conversation() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sever_crisis_audit_conversation() TO service_role;
 
 
 --
