@@ -284,16 +284,22 @@ export async function upsertStudyProfile(
     row.timezone = FALLBACK_TIMEZONE;
   }
 
-  // `setup_completed_at` is derived, never sent by a client. It is stamped by the write
-  // that first gives the row a target score — the precise condition the
-  // `setup_requires_target_score` CHECK encodes, so the derivation and the constraint
-  // cannot disagree.
-  const targetScoreAfter =
-    update.target_score !== undefined
-      ? update.target_score
-      : (existing?.target_score ?? null);
-  const completesSetup =
-    existing?.setup_completed_at == null && targetScoreAfter !== null;
+  // `setup_completed_at` is derived, never sent by a client. It is stamped by the FIRST
+  // write that finds no completed setup — the student reached the end of the flow.
+  //
+  // IT USED TO REQUIRE A TARGET SCORE, mirroring the `setup_requires_target_score` CHECK.
+  // 20261002000000 drops that CHECK (SCL-130, R-08-17 reversed) and this derivation has to
+  // go with it, or the reversal is undone here: a student who presses straight through
+  // setup without answering would get no `setup_completed_at`, so `readStudyProfile` would
+  // keep answering `setup_required`, so the popup would reopen on every visit and R-08-04
+  // would never generate a first plan. "Nothing is required" has to hold on both sides of
+  // the write or it holds on neither.
+  //
+  // Why the first write is the right signal: `PUT /api/calendar/profile` is the only
+  // writer of this row, and a student with no profile has no settings sheet to reach — the
+  // read answers `setup_required` and serves `defaults` instead. So the first write is
+  // always setup finishing, whatever it did or did not carry.
+  const completesSetup = existing?.setup_completed_at == null;
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
   const { data, error } = await supabaseServer
@@ -336,6 +342,14 @@ export async function upsertStudyProfile(
   const versionNo = await regenerateAfterProfileChange({
     studentId,
     profile: after,
+    // R-08-04: the FIRST plan generates on the first entitled calendar OPEN after setup
+    // completes — never on the write that completes it. Before SCL-130 that fell out of
+    // the derivation for free, because the write completing setup was also the write
+    // supplying a target score, and `after.setup_completed_at` was read from a row that
+    // had only just been stamped. Now that ANY first write completes setup, the guard has
+    // to be told explicitly, or every student's setup submit would generate a plan the
+    // entitlement gate has not been consulted about.
+    setupJustCompleted: completesSetup,
     idempotencyKey: update.idempotency_key,
     generatorVersion: config.generatorVersion,
     requestId,
@@ -363,12 +377,17 @@ export async function upsertStudyProfile(
 async function regenerateAfterProfileChange(args: {
   studentId: string;
   profile: StudyProfile;
+  /** True when THIS write is the one that completed setup. See the call site. */
+  setupJustCompleted: boolean;
   idempotencyKey: string;
   generatorVersion: string;
   requestId?: string;
 }): Promise<number | null> {
   if (args.profile.planner_mode !== "auto") return null;
   if (args.profile.setup_completed_at === null) return null;
+  // R-08-04. `profile` is the row AFTER the write, so its stamp is already set on the very
+  // write that set it — which is precisely the case this must not generate for.
+  if (args.setupJustCompleted) return null;
 
   const result = await regeneratePlan(
     {

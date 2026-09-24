@@ -101,6 +101,9 @@ export default function CalendarPage(): JSX.Element {
    * server's rule, and would be wrong the moment the rule changed.
    */
   const [replanOffered, setReplanOffered] = useState(false);
+  // §17.5: dismissing closes it for THIS visit only. It reopens next visit because no
+  // profile exists — the reopen condition is the profile, never a stored "seen" flag.
+  const [setupDismissed, setSetupDismissed] = useState(false);
 
   if (calendar.isLoading) return <CalendarSkeleton />;
   if (isEntitlementDenial(calendar.error)) return <CalendarPremiumGate />;
@@ -127,19 +130,38 @@ export default function CalendarPage(): JSX.Element {
       <CalendarView
         backHref="/dashboard"
         model={null}
-        setup={{
-          defaults: response.defaults,
-          onSubmit: (body) => profile.mutate(body),
-          pending: profile.isPending,
-          // `toUserFacingMessage` returns { title, message }; the sheet shows the sentence.
-          error:
-            profile.error === null
-              ? null
-              : toUserFacingMessage(profile.error).message,
-        }}
+        // Dismissed for this visit: the plan behind it un-blurs and nothing is saved. The
+        // next mount asks the server again, gets `setup_required` again (no profile), and
+        // opens again — which is the reopen rule, held by the data rather than by a flag.
+        setup={
+          setupDismissed
+            ? undefined
+            : {
+                defaults: response.defaults,
+                onSubmit: (body) => profile.mutate(body),
+                // A free student reaches setup since SCL-130, and the last press shows them the
+                // third panel instead of a plan. `setup_required` is served before the
+                // entitlement gate, so reaching here says nothing about entitlement — the
+                // premium denial the query already knows about does.
+                entitled: response.entitled !== false,
+                // Dismiss writes nothing. No profile exists, so the next visit opens it again —
+                // which is §17.5's "reopens until a profile exists", not a nag.
+                onDismiss: () => setSetupDismissed(true),
+                onUpgrade: () => navigate("/upgrade"),
+                pending: profile.isPending,
+                // `toUserFacingMessage` returns { title, message }; the sheet shows the sentence.
+                error:
+                  profile.error === null
+                    ? null
+                    : toUserFacingMessage(profile.error).message,
+              }
+        }
         today={today}
         viewerName={user?.display_name ?? "Your plan"}
         targetExamDate={null}
+        // Pre-setup: there is no profile yet, so there is no target. The header says
+        // "Set a target" rather than showing a slot the student cannot explain.
+        targetScore={null}
         streak={streak.data}
         planUpdate={null}
         onRangeChange={onRangeChange}
@@ -157,6 +179,10 @@ export default function CalendarPage(): JSX.Element {
       today={today}
       viewerName={user?.display_name ?? "Your plan"}
       targetExamDate={response.profile.target_exam_date}
+      targetScore={response.profile.target_score}
+      // Doc 05C's rows, straight off the response. The header sums them; nothing here
+      // touches them.
+      projection={response.projection}
       streak={streak.data ?? response.streak}
       planUpdate={
         change === null

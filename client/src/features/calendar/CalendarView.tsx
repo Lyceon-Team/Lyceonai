@@ -45,6 +45,7 @@ import type {
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
+import type { SectionProjectionDto } from "@lyceon/shared";
 import {
   monthGridDates,
   rangeLabel,
@@ -81,7 +82,7 @@ import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
 import type { DayActions } from "./components/DayMenu";
-import { SetupSheet } from "./components/SetupSheet";
+import { SetupPopup } from "./components/SetupPopup";
 import {
   SettingsSheet,
   scheduleSummary,
@@ -122,6 +123,11 @@ export type CalendarViewProps = {
   setup?: {
     defaults: CalendarSetupDefaults;
     onSubmit: (profile: Record<string, unknown>) => void;
+    /** False for a free student — the last press shows the third panel, not a plan. */
+    entitled: boolean;
+    /** Dismiss saves nothing. It reopens next visit, because no profile exists yet. */
+    onDismiss: () => void;
+    onUpgrade: () => void;
     pending: boolean;
     error: string | null;
   };
@@ -129,6 +135,16 @@ export type CalendarViewProps = {
   viewerName: string;
   /** The student's exam date, for the countdown. Null when they have not set one. */
   targetExamDate: string | null;
+  /**
+   * §17.1's R1 slot. Null when the student has not set one — optional since SCL-130, so
+   * null is the ordinary case rather than an edge one, and the header says "Set a target".
+   */
+  targetScore: number | null;
+  /**
+   * Doc 05C's section rows, PASSED THROUGH UNTOUCHED from `GET /api/calendar`. The header
+   * sums them (`lib/projection`); nothing on this path re-derives a projection.
+   */
+  projection?: readonly SectionProjectionDto[];
   streak: StreakSummary | undefined;
   /** §17.4. Null when there is nothing unacknowledged. */
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
@@ -168,6 +184,8 @@ export function CalendarView({
   model,
   setup,
   today,
+  targetScore,
+  projection,
   viewerName,
   targetExamDate,
   streak,
@@ -367,7 +385,7 @@ export function CalendarView({
 
   return (
     <div className="lyceon-calendar">
-      <div className="app">
+      <div className={`app${setup === undefined ? "" : " blur"}`}>
         <LeftRail
           name={viewerName}
           subtitle={
@@ -413,6 +431,8 @@ export function CalendarView({
         <div className="main">
           <TopBar
             backHref={backHref}
+            targetScore={targetScore}
+            projection={projection}
             rangeLabelText={rangeLabel(view, cursor)}
             view={view}
             onView={(next) => move(next, cursor)}
@@ -533,11 +553,17 @@ export function CalendarView({
         />
       )}
 
+      {/* §17.5 — the popup renders OVER the plan (blurred above), never instead of it: a
+          student deciding whether to set up should be able to see what they are setting
+          up. It is dismissible and nothing behind it is disabled. */}
       {setup === undefined ? null : (
-        <SetupSheet
+        <SetupPopup
           defaults={setup.defaults}
           today={today}
+          entitled={setup.entitled}
           onSubmit={setup.onSubmit}
+          onDismiss={setup.onDismiss}
+          onUpgrade={setup.onUpgrade}
           pending={setup.pending}
           error={setup.error}
         />
