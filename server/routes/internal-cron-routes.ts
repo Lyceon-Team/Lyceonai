@@ -8,6 +8,7 @@ import {
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
 import { getBreachedCases } from "../services/crisis-review-queue";
+import { notifySlaBreaches } from "../services/crisis-notification";
 import {
   oidcAuthMiddlewareWithConfigGuard,
   type OidcConfigReader,
@@ -149,11 +150,13 @@ router.get(
  * CLOUD_TASKS_OIDC_AUDIENCE: that is a different URL, so a fallback could only
  * convert a visible "config missing" 500 (ERROR) into an hourly 401.
  *
- * trade-offs: alerting via the error log only; whether an ERROR entry
- * reaches a human depends on ERROR_MONITOR_WEBHOOK_URL or a Cloud Logging
- * alert policy, neither of which is in this repo (reported). Only `open`
- * cases are checked (getBreachedCases); an `in_review` case past its SLA is
- * not surfaced (reported, not changed here).
+ * ALERTING (closure plan W2-2a, 2026-09-24). A sweep that finds breaches
+ * logs ERROR `sla_breach_detected` AND posts one Slack message naming every
+ * breached case to LYCEON_CRISIS_ALERTS, through the same Cloud Tasks path a
+ * new case uses (notifySlaBreaches). Before this the sweep stopped at the log
+ * line. Breached means unresolved — open OR claimed (in_review) — past the
+ * deadline, and the alert repeats on every sweep while the breach stands;
+ * the turn-path two-minute throttle does not apply to a scheduled sweep.
  */
 const readSlaSweepOidcConfig: OidcConfigReader = () => ({
   expectedAudience: process.env.CRISIS_SLA_SWEEP_OIDC_AUDIENCE,
@@ -178,6 +181,13 @@ router.post(
             caseIds: breachedCases.map((c) => c.id as string),
             oldestDeadline: breachedCases[0]?.sla_deadline,
           },
+        );
+        await notifySlaBreaches(
+          breachedCases.map((c) => ({
+            caseId: String(c.id),
+            status: c.status === "in_review" ? "in_review" : "open",
+            slaDeadline: String(c.sla_deadline),
+          })),
         );
       } else {
         logger.info(
