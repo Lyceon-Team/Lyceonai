@@ -47,19 +47,16 @@ import {
   cloudTasksApiUrl,
   resolveCloudTasksAccess,
 } from "./cloud-tasks-enqueue";
+import type { CrisisSource } from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
 type CrisisNotificationPayload = {
   caseId: string;
   conversationId: string;
-  source:
-    | "signature"
-    | "model"
-    | "both"
-    | "classifier_degraded"
-    | "classifier_degraded_no_floor"
-    | "infrastructure_failure";
+  // The shared enum, not a hand-written copy: a copy here is how a new
+  // database source value reaches the alert with no label.
+  source: CrisisSource;
   slaDeadline: string;
   timestamp: string;
 };
@@ -83,6 +80,8 @@ const SOURCE_LABELS: Readonly<
   classifier_degraded_no_floor:
     "Classifier degraded, no crisis signatures — fail closed",
   infrastructure_failure: "Infrastructure failure — fail closed",
+  model_armor_dangerous:
+    "Model Armor blocked input (dangerous) — not a clinical signal; review",
 };
 
 // ── Slack Payload Builder ─────────────────────────────────────────────
