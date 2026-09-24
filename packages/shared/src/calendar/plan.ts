@@ -217,7 +217,7 @@ export function toGuardianPlanBlock(block: PlanBlock): GuardianPlanBlock {
  * One rule the plan validator refused a plan for.
  *
  * @spec [Doc_05F_V1.0 §10.3 `calendar_validate_plan`, §15 (errors), §18
- *        `calendar.plan_rejected {rule_ids}`; SCL-131] | @implemented [2026-09-24]
+ *        `calendar.plan_rejected {rule_ids}`; SCL-137] | @implemented [2026-09-24]
  *
  * plain English: `calendar_validate_plan` returns its refusals AS DATA rather than raising,
  * and each one is an object — `{"rule":"V-08","date":"2026-09-25","detail":"the date appears
