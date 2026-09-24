@@ -47,14 +47,16 @@ import type {
 } from "@lyceon/shared/calendar";
 import type { SectionProjectionDto } from "@lyceon/shared";
 import {
+  daysBetween,
   monthGridDates,
   rangeLabel,
+  shiftDays,
+  shiftMonths,
   shortDate,
   startOfMonth,
   startOfWeek,
   weekDates,
 } from "./lib/dates";
-import { daysBetween } from "./lib/dates";
 import { domainsForSection, isDraggable } from "./lib/blocks";
 import {
   MIX_GRANULARITY,
@@ -580,14 +582,3 @@ export function CalendarView({
   );
 }
 
-function shiftDays(date: string, days: number): string {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-
-function shiftMonths(date: string, months: number): string {
-  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
-  value.setUTCMonth(value.getUTCMonth() + months);
-  return value.toISOString().slice(0, 10);
-}
