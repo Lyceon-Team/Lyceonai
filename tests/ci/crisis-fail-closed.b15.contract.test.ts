@@ -82,7 +82,9 @@ function mockSignatureQuery(result: {
       or: vi.fn().mockReturnValue({
         eq: vi.fn().mockResolvedValue(result),
       }),
-      eq: vi.fn().mockResolvedValue(result),
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue(result),
+      }),
     }),
   };
   mockSupabaseFrom.mockImplementation((table: string) => {
@@ -126,7 +128,9 @@ function mockSignatureAndClassifierQueries(
           or: vi.fn().mockReturnValue({
             eq: vi.fn().mockResolvedValue(signatureResult),
           }),
-          eq: vi.fn().mockResolvedValue(signatureResult),
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue(signatureResult),
+          }),
         }),
       };
     }
@@ -374,7 +378,9 @@ describe("B1.5 — new source values accepted by CHECK constraint", () => {
             or: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: [], error: null }),
             }),
-            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
           }),
         };
       }
@@ -425,7 +431,9 @@ describe("B1.5 — new source values accepted by CHECK constraint", () => {
             or: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: [], error: null }),
             }),
-            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
           }),
         };
       }

@@ -29,9 +29,12 @@
  *     roles/cloudtasks.enqueuer to that service identity.
  *
  * edge cases:
- *   - No GCP credentials available (local dev): skip silently.
+ *   - No GCP credentials, or the token mint fails: log ERROR with the reason,
+ *     skip. Never throws (the mint used to throw into the turn's catch-all).
  *   - Cloud Tasks API failure: log error, do not throw.
- *   - Missing env vars: log warning on first call, skip.
+ *   - LYCEON_CRISIS_ALERTS unset: log ERROR, skip.
+ *   - Queue region is CLOUD_TASKS_LOCATION (Terraform `var.region`), never
+ *     VERTEX_LOCATION.
  *
  * IAM requirements (report only — Karl provisions):
  *   - Service account: Express server identity needs `roles/cloudtasks.enqueuer`
@@ -40,6 +43,10 @@
  *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
+import {
+  cloudTasksApiUrl,
+  resolveCloudTasksAccess,
+} from "./cloud-tasks-enqueue";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -63,13 +70,6 @@ export type { CrisisNotificationPayload };
 
 const CLOUD_TASKS_QUEUE_NAME =
   process.env.CRISIS_CLOUD_TASKS_QUEUE ?? "lisa-crisis-notification";
-
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
-
-const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
-
-const NOTIFICATION_TARGET_URL = process.env.LYCEON_CRISIS_ALERTS;
 
 // ── Source Labels ─────────────────────────────────────────────────────
 
@@ -125,34 +125,6 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
   return JSON.stringify(slackBody);
 }
 
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
-}
-
 // ── Cloud Tasks Enqueue ───────────────────────────────────────────────
 
 /**
@@ -169,36 +141,43 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function notifyCrisisEvent(
   payload: CrisisNotificationPayload,
 ): Promise<void> {
-  if (!GCP_PROJECT_ID) {
-    logger.warn(
-      "CRISIS_NOTIFICATION",
-      "missing_project_id",
-      "GCP_PROJECT_ID not set; crisis notification skipped",
-    );
-    return;
-  }
+  logger.info(
+    "CRISIS_NOTIFICATION",
+    "dispatch_entered",
+    "crisis notification dispatch entered",
+    { caseId: payload.caseId, source: payload.source },
+  );
 
-  if (!NOTIFICATION_TARGET_URL) {
-    logger.warn(
+  // @spec [Doc-03_V3 §21.2 step 5; CC Brief "Close the LISA Vertical" PR 2.1]
+  // Every skip below is ERROR, not WARN: a crisis alert that is not sent is an
+  // operator-facing failure, and only error-level entries reach the error
+  // monitor (server/logger.ts). These guards used to log at WARN, which is why
+  // the queue could receive zero tasks without anyone being told.
+  const targetUrl = process.env.LYCEON_CRISIS_ALERTS;
+  if (!targetUrl) {
+    logger.error(
       "CRISIS_NOTIFICATION",
       "missing_target_url",
-      "LYCEON_CRISIS_ALERTS not set; crisis notification skipped",
+      "LYCEON_CRISIS_ALERTS not set; crisis notification NOT sent",
+      undefined,
+      { caseId: payload.caseId },
     );
     return;
   }
 
-  const accessToken = await getGcpAccessToken();
-  if (!accessToken) {
-    logger.debug(
+  const access = await resolveCloudTasksAccess();
+  if (!access.ok) {
+    logger.error(
       "CRISIS_NOTIFICATION",
-      "no_gcp_credentials",
-      "GCP credentials not available (local dev); crisis notification skipped",
+      "gcp_access_unavailable",
+      "GCP credentials or access token unavailable; crisis notification NOT sent",
+      { reason: access.reason, detail: access.detail },
+      { caseId: payload.caseId },
     );
     return;
   }
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
-  const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
+  const apiUrl = cloudTasksApiUrl(access.projectId, CLOUD_TASKS_QUEUE_NAME);
 
   const slackPayload = buildSlackPayload(payload);
 
@@ -206,7 +185,7 @@ export async function notifyCrisisEvent(
     task: {
       httpRequest: {
         httpMethod: "POST",
-        url: NOTIFICATION_TARGET_URL,
+        url: targetUrl,
         headers: {
           "Content-Type": "application/json",
         },
@@ -219,7 +198,7 @@ export async function notifyCrisisEvent(
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${access.accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(taskBody),

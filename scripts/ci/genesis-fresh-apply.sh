@@ -70,6 +70,27 @@ RLS_OFF=$(psql_db "$DB1" -tAc "select count(*) from pg_tables where schemaname='
 [ "$RLS_OFF" = "0" ] || { echo "FAIL: $RLS_OFF public table(s) without RLS"; exit 1; }
 echo "    OK all RLS-enabled"
 
+echo "==> A.6 no public SECURITY DEFINER function is exposed to anon / unguarded to authenticated"
+# Self-test first: a deliberately unrevoked SECURITY DEFINER function must be
+# flagged, or the check proves nothing. Created and dropped in one transaction.
+SELFTEST=$(cd "$ROOT" && psql_db "$DB1" -tA <<'SQL'
+BEGIN;
+CREATE FUNCTION public.__secdef_gate_selftest() RETURNS integer
+  LANGUAGE sql SECURITY DEFINER AS $f$ SELECT 1 $f$;
+\i scripts/ci/secdef-exposure.sql
+ROLLBACK;
+SQL
+)
+grep -q '__secdef_gate_selftest' <<<"$SELFTEST" || { echo "FAIL: A.6 self-test — the gate did not flag an unrevoked SECURITY DEFINER function"; exit 1; }
+SECDEF_BAD=$(cd "$ROOT" && psql_db "$DB1" -tA -F' : ' -f scripts/ci/secdef-exposure.sql)
+if [ -n "$SECDEF_BAD" ]; then
+  echo "FAIL: SECURITY DEFINER functions reachable at /rest/v1/rpc without a caller check:"
+  sed 's/^/      /' <<<"$SECDEF_BAD"
+  echo "      fix: REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated; GRANT EXECUTE ... TO service_role;"
+  exit 1
+fi
+echo "    OK none exposed (self-test flagged its probe)"
+
 echo "==> B.1 profiles.id -> auth.users ON DELETE RESTRICT"
 DELTYPE=$(psql_db "$DB1" -tAc "select confdeltype::text from pg_constraint where conrelid='public.profiles'::regclass and contype='f' and confrelid='auth.users'::regclass;")
 [ "$DELTYPE" = "r" ] || { echo "FAIL: profiles.id FK confdeltype='$DELTYPE' (expected 'r' RESTRICT)"; exit 1; }
