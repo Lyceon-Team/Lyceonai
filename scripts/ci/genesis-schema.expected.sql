@@ -5112,6 +5112,7 @@ DECLARE
   v_ids      jsonb := '[]'::jsonb;
   v_attempt  int;
   v_id       uuid;
+  v_actor_id uuid;
 BEGIN
   SELECT * INTO v_form FROM test_forms WHERE id = p_test_form_id;
   IF NOT FOUND OR v_form.status <> 'published' THEN
@@ -5147,9 +5148,16 @@ BEGIN
    WHERE student_id = p_student_id AND test_form_id = p_test_form_id
      AND state IN ('completed', 'abandoned_final', 'partial_scored_abandoned');
 
-  INSERT INTO test_sessions (student_id, test_form_id, state, mode, grace_expires_at,
+  -- E6b (Doc 05E §8 step 2, INV-05E-06): stamp the student's one grouping id.
+  -- Fail closed without it (INV-05E-07), as apply_mastery_event does.
+  SELECT actor_id INTO v_actor_id FROM profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'EXAM_SESSION_NO_ACTOR_ID: no actor_id for student %', p_student_id;
+  END IF;
+
+  INSERT INTO test_sessions (student_id, actor_id, test_form_id, state, mode, grace_expires_at,
                              attempt_number_for_form, is_first_seen_form_attempt)
-  VALUES (p_student_id, p_test_form_id, 'created', p_mode,
+  VALUES (p_student_id, v_actor_id, p_test_form_id, 'created', p_mode,
           v_now + exam_runtime_setting('test_level_grace_window'),
           v_attempt, v_attempt = 1)
   RETURNING id INTO v_id;
@@ -6020,6 +6028,7 @@ DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
   v_actor_id  uuid;
+  v_exam_sessions uuid[];   -- E6b: the profile's test_sessions, collected before hard_delete removes them
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
@@ -6250,6 +6259,63 @@ BEGIN
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
+    -- ====================================================================
+    -- LAYER 2 (hard_delete): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- test_sessions.student_id and score_runs.student_id are ON DELETE SET NULL
+    -- (E6b), as practice and review are: the profile delete below would SEVER
+    -- these rows, not remove them. hard_delete removes them here, explicitly.
+    -- The sessions are collected first — the outbox carries only aggregate_id
+    -- (no FK, no identity) and is reachable only through them.
+    SELECT coalesce(array_agg(id), ARRAY[]::uuid[]) INTO v_exam_sessions
+      FROM public.test_sessions WHERE student_id = p_profile_id;
+
+    -- L2-08 .. L2-11. The four runtime children, children before parents.
+    -- Answers before submissions: test_session_answers.last_submission_id
+    -- references test_answer_submissions (NO ACTION).
+    DELETE FROM public.test_session_answers WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_answers', v_count);
+
+    DELETE FROM public.test_answer_submissions WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_answer_submissions', v_count);
+
+    DELETE FROM public.test_session_items WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_items', v_count);
+
+    DELETE FROM public.test_session_sections WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_sections', v_count);
+
+    -- L2-12 / L2-13. score_run_event_ledger and score_runs. Neither is deleted by
+    -- name: score_runs is insert-once (Doc 04B §9.4) and its trigger refuses a
+    -- DELETE while the parent session exists. Both leave with the session through
+    -- test_session_id / score_run_id ON DELETE CASCADE, which the trigger admits
+    -- (the parent is gone). Counted first, because that removal is invisible to
+    -- GET DIAGNOSTICS.
+    SELECT count(*) INTO v_count
+      FROM public.score_run_event_ledger l
+      JOIN public.score_runs r ON r.id = l.score_run_id
+     WHERE r.test_session_id = ANY (v_exam_sessions);
+    v_result := v_result || jsonb_build_object('score_run_event_ledger', v_count);
+
+    SELECT count(*) INTO v_count FROM public.score_runs WHERE test_session_id = ANY (v_exam_sessions);
+    v_result := v_result || jsonb_build_object('score_runs', v_count);
+
+    -- L2-14. test_sessions (takes its score_runs and their ledger rows with it)
+    DELETE FROM public.test_sessions WHERE id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_sessions', v_count);
+
+    -- L2-15. exam_runtime_outbox — identity-free queue state, deleted in
+    -- hard_delete like legal_acceptance_outbox (L1-13). After the sessions:
+    -- score_runs and the ledger reference it (NO ACTION) and are gone now.
+    DELETE FROM public.exam_runtime_outbox WHERE aggregate_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('exam_runtime_outbox', v_count);
+
   ELSIF p_privacy_mode = 'anonymize' THEN
     -- ====================================================================
     -- FAIL-CLOSED SENTINEL (INV-05E-07): before severing identity, verify
@@ -6271,7 +6337,9 @@ BEGIN
         ('review_session_items',             'student_id'),
         ('review_error_attempts',            'student_id'),
         ('mastery_event_audit_log',          'student_id'),
-        ('mastery_domain_refresh_audit_log', 'student_id')
+        ('mastery_domain_refresh_audit_log', 'student_id'),
+        ('test_sessions',                    'student_id'),   -- E6b (SCL-143)
+        ('score_runs',                       'student_id')    -- E6b (SCL-143)
       LOOP
         EXECUTE format(
           'SELECT count(*) FROM public.%I WHERE %I = $1 AND actor_id IS NULL',
@@ -6355,6 +6423,25 @@ BEGIN
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
     -- ====================================================================
+    -- LAYER 2 (anonymize): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- RETAINED under actor_id. The identity link is severed by
+    -- test_sessions.student_id and score_runs.student_id ON DELETE SET NULL when
+    -- the profile row goes below — the same mechanism as practice and review.
+    -- score_runs is insert-once; its trigger admits exactly that FK action (the
+    -- student_id -> NULL change with every other column equal, the profile gone).
+    -- Nothing else to remove: test_sessions has no client/device fingerprint
+    -- (Doc 04A omits client_instance_id); the four children and the ledger carry
+    -- no identity; the outbox carries none either and score_runs references it,
+    -- so it stays. Counted HERE, before the profile delete, because a severance
+    -- done by an FK action is invisible to GET DIAGNOSTICS.
+    SELECT count(*) INTO v_count FROM public.test_sessions WHERE student_id = p_profile_id;
+    v_result := v_result || jsonb_build_object('test_sessions', v_count);
+
+    SELECT count(*) INTO v_count FROM public.score_runs WHERE student_id = p_profile_id;
+    v_result := v_result || jsonb_build_object('score_runs', v_count);
+
+    -- ====================================================================
     -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
     -- (build-derived ledger; no spec anchor — SCL-088. The earlier citation of section 3.1 ("Industry precedent")
     -- was wrong.)
@@ -6380,6 +6467,8 @@ BEGIN
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
+  -- test_sessions.student_id and score_runs.student_id SET NULL fire here in
+  -- anonymize mode (E6b); in hard_delete no exam row is left for them to reach.
   -- Operator-FK edges (36 config/history) are ON DELETE SET NULL — Postgres severs
   -- the attribution as the profile row goes; no enumeration here.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
@@ -7247,10 +7336,29 @@ CREATE FUNCTION public.prevent_score_runs_mutation() RETURNS trigger
     SET search_path TO 'public', 'pg_temp'
     AS $$
 BEGIN
+  -- D6 (E4), narrowed by E6b: a DELETE passes only as the FK cascade of a
+  -- session deletion, or of a profile deletion for a row that still names a
+  -- student. OLD.student_id IS NOT NULL closes the hole the nullable column
+  -- opened: `id = NULL` matches no profile, so without it every anonymised
+  -- score row would read as "profile gone" and be deletable.
   IF TG_OP = 'DELETE'
      AND (NOT EXISTS (SELECT 1 FROM test_sessions WHERE id = OLD.test_session_id)
-          OR NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id)) THEN
-    RETURN OLD;  -- D6: the FK cascade of an account / session deletion
+          OR (OLD.student_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id))) THEN
+    RETURN OLD;
+  END IF;
+  -- E6b: the ONE admitted UPDATE is score_runs.student_id ON DELETE SET NULL
+  -- firing as the student's profile is deleted: student_id goes from a value to
+  -- NULL, no other column changes, and the referenced profile no longer exists.
+  -- No caller can build that state while the profile exists, and once it is gone
+  -- the FK action has already nulled the column — so no role, setting or
+  -- statement other than the FK action itself reaches this branch.
+  IF TG_OP = 'UPDATE'
+     AND OLD.student_id IS NOT NULL
+     AND NEW.student_id IS NULL
+     AND (to_jsonb(NEW) - 'student_id') = (to_jsonb(OLD) - 'student_id')
+     AND NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id) THEN
+    RETURN NEW;
   END IF;
   RAISE EXCEPTION 'score_runs is insert-once. UPDATE and DELETE are forbidden. Use score_runs_admin_recompute for post-launch calibration audit.';
 END;
@@ -8861,6 +8969,7 @@ DECLARE
   v_test_session_id uuid;
   v_test_form_id    uuid;
   v_student_id      uuid;
+  v_actor_id        uuid;   -- E6b: the session's grouping id, copied onto the run
   v_score_table_ver text;
   v_existing_run_id uuid;
   v_score_run_id    uuid;
@@ -8902,8 +9011,8 @@ BEGIN
   END IF;
 
   -- Read session metadata (D10: a missing session raises, §21.1)
-  SELECT student_id, test_form_id
-  INTO v_student_id, v_test_form_id
+  SELECT student_id, actor_id, test_form_id
+  INTO v_student_id, v_actor_id, v_test_form_id
   FROM test_sessions
   WHERE id = v_test_session_id;
 
@@ -9013,7 +9122,7 @@ BEGIN
 
   -- INSERT score_runs ROW (with ALL intermediate values)
   INSERT INTO score_runs (
-    test_session_id, student_id, test_form_id, scoring_model_version,
+    test_session_id, student_id, actor_id, test_form_id, scoring_model_version,
     source_outbox_event_id, source_event_type,
     rw_scored, rw_module1_correct, rw_module2_correct, rw_module2_path,
     rw_m2_easy_wrong, rw_m2_medium_wrong, rw_m2_hard_wrong,
@@ -9025,7 +9134,7 @@ BEGIN
     math_s_raw, math_scaled,
     total_scaled, partial_display_scaled, constants_snapshot
   ) VALUES (
-    v_test_session_id, v_student_id, v_test_form_id, v_score_table_ver,
+    v_test_session_id, v_student_id, v_actor_id, v_test_form_id, v_score_table_ver,
     p_outbox_event_id, v_event_type,
     v_rw_present,
     CASE WHEN v_rw_present THEN v_rw_row.module1_correct END,
@@ -11870,7 +11979,7 @@ CREATE TABLE public.score_run_event_ledger (
 CREATE TABLE public.score_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     test_session_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     test_form_id uuid NOT NULL,
     scoring_model_version text NOT NULL,
     source_outbox_event_id uuid NOT NULL,
@@ -11907,6 +12016,7 @@ CREATE TABLE public.score_runs (
     partial_display_scaled integer,
     constants_snapshot jsonb NOT NULL,
     computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT score_runs_check CHECK ((rw_scored OR math_scored)),
     CONSTRAINT score_runs_check1 CHECK (((rw_scored AND (rw_scaled IS NOT NULL) AND (rw_module1_correct IS NOT NULL)) OR ((NOT rw_scored) AND (rw_scaled IS NULL) AND (rw_module1_correct IS NULL)))),
     CONSTRAINT score_runs_check2 CHECK (((math_scored AND (math_scaled IS NOT NULL) AND (math_module1_correct IS NOT NULL)) OR ((NOT math_scored) AND (math_scaled IS NULL) AND (math_module1_correct IS NULL)))),
@@ -11919,6 +12029,13 @@ CREATE TABLE public.score_runs (
     CONSTRAINT score_runs_source_event_type_check CHECK ((source_event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text]))),
     CONSTRAINT score_runs_total_scaled_check CHECK (((total_scaled IS NULL) OR (((total_scaled >= 400) AND (total_scaled <= 1600)) AND ((total_scaled % 10) = 0))))
 );
+
+
+--
+-- Name: COLUMN score_runs.actor_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.score_runs.actor_id IS 'Doc 05E: copied from test_sessions.actor_id by score_test_session_from_outbox. Survives anonymisation; student_id does not.';
 
 
 --
@@ -12431,7 +12548,7 @@ CREATE TABLE public.test_session_sections (
 
 CREATE TABLE public.test_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     test_form_id uuid NOT NULL,
     state text NOT NULL,
     mode text NOT NULL,
@@ -12443,6 +12560,7 @@ CREATE TABLE public.test_sessions (
     attempt_number_for_form integer NOT NULL,
     is_first_seen_form_attempt boolean NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT abandoned_has_abandon_time CHECK ((((state = ANY (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])) AND (abandoned_at IS NOT NULL)) OR (state <> ALL (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])))),
     CONSTRAINT active_has_active_section CHECK ((((state = 'active'::text) AND (active_section IS NOT NULL)) OR (state <> 'active'::text))),
     CONSTRAINT break_has_no_active_section CHECK ((((state = 'section_break'::text) AND (active_section IS NULL)) OR (state <> 'section_break'::text))),
@@ -12452,6 +12570,13 @@ CREATE TABLE public.test_sessions (
     CONSTRAINT test_sessions_mode_check CHECK ((mode = ANY (ARRAY['strict'::text, 'lenient'::text]))),
     CONSTRAINT test_sessions_state_check CHECK ((state = ANY (ARRAY['created'::text, 'active'::text, 'section_break'::text, 'completed'::text, 'abandoned_final'::text, 'partial_scored_abandoned'::text])))
 );
+
+
+--
+-- Name: COLUMN test_sessions.actor_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.test_sessions.actor_id IS 'Doc 05E: the student''s synthetic grouping id (profiles.actor_id), stamped by exam_create_session. Survives anonymisation; student_id does not.';
 
 
 --
@@ -15993,7 +16118,7 @@ ALTER TABLE ONLY public.score_runs
 --
 
 ALTER TABLE ONLY public.score_runs
-    ADD CONSTRAINT score_runs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+    ADD CONSTRAINT score_runs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -16105,7 +16230,7 @@ ALTER TABLE ONLY public.test_session_sections
 --
 
 ALTER TABLE ONLY public.test_sessions
-    ADD CONSTRAINT test_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+    ADD CONSTRAINT test_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -21445,6 +21570,13 @@ GRANT SELECT(student_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
 --
 
 GRANT SELECT(test_form_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.actor_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(actor_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
 
 
 --

@@ -495,10 +495,10 @@ ROLLBACK;
 BEGIN;
 SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e510') AS run \gset
 SELECT pg_temp.e4_expect('IO3 second-insert-blocked-by-unique',
-  format($q$INSERT INTO public.score_runs (test_session_id, student_id, test_form_id, scoring_model_version,
+  format($q$INSERT INTO public.score_runs (test_session_id, student_id, actor_id, test_form_id, scoring_model_version,
        source_outbox_event_id, source_event_type, rw_scored, rw_module1_correct, rw_scaled, math_scored,
        partial_display_scaled, constants_snapshot)
-     SELECT test_session_id, student_id, test_form_id, scoring_model_version, source_outbox_event_id,
+     SELECT test_session_id, student_id, actor_id, test_form_id, scoring_model_version, source_outbox_event_id,
        source_event_type, true, 0, 200, false, 200, '{}'::jsonb FROM public.score_runs WHERE id = %L$q$, :'run'),
   '23505', '%', 'score_runs_test_session_id_key');
 ROLLBACK;
@@ -551,9 +551,11 @@ RESET ROLE;
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
--- DEL1 — account deletion (SCL-124 / SCL-129): deleting the student's profile
--- cascades through test_sessions to score_runs and the ledger; the insert-once
--- trigger lets exactly that cascade through.
+-- DEL1 — account deletion (E6b / SCL-143, superseding the CASCADE of SCL-129):
+-- deleting the student's profile SEVERS the score run (student_id ON DELETE SET
+-- NULL) — the one UPDATE the insert-once trigger admits — and keeps every other
+-- column, actor_id and the ledger row. Removal is the cascade's hard_delete job
+-- (scripts/ci/exam-deletion-cascade-gates.sql).
 -- ---------------------------------------------------------------------------
 BEGIN;
 SELECT pg_temp.e4_session('00000000-0000-0000-0000-00000000e512', '00000000-0000-0000-0000-0000000e4a02') AS ev \gset
@@ -561,15 +563,19 @@ SET ROLE service_role;
 SELECT public.score_test_session_from_outbox(:'ev') AS run \gset
 SELECT set_config('seg.run', :'run', true) \g /dev/null
 RESET ROLE;
+CREATE TEMP TABLE _del1_before ON COMMIT DROP AS
+  SELECT to_jsonb(r) - 'student_id' AS row FROM public.score_runs r WHERE id = current_setting('seg.run')::uuid;
 DELETE FROM public.profiles WHERE id = '00000000-0000-0000-0000-0000000e4a02';
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.score_runs WHERE id = current_setting('seg.run')::uuid)
-     OR EXISTS (SELECT 1 FROM public.score_run_event_ledger WHERE score_run_id = current_setting('seg.run')::uuid)
-     OR EXISTS (SELECT 1 FROM public.test_sessions WHERE id = '00000000-0000-0000-0000-00000000e512') THEN
-    RAISE EXCEPTION 'SEG FAIL [DEL1 account-deletion-cascade]: rows survived the profile delete';
+  IF NOT EXISTS (SELECT 1 FROM public.score_runs r, _del1_before b
+                  WHERE r.id = current_setting('seg.run')::uuid AND r.student_id IS NULL
+                    AND r.actor_id IS NOT NULL AND to_jsonb(r) - 'student_id' = b.row)
+     OR NOT EXISTS (SELECT 1 FROM public.score_run_event_ledger WHERE score_run_id = current_setting('seg.run')::uuid)
+     OR NOT EXISTS (SELECT 1 FROM public.test_sessions WHERE id = '00000000-0000-0000-0000-00000000e512' AND student_id IS NULL) THEN
+    RAISE EXCEPTION 'SEG FAIL [DEL1 account-deletion-severs]: score run not retained unchanged with student_id NULL';
   END IF;
-  RAISE NOTICE 'ok   [DEL1 account-deletion-cascade] profile delete removed session, score_run and ledger row';
+  RAISE NOTICE 'ok   [DEL1 account-deletion-severs] profile delete severed session + score run (student_id NULL, every other column equal, actor_id kept); ledger row retained';
 END $$;
 ROLLBACK;
 

@@ -581,6 +581,24 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-runtime-api-gates.sh
 
+      # Doc 05E §5.1/§6 + Doc 05D §10 (E6b, SCL-143) — the exam tables in the
+      # account-deletion cascade: whole exams walked through the runtime functions and
+      # scored, then both modes. anonymize retains sessions, children, scores, ledger and
+      # outbox with student_id NULL and actor_id intact; hard_delete removes and counts
+      # every table; the INV-05E-07 sentinel refuses an ungrouped exam row; a pending or
+      # in-progress exam of an anonymised student still scores (student_id NULL); a
+      # re-run is a no-op; the insert-once trigger still refuses every caller mutation.
+      # @spec [Doc-05E §1, §5.1, §6; Doc-05D §10.5; Doc-04B_V4.3 §9.4; SCL-143] | @implemented [2026-09-24]
+      - name: Exam deletion cascade gates (both modes, E6b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-deletion-cascade-gates.sh
+
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
   # questions into ephemeral Postgres, exercises select_practice_pool_random,
@@ -1328,6 +1346,23 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
             --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
+      # student through the real /api/tests handlers to a score, then the executor's
+      # anonymize call and the hard_delete cascade; row counts before/after and the
+      # result JSON are printed. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam deletion cascade lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-deletion.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-deletion.json \
+            --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that
