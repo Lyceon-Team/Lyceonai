@@ -1,0 +1,3 @@
+Introducing Lyceon: SAT prep that refuses to guess. The answer isn't hidden before you submit — it's absent, at all six places the server could have sent it.
+
+Deterministic. Server-authoritative. Anti-leak by design.

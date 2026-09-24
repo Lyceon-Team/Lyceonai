@@ -1,0 +1,41 @@
+{
+  "version": 3,
+  "skills": {
+    "brag": {
+      "source": "latent-spaces/brag",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/latent-spaces/brag.git",
+      "skillPath": "skills/brag/SKILL.md",
+      "skillFolderHash": "555a5266056e68f0660c34852d691c0f3a37590e",
+      "installedAt": "2026-09-17T08:53:14.172Z",
+      "updatedAt": "2026-09-17T08:53:14.172Z"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/vercel-labs/skills.git",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "skillFolderHash": "76a98a285cb0434f3d39e1a873823556330e398b",
+      "installedAt": "2026-09-17T08:53:21.854Z",
+      "updatedAt": "2026-09-17T08:53:21.854Z"
+    }
+  },
+  "dismissed": {
+    "findSkillsPrompt": true
+  },
+  "lastSelectedAgents": [
+    "amp",
+    "antigravity",
+    "antigravity-cli",
+    "cline",
+    "codex",
+    "cursor",
+    "deepagents",
+    "gemini-cli",
+    "github-copilot",
+    "kimi-code-cli",
+    "opencode",
+    "warp",
+    "zed"
+  ]
+}
