@@ -62,6 +62,11 @@ RETURNS uuid LANGUAGE sql AS $f$
     '{"path":"B","r1":24,"ne":1,"nm":2,"nh":2}', '{"path":"B","r1":20,"ne":1,"nm":1,"nh":2}');
 $f$;
 
+-- ...and scored (as the calling role; the orchestrator is SECURITY DEFINER).
+CREATE FUNCTION pg_temp.e4_scored(p_session uuid) RETURNS uuid LANGUAGE sql AS $f$
+  SELECT public.score_test_session_from_outbox(pg_temp.e4_session(p_session));
+$f$;
+
 -- A draft copy of the fixture form bound to another scoring version.
 CREATE FUNCTION pg_temp.e4_clone_form(p_form uuid, p_version text) RETURNS void LANGUAGE sql AS $f$
   INSERT INTO public.test_forms (id, name, test_kind, status, score_table_version,
@@ -210,10 +215,18 @@ SELECT pg_temp.e4_expect('K1 constant-not-nan',
   $q$INSERT INTO public.scoring_constants (scoring_model_version, key, value, description)
      VALUES ('zz_k', 'alpha_ceiling_exponent', 'NaN', 'plant')$q$,
   '23514', '%', 'scoring_constants_value_finite');
+ROLLBACK;
+BEGIN;
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_k', 'f', 'd', 'candidate');
 SELECT pg_temp.e4_expect('K2 constant-not-infinity',
   $q$INSERT INTO public.scoring_constants (scoring_model_version, key, value, description)
      VALUES ('zz_k', 'ceiling_max', 'Infinity', 'plant')$q$,
   '23514', '%', 'scoring_constants_value_finite');
+ROLLBACK;
+BEGIN;
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_k', 'f', 'd', 'candidate');
 SELECT pg_temp.e4_expect('K3 constant-key-charset',
   $q$INSERT INTO public.scoring_constants (scoring_model_version, key, value, description)
      VALUES ('zz_k', E'ceiling_max|x\n', 800, 'plant')$q$,
@@ -302,6 +315,10 @@ BEGIN
   END IF;
   RAISE NOTICE 'ok   [ID1 replay-idempotent] 3 calls -> one run %, 1 score_runs row, 1 ledger row, no error', current_setting('seg.run1');
 END $$;
+ROLLBACK;
+
+BEGIN;
+SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e503') AS run \gset
 INSERT INTO public.exam_runtime_outbox (id, event_type, aggregate_id, payload)
 VALUES ('00000000-0000-0000-0000-00000000e5e3', 'test_session_completed', '00000000-0000-0000-0000-00000000e503', '{}');
 SELECT pg_temp.e4_expect('ID2 second-event-same-session',
@@ -435,6 +452,9 @@ SELECT pg_temp.e4_expect('NS1 no-scoreable-section',
   format('SELECT public.score_test_session_from_outbox(%L)', :'ev'),
   'P0001', 'No scoreable sections found for session 00000000-0000-0000-0000-00000000e509');
 RESET ROLE;
+ROLLBACK;
+
+BEGIN;
 INSERT INTO public.exam_runtime_outbox (id, event_type, aggregate_id, payload)
 VALUES ('00000000-0000-0000-0000-00000000e5f0', 'test_session_completed', '00000000-0000-0000-0000-00000000dead', '{}');
 SET ROLE service_role;
@@ -445,23 +465,35 @@ RESET ROLE;
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
--- IO1..IO5 — insert-once, one layer per check (see header).
+-- IO1..IO5 — insert-once, one layer per check (see header). Each check runs
+-- in its own transaction on its own scored session, so a failure of one layer
+-- turns only that check red.
 -- ---------------------------------------------------------------------------
 BEGIN;
-SELECT pg_temp.e4_session('00000000-0000-0000-0000-00000000e510') AS ev \gset
+SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e510') AS run \gset
 SET ROLE service_role;
-SELECT public.score_test_session_from_outbox(:'ev') AS run \gset
-SELECT set_config('seg.run', :'run', true) \g /dev/null
 SELECT pg_temp.e4_expect('IO1 update-blocked-by-privilege',
   format('UPDATE public.score_runs SET rw_scaled = 800 WHERE id = %L', :'run'),
   '42501', 'permission denied for table score_runs');
 RESET ROLE;
+ROLLBACK;
+
+BEGIN;
+SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e510') AS run \gset
 SELECT pg_temp.e4_expect('IO2 delete-blocked-by-trigger',
   format('DELETE FROM public.score_runs WHERE id = %L', :'run'),
   'P0001', 'score_runs is insert-once. UPDATE and DELETE are forbidden.%');
+ROLLBACK;
+
+BEGIN;
+SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e510') AS run \gset
 SELECT pg_temp.e4_expect('IO5 update-blocked-by-trigger',
   format('UPDATE public.score_runs SET rw_scaled = 800 WHERE id = %L', :'run'),
   'P0001', 'score_runs is insert-once. UPDATE and DELETE are forbidden.%');
+ROLLBACK;
+
+BEGIN;
+SELECT pg_temp.e4_scored('00000000-0000-0000-0000-00000000e510') AS run \gset
 SELECT pg_temp.e4_expect('IO3 second-insert-blocked-by-unique',
   format($q$INSERT INTO public.score_runs (test_session_id, student_id, test_form_id, scoring_model_version,
        source_outbox_event_id, source_event_type, rw_scored, rw_module1_correct, rw_scaled, math_scored,
@@ -489,7 +521,7 @@ SET ROLE zz_seg_rls_probe;
 DO $$
 DECLARE v_u int; v_d int;
 BEGIN
-  UPDATE public.score_runs SET rw_scaled = 800;
+  UPDATE public.score_runs SET computed_at = now() - interval '1 day';  -- CHECK-neutral, reads no column (so only the UPDATE policy applies)
   GET DIAGNOSTICS v_u = ROW_COUNT;
   DELETE FROM public.score_runs;
   GET DIAGNOSTICS v_d = ROW_COUNT;
@@ -501,7 +533,7 @@ DECLARE v record;
 BEGIN
   SELECT * INTO v FROM _io4;
   IF v.upd <> 0 OR v.del <> 0
-     OR (SELECT rw_scaled FROM public.score_runs WHERE id = current_setting('seg.run')::uuid) <> 710 THEN
+     OR (SELECT computed_at > now() - interval '1 hour' FROM public.score_runs WHERE id = current_setting('seg.run')::uuid) IS NOT TRUE THEN
     RAISE EXCEPTION 'SEG FAIL [IO4 update-delete-blocked-by-rls]: privileged role updated % / deleted % row(s)', v.upd, v.del;
   END IF;
   RAISE NOTICE 'ok   [IO4 update-delete-blocked-by-rls] UPDATE 0 rows, DELETE 0 rows (score_runs_no_update / _no_delete USING false)';
