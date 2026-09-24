@@ -57,6 +57,43 @@ describe("CSRF runtime contract - app routes", () => {
     expect(res.body).toHaveProperty("error.code", "csrf_blocked");
   });
 
+  // W2-9 (closure plan, 2026-09-24): the admin crisis-review router has two
+  // state-changing POSTs (claim, disposition) and was mounted without
+  // doubleCsrfProtection. The CSRF layer now rejects a cross-origin POST
+  // before auth runs; before the fix the same request reached auth (401).
+  it("blocks a disallowed origin on the admin crisis-review disposition POST", async () => {
+    const agent = request.agent(app);
+    const token = await getCsrfToken(agent);
+
+    const res = await agent
+      .post(
+        "/api/admin/crisis-review/cases/00000000-0000-4000-8000-000000000000/disposition",
+      )
+      .set("x-csrf-token", token)
+      .set("Origin", "https://evil.example")
+      .send({ disposition: "false_positive", notes: null });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toHaveProperty("error.code", "csrf_blocked");
+  });
+
+  it("rejects the admin crisis-review claim POST without a CSRF token", async () => {
+    const res = await request(app)
+      .post(
+        "/api/admin/crisis-review/cases/00000000-0000-4000-8000-000000000000/claim",
+      )
+      .set("Origin", "http://localhost:5000");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("still lets the admin crisis-review GET through CSRF to auth", async () => {
+    const res = await request(app).get("/api/admin/crisis-review/cases");
+
+    // GET is ignored by the CSRF layer; auth then refuses the anonymous caller.
+    expect(res.status).toBe(401);
+  });
+
   it("keeps Stripe webhook CSRF-exempt and signature-protected", async () => {
     const res = await request(app)
       .post("/api/billing/webhook")

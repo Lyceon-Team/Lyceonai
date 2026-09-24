@@ -498,10 +498,18 @@ app.get(
 );
 // Admin crisis review surface — SEPARATE from /api/tutor/* per SCL-025.
 // §3.1 stands unchanged (student-only on /api/tutor/*). This is a different
-// authorization axis per SCL-025: read-only, scoped to crisis_flagged conversations,
-// every read audit-logged.
-// @spec [Doc-03_V3 §21.3, SCL-025]
-app.use("/api/admin/crisis-review", adminCrisisReviewRouter);
+// authorization axis per SCL-025: scoped to crisis_flagged conversations, every
+// read audit-logged. NOT read-only: POST /cases/:id/claim and
+// POST /cases/:id/disposition change case state, so the router is mounted with
+// doubleCsrfProtection like every other browser-facing mutating router (see the
+// CSRF note at the top of this file). GETs are ignored by the middleware. The
+// admin pages already send the token (apiRequest → csrfFetch).
+// @spec [Doc-03_V3 §21.3, SCL-025; closure plan W2-9] | @implemented [2026-09-24]
+app.use(
+  "/api/admin/crisis-review",
+  doubleCsrfProtection,
+  adminCrisisReviewRouter,
+);
 
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
