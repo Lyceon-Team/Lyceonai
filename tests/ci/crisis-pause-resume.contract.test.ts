@@ -12,6 +12,9 @@
  *   POST /resume      → 200, crisis_paused_at = null, crisis_flagged stays true
  *   POST /resume again→ 409 conversation_not_paused
  *   degraded Layer 2  → flagged for review, NOT paused, normal reply
+ *   pause write fails → crisis resources still delivered, response says
+ *                       crisis_paused: false / crisis_paused_at: null, and
+ *                       an ERROR log — never a pause the row does not hold
  *
  * The last case is why the pause is not written inside
  * `flag_conversation_for_crisis_review`: that RPC also serves the degraded
@@ -94,6 +97,7 @@ vi.mock("../../server/services/cloud-tasks-enqueue", () => ({
 }));
 
 import tutorRuntimeRouter from "../../server/routes/tutor-runtime";
+import { logger } from "../../server/logger";
 
 const STUDENT_ID = "55555555-5555-4555-8555-555555555555";
 const CASE_ID = "66666666-6666-4666-8666-666666666666";
@@ -112,7 +116,7 @@ function makeApp(): express.Express {
   return app;
 }
 
-function seedConversation(): string {
+function seedConversation(title = "New session"): string {
   const row = db.current.seed("tutor_conversations", {
     student_id: STUDENT_ID,
     entry_mode: "general",
@@ -127,7 +131,7 @@ function seedConversation(): string {
     deleted_at: null,
     updated_at: "2026-09-24T00:00:00.000Z",
     closed_at: null,
-    title: "New session",
+    title,
     crisis_paused_at: null,
     ended_at: null,
   });
@@ -143,6 +147,7 @@ beforeEach(() => {
   orchestrateTurn.mockReset();
   runCrisisClassifier.mockReset();
   flagConversationForReview.mockReset();
+  vi.mocked(logger.error).mockClear();
   // What the RPC does to tutor_conversations: set crisis_flagged. Nothing else.
   flagConversationForReview.mockImplementation(
     async (conversationId: string) => {
@@ -255,5 +260,84 @@ describe("crisis turn pauses; /resume unpauses", () => {
     const row = conversationRow(convId);
     expect(row?.crisis_flagged).toBe(true);
     expect(row?.crisis_paused_at).toBeNull();
+  });
+  it("a failed pause write is reported as NOT paused, logged at ERROR, and the crisis resources still go out", async () => {
+    const app = makeApp();
+    // A non-default title, so the route's first tutor_conversations UPDATE is
+    // the pause write, not the first-message title write.
+    const convId = seedConversation("already titled");
+    runCrisisClassifier.mockResolvedValue({
+      crisis: true,
+      source: "layer1_signature",
+      category: "crisis",
+      signatureId: null,
+      modelConfidence: null,
+      forceReview: true,
+    });
+    db.current.failNext("tutor_conversations", "update", {
+      message: "simulated write failure",
+      code: "XX000",
+    });
+
+    const send = await request(app).post("/api/tutor/messages").send({
+      conversation_id: convId,
+      message: "a hard day",
+      client_turn_id: "99999999-9999-4999-8999-999999999999",
+    });
+
+    // The turn still succeeds and the student still gets the resources.
+    expect(send.status).toBe(200);
+    expect(send.body.data.response.content).toBe("crisis resources");
+    expect(send.body.data.response.crisis_category).toBe("crisis");
+    // ...but is told the truth about the pause.
+    expect(send.body.data.crisis_paused).toBe(false);
+    expect(send.body.data.crisis_paused_at).toBeNull();
+
+    const row = conversationRow(convId);
+    expect(row?.crisis_flagged).toBe(true);
+    expect(row?.crisis_paused_at).toBeNull();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "TUTOR_RUNTIME",
+      "crisis_pause_write_failed",
+      expect.any(String),
+      expect.objectContaining({
+        conversationId: convId,
+        caseId: CASE_ID,
+        code: "XX000",
+      }),
+    );
+
+    // Consistent with the response: nothing to resume.
+    const resume = await request(app)
+      .post(`/api/tutor/conversations/${convId}/resume`)
+      .send({});
+    expect(resume.status).toBe(409);
+    expect(resume.body.error.code).toBe("conversation_not_paused");
+  });
+
+  it("the success path does not log a pause failure", async () => {
+    const app = makeApp();
+    const convId = seedConversation("already titled");
+    runCrisisClassifier.mockResolvedValue({
+      crisis: true,
+      source: "layer1_signature",
+      category: "crisis",
+      signatureId: null,
+      modelConfidence: null,
+      forceReview: true,
+    });
+    const send = await request(app).post("/api/tutor/messages").send({
+      conversation_id: convId,
+      message: "a hard day",
+      client_turn_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    expect(send.body.data.crisis_paused).toBe(true);
+    expect(logger.error).not.toHaveBeenCalledWith(
+      "TUTOR_RUNTIME",
+      "crisis_pause_write_failed",
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

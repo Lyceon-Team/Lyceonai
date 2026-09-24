@@ -118,7 +118,9 @@ export type SendMessageResponse = {
     ui_hints: TutorUiHints;
   };
   crisis_paused?: boolean;
-  crisis_paused_at?: string;
+  // null on a crisis turn whose pause write failed: the server reports the
+  // pause it actually holds, not the one it attempted.
+  crisis_paused_at?: string | null;
   conversation_updated_at: string;
 };
 

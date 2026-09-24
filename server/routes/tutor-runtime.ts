@@ -1203,11 +1203,45 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
 
       // Set crisis_paused_at — conversation is now paused for tutoring.
       // The student must explicitly resume before sending more messages.
-      const crisisPausedAt = new Date().toISOString();
-      await supabaseServer
+      //
+      // @spec [CC Brief "LISA Session Lifecycle" §5.4; owner ruling 2026-09-24]
+      // | @implemented [2026-09-24] | plain English: the response reports
+      // the pause the database actually holds. This write's result was never
+      // checked, so a failed write still answered `crisis_paused: true` and
+      // the client rendered a pause the server did not have — /resume then
+      // 409s `conversation_not_paused`. The row is read back, because
+      // PostgREST reports no error when a filtered UPDATE matches zero rows.
+      // A failed pause does NOT fail the turn: the review case is already
+      // persisted and the student still receives the crisis resources below;
+      // what they lose is the pause, and they are told the truth about it.
+      // Logged at ERROR — a silent miss on a safety-path write is how this
+      // class of defect hides.
+      const { data: pausedRow, error: pauseError } = await supabaseServer
         .from("tutor_conversations")
-        .update({ crisis_paused_at: crisisPausedAt })
-        .eq("id", conversation.id);
+        .update({ crisis_paused_at: new Date().toISOString() })
+        .eq("id", conversation.id)
+        .select("crisis_paused_at")
+        .maybeSingle();
+      const crisisPausedAt: string | null =
+        !pauseError &&
+        pausedRow &&
+        typeof pausedRow.crisis_paused_at === "string"
+          ? pausedRow.crisis_paused_at
+          : null;
+      if (crisisPausedAt === null) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "crisis_pause_write_failed",
+          "crisis turn could not pause the conversation; responding unpaused",
+          {
+            conversationId: conversation.id,
+            caseId: flagResult.caseId,
+            message: pauseError?.message,
+            code: pauseError?.code,
+            rowReturned: pausedRow !== null,
+          },
+        );
+      }
 
       // ── PagerDuty-style notification policy ──
       // @spec [CC Brief "LISA Session Lifecycle" §1]
@@ -1400,7 +1434,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
               suggested_chip: null,
             },
           },
-          crisis_paused: true,
+          crisis_paused: crisisPausedAt !== null,
           crisis_paused_at: crisisPausedAt,
           conversation_updated_at: new Date().toISOString(),
         },
