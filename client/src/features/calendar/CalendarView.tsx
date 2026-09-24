@@ -84,6 +84,8 @@ import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
 import { CreateBlockSheet } from "./components/CreateBlockSheet";
+import { DayStrip } from "./components/DayStrip";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup } from "./components/SetupPopup";
 import {
@@ -207,6 +209,15 @@ export function CalendarView({
   /** The date whose "+ Add block" is open, or null. §17.2: opening writes nothing. */
   const [addOnDate, setAddOnDate] = useState<string | null>(null);
 
+  /**
+   * §17.7 phone layout. Below `useIsMobile`'s breakpoint the week is ONE day plus a strip,
+   * not seven columns behind a sideways swipe — see `DayStrip`'s note for the measurement.
+   * Month stays a grid at every width: a month IS a grid, and collapsing it would leave
+   * nothing to navigate with.
+   */
+  const isMobile = useIsMobile();
+  const [agendaDate, setAgendaDate] = useState<string | null>(null);
+
   const readOnly = mutations === undefined;
 
   // §17.7 forbids `useEffect` for derived state, so the range is derived inline and the
@@ -215,6 +226,18 @@ export function CalendarView({
     () => (view === "week" ? weekDates(cursor) : monthGridDates(cursor)),
     [view, cursor],
   );
+
+  /**
+   * The open day: whatever the student last tapped, as long as the week still holds it.
+   * Stepping the week resets to today when today is in view and to the first day
+   * otherwise, so the agenda never shows a date the strip above it cannot reach.
+   */
+  const agendaDay =
+    agendaDate !== null && dates.includes(agendaDate)
+      ? agendaDate
+      : dates.includes(today)
+        ? today
+        : (dates[0] ?? today);
 
   const move = useCallback(
     (nextView: "week" | "month", nextCursor: string) => {
@@ -470,7 +493,32 @@ export function CalendarView({
 
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div className="scroll">
-              {view === "week" ? (
+              {view === "week" && isMobile ? (
+                <>
+                  <DayStrip
+                    dates={dates}
+                    selected={agendaDay}
+                    today={today}
+                    hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+                    onSelect={setAgendaDate}
+                  />
+                  {/* The SAME WeekGrid, given one date. Every affordance a column carries —
+                      the droppable, the day menu, the block cards, "+ Add block" — comes
+                      with it, so the phone layout cannot drift from the desktop one. */}
+                  <WeekGrid
+                    dates={[agendaDay]}
+                    dayFor={dayFor}
+                    today={today}
+                    visible={visible}
+                    canDrag={canDrag}
+                    onOpen={setOpenBlockId}
+                    {...(dayActions === undefined ? {} : { dayActions })}
+                    {...(mutations === undefined
+                      ? {}
+                      : { onAddBlock: (date: string) => setAddOnDate(date) })}
+                  />
+                </>
+              ) : view === "week" ? (
                 <WeekGrid
                   dates={dates}
                   dayFor={dayFor}
