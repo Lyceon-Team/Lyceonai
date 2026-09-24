@@ -478,6 +478,15 @@ describe("scanWithModelArmor", () => {
 
 // ── Serializer ───────────────────────────────────────────────────────────
 
+describe("the block copy", () => {
+  it("is the owner-approved wording (2026-09-24), with no implied accusation", () => {
+    expect(MODEL_ARMOR_SUBSTITUTION).toBe(
+      "Let's keep this on your SAT prep. What would you like to work on next?",
+    );
+    expect(MODEL_ARMOR_SUBSTITUTION).not.toMatch(/can't help|cannot help/i);
+  });
+});
+
 describe("serializeTutorOutput acts on armorOutputBlocked", () => {
   const base = {
     conversationId: "conv-1",

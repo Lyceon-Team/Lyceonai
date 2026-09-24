@@ -86,9 +86,12 @@ export const MODEL_ARMOR_TIMEOUT_MS = 1500;
  * What the student sees in place of a reply when Model Armor blocks the
  * student's message or LISA's response. Neutral: not an error, not a safety
  * lecture, and it does not say what was matched (INV-03-13 silent handling).
+ * Owner-approved wording, 2026-09-24: no "I can't help with that", which
+ * implies the student did something wrong — the wrong message on a false
+ * positive.
  */
 export const MODEL_ARMOR_SUBSTITUTION =
-  "I can't help with that one. Let's get back to your SAT prep — what would you like to work on next?";
+  "Let's keep this on your SAT prep. What would you like to work on next?";
 
 const LOG_COMPONENT = "TUTOR_MODEL_ARMOR";
 

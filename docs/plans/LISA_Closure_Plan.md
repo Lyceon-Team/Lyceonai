@@ -178,7 +178,8 @@ commit;
 | **W3-2** | LISA invents and grades questions | In general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
 | **W3-3** | All students get US crisis resources | A student with a non-US country sees that country's resources. Depends on Stripe country collection | CC + Karl |
 | **W3-4** | Model Armor template IDs still ride the orchestrate wire and the worker's Cloud Run env, unused since W3-1 | The deployed worker's `orchestrateRequestSchema` no longer requires `model_armor_*_template_id`, **then** the BFF stops sending them; `MODEL_ARMOR_*` absent from the Cloud Run revision and from Vercel. Two steps, worker first — the running worker 400s every turn if the BFF drops them early | CC + Karl |
-| **W3-5** | A Model Armor input block answers a missed crisis with "I can't help with that one" | Decision first: an input block on `rai:dangerous` also flags the conversation for crisis review (or not). Found wiring W3-1; see *W3-1 detail* | Karl |
+| **W3-5** | A crisis the classifier misses, blocked by Model Armor's `dangerous` filter, reaches no human | **Ruled 2026-09-24:** an input block whose matched filters include `dangerous` opens a crisis review case and alerts; the student still sees the neutral block copy, not the crisis template (the filter is broad and not clinical — firing crisis resources on it would undercut the deterministic Layer 1/Layer 2 design). Proof: a `dangerous` input block in production → a new `crisis_review_cases` row and a Slack alert, and the reply is the block copy | CC |
+| **W3-6** | `google-auth-library` is a worker dependency that no worker source imports since W3-1 | Removed from `apps/workers/tutor-orchestrator/package.json` in a cleanup pass; worker builds and deploys. Low priority — ruled not worth its own PR now (2026-09-24) | CC |
 
 ### W3-1 detail — what shipped, and the proof still owed
 
@@ -194,20 +195,20 @@ The crisis path returns before either scan. Dead code deleted: the worker's
 `sanitizeOutput`, `_buildInputModelArmorConfig`, `armorOutputBlocked: false`,
 `getModelArmorConfig` in the BFF.
 
-**Spec status — Karl to rule:** `docs/Spec` never mentions Model Armor. Doc 03 §18.2
-Layer 4 and INV-03-12 ("failed scans block the response… scans are not optional") name
-the deterministic output scans in `serializeTutorOutput`. Those are unchanged, run on
-every reply, and still fail closed. Model Armor sits on top as an additional layer, and
-fails open by your ruling. The code cites the closure plan, not §18.2. Whether Model Armor
-and its fail-open posture should be written into Doc 03 through an SCL entry is your call.
-CC has not allocated an SCL number.
+**Spec status — SCL-142, PROPOSED (ruled 2026-09-24: write it).** `docs/Spec` never
+mentions Model Armor. Doc 03 §18.2 Layer 4 and INV-03-12 name the deterministic output
+scans in `serializeTutorOutput`, which are unchanged, run on every reply, and still fail
+closed. Model Armor sits on top and fails open. SCL-142 asks for Model Armor in §18.2,
+an INV-03-12 carve-out for the model-backed layer, and W3-5's case source in §21.3.
 
-**Student copy on a block (both points):** *"I can't help with that one. Let's get back
-to your SAT prep — what would you like to work on next?"*
+**Student copy on a block (both points), approved 2026-09-24:** *"Let's keep this on your
+SAT prep. What would you like to work on next?"* — no implied accusation on a false positive.
 
-**Karl, before the proof can pass:** grant `roles/modelarmor.user` to the service account
-in Vercel's `GCP_SERVICE_ACCOUNT_JSON`. Without it every scan is a 403 → ERROR
-`model_armor_scan_skipped reason=http_error http_status=403`, and turns proceed unscanned.
+**Karl, before the proof can pass:** grant `roles/modelarmor.user` to
+`lyceon-server-sa@replit-cop.iam.gserviceaccount.com`. Without it every scan is a 403 →
+ERROR `model_armor_scan_skipped reason=http_error http_status=403`, and turns proceed
+unscanned — the feature inert while appearing wired. Also delete `MODEL_ARMOR_*` from
+Vercel; nothing reads them.
 
 **Proof owed after deploy** (not yet run — the read-only credential was not in the
 session that built this; environment variables reach new sessions only):
