@@ -16,7 +16,9 @@
 -- Output contract (read by exam-runtime-api-gates.sh): one "ok   [ID] ..."
 --   NOTICE per passing check; any failure raises "E6G FAIL [ID] ...".
 -- ============================================================================
-\set ON_ERROR_STOP 1
+-- Each check is its own statement: one failing check does not stop the rest,
+-- so a red run names every check that broke (the runner fails on any missing ok).
+\set ON_ERROR_STOP 0
 SET client_min_messages = notice;
 
 -- Supabase resolves auth.uid() from the request JWT; do the same here.
