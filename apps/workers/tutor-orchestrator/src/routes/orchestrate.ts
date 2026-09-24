@@ -19,8 +19,9 @@
  * routes to the correct model alias (flash_class or pro_class per the 9-rule routing
  * table), builds a system instruction from the prompt artifact with state blocks
  * appended (SCL-041), builds conversation contents with same-role merging,
- * invokes Vertex with Model Armor input scanning, and returns the response with
- * Model Armor output scanning applied and prompt_version on the wire.
+ * invokes Vertex, and returns the response with prompt_version on the wire.
+ * Model Armor input and output scanning run in the BFF around this call
+ * (server/services/tutor-model-armor.ts, closure plan W3-1), not here.
  *
  * trade-offs:
  *  - Model routing rules are hardcoded in the 9-rule precedence table (Doc 03C V3
@@ -375,7 +376,6 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
     case "vertex_timeout":
       return 503;
     case "vertex_403_auth":
-    case "vertex_model_armor_unconfigured":
     case "vertex_unknown":
       return 500;
     default: {
@@ -442,10 +442,6 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
-    },
-    {
-      inputTemplateId: request.model_armor_input_template_id,
-      outputTemplateId: request.model_armor_output_template_id,
     },
   );
 

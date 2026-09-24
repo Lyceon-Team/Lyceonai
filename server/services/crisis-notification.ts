@@ -47,19 +47,16 @@ import {
   cloudTasksApiUrl,
   resolveCloudTasksAccess,
 } from "./cloud-tasks-enqueue";
+import type { CrisisSource } from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
 type CrisisNotificationPayload = {
   caseId: string;
   conversationId: string;
-  source:
-    | "signature"
-    | "model"
-    | "both"
-    | "classifier_degraded"
-    | "classifier_degraded_no_floor"
-    | "infrastructure_failure";
+  // The shared enum, not a hand-written copy: a copy here is how a new
+  // database source value reaches the alert with no label.
+  source: CrisisSource;
   slaDeadline: string;
   timestamp: string;
 };
@@ -83,6 +80,8 @@ const SOURCE_LABELS: Readonly<
   classifier_degraded_no_floor:
     "Classifier degraded, no crisis signatures — fail closed",
   infrastructure_failure: "Infrastructure failure — fail closed",
+  model_armor_dangerous:
+    "Model Armor blocked input (dangerous) — not a clinical signal; review",
 };
 
 // ── Slack Payload Builder ─────────────────────────────────────────────
@@ -96,9 +95,7 @@ const SOURCE_LABELS: Readonly<
  */
 function buildSlackPayload(payload: CrisisNotificationPayload): string {
   const siteUrl = (process.env.PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
-  const reviewUrl = siteUrl
-    ? `${siteUrl}/admin/crisis-review/${payload.caseId}`
-    : `(PUBLIC_SITE_URL not configured — case ID: ${payload.caseId})`;
+  const reviewUrl = `${siteUrl}/admin/crisis-review/${payload.caseId}`;
 
   const reason = SOURCE_LABELS[payload.source];
 
@@ -108,12 +105,19 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
 
   const linkLine = siteUrl
     ? `<${reviewUrl}|Review this case →>`
-    : `Case ID: \`${payload.caseId}\``;
+    : `(PUBLIC_SITE_URL not configured — no review link)`;
 
+  // @spec [SCL-025(c); closure plan W2-6] | @implemented [2026-09-24]
+  // The case id is printed in full, as the SLA breach alert already does: it
+  // is the key an operator looks up in the admin surface and the database.
+  // Before this it appeared only inside the review link's URL, while the
+  // visible id was the conversation's — the wrong row to look up. Both are
+  // opaque UUIDs (metadata, not PII); the conversation id stays for context.
   const slackBody = {
     text: [
       `🚨 *Crisis Review Case*`,
       ``,
+      `*Case:* \`${payload.caseId}\``,
       `*Reason:* ${reason}`,
       `*SLA Deadline:* ${slaFormatted}`,
       `*Conversation:* \`${payload.conversationId}\``,

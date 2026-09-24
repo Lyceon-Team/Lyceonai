@@ -12,7 +12,7 @@ steps:
           --region us-central1 \
           --service-account lyceon-tasks-sa@replit-cop.iam.gserviceaccount.com \
           --no-allow-unauthenticated \
-          --set-env-vars=NODE_ENV=production,TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE=require_bearer,VERTEX_MODEL_PRO_CLASS_ALIAS=gemini-3.5-flash,VERTEX_MODEL_FLASH_CLASS_ALIAS=gemini-3.5-flash,VERTEX_CLASSIFIER_CLASS_MODEL=gemini-3.1-flash-lite,VERTEX_LOCATION=global,GOOGLE_CLOUD_PROJECT=replit-cop,VERTEX_PROJECT_ID=replit-cop,MODEL_ARMOR_INPUT_TEMPLATE_ID=lyceon-lisa-input-v1,MODEL_ARMOR_OUTPUT_TEMPLATE_ID=lyceon-lisa-output-v1
+          --set-env-vars=NODE_ENV=production,TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE=require_bearer,VERTEX_MODEL_PRO_CLASS_ALIAS=gemini-3.5-flash,VERTEX_MODEL_FLASH_CLASS_ALIAS=gemini-3.5-flash,VERTEX_CLASSIFIER_CLASS_MODEL=gemini-3.1-flash-lite,VERTEX_LOCATION=global,GOOGLE_CLOUD_PROJECT=replit-cop,VERTEX_PROJECT_ID=replit-cop
 
 options:
   logging: CLOUD_LOGGING_ONLY
