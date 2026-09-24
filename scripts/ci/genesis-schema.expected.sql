@@ -4462,6 +4462,60 @@ $$;
 
 
 --
+-- Name: enforce_scoring_version_status_machine(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_scoring_version_status_machine() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Block illegal transitions
+  IF OLD.status = 'active' AND NEW.status = 'candidate' THEN
+    RAISE EXCEPTION 'Cannot downgrade scoring_model_versions from active to candidate';
+  END IF;
+  IF OLD.status = 'superseded' AND NEW.status <> 'superseded' THEN
+    RAISE EXCEPTION 'Cannot revive a superseded scoring_model_version';
+  END IF;
+
+  -- Stamp transition timestamps
+  IF OLD.status = 'candidate' AND NEW.status = 'active' THEN
+    NEW.published_at := COALESCE(NEW.published_at, now());
+  END IF;
+  IF OLD.status = 'active' AND NEW.status = 'superseded' THEN
+    NEW.superseded_at := COALESCE(NEW.superseded_at, now());
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_single_active_scoring_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_single_active_scoring_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.status = 'active' THEN
+    IF EXISTS (
+      SELECT 1 FROM scoring_model_versions
+      WHERE status = 'active' AND version <> NEW.version
+    ) THEN
+      RAISE EXCEPTION 'Only one scoring model version may be active at a time';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: entitlement_active(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5622,6 +5676,43 @@ BEGIN
   v_result := v_result || jsonb_build_object('account_deletion_requests_as_actor', v_count);
 
   RETURN jsonb_build_object('status', 'precleared', 'profile_id', p_profile_id, 'rows_affected', v_result);
+END;
+$$;
+
+
+--
+-- Name: prevent_active_scoring_constants_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_active_scoring_constants_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_status text;
+  v_target_version text;
+BEGIN
+  -- For INSERT we examine NEW (the row being inserted); for UPDATE and DELETE we
+  -- examine OLD (the row being changed). In all cases we check the parent version's
+  -- status: if the parent is active or superseded, the constants are sealed.
+  v_target_version := CASE TG_OP
+    WHEN 'INSERT' THEN NEW.scoring_model_version
+    ELSE OLD.scoring_model_version
+  END;
+
+  SELECT status INTO v_status
+  FROM scoring_model_versions
+  WHERE version = v_target_version;
+
+  IF v_status IN ('active', 'superseded') THEN
+    RAISE EXCEPTION
+      'scoring_constants rows for active/superseded scoring_model_version % are immutable. '
+      'Adding, modifying, or deleting constants requires a new scoring_model_version '
+      '(Doc 04B V4.3 §8.4 Tier 3 protocol).',
+      v_target_version
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END;
 $$;
 
@@ -7213,6 +7304,68 @@ CREATE FUNCTION public.round_to_step(p_value numeric, p_step integer) RETURNS in
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT (ROUND(p_value / p_step) * p_step)::integer;
+$$;
+
+
+--
+-- Name: scoring_constant(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constant(p_version text, p_key text, p_section text DEFAULT NULL::text) RETURNS numeric
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_value numeric;
+BEGIN
+  -- Try section-specific first, then fall back to global
+  SELECT value INTO v_value FROM scoring_constants
+  WHERE scoring_model_version = p_version
+    AND key = p_key
+    AND (
+      (p_section IS NOT NULL AND section = p_section)
+      OR (section IS NULL)
+    )
+  ORDER BY (section IS NULL)  -- false (section-specific) sorts before true (global)
+  LIMIT 1;
+
+  IF v_value IS NULL THEN
+    RAISE EXCEPTION 'scoring_constant lookup failed: version=%, key=%, section=%',
+      p_version, p_key, COALESCE(p_section, '<global>')
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN v_value;
+END;
+$$;
+
+
+--
+-- Name: scoring_constants_sha256(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_sha256(p_version text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_payload text;
+BEGIN
+  SELECT string_agg(
+           key || '|' || COALESCE(section, '') || '|' || trim_scale(value)::text,
+           E'\n'
+           ORDER BY key COLLATE "C", section COLLATE "C" NULLS FIRST)
+    INTO v_payload
+    FROM scoring_constants
+   WHERE scoring_model_version = p_version;
+
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'scoring_constants_sha256: no constants for version=%', p_version
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
+END;
 $$;
 
 
@@ -9744,6 +9897,43 @@ CREATE TABLE public.review_sessions (
 
 
 --
+-- Name: scoring_constants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_constants (
+    scoring_model_version text NOT NULL,
+    key text NOT NULL,
+    section text,
+    value numeric NOT NULL,
+    description text NOT NULL,
+    notes text,
+    CONSTRAINT scoring_constants_section_check CHECK (((section IS NULL) OR (section = ANY (ARRAY['rw'::text, 'math'::text])))),
+    CONSTRAINT scoring_constants_value_nonneg CHECK ((value >= (0)::numeric))
+);
+
+
+--
+-- Name: scoring_model_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_model_versions (
+    version text NOT NULL,
+    formula_name text NOT NULL,
+    formula_doc_ref text NOT NULL,
+    constants_sha256 text,
+    validation_packet_sha256 text,
+    validation_packet_url text,
+    status text NOT NULL,
+    published_at timestamp with time zone,
+    superseded_at timestamp with time zone,
+    notes text,
+    CONSTRAINT active_or_superseded_attestation_complete CHECK ((((status = ANY (ARRAY['active'::text, 'superseded'::text])) AND (published_at IS NOT NULL) AND (constants_sha256 IS NOT NULL) AND (validation_packet_sha256 IS NOT NULL) AND (validation_packet_url IS NOT NULL)) OR ((status = 'candidate'::text) AND (published_at IS NULL)))),
+    CONSTRAINT scoring_model_versions_status_check CHECK ((status = ANY (ARRAY['candidate'::text, 'active'::text, 'superseded'::text]))),
+    CONSTRAINT superseded_has_superseded_at CHECK ((((status = 'superseded'::text) AND (superseded_at IS NOT NULL)) OR ((status <> 'superseded'::text) AND (superseded_at IS NULL))))
+);
+
+
+--
 -- Name: sections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11157,6 +11347,14 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: scoring_model_versions scoring_model_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_model_versions
+    ADD CONSTRAINT scoring_model_versions_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: sections sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12141,6 +12339,13 @@ CREATE INDEX notification_messages_provider_idx ON public.notification_messages 
 
 
 --
+-- Name: one_active_scoring_model_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX one_active_scoring_model_version ON public.scoring_model_versions USING btree (status) WHERE (status = 'active'::text);
+
+
+--
 -- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12159,6 +12364,13 @@ COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner 
 --
 
 CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btree (student_link_code) WHERE (student_link_code IS NOT NULL);
+
+
+--
+-- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX scoring_constants_unique_idx ON public.scoring_constants USING btree (scoring_model_version, key, COALESCE(section, '__global__'::text));
 
 
 --
@@ -12479,10 +12691,31 @@ CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_
 
 
 --
+-- Name: scoring_constants trg_prevent_active_scoring_constants_mutation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_active_scoring_constants_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.scoring_constants FOR EACH ROW EXECUTE FUNCTION public.prevent_active_scoring_constants_mutation();
+
+
+--
 -- Name: review_session_items trg_review_item_resolve; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_review_item_resolve AFTER UPDATE ON public.review_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND (new.status = ANY (ARRAY['answered'::text, 'skipped'::text])))) EXECUTE FUNCTION public.review_item_resolve();
+
+
+--
+-- Name: scoring_model_versions trg_scoring_version_status_machine; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_scoring_version_status_machine BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_scoring_version_status_machine();
+
+
+--
+-- Name: scoring_model_versions trg_single_active_scoring_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_single_active_scoring_version BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_single_active_scoring_version();
 
 
 --
@@ -13245,6 +13478,14 @@ ALTER TABLE ONLY public.review_session_items
 
 ALTER TABLE ONLY public.review_sessions
     ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: scoring_constants scoring_constants_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_constants
+    ADD CONSTRAINT scoring_constants_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
 
 
 --
@@ -14123,6 +14364,18 @@ ALTER TABLE public.review_sessions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY review_sessions_select_self ON public.review_sessions FOR SELECT TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: scoring_constants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_constants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: scoring_model_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_model_versions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: sections; Type: ROW SECURITY; Schema: public; Owner: -
@@ -15240,6 +15493,20 @@ GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_ty
 
 
 --
+-- Name: FUNCTION enforce_scoring_version_status_machine(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_scoring_version_status_machine() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_single_active_scoring_version(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_single_active_scoring_version() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION entitlement_active(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15459,6 +15726,13 @@ GRANT ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) TO
 
 REVOKE ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION prevent_active_scoring_constants_mutation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.prevent_active_scoring_constants_mutation() FROM PUBLIC;
 
 
 --
@@ -15933,6 +16207,22 @@ GRANT ALL ON FUNCTION public.rewrite_anonymized_actors() TO service_role;
 
 REVOKE ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constant(p_version text, p_key text, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constants_sha256(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_sha256(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service_role;
 
 
 --
@@ -17079,6 +17369,20 @@ GRANT SELECT(queue_entry_id) ON TABLE public.review_session_items TO authenticat
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_sessions TO service_role;
 GRANT SELECT ON TABLE public.review_sessions TO authenticated;
+
+
+--
+-- Name: TABLE scoring_constants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_constants TO service_role;
+
+
+--
+-- Name: TABLE scoring_model_versions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_model_versions TO service_role;
 
 
 --
