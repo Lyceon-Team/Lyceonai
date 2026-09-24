@@ -32,6 +32,10 @@ export const crisisSourceSchema = z.enum([
   "classifier_degraded",
   "classifier_degraded_no_floor",
   "infrastructure_failure",
+  // W3-5 (owner ruling 2026-09-24): a Model Armor INPUT block whose matched
+  // filters include `dangerous`. Not a classifier signal — the case exists so
+  // a human reviews what the classifier may have missed.
+  "model_armor_dangerous",
 ]);
 export type CrisisSource = z.infer<typeof crisisSourceSchema>;
 

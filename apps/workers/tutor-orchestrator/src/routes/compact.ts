@@ -8,8 +8,9 @@
  *
  * expected outcome: POST /compact accepts a validated CompactRequest, invokes
  * Vertex flash_class (per Doc 03A V3 §14.5 model choice) to produce a compact
- * summary of the conversation, runs it through Model Armor output scanning, and
- * returns { ok, summary }.
+ * summary of the conversation, and returns { ok, summary }. The summary is not
+ * Model Armor-scanned: it is memory context for later turns, never shown to the
+ * student, and every student-facing reply is scanned by the BFF (W3-1).
  *
  * trade-offs:
  *  - Doc 03C V3 §8.3's full algorithm is: (1) load tutor_messages from Supabase,
@@ -114,7 +115,6 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
     case "vertex_timeout":
       return 503;
     case "vertex_403_auth":
-    case "vertex_model_armor_unconfigured":
     case "vertex_unknown":
       return 500;
     default: {
