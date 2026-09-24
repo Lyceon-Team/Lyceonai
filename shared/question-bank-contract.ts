@@ -750,6 +750,37 @@ export function resolveSelectedCanonicalKey(
   return mappedKeyFromToken ?? normalizeAnswerKey(selected ?? null);
 }
 
+const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
+const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
+
+// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
+// Moved verbatim from server/routes/practice-canonical.ts on 2026-09-24 (E6): practice,
+// review and the full-length exam serialize pre-submit assets through this one filter.
+// Fail-closed: only v:1 structured payloads with a valid items array are
+// understood. Unknown versions, missing structure, legacy flat formats, or
+// any unrecognized shape → null (exclude). Items with missing/unknown role
+// or kind are dropped individually; if nothing survives, return null.
+export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
+  if (assets == null) return null;
+  if (typeof assets !== "object") return null;
+
+  const obj = assets as Record<string, unknown>;
+  if (obj.v !== 1 || !Array.isArray(obj.items)) {
+    return null;
+  }
+
+  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
+    (item) =>
+      typeof item.role === "string" &&
+      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
+      typeof item.kind === "string" &&
+      KNOWN_ASSET_KINDS.has(item.kind),
+  );
+
+  if (filtered.length === 0) return null;
+  return { v: 1, items: filtered };
+}
+
 export function buildStudentSafeOptionTokens(
   options: ReadonlyArray<CanonicalMcOption>,
   order?: ReadonlyArray<CanonicalOptionKey>,

@@ -36,12 +36,12 @@ import { logger } from "../logger";
 import {
   buildServedOptions,
   buildStudentSafeOptionsFromStoredMap,
+  filterAssetsPreSubmit,
   parseCanonicalMcOptions,
   parseStudentSafeOptionTokenMap,
   resolveSelectedCanonicalKey,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
-import { filterAssetsPreSubmit } from "../routes/practice-canonical";
 import {
   examErrorCodeSchema,
   examAnswerResponseSchema,
