@@ -177,6 +177,64 @@ commit;
 | **W3-1** | Model Armor protects nothing | A deliberately unsafe output is **blocked** by your template, with the filter named in the log. Standalone Sanitize from the BFF, real enforcement, SDP on output, fail-open with ERROR | CC |
 | **W3-2** | LISA invents and grades questions | In general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
 | **W3-3** | All students get US crisis resources | A student with a non-US country sees that country's resources. Depends on Stripe country collection | CC + Karl |
+| **W3-4** | Model Armor template IDs still ride the orchestrate wire and the worker's Cloud Run env, unused since W3-1 | The deployed worker's `orchestrateRequestSchema` no longer requires `model_armor_*_template_id`, **then** the BFF stops sending them; `MODEL_ARMOR_*` absent from the Cloud Run revision and from Vercel. Two steps, worker first — the running worker 400s every turn if the BFF drops them early | CC + Karl |
+| **W3-5** | A crisis the classifier misses, blocked by Model Armor's `dangerous` filter, reaches no human | **Ruled 2026-09-24:** an input block whose matched filters include `dangerous` opens a crisis review case and alerts; the student still sees the neutral block copy, not the crisis template (the filter is broad and not clinical — firing crisis resources on it would undercut the deterministic Layer 1/Layer 2 design). Proof: a `dangerous` input block in production → a new `crisis_review_cases` row and a Slack alert, and the reply is the block copy | CC |
+| **W3-6** | `google-auth-library` is a worker dependency that no worker source imports since W3-1 | Removed from `apps/workers/tutor-orchestrator/package.json` in a cleanup pass; worker builds and deploys. Low priority — ruled not worth its own PR now (2026-09-24) | CC |
+
+### W3-1 detail — what shipped, and the proof still owed
+
+**Shipped (code):** both scan points run in the BFF against the regional Sanitize API
+(`https://modelarmor.us-central1.rep.googleapis.com`, a constant — not `VERTEX_LOCATION`),
+templates from `TutorConfig`, credential from `server/lib/gcp-credentials.ts`.
+Input scan before `orchestrateTurn` — a block skips the model; output scan after it —
+the verdict is `armorOutputBlocked` in `serializeTutorOutput`, which substitutes.
+Fail open on every scanner failure, with ERROR. Timeout 1500 ms per scan. Clean → INFO
+`model_armor_scan_clean`, blocked → WARN `model_armor_scan_blocked` (filters named),
+skipped → ERROR `model_armor_scan_skipped` (reason). No text in any log line.
+The crisis path returns before either scan. Dead code deleted: the worker's
+`sanitizeOutput`, `_buildInputModelArmorConfig`, `armorOutputBlocked: false`,
+`getModelArmorConfig` in the BFF.
+
+**Spec status — SCL-142, PROPOSED (ruled 2026-09-24: write it).** `docs/Spec` never
+mentions Model Armor. Doc 03 §18.2 Layer 4 and INV-03-12 name the deterministic output
+scans in `serializeTutorOutput`, which are unchanged, run on every reply, and still fail
+closed. Model Armor sits on top and fails open. SCL-142 asks for Model Armor in §18.2,
+an INV-03-12 carve-out for the model-backed layer, and W3-5's case source in §21.3.
+
+**Student copy on a block (both points), approved 2026-09-24:** *"Let's keep this on your
+SAT prep. What would you like to work on next?"* — no implied accusation on a false positive.
+
+**Karl, before the proof can pass:** grant `roles/modelarmor.user` to
+`lyceon-server-sa@replit-cop.iam.gserviceaccount.com`. Without it every scan is a 403 →
+ERROR `model_armor_scan_skipped reason=http_error http_status=403`, and turns proceed
+unscanned — the feature inert while appearing wired. Also delete `MODEL_ARMOR_*` from
+Vercel; nothing reads them.
+
+**Proof owed after deploy** (not yet run — the read-only credential was not in the
+session that built this; environment variables reach new sessions only):
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Ordinary turn → `model_armor_scan_clean` at `input` and `output`, `latency_ms` recorded | *pending* |
+| 2 | Deliberately unsafe input → `model_armor_scan_blocked`, `matched_filters` named | *pending* |
+| 3 | Crisis turn → zero `TUTOR_MODEL_ARMOR` lines, crisis response unchanged | *pending* |
+| 4 | `turn_metrics_logged.orchestrationDurationMs`, 24 h before vs after (now includes both scans) | *pending* |
+
+**Measure before enforcement is trusted** — the same session, with the credential, sends
+ordinary tutoring text through both templates directly and reports matches:
+- `pi_and_jailbreak` at `LOW_AND_ABOVE` is on the **output** template too; a tutor reply
+  that quotes instructions ("ignore the distractor and…") is the likeliest false positive.
+- `SEXUALLY_EXPLICIT` at `LOW_AND_ABOVE` against literature-passage discussion.
+- SDP on output is `basic_config`. As CC recalls Google's docs, its fixed infoTypes are
+  financial/government IDs and cloud credentials, not `PERSON_NAME`, so a student's name
+  echoed back should not match. The docs host is blocked from CC's sandbox and the proto
+  does not list them — **confirm with a real call before relying on it.**
+Thresholds are Terraform and Karl's ruling; any false positive found is reported, not tuned.
+
+**Latency:** two sequential calls at the measured 0.18–0.42 s each is roughly 0.4–0.9 s on a
+3–5 s turn — 8 % to 30 %, straddling the 15 % line. Item 4 settles it. If over, the first
+lever is starting the input scan in parallel with context resolution (it needs only the
+student's message); output-only scanning is the fallback.
 
 ---
 

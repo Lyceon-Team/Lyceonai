@@ -54,6 +54,10 @@ import {
   type OutputScanContext,
 } from "../services/tutor-output-serializer";
 import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
+import {
+  MODEL_ARMOR_SUBSTITUTION,
+  scanWithModelArmor,
+} from "../services/tutor-model-armor";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
 import { enqueueCloudTask } from "../services/cloud-tasks-enqueue";
@@ -1576,16 +1580,56 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           : "general",
     });
 
+    // The clock starts before the Model Armor input scan so that
+    // turn_metrics.orchestration_duration_ms includes both scans — that is
+    // the before/after latency measurement for W3-1.
+    const turnStartedAt = Date.now();
+
+    // Step 13b: Model Armor input scan (closure plan W3-1 — an additional
+    // layer, not in docs/Spec; see the tutor-model-armor.ts header). Runs on
+    // the student's message as typed, immediately before the worker call. The crisis path returned above and never reaches this
+    // line — Model Armor cannot suppress a crisis response. Fail open: a
+    // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
+    // model entirely and answers with the neutral substitution.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorInput = await scanWithModelArmor(
+      "input",
+      input.message,
+      conversation.id,
+    );
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
-    // and returns a TutorResult — never throws.
-    const turnStartedAt = Date.now();
-    const orchestrationResult = await orchestrateTurn(
-      envelope,
-      preSubmit,
-      correctAnswerResult.value,
-    );
+    // and returns a TutorResult — never throws. Not called when the input
+    // scan blocked: the reply is the server-authored substitution instead.
+    const orchestrationResult =
+      armorInput.kind === "blocked"
+        ? ({
+            ok: true,
+            value: {
+              response: {
+                content: MODEL_ARMOR_SUBSTITUTION,
+                content_kind: "message",
+                suggested_action: { type: "none", label: null },
+                ui_hints: {
+                  show_accept_decline: false,
+                  allow_freeform_reply: true,
+                  suggested_chip: null,
+                },
+              },
+              question_links: [],
+              instruction_exposures: [],
+              orchestration_meta: {
+                model_name: "model_armor_input_blocked",
+                prompt_version: "none",
+                cache_used: false,
+                compaction_recommended: false,
+              },
+              learner_observation: null,
+            },
+          } as const)
+        : await orchestrateTurn(envelope, preSubmit, correctAnswerResult.value);
 
     if (!orchestrationResult.ok) {
       logger.error(
@@ -1630,6 +1674,19 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
+    // Step 14b: Model Armor output scan (closure plan W3-1) on LISA's reply,
+    // before the serializer. Additional to the INV-03-12 scans in
+    // serializeTutorOutput, which still run on every reply and fail closed. The verdict is carried
+    // into serializeTutorOutput as `armorOutputBlocked`, which substitutes.
+    // Not run when the input scan blocked — the reply is then server copy,
+    // not model output. Fail open, as for the input scan.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorOutput =
+      armorInput.kind === "blocked"
+        ? null
+        : await scanWithModelArmor("output", tutorResponse, conversation.id);
+    const armorOutputBlocked = armorOutput?.kind === "blocked";
+
     // Step 15: LISA-FULL-007 — mandatory output serializer (belt-and-suspenders).
     // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
     // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
@@ -1647,13 +1704,24 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       studentMessages: envelope.recent_messages
         .filter((m) => m.role === "student")
         .map((m) => m.message),
+      armorOutputBlocked,
+      // An input-blocked reply is the server-authored substitution.
+      isServerAuthored: armorInput.kind === "blocked",
     };
     const serialized = await serializeTutorOutput(
       tutorResponse,
       appendScanContext,
     );
     const safeContent = serialized.content;
-    const antiLeakTriggered = serialized.blocked;
+    // Anti-leak scan classes only: a Model Armor block is logged by the
+    // scanner (model_armor_scan_blocked), not counted as an anti-leak hit.
+    const scans = serialized.scanResults;
+    const antiLeakTriggered =
+      scans.answerLeakDetected ||
+      scans.canonicalIdLeakDetected ||
+      scans.systemPromptLeakDetected ||
+      scans.personaViolationDetected ||
+      scans.correctAnswerGateBlocked;
 
     // Step 16: Persist tutor message.
     const { data: tutorMessageRow, error: tutorMessageError } =

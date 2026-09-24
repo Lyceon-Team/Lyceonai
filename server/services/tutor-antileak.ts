@@ -12,7 +12,7 @@
  * unmodified.
  *
  * trade-offs: regex-based detection may produce false negatives on novel phrasing; this
- * is the fast deterministic layer — Model Armor (tutor-injection-defense.ts) provides
+ * is the fast deterministic layer — Model Armor (tutor-model-armor.ts) provides
  * the model-backed depth layer. False positives are preferable to leaks: a blocked
  * helpful response is recoverable; a leaked answer is not.
  *

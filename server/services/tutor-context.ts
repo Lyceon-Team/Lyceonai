@@ -1231,6 +1231,8 @@ export async function resolveFullEnvelope(
     correct_answer: params.isPostSubmit ? params.correctAnswer : null,
     // Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless).
     // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
+    // Wire-compatibility only since W3-1: the worker ignores them and the BFF
+    // scans itself (tutor-model-armor.ts). Removal sequenced as W3-4.
     model_armor_input_template_id:
       TutorConfig.get("model_armor_input_template_id") || null,
     model_armor_output_template_id:
