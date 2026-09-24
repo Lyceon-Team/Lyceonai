@@ -236,6 +236,18 @@ export const calendarSetupRequiredResponseSchema = z
   .object({
     status: z.literal("setup_required"),
     defaults: calendarSetupDefaultsSchema,
+    /**
+     * Whether this student can see a PLAN (SCL-130, 2026-09-24). Setup is served before the
+     * entitlement gate so a free student can answer, which means `setup_required` on its
+     * own no longer implies anything about entitlement — this field is what the popup
+     * branches on for its last press: "Build my plan" for an entitled student, "See what
+     * I'd get" and the upgrade panel for a free one.
+     *
+     * Optional so an older client parses a newer server. Absent reads as "assume entitled",
+     * which is the pre-2026-09-24 behaviour and the safe direction: the worst case is an
+     * entitled-looking button that meets the 402 it always would have.
+     */
+    entitled: z.boolean().optional(),
   })
   .strict();
 export type CalendarSetupRequiredResponse = z.infer<

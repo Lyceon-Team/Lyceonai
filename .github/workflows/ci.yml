@@ -67,6 +67,15 @@ jobs:
       # mechanical check closes the same-day race. The two pre-existing
       # collisions are allowlisted by exact count inside the script, with an
       # expiry note; a third heading on either still fails.
+      # §17.1's band is Doc 05C's, summed. The selftest runs FIRST and on its own line: a
+      # gate whose matcher has rotted reports zero findings and reads exactly like a clean
+      # tree.
+      - name: Calendar projection is read, never recomputed
+        run: |
+          set -euo pipefail
+          node scripts/ci/calendar-projection-gate.mjs --selftest
+          node scripts/ci/calendar-projection-gate.mjs
+
       - name: SCL register — no duplicate ids
         run: node scripts/ci/scl-duplicate-check.mjs
 

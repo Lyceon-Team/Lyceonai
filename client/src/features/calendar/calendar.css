@@ -248,13 +248,17 @@
   min-width: 0;
   background: var(--canvas);
 }
+/* §17.1 — three zones, two rows each, lifted from the prototype's `.top` grid.
+   L1 back · C1 nav+view · R1 target / L2 edit+refresh · C2 streak+countdown · R2 projected.
+   The prototype's drag-to-rearrange mode is a demo device and is not carried over; the
+   slots it moved around are. */
 .lyceon-calendar .top {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 14px;
-  padding: 13px 20px;
+  gap: 8px 26px;
+  padding: 13px 22px;
   border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
 }
 .lyceon-calendar .range {
   font-family: "Bricolage Grotesque";
@@ -1232,4 +1236,246 @@
   font-weight: 600;
   color: #8a4309;
   text-decoration: underline;
+}
+
+/* ── §17.1 header slots (Brief 10 Step 4) ─────────────────────────────────── */
+
+.lyceon-calendar .slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  min-width: 40px;
+  border-radius: 9px;
+}
+.lyceon-calendar .slot[data-slot^="C"] {
+  justify-content: center;
+}
+/* Centred, and wide enough that the target and the range share one axis whatever their
+   digit counts — "1400" and "680 – 1060" are different widths and must still line up. */
+.lyceon-calendar .slot[data-slot^="R"] {
+  justify-content: center;
+  min-width: 186px;
+}
+.lyceon-calendar .item {
+  display: flex;
+  align-items: center;
+}
+.lyceon-calendar .navrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyceon-calendar .streakline {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lyceon-calendar .streakline b {
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.lyceon-calendar .top .countline {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+.lyceon-calendar .top .countline b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 13.5px;
+}
+
+/* Number first, label trailing — both rows, so the eye reads down the figures. */
+.lyceon-calendar .item[data-item="target"] .ptarget {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.lyceon-calendar .item[data-item="target"] .ptarget b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .item[data-item="range"] .prange {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.lyceon-calendar .item[data-item="range"] .prange b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 20px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+
+/* An absence is a sentence, not a gap. Smaller and muted so it reads as an invitation
+   rather than as a number that failed to load. */
+.lyceon-calendar .ptarget.absent,
+.lyceon-calendar .top .countline.absent,
+.lyceon-calendar .prange.absent {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.3;
+  max-width: 186px;
+}
+
+/* Below the prototype's breakpoint the three zones stack rather than crush: the header
+   is the one part of the page a lost student reads. */
+@media (max-width: 1180px) {
+  .lyceon-calendar .top {
+    row-gap: 10px;
+  }
+  .lyceon-calendar .slot[data-slot^="R"] {
+    min-width: 0;
+  }
+}
+
+/* ── §17.5 setup popup (Brief 10 Step 2) ──────────────────────────────────── */
+
+.lyceon-calendar .modal {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 22, 42, 0.25);
+}
+.lyceon-calendar .modal.on {
+  display: grid;
+}
+.lyceon-calendar .modal .card {
+  background: #fff;
+  border-radius: 16px;
+  width: 520px;
+  max-width: 100%;
+  box-shadow: 0 24px 64px -24px rgba(16, 22, 42, 0.45);
+  overflow: hidden;
+}
+.lyceon-calendar .modal header {
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lyceon-calendar .modal h2 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .modal .lede {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin-top: 5px;
+}
+.lyceon-calendar .modal .body {
+  padding: 20px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lyceon-calendar .modal footer {
+  padding: 16px 26px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lyceon-calendar .dots {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+}
+.lyceon-calendar .dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  display: block;
+}
+.lyceon-calendar .dots i.on {
+  background: var(--ink);
+}
+.lyceon-calendar .skip {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.lyceon-calendar .scoreline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lyceon-calendar .scoreline b {
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .scoreline span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lyceon-calendar .modal input[type="range"] {
+  width: 100%;
+  accent-color: var(--math);
+}
+.lyceon-calendar .optout {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lyceon-calendar .cta {
+  padding: 14px 16px;
+  border-radius: var(--r);
+  background: var(--math-t);
+  border: 1px solid #d7e2fb;
+  color: #1b3f91;
+  font-size: 13.5px;
+}
+.lyceon-calendar .cta b {
+  display: block;
+  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-size: 15px;
+  margin-bottom: 3px;
+}
+.lyceon-calendar .cta button {
+  margin-top: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--math);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13.5px;
+  border: 0;
+  cursor: pointer;
+}
+
+/* The plan stays visible behind the popup — §17.5 wants a student to see what they are
+   setting up — but blurred, so it reads as context rather than as something to click. */
+.lyceon-calendar .app.blur {
+  filter: blur(3px);
+  pointer-events: none;
+  user-select: none;
 }

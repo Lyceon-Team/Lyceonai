@@ -1441,4 +1441,77 @@ END;
 $blockout$;
 
 
+-- ----------------------------------------------------------------------------
+-- Z-52. NOTHING IN SETUP IS REQUIRED: a profile with BOTH target fields NULL
+--       generates an ACCEPTED plan. (Doc 05F §8.1, SCL-130, R-08-17 reversed.)
+--
+-- This is the gate for the student who presses straight through setup without
+-- answering anything. Until 20261002000000 such a row could not exist at all --
+-- `setup_requires_target_score` refused any completed setup without a score --
+-- so "can they still get a plan?" was a question the schema made unaskable.
+--
+-- It asserts the PLAN, not the row. That a NULL target is storable is the
+-- migration's claim and the CHECK's absence proves it; what matters here is the
+-- consequence: the generator runs on this profile and the validator accepts the
+-- output. A student who skips every field and gets `rejected` has been blocked
+-- by the reversal's own gap rather than by a constraint, which is the same
+-- outcome wearing a different error.
+--
+-- PLANT (the reversal, reversed): re-add the CHECK above this block --
+--   ALTER TABLE public.student_study_profile ADD CONSTRAINT
+--     setup_requires_target_score CHECK (setup_completed_at IS NULL OR target_score IS NOT NULL);
+-- -- and the INSERT below fails on it, which is this gate going red.
+-- ----------------------------------------------------------------------------
+DO $notarget$
+DECLARE
+  S CONSTANT uuid := 'dddddddd-0000-0000-0000-00000000005a';
+  v_r jsonb;
+  v_n int;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'no-target@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'no-target@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  -- The row setup writes when the student answers NOTHING: the schedule fields come
+  -- preselected from config, both target fields stay NULL, and setup is complete because
+  -- the student reached the end of the flow.
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     target_score, target_exam_date, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, NULL, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
+     event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h')
+  ON CONFLICT DO NOTHING;
+
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'dddddddd-0000-0000-0000-00000000005b');
+
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 a profile with no target score and no exam date did not produce an accepted plan: %', v_r;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND block_id IS NOT NULL;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 the plan was accepted but holds no blocks — an empty plan is not "still get a plan"';
+  END IF;
+
+  -- The absence survived the write. A generator that quietly defaulted the target would
+  -- satisfy everything above while making the reversal cosmetic.
+  PERFORM 1 FROM public.student_study_profile
+   WHERE student_id = S AND target_score IS NULL AND target_exam_date IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 the target fields did not stay NULL through generation';
+  END IF;
+
+  RAISE NOTICE '    OK Z-52 both target fields NULL -> accepted plan with % block(s), and they stayed NULL', v_n;
+END;
+$notarget$;
+
+
 ROLLBACK;

@@ -20,6 +20,7 @@ import rateLimit from "express-rate-limit";
 // Any duplicate tutor route under apps/api/** must remain unmounted.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
+import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
 import {
   getQuestions,
@@ -365,6 +366,19 @@ const googleOAuthCallbackLimiter = rateLimit({
   message: { error: "Too many OAuth callback requests" },
 });
 
+// @spec [Doc-03A_V3.0 §18.7; owner ruling 2026-09-24 (W4-3)] | @implemented [2026-09-24]
+// Tutor runtime config is read from tutor_context_runtime_config ONCE per
+// process, starting at module load — on Vercel the app module is the boot
+// (app.listen below never runs there). Until this was wired, every key served
+// its hardcoded default on every request. The two routers that read config
+// wait for the load to settle (bounded at 3s) so a cold-start request cannot
+// race it. A failed load logs ERROR boot_load_failed and serves defaults.
+const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
+void TutorConfig.bootLoad();
+const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
+  TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
+};
+
 // Canonical tutor runtime endpoints:
 // POST /api/tutor/conversations
 // POST /api/tutor/messages
@@ -378,6 +392,7 @@ app.use(
   requireSupabaseAuth,
   requireStudentOnly,
   doubleCsrfProtection,
+  awaitTutorConfig,
   tutorRuntimeRouter,
 );
 
@@ -398,7 +413,7 @@ app.use("/api/auth", supabaseAuthRoutes);
 // Internal cron-only endpoints (CRON_SECRET-gated; e.g. scheduled legal-acceptance outbox drain).
 app.use("/api/internal", internalCronRoutes);
 // Internal memory routes (OIDC-gated; Cloud Tasks compaction writeback per Doc 03C §8.3).
-app.use("/api/internal", internalMemoryRoutes);
+app.use("/api/internal", awaitTutorConfig, internalMemoryRoutes);
 // Internal retention sweep (OIDC-gated; Cloud Scheduler per-tier jobs per Doc 03 §14.2).
 app.use("/api/internal", internalRetentionRoutes);
 
@@ -413,7 +428,6 @@ app.use(
   doubleCsrfProtection,
   profileRoutes,
 );
-
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
