@@ -504,10 +504,17 @@
   width: 3px;
   border-radius: 3px;
 }
+/*
+ * §17.1 card type. RAISED from the prototype's 13.5px / 10.5px, not copied from it: the
+ * prototype's own values are exactly what the build already shipped, so "per the prototype"
+ * had nothing larger to adopt. The two elements raised are the two the brief names — the
+ * title and the domain chips — and nothing else moved: same padding, same gaps, same four
+ * colours, so the card's density is unchanged.
+ */
 .lyceon-calendar .block .ttl {
   font-family: "Bricolage Grotesque";
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 14.5px;
   letter-spacing: -0.01em;
   padding-left: 9px;
   display: flex;
@@ -528,7 +535,7 @@
   gap: 3px;
 }
 .lyceon-calendar .block .dom span {
-  font-size: 10.5px;
+  font-size: 11.5px;
   padding: 2px 6px;
   border-radius: 5px;
   background: rgba(16, 22, 42, 0.05);
@@ -962,6 +969,12 @@
 .lyceon-calendar .kind-exam {
   background: var(--exam-t);
   color: #26324a;
+}
+/* §17.2's create sheet. Deliberately NOT one of the four block tones: nothing has been
+   chosen yet, so borrowing a colour would name an engine the student has not picked. */
+.lyceon-calendar .kind-new {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
 }
 
 /* The mini-month marks today even when it is not the selected week. */
@@ -1478,4 +1491,146 @@
   filter: blur(3px);
   pointer-events: none;
   user-select: none;
+}
+
+/* ── §17.7 phone layout (Brief 11 Step 5) ─────────────────────────────────── */
+
+/*
+ * The day strip. Seven chips, always all seven — the whole point is that no day is
+ * hidden behind a swipe. It only renders below the mobile breakpoint, so it needs no
+ * media query of its own; the rules below are what it looks like when it is there.
+ */
+.lyceon-calendar .daystrip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.lyceon-calendar .daychip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-2);
+  /* 44px is the smallest comfortable touch target; seven of them fit 390px with the gaps. */
+  min-height: 44px;
+}
+.lyceon-calendar .daychip .dow {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lyceon-calendar .daychip .dnum {
+  font-family: "Bricolage Grotesque";
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.lyceon-calendar .daychip .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--math);
+}
+/* Kept in the layout rather than removed, so the chips do not change height between a day
+   with work and a day without — a strip that jumps as you tap along it reads as broken. */
+.lyceon-calendar .daychip .dot.off {
+  background: transparent;
+}
+.lyceon-calendar .daychip.is-today .dnum {
+  color: var(--math);
+}
+.lyceon-calendar .daychip.on {
+  background: var(--math-t);
+  border-color: #d9e4fd;
+}
+.lyceon-calendar .daychip.on .dnum {
+  color: #1b3f91;
+}
+
+@media (max-width: 767px) {
+  /*
+   * ONE day, full width. `WeekGrid` is handed a single date at this width, so the grid has
+   * one column to lay out; this stops that column being held to the 132px minimum and
+   * makes it fill the phone instead.
+   */
+  .lyceon-calendar .week {
+    grid-template-columns: 1fr;
+  }
+  .lyceon-calendar .col {
+    border-right: 0;
+  }
+
+  /*
+   * §17.1's three zones stack. The 1180px rule above claimed to do this and only widened
+   * the row gap — the zones stayed in three columns and simply crushed. At 390px they
+   * genuinely become one column, each zone keeping its own two rows in reading order.
+   */
+  .lyceon-calendar .top {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+  .lyceon-calendar .slot[data-slot^="C"],
+  .lyceon-calendar .slot[data-slot^="R"] {
+    justify-content: flex-start;
+  }
+  .lyceon-calendar .slot {
+    min-height: 0;
+    flex-wrap: wrap;
+  }
+  /*
+   * The DOM order is row-major (L1 C1 R1 / L2 C2 R2), which is what puts the three zones
+   * side by side on a desktop. Stacking that order verbatim interleaves them — back, range,
+   * target, edit, streak, projection — so each zone's two rows are reordered to sit
+   * together: the left zone, then the centre, then the right. `order` and not a DOM change
+   * because the desktop grid is correct as it stands and the reading order only differs
+   * here.
+   */
+  .lyceon-calendar .slot[data-slot="L1"] {
+    order: 1;
+  }
+  .lyceon-calendar .slot[data-slot="L2"] {
+    order: 2;
+  }
+  .lyceon-calendar .slot[data-slot="C1"] {
+    order: 3;
+  }
+  .lyceon-calendar .slot[data-slot="C2"] {
+    order: 4;
+  }
+  .lyceon-calendar .slot[data-slot="R1"] {
+    order: 5;
+  }
+  .lyceon-calendar .slot[data-slot="R2"] {
+    order: 6;
+  }
+
+  /* The side sheet becomes a bottom sheet: full width, anchored to the bottom edge, and
+     capped so the plan behind it stays visible and the scrim stays tappable. */
+  .lyceon-calendar .sheet {
+    inset: auto 0 0 0;
+    width: auto;
+    /* The desktop rule caps the panel at 92vw so the scrim stays tappable down its right
+       edge. A bottom sheet is dismissed by the scrim ABOVE it, so the cap would only leave
+       a dead strip beside it. */
+    max-width: none;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    transform: translateY(100%);
+  }
+  .lyceon-calendar .sheet.on {
+    transform: translateY(0);
+  }
 }
