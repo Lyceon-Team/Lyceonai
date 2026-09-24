@@ -726,6 +726,30 @@ export function parseStudentSafeOptionTokenMap(
   return parseStoredOptionTokenMap(raw);
 }
 
+/**
+ * @spec [Doc-02B_V4 §16; Doc-04A_V2.2 §11.1 (stored mcq answer is the canonical
+ *        letter); E6 ruling "shuffle same as practice and review"]
+ * | @implemented [2026-09-24]
+ *
+ * plain English: the one rule for turning what a student selected on a shuffled
+ * screen into the canonical option key. A served token resolves through the map the
+ * server persisted when it shuffled; anything that is not a token is read as a
+ * canonical letter A-D. Extracted verbatim from practice's gradeAnswer so practice,
+ * review and the full-length exam resolve selections with the SAME code.
+ * expected outcome: a canonical key, or null when the selection is neither a served
+ * token nor a letter. trade-offs: the letter fallback is practice's behaviour, kept
+ * so the three engines stay one; a client that sends a letter gets that canonical
+ * letter, which reveals nothing (it does not know which letter is correct).
+ * edge cases: an empty selection resolves to null.
+ */
+export function resolveSelectedCanonicalKey(
+  selected: string,
+  optionTokenMap: Readonly<Record<string, string>>,
+): string | null {
+  const mappedKeyFromToken = selected ? optionTokenMap[selected] : null;
+  return mappedKeyFromToken ?? normalizeAnswerKey(selected ?? null);
+}
+
 export function buildStudentSafeOptionTokens(
   options: ReadonlyArray<CanonicalMcOption>,
   order?: ReadonlyArray<CanonicalOptionKey>,

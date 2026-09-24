@@ -31,6 +31,7 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
+  resolveSelectedCanonicalKey,
   resolveCanonicalDomain,
   resolveClientInstanceBinding,
   normalizeSectionCode,
@@ -2819,11 +2820,11 @@ export function gradeAnswer(
     };
   }
 
-  const mappedKeyFromToken = selectedAnswer
-    ? optionTokenMap[selectedAnswer]
-    : null;
-  const selectedCanonicalKey =
-    mappedKeyFromToken ?? normalizeAnswerKey(selectedAnswer ?? null);
+  // One resolution rule for practice, review and the full-length exam (E6).
+  const selectedCanonicalKey = resolveSelectedCanonicalKey(
+    selectedAnswer,
+    optionTokenMap,
+  );
 
   if (!selectedCanonicalKey) {
     return {
