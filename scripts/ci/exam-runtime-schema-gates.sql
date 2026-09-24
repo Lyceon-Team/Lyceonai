@@ -93,7 +93,7 @@ INSERT INTO auth.users (id, email) VALUES ('00000000-0000-0000-0000-00000000e3aa
 COMMIT;
 
 -- ---------------------------------------------------------------------------
--- G1 — privileges: RLS on all seven, no policies, no anon/authenticated grant,
+-- G1 — privileges: RLS on all seven, exactly the E4 + E6 policies, only E6's SELECT grants,
 -- service_role cannot UPDATE/DELETE the §5.5 append-only ledger.
 -- ---------------------------------------------------------------------------
 BEGIN;
@@ -105,28 +105,58 @@ BEGIN
      AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
                        'test_answer_submissions','test_session_answers','exam_runtime_outbox');
   IF v_n <> 7 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: RLS enabled on % of 7 tables', v_n; END IF;
-  -- E4 (20260930040000, D7): the ONLY policies allowed are the six SELECT-only
-  -- policies for lyceon_scoring_owner (not BYPASSRLS) that the §11.1 scoring
-  -- functions need to read these tables. Still none for anon/authenticated/any
-  -- other role (G-EX-01 unresolved), and none on test_answer_submissions.
+  -- E4 (20260930040000, D7): six SELECT-only policies for lyceon_scoring_owner
+  -- (not BYPASSRLS) that the §11.1 scoring functions need. E6
+  -- (20260930060000): exactly seven more — the student own-row reads (auth.uid(),
+  -- SCL-131), the published-forms read, the own-form items read and the outbox's
+  -- explicit no-client-access. Any other policy is still a failure.
   SELECT count(*) INTO v_n FROM pg_policies
    WHERE schemaname = 'public'
      AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
                        'test_answer_submissions','test_session_answers','exam_runtime_outbox')
      AND NOT (policyname = tablename || '_scoring_owner_read' AND cmd = 'SELECT'
               AND roles = ARRAY['lyceon_scoring_owner']::name[] AND qual = 'true'
-              AND tablename <> 'test_answer_submissions');
-  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % policies exist beyond the E4 scoring-owner reads (G-EX-01 unresolved)', v_n; END IF;
+              AND tablename <> 'test_answer_submissions')
+     AND policyname NOT IN ('test_sessions_select_self', 'test_session_sections_select_self',
+                            'test_session_answers_select_self', 'test_answer_submissions_select_self',
+                            'test_forms_select_published', 'test_form_items_select_own_form',
+                            'exam_runtime_outbox_no_client_access');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % policies exist beyond the E4 scoring-owner reads and the E6 set', v_n; END IF;
   SELECT count(*) INTO v_n FROM pg_policies
    WHERE schemaname = 'public' AND policyname LIKE '%\_scoring\_owner\_read'
      AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
                        'test_session_answers','exam_runtime_outbox');
   IF v_n <> 6 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: expected the 6 E4 scoring-owner read policies, found %', v_n; END IF;
+  SELECT count(*) INTO v_n FROM pg_policies
+   WHERE schemaname = 'public'
+     AND ((policyname IN ('test_sessions_select_self', 'test_session_sections_select_self',
+                          'test_session_answers_select_self', 'test_answer_submissions_select_self',
+                          'test_forms_select_published', 'test_form_items_select_own_form')
+           AND cmd = 'SELECT' AND roles = ARRAY['authenticated']::name[])
+       OR (policyname = 'exam_runtime_outbox_no_client_access' AND qual = 'false'));
+  IF v_n <> 7 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: expected the 7 E6 policies, found %', v_n; END IF;
+  -- Grants: nothing for anon/PUBLIC; for authenticated only E6's SELECTs — the
+  -- whole test_sessions row, and column lists that leave out the routing path
+  -- (module2_path, module), thresholds and the replay body.
   SELECT count(*) INTO v_n FROM information_schema.role_table_grants
-   WHERE table_schema = 'public' AND grantee IN ('anon','authenticated','PUBLIC')
+   WHERE table_schema = 'public'
      AND table_name IN ('test_forms','test_form_items','test_sessions','test_session_sections',
-                        'test_answer_submissions','test_session_answers','exam_runtime_outbox');
-  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % anon/authenticated grant(s)', v_n; END IF;
+                        'test_answer_submissions','test_session_answers','exam_runtime_outbox')
+     AND (grantee IN ('anon','PUBLIC')
+          OR (grantee = 'authenticated' AND NOT (table_name = 'test_sessions' AND privilege_type = 'SELECT')));
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % table grant(s) beyond E6''s test_sessions SELECT', v_n; END IF;
+  SELECT count(*) INTO v_n FROM information_schema.column_privileges
+   WHERE table_schema = 'public' AND grantee IN ('anon','authenticated','PUBLIC')
+     AND (privilege_type <> 'SELECT'
+          OR table_name IN ('test_form_items', 'exam_runtime_outbox')
+          OR column_name IN ('module2_path', 'module', 'response_json', 'routing_threshold_rw',
+                             'routing_threshold_m', 'score_table_version',
+                             'routing_override_approved_by', 'routing_override_reason',
+                             'routing_override_ticket_id'))
+     AND table_name IN ('test_forms','test_form_items','test_sessions','test_session_sections',
+                        'test_answer_submissions','test_session_answers','exam_runtime_outbox')
+     AND NOT (table_name = 'test_sessions' AND privilege_type = 'SELECT');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % column grant(s) expose a path/threshold/replay column or a non-SELECT', v_n; END IF;
   IF has_table_privilege('service_role', 'public.test_answer_submissions', 'UPDATE')
      OR has_table_privilege('service_role', 'public.test_answer_submissions', 'DELETE')
      OR NOT has_table_privilege('service_role', 'public.test_answer_submissions', 'INSERT') THEN
@@ -137,7 +167,7 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.validate_form_composition(uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'EXG FAIL [G1 privileges]: validate_form_composition EXECUTE is not service_role-only';
   END IF;
-  RAISE NOTICE 'ok   [G1 privileges] RLS on 7/7, only the 6 E4 scoring-owner SELECT policies, 0 anon/authenticated grants, ledger append-only';
+  RAISE NOTICE 'ok   [G1 privileges] RLS on 7/7, the 6 E4 scoring-owner + 7 E6 policies and no other, authenticated: SELECT only, no path/threshold/replay column, ledger append-only';
 END $$;
 ROLLBACK;
 

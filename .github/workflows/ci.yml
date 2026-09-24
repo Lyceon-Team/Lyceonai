@@ -554,6 +554,24 @@ jobs:
       - name: Scoring evidence packet (hash + provenance)
         run: bash scripts/ci/scoring-evidence-packet-check.sh
 
+      # Doc 04A V2.2 §4/§7-§16 + E6 rulings — the exam runtime functions the API calls,
+      # driven on a fresh apply: RLS on every exam table AS `authenticated` (own rows
+      # only, B's rows invisible, answer/routing columns not granted), server-time
+      # expiry (409 module_submitted, section timed out), routing lock, idempotent
+      # replay (one ledger row), module '2' -> locked path, strict break bounded /
+      # lenient unbounded, lenient pause vs strict, inline finalisation of past-grace
+      # sessions with a partial score, and the sweep. Each check prints its own `ok`.
+      # @spec [Doc-04A_V2.2, §4, §7-§16; SCL-131..136] | @implemented [2026-09-24]
+      - name: Exam runtime API gates (04A runtime behaviour + RLS, E6)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-runtime-api-gates.sh
+
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
   # questions into ephemeral Postgres, exercises select_practice_pool_random,
@@ -1284,6 +1302,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-review.json \
             --file tests/ci/review.routes.pg.ci.test.ts \
             --file tests/ci/review.queue-e2e.pg.ci.test.ts
+
+      # @spec [Doc-04A_V2.2 §7-§16; E6] Exam runtime API -> real PG proof: whole exams
+      # through the real /api/tests handlers (both routing paths, both modes), answers by
+      # SERVED TOKEN stored as the canonical letter, pre-submit payloads anti-leak, inline
+      # scoring. Named BY FILE: the `ci` job sets no PGHOST, so this file skips there.
+      - name: Exam runtime API → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-runtime.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
+            --file tests/ci/exam-runtime.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that
