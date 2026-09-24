@@ -37,10 +37,12 @@ function linkRow(over: Record<string, unknown> = {}) {
   };
 }
 
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView, projectGuardianFullLengthReportView, the fullLengthExam
+// service mock)
+// removed; they stubbed deleted exports and fed no assertion here.
 const kpiMocks = {
   buildStudentKpiViewFromCanonical: vi.fn(),
-  buildStudentFullLengthReportView: vi.fn(),
-  projectGuardianFullLengthReportView: vi.fn(),
 };
 const weaknessViewMocks = {
   buildWeaknessSkillsView: vi.fn(async () => ({
@@ -267,9 +269,6 @@ vi.mock("../../server/logger", () => ({
     error: vi.fn(),
   },
 }));
-vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
-  getExamReport: vi.fn(),
-}));
 vi.mock("../../apps/api/src/services/weakness-view", () => ({
   buildWeaknessSkillsView: weaknessViewMocks.buildWeaknessSkillsView,
 }));
@@ -439,12 +438,6 @@ describe("Guardian reporting runtime contract", () => {
         ],
       },
     });
-    kpiMocks.buildStudentFullLengthReportView.mockImplementation(
-      (report: any) => report,
-    );
-    kpiMocks.projectGuardianFullLengthReportView.mockImplementation(
-      (view: any) => view,
-    );
     weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
       ok: true,
       count: 0,

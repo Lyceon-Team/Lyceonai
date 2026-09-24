@@ -32,7 +32,7 @@ import {
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
+import { AlertCircle, Calculator, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import {
   type EngineConfig,
@@ -384,14 +384,6 @@ export default function CanonicalPracticePage(props: {
         </div>
         <div className="flex items-center gap-3">
           {calculatorToggle}
-          {engine.features.examTagHint && (
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Flag className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">
-                Review tagging is available in full-length exam mode.
-              </span>
-            </div>
-          )}
         </div>
       </div>
 

@@ -28,7 +28,9 @@ export const RETURN_PATH_ALLOWLIST: readonly string[] = [
   "/practice",
   "/review",
   "/chat",
-  "/full-test",
+  // "/full-test" removed — E1 exam deletion ruling, 2026-09-23: the pre-baseline
+  // full-length page is deleted pending the Doc 04 rebuild, and every entry here must be
+  // a route App.tsx mounts (client/src/review-entry-points.test.ts enforces it).
   "/mastery",
   "/upgrade",
   "/update-password",
