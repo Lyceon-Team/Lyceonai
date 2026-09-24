@@ -26,6 +26,7 @@
  */
 import type {
   CanonicalDomain,
+  NewBlock,
   PlanBlock,
   PlanMember,
 } from "@lyceon/shared/calendar";
@@ -129,27 +130,54 @@ export function membersWithout(
 }
 
 /**
- * A brand-new practice block on a day, for the grid's "+ Add block".
+ * What the student chose in §17.2's create form, before it is a block.
+ *
+ * A discriminated union rather than one shape with optional fields, for the reason the
+ * sheet gives about its own branches: an optional `section` on a review draft is a field
+ * someone eventually fills in for the wrong engine. Each arm carries exactly what its
+ * engine needs and nothing else, so an impossible draft cannot be constructed.
+ */
+export type NewBlockDraft =
+  | {
+      block_type: "practice";
+      section: "M" | "RW";
+      mix: readonly { domain: CanonicalDomain; count: number }[];
+    }
+  | { block_type: "review"; count: number }
+  | { block_type: "full_length" };
+
+/**
+ * A brand-new block on a day, for §17.2's "+ Add block".
  *
  * `explanation_key` is null on purpose. §17.6's copy explains why the SYSTEM put a block
  * somewhere; a block the student added themselves needs no such explanation, and inventing a
  * key would put words in the generator's mouth. `blockExplanation(null)` returns null and
  * the "why this is here" panel does not render — which is correct.
+ *
+ * This replaces `membersWithNewPracticeBlock`, which could only build one engine and was
+ * called with an INVENTED default — section M, the first two M domains, five questions each
+ * — the instant the student clicked Add. Nothing asked them; the write simply went. Every
+ * engine now comes through here, and only from a draft the student filled in.
  */
-export function membersWithNewPracticeBlock(
+export function membersWithNewBlock(
   day: ViewDay,
-  section: "M" | "RW",
-  mix: readonly { domain: CanonicalDomain; count: number }[],
+  draft: NewBlockDraft,
 ): readonly PlanMember[] {
-  const target = mix.reduce((sum, entry) => sum + entry.count, 0);
   const created: PlanMember = {
     kind: "created",
-    block: {
+    block: newBlockFrom(draft),
+  };
+  return [...day.blocks.map((entry) => carried(entry.blockId)), created];
+}
+
+function newBlockFrom(draft: NewBlockDraft): NewBlock {
+  if (draft.block_type === "practice") {
+    return {
       block_type: "practice",
-      section,
+      section: draft.section,
       scope: {
         level: "domain",
-        mix: mix.map((entry) => ({
+        mix: draft.mix.map((entry) => ({
           domain: entry.domain,
           count: entry.count,
           // The per-domain key vocabulary is the GENERATOR's (V-09 constrains generated
@@ -158,11 +186,33 @@ export function membersWithNewPracticeBlock(
           explanation_key: "student_choice",
         })),
       },
-      target_count: target,
+      target_count: draft.mix.reduce((sum, entry) => sum + entry.count, 0),
       explanation_key: null,
-    },
+    };
+  }
+  if (draft.block_type === "review") {
+    return {
+      block_type: "review",
+      section: null,
+      // `queue`, never `session`. A session-scoped review reviews ONE finished engine
+      // session (sheet §8 item 13) and carries its id; a block the student adds by hand has
+      // no session behind it, so the due queue is the only honest scope.
+      scope: { mode: "queue" },
+      target_count: draft.count,
+      explanation_key: null,
+    };
+  }
+  return {
+    block_type: "full_length",
+    section: null,
+    // `form_id` null means "Doc 04 rotation picks the form" — and the KEY must be present
+    // (owner ruling B3, 2026-09-17): the CHECK is `scope ?& ARRAY['form_id']`, so an absent
+    // key is a different shape and the database refuses it.
+    scope: { form_id: null },
+    // §7.4: `calendar_blocks_full_length_single` makes this a CHECK, not a convention.
+    target_count: 1,
+    explanation_key: null,
   };
-  return [...day.blocks.map((entry) => carried(entry.blockId)), created];
 }
 
 // ── The §17.2 editing rules, in one place ───────────────────────────────────

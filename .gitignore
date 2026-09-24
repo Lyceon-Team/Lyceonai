@@ -63,3 +63,6 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 # NOTE: .terraform.lock.hcl is NOT ignored — commit it (pins provider versions)
+
+# Doc 04B v1.0 evidence packet (E4): hash-pinned CSVs, must be committed.
+!scripts/ci/fixtures/scoring-v1.0/*.csv

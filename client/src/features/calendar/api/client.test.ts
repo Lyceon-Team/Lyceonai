@@ -118,6 +118,8 @@ const READY_BODY = {
   streak: STREAK,
   latest_unacknowledged_nonstudent_change: null,
   diagnostic_state: "baseline_ready",
+  // §17.2. Production's own list on 2026-09-24 — full-length absent until it ships.
+  enabled_block_types: ["practice", "review"],
 };
 
 const GUARDIAN_BODY = {

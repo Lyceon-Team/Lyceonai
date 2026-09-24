@@ -584,6 +584,9 @@ export async function readCalendar(
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
     estimates: config.estimates,
+    // §17.2. From the config accessor, never a literal — the picker must offer exactly what
+    // V-03 accepts. The guardian payload below deliberately omits it (§16: no write path).
+    enabled_block_types: [...config.enabledBlockTypes],
     days: built.days,
     facts: built.facts,
     streak,

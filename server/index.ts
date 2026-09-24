@@ -68,6 +68,7 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
+import examRuntimeRouter from "./routes/exam-runtime-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -663,6 +664,19 @@ app.use(
   requireStudentOrAdmin,
   doubleCsrfProtection,
   practiceCanonicalRouter,
+);
+
+// Full-length exam runtime (Doc 04A §16 student surface only — no admin routes)
+// @spec [Doc-04A_V2.2 §16, §16.1; E6] | @implemented [2026-09-24]
+// Practice's middleware stack: auth, student-or-admin, then CSRF (the middleware
+// ignores GET/HEAD/OPTIONS). Entitlement (exam_full_length) is step 2 of every
+// handler, inside the router, after auth.
+app.use(
+  "/api/tests",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  examRuntimeRouter,
 );
 
 // Review Canonical Routes (the mistake queue — practice's loop, a different pool)

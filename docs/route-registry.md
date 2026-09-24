@@ -165,8 +165,21 @@ Removed auth endpoints (must return 404):
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
 
 ### Full-Length Exam Endpoints
-None mounted. The pre-baseline `/api/full-length/*` runtime and the `/full-test` page were
-removed by the E1 exam deletion ruling (2026-09-23) pending the Doc 04 rebuild.
+Doc 04A V2.2 §16 student runtime (E6, 2026-09-24), mounted at `/api/tests`. Every handler:
+auth -> `exam_full_length` entitlement -> Zod -> one `exam_*` SQL function -> serialize.
+`:module` is `1` or `2` (the server resolves Module 2 to the locked path; SCL-132). No
+admin, publish, report or outbox route exists. The pre-baseline `/api/full-length/*`
+runtime and the `/full-test` page were removed by E1 (2026-09-23); no client page yet.
+
+| Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
+|----------|--------|--------------|------|-------------|---------|
+| `/api/tests/sessions` | POST | Yes | student/admin | premium (`exam_full_length`) | Create a session, or return the in-progress one for the same form |
+| `/api/tests/sessions/:session_id/state` | GET | Yes | student/admin | premium (`exam_full_length`) | Session state + remaining time; finalises a past-grace session |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | POST | Yes | student/admin | premium (`exam_full_length`) | Start a module; returns its first item |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/items` | GET | Yes | student/admin | premium (`exam_full_length`) | Items of the active module (no answer, no explanation) |
+| `/api/tests/answer` | POST | Yes | student/admin | premium (`exam_full_length`) | Submit one answer (idempotent via `idempotency_key`) |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/submit` | POST | Yes | student/admin | premium (`exam_full_length`) | Submit a module (Module 1 routes; the last Module 2 completes and scores) |
+| `/api/tests/sessions/:session_id/sections/:section/heartbeat` | POST | Yes | student/admin | premium (`exam_full_length`) | Activity heartbeat (lenient pause accounting) |
 
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |

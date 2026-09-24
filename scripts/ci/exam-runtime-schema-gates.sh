@@ -33,7 +33,7 @@ DB=exam_runtime_schema_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-EXPECTED_IDS="G1 C4 C1 C2 C3 C5 C6 P1 P2 P3 P4 P5 C7 F1 F2 F3 F4 I1 I2 I3 U1 U2 R1 R2 A1a A1b A1 D1"
+EXPECTED_IDS="G1 C4 C1 C2 C3 C5 C6 P1 P1s P2 P3 P4 P5 C7 F1 F2 F3 F4 I1 I2 I3 U1 U2 R1 R2 A1a A1b A1 D1"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 

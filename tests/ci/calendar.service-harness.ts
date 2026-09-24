@@ -190,6 +190,9 @@ export const CONFIG_ROWS: { key: string; value: unknown }[] = [
   // §17.1's "~N min" readout. Calendar-owned (SCL-08-F); its practice counterpart lives in
   // `practice_runtime_config` because Doc 02B §41 owns practice timing.
   { key: "review_estimated_seconds_per_item", value: 120 },
+  // §17.2's engine picker, and V-03's allow-list. Matches production on 2026-09-24:
+  // full-length is absent because it has not shipped.
+  { key: "enabled_block_types", value: ["practice", "review"] },
 ];
 
 /**
