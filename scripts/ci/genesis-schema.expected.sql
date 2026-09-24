@@ -7902,14 +7902,36 @@ BEGIN
   END IF;
 
   -- COMPUTE PRESENT SECTIONS
+  -- An absent section's record is still ASSIGNED, to a typed all-NULL row of
+  -- compute_section_scaled_score's shape. PL/pgSQL fixes the INSERT below's plan
+  -- on its first execution in a session; if that execution sees an unassigned
+  -- `record` it raises "record … is not assigned yet" even inside a CASE branch
+  -- that is not taken. Without this, the first partial (one-section) session a
+  -- fresh connection scores fails. Found by the scoring-parity gate in CI
+  -- (collation ordered a partial session first). The CASE guards stay; the NULL
+  -- row only makes the structure determinate.
   IF v_rw_present THEN
     SELECT * INTO v_rw_row
     FROM compute_section_scaled_score(v_test_session_id, 'rw');
+  ELSE
+    SELECT NULL::int AS scaled, NULL::int AS module1_correct, NULL::int AS module2_correct,
+           NULL::text AS module2_path, NULL::int AS m2_easy_wrong, NULL::int AS m2_medium_wrong,
+           NULL::int AS m2_hard_wrong, NULL::numeric AS ceiling, NULL::numeric AS deduction,
+           NULL::numeric AS raw_floor, NULL::numeric AS path_floor,
+           NULL::numeric AS effective_floor, NULL::numeric AS s_raw
+      INTO v_rw_row;
   END IF;
 
   IF v_math_present THEN
     SELECT * INTO v_math_row
     FROM compute_section_scaled_score(v_test_session_id, 'math');
+  ELSE
+    SELECT NULL::int AS scaled, NULL::int AS module1_correct, NULL::int AS module2_correct,
+           NULL::text AS module2_path, NULL::int AS m2_easy_wrong, NULL::int AS m2_medium_wrong,
+           NULL::int AS m2_hard_wrong, NULL::numeric AS ceiling, NULL::numeric AS deduction,
+           NULL::numeric AS raw_floor, NULL::numeric AS path_floor,
+           NULL::numeric AS effective_floor, NULL::numeric AS s_raw
+      INTO v_math_row;
   END IF;
 
   -- TOTAL_SCALED / PARTIAL_DISPLAY_SCALED (§9.1, §15.2)

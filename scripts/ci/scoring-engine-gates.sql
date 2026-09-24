@@ -572,3 +572,52 @@ BEGIN
   RAISE NOTICE 'ok   [DEL1 account-deletion-cascade] profile delete removed session, score_run and ledger row';
 END $$;
 ROLLBACK;
+
+-- ---------------------------------------------------------------------------
+-- PS0a / PS0b — a partial session as the FIRST scoring call on a FRESH
+-- connection (RW-only, then Math-only). PL/pgSQL fixes the score_runs INSERT's
+-- plan on its first execution per session; an unassigned `record` for the
+-- absent section raised "record … is not assigned yet" (SQLSTATE
+-- 55000) and wrote nothing. Found by scoring-parity in CI, where collation
+-- ordered a partial session first. Each block reconnects so it is order-free.
+-- ---------------------------------------------------------------------------
+\c
+SET client_min_messages = notice;
+\ir lib/exam-form-fixture.sql
+\ir lib/scoring-session-fixture.sql
+BEGIN;
+SELECT pg_temp.scoring_fixture_session('00000000-0000-0000-0000-00000000e5a1', '00000000-0000-0000-0000-0000000e4a01',
+  '00000000-0000-0000-0000-0000000e4f01', '{"path":"B","r1":24,"ne":1,"nm":2,"nh":2}', NULL) AS ev \gset
+SET ROLE service_role;
+SELECT public.score_test_session_from_outbox(:'ev') AS run \gset
+RESET ROLE;
+DO $$
+DECLARE r public.score_runs%ROWTYPE;
+BEGIN
+  SELECT * INTO r FROM public.score_runs WHERE test_session_id = '00000000-0000-0000-0000-00000000e5a1';
+  IF r.id IS NULL OR r.total_scaled IS NOT NULL OR r.partial_display_scaled IS NULL OR r.math_scored OR NOT r.rw_scored THEN
+    RAISE EXCEPTION 'SEG FAIL [PS0a partial-rw-first-call]: %', row_to_json(r);
+  END IF;
+  RAISE NOTICE 'ok   [PS0a partial-rw-first-call] first scoring call on a fresh connection is a partial session: scored, partial_display %', r.partial_display_scaled;
+END $$;
+ROLLBACK;
+\c
+SET client_min_messages = notice;
+\ir lib/exam-form-fixture.sql
+\ir lib/scoring-session-fixture.sql
+BEGIN;
+SELECT pg_temp.scoring_fixture_session('00000000-0000-0000-0000-00000000e5a2', '00000000-0000-0000-0000-0000000e4a01',
+  '00000000-0000-0000-0000-0000000e4f01', NULL, '{"path":"B","r1":18,"ne":1,"nm":2,"nh":2}') AS ev \gset
+SET ROLE service_role;
+SELECT public.score_test_session_from_outbox(:'ev') AS run \gset
+RESET ROLE;
+DO $$
+DECLARE r public.score_runs%ROWTYPE;
+BEGIN
+  SELECT * INTO r FROM public.score_runs WHERE test_session_id = '00000000-0000-0000-0000-00000000e5a2';
+  IF r.id IS NULL OR r.total_scaled IS NOT NULL OR r.partial_display_scaled IS NULL OR r.rw_scored OR NOT r.math_scored THEN
+    RAISE EXCEPTION 'SEG FAIL [PS0b partial-math-first-call]: %', row_to_json(r);
+  END IF;
+  RAISE NOTICE 'ok   [PS0b partial-math-first-call] first scoring call on a fresh connection is a partial session: scored, partial_display %', r.partial_display_scaled;
+END $$;
+ROLLBACK;
