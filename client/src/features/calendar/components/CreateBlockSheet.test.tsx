@@ -2,7 +2,7 @@
 /**
  * §17.2 — Add opens a form. It does not write.
  *
- * @spec [Doc 05F §17.2, §12.4; Brief 11 Step 2; SCL-131] | @implemented [2026-09-24]
+ * @spec [Doc 05F §17.2, §12.4; Brief 11 Step 2; SCL-137] | @implemented [2026-09-24]
  *
  * The first test is the one that matters. "+ Add block" used to POST a day edit on the
  * click, carrying a block nobody chose — practice, section M, the first two Math domains,

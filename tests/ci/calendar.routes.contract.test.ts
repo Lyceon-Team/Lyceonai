@@ -419,7 +419,7 @@ describe("§15's error list — every failure gets its own status", () => {
     });
   }
 
-  /** The shape the validator really returns — objects, never strings. See SCL-131. */
+  /** The shape the validator really returns — objects, never strings. See SCL-137. */
   const V05 = {
     rule: "V-05",
     date: "2026-09-25",
@@ -443,7 +443,7 @@ describe("§15's error list — every failure gets its own status", () => {
     expect(JSON.stringify(res.body)).not.toContain("V-05");
   });
 
-  describe("a refused DAY EDIT is a decision, not a fault (§15; SCL-131)", () => {
+  describe("a refused DAY EDIT is a decision, not a fault (§15; SCL-137)", () => {
     it("answers 409, not 500 — the request was understood and declined", async () => {
       editDayMock.mockResolvedValue({
         ok: false,
