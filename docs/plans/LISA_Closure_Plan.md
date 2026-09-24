@@ -177,6 +177,55 @@ commit;
 | **W3-1** | Model Armor protects nothing | A deliberately unsafe output is **blocked** by your template, with the filter named in the log. Standalone Sanitize from the BFF, real enforcement, SDP on output, fail-open with ERROR | CC |
 | **W3-2** | LISA invents and grades questions | In general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
 | **W3-3** | All students get US crisis resources | A student with a non-US country sees that country's resources. Depends on Stripe country collection | CC + Karl |
+| **W3-4** | Model Armor template IDs still ride the orchestrate wire and the worker's Cloud Run env, unused since W3-1 | The deployed worker's `orchestrateRequestSchema` no longer requires `model_armor_*_template_id`, **then** the BFF stops sending them; `MODEL_ARMOR_*` absent from the Cloud Run revision and from Vercel. Two steps, worker first — the running worker 400s every turn if the BFF drops them early | CC + Karl |
+| **W3-5** | A Model Armor input block answers a missed crisis with "I can't help with that one" | Decision first: an input block on `rai:dangerous` also flags the conversation for crisis review (or not). Found wiring W3-1; see *W3-1 detail* | Karl |
+
+### W3-1 detail — what shipped, and the proof still owed
+
+**Shipped (code):** both scan points run in the BFF against the regional Sanitize API
+(`https://modelarmor.us-central1.rep.googleapis.com`, a constant — not `VERTEX_LOCATION`),
+templates from `TutorConfig`, credential from `server/lib/gcp-credentials.ts`.
+Input scan before `orchestrateTurn` — a block skips the model; output scan after it —
+the verdict is `armorOutputBlocked` in `serializeTutorOutput`, which substitutes.
+Fail open on every scanner failure, with ERROR. Timeout 1500 ms per scan. Clean → INFO
+`model_armor_scan_clean`, blocked → WARN `model_armor_scan_blocked` (filters named),
+skipped → ERROR `model_armor_scan_skipped` (reason). No text in any log line.
+The crisis path returns before either scan. Dead code deleted: the worker's
+`sanitizeOutput`, `_buildInputModelArmorConfig`, `armorOutputBlocked: false`,
+`getModelArmorConfig` in the BFF.
+
+**Student copy on a block (both points):** *"I can't help with that one. Let's get back
+to your SAT prep — what would you like to work on next?"*
+
+**Karl, before the proof can pass:** grant `roles/modelarmor.user` to the service account
+in Vercel's `GCP_SERVICE_ACCOUNT_JSON`. Without it every scan is a 403 → ERROR
+`model_armor_scan_skipped reason=http_error http_status=403`, and turns proceed unscanned.
+
+**Proof owed after deploy** (not yet run — the read-only credential was not in the
+session that built this; environment variables reach new sessions only):
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Ordinary turn → `model_armor_scan_clean` at `input` and `output`, `latency_ms` recorded | *pending* |
+| 2 | Deliberately unsafe input → `model_armor_scan_blocked`, `matched_filters` named | *pending* |
+| 3 | Crisis turn → zero `TUTOR_MODEL_ARMOR` lines, crisis response unchanged | *pending* |
+| 4 | `turn_metrics_logged.orchestrationDurationMs`, 24 h before vs after (now includes both scans) | *pending* |
+
+**Measure before enforcement is trusted** — the same session, with the credential, sends
+ordinary tutoring text through both templates directly and reports matches:
+- `pi_and_jailbreak` at `LOW_AND_ABOVE` is on the **output** template too; a tutor reply
+  that quotes instructions ("ignore the distractor and…") is the likeliest false positive.
+- `SEXUALLY_EXPLICIT` at `LOW_AND_ABOVE` against literature-passage discussion.
+- SDP on output is `basic_config`. As CC recalls Google's docs, its fixed infoTypes are
+  financial/government IDs and cloud credentials, not `PERSON_NAME`, so a student's name
+  echoed back should not match. The docs host is blocked from CC's sandbox and the proto
+  does not list them — **confirm with a real call before relying on it.**
+Thresholds are Terraform and Karl's ruling; any false positive found is reported, not tuned.
+
+**Latency:** two sequential calls at the measured 0.18–0.42 s each is roughly 0.4–0.9 s on a
+3–5 s turn — 8 % to 30 %, straddling the 15 % line. Item 4 settles it. If over, the first
+lever is starting the input scan in parallel with context resolution (it needs only the
+student's message); output-only scanning is the fallback.
 
 ---
 
