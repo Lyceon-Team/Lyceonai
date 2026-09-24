@@ -417,9 +417,10 @@ ROLLBACK;
 -- R1 / R2 — module2_path: first lock allowed; any rewrite refused.
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3501', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 INSERT INTO public.test_session_sections (test_session_id, section, state, module1_started_at)
 VALUES ('00000000-0000-0000-0000-0000000e3501', 'RW', 'module1_active', now());
@@ -447,9 +448,10 @@ ROLLBACK;
 -- the single canonical row (answer, last_submission_id). One row throughout.
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3502', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 CREATE TEMP TABLE _submit (key text, answer text) ON COMMIT DROP;
 CREATE FUNCTION pg_temp.e3_submit(p_key text, p_answer text) RETURNS void LANGUAGE plpgsql AS $f$
@@ -500,13 +502,17 @@ END $$;
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
--- D1 — account deletion: DELETE of the student's profile cascades through
--- test_sessions to sections, submissions and answers (nothing blocks).
+-- D1 — account deletion: DELETE of the student's profile SEVERS the session
+-- (student_id ON DELETE SET NULL, E6b / SCL-143, superseding the CASCADE of
+-- SCL-124) and nothing blocks. The session keeps its actor_id and its sections,
+-- submissions and answers. Removal is the cascade's hard_delete job
+-- (scripts/ci/exam-deletion-cascade-gates.sql).
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3503', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 INSERT INTO public.test_session_sections (test_session_id, section, state) VALUES
   ('00000000-0000-0000-0000-0000000e3503', 'RW', 'module1_active'),
@@ -520,16 +526,17 @@ INSERT INTO public.test_session_answers (test_session_id, section, module, ordin
 SELECT '00000000-0000-0000-0000-0000000e3503', 'RW', '1', 0, 'SATRW1V10100', 'A', id FROM s;
 DELETE FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa';
 DO $$
-DECLARE v_left int;
+DECLARE v_left int; v_sev int;
 BEGIN
-  SELECT (SELECT count(*) FROM public.test_sessions WHERE id = '00000000-0000-0000-0000-0000000e3503')
-       + (SELECT count(*) FROM public.test_session_sections WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
+  SELECT count(*) INTO v_sev FROM public.test_sessions
+   WHERE id = '00000000-0000-0000-0000-0000000e3503' AND student_id IS NULL AND actor_id IS NOT NULL;
+  SELECT (SELECT count(*) FROM public.test_session_sections WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
        + (SELECT count(*) FROM public.test_answer_submissions WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
        + (SELECT count(*) FROM public.test_session_answers WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
     INTO v_left;
-  IF v_left <> 0 THEN
-    RAISE EXCEPTION 'EXG FAIL [D1 deletion-cascade]: % runtime row(s) survived the profile delete', v_left;
+  IF v_sev <> 1 OR v_left <> 4 THEN
+    RAISE EXCEPTION 'EXG FAIL [D1 deletion-severs]: severed session rows=% (want 1), children=% (want 4)', v_sev, v_left;
   END IF;
-  RAISE NOTICE 'ok   [D1 deletion-cascade] profile delete removed session, 2 sections, 1 submission, 1 answer';
+  RAISE NOTICE 'ok   [D1 deletion-severs] profile delete severed the session (student_id NULL, actor_id kept); 2 sections, 1 submission, 1 answer retained';
 END $$;
 ROLLBACK;
