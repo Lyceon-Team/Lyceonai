@@ -1,7 +1,7 @@
 /**
  * §17.2's "+ Add block" — the side sheet in CREATE mode.
  *
- * @spec [Doc_05F_V1.0 §17.2 day editor, §12.4 day edit, §21; Brief 11 Step 2; SCL-131]
+ * @spec [Doc_05F_V1.0 §17.2 day editor, §12.4 day edit, §21; Brief 11 Step 2; SCL-137]
  * | @implemented [2026-09-24]
  *
  * plain English: pick the engine, fill in that engine's fields, confirm. Only then is
