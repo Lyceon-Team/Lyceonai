@@ -3,25 +3,21 @@
  * @implemented 2026-08-09
  *
  * plain English: Vertex AI client for the tutor orchestrator worker. Handles model
- * invocation with safetySettings on generateContent. Model Armor integration code
- * (inline modelArmorConfig, standalone Sanitize API) is retained but not called —
- * deferred pending Google-side TEMPLATE_NOT_FOUND resolution. Template ID plumbing
- * preserved for re-enablement.
+ * invocation with safetySettings on generateContent.
  *
  * expected outcome: generateTutorResponse() sends a request to Vertex AI with
  * safetySettings (four harm categories, thresholds mirroring the Model Armor
- * templates). Model Armor input and output scanning are bypassed.
+ * templates).
  *
  * trade-offs:
- *  - Model Armor template IDs come from env vars (MODEL_ARMOR_INPUT_TEMPLATE_ID,
- *    MODEL_ARMOR_OUTPUT_TEMPLATE_ID), NOT hardcoded literals, per Doc 03B §12B.8
- *    ("Runtime config cache... event-driven refresh"). This worker has no Supabase
- *    client (see index.ts / package.json — deliberately thin/stateless per Doc 03C V3
- *    §1.2 "Stateless orchestrator"), so unlike server/services/tutor-injection-defense.ts
- *    (which reads tutor_context_runtime_config directly), template IDs here are baked
- *    into the Cloud Run env at deploy time from the same runtime-config source of truth.
- *    Both call sites fail CLOSED identically when a template ID is unconfigured —
- *    same posture, different transport, per "Unified code across agents".
+ *  - Model Armor is NOT called from this worker. Both scan points (input and
+ *    output) run in the BFF — server/services/tutor-model-armor.ts, closure
+ *    plan W3-1, 2026-09-24 — against the regional Sanitize API. The worker's
+ *    inline-config builder and its sanitizeOutput (which derived the Model
+ *    Armor region from VERTEX_LOCATION=global, an endpoint that does not
+ *    exist) were deleted then, with no callers. The orchestrate request still
+ *    carries model_armor_*_template_id for wire compatibility; the worker
+ *    ignores them.
  *  - Pro-to-Flash fallback on 5xx/429/timeout only (Doc 03C V3 §5.3.2). Fallback does
  *    NOT trigger for 400/403/422 — those indicate a bug or a real safety block, not a
  *    transient condition, and retrying/falling back would not help.
@@ -40,10 +36,6 @@
  *    else in this file: build what the current wire contract can exercise.
  *
  * edge cases:
- *  - Missing/empty Model Armor template ID → fails closed (`vertex_model_armor_unconfigured`)
- *    before ever calling Vertex; never proceeds unarmored.
- *  - Sanitize API network/parse/schema failure → fails closed (`vertex_model_armor_unconfigured`)
- *    rather than passing raw model output through unscanned.
  *  - Vertex response blocked by safety filter (finishReason SAFETY/PROHIBITED_CONTENT/
  *    BLOCKLIST/SPII, or promptFeedback.blockReason set) → classified as
  *    `vertex_422_safety_blocked`, not fallback-eligible, per Doc 03C V3 §5.3.2.
@@ -57,11 +49,8 @@ import {
   HarmCategory,
   type Content,
   type GenerateContentConfig,
-  type ModelArmorConfig,
   type SafetySetting,
 } from "@google/genai";
-import { GoogleAuth } from "google-auth-library";
-import { z } from "zod";
 
 // ── Result type (mirrors server/services/tutor-error-codes.ts TutorResult
 //    shape — Coding Standards §3.6 "single canonical Result shape") ────────
@@ -91,7 +80,6 @@ export type VertexResponse = {
   modelAliasUsed: ModelAlias;
   providerModel: string;
   fallbackApplied: boolean;
-  armorOutputBlocked: boolean;
   finishReason: string | null;
 };
 
@@ -110,12 +98,9 @@ export type VertexErrorCode =
   | "vertex_403_auth"
   | "vertex_422_safety_blocked"
   | "vertex_max_tokens_truncated"
-  | "vertex_model_armor_unconfigured"
   | "vertex_unknown";
 
 // ── Constants ────────────────────────────────────────────────────────────
-
-const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
 /** Generation parameters per Doc 03C V3 §5.7. Low temperature: tutor is informative,
  * not creative; topK/topP bound structured-output drift. */
@@ -123,7 +108,7 @@ const TEMPERATURE = 0.3;
 const TOP_P = 0.95;
 const TOP_K = 40;
 
-// Thresholds mirror the Model Armor templates; if Model Armor is re-enabled, these values and the templates must be reconciled.
+// Thresholds mirror the Model Armor templates (infra/terraform/model-armor.tf); change both together.
 const SAFETY_SETTINGS: SafetySetting[] = [
   {
     category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
@@ -161,19 +146,6 @@ const RETRY_SCHEDULE: ReadonlyArray<{
   { baseMs: 200, jitterMs: 50 },
   { baseMs: 800, jitterMs: 200 },
 ];
-
-/**
- * Safe substitution text mirrored from the canonical constant
- * `TUTOR_ANTI_LEAK_SUBSTITUTION` in server/services/tutor-antileak.ts (defined
- * there "exactly once" for the BFF's regex-based anti-leak layer). This worker
- * cannot import that module — it drags in `apps/api/src/lib/supabase-server`
- * and breaks the isolated Cloud Run buildpack compile (see schema.ts). The
- * literal wording is kept identical for a consistent student-facing message;
- * update both locations together if the wording ever changes.
- * @spec [Doc-03_V3 §17.5, INV-03-04]
- */
-const MODEL_ARMOR_SAFE_SUBSTITUTION =
-  "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
 
 // ── Structured logging (task-sanctioned exception to Coding Standards §16
 //    "no console.log": this Cloud Run worker is a separate process with no
@@ -239,17 +211,6 @@ export function resolveProviderModel(alias: ModelAlias): string {
   );
 }
 
-function resolveModelArmorTemplateName(
-  rawId: string,
-  project: string,
-  location: string,
-): string {
-  if (rawId.startsWith("projects/")) {
-    return rawId;
-  }
-  return `projects/${project}/locations/${location}/templates/${rawId}`;
-}
-
 let cachedGenAiClient: GoogleGenAI | null = null;
 
 function getGenAiClient(): GoogleGenAI {
@@ -262,197 +223,6 @@ function getGenAiClient(): GoogleGenAI {
     location: getVertexLocation(),
   });
   return cachedGenAiClient;
-}
-
-/** Lazy singleton: token minting for the standalone Model Armor Sanitize API
- * call. Vertex calls themselves are authenticated internally by @google/genai
- * via Application Default Credentials; this is only for the REST call that
- * has no SDK coverage (see sanitizeOutput). */
-let cachedAuth: GoogleAuth | null = null;
-
-function getGoogleAuth(): GoogleAuth {
-  if (cachedAuth) {
-    return cachedAuth;
-  }
-  cachedAuth = new GoogleAuth({ scopes: [CLOUD_PLATFORM_SCOPE] });
-  return cachedAuth;
-}
-
-// ── Model Armor input config (inline on generateContent) ─────────────────
-
-/**
- * Builds the inline `modelArmorConfig` for prompt (input) scanning. Fails
- * closed (Result error) when the template ID is empty — the caller
- * must not proceed to Vertex unarmored.
- *
- * @param requestTemplateId Template ID from the orchestrate request (BFF
- *   reads it from tutor_context_runtime_config and passes it on the wire —
- *   Karl ruling: worker stays stateless, config stays in DB, ADR-001).
- *   Falls back to the env var for callers that don't pass one (e.g. compact).
- *
- * @spec [Doc-03B_V4.1 §12B.8, Doc-03C_V3 §5]
- */
-function _buildInputModelArmorConfig(
-  requestTemplateId?: string | null,
-): Result<ModelArmorConfig, VertexErrorCode> {
-  const rawTemplateId = (
-    requestTemplateId ??
-    process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID ??
-    ""
-  ).trim();
-  if (!rawTemplateId) {
-    return {
-      ok: false,
-      errorCode: "vertex_model_armor_unconfigured",
-      details: { reason: "Model Armor input template ID is not configured" },
-    };
-  }
-  const promptTemplateName = resolveModelArmorTemplateName(
-    rawTemplateId,
-    getVertexProjectId(),
-    getVertexLocation(),
-  );
-  return { ok: true, value: { promptTemplateName } };
-}
-
-// ── Standalone Model Armor Sanitize API (output scanning) ────────────────
-
-const modelArmorSanitizeResponseSchema = z.object({
-  sanitizationResult: z
-    .object({
-      filterMatchState: z.string().optional(),
-    })
-    .optional(),
-});
-
-export type SanitizeOutcome = {
-  blocked: boolean;
-  sanitizedText: string;
-};
-
-/**
- * Calls the standalone Model Armor `sanitizeModelResponse` REST API
- * (no SDK coverage for this — see @google/genai's ModelArmorConfig, which
- * only supports inline prompt/response template names on generateContent,
- * not a standalone sanitize call). Fails closed: any network, auth, parse,
- * or schema failure returns a `vertex_model_armor_unconfigured`-equivalent
- * error rather than letting unscanned text through.
- *
- * @spec [Doc-03B_V4.1 §12B.8, Doc-03C_V3 §5]
- */
-export async function sanitizeOutput(
-  text: string,
-  templateId: string,
-): Promise<Result<SanitizeOutcome, VertexErrorCode>> {
-  const rawTemplateId = templateId.trim();
-  if (!rawTemplateId) {
-    return {
-      ok: false,
-      errorCode: "vertex_model_armor_unconfigured",
-      details: { reason: "output template ID is empty" },
-    };
-  }
-
-  const templateName = resolveModelArmorTemplateName(
-    rawTemplateId,
-    getVertexProjectId(),
-    getVertexLocation(),
-  );
-  const location = getVertexLocation();
-  const url = `https://modelarmor.${location}.rep.googleapis.com/v1/${templateName}:sanitizeModelResponse`;
-
-  let accessToken: string | null | undefined;
-  try {
-    accessToken = await getGoogleAuth().getAccessToken();
-  } catch (err: unknown) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_token_failed",
-      "failed to acquire access token for Model Armor Sanitize API",
-      { err: err instanceof Error ? err.message : String(err) },
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-  if (!accessToken) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_token_empty",
-      "GCP access token unavailable for Model Armor Sanitize API",
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ modelResponseData: { text } }),
-    });
-  } catch (err: unknown) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_sanitize_unreachable",
-      "Model Armor Sanitize API request failed",
-      { err: err instanceof Error ? err.message : String(err) },
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-
-  if (!response.ok) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_sanitize_error_status",
-      "Model Armor Sanitize API returned a non-2xx status",
-      { status: response.status },
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch (err: unknown) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_sanitize_parse_failed",
-      "Model Armor Sanitize API response was not valid JSON",
-      { err: err instanceof Error ? err.message : String(err) },
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-
-  const parsed = modelArmorSanitizeResponseSchema.safeParse(rawBody);
-  if (!parsed.success) {
-    logEvent(
-      "error",
-      "vertex_client",
-      "model_armor_sanitize_schema_invalid",
-      "Model Armor Sanitize API response failed schema validation",
-      { errors: parsed.error.flatten() },
-    );
-    return { ok: false, errorCode: "vertex_model_armor_unconfigured" };
-  }
-
-  const matchState =
-    parsed.data.sanitizationResult?.filterMatchState ?? "NO_MATCH_FOUND";
-  const blocked = matchState === "MATCH_FOUND";
-
-  return {
-    ok: true,
-    value: {
-      blocked,
-      sanitizedText: blocked ? MODEL_ARMOR_SAFE_SUBSTITUTION : text,
-    },
-  };
 }
 
 // ── Error classification ─────────────────────────────────────────────────
@@ -649,44 +419,22 @@ async function invokeWithRetry(
   return lastResult;
 }
 
-// ── Public entry point: fallback + retry + Model Armor output scan ───────
+// ── Public entry point: fallback + retry ─────────────────────────────────
 
 /**
- * Model Armor template IDs passed from the BFF on the orchestrate wire
- * request (Karl ruling: worker stays stateless, config stays in DB, no
- * redeploy to change a threshold — ADR-001). Optional so callers that
- * don't carry them (e.g. compact) fall back to env vars.
- */
-export type ModelArmorTemplateIds = {
-  inputTemplateId: string | null;
-  outputTemplateId: string | null;
-};
-
-/**
- * Generates a tutor turn response from Vertex AI. Applies Model Armor input
- * scanning inline, retries transient failures per §5.8, falls back
- * pro_class → flash_class per §5.3.2 on fallback-eligible errors, and runs
- * the model's raw text through the standalone Model Armor Sanitize API for
- * output scanning before returning.
+ * Generates a tutor turn response from Vertex AI. Retries transient failures
+ * per §5.8 and falls back pro_class → flash_class per §5.3.2 on
+ * fallback-eligible errors. Model Armor scanning is the BFF's
+ * (server/services/tutor-model-armor.ts).
  *
- * @param modelArmorIds Template IDs from the BFF request; falls back to env
- *   vars when omitted (e.g. compact route). See `buildInputModelArmorConfig`.
- *
- * @spec [Doc-03C_V3 §5.2, §5.3, §5.7, §5.8; Doc-03B_V4.1 §12B.8]
+ * @spec [Doc-03C_V3 §5.2, §5.3, §5.7, §5.8]
  */
 export async function generateTutorResponse(
   modelAlias: ModelAlias,
   messages: VertexMessage[],
   systemInstruction: string,
   config: VertexGenerationLimits,
-  _modelArmorIds?: ModelArmorTemplateIds,
 ): Promise<Result<VertexResponse, VertexErrorCode>> {
-  // Model Armor deferred: Google-side TEMPLATE_NOT_FOUND blocks both the
-  // inline modelArmorConfig and the standalone Sanitize API. safetySettings
-  // (SAFETY_SETTINGS constant) replaces the inline config on generateContent;
-  // the standalone sanitizeOutput call is also bypassed. When Model Armor is
-  // re-enabled, restore both paths and remove safetySettings.
-
   const primary = await invokeWithRetry(
     modelAlias,
     messages,
@@ -734,7 +482,6 @@ export async function generateTutorResponse(
       modelAliasUsed,
       providerModel: resolveProviderModel(modelAliasUsed),
       fallbackApplied,
-      armorOutputBlocked: false,
       finishReason: generation.finishReason,
     },
   };

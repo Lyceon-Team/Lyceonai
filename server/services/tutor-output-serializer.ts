@@ -14,6 +14,8 @@
  *   3. Canonical ID leak (hasCanonicalIdLeak) — INV-03-10, SCL-030
  *   4. System-prompt signature leak (hasSystemPromptLeak) — INV-03-17
  *   5. Persona / identity violation (hasPersonaViolation) — INV-03-09
+ * plus the Model Armor output verdict when the caller supplies one
+ * (`armorOutputBlocked`, closure plan W3-1).
  *
  * expected outcome: every LISA response is scanned across all 5 classes before
  * delivery. On any blocking detection: substitute with TUTOR_ANTI_LEAK_SUBSTITUTION,
@@ -23,7 +25,7 @@
  *
  * trade-offs:
  *  - Regex-based detection may produce false negatives on novel phrasing. This
- *    is the fast deterministic layer; Model Armor (worker-side) provides model-
+ *    is the fast deterministic layer; Model Armor (tutor-model-armor.ts, BFF) provides model-
  *    backed depth. False positives are preferable to leaks.
  *  - Fail-closed: if any scan throws, substitute rather than deliver. Unresolved
  *    correct_answer on a pre-submit turn is a blocking gate (LISA-FULL-007).
@@ -50,6 +52,7 @@ import {
   hasPersonaViolation,
   removeInternalMetadataMentions,
 } from "../../shared/tutor-safety-constants";
+import { MODEL_ARMOR_SUBSTITUTION } from "./tutor-model-armor";
 
 // Re-export for consumers that previously imported from tutor-antileak.ts
 // or tutor-runtime.ts — single import path going forward.
@@ -90,6 +93,16 @@ export type OutputScanContext = {
    * Omitting this field preserves fail-closed behavior (no echo exemption).
    */
   studentMessages?: readonly string[];
+  /**
+   * The Model Armor output verdict for this text (tutor-model-armor.ts,
+   * `sanitizeModelResponse` against the output template). true = matched:
+   * the serializer substitutes MODEL_ARMOR_SUBSTITUTION and records the
+   * detection like any other blocking scan class. Omitted or false = clean,
+   * or the scan was skipped (fail open — the skip is logged at ERROR by the
+   * scanner, not here).
+   * @spec [Doc-03_V3 §18.2 Layer 4; closure plan W3-1] | @implemented 2026-09-24
+   */
+  armorOutputBlocked?: boolean;
 };
 
 /**
@@ -106,6 +119,7 @@ export type SerializedOutput = {
     systemPromptLeakDetected: boolean;
     personaViolationDetected: boolean;
     correctAnswerGateBlocked: boolean;
+    modelArmorOutputBlocked: boolean;
   };
 };
 
@@ -116,7 +130,8 @@ type ScanClass =
   | "canonical_id_leak"
   | "system_prompt_leak"
   | "persona_violation"
-  | "correct_answer_gate";
+  | "correct_answer_gate"
+  | "model_armor_output";
 
 // ── Dual-write: abuse_score_incidents (Doc 03A §12.8) ───────────────────
 
@@ -247,6 +262,7 @@ export async function serializeTutorOutput(
     systemPromptLeakDetected: false,
     personaViolationDetected: false,
     correctAnswerGateBlocked: false,
+    modelArmorOutputBlocked: false,
   };
 
   // ── Server-authored shortcut ──────────────────────────────────────
@@ -342,9 +358,23 @@ async function runAllScans(
     detectedClasses.push("persona_violation");
   }
 
+  // ── 7. Model Armor output verdict (closure plan W3-1) ────────────
+  // The scan itself ran in the route (tutor-model-armor.ts); the verdict is
+  // acted on here so substitution stays in the one serializer.
+  if (context.armorOutputBlocked === true) {
+    scanResults.modelArmorOutputBlocked = true;
+    detectedClasses.push("model_armor_output");
+  }
+
   // ── Evaluate: any blocking detection? ─────────────────────────────
+  // A Model Armor block takes the neutral safety copy; the anti-leak copy
+  // ("what approach would you take…") presumes a question in progress.
   const blocked = detectedClasses.length > 0;
-  const content = blocked ? TUTOR_ANTI_LEAK_SUBSTITUTION : cleaned;
+  const content = !blocked
+    ? cleaned
+    : scanResults.modelArmorOutputBlocked
+      ? MODEL_ARMOR_SUBSTITUTION
+      : TUTOR_ANTI_LEAK_SUBSTITUTION;
 
   // ── SLI emission (§22.2) ──────────────────────────────────────────
   emitScannerSli(blocked, detectedClasses, context.conversationId);
