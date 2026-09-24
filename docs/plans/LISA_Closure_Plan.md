@@ -89,7 +89,36 @@ Both are toggles. Neither loses a control — floor settings are inspect-only an
 |---|---|---|---|
 | **W4-1** | LISA in practice and review | A scoped turn from each surface, anti-leak holding pre-submit | CC |
 | **W4-2** | Golden set Phase B | The judge reproduces Karl's verdicts on all ten gold responses, then scores the remaining 25 | CC + Karl |
-| **W4-3** | `TutorConfig.loadAll()` | Enabled and the six live keys read from the database — **or** the path deleted. Karl's ruling; same decision as W3-1 | Karl rules |
+| **W4-3** | `TutorConfig.loadAll()` — **IN PROGRESS** (Karl ruled *enable*, 09-24; code in the W4-3 PR, awaiting deploy) | Production logs show `TUTOR_CONFIG cache_loaded` with `effective.model_armor_input_template_id = "lyceon-lisa-input-v1"` (a database value; the default is `null`), and a tutor request with **no** `cache_not_loaded` line. See *W4-3 detail* below | CC |
+
+
+### W4-3 detail — before/after of every key the runtime reads
+
+Read from production `tutor_context_runtime_config` on 2026-09-24. All 24 rows are `environment = all`, so there are no per-environment duplicates for `loadAll()` to collide on.
+
+| Key | Read at | Served before (default) | Database value = served after | Changes? |
+|---|---|---|---|---|
+| `recent_message_window` | `tutor-compaction.ts:141`, `tutor-memory.ts:438` | 12 | 12 | no |
+| `observation_promotion_threshold` | `tutor-memory.ts:365` | 5 | 5 | no |
+| `friction_long_pause_seconds` | `tutor-context.ts:844` | 120 | 120 | no |
+| `tutor_request_timeout_seconds` | `tutor-orchestrator-client.ts:181` | 30 | 30 | no |
+| `model_armor_input_template_id` | `tutor-context.ts:1235` → worker wire | `null` | `lyceon-lisa-input-v1` | **yes, inert.** The worker ignores it until W3-1 |
+| `model_armor_output_template_id` | `tutor-context.ts:1237` → worker wire | `null` | `lyceon-lisa-output-v1` | **yes, inert.** Same |
+
+The other 16 keys in the schema are not read by any code path, and their database values equal their defaults.
+
+`crisis_classifier_model_alias` and `vertex.model.*_class_alias` are not `TutorConfig` keys, so this change does not touch them.
+
+**What changed.**
+- `TutorConfig.bootLoad()` runs once per process at module load in `server/index.ts`. On Vercel the app module *is* the boot, because `app.listen` never runs there.
+- The load is single-flight and never throws. A failure logs ERROR `boot_load_failed` and the process keeps serving the defaults it served before.
+- `/api/tutor` and the internal memory (compaction) routes wait up to 3s for the load to settle, so a cold-start request cannot race it.
+- The per-call `cache_not_loaded` warning is removed.
+- `cache_loaded` now logs the effective value of every key.
+
+**Proof to paste here after deploy:**
+1. The `cache_loaded` line with its `effective` values.
+2. One `POST /api/tutor/messages` request log with no `cache_not_loaded` line.
 
 ---
 
