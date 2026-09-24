@@ -1,0 +1,11 @@
+import { createRequire } from 'node:module';import fs from 'node:fs';
+const require=createRequire(import.meta.url);const {createCanvas}=require('/workspace/Lyceonai/node_modules/.pnpm/@napi-rs+canvas@0.1.99/node_modules/@napi-rs/canvas');
+const c=createCanvas(1920,1080),x=c.getContext('2d');
+x.fillStyle='#0F2E48';x.fillRect(0,0,1920,1080);
+x.fillStyle='#FFFAEF';x.textAlign='center';x.font='800 34px Arial';x.fillText('L Y C E O N',960,170);
+x.font='700 86px Arial';x.fillText('Know what to practise next —',960,390);x.fillText('and why.',960,490);
+x.globalAlpha=.72;x.font='400 28px Arial';x.fillText('Diagnostic  →  focused practice  →  understanding  →  measured mastery.',960,590);x.globalAlpha=1;
+const labels=['Baseline','Practice','Understand','Improve'],w=260,g=38,start=960-(labels.length*w+(labels.length-1)*g)/2;
+labels.forEach((s,i)=>{const left=start+i*(w+g);x.strokeStyle='rgba(255,250,239,.35)';x.lineWidth=2;x.beginPath();x.roundRect(left,715,w,64,32);x.stroke();x.font='700 21px Arial';x.fillText(s,left+w/2,756);if(i<3){x.globalAlpha=.5;x.font='400 24px Arial';x.fillText('→',left+w+g/2,756);x.globalAlpha=1}});
+x.fillStyle='#FFFAEF';x.beginPath();x.roundRect(785,860,350,76,14);x.fill();x.fillStyle='#0F2E48';x.font='700 23px Arial';x.fillText('Start free practice',960,908);
+fs.writeFileSync('../brag.jpg',c.toBuffer('image/jpeg',92));console.log('Wrote ../brag.jpg');
