@@ -96,9 +96,7 @@ const SOURCE_LABELS: Readonly<
  */
 function buildSlackPayload(payload: CrisisNotificationPayload): string {
   const siteUrl = (process.env.PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
-  const reviewUrl = siteUrl
-    ? `${siteUrl}/admin/crisis-review/${payload.caseId}`
-    : `(PUBLIC_SITE_URL not configured — case ID: ${payload.caseId})`;
+  const reviewUrl = `${siteUrl}/admin/crisis-review/${payload.caseId}`;
 
   const reason = SOURCE_LABELS[payload.source];
 
@@ -108,12 +106,19 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
 
   const linkLine = siteUrl
     ? `<${reviewUrl}|Review this case →>`
-    : `Case ID: \`${payload.caseId}\``;
+    : `(PUBLIC_SITE_URL not configured — no review link)`;
 
+  // @spec [SCL-025(c); closure plan W2-6] | @implemented [2026-09-24]
+  // The case id is printed in full, as the SLA breach alert already does: it
+  // is the key an operator looks up in the admin surface and the database.
+  // Before this it appeared only inside the review link's URL, while the
+  // visible id was the conversation's — the wrong row to look up. Both are
+  // opaque UUIDs (metadata, not PII); the conversation id stays for context.
   const slackBody = {
     text: [
       `🚨 *Crisis Review Case*`,
       ``,
+      `*Case:* \`${payload.caseId}\``,
       `*Reason:* ${reason}`,
       `*SLA Deadline:* ${slaFormatted}`,
       `*Conversation:* \`${payload.conversationId}\``,
