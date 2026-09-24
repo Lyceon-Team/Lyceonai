@@ -109,6 +109,10 @@ import {
   scanWithModelArmor,
 } from "../../server/services/tutor-model-armor";
 import { serializeTutorOutput } from "../../server/services/tutor-output-serializer";
+import {
+  flagConversationForReview,
+  notifyCrisisEvent,
+} from "../../server/services/tutor-crisis";
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -613,5 +617,126 @@ describe("POST /api/tutor/messages with Model Armor", () => {
     expect(armorUrls()).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(orchestrateTurn).not.toHaveBeenCalled();
+  });
+});
+
+// ── W3-5: a `dangerous` input block opens a review case ──────────────────
+
+/** A block that matched ONLY the named RAI type (or only pi_and_jailbreak). */
+function blockOn(
+  filter: "dangerous" | "harassment" | "pi_and_jailbreak",
+): Response {
+  const rai = filter !== "pi_and_jailbreak";
+  return jsonResponse({
+    sanitizationResult: {
+      filterMatchState: "MATCH_FOUND",
+      invocationResult: "SUCCESS",
+      filterResults: {
+        rai: {
+          raiFilterResult: {
+            matchState: rai ? "MATCH_FOUND" : "NO_MATCH_FOUND",
+            raiFilterTypeResults: {
+              [rai ? filter : "dangerous"]: {
+                matchState: rai ? "MATCH_FOUND" : "NO_MATCH_FOUND",
+              },
+            },
+          },
+        },
+        pi_and_jailbreak: {
+          piAndJailbreakFilterResult: {
+            matchState: rai ? "NO_MATCH_FOUND" : "MATCH_FOUND",
+          },
+        },
+      },
+    },
+  });
+}
+
+describe("W3-5 — a `dangerous` input block reaches a human", () => {
+  it("opens a review case with source model_armor_dangerous and alerts; the student still gets the neutral copy, not crisis resources", async () => {
+    armor(blockOn("dangerous"), jsonResponse(sanitizeBody(false)));
+    const convId = seedConversation();
+    const res = await sendTurn(convId);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(MODEL_ARMOR_SUBSTITUTION);
+    expect(res.body.data.response.crisis_category).toBeUndefined();
+    expect(res.body.data.crisis_paused).toBeFalsy();
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+
+    expect(flagConversationForReview).toHaveBeenCalledWith(
+      convId,
+      STUDENT_ID,
+      "model_armor_dangerous",
+      null,
+      null,
+    );
+    expect(notifyCrisisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caseId: "66666666-6666-4666-8666-666666666666",
+        conversationId: convId,
+        source: "model_armor_dangerous",
+      }),
+    );
+    // Flagged, never paused: the student can keep tutoring.
+    const row = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id === convId);
+    expect(row?.crisis_paused_at).toBeNull();
+  });
+
+  it.each(["harassment", "pi_and_jailbreak"] as const)(
+    "a block on %s alone opens no case",
+    async (filter) => {
+      armor(blockOn(filter), jsonResponse(sanitizeBody(false)));
+      const res = await sendTurn(seedConversation());
+      expect(res.body.data.response.content).toBe(MODEL_ARMOR_SUBSTITUTION);
+      expect(flagConversationForReview).not.toHaveBeenCalled();
+      expect(notifyCrisisEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it("an OUTPUT block on dangerous opens no case (the ruling covers the student's input)", async () => {
+    armor(jsonResponse(sanitizeBody(false)), blockOn("dangerous"));
+    const res = await sendTurn(seedConversation());
+    expect(res.body.data.response.content).toBe(MODEL_ARMOR_SUBSTITUTION);
+    expect(flagConversationForReview).not.toHaveBeenCalled();
+  });
+
+  it("an active case already open → no second alert, a WARN instead", async () => {
+    vi.mocked(flagConversationForReview).mockResolvedValueOnce({
+      caseId: "77777777-7777-4777-8777-777777777777",
+      isNewCase: false,
+      caseStatus: "in_review",
+      slaDeadline: "2026-09-26T00:00:00.000Z",
+    });
+    armor(blockOn("dangerous"), jsonResponse(sanitizeBody(false)));
+    const res = await sendTurn(seedConversation());
+    expect(res.status).toBe(200);
+    expect(notifyCrisisEvent).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "TUTOR_RUNTIME",
+      "model_armor_crisis_case_exists",
+      expect.any(String),
+      expect.objectContaining({ caseStatus: "in_review" }),
+    );
+  });
+
+  it("a failed flag (e.g. migration not applied) → ERROR, and the block copy is still delivered", async () => {
+    vi.mocked(flagConversationForReview).mockRejectedValueOnce(
+      new Error("crisis flag write failed: check_violation"),
+    );
+    armor(blockOn("dangerous"), jsonResponse(sanitizeBody(false)));
+    const res = await sendTurn(seedConversation());
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(MODEL_ARMOR_SUBSTITUTION);
+    expect(logger.error).toHaveBeenCalledWith(
+      "TUTOR_RUNTIME",
+      "model_armor_crisis_flag_failed",
+      expect.any(String),
+      expect.any(Error),
+      expect.objectContaining({ conversationId: expect.any(String) }),
+    );
+    expect(allLogText()).not.toContain("zqx-student-secret-7731");
   });
 });

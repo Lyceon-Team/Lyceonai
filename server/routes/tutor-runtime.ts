@@ -1598,6 +1598,59 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       conversation.id,
     );
 
+    // Step 13c (closure plan W3-5, owner ruling 2026-09-24): an input block on
+    // Model Armor's `dangerous` filter may be a crisis the Layer 1/Layer 2
+    // classifier missed. Open a review case and alert so a human sees it
+    // within SLA — but the student still gets the neutral block copy, not the
+    // crisis template: the filter is broad and not clinical, and firing crisis
+    // resources on it would undercut the deterministic classifier design.
+    // Alerts only on a NEW case; an open case was already alerted. A failed
+    // flag is logged at ERROR and the block copy is still delivered — a 500
+    // here would leave the student with an error AND no review case.
+    // @spec [closure plan W3-5; SCL-142 (PROPOSED)] | @implemented 2026-09-24
+    if (
+      armorInput.kind === "blocked" &&
+      armorInput.matchedFilters.includes("rai:dangerous")
+    ) {
+      try {
+        const armorFlag = await flagConversationForReview(
+          conversation.id,
+          studentId,
+          "model_armor_dangerous",
+          null,
+          null,
+        );
+        if (armorFlag.isNewCase) {
+          await notifyCrisisEvent({
+            caseId: armorFlag.caseId,
+            conversationId: conversation.id,
+            source: "model_armor_dangerous",
+            slaDeadline: armorFlag.slaDeadline,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          logger.warn(
+            "TUTOR_RUNTIME",
+            "model_armor_crisis_case_exists",
+            "dangerous input block on a conversation with an active review case; no new alert",
+            {
+              caseId: armorFlag.caseId,
+              caseStatus: armorFlag.caseStatus,
+              conversationId: conversation.id,
+            },
+          );
+        }
+      } catch (err: unknown) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "model_armor_crisis_flag_failed",
+          "dangerous input block could not open a review case; the block copy is still delivered",
+          err instanceof Error ? err : undefined,
+          { conversationId: conversation.id },
+        );
+      }
+    }
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
