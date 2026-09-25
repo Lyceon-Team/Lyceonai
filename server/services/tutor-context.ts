@@ -496,9 +496,11 @@ async function resolveMasterySnapshot(
   scope: ResolvedScope,
 ): Promise<MasterySnapshot | null> {
   try {
-    // If no question context, return a minimal "all" scope snapshot
+    // No question context (general mode): a student-wide snapshot. This was
+    // an all-null placeholder, so no general-mode turn ever carried mastery
+    // (W3-4b).
     if (!scope.source_question_row_id) {
-      return buildAllScopeSnapshot();
+      return buildStudentWideSnapshot(studentId);
     }
 
     // Fetch question metadata to know skill/domain/section
@@ -604,8 +606,11 @@ async function resolveMasterySnapshot(
       };
     }
 
-    // Fetch recent activity summary (7d/30d)
-    const recentActivitySummary = await fetchRecentActivitySummary(studentId);
+    // Fetch recent activity summary (7d/30d) and the student-wide bands
+    const [recentActivitySummary, domainBands] = await Promise.all([
+      fetchRecentActivitySummary(studentId),
+      fetchDomainMastery(studentId),
+    ]);
 
     const snapshot: MasterySnapshot = {
       scope: primarySkill ? "skill" : "domain",
@@ -614,6 +619,7 @@ async function resolveMasterySnapshot(
       section_projection: null, // Populated by the projection service, not context resolver
       section_projection_trend: null,
       recent_activity_summary: recentActivitySummary,
+      ...(domainBands ? { domain_mastery: domainBands } : {}),
     };
 
     const parsed = masterySnapshotSchema.safeParse(snapshot);
@@ -640,18 +646,93 @@ async function resolveMasterySnapshot(
 }
 
 /**
- * Returns a minimal mastery snapshot with "all" scope and null specifics.
- * Used when no question context is available (general entry mode).
+ * @spec [Doc-03A_V3.0 §5.4 mastery_snapshot; closure plan W3-4b]
+ * @implemented 2026-09-25
+ *
+ * plain English: the mastery snapshot for a turn with no question in scope.
+ * It carries what is true of the student regardless of question: the 7-day
+ * activity summary and every domain band with an observed level. Both come
+ * from recorded events only (INV: mastery is never inferred).
+ *
+ * WHY. General mode used to send `{scope:"all"}` with every field null. The
+ * envelope logged `hasMastery: true` (the object was not null), the worker's
+ * mastery block rendered nothing, and no production turn — all of them
+ * general mode — ever put mastery in the system instruction.
  */
-function buildAllScopeSnapshot(): MasterySnapshot {
+async function buildStudentWideSnapshot(
+  studentId: string,
+): Promise<MasterySnapshot> {
+  const [recentActivitySummary, domainMastery] = await Promise.all([
+    fetchRecentActivitySummary(studentId),
+    fetchDomainMastery(studentId),
+  ]);
   return {
     scope: "all",
     current_skill: null,
     current_domain: null,
     section_projection: null,
     section_projection_trend: null,
-    recent_activity_summary: null,
+    recent_activity_summary: recentActivitySummary,
+    ...(domainMastery ? { domain_mastery: domainMastery } : {}),
   };
+}
+
+/** True when the snapshot holds at least one observed mastery fact. */
+export function snapshotCarriesMastery(
+  snapshot: MasterySnapshot | null,
+): boolean {
+  if (!snapshot) return false;
+  return (
+    snapshot.current_skill !== null ||
+    snapshot.current_domain !== null ||
+    (snapshot.domain_mastery?.length ?? 0) > 0 ||
+    (snapshot.recent_activity_summary?.skills_practiced_7d.length ?? 0) > 0
+  );
+}
+
+type DomainMasteryBand = NonNullable<MasterySnapshot["domain_mastery"]>[number];
+
+/**
+ * Every domain with an observed mastery level, ordered by section then
+ * domain so the prompt is deterministic. `null` on a read error (logged) —
+ * the snapshot then omits the field rather than claiming "no mastery".
+ */
+async function fetchDomainMastery(
+  studentId: string,
+): Promise<DomainMasteryBand[] | null> {
+  const { data, error } = await supabaseServer
+    .from("student_domain_mastery")
+    .select("domain, section, mastery_level")
+    .eq("student_id", studentId)
+    .order("section", { ascending: true })
+    .order("domain", { ascending: true });
+
+  if (error) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "domain_mastery_query_failed",
+      "student_domain_mastery read failed; snapshot omits domain bands",
+      { studentId, message: error.message, code: error.code },
+    );
+    return null;
+  }
+
+  const bands: DomainMasteryBand[] = [];
+  for (const row of data ?? []) {
+    const r = row as {
+      domain: string;
+      section: string;
+      mastery_level: number | null;
+    };
+    if (r.mastery_level === null) continue;
+    if (r.section !== "M" && r.section !== "RW") continue;
+    bands.push({
+      domain: r.domain,
+      section: r.section,
+      mastery_level: Number(r.mastery_level),
+    });
+  }
+  return bands;
 }
 
 /**
@@ -735,7 +816,13 @@ async function fetchRecentActivitySummary(
       skills_with_fails_7d: Array.from(skillsWithFails),
       skills_newly_mastered_30d: null, // Requires comparing mastery snapshots over time; deferred
     };
-  } catch {
+  } catch (err: unknown) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "recent_activity_summary_error",
+      "Unexpected error building the 7-day activity summary; omitting it",
+      { studentId, error: err instanceof Error ? err.message : String(err) },
+    );
     return null;
   }
 }
@@ -1270,7 +1357,17 @@ export async function resolveFullEnvelope(
     {
       conversationId: params.conversationId,
       entryMode: params.entryMode,
-      hasMastery: learningContext.mastery_snapshot !== null,
+      // What the snapshot actually carries — not merely that it exists.
+      // `hasMastery` used to be `snapshot !== null`, true for an all-null
+      // placeholder (W3-4b).
+      hasMastery: snapshotCarriesMastery(learningContext.mastery_snapshot),
+      masteryDomainBands:
+        learningContext.mastery_snapshot?.domain_mastery?.length ?? 0,
+      masteryHasCurrentSkill:
+        learningContext.mastery_snapshot?.current_skill != null,
+      masteryHasRecentActivity:
+        (learningContext.mastery_snapshot?.recent_activity_summary
+          ?.skills_practiced_7d.length ?? 0) > 0,
       hasKpi: learningContext.kpi_state !== null,
       memorySummaryCount: memorySummaries.length,
       hasStructuredFields:

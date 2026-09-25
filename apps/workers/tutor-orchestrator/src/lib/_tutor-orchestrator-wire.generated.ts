@@ -111,6 +111,21 @@ export const masterySnapshotSchema = z.object({
       skills_newly_mastered_30d: z.array(z.string()).nullable(),
     })
     .nullable(),
+  // ── Student-wide domain bands (closure plan W3-4b, 2026-09-25) ───────
+  // Every domain the student has an observed mastery level for, from
+  // student_domain_mastery — present in general mode too, where there is no
+  // "current" skill or domain. OPTIONAL so either side can deploy first: an
+  // older worker strips the unknown key; a newer worker tolerates its absence.
+  // @spec [Doc-03A_V3.0 §5.4 mastery_snapshot; closure plan W3-4b]
+  domain_mastery: z
+    .array(
+      z.object({
+        domain: z.string(),
+        section: z.enum(["M", "RW"]),
+        mastery_level: z.number().int().min(0).max(4),
+      }),
+    )
+    .optional(),
 });
 
 export const recentFrictionSchema = z.object({
