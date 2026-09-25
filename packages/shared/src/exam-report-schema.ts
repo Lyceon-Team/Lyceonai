@@ -161,8 +161,12 @@ export const examReportScoredSchema = z
 
 // ── §9.1 ────────────────────────────────────────────────────────────────────
 
+/**
+ * 04C §9.2 lists `timed_out` too, but its `null when scoreable` rule makes that value
+ * unreachable (SCL-149): a section submitted by timeout is complete and scored. It is
+ * left out so the strict parse refuses it rather than a reviewer having to notice.
+ */
 export const examIncompletenessReasonSchema = z.enum([
-  "timed_out",
   "never_attempted",
   "module1_only",
 ]);

@@ -599,7 +599,7 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-deletion-cascade-gates.sh
 
-      # E7a (SCL-145..148) — the exam shell's server pieces, on a fresh apply: the item
+      # E7a (SCL-145..149) — the exam shell's server pieces, on a fresh apply: the item
       # workspace (served tokens only — a canonical letter, another item's token or a
       # repeat is refused; highlights are code-point offsets inside the passage; no notes;
       # active module and owner only), the heartbeat's resume position (read back only in
@@ -1382,7 +1382,7 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-deletion.json \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts
 
-      # @spec [Doc-04A_V2.2 §16 (SCL-145/145/146); Doc-04C_V1.0 §11.2, §16.1-§16.8; E7a]
+      # @spec [Doc-04A_V2.2 §16 (SCL-145 workspace, SCL-146 heartbeat, SCL-147 forms); Doc-04C_V1.0 §11.2, §16.1-§16.8; E7a]
       # The shell's server surface through the real /api/tests routers: forms list,
       # workspace round-trip with served tokens (a letter refused), heartbeat position,
       # and the 04C report in every reachable state plus the bare 403. Named BY FILE.
