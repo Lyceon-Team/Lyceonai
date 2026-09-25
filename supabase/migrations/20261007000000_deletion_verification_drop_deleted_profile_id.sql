@@ -330,7 +330,7 @@ BEGIN
     v_stripped := v_stripped + COALESCE((v_strip ->> 'rows')::bigint, 0);
   END LOOP;
 
-  -- @spec [Doc 06D §6.2 / §6.3 / §6.5 INV-06-08; SCL-091, SCL-100, SCL-119 (PROPOSED);
+  -- @spec [Doc 06D §6.2 / §6.3 / §6.5 INV-06-08; SCL-091, SCL-100, SCL-153 (PROPOSED);
   -- owner brief 2026-09-23] | @implemented [2026-09-23]
   --
   -- THE EXECUTABLE PROOF. One verification record per deletion completed by THIS call, written
@@ -433,7 +433,7 @@ BEGIN
     INTO v_ids, v_completed
     FROM done d;
 
-  -- @spec [Doc 06D §6.2 / §6.5 INV-06-08; SCL-119 (PROPOSED); owner brief 2026-09-23]
+  -- @spec [Doc 06D §6.2 / §6.5 INV-06-08; SCL-153 (PROPOSED); owner brief 2026-09-23]
   --
   -- A row the reconciler completes is one whose cascade COMMITTED but whose T3 never ran, so
   -- the scan in `complete_deletion_log` never happened for it. It cannot be run now: PS-5 of
