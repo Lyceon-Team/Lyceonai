@@ -100,6 +100,38 @@ export function detectsSelfDeprecatingLanguage(text: string): boolean {
 // ── Scope Resolution ───────────────────────────────────────────────────
 
 /**
+ * @spec [Doc-02B_V4 §21 Tutor Invocation Contract (session + session_item
+ *        identifiers per surface); closure plan W4-1] | @implemented 2026-09-25
+ *
+ * plain English: which tables hold a surface's sessions and items, and which
+ * column says who owns them. Practice and review are separate engines with
+ * separate tables; scope resolution, ownership checks and question content
+ * all read through this one map rather than hard-coding practice. Every
+ * surface other than review keeps the practice tables it always used.
+ */
+export type SessionTables = {
+  sessions: "practice_sessions" | "review_sessions";
+  items: "practice_session_items" | "review_session_items";
+  owner: "user_id" | "student_id";
+};
+
+export function sessionTablesFor(
+  surface: string | null | undefined,
+): SessionTables {
+  return surface === "review"
+    ? {
+        sessions: "review_sessions",
+        items: "review_session_items",
+        owner: "student_id",
+      }
+    : {
+        sessions: "practice_sessions",
+        items: "practice_session_items",
+        owner: "user_id",
+      };
+}
+
+/**
  * @spec [Doc-03A_V3.0 §5.2, Doc-03B_V2 §5.4 rule 5, §11.1-11.2, INV-03-14]
  * @implemented 2026-08-12
  * plain English: Resolves the source scope for the current tutor turn with
@@ -129,7 +161,9 @@ export async function resolveScope(
   sessionId: string | null,
   sessionItemId: string | null,
   questionRowId: string | null,
+  surface: string = "practice",
 ): Promise<ResolvedScope> {
+  const tables = sessionTablesFor(surface);
   let validSessionId = sessionId;
   let validItemId = sessionItemId;
   let resolvedQuestionRowId = questionRowId;
@@ -140,10 +174,10 @@ export async function resolveScope(
   // resolve to an existing row owned by the authenticated student.
   if (validSessionId) {
     const { data: sessionData, error: sessionError } = await supabaseServer
-      .from("practice_sessions")
+      .from(tables.sessions)
       .select("id")
       .eq("id", validSessionId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (sessionError) {
@@ -177,10 +211,10 @@ export async function resolveScope(
   // someone else's item id).
   if (validItemId) {
     const { data: itemData, error: itemError } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select("question_id, session_id")
       .eq("id", validItemId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (itemError) {
@@ -335,20 +369,22 @@ export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
   isPostSubmit: boolean,
+  surface: string = "practice",
 ): Promise<QuestionContent | null> {
+  const tables = sessionTablesFor(surface);
   // No session item → no question context (general mode)
   if (!scope.source_session_item_id) return null;
 
   try {
     const { data, error } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select(
         "question_stem, question_passage, question_options, question_item_type, " +
           "selected_answer, ordinal" +
           (isPostSubmit ? ", question_explanation" : ""),
       )
       .eq("id", scope.source_session_item_id)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (error) {
@@ -1270,6 +1306,7 @@ export async function resolveFullEnvelope(
     params.sourceSessionId,
     params.sourceSessionItemId,
     params.sourceQuestionRowId,
+    params.sourceSurface,
   );
 
   // ── Step 2: Parallel resolution of remaining subsections ───────────
@@ -1282,6 +1319,7 @@ export async function resolveFullEnvelope(
         params.studentId,
         resolvedScope,
         params.isPostSubmit,
+        params.sourceSurface,
       ),
     ]);
 

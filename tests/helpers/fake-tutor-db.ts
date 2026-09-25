@@ -238,6 +238,21 @@ export class FakeTutorDb {
 
   defaultsFor(table: string): Row {
     if (table === "tutor_messages") return { status: "completed" };
+    // The column defaults production applies on INSERT (migrations
+    // 20260805000000 and 20260922000000_lisa_session_lifecycle). Without
+    // them a conversation created through POST /conversations had no status,
+    // so it was neither reusable nor able to take a turn in tests.
+    if (table === "tutor_conversations") {
+      return {
+        status: "active",
+        crisis_flagged: false,
+        deleted_at: null,
+        closed_at: null,
+        title: "New session",
+        crisis_paused_at: null,
+        ended_at: null,
+      };
+    }
     return {};
   }
 
