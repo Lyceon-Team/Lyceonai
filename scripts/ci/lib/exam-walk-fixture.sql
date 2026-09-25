@@ -8,6 +8,9 @@
 --     pg_temp.ok(id, msg)                     -> NOTICE 'ok   [id] msg'
 --     pg_temp.expect_status(id, res, status, code)
 --     pg_temp.answer_module(student, session, section, module, correct)
+--       (E7a: also saves a workspace row — marked for review, served option
+--        'opt_<ordinal>d' eliminated — on every mcq item whose ordinal % 5 = 0,
+--        so every walked module leaves test_session_item_workspace rows)
 --     pg_temp.complete_session(student, form, mode, rw_correct, m_correct)
 --       -> the completion outbox id (the session is NOT scored here).
 --   Requires lib/exam-form-fixture.sql to be included first.
@@ -58,6 +61,11 @@ BEGIN
                 ELSE (CASE WHEN p_correct THEN 'A' ELSE 'B' END) END,
            'display', 1000, p_session::text || ':' || p_section || ':' || v_phys || ':' || it.ordinal);
     IF (v->>'status')::int <> 200 THEN RAISE EXCEPTION 'E6G FAIL [fixture]: answer refused %', v; END IF;
+    IF it.item_type = 'mcq' AND it.ordinal % 5 = 0 THEN
+      v := public.exam_save_item_workspace(p_student, p_session, p_section, p_module, it.ordinal,
+             true, ARRAY['opt_' || it.ordinal || 'd'], '[]'::jsonb);
+      IF (v->>'status')::int <> 200 THEN RAISE EXCEPTION 'E6G FAIL [fixture]: workspace refused %', v; END IF;
+    END IF;
     n := n + 1;
   END LOOP;
   RETURN n;
