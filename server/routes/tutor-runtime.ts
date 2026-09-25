@@ -1341,10 +1341,10 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .eq("id", studentId)
         .maybeSingle();
       // W3-3: resources follow the student's billing country (Doc 03 §4.6).
-      // Unknown still resolves to the named default — and that is the one
-      // case worth an alert: a student in crisis may have been given numbers
-      // that do not work where they are. The student id is logged (digested
-      // by the logger); the crisis content never is.
+      // Unknown gets the named no-number response (owner ruling 2026-09-25)
+      // — and that is the one case worth an alert: a student in crisis was
+      // given no local number. The student id is logged (digested by the
+      // logger) so ops can find their country; the crisis content never is.
       const crisisCountry = resolveCrisisCountry(
         profileRow?.country_code as string | null | undefined,
       );
@@ -1352,13 +1352,12 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         logger.warn(
           "TUTOR_RUNTIME",
           "crisis_country_defaulted",
-          "Crisis resources resolved to the default country: this student's country is unknown or unsupported",
+          "Crisis resources fell back to the no-number response: this student's country is unknown or unsupported",
           {
             studentId,
             conversationId: conversation.id,
             category: crisisResult.category,
             reason: crisisCountry.reason,
-            defaultCountry: crisisCountry.country,
           },
         );
       }

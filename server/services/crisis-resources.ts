@@ -1,10 +1,11 @@
 /**
  * @spec [Doc-03_V3 §4.6, §12.3, §21.2; Layer1 PR 2 brief §2–§3; closure plan W3-3]
- * @implemented 2026-09-25 (moved out of tutor-crisis.ts, unchanged content)
+ * @implemented 2026-09-25 (tables moved out of tutor-crisis.ts unchanged; the
+ *   unknown-country response replaced the US default the same day)
  *
  * plain English: the crisis and safeguarding resources for each supported
- * billing country, the named default for an unknown one, and the resolver that
- * decides which a student gets. Pure data and pure functions — no imports — so
+ * billing country, the named no-number response for an unknown one, and the
+ * resolver that decides which a student gets. Pure data and pure functions, so
  * the route, the crisis service and the tests all read the one table.
  *
  * Resource numbers are owner-verified content (Karl). Nothing in this file
@@ -13,11 +14,21 @@
 import type { CrisisCategory } from "../../packages/shared/src/crisis-flag-schema";
 
 /**
- * The country whose resources a student gets when we do not know theirs.
- * Named, and kept, deliberately: an unknown country still resolves here, and
- * every such resolution is logged at WARN by the caller (closure plan W3-3).
+ * What a student gets when we do not know their country, or have no resources
+ * configured for it. Deliberately NAMES NO NUMBER: a hotline number is only
+ * right in one country, and a US student's 988 does nothing for a student in
+ * France. An honest pointer to local emergency services and a trusted adult
+ * works everywhere. Owner ruling 2026-09-25 (closure plan W3-3), replacing the
+ * US-number default the build first shipped with. Every use of these is logged
+ * at WARN by the caller.
+ *
+ * Each keeps its lane's shape: the crisis copy never opens with the
+ * safeguarding line, and the safeguarding copy never uses the crisis sign-off.
  */
-export const DEFAULT_CRISIS_COUNTRY = "US";
+export const UNKNOWN_COUNTRY_CRISIS_RESPONSE =
+  "If you're in crisis, please reach out to someone right now. Call your local emergency number, or talk to a trusted adult — a parent, teacher, school counselor, or doctor. You don't have to go through this alone.";
+export const UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE =
+  "What you've shared matters. Please tell a trusted adult — a parent, teacher, school counselor, or doctor. If you're in danger right now, call your local emergency number.";
 
 /**
  * Crisis-lane resources by billing country code. Youth-preferred lines
@@ -54,10 +65,6 @@ const SAFEGUARDING_RESOURCES: Readonly<Record<string, string>> = {
   SG: "What you've shared matters. The National Anti-Violence Helpline is there for you — call 1800-777-0000. They listen, and you decide what happens next.",
 };
 
-const DEFAULT_CRISIS_RESPONSE = CRISIS_RESOURCES[DEFAULT_CRISIS_COUNTRY];
-const DEFAULT_SAFEGUARDING_RESPONSE =
-  SAFEGUARDING_RESOURCES[DEFAULT_CRISIS_COUNTRY];
-
 /**
  * @spec [Doc-03_V3 §4.6 ("selects the appropriate regional resource based on
  *        billing address country"), §12.3; closure plan W3-3]
@@ -67,8 +74,9 @@ const DEFAULT_SAFEGUARDING_RESPONSE =
  * that was a fallback. Pure — the caller decides what to log.
  *
  * expected outcome: a country with configured resources resolves to itself;
- * no country, or one with no configured resources, resolves to
- * `DEFAULT_CRISIS_COUNTRY` with `defaulted: true` and the reason.
+ * no country, or one with no configured resources, resolves to `null` with
+ * `defaulted: true` and the reason — and `getCrisisResponse(null, …)` gives
+ * the no-number response.
  *
  * edge cases: `GB` and `UK` both resolve (Stripe returns ISO `GB`; Doc 03
  * writes `UK`). Case and surrounding whitespace are ignored.
@@ -76,7 +84,7 @@ const DEFAULT_SAFEGUARDING_RESPONSE =
 export type CrisisCountryResolution =
   | { country: string; defaulted: false }
   | {
-      country: typeof DEFAULT_CRISIS_COUNTRY;
+      country: null;
       defaulted: true;
       reason: "no_country" | "unsupported_country";
     };
@@ -87,7 +95,7 @@ export function resolveCrisisCountry(
   const normalised = countryCode?.trim().toUpperCase() ?? "";
   if (!normalised) {
     return {
-      country: DEFAULT_CRISIS_COUNTRY,
+      country: null,
       defaulted: true,
       reason: "no_country",
     };
@@ -96,21 +104,26 @@ export function resolveCrisisCountry(
     return { country: normalised, defaulted: false };
   }
   return {
-    country: DEFAULT_CRISIS_COUNTRY,
+    country: null,
     defaulted: true,
     reason: "unsupported_country",
   };
 }
 
+/**
+ * The response for a country and lane. A null, unknown or unconfigured country
+ * gets the no-number response for that lane — never another country's numbers.
+ */
 export function getCrisisResponse(
-  country: string,
+  country: string | null,
   category: CrisisCategory = "crisis",
 ): string {
-  const upperCountry = country.toUpperCase().trim();
+  const upperCountry = country?.toUpperCase().trim() ?? "";
   if (category === "safeguarding") {
     return (
-      SAFEGUARDING_RESOURCES[upperCountry] ?? DEFAULT_SAFEGUARDING_RESPONSE
+      SAFEGUARDING_RESOURCES[upperCountry] ??
+      UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE
     );
   }
-  return CRISIS_RESOURCES[upperCountry] ?? DEFAULT_CRISIS_RESPONSE;
+  return CRISIS_RESOURCES[upperCountry] ?? UNKNOWN_COUNTRY_CRISIS_RESPONSE;
 }

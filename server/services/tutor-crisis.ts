@@ -139,11 +139,12 @@ export type { CrisisResult, CrisisCategory };
 export { notifyCrisisEvent };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
-// The tables, the named default and the resolver live in `crisis-resources.ts`
+// The tables, the named no-number fallback and the resolver live in `crisis-resources.ts`
 // — pure data with no imports, so any caller can use them. Re-exported here so
 // existing consumers keep their import site.
 export {
-  DEFAULT_CRISIS_COUNTRY,
+  UNKNOWN_COUNTRY_CRISIS_RESPONSE,
+  UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE,
   getCrisisResponse,
   resolveCrisisCountry,
 } from "./crisis-resources";

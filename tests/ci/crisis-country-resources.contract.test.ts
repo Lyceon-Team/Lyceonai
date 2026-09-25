@@ -6,8 +6,9 @@
  * plain English: a student in crisis is given resources that work where they
  * are. The country is the billing country the Stripe grant path records on the
  * profile (`profiles.country_code`); a student whose country is unknown still
- * gets the named default, and that case is logged at WARN — the one place a
- * student id belongs in a crisis log. The crisis content never does.
+ * gets the named no-number response (owner ruling 2026-09-25), and that case
+ * is logged at WARN — the one place a student id belongs in a crisis log. The
+ * crisis content never does.
  *
  * The route test drives the REAL tutor router over the in-memory DB with the
  * REAL resource tables and resolver; only the classifier's verdict and the
@@ -80,7 +81,8 @@ vi.mock("../../server/services/cloud-tasks-enqueue", () => ({
 import tutorRuntimeRouter from "../../server/routes/tutor-runtime";
 import { logger } from "../../server/logger";
 import {
-  DEFAULT_CRISIS_COUNTRY,
+  UNKNOWN_COUNTRY_CRISIS_RESPONSE,
+  UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE,
   getCrisisResponse,
   resolveCrisisCountry,
 } from "../../server/services/crisis-resources";
@@ -138,10 +140,9 @@ describe("W3-3 — every one of the seven resolves to its own resources", () => 
     expect(resolveCrisisCountry("uk ").defaulted).toBe(false);
   });
 
-  it("unknown → the NAMED default, flagged as defaulted, with the reason", () => {
-    expect(DEFAULT_CRISIS_COUNTRY).toBe("US");
+  it("unknown → no country, flagged as defaulted, with the reason", () => {
     expect(resolveCrisisCountry(null)).toEqual({
-      country: "US",
+      country: null,
       defaulted: true,
       reason: "no_country",
     });
@@ -150,10 +151,31 @@ describe("W3-3 — every one of the seven resolves to its own resources", () => 
       reason: "no_country",
     });
     expect(resolveCrisisCountry("FR")).toEqual({
-      country: "US",
+      country: null,
       defaulted: true,
       reason: "unsupported_country",
     });
+  });
+
+  it("the unknown-country response names NO number, in either lane — only local emergency services and a trusted adult", () => {
+    for (const unknown of [null, "FR", "XX"]) {
+      const crisis = getCrisisResponse(unknown, "crisis");
+      const safeguarding = getCrisisResponse(unknown, "safeguarding");
+      expect(crisis).toBe(UNKNOWN_COUNTRY_CRISIS_RESPONSE);
+      expect(safeguarding).toBe(UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE);
+      for (const text of [crisis, safeguarding]) {
+        expect(text).not.toMatch(/\d/);
+        expect(text).toContain("local emergency number");
+        expect(text).toContain("trusted adult");
+      }
+    }
+    // Lane shapes hold for the fallback too.
+    expect(UNKNOWN_COUNTRY_CRISIS_RESPONSE).not.toContain(
+      "What you've shared matters",
+    );
+    expect(UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE).not.toContain(
+      "Real people, anytime",
+    );
   });
 });
 
@@ -253,24 +275,26 @@ describe("W3-3 — a crisis turn uses the student's recorded country", () => {
     });
   }
 
-  it("country_code = null → the named default, and a WARN naming the student", async () => {
+  it("country_code = null → the no-number response, and a WARN naming the student", async () => {
     db.current.seed("profiles", { id: STUDENT_ID, country_code: null });
     const content = await crisisTurn("crisis");
 
-    expect(content).toBe(getCrisisResponse(DEFAULT_CRISIS_COUNTRY, "crisis"));
+    expect(content).toBe(UNKNOWN_COUNTRY_CRISIS_RESPONSE);
+    expect(content).not.toContain("988");
     const warns = defaultedWarnings();
     expect(warns).toHaveLength(1);
     expect(warns[0][3]).toMatchObject({
       studentId: STUDENT_ID,
       reason: "no_country",
-      defaultCountry: "US",
       category: "crisis",
     });
   });
 
-  it("a country outside the seven → the named default, WARN says unsupported", async () => {
+  it("a country outside the seven → the no-number response, WARN says unsupported", async () => {
     db.current.seed("profiles", { id: STUDENT_ID, country_code: "FR" });
-    await crisisTurn("safeguarding");
+    const content = await crisisTurn("safeguarding");
+    expect(content).toBe(UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE);
+    expect(content).not.toContain("Childhelp");
     expect(defaultedWarnings()[0][3]).toMatchObject({
       reason: "unsupported_country",
     });
