@@ -6334,6 +6334,8 @@ DECLARE
   v_count     bigint;
   v_actor_id  uuid;
   v_exam_sessions uuid[];   -- E6b: the profile's test_sessions, collected before hard_delete removes them
+  v_exam_child    record;   -- E9 commit 0: one row of public.exam_child_tables
+  v_exam_pred     text;     -- E9 commit 0: that row's WHERE clause
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
@@ -6575,57 +6577,34 @@ BEGIN
     SELECT coalesce(array_agg(id), ARRAY[]::uuid[]) INTO v_exam_sessions
       FROM public.test_sessions WHERE student_id = p_profile_id;
 
-    -- L2-08 .. L2-11. The four runtime children, children before parents.
-    -- Answers before submissions: test_session_answers.last_submission_id
-    -- references test_answer_submissions (NO ACTION).
-    DELETE FROM public.test_session_answers WHERE test_session_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_session_answers', v_count);
-
-    DELETE FROM public.test_answer_submissions WHERE test_session_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_answer_submissions', v_count);
-
-    -- E7a (SCL-145): the workspace rows hang off test_session_items (CASCADE),
-    -- so they go first, by name and counted, like every other exam child.
-    DELETE FROM public.test_session_item_workspace WHERE test_session_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_session_item_workspace', v_count);
-
-    DELETE FROM public.test_session_items WHERE test_session_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_session_items', v_count);
-
-    DELETE FROM public.test_session_sections WHERE test_session_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_session_sections', v_count);
-
-    -- L2-12 / L2-13. score_run_event_ledger and score_runs. Neither is deleted by
-    -- name: score_runs is insert-once (Doc 04B §9.4) and its trigger refuses a
-    -- DELETE while the parent session exists. Both leave with the session through
-    -- test_session_id / score_run_id ON DELETE CASCADE, which the trigger admits
-    -- (the parent is gone). Counted first, because that removal is invisible to
-    -- GET DIAGNOSTICS.
-    SELECT count(*) INTO v_count
-      FROM public.score_run_event_ledger l
-      JOIN public.score_runs r ON r.id = l.score_run_id
-     WHERE r.test_session_id = ANY (v_exam_sessions);
-    v_result := v_result || jsonb_build_object('score_run_event_ledger', v_count);
-
-    SELECT count(*) INTO v_count FROM public.score_runs WHERE test_session_id = ANY (v_exam_sessions);
-    v_result := v_result || jsonb_build_object('score_runs', v_count);
-
-    -- L2-14. test_sessions (takes its score_runs and their ledger rows with it)
-    DELETE FROM public.test_sessions WHERE id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('test_sessions', v_count);
-
-    -- L2-15. exam_runtime_outbox — identity-free queue state, deleted in
-    -- hard_delete like legal_acceptance_outbox (L1-13). After the sessions:
-    -- score_runs and the ledger reference it (NO ACTION) and are gone now.
-    DELETE FROM public.exam_runtime_outbox WHERE aggregate_id = ANY (v_exam_sessions);
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    v_result := v_result || jsonb_build_object('exam_runtime_outbox', v_count);
+    -- L2-08 .. L2-15, E9 commit 0: every exam table is a ROW of
+    -- public.exam_child_tables, walked in `ordinal` order (children before
+    -- parents; the E6b order, unchanged). `delete` rows are removed and counted;
+    -- `count` rows (score_run_event_ledger, score_runs — insert-once, they leave
+    -- with test_sessions through ON DELETE CASCADE, which their trigger admits)
+    -- are counted first because that removal is invisible to GET DIAGNOSTICS.
+    -- The next exam table is a list row in its own migration, not an edit here;
+    -- scripts/ci/exam-deletion-cascade-gates.sql L1 fails while one is missing.
+    FOR v_exam_child IN
+      SELECT table_name, key_column, key_target, action
+        FROM public.exam_child_tables ORDER BY ordinal
+    LOOP
+      v_exam_pred := CASE v_exam_child.key_target
+        WHEN 'session'   THEN format('%I = ANY ($1)', v_exam_child.key_column)
+        WHEN 'score_run' THEN format(
+          '%I IN (SELECT r.id FROM public.score_runs r WHERE r.test_session_id = ANY ($1))',
+          v_exam_child.key_column)
+      END;
+      IF v_exam_child.action = 'delete' THEN
+        EXECUTE format('DELETE FROM public.%I WHERE %s', v_exam_child.table_name, v_exam_pred)
+          USING v_exam_sessions;
+        GET DIAGNOSTICS v_count = ROW_COUNT;
+      ELSE
+        EXECUTE format('SELECT count(*) FROM public.%I WHERE %s', v_exam_child.table_name, v_exam_pred)
+          INTO v_count USING v_exam_sessions;
+      END IF;
+      v_result := v_result || jsonb_build_object(v_exam_child.table_name, v_count);
+    END LOOP;
 
   ELSIF p_privacy_mode = 'anonymize' THEN
     -- ====================================================================
@@ -6641,16 +6620,21 @@ BEGIN
       v_sentinel_col text;
       v_sentinel_cnt bigint;
     BEGIN
-      FOR v_sentinel_tbl, v_sentinel_col IN VALUES
-        ('practice_sessions',                'user_id'),
-        ('practice_session_items',           'user_id'),
-        ('review_sessions',                  'student_id'),
-        ('review_session_items',             'student_id'),
-        ('review_error_attempts',            'student_id'),
-        ('mastery_event_audit_log',          'student_id'),
-        ('mastery_domain_refresh_audit_log', 'student_id'),
-        ('test_sessions',                    'student_id'),   -- E6b (SCL-143)
-        ('score_runs',                       'student_id')    -- E6b (SCL-143)
+      FOR v_sentinel_tbl, v_sentinel_col IN
+        SELECT * FROM (VALUES
+          ('practice_sessions',                'user_id'),
+          ('practice_session_items',           'user_id'),
+          ('review_sessions',                  'student_id'),
+          ('review_session_items',             'student_id'),
+          ('review_error_attempts',            'student_id'),
+          ('mastery_event_audit_log',          'student_id'),
+          ('mastery_domain_refresh_audit_log', 'student_id')) AS v(t, c)
+        UNION ALL
+        -- E9 commit 0: the student-keyed exam tables (test_sessions, score_runs)
+        -- come from the same list the hard_delete walk reads.
+        SELECT e.table_name, e.student_column
+          FROM public.exam_child_tables e
+         WHERE e.student_column IS NOT NULL
       LOOP
         EXECUTE format(
           'SELECT count(*) FROM public.%I WHERE %I = $1 AND actor_id IS NULL',
@@ -6747,11 +6731,17 @@ BEGIN
     -- the ledger carry no identity; the outbox carries none either and score_runs references it,
     -- so it stays. Counted HERE, before the profile delete, because a severance
     -- done by an FK action is invisible to GET DIAGNOSTICS.
-    SELECT count(*) INTO v_count FROM public.test_sessions WHERE student_id = p_profile_id;
-    v_result := v_result || jsonb_build_object('test_sessions', v_count);
-
-    SELECT count(*) INTO v_count FROM public.score_runs WHERE student_id = p_profile_id;
-    v_result := v_result || jsonb_build_object('score_runs', v_count);
+    -- E9 commit 0: the counts come from the list (rows with a student_column).
+    FOR v_exam_child IN
+      SELECT table_name, student_column
+        FROM public.exam_child_tables
+       WHERE student_column IS NOT NULL ORDER BY ordinal
+    LOOP
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE %I = $1',
+                     v_exam_child.table_name, v_exam_child.student_column)
+        INTO v_count USING p_profile_id;
+      v_result := v_result || jsonb_build_object(v_exam_child.table_name, v_count);
+    END LOOP;
 
     -- ====================================================================
     -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
@@ -11274,6 +11264,30 @@ COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: t
 
 
 --
+-- Name: exam_child_tables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_child_tables (
+    table_name text NOT NULL,
+    ordinal integer NOT NULL,
+    key_column text NOT NULL,
+    key_target text NOT NULL,
+    action text NOT NULL,
+    student_column text,
+    note text NOT NULL,
+    CONSTRAINT exam_child_tables_action_check CHECK ((action = ANY (ARRAY['delete'::text, 'count'::text]))),
+    CONSTRAINT exam_child_tables_key_target_check CHECK ((key_target = ANY (ARRAY['session'::text, 'score_run'::text])))
+);
+
+
+--
+-- Name: TABLE exam_child_tables; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.exam_child_tables IS 'E9 commit 0: the exam tables execute_account_deletion_cascade walks. hard_delete: `delete` rows removed / `count` rows counted, in ordinal order (children before parents). anonymize: rows with a student_column are counted and sentinel-checked. A new exam table is a row here; exam-deletion-cascade-gates L1 fails while one with an FK path to test_sessions is missing.';
+
+
+--
 -- Name: exam_runtime_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13691,6 +13705,22 @@ ALTER TABLE ONLY public.entitlement_runtime_config
 
 ALTER TABLE ONLY public.entitlements
     ADD CONSTRAINT entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exam_child_tables exam_child_tables_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_child_tables
+    ADD CONSTRAINT exam_child_tables_ordinal_key UNIQUE (ordinal);
+
+
+--
+-- Name: exam_child_tables exam_child_tables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_child_tables
+    ADD CONSTRAINT exam_child_tables_pkey PRIMARY KEY (table_name);
 
 
 --
@@ -17190,6 +17220,12 @@ ALTER TABLE public.entitlement_runtime_config_history ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_child_tables; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_child_tables ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: exam_runtime_outbox; Type: ROW SECURITY; Schema: public; Owner: -
