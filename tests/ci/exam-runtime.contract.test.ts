@@ -10,7 +10,9 @@
  * correct_answer / explanation are null and nothing else answer-bearing can ride
  * along; (2) the serializer's output shape; (3) the one token -> canonical-letter
  * rule practice, review and the exam share; (4) the router's surface: exactly the
- * seven 04A §16 student endpoints, nothing under /admin.
+ * seven 04A §16 student endpoints plus E7a's three (forms list, module workspace
+ * read + write — SCL-147, SCL-145), nothing under /admin, no report (04C has its
+ * own router, pinned to its two reads).
  */
 import { describe, it, expect, vi } from "vitest";
 
@@ -28,6 +30,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 import { examQuestionPayloadSchema } from "../../packages/shared/src/exam-runtime-schema";
 import { resolveSelectedCanonicalKey } from "../../shared/question-bank-contract";
 import { toExamQuestionPayload } from "../../server/services/exam-runtime-service";
+import examReportRouter from "../../server/routes/exam-report-routes";
 import examRuntimeRouter from "../../server/routes/exam-runtime-routes";
 
 const BASE = {
@@ -100,21 +103,25 @@ describe("resolveSelectedCanonicalKey (practice, review and exam share it)", () 
   });
 });
 
-describe("router surface (Doc 04A §16; no admin surface in E6)", () => {
-  it("mounts exactly the seven student endpoints", () => {
-    const routes = (
-      examRuntimeRouter as unknown as {
-        stack: Array<{
-          route?: { path: string; methods: Record<string, boolean> };
-        }>;
-      }
-    ).stack
-      .filter((layer) => layer.route)
-      .map(
-        (layer) =>
-          `${Object.keys(layer.route!.methods)[0]!.toUpperCase()} ${layer.route!.path}`,
-      )
-      .sort();
+function surface(router: unknown): string[] {
+  return (
+    router as {
+      stack: Array<{
+        route?: { path: string; methods: Record<string, boolean> };
+      }>;
+    }
+  ).stack
+    .filter((layer) => layer.route)
+    .map(
+      (layer) =>
+        `${Object.keys(layer.route!.methods)[0]!.toUpperCase()} ${layer.route!.path}`,
+    )
+    .sort();
+}
+
+describe("router surface (Doc 04A §16 + SCL-145/146; no admin surface)", () => {
+  it("mounts exactly the seven student endpoints and E7a's three", () => {
+    const routes = surface(examRuntimeRouter);
     expect(routes).toEqual(
       [
         "POST /sessions",
@@ -124,8 +131,20 @@ describe("router surface (Doc 04A §16; no admin surface in E6)", () => {
         "POST /answer",
         "POST /sessions/:session_id/sections/:section/modules/:module/submit",
         "POST /sessions/:session_id/sections/:section/heartbeat",
+        "GET /forms",
+        "GET /sessions/:session_id/sections/:section/modules/:module/workspace",
+        "PUT /sessions/:session_id/sections/:section/modules/:module/workspace",
       ].sort(),
     );
     expect(routes.join(" ")).not.toMatch(/admin|publish|outbox|report/);
+  });
+
+  it("the 04C report router mounts exactly the two student reads (§16.1)", () => {
+    expect(surface(examReportRouter)).toEqual(
+      [
+        "GET /sessions/:session_id/report",
+        "GET /sessions/:session_id/report/status",
+      ].sort(),
+    );
   });
 });

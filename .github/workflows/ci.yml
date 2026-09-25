@@ -152,6 +152,15 @@ jobs:
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
 
+      # E7b: the exam e2e harness stubs auth to one student. It must be unreachable
+      # from production: nothing outside tests/ names it, the bundle built above
+      # carries none of its markers, and it refuses NODE_ENV=production.
+      - name: Exam e2e harness is unreachable from the production build (E7b)
+        run: bash scripts/ci/exam-harness-isolation.sh
+
+      - name: Exam e2e harness isolation self-test (proves each rule turns it red)
+        run: bash scripts/ci/exam-harness-isolation.selftest.sh
+
       - name: No hardcoded constants (Lane-A gate — DB is source of truth)
         run: node scripts/ci/no-hardcoded-constants.mjs
 
@@ -580,6 +589,42 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-runtime-api-gates.sh
+
+      # Doc 05E §5.1/§6 + Doc 05D §10 (E6b, SCL-143) — the exam tables in the
+      # account-deletion cascade: whole exams walked through the runtime functions and
+      # scored, then both modes. anonymize retains sessions, children, scores, ledger and
+      # outbox with student_id NULL and actor_id intact; hard_delete removes and counts
+      # every table; the INV-05E-07 sentinel refuses an ungrouped exam row; a pending or
+      # in-progress exam of an anonymised student still scores (student_id NULL); a
+      # re-run is a no-op; the insert-once trigger still refuses every caller mutation.
+      # @spec [Doc-05E §1, §5.1, §6; Doc-05D §10.5; Doc-04B_V4.3 §9.4; SCL-143] | @implemented [2026-09-24]
+      - name: Exam deletion cascade gates (both modes, E6b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-deletion-cascade-gates.sh
+
+      # E7a (SCL-145..149) — the exam shell's server pieces, on a fresh apply: the item
+      # workspace (served tokens only — a canonical letter, another item's token or a
+      # repeat is refused; highlights are code-point offsets inside the passage; no notes;
+      # active module and owner only), the heartbeat's resume position (read back only in
+      # the module it names), GET /forms (drafts never listed, no thresholds), the 04C
+      # report source (one 403 for missing and foreign sessions, the dead-letter failure
+      # stand-in, the v1.0 disclosure seeded from 04B §17.1 verbatim) and grants.
+      # @spec [Doc-04A_V2.2 §8.3, §15.1, §16; Doc-04C_V1.0 §5.3, §15.2, §16.6] | @implemented [2026-09-25]
+      - name: Exam shell server gates (workspace, resume, forms, report source — E7a)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-shell-server-gates.sh
 
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
@@ -1328,6 +1373,40 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
             --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
+      # student through the real /api/tests handlers to a score, then the executor's
+      # anonymize call and the hard_delete cascade; row counts before/after and the
+      # result JSON are printed. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam deletion cascade lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-deletion.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-deletion.json \
+            --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts
+
+      # @spec [Doc-04A_V2.2 §16 (SCL-145 workspace, SCL-146 heartbeat, SCL-147 forms); Doc-04C_V1.0 §11.2, §16.1-§16.8; E7a]
+      # The shell's server surface through the real /api/tests routers: forms list,
+      # workspace round-trip with served tokens (a letter refused), heartbeat position,
+      # and the 04C report in every reachable state plus the bare 403. Named BY FILE.
+      - name: Exam shell server endpoints → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-shell-server.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-shell.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
+            --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that

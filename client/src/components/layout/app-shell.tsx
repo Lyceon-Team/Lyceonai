@@ -12,6 +12,7 @@ import {
   RotateCcw,
   MessageSquare,
   CalendarDays,
+  ClipboardCheck,
   Settings,
   LogOut,
   type LucideIcon,
@@ -43,6 +44,7 @@ export const navItems: readonly {
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/practice", label: "Practice", icon: BookOpen },
+  { href: "/tests", label: "Tests", icon: ClipboardCheck },
   { href: "/review", label: "Review", icon: RotateCcw },
   { href: "/chat", label: "Lisa", icon: MessageSquare },
 ];

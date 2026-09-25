@@ -7,7 +7,9 @@
  *        explanation are null), §7.2 (Zod first, types inferred)]
  *       [E6 rulings: Module 2 is addressed as '2' (SCL-132); options are practice's
  *        opaque tokens (SCL-133)]
- * @implemented [2026-09-24]
+ *       [E7a: item workspace (SCL-145), heartbeat resume position (SCL-146), forms
+ *        list (SCL-147)]
+ * @implemented [2026-09-24] | @updated [2026-09-25]
  *
  * plain English: the single definition of every exam request body, path parameter
  * and response the server returns. The question payload schema is `.strict()` and
@@ -78,6 +80,53 @@ export const examModuleParamsSchema = z.object({
   module: examModuleSchema,
 });
 
+/**
+ * §8.3 heartbeat body, as amended by SCL-146: an optional resume position — the
+ * ordinal of the item on screen in the section's ACTIVE module. An empty body is
+ * the E6 heartbeat unchanged.
+ */
+export const examHeartbeatRequestSchema = z
+  .object({ ordinal: z.number().int().min(0).max(200).optional() })
+  .strict();
+export type ExamHeartbeatRequest = z.infer<typeof examHeartbeatRequestSchema>;
+
+/**
+ * SCL-145 — a passage highlight: a [start, end) range in Unicode CODE POINTS
+ * (what Postgres char_length counts), not UTF-16 units. Offsets only: no text.
+ */
+export const examHighlightSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+  })
+  .strict()
+  .refine((h) => h.start < h.end, { message: "start must be before end" });
+export type ExamHighlight = z.infer<typeof examHighlightSchema>;
+
+/** Upper bounds, mirrored by the table's CHECKs (20260930090000). */
+export const EXAM_WORKSPACE_MAX_ELIMINATED = 8;
+export const EXAM_WORKSPACE_MAX_HIGHLIGHTS = 64;
+
+/**
+ * SCL-145 — one item's workspace. Eliminations are the item's SERVED option
+ * tokens (the ids in `options`), never letters; the server refuses anything else.
+ * There is no notes field: free text is out of scope (Doc 05E INV-05E-04).
+ */
+export const examWorkspaceItemSchema = z
+  .object({
+    ordinal: z.number().int().min(0).max(200),
+    marked_for_review: z.boolean(),
+    eliminated_option_ids: z
+      .array(z.string().min(1).max(64))
+      .max(EXAM_WORKSPACE_MAX_ELIMINATED),
+    highlights: z.array(examHighlightSchema).max(EXAM_WORKSPACE_MAX_HIGHLIGHTS),
+  })
+  .strict();
+export type ExamWorkspaceItem = z.infer<typeof examWorkspaceItemSchema>;
+
+/** PUT body: the item's whole workspace (a replay is a no-op). */
+export const examWorkspaceSaveRequestSchema = examWorkspaceItemSchema;
+
 /** §15.3 per-request audit metadata; accepted and logged, never trusted. */
 export const examAuditMetaSchema = z
   .object({
@@ -140,6 +189,8 @@ export const examSessionResponseSchema = z
           state: examSectionStateSchema,
           remaining_ms: z.number().int().nonnegative().nullable(),
           module2_path_locked: z.boolean(),
+          /** SCL-146: the last reported position in the ACTIVE module, if any. */
+          current_ordinal: z.number().int().nonnegative().nullable(),
         })
         .strict(),
     ),
@@ -215,6 +266,24 @@ export const examAnswerResponseSchema = z
   .strict();
 export type ExamAnswerResponse = z.infer<typeof examAnswerResponseSchema>;
 
+export const examWorkspaceResponseSchema = z
+  .object({
+    section_state: examSectionStateResponseSchema,
+    items: z.array(examWorkspaceItemSchema),
+  })
+  .strict();
+export type ExamWorkspaceResponse = z.infer<typeof examWorkspaceResponseSchema>;
+
+export const examWorkspaceSaveResponseSchema = z
+  .object({
+    section_state: examSectionStateResponseSchema,
+    item: examWorkspaceItemSchema,
+  })
+  .strict();
+export type ExamWorkspaceSaveResponse = z.infer<
+  typeof examWorkspaceSaveResponseSchema
+>;
+
 /** §16.2 plus E6's module_not_started / module_not_startable (PR log). */
 export const EXAM_ERROR_CODES = [
   "unauthenticated",
@@ -232,6 +301,7 @@ export const EXAM_ERROR_CODES = [
   "invalid_question_for_form",
   "invalid_answer",
   "session_item_mapping_missing",
+  "invalid_workspace",
 ] as const;
 export const examErrorCodeSchema = z.enum(EXAM_ERROR_CODES);
 export type ExamErrorCode = z.infer<typeof examErrorCodeSchema>;
