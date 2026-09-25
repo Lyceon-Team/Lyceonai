@@ -185,7 +185,7 @@ commit;
 | **W3-6** | `google-auth-library` is a worker dependency that no worker source imports since W3-1 | Removed from `apps/workers/tutor-orchestrator/package.json` in a cleanup pass; worker builds and deploys. Low priority — ruled not worth its own PR now (2026-09-24) | CC |
 | **W3-7** | Practice selector is `ORDER BY random()` with no mastery input | OPEN — contradicts the determinism ruling. Pre-existing, practice-side | CC |
 | **W3-8** | `isPreSubmitForSurface("dashboard")` returns post-submit | OPEN — **launch-blocking.** A general-mode conversation attaching a question ID puts `correct_answer` on the wire. Latent today only because `question_content` is null. **Fix in PR (branch `…-w3-8-gates`):** dashboard is pre-submit (no item, no submission record); review reads `review_session_items.status` (was hard-coded post-submit — the review half of the same fix, launch-blocking for W4-1) | CC |
-| **W3-9** | SCL-111 marks tutor-in-review deferred | OPEN — amend; review is launch scope | CC |
+| **W3-9** | SCL-111 marks tutor-in-review deferred | DRAFTED — SCL-150 (PROPOSED, PR #891) amends SCL-111: deferral withdrawn, CR-02B-29 in force, post-submit tutor row added for review; owner action pending | CC |
 | **W3-10** | SCL-060 sends `explanation` pre-submit in practice | OPEN — ruling 2026-09-25: reverse. Possession is the control, not instruction (CR-02B-29: cannot leak what it doesn't have). SCL amendment drafted PROPOSED | CC |
 
 ### W3-1 detail — what shipped, and the proof still owed
