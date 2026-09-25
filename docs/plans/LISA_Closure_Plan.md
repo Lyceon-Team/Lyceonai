@@ -176,11 +176,17 @@ commit;
 | ID | Item | Proof | Owner |
 |---|---|---|---|
 | **W3-1** | Model Armor protects nothing | A deliberately unsafe output is **blocked** by your template, with the filter named in the log. Standalone Sanitize from the BFF, real enforcement, SDP on output, fail-open with ERROR | CC |
-| **W3-2** | LISA invents and grades questions | In general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
+| **W3-2** | LISA invents and grades questions | IN PROGRESS — ruling 2026-09-25: retrieval for discussion only; no grading, no attempt, no mastery write. General mode offers a **handoff to practice** (practice keeps sole ownership of selection, serving, anti-leak, grading and mastery events); it never invents an item or asserts a computed answer. Question-bank access lands in **review**, where the exact question matters. Proof: in general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
+| **W3-2a** | Golden set has no case for LISA fabricating a question | OPEN — add case 36 | CC |
 | **W3-3** | All students get US crisis resources | A student with a non-US country sees that country's resources. Depends on Stripe country collection | CC + Karl |
 | **W3-4** | Model Armor template IDs still ride the orchestrate wire and the worker's Cloud Run env, unused since W3-1 | The deployed worker's `orchestrateRequestSchema` no longer requires `model_armor_*_template_id`, **then** the BFF stops sending them; `MODEL_ARMOR_*` absent from the Cloud Run revision and from Vercel. Two steps, worker first — the running worker 400s every turn if the BFF drops them early | CC + Karl |
 | **W3-5** | A crisis the classifier misses, blocked by Model Armor's `dangerous` filter, reaches no human | **Ruled 2026-09-24:** an input block whose matched filters include `dangerous` opens a crisis review case and alerts; the student still sees the neutral block copy, not the crisis template (the filter is broad and not clinical — firing crisis resources on it would undercut the deterministic Layer 1/Layer 2 design). Proof: a `dangerous` input block in production → a new `crisis_review_cases` row with `source = 'model_armor_dangerous'` and a Slack alert, and the reply is the block copy. **Apply migration `20261003000000` before the code deploys** — without it the case insert fails CHECK (logged ERROR `model_armor_crisis_flag_failed`; the student still gets the block copy) | CC |
+| **W3-4b** | Mastery never reaches the prompt | OPEN — **verified 2026-09-25:** `hasMastery: true` is `snapshot !== null`, and general mode sends an all-null `scope:"all"` placeholder, so `renderMasteryBlock` returns null and the system instruction carries no mastery. Every production turn has been general mode; both students who used LISA have mastery rows (50 skill, 16 domain). Fix: BFF fills the general-mode snapshot (deploys on merge); student-wide domain bands need a wire field + worker renderer (Cloud Build). Proof: assert on the assembled system instruction, not the envelope | CC |
 | **W3-6** | `google-auth-library` is a worker dependency that no worker source imports since W3-1 | Removed from `apps/workers/tutor-orchestrator/package.json` in a cleanup pass; worker builds and deploys. Low priority — ruled not worth its own PR now (2026-09-24) | CC |
+| **W3-7** | Practice selector is `ORDER BY random()` with no mastery input | OPEN — contradicts the determinism ruling. Pre-existing, practice-side | CC |
+| **W3-8** | `isPreSubmitForSurface("dashboard")` returns post-submit | OPEN — **launch-blocking.** A general-mode conversation attaching a question ID puts `correct_answer` on the wire. Latent today only because `question_content` is null. **Fix in PR (branch `…-w3-8-gates`):** dashboard is pre-submit (no item, no submission record); review reads `review_session_items.status` (was hard-coded post-submit — the review half of the same fix, launch-blocking for W4-1) | CC |
+| **W3-9** | SCL-111 marks tutor-in-review deferred | OPEN — amend; review is launch scope | CC |
+| **W3-10** | SCL-060 sends `explanation` pre-submit in practice | OPEN — ruling 2026-09-25: reverse. Possession is the control, not instruction (CR-02B-29: cannot leak what it doesn't have). SCL amendment drafted PROPOSED | CC |
 
 ### W3-1 detail — what shipped, and the proof still owed
 
@@ -243,7 +249,7 @@ student's message); output-only scanning is the fallback.
 
 | ID | Item | Proof | Owner |
 |---|---|---|---|
-| **W4-1** | LISA in practice and review | A scoped turn from each surface, anti-leak holding pre-submit | CC |
+| **W4-1** | LISA in practice and review | **PROMOTED TO LAUNCH SCOPE (2026-09-25)** — review is the priority; a core purpose of review is learning from mistakes with LISA. Review first, practice after. Review is a graded re-attempt: pre-submit LISA gets stem/passage/options only (CR-02B-29); post-submit, answer and explanation. One conversation per review item. Proof: a scoped turn from review, anti-leak holding pre-submit, discussion allowed post-submit | CC |
 | **W4-2** | Golden set Phase B | The judge reproduces Karl's verdicts on all ten gold responses, then scores the remaining 25 | CC + Karl |
 
 
@@ -277,7 +283,7 @@ The other 16 keys in the schema are not read by any code path, and their databas
 
 ## Launch gate
 
-**Blocking:** W0-1, W0-2, W1-1, W1-2, W1-3, W3-1, W3-2, W3-3.
+**Blocking:** W0-1, W0-2, W1-1, W1-2, W1-3, W3-1, W3-2, W3-3, W3-8, W4-1 (review).
 
 **Not blocking:** W2-2, W2-3, W4-1, W4-2, W4-3 — each an explicit, recorded decision to launch without it.
 
