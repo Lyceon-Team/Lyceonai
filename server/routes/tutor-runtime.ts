@@ -84,7 +84,10 @@ import {
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
-import type { ConversationDetail } from "../../packages/shared/src/tutor-lifecycle-schema";
+import {
+  listConversationsQuerySchema,
+  type ConversationDetail,
+} from "../../packages/shared/src/tutor-lifecycle-schema";
 
 const router = Router();
 
@@ -141,16 +144,6 @@ const endConversationSchema = z.object({
 
 const resumeConversationSchema = z.object({
   idempotency_key: z.string().uuid().optional(),
-});
-
-const surfaceSchema = z.enum(["standalone", "practice", "review"]);
-
-const listConversationsQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(100).optional(),
-  cursor: z.string().min(1).optional(),
-  source_surface: sourceSurfaceSchema.optional(),
-  surface: surfaceSchema.optional(),
-  status: z.enum(["active", "ended"]).optional(),
 });
 
 const fetchConversationQuerySchema = z.object({
@@ -2209,6 +2202,12 @@ router.get(
       }
       if (parsedQuery.data.source_surface) {
         query = query.eq("source_surface", parsedQuery.data.source_surface);
+      }
+      if (parsedQuery.data.source_session_item_id) {
+        query = query.eq(
+          "source_session_item_id",
+          parsedQuery.data.source_session_item_id,
+        );
       }
       query = parsedQuery.data.status
         ? query.eq("status", parsedQuery.data.status)

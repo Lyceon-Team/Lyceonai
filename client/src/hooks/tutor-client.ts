@@ -263,6 +263,39 @@ export function useConversation(
   });
 }
 
+/**
+ * W4-4: the item's existing scoped conversation, found with a GET — never a
+ * POST. The review panel is always open, and a conversation is created only
+ * on the student's first real message; this is how a returning student sees
+ * the thread they already started. Resolves to null when there is none.
+ * Keyed under `tutorConversationsQueryKey`, so a create refreshes it.
+ */
+export function useItemConversation(
+  sourceSurface: TutorSourceSurface,
+  sessionItemId: string,
+): UseQueryResult<string | null, HttpApiError> {
+  return useQuery({
+    queryKey: [
+      ...tutorConversationsQueryKey,
+      "item",
+      sourceSurface,
+      sessionItemId,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        source_surface: sourceSurface,
+        source_session_item_id: sessionItemId,
+        status: "active",
+        limit: "1",
+      });
+      const list = await tutorRequest<TutorConversationsList>(
+        `/conversations?${params.toString()}`,
+      );
+      return list.conversations[0]?.conversation_id ?? null;
+    },
+  });
+}
+
 export function useConversations(): UseQueryResult<
   TutorConversationsList,
   HttpApiError
