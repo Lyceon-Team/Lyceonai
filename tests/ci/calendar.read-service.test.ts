@@ -13,24 +13,16 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
-  BLOCK_ROW,
-  CONFIG_ROWS,
-  PLAN_ROW,
-  PRACTICE_CONFIG_ROW,
   PROFILE_ROW,
-  SCENARIO_BLOCK_ID,
   SCENARIO_NOW,
   SCENARIO_STUDENT,
   SCENARIO_TODAY,
   makeScenarioClient,
-  okReply,
   type ScenarioOptions,
   type FakeClient,
-  type QueryState,
 } from "./calendar.service-harness";
 
 const STUDENT = SCENARIO_STUDENT;
-const BLOCK_ID = SCENARIO_BLOCK_ID;
 const TODAY = SCENARIO_TODAY;
 const NOW = SCENARIO_NOW;
 const PROFILE = PROFILE_ROW;
@@ -161,7 +153,7 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok || result.value.status !== "setup_required") return;
-    // Every value traces to a `calendar_runtime_config` row in CONFIG_ROWS. Change a row
+    // Every value traces to a `calendar_runtime_config` row in the harness's CONFIG_ROWS. Change a row
     // and this changes with it, which is the property that keeps the setup sheet's chips
     // and the server's own validation from disagreeing.
     expect(result.value.defaults.daily_minutes_presets).toEqual([

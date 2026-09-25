@@ -40,9 +40,6 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BLOCK_ROW,
-  CONFIG_ROWS,
-  PLAN_ROW,
-  PRACTICE_CONFIG_ROW,
   SCENARIO_STUDENT,
   SCENARIO_TODAY,
   makeScenarioClient,
