@@ -86,6 +86,10 @@ import {
 } from "../lib/vertex-client.js";
 import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
 import { renderStateBlocks } from "../prompts/render-state-blocks.js";
+import {
+  PRACTICE_HANDOFF_LABEL,
+  extractPracticeHandoff,
+} from "../prompts/lisa-default-v2.js";
 
 export const orchestrateRouter: Router = Router();
 
@@ -309,7 +313,16 @@ export function buildOrchestrateResponse(
     .filter((m) => m.role === "student")
     .map((m) => m.message);
 
-  let content = vertexResponse.text;
+  // W3-2: the handoff marker never reaches the student. It becomes the
+  // start_practice action only when no bank item is attached (general mode);
+  // inside practice or review LISA stays on the item.
+  const handoff = extractPracticeHandoff(vertexResponse.text);
+  const suggestedAction: OrchestrateResponse["response"]["suggested_action"] =
+    handoff.offered && request.question_content === null
+      ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
+      : { type: "none", label: null };
+
+  let content = handoff.content;
   if (!request.is_post_submit && request.correct_answer !== null) {
     const leaked = hasAnswerLeak(
       content,
@@ -335,7 +348,7 @@ export function buildOrchestrateResponse(
     response: {
       content,
       content_kind: "message",
-      suggested_action: { type: "none", label: null },
+      suggested_action: suggestedAction,
       ui_hints: {
         show_accept_decline: false,
         allow_freeform_reply: true,

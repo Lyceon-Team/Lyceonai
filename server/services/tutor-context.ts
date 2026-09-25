@@ -100,6 +100,38 @@ export function detectsSelfDeprecatingLanguage(text: string): boolean {
 // ── Scope Resolution ───────────────────────────────────────────────────
 
 /**
+ * @spec [Doc-02B_V4 §21 Tutor Invocation Contract (session + session_item
+ *        identifiers per surface); closure plan W4-1] | @implemented 2026-09-25
+ *
+ * plain English: which tables hold a surface's sessions and items, and which
+ * column says who owns them. Practice and review are separate engines with
+ * separate tables; scope resolution, ownership checks and question content
+ * all read through this one map rather than hard-coding practice. Every
+ * surface other than review keeps the practice tables it always used.
+ */
+export type SessionTables = {
+  sessions: "practice_sessions" | "review_sessions";
+  items: "practice_session_items" | "review_session_items";
+  owner: "user_id" | "student_id";
+};
+
+export function sessionTablesFor(
+  surface: string | null | undefined,
+): SessionTables {
+  return surface === "review"
+    ? {
+        sessions: "review_sessions",
+        items: "review_session_items",
+        owner: "student_id",
+      }
+    : {
+        sessions: "practice_sessions",
+        items: "practice_session_items",
+        owner: "user_id",
+      };
+}
+
+/**
  * @spec [Doc-03A_V3.0 §5.2, Doc-03B_V2 §5.4 rule 5, §11.1-11.2, INV-03-14]
  * @implemented 2026-08-12
  * plain English: Resolves the source scope for the current tutor turn with
@@ -129,7 +161,9 @@ export async function resolveScope(
   sessionId: string | null,
   sessionItemId: string | null,
   questionRowId: string | null,
+  surface: string = "practice",
 ): Promise<ResolvedScope> {
+  const tables = sessionTablesFor(surface);
   let validSessionId = sessionId;
   let validItemId = sessionItemId;
   let resolvedQuestionRowId = questionRowId;
@@ -140,10 +174,10 @@ export async function resolveScope(
   // resolve to an existing row owned by the authenticated student.
   if (validSessionId) {
     const { data: sessionData, error: sessionError } = await supabaseServer
-      .from("practice_sessions")
+      .from(tables.sessions)
       .select("id")
       .eq("id", validSessionId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (sessionError) {
@@ -177,10 +211,10 @@ export async function resolveScope(
   // someone else's item id).
   if (validItemId) {
     const { data: itemData, error: itemError } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select("question_id, session_id")
       .eq("id", validItemId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (itemError) {
@@ -317,31 +351,40 @@ export async function resolveScope(
  * guaranteed by the user_id predicate (tutor-context.ts already queries
  * this table with ownership predicates — we do not weaken them).
  *
- * SCL-060: explanation is populated for all surfaces, pre-submit included —
- * it is internal context for model reasoning, not an anti-leak surface.
- * The correct_answer column is NEVER included in the select — it does not
- * appear on the wire. Anti-echo directive + INV-03-04 are the defenses.
+ * The correct_answer column is NEVER included in the select — it reaches
+ * the envelope only through the post-submit gate in resolveFullEnvelope.
+ *
+ * EXPLANATION IS POST-SUBMIT ONLY (closure plan W3-10, owner ruling
+ * 2026-09-25; SCL-144 PROPOSED, reversing SCL-060). SCL-060 sent the active
+ * question's explanation pre-submit as "internal context" behind an anti-echo
+ * directive, so the model held the explanation while the student was still
+ * working. CR-02B-29's principle is "cannot leak what it doesn't have":
+ * possession is the control, a prompt instruction is not. Pre-submit the
+ * column is not even selected.
  *
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
  */
-async function resolveQuestionContent(
+export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
   isPostSubmit: boolean,
+  surface: string = "practice",
 ): Promise<QuestionContent | null> {
+  const tables = sessionTablesFor(surface);
   // No session item → no question context (general mode)
   if (!scope.source_session_item_id) return null;
 
   try {
     const { data, error } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select(
         "question_stem, question_passage, question_options, question_item_type, " +
-          "question_explanation, selected_answer, ordinal",
+          "selected_answer, ordinal" +
+          (isPostSubmit ? ", question_explanation" : ""),
       )
       .eq("id", scope.source_session_item_id)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
 
     if (error) {
@@ -385,14 +428,14 @@ async function resolveQuestionContent(
         ? ("grid_in" as const)
         : ("mcq" as const);
 
-    // SCL-060: the active question's explanation is internal context —
-    // direction on how LISA should explain the question. Populated for
-    // all surfaces, pre-submit included. The anti-echo directive in
-    // renderItemBlock enforces at the prompt layer; INV-03-04 enforces
-    // at the output layer. This query resolves the ACTIVE question only
-    // (keyed by source_session_item_id). No multi-question delivery.
-    // @spec [SCL-060, INV-03-04, Doc-03D_V1.2 §6.2]
-    const explanation = (data.question_explanation as string) ?? null;
+    // Post-submit only (W3-10; SCL-144 PROPOSED, reversing SCL-060). The
+    // column was not selected pre-submit, so this is null there by
+    // construction — and the explicit gate keeps it null even if the select
+    // ever changes.
+    // @spec [CR-02B-29, Doc-02B_V4 §21 Question Awareness, INV-03-04; SCL-144]
+    const explanation = isPostSubmit
+      ? ((data.question_explanation as string) ?? null)
+      : null;
 
     return {
       stem: data.question_stem as string,
@@ -489,9 +532,11 @@ async function resolveMasterySnapshot(
   scope: ResolvedScope,
 ): Promise<MasterySnapshot | null> {
   try {
-    // If no question context, return a minimal "all" scope snapshot
+    // No question context (general mode): a student-wide snapshot. This was
+    // an all-null placeholder, so no general-mode turn ever carried mastery
+    // (W3-4b).
     if (!scope.source_question_row_id) {
-      return buildAllScopeSnapshot();
+      return buildStudentWideSnapshot(studentId);
     }
 
     // Fetch question metadata to know skill/domain/section
@@ -597,8 +642,11 @@ async function resolveMasterySnapshot(
       };
     }
 
-    // Fetch recent activity summary (7d/30d)
-    const recentActivitySummary = await fetchRecentActivitySummary(studentId);
+    // Fetch recent activity summary (7d/30d) and the student-wide bands
+    const [recentActivitySummary, domainBands] = await Promise.all([
+      fetchRecentActivitySummary(studentId),
+      fetchDomainMastery(studentId),
+    ]);
 
     const snapshot: MasterySnapshot = {
       scope: primarySkill ? "skill" : "domain",
@@ -607,6 +655,7 @@ async function resolveMasterySnapshot(
       section_projection: null, // Populated by the projection service, not context resolver
       section_projection_trend: null,
       recent_activity_summary: recentActivitySummary,
+      ...(domainBands ? { domain_mastery: domainBands } : {}),
     };
 
     const parsed = masterySnapshotSchema.safeParse(snapshot);
@@ -633,18 +682,93 @@ async function resolveMasterySnapshot(
 }
 
 /**
- * Returns a minimal mastery snapshot with "all" scope and null specifics.
- * Used when no question context is available (general entry mode).
+ * @spec [Doc-03A_V3.0 §5.4 mastery_snapshot; closure plan W3-4b]
+ * @implemented 2026-09-25
+ *
+ * plain English: the mastery snapshot for a turn with no question in scope.
+ * It carries what is true of the student regardless of question: the 7-day
+ * activity summary and every domain band with an observed level. Both come
+ * from recorded events only (INV: mastery is never inferred).
+ *
+ * WHY. General mode used to send `{scope:"all"}` with every field null. The
+ * envelope logged `hasMastery: true` (the object was not null), the worker's
+ * mastery block rendered nothing, and no production turn — all of them
+ * general mode — ever put mastery in the system instruction.
  */
-function buildAllScopeSnapshot(): MasterySnapshot {
+async function buildStudentWideSnapshot(
+  studentId: string,
+): Promise<MasterySnapshot> {
+  const [recentActivitySummary, domainMastery] = await Promise.all([
+    fetchRecentActivitySummary(studentId),
+    fetchDomainMastery(studentId),
+  ]);
   return {
     scope: "all",
     current_skill: null,
     current_domain: null,
     section_projection: null,
     section_projection_trend: null,
-    recent_activity_summary: null,
+    recent_activity_summary: recentActivitySummary,
+    ...(domainMastery ? { domain_mastery: domainMastery } : {}),
   };
+}
+
+/** True when the snapshot holds at least one observed mastery fact. */
+export function snapshotCarriesMastery(
+  snapshot: MasterySnapshot | null,
+): boolean {
+  if (!snapshot) return false;
+  return (
+    snapshot.current_skill !== null ||
+    snapshot.current_domain !== null ||
+    (snapshot.domain_mastery?.length ?? 0) > 0 ||
+    (snapshot.recent_activity_summary?.skills_practiced_7d.length ?? 0) > 0
+  );
+}
+
+type DomainMasteryBand = NonNullable<MasterySnapshot["domain_mastery"]>[number];
+
+/**
+ * Every domain with an observed mastery level, ordered by section then
+ * domain so the prompt is deterministic. `null` on a read error (logged) —
+ * the snapshot then omits the field rather than claiming "no mastery".
+ */
+async function fetchDomainMastery(
+  studentId: string,
+): Promise<DomainMasteryBand[] | null> {
+  const { data, error } = await supabaseServer
+    .from("student_domain_mastery")
+    .select("domain, section, mastery_level")
+    .eq("student_id", studentId)
+    .order("section", { ascending: true })
+    .order("domain", { ascending: true });
+
+  if (error) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "domain_mastery_query_failed",
+      "student_domain_mastery read failed; snapshot omits domain bands",
+      { studentId, message: error.message, code: error.code },
+    );
+    return null;
+  }
+
+  const bands: DomainMasteryBand[] = [];
+  for (const row of data ?? []) {
+    const r = row as {
+      domain: string;
+      section: string;
+      mastery_level: number | null;
+    };
+    if (r.mastery_level === null) continue;
+    if (r.section !== "M" && r.section !== "RW") continue;
+    bands.push({
+      domain: r.domain,
+      section: r.section,
+      mastery_level: Number(r.mastery_level),
+    });
+  }
+  return bands;
 }
 
 /**
@@ -728,7 +852,13 @@ async function fetchRecentActivitySummary(
       skills_with_fails_7d: Array.from(skillsWithFails),
       skills_newly_mastered_30d: null, // Requires comparing mastery snapshots over time; deferred
     };
-  } catch {
+  } catch (err: unknown) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "recent_activity_summary_error",
+      "Unexpected error building the 7-day activity summary; omitting it",
+      { studentId, error: err instanceof Error ? err.message : String(err) },
+    );
     return null;
   }
 }
@@ -1176,6 +1306,7 @@ export async function resolveFullEnvelope(
     params.sourceSessionId,
     params.sourceSessionItemId,
     params.sourceQuestionRowId,
+    params.sourceSurface,
   );
 
   // ── Step 2: Parallel resolution of remaining subsections ───────────
@@ -1188,6 +1319,7 @@ export async function resolveFullEnvelope(
         params.studentId,
         resolvedScope,
         params.isPostSubmit,
+        params.sourceSurface,
       ),
     ]);
 
@@ -1213,10 +1345,9 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060): CONTENT,
-    // never canonical ID. SCL-060: explanation is internal context for
-    // all surfaces. Anti-echo directive (prompt) + INV-03-04 (output)
-    // are the defense layers.
+    // Question content (Doc 03A §5.4, Doc 03C §4.4): CONTENT, never
+    // canonical ID. Explanation is post-submit only (W3-10; SCL-144
+    // PROPOSED, reversing SCL-060) — resolveQuestionContent withholds it.
     question_content: questionContent,
     // Server-derived post-submit flag (Doc 03D §6.3): resolved from
     // practice_session_items.status by isPreSubmitForSurface. The worker
@@ -1264,7 +1395,17 @@ export async function resolveFullEnvelope(
     {
       conversationId: params.conversationId,
       entryMode: params.entryMode,
-      hasMastery: learningContext.mastery_snapshot !== null,
+      // What the snapshot actually carries — not merely that it exists.
+      // `hasMastery` used to be `snapshot !== null`, true for an all-null
+      // placeholder (W3-4b).
+      hasMastery: snapshotCarriesMastery(learningContext.mastery_snapshot),
+      masteryDomainBands:
+        learningContext.mastery_snapshot?.domain_mastery?.length ?? 0,
+      masteryHasCurrentSkill:
+        learningContext.mastery_snapshot?.current_skill != null,
+      masteryHasRecentActivity:
+        (learningContext.mastery_snapshot?.recent_activity_summary
+          ?.skills_practiced_7d.length ?? 0) > 0,
       hasKpi: learningContext.kpi_state !== null,
       memorySummaryCount: memorySummaries.length,
       hasStructuredFields:

@@ -90,9 +90,18 @@ describe("Premium CTA wiring contract", () => {
 
   it("routes entitlement denials through premium prompt UX on key premium surfaces", () => {
     const chat = read("client/src/pages/chat.tsx");
+    // W4-1: the turn machine (send, retry, and the entitlement-denial mapping)
+    // moved into the shared hook the chat page and the review panel both run.
+    const tutorTurn = read("client/src/hooks/useTutorTurn.ts");
+    const reviewPanel = read(
+      "client/src/components/tutor/ScopedTutorPanel.tsx",
+    );
 
     expect(chat).toContain("PremiumUpgradePrompt");
-    expect(chat).toContain("mapTutorErrorToPremiumReason");
+    expect(chat).toContain("useTutorTurn");
+    expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
+    expect(reviewPanel).toContain("PremiumUpgradePrompt");
+    expect(reviewPanel).toContain("useTutorTurn");
     // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
     // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,
     // getPremiumDenialReason) went with the deleted page; the chat surface is unchanged.

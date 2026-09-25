@@ -111,6 +111,21 @@ export const masterySnapshotSchema = z.object({
       skills_newly_mastered_30d: z.array(z.string()).nullable(),
     })
     .nullable(),
+  // ── Student-wide domain bands (closure plan W3-4b, 2026-09-25) ───────
+  // Every domain the student has an observed mastery level for, from
+  // student_domain_mastery — present in general mode too, where there is no
+  // "current" skill or domain. OPTIONAL so either side can deploy first: an
+  // older worker strips the unknown key; a newer worker tolerates its absence.
+  // @spec [Doc-03A_V3.0 §5.4 mastery_snapshot; closure plan W3-4b]
+  domain_mastery: z
+    .array(
+      z.object({
+        domain: z.string(),
+        section: z.enum(["M", "RW"]),
+        mastery_level: z.number().int().min(0).max(4),
+      }),
+    )
+    .optional(),
 });
 
 export const recentFrictionSchema = z.object({
@@ -195,11 +210,12 @@ export const memoryStructuredFieldsSchema = z.object({
   style_confidence: z.enum(["low", "medium", "high"]).nullable(),
 });
 
-// ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060) ─────────
-// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-060]: pass question
-// CONTENT to the worker, never canonical ID. SCL-060: explanation is
-// internal context populated for all surfaces (anti-echo directive +
-// INV-03-04 are the defense). student_answer is null if no submission yet.
+// ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-144) ─────────
+// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-144]: pass question
+// CONTENT to the worker, never canonical ID. `explanation` is null
+// pre-submit (SCL-144 PROPOSED, reversing SCL-060: possession is the
+// control, not a prompt instruction). student_answer is null if no
+// submission yet.
 
 export const questionOptionSchema = z.object({
   key: z.string(),
@@ -233,10 +249,10 @@ export const orchestrateRequestSchema = z.object({
     max_output_tokens: z.number().int().positive(),
     timeout_ms: z.number().int().positive(),
   }),
-  // ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060) ─────────
-  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-060]: question CONTENT,
-  // never canonical ID. SCL-060: active question's explanation is internal
-  // context for all surfaces (anti-echo directive + INV-03-04 are the defense).
+  // ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-144) ─────────
+  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-144]: question CONTENT,
+  // never canonical ID. `explanation` is null pre-submit (SCL-144 PROPOSED,
+  // reversing SCL-060).
   question_content: questionContentSchema.nullable(),
   // ── Server-derived post-submit flag (Doc 03D §6.3) ─────────────────
   // @spec [Doc-03D_V1.2 §6.3, INV-03-04]: "Pre-submit gating is derived
@@ -310,11 +326,17 @@ export const orchestrateResponseSchema = z.object({
     content: z.string(),
     content_kind: z.literal("message"),
     suggested_action: z.object({
+      // start_practice (closure plan W3-2, 2026-09-25): LISA's handoff to
+      // practice in general mode — it offers a question that counts instead of
+      // inventing one. DEPLOY ORDER: the BFF parses worker responses with this
+      // schema, so the BFF (Vercel) must carry this value before the worker
+      // (Cloud Build) can emit it.
       type: z.enum([
         "none",
         "offer_similar_question",
         "offer_broader_coaching",
         "offer_stay_focused",
+        "start_practice",
       ]),
       label: z.string().nullable(),
     }),

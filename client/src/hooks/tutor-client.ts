@@ -91,7 +91,9 @@ export type TutorSuggestedActionType =
   | "none"
   | "offer_similar_question"
   | "offer_broader_coaching"
-  | "offer_stay_focused";
+  | "offer_stay_focused"
+  // W3-2: LISA's handoff to practice (general mode) — rendered as a link.
+  | "start_practice";
 
 export type TutorSuggestedAction = {
   type: TutorSuggestedActionType;
