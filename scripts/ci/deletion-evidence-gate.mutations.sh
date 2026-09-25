@@ -45,6 +45,9 @@ OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
 ANASURF="client/src/lib/analytics-surface.ts"
 APPTSX="client/src/App.tsx"
 VERIF="supabase/migrations/20260930000000_deletion_verification_in_t3.sql"
+SENT="supabase/migrations/20261002000000_actor_id_integrity_sentinel.sql"
+CARVE="supabase/migrations/20261004000000_deletion_verification_drop_deleted_profile_id.sql"
+DIAG="server/routes/diagnostic-routes.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -70,6 +73,9 @@ cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
 cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
 cp "$APPTSX"     "$BACKUP/App.tsx"
 cp "$VERIF"      "$BACKUP/deletion_verification_in_t3.sql"
+cp "$SENT"       "$BACKUP/actor_id_integrity_sentinel.sql"
+cp "$CARVE"      "$BACKUP/drop_deleted_profile_id.sql"
+cp "$DIAG"       "$BACKUP/diagnostic-routes.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -97,6 +103,9 @@ restore() {
   cp "$BACKUP/analytics-surface.ts" "$ANASURF"
   cp "$BACKUP/App.tsx" "$APPTSX"
   cp "$BACKUP/deletion_verification_in_t3.sql" "$VERIF"
+  cp "$BACKUP/actor_id_integrity_sentinel.sql" "$SENT"
+  cp "$BACKUP/drop_deleted_profile_id.sql" "$CARVE"
+  cp "$BACKUP/diagnostic-routes.ts" "$DIAG"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -370,7 +379,7 @@ expect_red M31 "P6.5 a verification record is written"
 # verification record is no longer the only place it survives.
 echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
 plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
-expect_red M32 "P6.6 the deleted profile's uuid survives ONLY on the evidence side"
+expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
 
 # =============================================================================
 # Operational-log retention (v3 §6.7 / SCL-101) — B1
@@ -668,6 +677,36 @@ SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
 echo "==> (M93) the write path accepts a pass whose in-scope layers are not verified"
 plant M93 "$VERIF" 's.replace("  IF p_outcome = \x27pass\x27 THEN", "  IF false THEN", 1)'
 expect_red M93 "P6.7 the write path refuses a pass"
+
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+# ── actor_id: the grouping identifier must never be the identity key ────────────
+# M94 is the mutation the owner brief names: revert the sentinel to the nullity-only check it
+# shipped with, and the deletion of a profile whose rows carry actor_id = its own id goes
+# through without complaint. That is the state production was in from the day the diagnostic
+# route was written until 2026-09-25.
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+echo "==> (M94) the sentinel goes back to asking only whether actor_id IS NULL"
+plant M94 "$SENT" 's.replace("          \x27AND (actor_id IS NULL OR actor_id <> $2)\x27,", "          \x27AND actor_id IS NULL\x27,", 1)'
+expect_red M94 "C3.11 the sentinel refuses"
+
+echo "==> (M95) the integrity check stops comparing actor_id to the row's own identity"
+plant M95 "$SENT" 's.replace("    EXECUTE format(\x27SELECT count(*) FROM public.%1$I WHERE %2$I IS NOT NULL AND actor_id = %2$I\x27,\n                   r.tbl, v_idcol) INTO v_n;", "    v_n := 0;", 1)'
+expect_red M95 "C3.11 the sentinel refuses"
+
+# Targets CARVE, not VERIF: 20261004000000 REPLACES verify_deletion_layers to drop the
+# exclusion, so the body lives there now. Planting into 20260930000000 mutates a function the
+# pipeline immediately overwrites — the FOURTH time this harness has caught that (M2, M9, M17
+# and M31 carry the same note). The rule, again: plant into the LAST migration that defines it.
+echo "==> (M96) the scan stops naming WHERE the residue is"
+plant M96 "$CARVE" 's.replace("      \x27residual_columns\x27, to_jsonb(v_residual),", "      \x27residual_columns\x27, to_jsonb(ARRAY[]::text[]),", 1)'
+expect_red M96 "C3.12 the scan reports"
+
+SUITE="tests/ci/actor-id-writer.contract.test.ts"
+echo "==> (M97) the diagnostic writer goes back to using the identity as the actor"
+plant M97 "$DIAG" 's.replace("  const actorId = user?.actor_id;", "  const actorId = userId;", 1)'
+expect_red M97 "D1.1 the diagnostic route resolves actor_id from the profile"
 
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 

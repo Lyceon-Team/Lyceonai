@@ -76,19 +76,18 @@ const EVIDENCE_TABLES = [
 ] as const;
 
 /**
- * The ONE uuid the structural rule lets through besides `log_id`, named rather than
- * pattern-matched so a second carve-out cannot arrive by accident.
+ * THERE ARE NO CARVE-OUTS. `deletion_verification_records.deleted_profile_id` was the only one,
+ * granted on the premise that the uuid dies with the profile and joins to nothing retained.
+ * Production falsified that on 2026-09-25: 41 retained practice rows carried the 2026-09-23
+ * deletion's profile uuid in `actor_id`, because two write paths used the identity key as the
+ * grouping identifier. While those rows existed the column was a live join from the evidence
+ * side to the pseudonymous side — the thing plan v4 §1 rule 3 exists to forbid. Dropped by
+ * migration 20261004000000 (SCL-152, reversing SCL-100's grant).
  *
- * `deletion_verification_records.deleted_profile_id` holds the uuid of a profile that no
- * longer exists. It is kept so the conformance job can re-scan for it and confirm absence —
- * the difference between recording a pass and being able to re-derive one, which is what
- * INV-06-08's "executable proof" means. It is safe only while no retained row still carries
- * that uuid, which is not assumed here: `tests/ci/deletion-phase-6.pg.ci.test.ts` P6.6 sweeps
- * every uuid column in the schema after a real deletion and requires this to be the only hit.
+ * Absence is proven instead by `public.verify_deletion_layers` sweeping every uuid column in
+ * the schema inside T3, which is the mechanism that found the residue. It never needed the
+ * uuid stored.
  */
-const UUID_CARVE_OUTS = new Set([
-  "deletion_verification_records.deleted_profile_id",
-]);
 
 let pg: Client;
 
@@ -236,6 +235,19 @@ async function seedActivity(profileId: string): Promise<void> {
     [profileId],
   );
 }
+/**
+ * Seeds activity the way `diagnostic-routes.ts` did until 2026-09-25: `actor_id` set to the
+ * profile's own primary key instead of `profiles.actor_id`. `seedActivity` above writes
+ * `SELECT p.id, p.actor_id FROM profiles`, i.e. always correct — which is exactly why no test
+ * could reproduce this bug before, and why production found it instead of CI.
+ */
+async function seedActivityWithIdentityAsActor(profileId: string): Promise<void> {
+  await pg.query(
+    `INSERT INTO public.practice_sessions (user_id, actor_id, mode, target_count, platform, client_instance_id)
+     VALUES ($1, $1, 'diagnostic', 5, 'web', 'client-bad')`,
+    [profileId],
+  );
+}
 async function seedConsent(profileId: string): Promise<void> {
   await pg.query(
     `INSERT INTO public.legal_acceptances
@@ -333,13 +345,12 @@ type VerificationRow = {
   verification_outcome: string;
   layers_text: string;
   proof_manifest_ref: string;
-  deleted_profile_id: string | null;
   x: string;
 };
 async function verificationRows(): Promise<VerificationRow[]> {
   const r = await pg.query(
     `SELECT xmin::text AS x, log_id, verification_outcome, layers_verified::text AS layers_text,
-            proof_manifest_ref, deleted_profile_id
+            proof_manifest_ref
        FROM public.deletion_verification_records ORDER BY log_id`,
   );
   return r.rows as VerificationRow[];
@@ -354,7 +365,6 @@ function manifestHash(row: VerificationRow): string {
     row.log_id,
     row.verification_outcome,
     row.layers_text,
-    row.deleted_profile_id ?? "",
   ].join("\n");
   return (
     "sha256:" +
@@ -434,11 +444,11 @@ describe.skipIf(!PG_AVAILABLE)(
         String(c.data_type).startsWith("timestamp"),
       );
       expect(timestampCols).toEqual([]);
+      // No exception list: every uuid but log_id is forbidden, full stop. The one carve-out
+      // this used to tolerate is gone (SCL-152) precisely because a tolerated exception became
+      // a live cross-universe join the moment an unrelated writer bug landed.
       const uuidCols = cols.rows.filter(
-        (c) =>
-          c.data_type === "uuid" &&
-          c.column_name !== "log_id" &&
-          !UUID_CARVE_OUTS.has(`${c.table_name}.${c.column_name}`),
+        (c) => c.data_type === "uuid" && c.column_name !== "log_id",
       );
       expect(uuidCols).toEqual([]);
       const identityLeak = cols.rows.filter((c) =>
@@ -795,11 +805,10 @@ describe.skipIf(!PG_AVAILABLE)(
       // T3 never ran for this row, and PS-5 consumed the request row inside the cascade's own
       // transaction, taking the deleted profile's uuid with it — there is nothing left to scan.
       // §6.5 pages on a missing record and on a `fail` alike, but only the `fail` carries the
-      // reason. `deleted_profile_id` is NULL because inventing one would be worse than the gap.
+      // reason. It stores no profile uuid at all — there is no column to put one in (SCL-152).
       const recon = (await verificationRows()).find((v) => v.log_id === logY);
       expect(recon).toBeDefined();
       expect(recon?.verification_outcome).toBe("fail");
-      expect(recon?.deleted_profile_id).toBeNull();
       expect(recon?.proof_manifest_ref).toBe(manifestHash(recon!));
       const reconLayers = JSON.parse(recon!.layers_text) as Record<
         string,
@@ -930,8 +939,10 @@ describe.skipIf(!PG_AVAILABLE)(
       for (const [i, u] of pair.entries()) {
         const row = byLog.get(logIds[i]!)!;
         expect(row.verification_outcome).toBe("pass");
-        // the dead key, kept so the conformance job can re-run the scan and re-derive the answer
-        expect(row.deleted_profile_id).toBe(u.id);
+        // and the record stores NO profile uuid: `u.id` must appear nowhere in it. The scan
+        // proved absence at T3 time; storing the key to re-prove it later is what SCL-152
+        // removed, after production showed the stored key joining to retained actor_id rows.
+        expect(JSON.stringify(row)).not.toContain(u.id);
         expect(row.proof_manifest_ref).toBe(manifestHash(row));
 
         // Doc 06D §6.3: all four layers, every time. `analytics` is out of scope at V1 and must
@@ -1044,6 +1055,109 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(layers.lisa?.verified).toBe(true);
 
       await pg.query(`DROP TABLE public.${RESIDUE_PROBE}`);
+    });
+
+    // ── C3.11 ───────────────────────────────────────────────────────────────────
+    // PREVENTION. The sentinel is the half that failed: it asked `actor_id IS NULL`, and a
+    // WRONG non-null value is invisible to a nullity check. Two write paths wrote the profile's
+    // own primary key as the grouping identifier and every gate passed.
+    it("C3.11 the sentinel refuses to delete a profile whose retained rows carry actor_id = its identity", async () => {
+      const u = USERS[4];
+      await seedUser(u.id, u.email);
+      await seedActivityWithIdentityAsActor(u.id);
+      const { logId } = await requestAndMakeDue(u.id);
+
+      const summary = await runExecutor();
+      expect(summary).toEqual({
+        executedCount: 0,
+        skippedCount: 0,
+        failedCount: 1,
+      });
+      // fail-closed: nothing was deleted and nothing was anonymized
+      expect(await profileExists(u.id)).toBe(true);
+      expect(
+        (
+          await pg.query(
+            `SELECT count(*)::int AS n FROM public.anonymized_actors`,
+          )
+        ).rows[0].n,
+      ).toBe(0);
+      // T2 rolled back, so the reconciler put the log row back to pending for the next pass
+      expect((await logRow(logId))?.status).toBe("pending");
+      // and no verification record was written, because the deletion never happened
+      expect((await verificationRows()).length).toBe(0);
+
+      // the schema-wide gate names the same defect, without being told where to look
+      const viol = await pg.query(
+        `SELECT viol_table, viol_identity_column, viol_kind, viol_rows
+           FROM public.actor_id_integrity_violations() ORDER BY viol_kind`,
+      );
+      expect(viol.rowCount).toBeGreaterThan(0);
+      expect(viol.rows.map((r) => r.viol_table)).toContain("practice_sessions");
+      expect(
+        viol.rows.some((r) =>
+          String(r.viol_kind).includes("own identity value"),
+        ),
+      ).toBe(true);
+
+      // …and once the row is corrected the way migration 20261003000000 does it, the same
+      // deletion goes through. The sentinel blocks a wrong value, not a legitimate deletion.
+      await pg.query(
+        `UPDATE public.practice_sessions s SET actor_id = p.actor_id
+           FROM public.profiles p
+          WHERE p.id = s.user_id AND s.actor_id = s.user_id AND p.actor_id <> p.id`,
+      );
+      expect(
+        (await pg.query(`SELECT count(*)::int AS n FROM public.actor_id_integrity_violations()`))
+          .rows[0].n,
+      ).toBe(0);
+      const second = await runExecutor();
+      expect(second).toEqual({
+        executedCount: 1,
+        skippedCount: 0,
+        failedCount: 0,
+      });
+      expect(await profileExists(u.id)).toBe(false);
+      expect((await verificationRows())[0]?.verification_outcome).toBe("pass");
+    });
+
+    // ── C3.12 ───────────────────────────────────────────────────────────────────
+    // DETECTION, and this is the production state reproduced exactly: the rows were written
+    // before the sentinel existed, the profile is already gone, and `user_id` is NULL via the
+    // FK. On 2026-09-23 this is what the database looked like — and the scan is what noticed,
+    // two days later, naming both columns. It needs no sentinel and no stored uuid to do it.
+    it("C3.12 the scan reports `fail` and names the column when a dead profile's uuid survives in actor_id", async () => {
+      const u = USERS[5];
+      await seedUser(u.id, u.email);
+      await seedActivityWithIdentityAsActor(u.id);
+      // remove the identity the way the cascade's declarative FKs do, WITHOUT the sentinel:
+      // this is the row state the two writer bugs left behind.
+      await pg.query(`DELETE FROM public.profiles WHERE id = $1`, [u.id]);
+      await pg.query(`DELETE FROM auth.users WHERE id = $1`, [u.id]);
+
+      const scan = await pg.query(
+        `SELECT public.verify_deletion_layers($1) AS v`,
+        [u.id],
+      );
+      const v = scan.rows[0].v as Record<string, Record<string, unknown>>;
+
+      expect(v.identity?.verified).toBe(false);
+      expect(v.identity?.residual_columns).toContain(
+        "practice_sessions.actor_id",
+      );
+      expect(String(v.identity?.result)).toContain("residual=1");
+      // profile and auth user really are gone — the failure is the residue, not the erasure
+      expect(String(v.identity?.result)).toContain("profiles=0");
+      expect(String(v.identity?.result)).toContain("auth.users=0");
+      // attributed to mastery by table-name convention, and the outcome would be `fail`
+      expect(v.mastery?.verified).toBe(false);
+      expect(v.lisa?.verified).toBe(true);
+
+      // clean up: this row is deliberately un-anonymizable and would fail the suite's own
+      // integrity expectations for every later test in the file
+      await pg.query(`DELETE FROM public.practice_sessions WHERE actor_id = $1`, [
+        u.id,
+      ]);
     });
 
     // ── B3 ──────────────────────────────────────────────────────────────────────

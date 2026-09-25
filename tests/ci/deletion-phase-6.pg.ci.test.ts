@@ -259,20 +259,22 @@ describe.skipIf(!PG_AVAILABLE)(
       };
 
       const res = await pg.query(
-        `SELECT public.record_deletion_verification($1, $2::jsonb, $3, $4) AS r`,
-        [logId, JSON.stringify(layers), "pass", deadProfile],
+        `SELECT public.record_deletion_verification($1, $2::jsonb, $3) AS r`,
+        [logId, JSON.stringify(layers), "pass"],
       );
       expect(res.rows[0].r).toBe(logId);
 
       const row = await pg.query(
         `SELECT log_id, verification_outcome, layers_verified::text AS layers_text,
-                proof_manifest_ref, deleted_profile_id
+                proof_manifest_ref
            FROM public.deletion_verification_records WHERE log_id = $1`,
         [logId],
       );
       expect(row.rowCount).toBe(1);
       expect(row.rows[0].verification_outcome).toBe("pass");
-      expect(row.rows[0].deleted_profile_id).toBe(deadProfile);
+      // The record stores NO profile uuid — the carve-out is gone (SCL-152). `deadProfile`
+      // must not appear anywhere in the row.
+      expect(JSON.stringify(row.rows[0])).not.toContain(deadProfile);
 
       // B3 as ruled: the manifest IS this record, and proof_manifest_ref is a SHA-256 over
       // its canonicalised form. Recomputing it here proves the hash is derived, not decorative.
@@ -282,7 +284,6 @@ describe.skipIf(!PG_AVAILABLE)(
         row.rows[0].log_id,
         row.rows[0].verification_outcome,
         row.rows[0].layers_text,
-        row.rows[0].deleted_profile_id,
       ].join("\n");
       const expected =
         "sha256:" +
@@ -321,7 +322,7 @@ describe.skipIf(!PG_AVAILABLE)(
       // meant when the same argument removed `in_progress`.
       await expect(
         pg.query(
-          `SELECT public.record_deletion_verification($1, $2::jsonb, 'pass', NULL)`,
+          `SELECT public.record_deletion_verification($1, $2::jsonb, 'pass')`,
           [logId, full(false)],
         ),
       ).rejects.toThrow(/pass requires the mastery layer/);
@@ -329,7 +330,7 @@ describe.skipIf(!PG_AVAILABLE)(
       // …and a record that omits a layer altogether — the shape audit P21 exists to catch
       await expect(
         pg.query(
-          `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail', NULL)`,
+          `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail')`,
           [logId, JSON.stringify({ identity: layer(false) })],
         ),
       ).rejects.toThrow(/no mastery layer object/);
@@ -344,7 +345,7 @@ describe.skipIf(!PG_AVAILABLE)(
       // A `fail` with all four layers present and none verified IS allowed — that is the
       // reconciler's record, and refusing it would push the harness back to silence.
       await pg.query(
-        `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail', NULL)`,
+        `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail')`,
         [logId, full(false)],
       );
       const row = await pg.query(
@@ -354,8 +355,8 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(row.rows[0].verification_outcome).toBe("fail");
     });
 
-    // ══ P6.6 — the carve-out, proven rather than asserted ══════════════════════
-    it("P6.6 the deleted profile's uuid survives ONLY on the evidence side — every retained uuid column swept", async () => {
+    // ══ P6.6 — absence, now absolute: the carve-out it was written for is gone ══
+    it("P6.6 the deleted profile's uuid survives NOWHERE — every uuid column in the schema swept", async () => {
       await seedFlaggedStudentWithCase();
 
       // `audit_logs` is the case this sweep exists for, and it has to be SEEDED or the sweep
@@ -396,7 +397,7 @@ describe.skipIf(!PG_AVAILABLE)(
       // to distrust. If the sweep below finds a hit, this call has already failed.
       await pg.query(
         `SELECT public.record_deletion_verification(
-           $1, public.verify_deletion_layers($2), 'pass', $2)`,
+           $1, public.verify_deletion_layers($2), 'pass')`,
         [log.rows[0].log_id, SUBJECT],
       );
 
@@ -420,9 +421,13 @@ describe.skipIf(!PG_AVAILABLE)(
         );
         if (hit.rows[0].n > 0) holders.push(`${table_name}.${column_name}`);
       }
-      expect(holders).toEqual([
-        "deletion_verification_records.deleted_profile_id",
-      ]);
+      // NOTHING retains the uuid — not even the evidence side. This used to expect exactly
+      // one holder, `deletion_verification_records.deleted_profile_id`; that column is gone
+      // (SCL-152) and the assertion is now the absolute one the design always wanted. It is
+      // also the assertion that, had it been this strict and had the writers been correct,
+      // would have described production accurately — instead of tolerating a stored key that
+      // turned out to join to 41 retained actor_id rows.
+      expect(holders).toEqual([]);
     });
   },
 );
