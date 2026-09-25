@@ -195,11 +195,12 @@ export const memoryStructuredFieldsSchema = z.object({
   style_confidence: z.enum(["low", "medium", "high"]).nullable(),
 });
 
-// ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060) ─────────
-// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-060]: pass question
-// CONTENT to the worker, never canonical ID. SCL-060: explanation is
-// internal context populated for all surfaces (anti-echo directive +
-// INV-03-04 are the defense). student_answer is null if no submission yet.
+// ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-144) ─────────
+// @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-144]: pass question
+// CONTENT to the worker, never canonical ID. `explanation` is null
+// pre-submit (SCL-144 PROPOSED, reversing SCL-060: possession is the
+// control, not a prompt instruction). student_answer is null if no
+// submission yet.
 
 export const questionOptionSchema = z.object({
   key: z.string(),
@@ -233,10 +234,10 @@ export const orchestrateRequestSchema = z.object({
     max_output_tokens: z.number().int().positive(),
     timeout_ms: z.number().int().positive(),
   }),
-  // ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060) ─────────
-  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-060]: question CONTENT,
-  // never canonical ID. SCL-060: active question's explanation is internal
-  // context for all surfaces (anti-echo directive + INV-03-04 are the defense).
+  // ── Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-144) ─────────
+  // @spec [Doc-03A_V3 §5.4, Doc-03C_V3 §4.4, SCL-144]: question CONTENT,
+  // never canonical ID. `explanation` is null pre-submit (SCL-144 PROPOSED,
+  // reversing SCL-060).
   question_content: questionContentSchema.nullable(),
   // ── Server-derived post-submit flag (Doc 03D §6.3) ─────────────────
   // @spec [Doc-03D_V1.2 §6.3, INV-03-04]: "Pre-submit gating is derived
