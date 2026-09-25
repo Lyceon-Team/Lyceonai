@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================================
-# E6b gate — exam tables in the account-deletion cascade (Doc 05E, 05D §10)
+# E9 gate — exam seams: review queue, mastery, projection outbox, section
+# scores, the scored-seams event, the anonymised student
 # ============================================================================
-# @spec [Doc-05E §1, §5.1, §6 INV-05E-07; Doc-05D §10.5; Doc-04B_V4.3 §9.4; SCL-143] | @implemented [2026-09-24]
+# @spec [SCL-154 .. SCL-158; Doc-04B_V4.3 §16.1; Doc-05A §6.2; Doc-05C §5.7, §7.7;
+#        Doc-05D §12.2] | @implemented [2026-09-25]
 # Applies every migration to a THROWAWAY Postgres (no prod creds) and runs
-# scripts/ci/exam-deletion-cascade-gates.sql: whole exams walked through the
-# E6 runtime functions and scored, then execute_account_deletion_cascade in both
-# modes — anonymize retains and severs, hard_delete removes and counts, the
-# INV-05E-07 sentinel refuses an ungrouped row, a re-run is a no-op, the
-# insert-once trigger still refuses every caller UPDATE/DELETE. The result JSON
-# of each run is printed (evidence).
+# scripts/ci/exam-seams-gates.sql: whole exams walked through the E6 runtime
+# functions, scored and their seams consumed as the API does, then every E9
+# plant (S1-S8, see the .sql header).
 # Every expected check id must print "ok   [ID ...]"; anything else is red.
 # ============================================================================
 set -euo pipefail
@@ -20,11 +19,11 @@ export PGUSER="${PGUSER:-postgres}"
 export PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MIG_DIR="$ROOT/supabase/migrations"
-DB=exam_deletion_cascade_gate_ci
+DB=exam_seams_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-EXPECTED_IDS="S1 W1 N1 T1 SN1 SN2 A1 A2 A3 P1 P2 H1 R1 C1 L1 L2 L3 L4"
+EXPECTED_IDS="S1 S2 S3 S4 S5 S6 S7 S8"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 
@@ -46,9 +45,9 @@ SQL
 echo "==> apply pipeline"
 for f in "$MIG_DIR"/*.sql; do psql_db "$DB" -q -f "$f" >/dev/null 2>&1 || { echo "FAIL: $f did not apply"; psql_db "$DB" -q -f "$f" 2>&1 | tail -5; exit 1; }; done
 
-echo "==> exam deletion cascade checks"
-psql -X -d "$DB" -f "$ROOT/scripts/ci/exam-deletion-cascade-gates.sql" > "$WORK/sql.out" 2>&1 || true
-grep -E 'ok   \[|EDC FAIL|ERROR|^psql.*result ' "$WORK/sql.out" | sed 's/^psql:[^ ]* //' || true
+echo "==> exam seams checks"
+psql -X -d "$DB" -f "$ROOT/scripts/ci/exam-seams-gates.sql" > "$WORK/sql.out" 2>&1 || true
+grep -E 'ok   \[|E9G FAIL|ERROR' "$WORK/sql.out" | sed 's/^psql:[^ ]* //' || true
 
 RED=""
 for id in $EXPECTED_IDS; do
@@ -59,7 +58,7 @@ if grep -q 'ERROR' "$WORK/sql.out" && [ -z "$RED" ]; then RED=" (unattributed ER
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null
 
 if [ -n "$RED" ]; then
-  echo "EXAM DELETION CASCADE GATES: FAIL — red:$RED"
+  echo "EXAM SEAMS GATES: FAIL — red:$RED"
   exit 1
 fi
-echo "EXAM DELETION CASCADE GATES: PASS ($(echo $EXPECTED_IDS | wc -w) checks)"
+echo "EXAM SEAMS GATES: PASS ($(echo $EXPECTED_IDS | wc -w) checks)"

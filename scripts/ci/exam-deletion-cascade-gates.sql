@@ -131,6 +131,19 @@ SELECT pg_temp.request_deletion(s) FROM unnest(ARRAY[
   '00000000-0000-0000-0000-000000e6b0a1', '00000000-0000-0000-0000-000000e6b0b2',
   '00000000-0000-0000-0000-000000e6b0d4', '00000000-0000-0000-0000-000000e6b0e5']::uuid[]) AS s;
 
+-- E9 (SCL-154): every scoring above enqueued a 'test_session_scored' event.
+-- Consume them now, as the API's follow-up call would, so the "before"
+-- footprints are settled and a later sweep has nothing of theirs to touch.
+DO $$
+DECLARE e record; v jsonb;
+BEGIN
+  FOR e IN SELECT id FROM public.exam_runtime_outbox
+            WHERE event_type = 'test_session_scored' AND status = 'pending' ORDER BY created_at LOOP
+    v := public.exam_score_outbox_event(e.id);
+    IF NOT (v->>'ok')::boolean THEN RAISE EXCEPTION 'EDC FAIL [fixture]: seams event % -> %', e.id, v; END IF;
+  END LOOP;
+END $$;
+
 -- Frozen "before" footprints (plain tables: they outlive each check's statement)
 CREATE TEMP TABLE _sess AS
   SELECT p.id AS student, p.actor_id, pg_temp.sessions_of(p.id) AS sessions
@@ -602,4 +615,24 @@ BEGIN
      AND ch.ordinal > pa.ordinal;
   IF v_bad IS NOT NULL THEN RAISE EXCEPTION 'EDC FAIL [L3]: parent deleted before child: %', v_bad; END IF;
   PERFORM pg_temp.ok('L3', 'every FK between two delete rows is walked child before parent');
+END $$;
+
+-- L4 — the cascade READS the list: a later CREATE OR REPLACE built from an
+--      older body (hand-written exam DELETEs) would leave L1-L3 green while the
+--      list went unread. The deployed body must name exam_child_tables and must
+--      not DELETE any listed table by name.
+DO $$
+DECLARE v_def text; v_bad text;
+BEGIN
+  v_def := pg_get_functiondef('public.execute_account_deletion_cascade(uuid, text)'::regprocedure);
+  IF position('public.exam_child_tables' IN v_def) = 0 THEN
+    RAISE EXCEPTION 'EDC FAIL [L4]: execute_account_deletion_cascade does not read public.exam_child_tables';
+  END IF;
+  SELECT string_agg(e.table_name, ', ') INTO v_bad
+    FROM public.exam_child_tables e
+   WHERE v_def ~* ('DELETE\s+FROM\s+(public\.)?' || e.table_name || '\M');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'EDC FAIL [L4]: listed exam tables deleted by hand in the cascade: %', v_bad;
+  END IF;
+  PERFORM pg_temp.ok('L4', 'the deployed cascade reads exam_child_tables and deletes no listed table by hand');
 END $$;
