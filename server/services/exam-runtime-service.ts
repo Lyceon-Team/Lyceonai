@@ -162,36 +162,57 @@ function failureFrom(env: RpcEnvelope): ExamFailure {
  * §13.3 hand-off, after the transaction that wrote the outbox row committed. Runs
  * for every operation, because any touch can time out a final Module 2 and complete
  * the session. Failures are recorded on the outbox row by SQL and logged here.
+ *
+ * E9 (SCL-154, owner ruling R1): a scored completion returns `followup_outbox_id`,
+ * the session's 'test_session_scored' event. It is consumed by a SEPARATE RPC call —
+ * its own transaction — so the review queue, mastery and projection seams never share
+ * a transaction with the scorer (04B §16.1). A seams failure is recorded on that event
+ * and re-driven by the sweep; the score is already committed.
  */
+const outboxConsumerResultSchema = z
+  .object({
+    ok: z.boolean(),
+    sqlstate: z.string().optional(),
+    followup_outbox_id: z.string().uuid().nullable().optional(),
+  })
+  .passthrough();
+
+async function consumeOutboxEvent(
+  outboxEventId: string,
+): Promise<string | null> {
+  const env = await supabaseServer.rpc("exam_score_outbox_event", {
+    p_outbox_event_id: outboxEventId,
+  });
+  if (env.error) {
+    logger.error(COMPONENT, "score_outbox_event", "outbox hand-off failed", {
+      outboxEventId,
+      reason: env.error.message,
+    });
+    return null;
+  }
+  const parsed = outboxConsumerResultSchema.safeParse(env.data);
+  if (!parsed.success || !parsed.data.ok) {
+    logger.warn(
+      COMPONENT,
+      "score_outbox_event",
+      "outbox event deferred to the sweep",
+      {
+        outboxEventId,
+        sqlstate: parsed.success ? parsed.data.sqlstate : "unparsed",
+      },
+    );
+    return null;
+  }
+  return parsed.data.followup_outbox_id ?? null;
+}
+
 async function scoreCommittedOutboxEvents(
   ids: readonly string[] | undefined,
 ): Promise<void> {
   for (const outboxEventId of ids ?? []) {
-    const env = await supabaseServer.rpc("exam_score_outbox_event", {
-      p_outbox_event_id: outboxEventId,
-    });
-    if (env.error) {
-      logger.error(COMPONENT, "score_outbox_event", "scoring hand-off failed", {
-        outboxEventId,
-        reason: env.error.message,
-      });
-      continue;
-    }
-    const parsed = z
-      .object({ ok: z.boolean(), sqlstate: z.string().optional() })
-      .passthrough()
-      .safeParse(env.data);
-    if (!parsed.success || !parsed.data.ok) {
-      logger.warn(
-        COMPONENT,
-        "score_outbox_event",
-        "scoring deferred to the sweep",
-        {
-          outboxEventId,
-          sqlstate: parsed.success ? parsed.data.sqlstate : "unparsed",
-        },
-      );
-    }
+    const followup = await consumeOutboxEvent(outboxEventId);
+    // The seams event: its own call, its own transaction.
+    if (followup !== null) await consumeOutboxEvent(followup);
   }
 }
 
