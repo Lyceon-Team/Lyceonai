@@ -8,8 +8,9 @@
  *        EntitlementService.canAccessFeature; Module 2 addressed as '2' (SCL-132)]
  * @implemented [2026-09-24]
  *
- * plain English: the seven student endpoints of 04A §16, and nothing else — no
- * form publish, no report, no outbox re-drive. Every handler runs, in this order:
+ * plain English: the seven student endpoints of 04A §16, plus E7a's three
+ * (GET /forms — SCL-147; GET and PUT the module workspace — SCL-145), and nothing
+ * else — no form publish, no report (04C's own router), no outbox re-drive. Every handler runs, in this order:
  *   1. auth       — req.user from supabaseAuthMiddleware (mount also requires it);
  *   2. entitlement — canAccessFeature(user.id, 'exam_full_length'), 403 forbidden;
  *   3. Zod        — params and body through the shared schemas, 400 invalid_request;
@@ -32,9 +33,12 @@ import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
 import {
   createExamSession,
+  listExamForms,
   listExamModuleItems,
+  readModuleWorkspace,
   readExamSessionState,
   recordExamHeartbeat,
+  saveItemWorkspace,
   startExamModule,
   submitExamAnswer,
   submitExamModule,
@@ -44,9 +48,11 @@ import {
 import {
   examAnswerRequestSchema,
   examCreateSessionRequestSchema,
+  examHeartbeatRequestSchema,
   examModuleParamsSchema,
   examSectionParamsSchema,
   examSessionParamsSchema,
+  examWorkspaceSaveRequestSchema,
 } from "../../packages/shared/src/exam-runtime-schema";
 
 export const EXAM_FEATURE_KEY = "exam_full_length";
@@ -312,14 +318,92 @@ router.post(
     if (studentId === null) return;
     const params = parseOr400(examSectionParamsSchema, req.params, req, res);
     if (params === null) return;
+    // SCL-146: an optional resume position; no body is the E6 heartbeat.
+    const body = parseOr400(
+      examHeartbeatRequestSchema,
+      req.body ?? {},
+      req,
+      res,
+    );
+    if (body === null) return;
     try {
       return sendResult(
         res,
-        await recordExamHeartbeat(studentId, params.session_id, params.section),
+        await recordExamHeartbeat(
+          studentId,
+          params.session_id,
+          params.section,
+          body.ordinal ?? null,
+        ),
         req.requestId,
       );
     } catch (error) {
       return sendServerError(res, "heartbeat", error, req.requestId);
+    }
+  },
+);
+
+// ── E7a (SCL-147, SCL-145) ──────────────────────────────────────────────────
+
+router.get("/forms", ...studentGuards, async (req: Request, res: Response) => {
+  const studentId = await authorizeExamCaller(req, res);
+  if (studentId === null) return;
+  try {
+    return sendResult(res, await listExamForms(studentId), req.requestId);
+  } catch (error) {
+    return sendServerError(res, "list_forms", error, req.requestId);
+  }
+});
+
+router.get(
+  "/sessions/:session_id/sections/:section/modules/:module/workspace",
+  ...studentGuards,
+  async (req: Request, res: Response) => {
+    const studentId = await authorizeExamCaller(req, res);
+    if (studentId === null) return;
+    const params = parseOr400(examModuleParamsSchema, req.params, req, res);
+    if (params === null) return;
+    try {
+      return sendResult(
+        res,
+        await readModuleWorkspace(
+          studentId,
+          params.session_id,
+          params.section,
+          params.module,
+        ),
+        req.requestId,
+      );
+    } catch (error) {
+      return sendServerError(res, "workspace_read", error, req.requestId);
+    }
+  },
+);
+
+router.put(
+  "/sessions/:session_id/sections/:section/modules/:module/workspace",
+  ...studentGuards,
+  async (req: Request, res: Response) => {
+    const studentId = await authorizeExamCaller(req, res);
+    if (studentId === null) return;
+    const params = parseOr400(examModuleParamsSchema, req.params, req, res);
+    if (params === null) return;
+    const body = parseOr400(examWorkspaceSaveRequestSchema, req.body, req, res);
+    if (body === null) return;
+    try {
+      return sendResult(
+        res,
+        await saveItemWorkspace(
+          studentId,
+          params.session_id,
+          params.section,
+          params.module,
+          body,
+        ),
+        req.requestId,
+      );
+    } catch (error) {
+      return sendServerError(res, "workspace_save", error, req.requestId);
     }
   },
 );

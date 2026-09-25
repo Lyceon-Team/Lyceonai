@@ -56,6 +56,7 @@ const EXAM_TABLES = [
   "test_sessions",
   "test_session_sections",
   "test_session_items",
+  "test_session_item_workspace",
   "test_answer_submissions",
   "test_session_answers",
   "score_runs",
@@ -66,14 +67,23 @@ type Footprint = Record<(typeof EXAM_TABLES)[number], number>;
 
 let testPg: Client | null = null;
 
-/** PostgREST sends rpc arguments as JSON; encode arrays/objects the same way. */
+/**
+ * PostgREST types rpc arguments by the function's signature; node-pg cannot see it.
+ * Objects and arrays go as JSON (jsonb), except the one text[] argument the exam
+ * surface has, p_eliminated (E7a workspace), which must reach Postgres as an array.
+ */
+const TEXT_ARRAY_ARGS = new Set(["p_eliminated"]);
+
 function jsonArgs(
   args?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   if (!args) return args;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
-    out[k] = v !== null && typeof v === "object" ? JSON.stringify(v) : v;
+    out[k] =
+      v !== null && typeof v === "object" && !TEXT_ARRAY_ARGS.has(k)
+        ? JSON.stringify(v)
+        : v;
   }
   return out;
 }
@@ -132,6 +142,7 @@ async function footprint(pg: Client, sessions: string[]): Promise<Footprint> {
     `SELECT (SELECT count(*) FROM public.test_sessions WHERE id = ANY ($1::uuid[]))::int AS test_sessions,
             (SELECT count(*) FROM public.test_session_sections WHERE test_session_id = ANY ($1::uuid[]))::int AS test_session_sections,
             (SELECT count(*) FROM public.test_session_items WHERE test_session_id = ANY ($1::uuid[]))::int AS test_session_items,
+            (SELECT count(*) FROM public.test_session_item_workspace WHERE test_session_id = ANY ($1::uuid[]))::int AS test_session_item_workspace,
             (SELECT count(*) FROM public.test_answer_submissions WHERE test_session_id = ANY ($1::uuid[]))::int AS test_answer_submissions,
             (SELECT count(*) FROM public.test_session_answers WHERE test_session_id = ANY ($1::uuid[]))::int AS test_session_answers,
             (SELECT count(*) FROM public.score_runs WHERE test_session_id = ANY ($1::uuid[]))::int AS score_runs,
@@ -265,6 +276,24 @@ describe.skipIf(!PG_AVAILABLE)(
             });
             expect(res.status).toBe(200);
           }
+          // E7a: one workspace row per module through the real PUT (served tokens)
+          const firstMcq = (
+            items.body.items as Array<{
+              ordinal: number;
+              question_type: string;
+              options: Array<{ id: string }>;
+            }>
+          ).find((i) => i.question_type === "multiple_choice")!;
+          expect(
+            (
+              await as(request(app).put(`${base}/workspace`)).send({
+                ordinal: firstMcq.ordinal,
+                marked_for_review: true,
+                eliminated_option_ids: [firstMcq.options[0]!.id],
+                highlights: [],
+              })
+            ).status,
+          ).toBe(200);
           expect((await as(request(app).post(`${base}/submit`))).status).toBe(
             200,
           );

@@ -69,6 +69,7 @@ import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
 import examRuntimeRouter from "./routes/exam-runtime-routes";
+import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -685,6 +686,19 @@ app.use(
   requireStudentOrAdmin,
   doubleCsrfProtection,
   examRuntimeRouter,
+);
+
+// Full-length exam score report (Doc 04C §16.1 student reads only)
+// @spec [Doc-04C_V1.0 §16.1, §16.5; E7a] | @implemented [2026-09-25]
+// Same stack as the runtime. Ownership is decided before entitlement inside the
+// router (04C §16.5): a lapsed entitlement on an OWNED session is a 200
+// `unavailable` payload, a missing or foreign session a bare 403.
+app.use(
+  "/api/tests",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  examReportRouter,
 );
 
 // Review Canonical Routes (the mistake queue — practice's loop, a different pool)

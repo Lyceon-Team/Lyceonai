@@ -43,6 +43,8 @@ RETURNS TABLE (tbl text, n bigint, digest text) LANGUAGE sql AS $f$
   SELECT 'test_answer_submissions', count(*), md5(coalesce(string_agg(to_jsonb(t)::text, '|' ORDER BY t.id), ''))
     FROM public.test_answer_submissions t WHERE t.test_session_id = ANY (p_sessions)
   UNION ALL
+  SELECT 'test_session_item_workspace', count(*), md5(coalesce(string_agg(to_jsonb(t)::text, '|' ORDER BY t.test_session_id, t.section, t.module, t.ordinal), ''))
+    FROM public.test_session_item_workspace t WHERE t.test_session_id = ANY (p_sessions)  UNION ALL
   SELECT 'test_session_answers', count(*), md5(coalesce(string_agg(to_jsonb(t)::text, '|' ORDER BY t.test_session_id, t.section, t.module, t.ordinal), ''))
     FROM public.test_session_answers t WHERE t.test_session_id = ANY (p_sessions)
   UNION ALL
@@ -512,5 +514,5 @@ BEGIN
   IF v_diff IS NOT NULL OR NOT EXISTS (SELECT 1 FROM public.test_sessions WHERE student_id = s.student) THEN
     RAISE EXCEPTION 'EDC FAIL [C1]: control rows changed in %', v_diff;
   END IF;
-  PERFORM pg_temp.ok('C1', 'control student: all 8 exam tables byte-identical');
+  PERFORM pg_temp.ok('C1', 'control student: all 9 exam tables byte-identical');
 END $$;
