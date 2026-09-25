@@ -340,6 +340,15 @@ Grouped by where it sits on the path. "Level" is the logger level. "—" means n
 
 ---
 
+**Question bank and grounding (added 2026-09-25, LISA Core brief §2)**
+
+| # | file:line | Finding | Consequence | Row |
+|---|---|---|---|---|
+| Q1 | `tutor-context.ts:229-247` (`resolveScope` returns early), worker prompt `lisa-default-v1.ts` | **The general-mode tutor flow has no path to `questions`.** No client opens scoped mode (`chat.tsx`, `tutor.tsx` send only `general`/`dashboard`); the envelope's `question_content` is null; nothing in the prompt forbids inventing an item. | This is why fabrication is possible: asked for a question, the model has none to give and writes one — the verified trigonometry item absent from the bank, graded wrong against a correct student. | W3-2 |
+| Q2 | `tutor-context.ts:492-494` (`buildAllScopeSnapshot`), `render-state-blocks.ts:173` | General mode sends an all-null `scope:"all"` mastery placeholder; `hasMastery` logs `true` because it is not null; the worker renders nothing from it. | No production turn has ever carried mastery into the system instruction. | W3-4b |
+| Q3 | `tutor-antileak.ts` `isPreSubmitForSurface` | `dashboard` and `review` were hard-coded post-submit. | A question attached to a general conversation, or LISA wired into review, would put `correct_answer` on the wire before the student answered. **✅ Fixed in the W3-8 PR** (dashboard pre-submit; review reads `review_session_items.status`). | W3-8, W4-1 |
+| Q4 | `tutor-context.ts:385-395` (SCL-060) | `explanation` is sent to the worker pre-submit as "internal context". | The model holds the explanation while the student is still working — CR-02B-29 violated by construction. Ruling: reverse. | W3-10 |
+
 ## 4. Configuration dependency table
 
 Legend. **Set where**:

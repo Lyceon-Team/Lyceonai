@@ -73,6 +73,7 @@ Both are toggles. Neither loses a control — floor settings are inspect-only an
 | **W2-7** | Nothing in the app links to `/admin/crisis-review` | OPEN — an admin needs the URL or a Slack alert to reach it | CC |
 | **W2-8** | Return-path allowlist excludes `/admin` | OPEN — a signed-out admin clicking a Slack alert lands on `/dashboard`, not the case. **This breaks the last step of the escalation path** | CC |
 | **W2-9** | Admin claim/disposition POSTs skip `doubleCsrfProtection` | OPEN — not exploitable under `SameSite=Lax`; missing second layer, and the mount comment still says "read-only" | CC |
+| **W2-10** | Student's message not shown until LISA responds | OPEN — no optimistic insert; thread renders only on query refetch. Same root cause as the original duplicate-send stacking. **Fix in PR (this branch):** the message renders on send, keyed by `client_turn_id`, and reconciles to the persisted row; a failed turn keeps it above FailedTurn; a retry reuses the id, so one bubble. Proof: in production, send a message and see it before the reply; force a failed turn (W2-1 method) and see it stay | CC |
 | **W2-4** | Eight UI states — **OPEN** (ruling 09-24: verify in production) | Walk the UI on Karl's signed-in account with Claude in Chrome; eight screenshots, each against the mockup. A state that cannot be reached becomes a new row | Karl + Claude in Chrome |
 | **W2-5** | Smoke test — **OPEN** (ruling 09-24: done in the UI, script skipped) | The script's seven steps done in the production UI, each verified from the database and logs: a conversation, a normal turn, a crisis turn, the `crisis_review_cases` row, the `crisis_review_events` row, the Slack message, and a clean end. **Slack delivery is proven only by a human seeing the message in `#lyceon-crisis`** — nothing in the logs proves receipt | Karl |
 
@@ -175,11 +176,17 @@ commit;
 | ID | Item | Proof | Owner |
 |---|---|---|---|
 | **W3-1** | Model Armor protects nothing | A deliberately unsafe output is **blocked** by your template, with the filter named in the log. Standalone Sanitize from the BFF, real enforcement, SDP on output, fail-open with ERROR | CC |
-| **W3-2** | LISA invents and grades questions | In general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36 | CC |
+| **W3-2** | LISA invents and grades questions | IN PROGRESS — ruling 2026-09-25: retrieval for discussion only; no grading, no attempt, no mastery write. General mode offers a **handoff to practice** (practice keeps sole ownership of selection, serving, anti-leak, grading and mastery events); it never invents an item or asserts a computed answer. Question-bank access lands in **review**, where the exact question matters. Proof: in general mode, a request for practice produces **no** invented item and **no** model-computed answer. Golden-set case 36. **Built (2026-09-25, branch `…-w3-2-worker-prompt`):** prompt `lisa-default-v2` (v1 unchanged) — no grading, no invented question, no computed answer, owner copy verbatim; the worker turns LISA's offer into a `start_practice` action (general mode only) rendered as a link to practice. Needs a Cloud Build after merge to `main`; BFF must deploy first (schema). Production proof owed | CC |
+| **W3-2a** | Golden set has no case for LISA fabricating a question | DONE (branch `…-w3-2-worker-prompt`) — CASE-36 in `docs/eval/lisa/LISA_Golden_Set_v2.md` and the fixtures; deterministic half tested, model half runs in Phase B. The fabricated-memory case previously noted as 36 is now owed as CASE-37 | CC |
 | **W3-3** | All students get US crisis resources | A student with a non-US country sees that country's resources. Depends on Stripe country collection | CC + Karl |
 | **W3-4** | Model Armor template IDs still ride the orchestrate wire and the worker's Cloud Run env, unused since W3-1 | The deployed worker's `orchestrateRequestSchema` no longer requires `model_armor_*_template_id`, **then** the BFF stops sending them; `MODEL_ARMOR_*` absent from the Cloud Run revision and from Vercel. Two steps, worker first — the running worker 400s every turn if the BFF drops them early | CC + Karl |
 | **W3-5** | A crisis the classifier misses, blocked by Model Armor's `dangerous` filter, reaches no human | **Ruled 2026-09-24:** an input block whose matched filters include `dangerous` opens a crisis review case and alerts; the student still sees the neutral block copy, not the crisis template (the filter is broad and not clinical — firing crisis resources on it would undercut the deterministic Layer 1/Layer 2 design). Proof: a `dangerous` input block in production → a new `crisis_review_cases` row with `source = 'model_armor_dangerous'` and a Slack alert, and the reply is the block copy. **Apply migration `20261003000000` before the code deploys** — without it the case insert fails CHECK (logged ERROR `model_armor_crisis_flag_failed`; the student still gets the block copy) | CC |
+| **W3-4b** | Mastery never reaches the prompt | OPEN — **verified 2026-09-25:** `hasMastery: true` is `snapshot !== null`, and general mode sends an all-null `scope:"all"` placeholder, so `renderMasteryBlock` returns null and the system instruction carries no mastery. Every production turn has been general mode; both students who used LISA have mastery rows (50 skill, 16 domain). Fix: BFF fills the general-mode snapshot (deploys on merge); student-wide domain bands need a wire field + worker renderer (Cloud Build). Proof: assert on the assembled system instruction, not the envelope | CC |
 | **W3-6** | `google-auth-library` is a worker dependency that no worker source imports since W3-1 | Removed from `apps/workers/tutor-orchestrator/package.json` in a cleanup pass; worker builds and deploys. Low priority — ruled not worth its own PR now (2026-09-24) | CC |
+| **W3-7** | Practice selector is `ORDER BY random()` with no mastery input | OPEN — contradicts the determinism ruling. Pre-existing, practice-side | CC |
+| **W3-8** | `isPreSubmitForSurface("dashboard")` returns post-submit | OPEN — **launch-blocking.** A general-mode conversation attaching a question ID puts `correct_answer` on the wire. Latent today only because `question_content` is null. **Fix in PR (branch `…-w3-8-gates`):** dashboard is pre-submit (no item, no submission record); review reads `review_session_items.status` (was hard-coded post-submit — the review half of the same fix, launch-blocking for W4-1) | CC |
+| **W3-9** | SCL-111 marks tutor-in-review deferred | DRAFTED — SCL-150 (PROPOSED, PR #891) amends SCL-111: deferral withdrawn, CR-02B-29 in force, post-submit tutor row added for review; owner action pending | CC |
+| **W3-10** | SCL-060 sends `explanation` pre-submit in practice | OPEN — ruling 2026-09-25: reverse. Possession is the control, not instruction (CR-02B-29: cannot leak what it doesn't have). SCL amendment drafted PROPOSED | CC |
 
 ### W3-1 detail — what shipped, and the proof still owed
 
@@ -242,7 +249,7 @@ student's message); output-only scanning is the fallback.
 
 | ID | Item | Proof | Owner |
 |---|---|---|---|
-| **W4-1** | LISA in practice and review | A scoped turn from each surface, anti-leak holding pre-submit | CC |
+| **W4-1** | LISA in practice and review | **PROMOTED TO LAUNCH SCOPE (2026-09-25)** — review is the priority; a core purpose of review is learning from mistakes with LISA. Review first, practice after. Review is a graded re-attempt: pre-submit LISA gets stem/passage/options only (CR-02B-29); post-submit, answer and explanation. One conversation per review item. Proof: a scoped turn from review, anti-leak holding pre-submit, discussion allowed post-submit. **Built (2026-09-25):** server review scope — review tables, ownership, item-anchored question (PR #888); client panel — Ask LISA beside the review question, chip naming it, close, scoped composer, one conversation per item (branch `…-w4-1-review-panel`). Practice keeps `features.tutor: false` until review is proven. Production proof owed | CC |
 | **W4-2** | Golden set Phase B | The judge reproduces Karl's verdicts on all ten gold responses, then scores the remaining 25 | CC + Karl |
 
 
@@ -276,7 +283,7 @@ The other 16 keys in the schema are not read by any code path, and their databas
 
 ## Launch gate
 
-**Blocking:** W0-1, W0-2, W1-1, W1-2, W1-3, W3-1, W3-2, W3-3.
+**Blocking:** W0-1, W0-2, W1-1, W1-2, W1-3, W3-1, W3-2, W3-3, W3-8, W4-1 (review).
 
 **Not blocking:** W2-2, W2-3, W4-1, W4-2, W4-3 — each an explicit, recorded decision to launch without it.
 

@@ -42,7 +42,10 @@ import { EntitlementService } from "../services/entitlement-service";
 // hasAnswerLeak was previously imported here but is now internal to the
 // output serializer — the static gate test (LISA-FULL-007) enforces that
 // this file never bypasses the serializer by using raw scan functions.
-import { resolveFullEnvelope } from "../services/tutor-context";
+import {
+  resolveFullEnvelope,
+  sessionTablesFor,
+} from "../services/tutor-context";
 // isPreSubmitForSurface: still needed to resolve pre-submit state before
 // calling the serializer. TUTOR_ANTI_LEAK_SUBSTITUTION no longer imported
 // here — it lives inside the serializer.
@@ -253,6 +256,7 @@ type ReplayMessageRow = {
   message: string;
   source_session_item_id: string | null;
   created_at: string;
+  client_turn_id: string | null;
 };
 
 /**
@@ -271,7 +275,7 @@ async function loadMessagesForReplay(
   let query = supabaseServer
     .from("tutor_messages")
     .select(
-      "id, role, content_kind, message, source_session_item_id, created_at",
+      "id, role, content_kind, message, source_session_item_id, created_at, client_turn_id",
     )
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
@@ -350,7 +354,11 @@ async function resolveTrustedScopeForCreate(
   sourceSessionItemId: string | null,
   sourceQuestionRowId: string | null,
   sourceQuestionCanonicalId: string | null,
+  sourceSurface: string,
 ): Promise<ResolvedScopeRow> {
+  // Review items live in review tables (W4-1); every other surface keeps the
+  // practice tables it always used.
+  const tables = sessionTablesFor(sourceSurface);
   let sessionId = sourceSessionId;
   let sessionItemId = sourceSessionItemId;
   let questionRowId = sourceQuestionRowId;
@@ -358,10 +366,10 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionId) {
     const { data, error } = await supabaseServer
-      .from("practice_sessions")
+      .from(tables.sessions)
       .select("id")
       .eq("id", sessionId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionId = null;
@@ -370,18 +378,21 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionItemId) {
     const { data, error } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select("id, question_id, session_id")
       .eq("id", sessionItemId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionItemId = null;
     } else {
-      // The session item's question is authoritative if the client did not
-      // separately supply one.
-      if (!questionRowId) {
-        questionRowId = (data.question_id as string) ?? null;
+      // An owned item's question is authoritative — it overrides a
+      // client-supplied question id rather than yielding to it, so a scoped
+      // conversation cannot pair one item with another question (W4-1).
+      questionRowId = (data.question_id as string) ?? null;
+      // Anchor the session to the item's own session.
+      if (!sessionId || sessionId !== (data.session_id as string)) {
+        sessionId = (data.session_id as string) ?? null;
       }
     }
   }
@@ -583,6 +594,7 @@ router.post(
         input.source_session_item_id ?? null,
         input.source_question_row_id ?? null,
         input.source_question_canonical_id ?? null,
+        input.source_surface,
       );
 
       // ── domain: derive surface from source_surface ──
@@ -2072,6 +2084,7 @@ router.get(
             content_kind: row.content_kind,
             message: row.message,
             created_at: row.created_at,
+            client_turn_id: row.client_turn_id,
           });
           continue;
         }
@@ -2106,6 +2119,7 @@ router.get(
           content_kind: row.content_kind,
           message: rowSerialized.content,
           created_at: row.created_at,
+          client_turn_id: row.client_turn_id,
         });
       }
 
