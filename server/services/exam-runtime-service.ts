@@ -50,6 +50,11 @@ import {
   examSectionStateResponseSchema,
   examSessionResponseSchema,
   examSubmitModuleResponseSchema,
+  examModeSchema,
+  examSectionSchema,
+  examSessionStateSchema,
+  examWorkspaceResponseSchema,
+  examWorkspaceSaveResponseSchema,
   type ExamAnswerRequest,
   type ExamAnswerResponse,
   type ExamErrorCode,
@@ -58,7 +63,15 @@ import {
   type ExamQuestionPayload,
   type ExamSection,
   type ExamSessionResponse,
+  type ExamWorkspaceItem,
+  type ExamWorkspaceResponse,
+  type ExamWorkspaceSaveResponse,
 } from "../../packages/shared/src/exam-runtime-schema";
+import {
+  deriveReportState,
+  examFormsResponseSchema,
+  type ExamFormsResponse,
+} from "../../packages/shared/src/exam-report-schema";
 
 const COMPONENT = "EXAM_RUNTIME";
 
@@ -120,7 +133,7 @@ const answerOptionMapSchema = z.object({
   option_token_map: z.unknown().nullable(),
 });
 
-async function callExamRpc(
+export async function callExamRpc(
   fn: string,
   args: Record<string, unknown>,
 ): Promise<RpcEnvelope> {
@@ -547,21 +560,152 @@ export async function submitExamModule(
   };
 }
 
-/** §8.3 */
+/** §8.3, with SCL-146's optional resume position. */
 export async function recordExamHeartbeat(
   studentId: string,
   sessionId: string,
   section: ExamSection,
+  ordinal: number | null = null,
 ): Promise<ExamResult<z.infer<typeof examHeartbeatResponseSchema>>> {
   const env = await runExamRpc("exam_heartbeat", {
     p_student_id: studentId,
     p_session_id: sessionId,
     p_section: section,
+    p_ordinal: ordinal,
   });
   if (env.status !== 200) return { ok: false, error: failureFrom(env) };
   return {
     ok: true,
     status: 200,
     value: examHeartbeatResponseSchema.parse(env.body),
+  };
+}
+
+// ── E7a: item workspace (SCL-145) ───────────────────────────────────────────
+
+/** The ACTIVE module's workspace rows, for resume. */
+export async function readModuleWorkspace(
+  studentId: string,
+  sessionId: string,
+  section: ExamSection,
+  module: ExamModule,
+): Promise<ExamResult<ExamWorkspaceResponse>> {
+  const env = await runExamRpc("exam_module_workspace", {
+    p_student_id: studentId,
+    p_session_id: sessionId,
+    p_section: section,
+    p_module: module,
+  });
+  if (env.status !== 200) return { ok: false, error: failureFrom(env) };
+  return {
+    ok: true,
+    status: 200,
+    value: examWorkspaceResponseSchema.parse(env.body),
+  };
+}
+
+/**
+ * Replaces one item's workspace. The SQL checks every eliminated id against the
+ * item's served token map, so a canonical letter can never be stored here.
+ */
+export async function saveItemWorkspace(
+  studentId: string,
+  sessionId: string,
+  section: ExamSection,
+  module: ExamModule,
+  item: ExamWorkspaceItem,
+): Promise<ExamResult<ExamWorkspaceSaveResponse>> {
+  const env = await runExamRpc("exam_save_item_workspace", {
+    p_student_id: studentId,
+    p_session_id: sessionId,
+    p_section: section,
+    p_module: module,
+    p_ordinal: item.ordinal,
+    p_marked: item.marked_for_review,
+    p_eliminated: item.eliminated_option_ids,
+    p_highlights: item.highlights,
+  });
+  if (env.status !== 200) return { ok: false, error: failureFrom(env) };
+  return {
+    ok: true,
+    status: 200,
+    value: examWorkspaceSaveResponseSchema.parse(env.body),
+  };
+}
+
+// ── E7a: GET /api/tests/forms (SCL-147) ─────────────────────────────────────
+
+const formRowSchema = z.object({
+  test_form_id: z.string().uuid(),
+  name: z.string(),
+  is_selectable: z.boolean(),
+  question_count: z.number().int(),
+  break_duration_ms: z.number().int(),
+  sections: z.array(
+    z.object({
+      section: examSectionSchema,
+      questions_per_module: z.number().int(),
+      module1_ms: z.number().int(),
+      module2_ms: z.number().int(),
+    }),
+  ),
+  latest_session: z
+    .object({
+      session_id: z.string().uuid(),
+      state: examSessionStateSchema,
+      mode: examModeSchema,
+      attempt_number_for_form: z.number().int(),
+      score_total_present: z.boolean(),
+      score_partial_present: z.boolean(),
+      failed_outbox_id: z.string().uuid().nullable(),
+    })
+    .nullable(),
+});
+
+/**
+ * Published forms plus the caller's latest session on each. The report state is
+ * derived here by 04C's one derivation (the route already required the
+ * entitlement, so access is granted).
+ */
+export async function listExamForms(
+  studentId: string,
+): Promise<ExamResult<ExamFormsResponse>> {
+  const env = await callExamRpc("exam_list_forms", {
+    p_student_id: studentId,
+  });
+  if (env.status !== 200) return { ok: false, error: failureFrom(env) };
+  const rows = z
+    .object({ forms: z.array(formRowSchema) })
+    .parse(env.body).forms;
+  return {
+    ok: true,
+    status: 200,
+    value: examFormsResponseSchema.parse({
+      forms: rows.map((f) => ({
+        test_form_id: f.test_form_id,
+        name: f.name,
+        is_selectable: f.is_selectable,
+        question_count: f.question_count,
+        break_duration_ms: f.break_duration_ms,
+        sections: f.sections,
+        latest_session:
+          f.latest_session === null
+            ? null
+            : {
+                session_id: f.latest_session.session_id,
+                state: f.latest_session.state,
+                mode: f.latest_session.mode,
+                attempt_number_for_form:
+                  f.latest_session.attempt_number_for_form,
+                report_state: deriveReportState({
+                  sessionState: f.latest_session.state,
+                  scoreTotalPresent: f.latest_session.score_total_present,
+                  scorePartialPresent: f.latest_session.score_partial_present,
+                  failurePresent: f.latest_session.failed_outbox_id !== null,
+                  accessGranted: true,
+                }),
+              },
+      })),
+    }),
   };
 }

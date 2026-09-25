@@ -136,9 +136,10 @@ CREATE FUNCTION pg_temp.scoring_fixture_session(p_session uuid, p_student uuid, 
 RETURNS uuid LANGUAGE plpgsql AS $f$
 DECLARE v_both boolean := p_rw IS NOT NULL AND p_m IS NOT NULL; v_event uuid;
 BEGIN
-  INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, started_at,
+  -- actor_id: the student's grouping id, as exam_create_session stamps it (E6b)
+  INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, started_at,
       completed_at, abandoned_at, grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
-  VALUES (p_session, p_student, p_form,
+  VALUES (p_session, p_student, (SELECT actor_id FROM public.profiles WHERE id = p_student), p_form,
           CASE WHEN v_both THEN 'completed' ELSE 'partial_scored_abandoned' END, 'strict', now(),
           CASE WHEN v_both THEN now() END, CASE WHEN v_both THEN NULL ELSE now() END,
           now(), 1, true);
