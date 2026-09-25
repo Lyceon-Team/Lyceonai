@@ -36,6 +36,22 @@ const IDENTITY_NAMES = [
   "user?.id",
 ];
 
+/**
+ * Comment-stripped source with every whitespace run collapsed to one space, so the shapes below
+ * can be matched with plain string containment.
+ *
+ * WHY NOT A REGEX BUILT FROM `IDENTITY_NAMES`. The first version of this file did exactly that,
+ * escaping the names with `.replace(/[.?]/g, "\\$&")` — an INCOMPLETE escape (it misses the
+ * backslash itself, and `*+^${}()|[]`). CodeQL flagged it as two high-severity
+ * "Incomplete string escaping or encoding" alerts, correctly. Completing the character class
+ * would have silenced the alert; not building a pattern out of data removes the whole class of
+ * mistake, and reads better besides. `user?.id` and `user.id` need no escaping at all under
+ * plain containment.
+ */
+function normalizedSource(file: string): string {
+  return stripComments(fs.readFileSync(file, "utf8")).replace(/\s+/g, " ");
+}
+
 function routeFiles(): string[] {
   return fs
     .readdirSync(ROUTE_DIR)
@@ -45,9 +61,7 @@ function routeFiles(): string[] {
 
 describe("actor_id writer contract — the grouping identifier is never the identity", () => {
   it("D1.1 the diagnostic route resolves actor_id from the profile, not from the identity", () => {
-    const src = stripComments(
-      fs.readFileSync(path.join(ROUTE_DIR, "diagnostic-routes.ts"), "utf8"),
-    );
+    const src = normalizedSource(path.join(ROUTE_DIR, "diagnostic-routes.ts"));
     // it must read the profile's actor_id…
     expect(src).toContain("user?.actor_id");
     // …and must not assign an identity to it, in any of the shapes that caused this
@@ -60,21 +74,14 @@ describe("actor_id writer contract — the grouping identifier is never the iden
   it("D1.2 no route file falls back from actor_id to an identity", () => {
     const offenders: string[] = [];
     for (const file of routeFiles()) {
-      const src = stripComments(fs.readFileSync(file, "utf8"));
+      const src = normalizedSource(file);
       for (const name of IDENTITY_NAMES) {
         // `user?.actor_id ?? studentId` — the review-canonical shape
-        if (
-          new RegExp(
-            `actor_id\\s*\\?\\?\\s*${name.replace(/[.?]/g, "\\$&")}`,
-          ).test(src)
-        ) {
+        if (src.includes(`actor_id ?? ${name}`)) {
           offenders.push(`${path.basename(file)}: actor_id ?? ${name}`);
         }
-        if (
-          new RegExp(
-            `const\\s+actorId\\s*=\\s*${name.replace(/[.?]/g, "\\$&")}\\s*;`,
-          ).test(src)
-        ) {
+        // `const actorId = userId;` — the diagnostic-routes shape
+        if (src.includes(`const actorId = ${name};`)) {
           offenders.push(`${path.basename(file)}: const actorId = ${name}`);
         }
       }
@@ -82,16 +89,28 @@ describe("actor_id writer contract — the grouping identifier is never the iden
     expect(offenders).toEqual([]);
   });
 
-  it("D1.3 the guard is not vacuous — it sees a planted violation", () => {
-    // Proves the matcher works, without needing a mutation to demonstrate it: the exact
-    // production shapes, in a string, must be detected.
-    const planted = stripComments(
-      "const actorId = userId; // a comment naming actor_id ?? studentId must not count\n",
+  it("D1.3 the guard is not vacuous — it sees both planted shapes, and comments do not count", () => {
+    const norm = (src: string): string =>
+      stripComments(src).replace(/\s+/g, " ");
+
+    // both production shapes, with deliberately awkward spacing, must be detected
+    expect(norm("const   actorId\n  =  userId ;")).toContain(
+      "const actorId = userId ;",
     );
-    expect(planted).toContain("const actorId = userId");
-    expect(planted).not.toContain("??");
-    const fallback = "const a = user?.actor_id ?? studentId;";
-    expect(/actor_id\s*\?\?\s*studentId/.test(fallback)).toBe(true);
+    expect(norm("const actorId = userId;")).toContain(
+      "const actorId = userId;",
+    );
+    expect(norm("const a = user?.actor_id   ??   studentId;")).toContain(
+      "actor_id ?? studentId",
+    );
+
+    // …and a comment naming the forbidden shape must NOT count, which is the reason this file
+    // strips comments before matching at all
+    const commentOnly = norm(
+      "// never write const actorId = userId, and never actor_id ?? studentId\nconst ok = 1;",
+    );
+    expect(commentOnly).not.toContain("const actorId = userId");
+    expect(commentOnly).not.toContain("actor_id ?? studentId");
   });
 
   it("D1.4 every route file was actually read", () => {
