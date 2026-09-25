@@ -8,25 +8,10 @@
  * safeguarding support cards driven entirely by server response content.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import {
-  Send,
-  Loader2,
-  Plus,
-  Phone,
-  MessageSquareText,
-  RefreshCw,
-  AlertCircle,
-  Menu,
-  Heart,
-  Shield,
-} from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { MathRenderer } from "@/components/MathRenderer";
+import { Loader2, Plus, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -41,28 +26,20 @@ import {
   useConversations,
   useCreateConversation,
   useEndConversation,
-  useResumeConversation,
-  useSendMessage,
-  type TutorMessage,
-  type SendMessageResponse,
   type TutorConversationSummary,
-  type CrisisCategory,
 } from "@/hooks/tutor-client";
-import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
+import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
-  PremiumUpgradePrompt,
-  type PremiumPromptReason,
-} from "@/components/billing/PremiumUpgradePrompt";
-
-// ---------------------------------------------------------------------------
-// TurnState — discriminated union per §3
-// ---------------------------------------------------------------------------
-
-type TurnState =
-  | { kind: "idle" }
-  | { kind: "thinking"; clientTurnId: string }
-  | { kind: "failed"; clientTurnId: string; messageText: string }
-  | { kind: "paused"; lane: CrisisCategory };
+  Composer,
+  CrisisSupportCard,
+  FailedTurnNotice,
+  LisaAvatar,
+  MessageBubble,
+  PausedBar,
+  ThinkingIndicator,
+  useScrollToBottomOnChange,
+} from "@/components/tutor/TutorThreadParts";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 
 // ---------------------------------------------------------------------------
 // Search param helper
@@ -73,73 +50,6 @@ function useConversationIdFromSearch(): string | null {
   const params = new URLSearchParams(search);
   const raw = params.get("conversationId");
   return raw && raw.trim().length > 0 ? raw.trim() : null;
-}
-
-// ---------------------------------------------------------------------------
-// Tutor markdown rendering
-// ---------------------------------------------------------------------------
-
-const TUTOR_ALLOWED_ELEMENTS = [
-  "p",
-  "strong",
-  "em",
-  "ul",
-  "ol",
-  "li",
-  "code",
-  "pre",
-  "br",
-  "h3",
-  "h4",
-  "blockquote",
-] as const;
-
-const TUTOR_MARKDOWN_COMPONENTS = {
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-2 last:mb-0">{children}</p>
-  ),
-  code: ({
-    className,
-    children,
-  }: {
-    className?: string;
-    children?: React.ReactNode;
-  }) => {
-    const isBlock = className?.startsWith("language-");
-    if (isBlock) {
-      return (
-        <pre className="my-2 overflow-x-auto rounded bg-black/10 p-2 text-xs dark:bg-white/10">
-          <code>{children}</code>
-        </pre>
-      );
-    }
-    return (
-      <code className="rounded bg-black/10 px-1 py-0.5 text-xs dark:bg-white/10">
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-} as const;
-
-function hasMathDelimiters(text: string): boolean {
-  return /\$.*\$|\\\(.*\\\)|\\\[.*\\\]/s.test(text);
-}
-
-function TutorMessageContent({ text }: { text: string }) {
-  if (hasMathDelimiters(text)) {
-    return <MathRenderer content={text} />;
-  }
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      allowedElements={[...TUTOR_ALLOWED_ELEMENTS]}
-      unwrapDisallowed
-      components={TUTOR_MARKDOWN_COMPONENTS}
-    >
-      {text}
-    </ReactMarkdown>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -170,250 +80,6 @@ function subjectFromEntryMode(
   if (surface === "review") return "Review";
   if (sourceSurface === "dashboard") return "";
   return sourceSurface.charAt(0).toUpperCase() + sourceSurface.slice(1);
-}
-
-// ---------------------------------------------------------------------------
-// LISA Avatar
-// ---------------------------------------------------------------------------
-
-function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-sm";
-  return (
-    <div
-      className={`${dim} flex shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold`}
-    >
-      L
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// MessageBubble
-// ---------------------------------------------------------------------------
-
-function MessageBubble({
-  message,
-  pending = false,
-}: {
-  message: TutorMessage;
-  pending?: boolean;
-}) {
-  const isStudent = message.role === "student";
-  return (
-    <div
-      className={`flex gap-3 ${isStudent ? "justify-end" : "justify-start"}`}
-      data-testid={isStudent ? "student-bubble" : "tutor-bubble"}
-      data-client-turn-id={message.client_turn_id ?? undefined}
-      data-pending={pending ? "true" : undefined}
-    >
-      {!isStudent && <LisaAvatar />}
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-          isStudent
-            ? "bg-primary text-primary-foreground"
-            : "bg-card border border-border text-foreground"
-        }`}
-        aria-label={isStudent ? "You said:" : "LISA said:"}
-      >
-        {isStudent ? (
-          <span className="whitespace-pre-wrap">{message.message}</span>
-        ) : (
-          <TutorMessageContent text={message.message} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ThinkingIndicator — matches mockup artboard 2
-// ---------------------------------------------------------------------------
-
-function ThinkingIndicator() {
-  return (
-    <div
-      className="flex gap-3 justify-start"
-      role="status"
-      aria-label="LISA is thinking"
-    >
-      <LisaAvatar />
-      <div className="flex items-center gap-2 rounded-2xl bg-card border border-border px-4 py-3">
-        <span className="flex gap-1">
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
-        </span>
-        <span className="text-sm text-muted-foreground">
-          LISA is thinking...
-        </span>
-        <span className="sr-only">LISA is thinking</span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// FailedTurnNotice — matches mockup artboard 3
-// ---------------------------------------------------------------------------
-
-function FailedTurnNotice({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
-      <AlertCircle className="h-4 w-4" />
-      <span>LISA couldn&apos;t respond to this message.</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px] min-w-[44px] justify-center"
-        aria-label="Try again"
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-        Try again
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// CrisisSupportCard — matches mockup artboard 5 (crisis) and 6 (safeguarding)
-// Content comes from server response — never hardcoded.
-// ---------------------------------------------------------------------------
-
-function CrisisSupportCard({
-  lane,
-  content,
-}: {
-  lane: CrisisCategory;
-  content: string;
-}) {
-  const isCrisis = lane === "crisis";
-
-  const bgClass = isCrisis
-    ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800"
-    : "bg-purple-50 border-purple-200 dark:bg-purple-950/30 dark:border-purple-800";
-
-  const iconClass = isCrisis ? "text-emerald-600" : "text-purple-600";
-  const Icon = isCrisis ? Heart : Shield;
-
-  const phoneNumbers = extractPhoneNumbers(content);
-  const smsNumbers = extractSmsNumbers(content);
-
-  return (
-    <div className={`rounded-2xl border p-5 ${bgClass}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className={`h-5 w-5 ${iconClass}`} />
-        <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
-          Support
-        </span>
-      </div>
-      <div className="text-sm leading-relaxed text-foreground mb-4 whitespace-pre-wrap">
-        {content}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {phoneNumbers.map((num) => (
-          <a
-            key={num}
-            href={`tel:${num.replace(/[^0-9+]/g, "")}`}
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium min-h-[44px] transition-colors ${
-              isCrisis
-                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                : "bg-purple-600 text-white hover:bg-purple-700"
-            }`}
-          >
-            <Phone className="h-4 w-4" />
-            Call {num}
-          </a>
-        ))}
-        {smsNumbers.map((num) => (
-          <a
-            key={`sms-${num}`}
-            href={`sms:${num.replace(/[^0-9+]/g, "")}`}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary min-h-[44px] transition-colors"
-          >
-            <MessageSquareText className="h-4 w-4" />
-            Text {num}
-          </a>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function extractPhoneNumbers(text: string): string[] {
-  const matches = text.match(
-    /(?:call|Call|phone)\s*(?:or\s*text\s*)?(\d[\d\s\-().]+\d)/gi,
-  );
-  if (!matches) {
-    const numMatches = text.match(/\b(\d{3})\b/g);
-    if (numMatches) return [...new Set(numMatches)];
-    return [];
-  }
-  return [
-    ...new Set(
-      matches.map((m) =>
-        m.replace(/^(?:call|Call|phone)\s*(?:or\s*text\s*)?/i, "").trim(),
-      ),
-    ),
-  ];
-}
-
-function extractSmsNumbers(text: string): string[] {
-  const matches = text.match(/(?:text)\s+(\d[\d\s\-().]+\d)/gi);
-  if (!matches) return [];
-  return [...new Set(matches.map((m) => m.replace(/^text\s*/i, "").trim()))];
-}
-
-// ---------------------------------------------------------------------------
-// PausedBar — "Tutoring is paused" replaces the composer
-// ---------------------------------------------------------------------------
-
-function PausedBar({
-  onEnd,
-  onContinue,
-  endPending,
-  resumePending,
-}: {
-  onEnd: () => void;
-  onContinue: () => void;
-  endPending: boolean;
-  resumePending: boolean;
-}) {
-  return (
-    <div className="border-t border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-foreground">
-            Tutoring is paused
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Take whatever time you need. Pick up again whenever you&apos;re
-            ready.
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEnd}
-            disabled={endPending || resumePending}
-            className="min-h-[44px] min-w-[44px]"
-          >
-            {endPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-            End session
-          </Button>
-          <Button
-            size="sm"
-            onClick={onContinue}
-            disabled={endPending || resumePending}
-            className="min-h-[44px] min-w-[44px]"
-          >
-            {resumePending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-            Continue with LISA
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -583,92 +249,6 @@ function NewSessionView({
 }
 
 // ---------------------------------------------------------------------------
-// Composer
-// ---------------------------------------------------------------------------
-
-function Composer({
-  draft,
-  onDraftChange,
-  onSubmit,
-  disabled,
-  placeholder,
-}: {
-  draft: string;
-  onDraftChange: (value: string) => void;
-  onSubmit: () => void;
-  disabled: boolean;
-  placeholder: string;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!disabled && draft.trim()) {
-        onSubmit();
-      }
-    }
-  };
-
-  return (
-    <div className="border-t border-border bg-background p-4">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit();
-        }}
-        className="relative"
-        aria-label="Send a message to LISA"
-      >
-        <Textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          className="resize-none pr-12 min-h-[44px] rounded-xl"
-          aria-label="Message"
-          aria-busy={disabled}
-        />
-        <Button
-          type="submit"
-          size="icon"
-          disabled={disabled || !draft.trim()}
-          className="absolute right-2 bottom-2 rounded-full h-9 w-9 min-h-[44px] min-w-[44px]"
-          aria-label="Send message"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
-      </form>
-      <p className="mt-2 text-center text-xs text-muted-foreground">
-        LISA can make mistakes. Your practice results are the source of truth.
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Scroll-to-bottom helper
-// ---------------------------------------------------------------------------
-
-function useScrollToBottomOnChange(
-  anchorRef: React.RefObject<HTMLDivElement | null>,
-  trigger: number,
-): void {
-  useEffect(() => {
-    anchorRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [trigger, anchorRef]);
-}
-
-// ---------------------------------------------------------------------------
-// TIMEOUT — client times out at 35s (server's is 30s per §3)
-// ---------------------------------------------------------------------------
-
-const CLIENT_TIMEOUT_MS = 35_000;
-
-// ---------------------------------------------------------------------------
 // ChatPage — main component
 // ---------------------------------------------------------------------------
 
@@ -680,76 +260,36 @@ export default function ChatPage() {
     useConversation(conversationId);
   const { data: conversationsList } = useConversations();
   const createConversation = useCreateConversation();
-  const sendMessageMutation = useSendMessage();
   const endConversation = useEndConversation();
-  const resumeConversation = useResumeConversation();
 
   const [draft, setDraft] = useState("");
-  const [turnState, setTurnState] = useState<TurnState>({ kind: "idle" });
-  // W2-10: the student's message as sent, shown at once — the thread itself
-  // renders from the conversation query, which refetches only after the turn
-  // resolves. Keyed by client_turn_id, the key the server persists: a retry
-  // reuses the id (same bubble, never a second one), and the bubble yields to
-  // the persisted row the moment the refetched thread carries that id. It is
-  // never cleared on failure — the text stays on screen above FailedTurn.
-  const [optimisticTurn, setOptimisticTurn] = useState<{
-    clientTurnId: string;
-    text: string;
-    sentAt: string;
-  } | null>(null);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dismissedPremium, setDismissedPremium] = useState(false);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const conversations = conversationsList?.conversations ?? [];
   const messages = conversationDetail?.messages ?? [];
   const conversation = conversationDetail?.conversation;
 
-  // Shown until the persisted student row with the same client_turn_id is in
-  // the thread — derived, not synced, so there is no frame where neither is.
-  const optimisticMessage: TutorMessage | null =
-    optimisticTurn !== null &&
-    !messages.some(
-      (m) =>
-        m.role === "student" &&
-        m.client_turn_id === optimisticTurn.clientTurnId,
-    )
-      ? {
-          message_id: `optimistic-${optimisticTurn.clientTurnId}`,
-          role: "student",
-          content_kind: "message",
-          message: optimisticTurn.text,
-          created_at: optimisticTurn.sentAt,
-          client_turn_id: optimisticTurn.clientTurnId,
-        }
-      : null;
+  const {
+    turnState,
+    optimisticMessage,
+    crisisLane,
+    effectiveCrisisContent,
+    showCrisisCard,
+    premiumReason,
+    send,
+    retry: handleRetry,
+    resume: handleResume,
+    resumePending,
+    reset: resetTurn,
+  } = useTutorTurn(conversationId, messages, conversation);
 
   const isPaused = !!conversation?.crisis_paused_at;
   const isEnded = conversation?.status === "ended";
   const hasMessages = messages.length > 0 || optimisticMessage !== null;
-
-  // Crisis state detection — from the conversation detail or from the last
-  // send response. The server sets crisis_paused_at; the client reads it.
-  const [crisisLane, setCrisisLane] = useState<CrisisCategory | null>(null);
-  const [crisisContent, setCrisisContent] = useState<string>("");
-
-  // Derive crisis content from the last tutor message when paused but
-  // crisisContent state is empty (e.g. page reload — React state is lost,
-  // but the server's crisis response is the last tutor message).
-  const lastTutorMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "tutor") return messages[i].message;
-    }
-    return "";
-  }, [messages]);
-
-  const effectiveCrisisContent = crisisContent || lastTutorMessage;
-
-  // Derive crisis state from conversation detail or turn state
-  const showCrisisCard = turnState.kind === "paused" || isPaused;
 
   // Scroll management
   const scrollTrigger =
@@ -757,43 +297,16 @@ export default function ChatPage() {
     (turnState.kind === "thinking" ? 1 : 0);
   useScrollToBottomOnChange(scrollAnchorRef, scrollTrigger);
 
-  // Premium entitlement check
-  const premiumReason: PremiumPromptReason | null = useMemo(() => {
-    const sendErr = sendMessageMutation.error;
-    return (
-      sendErr ? mapTutorErrorToPremiumReason(sendErr) : null
-    ) as PremiumPromptReason | null;
-  }, [sendMessageMutation.error]);
-
-  // Clear timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  // Sync crisis state when conversation detail loads with crisis_paused_at set
-  useEffect(() => {
-    if (conversation?.crisis_paused_at && turnState.kind !== "paused") {
-      const lane: CrisisCategory = crisisLane ?? "crisis";
-      if (!crisisLane) setCrisisLane(lane);
-      setTurnState({ kind: "paused", lane });
-    }
-  }, [conversation?.crisis_paused_at, turnState.kind, crisisLane]);
-
   // ── Navigation ────────────────────────────────────────────────────────
 
   const navigateToConversation = useCallback(
     (id: string) => {
       setLocation(`/chat?conversationId=${encodeURIComponent(id)}`);
-      setTurnState({ kind: "idle" });
-      setOptimisticTurn(null);
+      resetTurn();
       setDraft("");
-      setCrisisLane(null);
-      setCrisisContent("");
       setMobileMenuOpen(false);
     },
-    [setLocation],
+    [setLocation, resetTurn],
   );
 
   // ── New session ───────────────────────────────────────────────────────
@@ -815,79 +328,11 @@ export default function ChatPage() {
 
   const handleSendMessage = useCallback(
     async (messageText: string) => {
-      if (!conversationId) return;
-      const trimmed = messageText.trim();
-      if (!trimmed) return;
-
-      const clientTurnId =
-        turnState.kind === "failed"
-          ? turnState.clientTurnId
-          : crypto.randomUUID();
-
-      setTurnState({ kind: "thinking", clientTurnId });
-      // Same id on retry → the same bubble, updated in place.
-      setOptimisticTurn({
-        clientTurnId,
-        text: trimmed,
-        sentAt: new Date().toISOString(),
-      });
       setDraft("");
-      sendMessageMutation.reset();
-
-      timeoutRef.current = setTimeout(() => {
-        setTurnState({
-          kind: "failed",
-          clientTurnId,
-          messageText: trimmed,
-        });
-      }, CLIENT_TIMEOUT_MS);
-
-      try {
-        const response: SendMessageResponse =
-          await sendMessageMutation.mutateAsync({
-            conversation_id: conversationId,
-            message: trimmed,
-            client_turn_id: clientTurnId,
-          });
-
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-        if (response.crisis_paused && response.response.crisis_category) {
-          setCrisisLane(response.response.crisis_category);
-          setCrisisContent(response.response.content);
-          setTurnState({
-            kind: "paused",
-            lane: response.response.crisis_category,
-          });
-        } else {
-          setTurnState({ kind: "idle" });
-        }
-      } catch (err: unknown) {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        if (
-          err instanceof HttpApiError &&
-          err.code === "conversation_crisis_paused"
-        ) {
-          const lane: CrisisCategory = crisisLane ?? "crisis";
-          setTurnState({ kind: "paused", lane });
-        } else {
-          setTurnState({
-            kind: "failed",
-            clientTurnId,
-            messageText: trimmed,
-          });
-        }
-      }
+      await send(messageText);
     },
-    [conversationId, turnState, sendMessageMutation],
+    [send],
   );
-
-  // ── Retry ─────────────────────────────────────────────────────────────
-
-  const handleRetry = useCallback(() => {
-    if (turnState.kind !== "failed") return;
-    handleSendMessage(turnState.messageText);
-  }, [turnState, handleSendMessage]);
 
   // ── Submit from composer ──────────────────────────────────────────────
 
@@ -903,33 +348,11 @@ export default function ChatPage() {
     endConversation.mutate(conversationId, {
       onSuccess: () => {
         setEndModalOpen(false);
-        setTurnState({ kind: "idle" });
         navigateToConversation("");
         setLocation("/chat");
       },
     });
   }, [conversationId, endConversation, navigateToConversation, setLocation]);
-
-  // ── Resume from crisis ────────────────────────────────────────────────
-
-  const handleResume = useCallback(() => {
-    if (!conversationId) return;
-    const leavePausedState = (): void => {
-      setTurnState({ kind: "idle" });
-      setCrisisLane(null);
-      setCrisisContent("");
-    };
-    resumeConversation.mutate(conversationId, {
-      onSuccess: leavePausedState,
-      // 409 conversation_not_paused is the server saying the conversation is
-      // already live (e.g. resumed in another tab). Believe it and leave the
-      // paused state — useResumeConversation has already cleared the cached
-      // pause, so the sync effect above will not put it back.
-      onError: (err) => {
-        if (err.code === "conversation_not_paused") leavePausedState();
-      },
-    });
-  }, [conversationId, resumeConversation]);
 
   // ── Composer state ────────────────────────────────────────────────────
 
@@ -1175,7 +598,7 @@ export default function ChatPage() {
             onEnd={() => setEndModalOpen(true)}
             onContinue={handleResume}
             endPending={endConversation.isPending}
-            resumePending={resumeConversation.isPending}
+            resumePending={resumePending}
           />
         ) : isEnded ? null : (
           <Composer
