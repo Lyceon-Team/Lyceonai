@@ -19,8 +19,9 @@
  * routes to the correct model alias (flash_class or pro_class per the 9-rule routing
  * table), builds a system instruction from the prompt artifact with state blocks
  * appended (SCL-041), builds conversation contents with same-role merging,
- * invokes Vertex with Model Armor input scanning, and returns the response with
- * Model Armor output scanning applied and prompt_version on the wire.
+ * invokes Vertex, and returns the response with prompt_version on the wire.
+ * Model Armor input and output scanning run in the BFF around this call
+ * (server/services/tutor-model-armor.ts, closure plan W3-1), not here.
  *
  * trade-offs:
  *  - Model routing rules are hardcoded in the 9-rule precedence table (Doc 03C V3
@@ -85,6 +86,10 @@ import {
 } from "../lib/vertex-client.js";
 import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
 import { renderStateBlocks } from "../prompts/render-state-blocks.js";
+import {
+  PRACTICE_HANDOFF_LABEL,
+  extractPracticeHandoff,
+} from "../prompts/lisa-default-v2.js";
 
 export const orchestrateRouter: Router = Router();
 
@@ -308,7 +313,16 @@ export function buildOrchestrateResponse(
     .filter((m) => m.role === "student")
     .map((m) => m.message);
 
-  let content = vertexResponse.text;
+  // W3-2: the handoff marker never reaches the student. It becomes the
+  // start_practice action only when no bank item is attached (general mode);
+  // inside practice or review LISA stays on the item.
+  const handoff = extractPracticeHandoff(vertexResponse.text);
+  const suggestedAction: OrchestrateResponse["response"]["suggested_action"] =
+    handoff.offered && request.question_content === null
+      ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
+      : { type: "none", label: null };
+
+  let content = handoff.content;
   if (!request.is_post_submit && request.correct_answer !== null) {
     const leaked = hasAnswerLeak(
       content,
@@ -334,7 +348,7 @@ export function buildOrchestrateResponse(
     response: {
       content,
       content_kind: "message",
-      suggested_action: { type: "none", label: null },
+      suggested_action: suggestedAction,
       ui_hints: {
         show_accept_decline: false,
         allow_freeform_reply: true,
@@ -375,7 +389,6 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
     case "vertex_timeout":
       return 503;
     case "vertex_403_auth":
-    case "vertex_model_armor_unconfigured":
     case "vertex_unknown":
       return 500;
     default: {
@@ -442,10 +455,6 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
-    },
-    {
-      inputTemplateId: request.model_armor_input_template_id,
-      outputTemplateId: request.model_armor_output_template_id,
     },
   );
 

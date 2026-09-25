@@ -21,9 +21,13 @@
 --   in one session: the friendly trigger fires first there, and hides the
 --   index. It lives in the .sh runner. S1 below covers the trigger.
 --
--- The activation used by C2/C3/C4/C8 is the legitimate §8.4 Tier-3 step 5
---   UPDATE (all attestation fields populated, published_at stamped by the
---   status-machine trigger), done inside the rolled-back transaction.
+-- Since E4 (20260930050000_activate_scoring_v1.sql, owner ruling) the pipeline
+--   ends with v1.0 ACTIVE. C2/C3/C4/C8/S1 therefore run against the real
+--   activation instead of an in-transaction one; C5/C7/S2/H1, which need a
+--   WRITABLE (candidate) version, use a candidate copy of v1.0 created inside
+--   their rolled-back transaction; C9 supersedes v1.0 in-transaction first. The
+--   two-session race C1 runs last (see the .sh), after v1.0 is superseded in
+--   the throwaway database. No assertion was loosened.
 -- ============================================================================
 
 \set ON_ERROR_STOP 0
@@ -47,16 +51,19 @@ BEGIN
       v_versions, v_constants;
   END IF;
 
+  -- E4 ruling (20260930050000_activate_scoring_v1.sql): the pipeline now ends
+  -- with v1.0 ACTIVE and fully attested; before E4 this asserted 'candidate'
+  -- with constants_sha256 / validation_packet_url / published_at NULL.
   SELECT * INTO v_row FROM public.scoring_model_versions WHERE version = 'v1.0';
-  IF v_row.status IS DISTINCT FROM 'candidate'
+  IF v_row.status IS DISTINCT FROM 'active'
      OR v_row.formula_name IS DISTINCT FROM 'option_a_banded_ceiling'
      OR v_row.formula_doc_ref IS DISTINCT FROM 'Doc 04B V4.3 §6'
      OR v_row.validation_packet_sha256 IS DISTINCT FROM '29c3e0fd362b6f5c3c90c50a49b49fa55ebc03e1518f8ab1922408329b88651b'
-     OR v_row.constants_sha256 IS NOT NULL
-     OR v_row.validation_packet_url IS NOT NULL
-     OR v_row.published_at IS NOT NULL
+     OR v_row.constants_sha256 IS DISTINCT FROM '5a51132234b2d1654b5362943af2d1fef59eadbc57ed6af50a44211a735680d1'
+     OR v_row.validation_packet_url IS DISTINCT FROM 'https://github.com/Lyceon-Team/Lyceonai/tree/exam/scripts/ci/fixtures/scoring-v1.0'
+     OR v_row.published_at IS NULL
      OR v_row.superseded_at IS NOT NULL THEN
-    RAISE EXCEPTION 'SCG FAIL [P1 seed-shape]: v1.0 row is not the ruled candidate row: %', row_to_json(v_row);
+    RAISE EXCEPTION 'SCG FAIL [P1 seed-shape]: v1.0 row is not the ruled activated row: %', row_to_json(v_row);
   END IF;
 
   -- Appendix A, verbatim. Every key global; values compared as numeric.
@@ -80,7 +87,7 @@ BEGIN
      OR public.scoring_constant('v1.0', 'path_b_floor_cap', 'math') <> 580 THEN
     RAISE EXCEPTION 'SCG FAIL [P1 seed-shape]: scoring_constant() did not return the seeded value';
   END IF;
-  RAISE NOTICE 'ok   [P1 seed-shape] 1 version (v1.0 candidate, packet hash set), 13 Appendix A constants';
+  RAISE NOTICE 'ok   [P1 seed-shape] 1 version (v1.0 active, all four attestation fields), 13 Appendix A constants';
 END $$;
 ROLLBACK;
 
@@ -128,11 +135,9 @@ ROLLBACK;
 -- (the index never gets the chance). C1 in the runner covers the race.
 -- ---------------------------------------------------------------------------
 BEGIN;
-UPDATE public.scoring_model_versions
-   SET status = 'active',
-       constants_sha256 = 'gate-fixture',
-       validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
- WHERE version = 'v1.0';
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is already active
+-- in the pipeline, so the in-transaction activation this check performed
+-- before E4 is gone; the assertion below is unchanged.
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text;
@@ -160,11 +165,9 @@ ROLLBACK;
 -- C2 — UPDATE a constant of an ACTIVE version -> §8.4 trigger raises 23000.
 -- ---------------------------------------------------------------------------
 BEGIN;
-UPDATE public.scoring_model_versions
-   SET status = 'active',
-       constants_sha256 = 'gate-fixture',
-       validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
- WHERE version = 'v1.0';
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is already active
+-- in the pipeline, so the in-transaction activation this check performed
+-- before E4 is gone; the assertion below is unchanged.
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text;
@@ -195,11 +198,9 @@ ROLLBACK;
 -- unique index is silent, and the value is valid.)
 -- ---------------------------------------------------------------------------
 BEGIN;
-UPDATE public.scoring_model_versions
-   SET status = 'active',
-       constants_sha256 = 'gate-fixture',
-       validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
- WHERE version = 'v1.0';
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is already active
+-- in the pipeline, so the in-transaction activation this check performed
+-- before E4 is gone; the assertion below is unchanged.
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text;
@@ -225,11 +226,9 @@ ROLLBACK;
 -- C4 — DELETE a constant of an ACTIVE version -> §8.4 trigger raises 23000.
 -- ---------------------------------------------------------------------------
 BEGIN;
-UPDATE public.scoring_model_versions
-   SET status = 'active',
-       constants_sha256 = 'gate-fixture',
-       validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
- WHERE version = 'v1.0';
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is already active
+-- in the pipeline, so the in-transaction activation this check performed
+-- before E4 is gone; the assertion below is unchanged.
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text;
@@ -255,14 +254,23 @@ ROLLBACK;
 -- C5 — UPDATE a constant of a CANDIDATE version -> succeeds (work in progress).
 -- ---------------------------------------------------------------------------
 BEGIN;
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is active and its
+-- constants are sealed, so the writable-candidate premise of this check now
+-- lives on a candidate copy of v1.0 (same 13 rows) created inside this
+-- rolled-back transaction. Before E4 it used v1.0 itself.
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_cand', 'option_a_banded_ceiling', 'Doc 04B V4.3 §6', 'candidate');
+INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
+SELECT 'zz_cand', key, section, value, description FROM public.scoring_constants
+ WHERE scoring_model_version = 'v1.0';
 DO $$
 DECLARE
   v_n int;
 BEGIN
   UPDATE public.scoring_constants SET value = value + 1
-   WHERE scoring_model_version = 'v1.0' AND key = 'deduction_easy';
+   WHERE scoring_model_version = 'zz_cand' AND key = 'deduction_easy';
   GET DIAGNOSTICS v_n = ROW_COUNT;
-  IF v_n <> 1 OR public.scoring_constant('v1.0', 'deduction_easy') <> 16 THEN
+  IF v_n <> 1 OR public.scoring_constant('zz_cand', 'deduction_easy') <> 16 THEN
     RAISE EXCEPTION 'SCG FAIL [C5 update-candidate-constant]: candidate constant not updated (rows=%)', v_n;
   END IF;
   RAISE NOTICE 'ok   [C5 update-candidate-constant] candidate constants writable';
@@ -299,6 +307,15 @@ ROLLBACK;
 -- for section NULL (the COALESCE case) and for a real section.
 -- ---------------------------------------------------------------------------
 BEGIN;
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is active and its
+-- constants are sealed, so the writable-candidate premise of this check now
+-- lives on a candidate copy of v1.0 (same 13 rows) created inside this
+-- rolled-back transaction. Before E4 it used v1.0 itself.
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_cand', 'option_a_banded_ceiling', 'Doc 04B V4.3 §6', 'candidate');
+INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
+SELECT 'zz_cand', key, section, value, description FROM public.scoring_constants
+ WHERE scoring_model_version = 'v1.0';
 DO $$
 DECLARE
   v_raised boolean; v_state text; v_msg text; v_con text;
@@ -307,13 +324,13 @@ BEGIN
   v_raised := false;
   BEGIN
     INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
-    VALUES ('v1.0', 'ceiling_max', NULL, 800, 'gate duplicate');
+    VALUES ('zz_cand', 'ceiling_max', NULL, 800, 'gate duplicate');
   EXCEPTION WHEN OTHERS THEN
     v_raised := true;
     GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT, v_con = CONSTRAINT_NAME;
   END;
   IF NOT v_raised THEN
-    RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: duplicate (v1.0, ceiling_max, NULL) accepted';
+    RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: duplicate (zz_cand, ceiling_max, NULL) accepted';
   END IF;
   IF v_state <> '23505' OR v_con IS DISTINCT FROM 'scoring_constants_unique_idx' THEN
     RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: NULL-section dup: wrong error % % "%"', v_state, v_con, v_msg;
@@ -321,17 +338,17 @@ BEGIN
 
   -- Real section: first 'rw' row is fine (section-specific beside a global), second collides.
   INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
-  VALUES ('v1.0', 'ceiling_max', 'rw', 800, 'gate section row');
+  VALUES ('zz_cand', 'ceiling_max', 'rw', 800, 'gate section row');
   v_raised := false;
   BEGIN
     INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
-    VALUES ('v1.0', 'ceiling_max', 'rw', 800, 'gate section duplicate');
+    VALUES ('zz_cand', 'ceiling_max', 'rw', 800, 'gate section duplicate');
   EXCEPTION WHEN OTHERS THEN
     v_raised := true;
     GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT, v_con = CONSTRAINT_NAME;
   END;
   IF NOT v_raised THEN
-    RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: duplicate (v1.0, ceiling_max, rw) accepted';
+    RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: duplicate (zz_cand, ceiling_max, rw) accepted';
   END IF;
   IF v_state <> '23505' OR v_con IS DISTINCT FROM 'scoring_constants_unique_idx' THEN
     RAISE EXCEPTION 'SCG FAIL [C7 unique-version-key-section]: rw dup: wrong error % % "%"', v_state, v_con, v_msg;
@@ -346,11 +363,9 @@ ROLLBACK;
 -- resulting row: the trigger is the only thing standing in the way.
 -- ---------------------------------------------------------------------------
 BEGIN;
-UPDATE public.scoring_model_versions
-   SET status = 'active',
-       constants_sha256 = 'gate-fixture',
-       validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
- WHERE version = 'v1.0';
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is already active
+-- in the pipeline, so the in-transaction activation this check performed
+-- before E4 is gone; the assertion below is unchanged.
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text;
@@ -376,9 +391,12 @@ ROLLBACK;
 -- ---------------------------------------------------------------------------
 -- C9 — INSERT status='active' with constants_sha256 NULL (every other
 -- attestation field set) -> CHECK active_or_superseded_attestation_complete.
--- v1.0 is a candidate, so the single-active trigger/index are not in play.
+-- E4 ruling (20260930050000): v1.0 is active, so it is superseded inside this
+-- rolled-back transaction first; otherwise the single-active trigger would
+-- refuse the INSERT before the CHECK is reached. Assertion unchanged.
 -- ---------------------------------------------------------------------------
 BEGIN;
+UPDATE public.scoring_model_versions SET status = 'superseded' WHERE version = 'v1.0';
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_msg text; v_con text;
@@ -408,13 +426,22 @@ ROLLBACK;
 -- S2 — value >= 0 CHECK (scoring_constants_value_nonneg).
 -- ---------------------------------------------------------------------------
 BEGIN;
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is active and its
+-- constants are sealed, so the writable-candidate premise of this check now
+-- lives on a candidate copy of v1.0 (same 13 rows) created inside this
+-- rolled-back transaction. Before E4 it used v1.0 itself.
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_cand', 'option_a_banded_ceiling', 'Doc 04B V4.3 §6', 'candidate');
+INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
+SELECT 'zz_cand', key, section, value, description FROM public.scoring_constants
+ WHERE scoring_model_version = 'v1.0';
 DO $$
 DECLARE
   v_raised boolean := false; v_state text; v_con text;
 BEGIN
   BEGIN
     INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
-    VALUES ('v1.0', 'zz_negative', NULL, -1, 'gate negative');
+    VALUES ('zz_cand', 'zz_negative', NULL, -1, 'gate negative');
   EXCEPTION WHEN OTHERS THEN
     v_raised := true;
     GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_con = CONSTRAINT_NAME;
@@ -434,6 +461,15 @@ ROLLBACK;
 -- value E4 writes into scoring_model_versions.constants_sha256 at activation.
 -- ---------------------------------------------------------------------------
 BEGIN;
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): v1.0 is active and its
+-- constants are sealed, so the writable-candidate premise of this check now
+-- lives on a candidate copy of v1.0 (same 13 rows) created inside this
+-- rolled-back transaction. Before E4 it used v1.0 itself.
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_cand', 'option_a_banded_ceiling', 'Doc 04B V4.3 §6', 'candidate');
+INSERT INTO public.scoring_constants (scoring_model_version, key, section, value, description)
+SELECT 'zz_cand', key, section, value, description FROM public.scoring_constants
+ WHERE scoring_model_version = 'v1.0';
 DO $$
 DECLARE
   k_expected CONSTANT text := '5a51132234b2d1654b5362943af2d1fef59eadbc57ed6af50a44211a735680d1';
@@ -445,14 +481,17 @@ BEGIN
     RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: v1.0 hashed to %, expected %', v_hash, k_expected;
   END IF;
 
-  -- v1.0 is a candidate, so its constants are writable here (rolled back below).
+  -- the candidate copy (same 13 rows, same hash) is writable; v1.0 is sealed.
+  IF public.scoring_constants_sha256('zz_cand') IS DISTINCT FROM k_expected THEN
+    RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: candidate copy of v1.0 hashed differently';
+  END IF;
   UPDATE public.scoring_constants SET value = 0.50
-   WHERE scoring_model_version = 'v1.0' AND key = 'alpha_ceiling_exponent' AND section IS NULL;
+   WHERE scoring_model_version = 'zz_cand' AND key = 'alpha_ceiling_exponent' AND section IS NULL;
   IF (SELECT value::text FROM public.scoring_constants
-       WHERE scoring_model_version = 'v1.0' AND key = 'alpha_ceiling_exponent') <> '0.50' THEN
+       WHERE scoring_model_version = 'zz_cand' AND key = 'alpha_ceiling_exponent') <> '0.50' THEN
     RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: could not stage a scale-2 value for the scale check';
   END IF;
-  v_hash := public.scoring_constants_sha256('v1.0');
+  v_hash := public.scoring_constants_sha256('zz_cand');
   IF v_hash IS DISTINCT FROM k_expected THEN
     RAISE EXCEPTION 'SCG FAIL [H1 constants-sha256]: 0.50 hashed differently from 0.5 (%): scale leaks into the hash', v_hash;
   END IF;
@@ -476,10 +515,11 @@ ROLLBACK;
 DO $$
 BEGIN
   IF (SELECT count(*) FROM public.scoring_model_versions) <> 1
-     OR (SELECT status FROM public.scoring_model_versions WHERE version = 'v1.0') <> 'candidate'
+     -- E4 ruling (20260930050000): v1.0 is 'active' after the pipeline (was 'candidate').
+     OR (SELECT status FROM public.scoring_model_versions WHERE version = 'v1.0') <> 'active'
      OR (SELECT count(*) FROM public.scoring_constants) <> 13
      OR public.scoring_constant('v1.0', 'deduction_easy') <> 15 THEN
     RAISE EXCEPTION 'SCG FAIL [P2 catalogue-untouched]: a check leaked state';
   END IF;
-  RAISE NOTICE 'ok   [P2 catalogue-untouched] still 1 candidate version / 13 constants';
+  RAISE NOTICE 'ok   [P2 catalogue-untouched] still 1 active version / 13 constants';
 END $$;

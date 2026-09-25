@@ -67,6 +67,15 @@ jobs:
       # mechanical check closes the same-day race. The two pre-existing
       # collisions are allowlisted by exact count inside the script, with an
       # expiry note; a third heading on either still fails.
+      # §17.1's band is Doc 05C's, summed. The selftest runs FIRST and on its own line: a
+      # gate whose matcher has rotted reports zero findings and reads exactly like a clean
+      # tree.
+      - name: Calendar projection is read, never recomputed
+        run: |
+          set -euo pipefail
+          node scripts/ci/calendar-projection-gate.mjs --selftest
+          node scripts/ci/calendar-projection-gate.mjs
+
       - name: SCL register — no duplicate ids
         run: node scripts/ci/scl-duplicate-check.mjs
 
@@ -512,8 +521,9 @@ jobs:
       # Doc 04A V2.2 §5/§6/§9 + Doc 04B §13 as amended (owner ruling 2026-09-24,
       # SCL-121) — every exam-runtime constraint is made to FIRE on a fresh apply,
       # against synthetic fixtures: published-form and published-item immutability,
-      # the one-way status machine, module2_path lock, the publish gate (every
-      # publish refused while v1.0 is candidate; succeeds once active), the ruled
+      # the one-way status machine, module2_path lock, the publish gate (since E4
+      # v1.0 is active: publish succeeds against it and is refused for a candidate
+      # or superseded version), the ruled
       # per-module composition tallies (difficulty / grid-in / domain, each miss
       # naming its cell), form-item uniqueness, answer-upsert idempotency, and the
       # account-deletion cascade. Each check asserts its SQLSTATE and constraint/message.
@@ -527,6 +537,85 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-runtime-schema-gates.sh
+
+      # Doc 04B V4.3 §9-§12 (E4) — every scoring-engine constraint is made to FIRE on
+      # a fresh apply that ends with v1.0 ACTIVE: the activation row and its three
+      # attestation fields, insert-once by each layer separately (privilege 42501,
+      # trigger P0001, unique 23505, RLS 0 rows), the post-activation constants seal,
+      # the NaN/Infinity/key-charset CHECKs, the version gate (candidate blocked,
+      # superseded scores — §19.6), replay idempotency, the presented-item filter,
+      # blanks-count-wrong, partial scoring, and the account-deletion cascade.
+      # @spec [Doc-04B_V4.3, §9, §10, §11, §12, §19; SCL-128, SCL-129] | @implemented [2026-09-24]
+      - name: Scoring engine gates (04B §9-§12 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-engine-gates.sh
+
+      # Doc 04B V4.3 §18.2 / Appendix B + owner ruling (repo-hosted packet): the
+      # committed packet hashes to 29c3e0fd… (= validation_packet_sha256 of v1.0),
+      # its validation_sweep.py is byte-identical to docs/Spec, and it regenerates.
+      # @spec [Doc-04B_V4.3, §18.2, Appendix B] | @implemented [2026-09-24]
+      - name: Scoring evidence packet (hash + provenance)
+        run: bash scripts/ci/scoring-evidence-packet-check.sh
+
+      # Doc 04A V2.2 §4/§7-§16 + E6 rulings — the exam runtime functions the API calls,
+      # driven on a fresh apply: RLS on every exam table AS `authenticated` (own rows
+      # only, B's rows invisible, answer/routing columns not granted), server-time
+      # expiry (409 module_submitted, section timed out), routing lock, idempotent
+      # replay (one ledger row), module '2' -> locked path, strict break bounded /
+      # lenient unbounded, lenient pause vs strict, inline finalisation of past-grace
+      # sessions with a partial score, and the sweep. Each check prints its own `ok`.
+      # @spec [Doc-04A_V2.2, §4, §7-§16; SCL-131..136] | @implemented [2026-09-24]
+      - name: Exam runtime API gates (04A runtime behaviour + RLS, E6)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-runtime-api-gates.sh
+
+      # Doc 05E §5.1/§6 + Doc 05D §10 (E6b, SCL-143) — the exam tables in the
+      # account-deletion cascade: whole exams walked through the runtime functions and
+      # scored, then both modes. anonymize retains sessions, children, scores, ledger and
+      # outbox with student_id NULL and actor_id intact; hard_delete removes and counts
+      # every table; the INV-05E-07 sentinel refuses an ungrouped exam row; a pending or
+      # in-progress exam of an anonymised student still scores (student_id NULL); a
+      # re-run is a no-op; the insert-once trigger still refuses every caller mutation.
+      # @spec [Doc-05E §1, §5.1, §6; Doc-05D §10.5; Doc-04B_V4.3 §9.4; SCL-143] | @implemented [2026-09-24]
+      - name: Exam deletion cascade gates (both modes, E6b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-deletion-cascade-gates.sh
+
+      # E7a (SCL-145..149) — the exam shell's server pieces, on a fresh apply: the item
+      # workspace (served tokens only — a canonical letter, another item's token or a
+      # repeat is refused; highlights are code-point offsets inside the passage; no notes;
+      # active module and owner only), the heartbeat's resume position (read back only in
+      # the module it names), GET /forms (drafts never listed, no thresholds), the 04C
+      # report source (one 403 for missing and foreign sessions, the dead-letter failure
+      # stand-in, the v1.0 disclosure seeded from 04B §17.1 verbatim) and grants.
+      # @spec [Doc-04A_V2.2 §8.3, §15.1, §16; Doc-04C_V1.0 §5.3, §15.2, §16.6] | @implemented [2026-09-25]
+      - name: Exam shell server gates (workspace, resume, forms, report source — E7a)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-shell-server-gates.sh
 
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
@@ -1259,6 +1348,57 @@ jobs:
             --file tests/ci/review.routes.pg.ci.test.ts \
             --file tests/ci/review.queue-e2e.pg.ci.test.ts
 
+      # @spec [Doc-04A_V2.2 §7-§16; E6] Exam runtime API -> real PG proof: whole exams
+      # through the real /api/tests handlers (both routing paths, both modes), answers by
+      # SERVED TOKEN stored as the canonical letter, pre-submit payloads anti-leak, inline
+      # scoring. Named BY FILE: the `ci` job sets no PGHOST, so this file skips there.
+      - name: Exam runtime API → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-runtime.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
+            --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
+      # student through the real /api/tests handlers to a score, then the executor's
+      # anonymize call and the hard_delete cascade; row counts before/after and the
+      # result JSON are printed. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam deletion cascade lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-deletion.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-deletion.json \
+            --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts
+
+      # @spec [Doc-04A_V2.2 §16 (SCL-145 workspace, SCL-146 heartbeat, SCL-147 forms); Doc-04C_V1.0 §11.2, §16.1-§16.8; E7a]
+      # The shell's server surface through the real /api/tests routers: forms list,
+      # workspace round-trip with served tokens (a letter refused), heartbeat position,
+      # and the 04C report in every reachable state plus the bare 403. Named BY FILE.
+      - name: Exam shell server endpoints → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-shell-server.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-shell.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
+            --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
+
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that
       # assertion goes red. It patches the working tree and restores it in a trap, so
@@ -1590,6 +1730,57 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-parity.sh
+
+  # ---------------------------------------------------------------------------
+  # Scoring PARITY gate (Doc 04B V4.3 §6 / §18.3 / §21.1 / §28) — HARD GATE, run on
+  # every CI run by OWNER RULING 2026-09-24, overriding §21.2 (which makes parity a
+  # one-time lock-time check). Drives all 1,313 sweep scenarios + 60 targeted
+  # fixtures of the committed evidence packet through the pure formula function AND
+  # through real sessions scored by score_test_session_from_outbox(), plus every §28
+  # worked example; any disagreement with the Python reference fails, printing the
+  # first mismatches. COVERAGE LIMIT: this sees a repo-built database only — a
+  # production edit made outside migrations is NOT covered (owner deferred a
+  # prod-side drift check).
+  # @spec [Doc-04B_V4.3, §3.1, §6, §18.3, §21.1, §28] | @implemented [2026-09-24]
+  # ---------------------------------------------------------------------------
+  scoring-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Scoring formula parity (PL/pgSQL == validation_sweep.py, formula + session paths)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-parity.sh
 
   # ---------------------------------------------------------------------------
   # Lane-C seam gates (Doc 05A §4) — HARD GATE. Proves the live event→mastery seam:

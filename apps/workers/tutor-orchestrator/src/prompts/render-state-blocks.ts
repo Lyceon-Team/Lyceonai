@@ -31,7 +31,10 @@
  *  - Item block includes question content (stem, options, student answer)
  *    and correct_answer post-submit. Pre-submit: correct_answer is NEVER
  *    included, canonical ID is NEVER included (anti-leak). Explanation
- *    is present only post-submit (gated upstream in tutor-context.ts).
+ *    is present only post-submit (gated upstream in tutor-context.ts) and is
+ *    rendered only post-submit here (SCL-144, W3-10).
+ *  - @updated 2026-09-25 — W3-10: pre-submit explanation branch removed;
+ *    W3-4b: student-wide domain bands rendered (general mode had none).
  */
 
 import type { OrchestrateRequest } from "../lib/schema.js";
@@ -132,29 +135,16 @@ function renderItemBlock(request: OrchestrateRequest): string | null {
       parts.push(`Explanation: ${qc.explanation}`);
     }
   } else {
-    // Pre-submit: explanation is present on the wire per SCL-060 (active
-    // question's explanation is internal context for model reasoning).
-    // The model uses it to understand the solution path so it can guide the
-    // student through sub-steps without revealing the answer. Anti-echo
-    // directive (prompt layer) + INV-03-04 (output layer) are the defenses.
-    if (qc.explanation) {
-      parts.push(`[AUTHORED EXPLANATION — INTERNAL USE ONLY] ${qc.explanation}`);
-      parts.push(
-        `[DIRECTIVE] This question is pre-submit. The authored explanation above ` +
-          `is for YOUR internal reasoning only — use it to understand the solution ` +
-          `method so you can guide the student through sub-steps. Do NOT quote, ` +
-          `paraphrase, reveal, or produce any intermediate result the student can ` +
-          `read off as the final value. The pre-submit prohibition (INV-03-04) is ` +
-          `unchanged.`,
-      );
-    } else {
-      parts.push(
-        `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
-          `or show work toward the answer. Do not produce an intermediate result the student ` +
-          `can read off as the final value. Redirect to a sub-step the student can verify ` +
-          `without seeing the answer.`,
-      );
-    }
+    // Pre-submit: the explanation is not on the wire (SCL-144, reversing
+    // SCL-060 — possession is the control, not a directive; gated upstream in
+    // tutor-context.ts). Defense in depth: were one ever to arrive, it is
+    // still never rendered pre-submit.
+    parts.push(
+      `[DIRECTIVE] This question is pre-submit. Do not state, compute, demonstrate, ` +
+        `or show work toward the answer. Do not produce an intermediate result the student ` +
+        `can read off as the final value. Redirect to a sub-step the student can verify ` +
+        `without seeing the answer.`,
+    );
   }
 
   return parts.join(" ");
@@ -198,6 +188,23 @@ function renderMasteryBlock(request: OrchestrateRequest): string | null {
     }
   }
 
+  // Student-wide domain bands (W3-4b) — in general mode, the only mastery
+  // there is. The current domain, already stated above, is not repeated.
+  const domainBands = (snapshot.domain_mastery ?? [])
+    .filter((d) => d.domain !== snapshot.current_domain?.domain)
+    .map((d) => {
+      const band = masteryLevelToBand(d.mastery_level);
+      return band
+        ? `${d.domain} (${sectionLabel(d.section)}): "${band}"`
+        : null;
+    })
+    .filter((line): line is string => line !== null);
+  if (domainBands.length > 0) {
+    parts.push(
+      `[MASTERY] Their domain mastery across the SAT: ${domainBands.join("; ")}.`,
+    );
+  }
+
   // Recent activity summary — what they've been working on
   if (snapshot.recent_activity_summary) {
     const ras = snapshot.recent_activity_summary;
@@ -227,6 +234,10 @@ function renderMasteryBlock(request: OrchestrateRequest): string | null {
   );
 
   return parts.join(" ");
+}
+
+function sectionLabel(section: "M" | "RW"): string {
+  return section === "M" ? "Math" : "Reading & Writing";
 }
 
 /**

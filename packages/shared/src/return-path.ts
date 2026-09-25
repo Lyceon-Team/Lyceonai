@@ -35,6 +35,15 @@ export const RETURN_PATH_ALLOWLIST: readonly string[] = [
   "/upgrade",
   "/update-password",
   "/notifications",
+  // @spec [Doc-03_V3 §21.3, SCL-025; closure plan W2-8] | @implemented [2026-09-24]
+  // The crisis review surface. Slack crisis alerts link to
+  // /admin/crisis-review/<case id>; without this entry a signed-out admin who
+  // follows an alert is returned to /dashboard after sign-in and loses the
+  // case — the last step of the escalation path. Deliberately the one mounted
+  // admin route, not a bare "/admin" prefix: every entry must be a route
+  // App.tsx mounts. Returning a non-admin here is harmless — RequireRole
+  // redirects them, and the API is requireSupabaseAdmin.
+  "/admin/crisis-review",
 ];
 
 const MAX_RETURN_PATH_LENGTH = 512;

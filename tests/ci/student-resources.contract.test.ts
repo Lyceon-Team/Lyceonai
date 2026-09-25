@@ -133,6 +133,9 @@ function resetRows() {
     // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
     // counterpart above.
     { key: "review_estimated_seconds_per_item", value: 120 },
+    // §17.2's engine picker; the config accessor requires it, so an unseeded key is a
+    // loud 500 here rather than an empty picker in front of a student.
+    { key: "enabled_block_types", value: ["practice", "review"] },
   ];
   rows.student_study_profile = [
     {

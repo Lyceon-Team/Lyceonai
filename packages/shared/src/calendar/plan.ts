@@ -210,3 +210,34 @@ export function toGuardianPlanBlock(block: PlanBlock): GuardianPlanBlock {
     target_count: block.target_count,
   };
 }
+
+// ── Validator violations (§10.3, §18) ───────────────────────────────────────
+
+/**
+ * One rule the plan validator refused a plan for.
+ *
+ * @spec [Doc_05F_V1.0 §10.3 `calendar_validate_plan`, §15 (errors), §18
+ *        `calendar.plan_rejected {rule_ids}`; SCL-137] | @implemented [2026-09-24]
+ *
+ * plain English: `calendar_validate_plan` returns its refusals AS DATA rather than raising,
+ * and each one is an object — `{"rule":"V-08","date":"2026-09-25","detail":"the date appears
+ * 2 times in the output; display ordinals would collide"}`. This is that object, and it is
+ * the ONLY place the shape is written down on the TypeScript side.
+ *
+ * expected outcome: a rejection can be logged with its rule ids and shown to whoever caused
+ * it, instead of arriving as an empty list that says only "no".
+ *
+ * trade-offs: `.strict()` is deliberately NOT used. The validator is in SQL and may grow a
+ * field; under `.strict()` that would fail every element and empty the array — which is the
+ * exact defect this schema exists to fix, reintroduced from the other side. Unknown keys are
+ * stripped instead, so a new field is ignored rather than fatal.
+ *
+ * edge cases: `date` is null for a whole-horizon rule (V-11's full-length cap, V-08's
+ * carried-block check) — the violation is real but belongs to no single day.
+ */
+export const planViolationSchema = z.object({
+  rule: z.string().min(1),
+  date: localDateSchema.nullable(),
+  detail: z.string().min(1),
+});
+export type PlanViolation = z.infer<typeof planViolationSchema>;

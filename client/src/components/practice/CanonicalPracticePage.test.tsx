@@ -10,6 +10,10 @@ import {
   vi,
 } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  PRACTICE_ENGINE_CONFIG,
+  REVIEW_ENGINE_CONFIG,
+} from "@/lib/engine-config";
 import CanonicalPracticePage, {
   CALC_MIN_PX,
   CALC_PANEL_PAD_PX,
@@ -84,6 +88,29 @@ const hookMock = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useCanonicalPractice", () => ({
   useCanonicalPractice: hookMock.useCanonicalPractice,
+}));
+
+// W4-1: the panel's own behaviour (scope, one conversation per item, the
+// wire) is proven end to end in ScopedTutorPanel.contract.test.tsx; here only
+// what the page hands it.
+vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
+  ScopedTutorPanel: (p: {
+    sourceSurface: string;
+    sessionItemId: string;
+    questionLabel: string;
+    onClose: () => void;
+  }) => (
+    <div
+      data-testid="scoped-tutor-panel-mock"
+      data-surface={p.sourceSurface}
+      data-item={p.sessionItemId}
+      data-label={p.questionLabel}
+    >
+      <button type="button" onClick={p.onClose}>
+        Close LISA
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/math/DesmosCalculator", () => ({
@@ -1129,5 +1156,70 @@ describe("CanonicalPracticePage grid-in rendering", () => {
 
     const checkBtn = screen.getByText("Check Answer");
     expect((checkBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("W4-1 — LISA beside the question", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("review: Ask LISA opens the panel on the served item, naming the question; close hides it", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("RW", {
+        sessionItemId: "rev-item-7",
+        currentIndex: 2,
+        totalQuestions: 10,
+      }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Review"
+        badgeLabel="Review"
+        section="RW"
+        engine={REVIEW_ENGINE_CONFIG}
+      />,
+    );
+
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
+
+    const panel = screen.getByTestId("scoped-tutor-panel-mock");
+    expect(panel.getAttribute("data-surface")).toBe("review");
+    expect(panel.getAttribute("data-item")).toBe("rev-item-7");
+    expect(panel.getAttribute("data-label")).toBe("Question 3 / 10");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close LISA" }));
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+  });
+
+  it("review with no served item: no Ask LISA", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("RW", { sessionItemId: null }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Review"
+        badgeLabel="Review"
+        section="RW"
+        engine={REVIEW_ENGINE_CONFIG}
+      />,
+    );
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+
+  it("practice: not yet — review first, practice after", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("RW", { sessionItemId: "prac-item-1" }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="RW Practice"
+        badgeLabel="RW"
+        section="RW"
+        engine={PRACTICE_ENGINE_CONFIG}
+      />,
+    );
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
   });
 });

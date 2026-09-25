@@ -54,7 +54,10 @@ const stateMock = vi.hoisted(() => ({
     error: null as unknown,
   },
 }));
-vi.mock("@tanstack/react-query", () => ({
+// Partial: the page now imports the tutor client (W4-1 LISA panel), whose
+// module builds a QueryClient at load. Only useQuery is replaced.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: () => stateMock.value,
 }));
 

@@ -2,8 +2,8 @@
  * @spec [Doc-03_V3 §18.2 Layers 3-5, INV-03-12, INV-03-13, Doc-03A_V3 §12]
  * @implemented 2026-08-09
  *
- * plain English: Input sanitization, injection signature scanning, and Model Armor
- * integration for the LISA tutor runtime. Implements Layers 3-5 of the injection
+ * plain English: Input sanitization and injection signature scanning for the
+ * LISA tutor runtime. Implements Layers 3-5 of the injection
  * defense stack: input content isolation (Layer 3), output scanning (Layer 4 —
  * complement to tutor-antileak.ts), and rate limiting on injection attempts (Layer 5).
  *
@@ -14,14 +14,14 @@
  * student (INV-03-13).
  *
  * trade-offs: heuristic pattern scanning has inherent false-positive/negative rates.
- * The deterministic layer catches known attacks; Model Armor provides the depth layer.
+ * The deterministic layer catches known attacks; Model Armor provides the depth layer
+ * (server/services/tutor-model-armor.ts, closure plan W3-1).
  * We err on the side of detection (false positives logged, not blocked) to avoid
  * giving attackers telemetry about what bypassed.
  *
  * edge cases:
  *  - Signature table unreadable: fails closed (INV-03-16 parallel — Layer 1 table
  *    unreadable = fail closed).
- *  - Model Armor template IDs loaded from config, never hardcoded literals.
  *  - Injection logging never leaks back to student (INV-03-13: logged, not acknowledged).
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -47,10 +47,6 @@ type InjectionScanResult = {
 type SignatureCheckResult = {
   matched: boolean;
   signatureId: string | null;
-};
-
-type ModelArmorConfig = {
-  templateId: string;
 };
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -344,60 +340,4 @@ export async function logInjectionAttempt(
       hasSignatureMatch: signatureId !== null,
     },
   );
-}
-
-// ── Model Armor Config ─────────────────────────────────────────────────
-
-/**
- * Returns Model Armor template ID from runtime config.
- * Template IDs are NEVER hardcoded literals — they are loaded from
- * tutor_context_runtime_config.
- *
- * Input: inline modelArmorConfig on generateContent call.
- * Output: standalone Sanitize API call.
- *
- * @spec [Doc-03_V3 §18.2, Doc-03C_V3 GCP Orchestration]
- */
-export async function getModelArmorConfig(
-  configType: "input" | "output",
-): Promise<ModelArmorConfig> {
-  const configKey =
-    configType === "input"
-      ? "model_armor_input_template_id"
-      : "model_armor_output_template_id";
-
-  const { data, error } = await supabaseServer
-    .from("tutor_context_runtime_config")
-    .select("value")
-    .eq("key", configKey)
-    .single();
-
-  if (error || !data) {
-    logger.error(
-      "TUTOR_INJECTION_DEFENSE",
-      "model_armor_config_missing",
-      "Model Armor template ID not found in tutor_context_runtime_config; failing closed",
-      error,
-      { configKey },
-    );
-    // Fail closed — return empty template ID so the caller knows config is missing
-    // and can block the request rather than proceeding unarmored
-    return { templateId: "" };
-  }
-
-  const templateId =
-    typeof data.value === "string" ? data.value : String(data.value);
-
-  if (!templateId) {
-    logger.error(
-      "TUTOR_INJECTION_DEFENSE",
-      "model_armor_config_empty",
-      "Model Armor template ID is empty in tutor_context_runtime_config",
-      undefined,
-      { configKey },
-    );
-    return { templateId: "" };
-  }
-
-  return { templateId };
 }

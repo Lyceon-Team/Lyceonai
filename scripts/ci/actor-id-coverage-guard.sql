@@ -3,11 +3,11 @@
 -- ============================================================================
 -- @spec [Doc-05E §6 INV-05E-03, SCL-011] | @implemented [2026-06-25] | @updated [2026-06-26]
 -- Asserts that the actor_id substrate is correctly applied:
---   1. All 7 target tables (5 activity + 2 audit) have actor_id uuid
+--   1. All 9 target tables (5 activity + 2 audit + 2 exam) have actor_id uuid
 --   2. profiles.actor_id exists, is NOT NULL, uuid
 --   3. anonymized_actors table exists with actor_id PK
---   4. All 7 identity columns are nullable (5 activity from 5a, 2 audit from 5d)
---   5. All 7 actor_id columns are NOT NULL (PR-5c seal intact)
+--   4. All 9 identity columns are nullable (5 activity from 5a, 2 audit from 5d, 2 exam from E6b)
+--   5. All 9 actor_id columns are NOT NULL (PR-5c seal, E6b seal)
 -- Extended in 5b to cover write-path stamping invariant.
 -- Updated in 5d: G5 merged into G4 (audit student_id now nullable for anonymize §5).
 --   G8 added: schema-level NOT NULL assertion on actor_id (PR-5c seal defense-in-depth).
@@ -20,7 +20,7 @@ DECLARE
 BEGIN
 
   -- ========================================================================
-  -- G1: All 7 target tables have actor_id uuid column
+  -- G1: All 9 target tables have actor_id uuid column
   -- ========================================================================
   SELECT string_agg(t, ', ')
     INTO v_missing
@@ -31,7 +31,9 @@ BEGIN
       'review_session_items',
       'review_error_attempts',
       'mastery_event_audit_log',
-      'mastery_domain_refresh_audit_log'
+      'mastery_domain_refresh_audit_log',
+      'test_sessions',
+      'score_runs'
     ]) AS t
    WHERE NOT EXISTS (
      SELECT 1 FROM information_schema.columns c
@@ -44,7 +46,7 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G1]: actor_id uuid column MISSING on: %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G1] OK: all 7 tables have actor_id uuid';
+  RAISE NOTICE 'INV-05E-03 [G1] OK: all 9 tables have actor_id uuid';
 
   -- ========================================================================
   -- G2: profiles.actor_id exists, NOT NULL, uuid
@@ -84,7 +86,7 @@ BEGIN
   RAISE NOTICE 'INV-05E-03 [G3] OK: anonymized_actors table with actor_id PK';
 
   -- ========================================================================
-  -- G4: All 7 identity columns are nullable (5 activity from 5a, 2 audit from 5d)
+  -- G4: All 9 identity columns are nullable (5 activity from 5a, 2 audit from 5d)
   -- ========================================================================
   -- PR-5d merged G5 into G4: audit student_id DROP NOT NULL enables anonymize
   -- disposition SET NULL (§5 "one-way anonymized"). All 7 now nullable.
@@ -97,7 +99,9 @@ BEGIN
       ('review_session_items',             'student_id'),
       ('review_error_attempts',            'student_id'),
       ('mastery_event_audit_log',          'student_id'),
-      ('mastery_domain_refresh_audit_log', 'student_id')
+      ('mastery_domain_refresh_audit_log', 'student_id'),
+      ('test_sessions',                    'student_id'),
+      ('score_runs',                       'student_id')
     ) AS targets(tbl, col)
     CROSS JOIN LATERAL (SELECT tbl || '.' || col AS pair) x
    WHERE NOT EXISTS (
@@ -111,12 +115,12 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G4]: identity columns must be nullable after DROP NOT NULL: %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G4] OK: all 7 identity columns are nullable';
+  RAISE NOTICE 'INV-05E-03 [G4] OK: all 9 identity columns are nullable';
 
   -- ========================================================================
   -- G6: Row-level — no row may have identity present + actor_id absent
   -- ========================================================================
-  -- For each of the 7 target tables: FAIL if any row has its identity column
+  -- For each of the 9 target tables: FAIL if any row has its identity column
   -- IS NOT NULL but actor_id IS NULL. Vacuously true on empty tables;
   -- load-bearing once seeds/data exist (proves write-path stamps are wired).
   DECLARE
@@ -132,7 +136,9 @@ BEGIN
         ('review_session_items',             'student_id'),
         ('review_error_attempts',            'student_id'),
         ('mastery_event_audit_log',          'student_id'),
-        ('mastery_domain_refresh_audit_log', 'student_id')
+        ('mastery_domain_refresh_audit_log', 'student_id'),
+        ('test_sessions',                    'student_id'),
+        ('score_runs',                       'student_id')
     LOOP
       EXECUTE format(
         'SELECT count(*) FROM public.%I WHERE %I IS NOT NULL AND actor_id IS NULL',
@@ -143,11 +149,11 @@ BEGIN
           v_g6_cnt, v_g6_tbl, v_g6_col;
       END IF;
     END LOOP;
-    RAISE NOTICE 'INV-05E-03 [G6] OK: no row in 7 tables has identity present + actor_id absent';
+    RAISE NOTICE 'INV-05E-03 [G6] OK: no row in 9 tables has identity present + actor_id absent';
   END;
 
   -- ========================================================================
-  -- G7: Defense-in-depth — actor_id must have no DEFAULT on all 7 tables
+  -- G7: Defense-in-depth — actor_id must have no DEFAULT on all 9 tables
   -- ========================================================================
   -- actor_id column must NOT have a DEFAULT that would silently supply a value
   -- (which would hide a missing app-layer or moat-function stamp). A DEFAULT
@@ -161,7 +167,9 @@ BEGIN
       'review_session_items',
       'review_error_attempts',
       'mastery_event_audit_log',
-      'mastery_domain_refresh_audit_log'
+      'mastery_domain_refresh_audit_log',
+      'test_sessions',
+      'score_runs'
     ]) AS t
    WHERE EXISTS (
      SELECT 1 FROM information_schema.columns c
@@ -174,10 +182,10 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G7]: actor_id must NOT have a DEFAULT (app/moat stamps it): %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G7] OK: 7 table actor_id columns have no DEFAULT (app/moat-layer responsibility)';
+  RAISE NOTICE 'INV-05E-03 [G7] OK: 9 table actor_id columns have no DEFAULT (app/moat-layer responsibility)';
 
   -- ========================================================================
-  -- G8: actor_id must be NOT NULL on all 7 tables (PR-5c seal intact)
+  -- G8: actor_id must be NOT NULL on all 9 tables (PR-5c seal intact)
   -- ========================================================================
   SELECT string_agg(t, ', ')
     INTO v_missing
@@ -188,7 +196,9 @@ BEGIN
       'review_session_items',
       'review_error_attempts',
       'mastery_event_audit_log',
-      'mastery_domain_refresh_audit_log'
+      'mastery_domain_refresh_audit_log',
+      'test_sessions',
+      'score_runs'
     ]) AS t
    WHERE NOT EXISTS (
      SELECT 1 FROM information_schema.columns c
@@ -201,7 +211,7 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G8]: actor_id must be NOT NULL (PR-5c seal) on: %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G8] OK: all 7 actor_id columns are NOT NULL (PR-5c seal intact)';
+  RAISE NOTICE 'INV-05E-03 [G8] OK: all 9 actor_id columns are NOT NULL (PR-5c seal intact)';
 
   RAISE NOTICE 'INV-05E-03 COVERAGE GUARD: ALL PASS';
 

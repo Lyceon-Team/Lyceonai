@@ -42,7 +42,10 @@ import { EntitlementService } from "../services/entitlement-service";
 // hasAnswerLeak was previously imported here but is now internal to the
 // output serializer — the static gate test (LISA-FULL-007) enforces that
 // this file never bypasses the serializer by using raw scan functions.
-import { resolveFullEnvelope } from "../services/tutor-context";
+import {
+  resolveFullEnvelope,
+  sessionTablesFor,
+} from "../services/tutor-context";
 // isPreSubmitForSurface: still needed to resolve pre-submit state before
 // calling the serializer. TUTOR_ANTI_LEAK_SUBSTITUTION no longer imported
 // here — it lives inside the serializer.
@@ -54,6 +57,10 @@ import {
   type OutputScanContext,
 } from "../services/tutor-output-serializer";
 import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
+import {
+  MODEL_ARMOR_SUBSTITUTION,
+  scanWithModelArmor,
+} from "../services/tutor-model-armor";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
 import { enqueueCloudTask } from "../services/cloud-tasks-enqueue";
@@ -249,6 +256,7 @@ type ReplayMessageRow = {
   message: string;
   source_session_item_id: string | null;
   created_at: string;
+  client_turn_id: string | null;
 };
 
 /**
@@ -267,7 +275,7 @@ async function loadMessagesForReplay(
   let query = supabaseServer
     .from("tutor_messages")
     .select(
-      "id, role, content_kind, message, source_session_item_id, created_at",
+      "id, role, content_kind, message, source_session_item_id, created_at, client_turn_id",
     )
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
@@ -346,7 +354,11 @@ async function resolveTrustedScopeForCreate(
   sourceSessionItemId: string | null,
   sourceQuestionRowId: string | null,
   sourceQuestionCanonicalId: string | null,
+  sourceSurface: string,
 ): Promise<ResolvedScopeRow> {
+  // Review items live in review tables (W4-1); every other surface keeps the
+  // practice tables it always used.
+  const tables = sessionTablesFor(sourceSurface);
   let sessionId = sourceSessionId;
   let sessionItemId = sourceSessionItemId;
   let questionRowId = sourceQuestionRowId;
@@ -354,10 +366,10 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionId) {
     const { data, error } = await supabaseServer
-      .from("practice_sessions")
+      .from(tables.sessions)
       .select("id")
       .eq("id", sessionId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionId = null;
@@ -366,18 +378,21 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionItemId) {
     const { data, error } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select("id, question_id, session_id")
       .eq("id", sessionItemId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionItemId = null;
     } else {
-      // The session item's question is authoritative if the client did not
-      // separately supply one.
-      if (!questionRowId) {
-        questionRowId = (data.question_id as string) ?? null;
+      // An owned item's question is authoritative — it overrides a
+      // client-supplied question id rather than yielding to it, so a scoped
+      // conversation cannot pair one item with another question (W4-1).
+      questionRowId = (data.question_id as string) ?? null;
+      // Anchor the session to the item's own session.
+      if (!sessionId || sessionId !== (data.session_id as string)) {
+        sessionId = (data.session_id as string) ?? null;
       }
     }
   }
@@ -579,6 +594,7 @@ router.post(
         input.source_session_item_id ?? null,
         input.source_question_row_id ?? null,
         input.source_question_canonical_id ?? null,
+        input.source_surface,
       );
 
       // ── domain: derive surface from source_surface ──
@@ -1576,16 +1592,109 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           : "general",
     });
 
+    // The clock starts before the Model Armor input scan so that
+    // turn_metrics.orchestration_duration_ms includes both scans — that is
+    // the before/after latency measurement for W3-1.
+    const turnStartedAt = Date.now();
+
+    // Step 13b: Model Armor input scan (closure plan W3-1 — an additional
+    // layer, not in docs/Spec; see the tutor-model-armor.ts header). Runs on
+    // the student's message as typed, immediately before the worker call. The crisis path returned above and never reaches this
+    // line — Model Armor cannot suppress a crisis response. Fail open: a
+    // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
+    // model entirely and answers with the neutral substitution.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorInput = await scanWithModelArmor(
+      "input",
+      input.message,
+      conversation.id,
+    );
+
+    // Step 13c (closure plan W3-5, owner ruling 2026-09-24): an input block on
+    // Model Armor's `dangerous` filter may be a crisis the Layer 1/Layer 2
+    // classifier missed. Open a review case and alert so a human sees it
+    // within SLA — but the student still gets the neutral block copy, not the
+    // crisis template: the filter is broad and not clinical, and firing crisis
+    // resources on it would undercut the deterministic classifier design.
+    // Alerts only on a NEW case; an open case was already alerted. A failed
+    // flag is logged at ERROR and the block copy is still delivered — a 500
+    // here would leave the student with an error AND no review case.
+    // @spec [closure plan W3-5; SCL-142 (PROPOSED)] | @implemented 2026-09-24
+    if (
+      armorInput.kind === "blocked" &&
+      armorInput.matchedFilters.includes("rai:dangerous")
+    ) {
+      try {
+        const armorFlag = await flagConversationForReview(
+          conversation.id,
+          studentId,
+          "model_armor_dangerous",
+          null,
+          null,
+        );
+        if (armorFlag.isNewCase) {
+          await notifyCrisisEvent({
+            caseId: armorFlag.caseId,
+            conversationId: conversation.id,
+            source: "model_armor_dangerous",
+            slaDeadline: armorFlag.slaDeadline,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          logger.warn(
+            "TUTOR_RUNTIME",
+            "model_armor_crisis_case_exists",
+            "dangerous input block on a conversation with an active review case; no new alert",
+            {
+              caseId: armorFlag.caseId,
+              caseStatus: armorFlag.caseStatus,
+              conversationId: conversation.id,
+            },
+          );
+        }
+      } catch (err: unknown) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "model_armor_crisis_flag_failed",
+          "dangerous input block could not open a review case; the block copy is still delivered",
+          err instanceof Error ? err : undefined,
+          { conversationId: conversation.id },
+        );
+      }
+    }
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
-    // and returns a TutorResult — never throws.
-    const turnStartedAt = Date.now();
-    const orchestrationResult = await orchestrateTurn(
-      envelope,
-      preSubmit,
-      correctAnswerResult.value,
-    );
+    // and returns a TutorResult — never throws. Not called when the input
+    // scan blocked: the reply is the server-authored substitution instead.
+    const orchestrationResult =
+      armorInput.kind === "blocked"
+        ? ({
+            ok: true,
+            value: {
+              response: {
+                content: MODEL_ARMOR_SUBSTITUTION,
+                content_kind: "message",
+                suggested_action: { type: "none", label: null },
+                ui_hints: {
+                  show_accept_decline: false,
+                  allow_freeform_reply: true,
+                  suggested_chip: null,
+                },
+              },
+              question_links: [],
+              instruction_exposures: [],
+              orchestration_meta: {
+                model_name: "model_armor_input_blocked",
+                prompt_version: "none",
+                cache_used: false,
+                compaction_recommended: false,
+              },
+              learner_observation: null,
+            },
+          } as const)
+        : await orchestrateTurn(envelope, preSubmit, correctAnswerResult.value);
 
     if (!orchestrationResult.ok) {
       logger.error(
@@ -1630,6 +1739,19 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
+    // Step 14b: Model Armor output scan (closure plan W3-1) on LISA's reply,
+    // before the serializer. Additional to the INV-03-12 scans in
+    // serializeTutorOutput, which still run on every reply and fail closed. The verdict is carried
+    // into serializeTutorOutput as `armorOutputBlocked`, which substitutes.
+    // Not run when the input scan blocked — the reply is then server copy,
+    // not model output. Fail open, as for the input scan.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorOutput =
+      armorInput.kind === "blocked"
+        ? null
+        : await scanWithModelArmor("output", tutorResponse, conversation.id);
+    const armorOutputBlocked = armorOutput?.kind === "blocked";
+
     // Step 15: LISA-FULL-007 — mandatory output serializer (belt-and-suspenders).
     // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
     // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
@@ -1647,13 +1769,24 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       studentMessages: envelope.recent_messages
         .filter((m) => m.role === "student")
         .map((m) => m.message),
+      armorOutputBlocked,
+      // An input-blocked reply is the server-authored substitution.
+      isServerAuthored: armorInput.kind === "blocked",
     };
     const serialized = await serializeTutorOutput(
       tutorResponse,
       appendScanContext,
     );
     const safeContent = serialized.content;
-    const antiLeakTriggered = serialized.blocked;
+    // Anti-leak scan classes only: a Model Armor block is logged by the
+    // scanner (model_armor_scan_blocked), not counted as an anti-leak hit.
+    const scans = serialized.scanResults;
+    const antiLeakTriggered =
+      scans.answerLeakDetected ||
+      scans.canonicalIdLeakDetected ||
+      scans.systemPromptLeakDetected ||
+      scans.personaViolationDetected ||
+      scans.correctAnswerGateBlocked;
 
     // Step 16: Persist tutor message.
     const { data: tutorMessageRow, error: tutorMessageError } =
@@ -1951,6 +2084,7 @@ router.get(
             content_kind: row.content_kind,
             message: row.message,
             created_at: row.created_at,
+            client_turn_id: row.client_turn_id,
           });
           continue;
         }
@@ -1985,6 +2119,7 @@ router.get(
           content_kind: row.content_kind,
           message: rowSerialized.content,
           created_at: row.created_at,
+          client_turn_id: row.client_turn_id,
         });
       }
 
