@@ -82,7 +82,7 @@ const EVIDENCE_TABLES = [
  * deletion's profile uuid in `actor_id`, because two write paths used the identity key as the
  * grouping identifier. While those rows existed the column was a live join from the evidence
  * side to the pseudonymous side — the thing plan v4 §1 rule 3 exists to forbid. Dropped by
- * migration 20261004000000 (SCL-152, reversing SCL-100's grant).
+ * migration 20261007000000 (SCL-152, reversing SCL-100's grant).
  *
  * Absence is proven instead by `public.verify_deletion_layers` sweeping every uuid column in
  * the schema inside T3, which is the mechanism that found the residue. It never needed the
@@ -241,7 +241,9 @@ async function seedActivity(profileId: string): Promise<void> {
  * `SELECT p.id, p.actor_id FROM profiles`, i.e. always correct — which is exactly why no test
  * could reproduce this bug before, and why production found it instead of CI.
  */
-async function seedActivityWithIdentityAsActor(profileId: string): Promise<void> {
+async function seedActivityWithIdentityAsActor(
+  profileId: string,
+): Promise<void> {
   await pg.query(
     `INSERT INTO public.practice_sessions (user_id, actor_id, mode, target_count, platform, client_instance_id)
      VALUES ($1, $1, 'diagnostic', 5, 'web', 'client-bad')`,
@@ -1100,7 +1102,7 @@ describe.skipIf(!PG_AVAILABLE)(
         ),
       ).toBe(true);
 
-      // …and once the row is corrected the way migration 20261003000000 does it, the same
+      // …and once the row is corrected the way migration 20261006000000 does it, the same
       // deletion goes through. The sentinel blocks a wrong value, not a legitimate deletion.
       await pg.query(
         `UPDATE public.practice_sessions s SET actor_id = p.actor_id
@@ -1108,8 +1110,11 @@ describe.skipIf(!PG_AVAILABLE)(
           WHERE p.id = s.user_id AND s.actor_id = s.user_id AND p.actor_id <> p.id`,
       );
       expect(
-        (await pg.query(`SELECT count(*)::int AS n FROM public.actor_id_integrity_violations()`))
-          .rows[0].n,
+        (
+          await pg.query(
+            `SELECT count(*)::int AS n FROM public.actor_id_integrity_violations()`,
+          )
+        ).rows[0].n,
       ).toBe(0);
       const second = await runExecutor();
       expect(second).toEqual({
@@ -1155,9 +1160,10 @@ describe.skipIf(!PG_AVAILABLE)(
 
       // clean up: this row is deliberately un-anonymizable and would fail the suite's own
       // integrity expectations for every later test in the file
-      await pg.query(`DELETE FROM public.practice_sessions WHERE actor_id = $1`, [
-        u.id,
-      ]);
+      await pg.query(
+        `DELETE FROM public.practice_sessions WHERE actor_id = $1`,
+        [u.id],
+      );
     });
 
     // ── B3 ──────────────────────────────────────────────────────────────────────

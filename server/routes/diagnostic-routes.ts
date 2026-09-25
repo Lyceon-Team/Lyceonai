@@ -74,7 +74,9 @@ router.post("/sessions", async (req: Request, res: Response) => {
   // id and `const actorId = userId` looked like the only option. The canonical type carries
   // `actor_id`; consuming it is what CLAUDE.md's single-source-of-truth rule asks for, and it
   // makes the wrong value unreachable instead of merely discouraged.
-  const user = (req as Record<string, unknown>).user as SupabaseUser | undefined;
+  const user = (req as Record<string, unknown>).user as
+    | SupabaseUser
+    | undefined;
   const userId = user?.id;
 
   // 1. Auth

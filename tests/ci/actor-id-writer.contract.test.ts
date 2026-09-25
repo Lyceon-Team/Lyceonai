@@ -28,7 +28,13 @@ import { stripComments } from "./lib/strip-comments";
 const ROUTE_DIR = path.join(process.cwd(), "server", "routes");
 
 /** The identity-shaped names an actor_id must never be assigned from. */
-const IDENTITY_NAMES = ["userId", "studentId", "profileId", "user.id", "user?.id"];
+const IDENTITY_NAMES = [
+  "userId",
+  "studentId",
+  "profileId",
+  "user.id",
+  "user?.id",
+];
 
 function routeFiles(): string[] {
   return fs
@@ -57,10 +63,18 @@ describe("actor_id writer contract — the grouping identifier is never the iden
       const src = stripComments(fs.readFileSync(file, "utf8"));
       for (const name of IDENTITY_NAMES) {
         // `user?.actor_id ?? studentId` — the review-canonical shape
-        if (new RegExp(`actor_id\\s*\\?\\?\\s*${name.replace(/[.?]/g, "\\$&")}`).test(src)) {
+        if (
+          new RegExp(
+            `actor_id\\s*\\?\\?\\s*${name.replace(/[.?]/g, "\\$&")}`,
+          ).test(src)
+        ) {
           offenders.push(`${path.basename(file)}: actor_id ?? ${name}`);
         }
-        if (new RegExp(`const\\s+actorId\\s*=\\s*${name.replace(/[.?]/g, "\\$&")}\\s*;`).test(src)) {
+        if (
+          new RegExp(
+            `const\\s+actorId\\s*=\\s*${name.replace(/[.?]/g, "\\$&")}\\s*;`,
+          ).test(src)
+        ) {
           offenders.push(`${path.basename(file)}: const actorId = ${name}`);
         }
       }
@@ -83,7 +97,9 @@ describe("actor_id writer contract — the grouping identifier is never the iden
   it("D1.4 every route file was actually read", () => {
     const files = routeFiles();
     expect(files.length).toBeGreaterThan(5);
-    expect(files.map((f) => path.basename(f))).toContain("diagnostic-routes.ts");
+    expect(files.map((f) => path.basename(f))).toContain(
+      "diagnostic-routes.ts",
+    );
     expect(files.map((f) => path.basename(f))).toContain("review-canonical.ts");
   });
 });

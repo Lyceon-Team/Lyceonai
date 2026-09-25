@@ -112,7 +112,7 @@ BEGIN
 
   -- ---------- census after: the schema-wide check must be clean ----------
   -- The gate this migration exists to satisfy, asserted unconditionally so a partial repair
-  -- cannot commit. public.actor_id_integrity_violations() is created by 20261002000000, which
+  -- cannot commit. public.actor_id_integrity_violations() is created by 20261005000000, which
   -- applies immediately before this — deliberately that way round, so the check is real here
   -- rather than skipped. If the function is missing this raises, which is the correct failure.
   SELECT count(*) INTO v_violations_after FROM public.actor_id_integrity_violations();

@@ -46,14 +46,14 @@ BEGIN;
 -- 1. Refuse to drop the column while the leak it enabled still exists
 -- ---------------------------------------------------------------------------
 -- Dropping the column hides the join without removing it: the 41 rows would still carry the
--- uuid, and the next deletion would still be mislabelled. 20261003000000 repairs them and
--- 20261002000000 adds the guard; both apply before this. Assert it rather than assume it.
+-- uuid, and the next deletion would still be mislabelled. 20261006000000 repairs them and
+-- 20261005000000 adds the guard; both apply before this. Assert it rather than assume it.
 DO $guard$
 DECLARE v_violations bigint;
 BEGIN
   SELECT count(*) INTO v_violations FROM public.actor_id_integrity_violations();
   IF v_violations > 0 THEN
-    RAISE EXCEPTION 'CARVE_OUT: % actor_id violation class(es) outstanding — apply 20261002000000 and 20261003000000 first. Dropping deleted_profile_id now would conceal the cross-universe join rather than close it.', v_violations;
+    RAISE EXCEPTION 'CARVE_OUT: % actor_id violation class(es) outstanding — apply 20261005000000 and 20261006000000 first. Dropping deleted_profile_id now would conceal the cross-universe join rather than close it.', v_violations;
   END IF;
 END $guard$;
 

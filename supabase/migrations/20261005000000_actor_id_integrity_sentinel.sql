@@ -139,10 +139,15 @@ GRANT EXECUTE ON FUNCTION public.actor_id_integrity_violations() TO service_role
 -- ---------------------------------------------------------------------------
 -- 2. The cascade's own sentinel, replaced
 -- ---------------------------------------------------------------------------
--- Replaced wholesale from 20260917130000 so the body has one home; the ONLY change is the
--- sentinel DECLARE...END block. The mutation that reverts it to the nullity-only check is M94
--- in scripts/ci/deletion-evidence-gate.mutations.sh, and it reproduces the defect: with the
--- value check gone, a profile whose rows carry actor_id = its own id deletes without complaint.
+-- Replaced wholesale from 20260930090000_exam_shell_server.sql — the CURRENT owner of this
+-- body, not 20260917130000 where the sentinel was originally written. The first draft of this
+-- migration extracted from the older file and would have silently DELETED the exam cascade
+-- steps (v_exam_sessions and the six test_session_* deletes) that landed on `cleanup` in the
+-- meantime. Caught by re-checking the owner before merging, which is the same discipline the
+-- mutation harness enforces for M2/M9/M17/M31/M96.
+--
+-- The ONLY change here is the sentinel DECLARE...END block. M94 reverts it to the nullity-only
+-- check and reddens C3.11, reproducing the defect exactly.
 
 CREATE OR REPLACE FUNCTION public.execute_account_deletion_cascade(
   p_profile_id    uuid,
@@ -157,6 +162,7 @@ DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
   v_actor_id  uuid;
+  v_exam_sessions uuid[];   -- E6b: the profile's test_sessions, collected before hard_delete removes them
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
@@ -387,6 +393,69 @@ BEGIN
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
+    -- ====================================================================
+    -- LAYER 2 (hard_delete): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- test_sessions.student_id and score_runs.student_id are ON DELETE SET NULL
+    -- (E6b), as practice and review are: the profile delete below would SEVER
+    -- these rows, not remove them. hard_delete removes them here, explicitly.
+    -- The sessions are collected first — the outbox carries only aggregate_id
+    -- (no FK, no identity) and is reachable only through them.
+    SELECT coalesce(array_agg(id), ARRAY[]::uuid[]) INTO v_exam_sessions
+      FROM public.test_sessions WHERE student_id = p_profile_id;
+
+    -- L2-08 .. L2-11. The four runtime children, children before parents.
+    -- Answers before submissions: test_session_answers.last_submission_id
+    -- references test_answer_submissions (NO ACTION).
+    DELETE FROM public.test_session_answers WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_answers', v_count);
+
+    DELETE FROM public.test_answer_submissions WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_answer_submissions', v_count);
+
+    -- E7a (SCL-145): the workspace rows hang off test_session_items (CASCADE),
+    -- so they go first, by name and counted, like every other exam child.
+    DELETE FROM public.test_session_item_workspace WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_item_workspace', v_count);
+
+    DELETE FROM public.test_session_items WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_items', v_count);
+
+    DELETE FROM public.test_session_sections WHERE test_session_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_session_sections', v_count);
+
+    -- L2-12 / L2-13. score_run_event_ledger and score_runs. Neither is deleted by
+    -- name: score_runs is insert-once (Doc 04B §9.4) and its trigger refuses a
+    -- DELETE while the parent session exists. Both leave with the session through
+    -- test_session_id / score_run_id ON DELETE CASCADE, which the trigger admits
+    -- (the parent is gone). Counted first, because that removal is invisible to
+    -- GET DIAGNOSTICS.
+    SELECT count(*) INTO v_count
+      FROM public.score_run_event_ledger l
+      JOIN public.score_runs r ON r.id = l.score_run_id
+     WHERE r.test_session_id = ANY (v_exam_sessions);
+    v_result := v_result || jsonb_build_object('score_run_event_ledger', v_count);
+
+    SELECT count(*) INTO v_count FROM public.score_runs WHERE test_session_id = ANY (v_exam_sessions);
+    v_result := v_result || jsonb_build_object('score_runs', v_count);
+
+    -- L2-14. test_sessions (takes its score_runs and their ledger rows with it)
+    DELETE FROM public.test_sessions WHERE id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('test_sessions', v_count);
+
+    -- L2-15. exam_runtime_outbox — identity-free queue state, deleted in
+    -- hard_delete like legal_acceptance_outbox (L1-13). After the sessions:
+    -- score_runs and the ledger reference it (NO ACTION) and are gone now.
+    DELETE FROM public.exam_runtime_outbox WHERE aggregate_id = ANY (v_exam_sessions);
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('exam_runtime_outbox', v_count);
+
   ELSIF p_privacy_mode = 'anonymize' THEN
     -- ====================================================================
     -- FAIL-CLOSED SENTINEL (INV-05E-07): before severing identity, verify
@@ -531,6 +600,26 @@ BEGIN
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
     -- ====================================================================
+    -- LAYER 2 (anonymize): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- RETAINED under actor_id. The identity link is severed by
+    -- test_sessions.student_id and score_runs.student_id ON DELETE SET NULL when
+    -- the profile row goes below — the same mechanism as practice and review.
+    -- score_runs is insert-once; its trigger admits exactly that FK action (the
+    -- student_id -> NULL change with every other column equal, the profile gone).
+    -- Nothing else to remove: test_sessions has no client/device fingerprint
+    -- (Doc 04A omits client_instance_id); the children (E7a's workspace rows
+    -- included: flags, eliminated opaque tokens, highlight offsets — no text) and
+    -- the ledger carry no identity; the outbox carries none either and score_runs references it,
+    -- so it stays. Counted HERE, before the profile delete, because a severance
+    -- done by an FK action is invisible to GET DIAGNOSTICS.
+    SELECT count(*) INTO v_count FROM public.test_sessions WHERE student_id = p_profile_id;
+    v_result := v_result || jsonb_build_object('test_sessions', v_count);
+
+    SELECT count(*) INTO v_count FROM public.score_runs WHERE student_id = p_profile_id;
+    v_result := v_result || jsonb_build_object('score_runs', v_count);
+
+    -- ====================================================================
     -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
     -- (build-derived ledger; no spec anchor — SCL-088. The earlier citation of section 3.1 ("Industry precedent")
     -- was wrong.)
@@ -556,6 +645,8 @@ BEGIN
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
+  -- test_sessions.student_id and score_runs.student_id SET NULL fire here in
+  -- anonymize mode (E6b); in hard_delete no exam row is left for them to reach.
   -- Operator-FK edges (36 config/history) are ON DELETE SET NULL — Postgres severs
   -- the attribution as the profile row goes; no enumeration here.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
