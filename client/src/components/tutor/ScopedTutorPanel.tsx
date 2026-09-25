@@ -43,6 +43,7 @@ import {
   LisaAvatar,
   MessageBubble,
   PausedBar,
+  SuggestedActionLink,
   ThinkingIndicator,
   useScrollToBottomOnChange,
 } from "@/components/tutor/TutorThreadParts";
@@ -195,6 +196,7 @@ function ScopedThread({
     effectiveCrisisContent,
     showCrisisCard,
     premiumReason,
+    suggestedAction,
     send,
     retry,
     resume,
@@ -265,6 +267,10 @@ function ScopedThread({
             message={optimisticMessage}
             pending
           />
+        )}
+
+        {turnState.kind === "idle" && (
+          <SuggestedActionLink action={suggestedAction} />
         )}
 
         {isThinking && <ThinkingIndicator />}

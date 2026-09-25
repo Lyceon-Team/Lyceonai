@@ -36,6 +36,7 @@ import {
   LisaAvatar,
   MessageBubble,
   PausedBar,
+  SuggestedActionLink,
   ThinkingIndicator,
   useScrollToBottomOnChange,
 } from "@/components/tutor/TutorThreadParts";
@@ -280,6 +281,7 @@ export default function ChatPage() {
     effectiveCrisisContent,
     showCrisisCard,
     premiumReason,
+    suggestedAction,
     send,
     retry: handleRetry,
     resume: handleResume,
@@ -571,6 +573,10 @@ export default function ChatPage() {
               message={optimisticMessage}
               pending
             />
+          )}
+
+          {turnState.kind === "idle" && (
+            <SuggestedActionLink action={suggestedAction} />
           )}
 
           {/* Thinking indicator */}
