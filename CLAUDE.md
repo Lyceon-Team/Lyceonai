@@ -113,7 +113,15 @@ Answer the question from the catalog, against the database being asked about:
 
 Owner-run against production: never query or write production yourself. State what you would run
 and hand it over, or say the deployment state is unverified from here — which is honest, where a
-ledger reading is not. Where a migration's effect can be pinned in CI, pin it: gates `B-01` and
+ledger reading is not.
+
+**A consequence of not reading production: your deployment picture only changes when the owner
+tells you.** It has no other input, so it goes stale silently and a stale picture reads exactly
+like a current one. Treat what you believe about production as stale unless THIS turn updated it,
+and say which turn it came from when it matters — "applied, per the owner's report of
+2026-09-25", never a bare "applied". Carrying a previous turn's deployment state forward as
+present fact is the same false claim as sourcing it from the ledger, arrived at by a slower
+route. (Owner ruling 2026-09-25.) Where a migration's effect can be pinned in CI, pin it: gates `B-01` and
 `B-02` in `scripts/ci/calendar-schema-gates.sql` are the pattern — assert the body of whatever
 function is live at the end of the migration pipeline. (Learned 2026-09-24: five calendar
 migrations reported unapplied were all live in production.)
