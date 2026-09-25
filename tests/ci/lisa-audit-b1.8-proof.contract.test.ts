@@ -149,17 +149,18 @@ function buildEnvelope(
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// AUDIT-001: Pre-submit explanation reaches the production prompt via
-// question_content.explanation → renderItemBlock (one canonical path)
+// AUDIT-001: the explanation reaches the production prompt via
+// question_content.explanation → renderItemBlock (one canonical path) —
+// post-submit only since SCL-144 (W3-10)
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("AUDIT-001: explanation reaches production systemInstruction", () => {
-  // ── Proof 1: PRE-SUBMIT on active question — explanation PRESENT ────
-  it("PRE-SUBMIT: active question explanation present in systemInstruction via item block", () => {
-    // SCL-060: the active question's explanation is internal context,
-    // populated for all surfaces. The worker's renderItemBlock renders
-    // it with an anti-echo directive (prompt layer); INV-03-04 enforces
-    // at the output layer.
+  // ── Proof 1: PRE-SUBMIT on active question — explanation ABSENT (SCL-144) ──
+  it("PRE-SUBMIT: an explanation on the envelope is NOT rendered into systemInstruction (W3-10, SCL-144)", () => {
+    // Was SCL-060: the explanation went to the model pre-submit behind an
+    // anti-echo directive. Reversed by SCL-144 (owner ruling 2026-09-25):
+    // the BFF withholds it pre-submit, and renderItemBlock never renders it
+    // pre-submit either.
     const envelope = buildEnvelope({
       is_post_submit: false,
       correct_answer: null,
@@ -173,7 +174,9 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
           { key: "D", text: "2" },
         ],
         item_type: "mcq",
-        // SCL-060: explanation is internal context, populated for all surfaces
+        // SCL-144 (reversing SCL-060): the BFF no longer sends this
+        // pre-submit. It is set here to prove the worker would not render
+        // it even if it arrived — defense in depth.
         explanation:
           "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹. For x², n=2, so derivative = 2x.",
         student_answer: null,
@@ -190,20 +193,18 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
     console.log(systemInstruction);
     console.log("=== END PROOF-1 ===");
 
-    // The explanation MUST be present in the item block
-    expect(systemInstruction).toContain(
-      "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
-    );
-    expect(systemInstruction).toContain(
+    // W3-10 / SCL-144: the explanation MUST NOT reach the model pre-submit —
+    // possession is the control, not a directive.
+    expect(systemInstruction).not.toContain("[AUTHORED EXPLANATION");
+    expect(systemInstruction).not.toContain(
       "The power rule: d/dx[xⁿ] = n·xⁿ⁻¹",
     );
+    expect(systemInstruction).not.toContain("Explanation:");
 
-    // The anti-echo directive MUST prohibit revealing
+    // The pre-submit prohibition is present instead
+    expect(systemInstruction).toContain("This question is pre-submit");
     expect(systemInstruction).toContain(
-      "for YOUR internal reasoning only",
-    );
-    expect(systemInstruction).toContain(
-      "Do NOT quote, paraphrase, reveal",
+      "Do not state, compute, demonstrate",
     );
 
     // correct_answer MUST be null pre-submit (INV-03-04)
@@ -364,7 +365,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     // 3. Prompt registry: scaffolded resolves to a known artifact (not fallback)
     const artifact = resolvePromptArtifact("scaffolded", null);
     console.log("Prompt artifact version for scaffolded:", artifact.version);
-    expect(artifact.version).toBe("lisa-default-v1");
+    expect(artifact.version).toBe("lisa-default-v2");
     console.log("=== END PROOF-4 ===");
   });
 
@@ -376,7 +377,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       const artifact = resolvePromptArtifact(variant, null);
       console.log(`  ${variant} → ${artifact.version}`);
       // Each variant must resolve without falling back to the unknown-variant path
-      expect(artifact.version).toBe("lisa-default-v1");
+      expect(artifact.version).toBe("lisa-default-v2");
     }
     console.log("=== END ===");
   });

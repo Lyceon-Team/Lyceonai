@@ -24,6 +24,7 @@ import {
   type SendMessageResponse,
   type TutorConversationDetail,
   type TutorMessage,
+  type TutorSuggestedAction,
 } from "@/hooks/tutor-client";
 import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
 import type { PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
@@ -45,6 +46,11 @@ export type TutorTurn = {
   effectiveCrisisContent: string;
   showCrisisCard: boolean;
   premiumReason: PremiumPromptReason | null;
+  /**
+   * The action LISA offered on the last turn (W3-2: start_practice), until
+   * the next send. Not persisted — an offer, not part of the thread.
+   */
+  suggestedAction: TutorSuggestedAction | null;
   send: (messageText: string) => Promise<void>;
   retry: () => void;
   resume: () => void;
@@ -73,6 +79,9 @@ export function useTutorTurn(
     text: string;
     sentAt: string;
   } | null>(null);
+
+  const [suggestedAction, setSuggestedAction] =
+    useState<TutorSuggestedAction | null>(null);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -144,6 +153,7 @@ export function useTutorTurn(
   const reset = useCallback(() => {
     setTurnState({ kind: "idle" });
     setOptimisticTurn(null);
+    setSuggestedAction(null);
     setCrisisLane(null);
     setCrisisContent("");
   }, []);
@@ -162,6 +172,7 @@ export function useTutorTurn(
           : crypto.randomUUID();
 
       setTurnState({ kind: "thinking", clientTurnId });
+      setSuggestedAction(null);
       // Same id on retry → the same bubble, updated in place.
       setOptimisticTurn({
         clientTurnId,
@@ -196,6 +207,11 @@ export function useTutorTurn(
             lane: response.response.crisis_category,
           });
         } else {
+          setSuggestedAction(
+            response.response.suggested_action.type === "none"
+              ? null
+              : response.response.suggested_action,
+          );
           setTurnState({ kind: "idle" });
         }
       } catch (err: unknown) {
@@ -253,6 +269,7 @@ export function useTutorTurn(
     effectiveCrisisContent,
     showCrisisCard,
     premiumReason,
+    suggestedAction,
     send,
     retry,
     resume,

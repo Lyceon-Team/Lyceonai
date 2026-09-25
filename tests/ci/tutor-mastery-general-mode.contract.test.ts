@@ -121,6 +121,12 @@ describe("W3-4b — mastery reaches the system instruction in general mode", () 
     expect(instruction).toContain(
       "They have had difficulty with these skills in the past 7 days: Linear Equations in One Variable.",
     );
+    // The domain bands — as bands, never the raw score (Doc 03D §7.1).
+    expect(instruction).toContain(
+      `[MASTERY] Their domain mastery across the SAT: Advanced Math (Math): "proficient"; Algebra (Math): "needs_work".`,
+    );
+    expect(instruction).not.toContain("0.62");
+    expect(instruction).not.toContain("0.31");
   });
 
   it("a student with no rows: nothing is invented, and hasMastery is false", async () => {

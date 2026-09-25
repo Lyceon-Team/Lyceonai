@@ -326,11 +326,17 @@ export const orchestrateResponseSchema = z.object({
     content: z.string(),
     content_kind: z.literal("message"),
     suggested_action: z.object({
+      // start_practice (closure plan W3-2, 2026-09-25): LISA's handoff to
+      // practice in general mode — it offers a question that counts instead of
+      // inventing one. DEPLOY ORDER: the BFF parses worker responses with this
+      // schema, so the BFF (Vercel) must carry this value before the worker
+      // (Cloud Build) can emit it.
       type: z.enum([
         "none",
         "offer_similar_question",
         "offer_broader_coaching",
         "offer_stay_focused",
+        "start_practice",
       ]),
       label: z.string().nullable(),
     }),

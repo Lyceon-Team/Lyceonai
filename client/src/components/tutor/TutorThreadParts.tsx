@@ -12,6 +12,7 @@
 
 import { useEffect, useRef } from "react";
 import {
+  ArrowRight,
   Send,
   Loader2,
   Phone,
@@ -26,7 +27,11 @@ import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { TutorMessage, CrisisCategory } from "@/hooks/tutor-client";
+import type {
+  TutorMessage,
+  CrisisCategory,
+  TutorSuggestedAction,
+} from "@/hooks/tutor-client";
 
 // ---------------------------------------------------------------------------
 // Tutor markdown rendering
@@ -417,4 +422,36 @@ export function useScrollToBottomOnChange(
   useEffect(() => {
     anchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [trigger, anchorRef]);
+}
+
+// ---------------------------------------------------------------------------
+// SuggestedActionLink — LISA's handoff to practice (closure plan W3-2)
+// ---------------------------------------------------------------------------
+
+/** Where a practice handoff lands: the practice hub, which owns selection. */
+export const PRACTICE_HANDOFF_HREF = "/practice";
+
+/**
+ * Renders the action LISA offered on its last turn. Only `start_practice` has
+ * a surface today: LISA never writes a question — it hands off to practice,
+ * which owns selection, serving, anti-leak, grading and mastery.
+ */
+export function SuggestedActionLink({
+  action,
+}: {
+  action: TutorSuggestedAction | null;
+}) {
+  if (action?.type !== "start_practice") return null;
+  return (
+    <div className="flex justify-start pl-11">
+      <a
+        href={PRACTICE_HANDOFF_HREF}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
+        data-testid="tutor-start-practice"
+      >
+        {action.label ?? "Start a practice question"}
+        <ArrowRight className="h-4 w-4" />
+      </a>
+    </div>
+  );
 }

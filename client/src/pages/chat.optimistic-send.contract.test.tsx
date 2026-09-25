@@ -185,14 +185,20 @@ function seedEmptyConversation(): string {
   return conv.id as string;
 }
 
-function workerReply(): unknown {
+function workerReply(
+  suggestedAction: { type: string; label: string | null } = {
+    type: "none",
+    label: null,
+  },
+  content: string = TUTOR_TEXT,
+): unknown {
   return {
     ok: true,
     value: {
       response: {
-        content: TUTOR_TEXT,
+        content,
         content_kind: "message",
-        suggested_action: { type: "none", label: null },
+        suggested_action: suggestedAction,
         ui_hints: {
           show_accept_decline: false,
           allow_freeform_reply: true,
@@ -359,5 +365,41 @@ describe("W2-10 — the student's message renders on send", () => {
     expect(studentBubbles()[0].getAttribute("data-client-turn-id")).toBe(
       ids[0],
     );
+  });
+});
+
+describe("W3-2 — LISA's handoff to practice", () => {
+  it("a start_practice offer renders as a link to practice, and is gone after the next send", async () => {
+    const OFFER =
+      "I can start you on a practice question that counts — linear equations are a good place to begin.";
+    orchestrateTurn
+      .mockResolvedValueOnce(
+        workerReply(
+          { type: "start_practice", label: "Start a practice question" },
+          OFFER,
+        ),
+      )
+      .mockResolvedValueOnce(workerReply());
+    const convId = seedEmptyConversation();
+    await renderChat(convId);
+
+    send("can you give me a quick practice question");
+    await screen.findByText(OFFER);
+    const link = await screen.findByTestId("tutor-start-practice");
+    expect(link.getAttribute("href")).toBe("/practice");
+    expect(link.textContent).toContain("Start a practice question");
+
+    send("actually, one more thing first");
+    await screen.findByText(TUTOR_TEXT);
+    expect(screen.queryByTestId("tutor-start-practice")).toBeNull();
+  });
+
+  it("no offer, no link", async () => {
+    orchestrateTurn.mockResolvedValueOnce(workerReply());
+    const convId = seedEmptyConversation();
+    await renderChat(convId);
+    send(STUDENT_TEXT);
+    await screen.findByText(TUTOR_TEXT);
+    expect(screen.queryByTestId("tutor-start-practice")).toBeNull();
   });
 });
