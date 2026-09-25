@@ -72,6 +72,29 @@ pnpm -s run build && pnpm test
 
 A task is open until: build passes, tests pass, no invariant violated, result reproducible. Passing CI is necessary, not sufficient.
 
+## A migration that replaces a function body orphans its mutations
+
+A mutation in `scripts/ci/*.mutations.sh` bites by editing the migration that *currently
+defines* a function. The moment a newer migration `CREATE OR REPLACE`s that function, every
+mutation still aimed at the old home edits a body the pipeline immediately overwrites — so the
+mutation applies cleanly, the suite passes, and the proof is gone. **Mutations fail silently
+upward: a dead mutation is indistinguishable from a passing one.**
+
+So: **a change that replaces a function body must re-point every mutation aimed at that
+function's previous home, in the same change** — and must show each re-pointed mutation still
+reddening its target test, because an anchor that no longer matches is a dead mutation too.
+
+Before adding or moving a function-body mutation, find the LAST migration defining that
+function — not the first, not the one the mutation names:
+
+```bash
+grep -ln 'FUNCTION public\.<name>' supabase/migrations/*.sql | sort | tail -1
+```
+
+This has now fired **six times** (M2, M9, M17, M31, M90–M93, M96) — twice in the change that
+prompted this rule, where six mutations stopped biting at once because that change's own
+migration superseded their targets. Owner ruling 2026-09-25: it belongs in the working rules.
+
 ## "Is it deployed?" — ask the catalog, never the ledger
 
 `schema_migrations` **stopped recording in June**. Migrations are applied out of band, so the
@@ -138,6 +161,24 @@ When opening a PR, set its base to the integration branch that matches the scope
 ## Unified code across agents & sessions
 
 Multiple subagents and parallel sessions work this repo. They must produce **one coherent codebase**, not several divergent ones. Before writing a helper, type, schema, pattern, or constant: **search for an existing canonical one and consume it** — never fork a second version. Shared primitives (`packages/shared` schemas/types, DB utilities, the logger, identity helpers) are single-source-of-truth; extend the canonical definition, don't duplicate it. Foundations land before the work that depends on them. When integrating parallel work, verify it reuses existing primitives and follows established patterns rather than introducing a parallel approach. Divergence and duplication are defects, even when no two edits touch the same line.
+
+**Never re-declare inline a shape a canonical type already describes.** A hand-rolled
+`{ id: string; role?: string }` for a value that has a canonical type does not merely duplicate
+it — it *narrows* it, and the fields it drops become invisible to everyone reading that scope.
+The author then reaches for the nearest field that compiles. This is not a style preference; it
+is how a silent data defect gets written:
+
+> `server/routes/diagnostic-routes.ts` declared `user` as `{ id: string; role?: string }`.
+> `SupabaseUser` carries `actor_id: string`. With no `actor_id` in scope, the author wrote
+> `const actorId = userId` — the pseudonymous grouping key set to the identity key it exists to
+> survive. 205 production rows, weeks green, three guards blind to it. `review-canonical.ts`
+> did the same with `{ id?: string; actor_id?: string }`, making the field optional and
+> inviting `?? studentId`. (Learned 2026-09-25: SCL-151, #894.)
+
+Import the canonical type (`SupabaseUser` from `server/middleware/supabase-auth.ts` for the
+authenticated user) and, where a required field is somehow absent, **fail closed** — a 500 beats
+substituting a plausible value, because writing the wrong value *is* the defect. Watch for this
+anywhere a route, service, or handler re-states a shape the canonical type already has.
 
 ## Plan before implementing
 
