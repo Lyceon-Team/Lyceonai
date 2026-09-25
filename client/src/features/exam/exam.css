@@ -1,0 +1,34 @@
+/*
+ * Exam shell tokens (E7b). Values from the Lyceon_Exam_Shell design artboards.
+ * Scoped to .exam-root so nothing outside the exam changes.
+ * Contrast: --exam-muted #5F5B53 on #FFFFFF is 6.6:1; on --exam-bg 6.1:1 (AA body text).
+ */
+.exam-root {
+  --exam-bg: #f7f6f3;
+  --exam-surface: #ffffff;
+  --exam-ink: #191815;
+  --exam-muted: #5f5b53;
+  --exam-line: #ddd9d1;
+  --exam-line-strong: #b9b4aa;
+  --exam-accent: #1b4b8f;
+  --exam-accent-hover: #12356a;
+  --exam-accent-soft: #e8eef7;
+  --exam-marked: #a65a0b;
+  --exam-highlight: #fde68a;
+  background: var(--exam-bg);
+  color: var(--exam-ink);
+}
+
+.exam-root .exam-focus:focus-visible,
+.exam-root button:focus-visible,
+.exam-root a:focus-visible,
+.exam-root input:focus-visible {
+  outline: 3px solid var(--exam-accent);
+  outline-offset: 2px;
+}
+
+/* MathRenderer renders a block <div>; inside a passage line a formula stays inline and whole. */
+.exam-root .exam-inline-math .math-renderer,
+.exam-root .exam-inline-math .math-renderer > div {
+  display: inline !important;
+}
