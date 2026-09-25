@@ -152,6 +152,15 @@ jobs:
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
 
+      # E7b: the exam e2e harness stubs auth to one student. It must be unreachable
+      # from production: nothing outside tests/ names it, the bundle built above
+      # carries none of its markers, and it refuses NODE_ENV=production.
+      - name: Exam e2e harness is unreachable from the production build (E7b)
+        run: bash scripts/ci/exam-harness-isolation.sh
+
+      - name: Exam e2e harness isolation self-test (proves each rule turns it red)
+        run: bash scripts/ci/exam-harness-isolation.selftest.sh
+
       - name: No hardcoded constants (Lane-A gate — DB is source of truth)
         run: node scripts/ci/no-hardcoded-constants.mjs
 
