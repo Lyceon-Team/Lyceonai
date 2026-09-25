@@ -9,7 +9,13 @@ import {
   it,
   vi,
 } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   PRACTICE_ENGINE_CONFIG,
   REVIEW_ENGINE_CONFIG,
@@ -20,6 +26,8 @@ import CanonicalPracticePage, {
   DESMOS_HOST_MIN_PX,
   QUESTION_MIN_PX,
   SPLIT_BREAKPOINT,
+  THREE_PANEL_BREAKPOINT,
+  TUTOR_PANEL_PX,
 } from "./CanonicalPracticePage";
 
 /* ── MockResizeObserver: no-op stub (DesmosCalculator uses ResizeObserver) ── */
@@ -98,7 +106,7 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
     sourceSurface: string;
     sessionItemId: string;
     questionLabel: string;
-    onClose: () => void;
+    onHide: () => void;
   }) => (
     <div
       data-testid="scoped-tutor-panel-mock"
@@ -106,8 +114,8 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
       data-item={p.sessionItemId}
       data-label={p.questionLabel}
     >
-      <button type="button" onClick={p.onClose}>
-        Close LISA
+      <button type="button" onClick={p.onHide}>
+        Hide LISA
       </button>
     </div>
   ),
@@ -1159,67 +1167,196 @@ describe("CanonicalPracticePage grid-in rendering", () => {
   });
 });
 
-describe("W4-1 — LISA beside the question", () => {
+/** matchMedia that answers `(min-width: Npx)` truthfully for a viewport width. */
+function mockViewport(width: number): void {
+  window.matchMedia = vi.fn((query: string) => {
+    const m = /min-width:\s*(\d+)px/.exec(query);
+    return {
+      matches: m ? width >= Number(m[1]) : false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+  }) as unknown as typeof window.matchMedia;
+}
+
+function renderReview(overrides: Record<string, unknown> = {}) {
+  hookMock.useCanonicalPractice.mockReturnValue(
+    buildHookState("M", {
+      sessionItemId: "rev-item-7",
+      currentIndex: 2,
+      totalQuestions: 10,
+      ...overrides,
+    }),
+  );
+  return render(
+    <CanonicalPracticePage
+      title="Review"
+      badgeLabel="Review"
+      section="M"
+      engine={REVIEW_ENGINE_CONFIG}
+    />,
+  );
+}
+
+describe("W4-4 — LISA always open in review, three panels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("review: Ask LISA opens the panel on the served item, naming the question; close hides it", () => {
-    hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("RW", {
-        sessionItemId: "rev-item-7",
-        currentIndex: 2,
-        totalQuestions: 10,
-      }),
-    );
-    render(
-      <CanonicalPracticePage
-        title="Review"
-        badgeLabel="Review"
-        section="RW"
-        engine={REVIEW_ENGINE_CONFIG}
-      />,
-    );
-
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
-    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
-
+  it("LISA is open on load with no interaction, on the served item, naming the question", () => {
+    mockViewport(1600);
+    renderReview();
     const panel = screen.getByTestId("scoped-tutor-panel-mock");
     expect(panel.getAttribute("data-surface")).toBe("review");
     expect(panel.getAttribute("data-item")).toBe("rev-item-7");
     expect(panel.getAttribute("data-label")).toBe("Question 3 / 10");
-
-    fireEvent.click(screen.getByRole("button", { name: "Close LISA" }));
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.getByTestId("practice-tutor-toggle").textContent).toContain(
+      "Hide LISA",
+    );
   });
 
-  it("review with no served item: no Ask LISA", () => {
-    hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("RW", { sessionItemId: null }),
+  it(`≥ ${THREE_PANEL_BREAKPOINT}px: question, calculator and LISA render together — Desmos opens beside LISA, not over it`, () => {
+    mockViewport(THREE_PANEL_BREAKPOINT);
+    renderReview();
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const calcPanel = screen.getByTestId("practice-calc-panel");
+    expect(within(calcPanel).getByTestId("desmos-mock").textContent).toBe(
+      "expanded",
     );
-    render(
+    // Question in the left panel of the same group as the calculator.
+    const group = screen.getByTestId("practice-panel-group-container");
+    expect(within(group).getByText("What is 1 + 1?")).toBeTruthy();
+    // LISA present and NOT covered.
+    const aside = screen.getByTestId("practice-tutor-aside");
+    expect(within(aside).getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(aside.className).not.toContain("invisible");
+    expect(aside.getAttribute("aria-hidden")).toBeNull();
+    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
+    // The calculator keeps its pixel floor; LISA keeps its column.
+    expect(calcPanel.style.minWidth).toBe(`${CALC_MIN_PX}px`);
+    expect(screen.getByTestId("review-tutor-column").style.width).toBe(
+      `${TUTOR_PANEL_PX}px`,
+    );
+  });
+
+  it("the three-panel breakpoint is exactly question + calculator + LISA + gutters", () => {
+    expect(THREE_PANEL_BREAKPOINT).toBe(1446);
+    expect(TUTOR_PANEL_PX).toBe(360);
+  });
+
+  it("1024–1445px: opening the calculator expands Desmos over LISA's column; LISA stays mounted underneath and returns when it closes", () => {
+    mockViewport(1280);
+    renderReview();
+    const toggle = screen.getByTestId("practice-calculator-toggle");
+    fireEvent.click(toggle);
+
+    const over = screen.getByTestId("review-calc-over-tutor");
+    expect(within(over).getByTestId("desmos-mock").textContent).toBe(
+      "expanded",
+    );
+    expect(screen.getByTestId("review-tutor-column").style.width).toBe(
+      `${CALC_MIN_PX}px`,
+    );
+    const aside = screen.getByTestId("practice-tutor-aside");
+    expect(aside.className).toContain("invisible");
+    // Covered, not closed: the panel (and its thread state) is still mounted.
+    expect(within(aside).getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
+    expect(screen.getByTestId("practice-tutor-aside").className).not.toContain(
+      "invisible",
+    );
+  });
+
+  it("below 1024px: one column — question, then LISA, then the calculator", () => {
+    mockViewport(390);
+    renderReview();
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const layout = screen.getByTestId("review-tutor-layout");
+    const question = within(layout).getByText("What is 1 + 1?");
+    const lisa = within(layout).getByTestId("scoped-tutor-panel-mock");
+    const calc = within(layout).getByTestId("stacked-calculator-container");
+    expect(
+      question.compareDocumentPosition(lisa) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      lisa.compareDocumentPosition(calc) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(calc).getByTestId("desmos-mock").textContent).toBe(
+      "expanded",
+    );
+  });
+
+  it("Hide LISA hides it for this question; it returns on the next", () => {
+    mockViewport(1600);
+    const view = renderReview();
+    // The panel's own control (the header toggle carries the same name).
+    fireEvent.click(
+      within(screen.getByTestId("scoped-tutor-panel-mock")).getByRole(
+        "button",
+        { name: "Hide LISA" },
+      ),
+    );
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.getByTestId("practice-tutor-toggle").textContent).toContain(
+      "Show LISA",
+    );
+
+    // Next question.
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        sessionItemId: "rev-item-8",
+        currentIndex: 3,
+        totalQuestions: 10,
+      }),
+    );
+    view.rerender(
       <CanonicalPracticePage
         title="Review"
         badgeLabel="Review"
-        section="RW"
+        section="M"
         engine={REVIEW_ENGINE_CONFIG}
       />,
     );
-    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+    const panel = screen.getByTestId("scoped-tutor-panel-mock");
+    expect(panel.getAttribute("data-item")).toBe("rev-item-8");
   });
 
-  it("practice: not yet — review first, practice after", () => {
+  it("the header toggle can bring LISA back on the same question", () => {
+    mockViewport(1600);
+    renderReview();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+  });
+
+  it("review with no served item: no LISA and no toggle", () => {
+    mockViewport(1600);
+    renderReview({ sessionItemId: null });
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+  });
+
+  it("practice is untouched: no LISA, no entry point, its own layout", () => {
+    mockViewport(1600);
     hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("RW", { sessionItemId: "prac-item-1" }),
+      buildHookState("M", { sessionItemId: "prac-item-1" }),
     );
     render(
       <CanonicalPracticePage
-        title="RW Practice"
-        badgeLabel="RW"
-        section="RW"
+        title="Math Practice"
+        badgeLabel="Math"
+        section="M"
         engine={PRACTICE_ENGINE_CONFIG}
       />,
     );
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.queryByTestId("review-tutor-layout")).toBeNull();
+    expect(screen.queryByText(/LISA/)).toBeNull();
   });
 });

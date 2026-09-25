@@ -25,6 +25,13 @@ import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// W4-4: LISA is open on every review question. This file proves the review
+// LOOP (anti-leak, URL resume, copy); the panel's own behaviour — no
+// conversation on load, the opener, the wire — is proven end to end in
+// ScopedTutorPanel.contract.test.tsx. Stubbed here so the loop is tested alone.
+vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
+  ScopedTutorPanel: () => <div data-testid="scoped-tutor-panel-stub" />,
+}));
 vi.mock("@/components/math/DesmosCalculator", () => ({
   default: () => <div data-testid="desmos-mock" />,
 }));
