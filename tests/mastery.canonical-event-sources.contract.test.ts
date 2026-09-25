@@ -5,34 +5,24 @@ import path from "node:path";
 /**
  * canonical_mastery_events source-branch shape assertion.
  *
- * @spec [Doc-05A_V1.0 §4.4 seam guard; Doc-04B mastery_outbox scoring contract]
- * @implemented [2026-08-16]
+ * @spec [Doc-05A_V1.0 §4.4 seam guard, §6.2; Doc-04B §16.1] | @implemented [2026-08-16]
+ * @updated [2026-09-25] E9 — the ruling this file was written to force has happened:
+ *   SCL-154 (04B §16.1 wins: no mastery emission from the scoring transaction; the
+ *   seams run from their own outbox event) and SCL-156 (the full-length arm reads
+ *   answered items of SUBMITTED sections through `full_length_answer_events`).
+ *   Updated in the SAME change that added the branch, as this header asked.
  *
- * plain English: `canonical_mastery_events` has exactly TWO source branches —
- * practice_session_items and review_error_attempts. It has no branch that can
- * produce `full_length_answer`, so the direct applyMasteryEvent call in
- * fullLengthExam.ts fails the §4.4 seam guard with MASTERY_EVENT_NOT_DERIVED on
- * 100% of full-length events, permanently and by construction. That is invisible
- * today only because no full-length exams have been submitted.
+ * plain English: `canonical_mastery_events` has exactly THREE source branches —
+ * practice_session_items, review_error_attempts, and the view
+ * full_length_answer_events. The third is the only way a `full_length_answer` event
+ * can be derived, and the view admits only answered items of submitted sections, so
+ * the §4.4 seam guard still refuses an event from an unsubmitted section or a blank.
+ * No application code emits `full_length_answer`: the only caller is the SQL seams
+ * function (exam_apply_scored_seams), never a route.
  *
- * WHY THIS TEST AND NOT A GUARD ON THE CALL SITE: a test asserting that
- * fullLengthExam.ts makes no applyMasteryEvent call would be RED on day one,
- * because the call exists. A permanently-red committed test is not shippable, and
- * removing the call is out of scope for this workstream (owner ruling, non-goals).
- *
- * WHAT THIS GUARDS INSTEAD: the risk is that someone "fixes" the full-length seam
- * by adding a full_length_answer branch to canonical_mastery_events. Doc 04B locks
- * a mastery_outbox-in-scoring-transaction contract for that path, which the direct
- * call appears to contradict; the missing branch is consistent with 05A never
- * having expected a direct caller. Both cannot be right. Adding the branch would
- * silently ratify whichever contract happens to be wrong.
- *
- * This test is GREEN today and turns RED the moment that branch appears, forcing
- * the 04B/05A ruling to happen BEFORE the code lands rather than after.
- *
- * expected outcome: green until the seam conflict is resolved in the spec cycle.
- * When it is resolved and a branch is legitimately added, update this test in the
- * SAME change — that is the point, not an inconvenience.
+ * What would turn it red: a fourth source; the exam branch reading a table directly
+ * (bypassing the view's gates); the view losing its submitted-section or not-blank
+ * filter; a TypeScript caller passing the kind.
  */
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -60,32 +50,48 @@ describe("canonical_mastery_events — source branch contract", () => {
     "CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid",
   );
 
-  it("draws from exactly two source tables", () => {
-    const practiceBranches = body.match(
-      /FROM\s+public\.practice_session_items\b/g,
-    );
-    const reviewBranches = body.match(
-      /FROM\s+public\.review_error_attempts\b/g,
-    );
-
-    expect(practiceBranches).toHaveLength(1);
-    expect(reviewBranches).toHaveLength(1);
-
-    // Exactly one UNION joining exactly those two branches.
-    const unions = body.match(/\bUNION\s+ALL\b/g) ?? [];
-    expect(unions).toHaveLength(1);
+  it("draws from exactly three sources", () => {
+    expect(body.match(/FROM\s+public\.practice_session_items\b/g)).toHaveLength(1);
+    expect(body.match(/FROM\s+public\.review_error_attempts\b/g)).toHaveLength(1);
+    expect(body.match(/FROM\s+public\.full_length_answer_events\b/g)).toHaveLength(1);
+    // Exactly two UNIONs joining exactly those three branches.
+    expect(body.match(/\bUNION\s+ALL\b/g) ?? []).toHaveLength(2);
   });
 
-  it("has no branch that can derive full_length_answer", () => {
-    expect(body).not.toContain("full_length_answer");
-    expect(body).not.toMatch(/FROM\s+public\.full_length_exam/);
+  it("derives full_length_answer only through the gated view", () => {
+    // The exam branch never reads the answer tables directly.
+    expect(body).not.toMatch(/FROM\s+public\.test_session_answers/);
+    const viewStart = schema.indexOf("CREATE VIEW public.full_length_answer_events");
+    expect(viewStart).toBeGreaterThan(-1);
+    const view = schema.slice(viewStart, schema.indexOf(";", viewStart));
+    expect(view).toMatch(/security_invoker/);
+    expect(view).toContain("'full_length_answer'::text");
+    expect(view).toMatch(/sec\.state\s*=\s*'submitted'/); // submitted sections only
+    expect(view).toMatch(/a\.answer\s+IS\s+NOT\s+NULL/); // a blank is not an event
   });
 
-  it("still recognises full_length_answer as a valid apply_mastery_event kind", () => {
-    // The asymmetry IS the defect, and this asserts it is still present rather
-    // than having been silently resolved in one direction. apply_mastery_event
-    // accepts the kind; canonical_mastery_events cannot derive it; the §4.4 guard
-    // therefore rejects every full-length event.
+  it("no application code emits full_length_answer (the SQL seams are the only caller)", () => {
+    const hits: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const f = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules") walk(f);
+        } else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) {
+          const src = fs.readFileSync(f, "utf8");
+          if (src.includes('"full_length_answer"') && !f.endsWith(path.join("services", "mastery-write.ts"))) {
+            hits.push(path.relative(repoRoot, f));
+          }
+        }
+      }
+    };
+    for (const d of ["server", "apps/api/src", "client/src"]) walk(path.join(repoRoot, d));
+    expect(hits).toEqual([]);
+  });
+
+  it("apply_mastery_event still accepts the kind and still guards derivation", () => {
+    // The §4.4 guard is what makes the view's gates binding: an event the view
+    // cannot produce is refused with MASTERY_EVENT_NOT_DERIVED.
     const applyBody = extractFunctionBody(
       schema,
       "CREATE FUNCTION public.apply_mastery_event(p_student_id uuid",
