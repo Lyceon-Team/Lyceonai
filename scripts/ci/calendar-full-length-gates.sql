@@ -296,10 +296,14 @@ DECLARE
   sid uuid := (SELECT id FROM public.test_sessions WHERE student_id = W AND state = 'completed');
 BEGIN
   BEGIN
+    -- A QUEUE session whose `filters` still name the exam: review_sessions.filters has carried
+    -- stale keys before (review-canonical.ts: "Rows created before this change keep the stale
+    -- key"). The `mode` COLUMN is the authority, so this must NOT count.
     INSERT INTO public.review_sessions (student_id, actor_id, status, mode, filters, target_count, platform, completed_at)
-    VALUES (W, W, 'completed', 'queue', '{}', 5, 'web', now());
+    VALUES (W, W, 'completed', 'queue',
+            jsonb_build_object('source_engine', 'full_length', 'source_session_id', sid::text), 5, 'web', now());
     IF pg_temp.input(W) #> '{exams,reviewed}' <> 'false'::jsonb THEN
-      PERFORM pg_temp.fail('FL8', 'a completed QUEUE review marked the exam reviewed');
+      PERFORM pg_temp.fail('FL8', 'a completed QUEUE review (even one whose filters name the exam) marked the exam reviewed');
     END IF;
     INSERT INTO public.review_sessions (student_id, actor_id, status, mode, filters, target_count, platform, completed_at)
     VALUES (W, W, 'completed', 'session',
