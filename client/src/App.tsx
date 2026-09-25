@@ -27,6 +27,40 @@ const AccountRecover = lazy(() => import("@/pages/account-recover"));
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const Chat = lazy(() => import("@/pages/chat"));
 const Practice = lazy(() => import("@/pages/practice"));
+// Full-length exam shell (E7b). Wrappers are module-scope components, not inline
+// arrows, so a re-render of the Switch never remounts a running module.
+const TestsHomePage = lazy(() => import("@/features/exam/pages/TestsHomePage"));
+const ExamSessionPage = lazy(() => import("@/features/exam/pages/ExamSessionPage"));
+const ExamModulePage = lazy(() => import("@/features/exam/pages/ExamModulePage"));
+const ExamReportPage = lazy(() => import("@/features/exam/pages/ExamReportPage"));
+function TestsHomeRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <TestsHomePage />
+    </RequireRole>
+  );
+}
+function ExamSessionRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamSessionPage />
+    </RequireRole>
+  );
+}
+function ExamModuleRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamModulePage />
+    </RequireRole>
+  );
+}
+function ExamReportRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamReportPage />
+    </RequireRole>
+  );
+}
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
 const Calendar = lazy(() => import("@/pages/calendar"));
@@ -164,6 +198,11 @@ function Router() {
             </RequireRole>
           )}
         />
+        {/* Full-length exams (Doc 04A §16, Doc 04C §16.1) — E7b. */}
+        <Route path="/tests" component={TestsHomeRoute} />
+        <Route path="/tests/:sessionId/report" component={ExamReportRoute} />
+        <Route path="/tests/:sessionId/:section/:module" component={ExamModuleRoute} />
+        <Route path="/tests/:sessionId" component={ExamSessionRoute} />
         {/* Doc 05F §17.1 — the student's own calendar. */}
         <Route
           path="/calendar"
