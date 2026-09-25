@@ -101,6 +101,105 @@ $$;
 
 
 --
+-- Name: actor_id_integrity_violations(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.actor_id_integrity_violations() RETURNS TABLE(viol_table text, viol_identity_column text, viol_kind text, viol_rows bigint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  r       record;
+  v_idcol text;
+  v_n     bigint;
+BEGIN
+  -- (0) profiles itself: actor_id must never BE the primary key it is meant to replace.
+  SELECT count(*) INTO v_n FROM public.profiles p WHERE p.actor_id = p.id;
+  IF v_n > 0 THEN
+    viol_table := 'profiles'; viol_identity_column := 'id';
+    viol_kind  := 'actor_id equals the profile''s own id — the grouping identifier IS the identity key';
+    viol_rows  := v_n; RETURN NEXT;
+  END IF;
+
+  FOR r IN
+    SELECT c.relname AS tbl,
+           (SELECT a2.attname
+              FROM pg_attribute a2
+             WHERE a2.attrelid = c.oid AND a2.attnum > 0 AND NOT a2.attisdropped
+               AND a2.attname IN ('user_id', 'student_id')
+             ORDER BY a2.attname LIMIT 1) AS idcol
+      FROM pg_attribute a
+      JOIN pg_class     c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind = 'r'
+       AND NOT c.relispartition
+       AND a.attname = 'actor_id'
+       AND a.attnum > 0 AND NOT a.attisdropped
+       AND c.relname NOT IN ('profiles', 'anonymized_actors')
+     ORDER BY c.relname
+  LOOP
+    CONTINUE WHEN r.idcol IS NULL;   -- no identity column: nothing to compare against
+    v_idcol := r.idcol;
+
+    -- (a) the original nullity check, kept: a retained row with identity present and no
+    --     grouping identifier cannot be anonymized at all (INV-05E-07 as it always was).
+    EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NOT NULL AND actor_id IS NULL',
+                   r.tbl, v_idcol) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'identity present but actor_id IS NULL';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (b) THE DEFECT: actor_id equals the row's own identity value.
+    -- all-positional: format() refuses a mix of %I and %1$I in one string
+    EXECUTE format('SELECT count(*) FROM public.%1$I WHERE %2$I IS NOT NULL AND actor_id = %2$I',
+                   r.tbl, v_idcol) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id equals the row''s own identity value';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (c) the general form of (b): actor_id is SOME profile's primary key. Catches a row
+    --     pointing at a third party's identity key, which (b) cannot see.
+    EXECUTE format('SELECT count(*) FROM public.%I t WHERE EXISTS '
+                   '(SELECT 1 FROM public.profiles p WHERE p.id = t.actor_id)', r.tbl) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id is a profiles.id — an identity key used as a grouping identifier';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (d) actor_id resolves to no known actor. A live row's actor must exist in `profiles`; an
+    --     orphaned row's actor must appear in `anonymized_actors`, which is the only surviving
+    --     statement that the actor was anonymized. Neither means the value was invented.
+    EXECUTE format(
+      'SELECT count(*) FROM public.%I t WHERE t.actor_id IS NOT NULL '
+      'AND NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.actor_id = t.actor_id) '
+      'AND NOT EXISTS (SELECT 1 FROM public.anonymized_actors l WHERE l.actor_id = t.actor_id)',
+      r.tbl) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id matches no profiles.actor_id and no anonymized_actors row';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+  END LOOP;
+
+  RETURN;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION actor_id_integrity_violations(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.actor_id_integrity_violations() IS 'Doc 05E §6 INV-05E-07, strengthened per owner brief 2026-09-25 R2 and SCL-151. Catalog-driven: covers every public base table carrying an actor_id column plus an identity column, including tables added after this migration, with no list to edit. Four violation classes: NULL actor_id with identity present; actor_id equal to the row''s own identity; actor_id equal to any profiles.id; actor_id resolving to neither a live profile nor an anonymized_actors row. Zero rows = pass. The predecessor checked only nullity, which is why two write paths set actor_id to the profile id undetected until the Doc 06D §6.3 scan found it on a real deletion.';
+
+
+--
 -- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3674,7 +3773,7 @@ BEGIN
     v_stripped := v_stripped + COALESCE((v_strip ->> 'rows')::bigint, 0);
   END LOOP;
 
-  -- @spec [Doc 06D §6.2 / §6.3 / §6.5 INV-06-08; SCL-091, SCL-100, SCL-119 (PROPOSED);
+  -- @spec [Doc 06D §6.2 / §6.3 / §6.5 INV-06-08; SCL-091, SCL-100, SCL-153 (PROPOSED);
   -- owner brief 2026-09-23] | @implemented [2026-09-23]
   --
   -- THE EXECUTABLE PROOF. One verification record per deletion completed by THIS call, written
@@ -3705,9 +3804,9 @@ BEGIN
        AND (v_layers -> 'lisa'     ->> 'verified') = 'true'
       THEN 'pass' ELSE 'fail'
     END;
-    PERFORM public.record_deletion_verification(
-      v_comp.log_id, v_layers, v_outcome, v_comp.profile_id
-    );
+    -- profile_id is still READ (the scan needs it, and the audit strip above uses it) and is
+    -- still never STORED — that is the whole point of the carve-out's removal.
+    PERFORM public.record_deletion_verification(v_comp.log_id, v_layers, v_outcome);
     v_verified := v_verified + 1;
   END LOOP;
 
@@ -6678,31 +6777,68 @@ BEGIN
     -- this cannot fire under normal operation. But INV-05E-07 requires
     -- explicit verification before the identity ↔ actor_id linkage is
     -- destroyed. Runs BEFORE SET NULL so identity col is still queryable.
+    -- @spec [Doc 05E §6 INV-05E-07, strengthened; SCL-151 (PROPOSED); owner brief 2026-09-25 R2]
+    -- | @implemented [2026-09-25]
+    --
+    -- WAS: an enumerated seven-table list asking only `actor_id IS NULL`. Both halves failed.
+    -- The list could not cover a table added later, and the nullity question cannot see a
+    -- WRONG value — which is exactly what `diagnostic-routes.ts` wrote for five production
+    -- sessions and 200 items, undetected until the Doc 06D §6.3 scan ran on a real deletion.
+    --
+    -- IS: catalog-driven, and it checks the VALUE. Every retained row keyed to this profile
+    -- must carry THIS PROFILE'S actor_id — the one already read into v_actor_id above, from
+    -- `profiles`, before the identity link is destroyed. That single equality subsumes the old
+    -- check (NULL <> v_actor_id) and forbids the identity key (p_profile_id <> v_actor_id,
+    -- guaranteed because no profile may have id = actor_id, which
+    -- public.actor_id_integrity_violations() asserts schema-wide).
+    --
+    -- Still fail-closed and still HERE, before the SET NULLs: after identity is severed there
+    -- is no column left to key the check on.
     DECLARE
-      v_sentinel_tbl text;
+      v_sentinel_rec record;
       v_sentinel_col text;
       v_sentinel_cnt bigint;
+      v_sentinel_tbls integer := 0;
     BEGIN
-      FOR v_sentinel_tbl, v_sentinel_col IN VALUES
-        ('practice_sessions',                'user_id'),
-        ('practice_session_items',           'user_id'),
-        ('review_sessions',                  'student_id'),
-        ('review_session_items',             'student_id'),
-        ('review_error_attempts',            'student_id'),
-        ('mastery_event_audit_log',          'student_id'),
-        ('mastery_domain_refresh_audit_log', 'student_id'),
-        ('test_sessions',                    'student_id'),   -- E6b (SCL-143)
-        ('score_runs',                       'student_id')    -- E6b (SCL-143)
+      FOR v_sentinel_rec IN
+        SELECT c.relname AS tbl,
+               (SELECT a2.attname
+                  FROM pg_attribute a2
+                 WHERE a2.attrelid = c.oid AND a2.attnum > 0 AND NOT a2.attisdropped
+                   AND a2.attname IN ('user_id', 'student_id')
+                 ORDER BY a2.attname LIMIT 1) AS idcol
+          FROM pg_attribute a
+          JOIN pg_class     c ON c.oid = a.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relkind = 'r'
+           AND NOT c.relispartition
+           AND a.attname = 'actor_id'
+           AND a.attnum > 0 AND NOT a.attisdropped
+           AND c.relname NOT IN ('profiles', 'anonymized_actors')
+         ORDER BY c.relname
       LOOP
+        CONTINUE WHEN v_sentinel_rec.idcol IS NULL;
+        v_sentinel_col  := v_sentinel_rec.idcol;
+        v_sentinel_tbls := v_sentinel_tbls + 1;
+
         EXECUTE format(
-          'SELECT count(*) FROM public.%I WHERE %I = $1 AND actor_id IS NULL',
-          v_sentinel_tbl, v_sentinel_col
-        ) INTO v_sentinel_cnt USING p_profile_id;
+          'SELECT count(*) FROM public.%1$I WHERE %2$I = $1 '
+          'AND (actor_id IS NULL OR actor_id <> $2)',
+          v_sentinel_rec.tbl, v_sentinel_col
+        ) INTO v_sentinel_cnt USING p_profile_id, v_actor_id;
+
         IF v_sentinel_cnt > 0 THEN
-          RAISE EXCEPTION '05E-5d SENTINEL (INV-05E-07): % row(s) in public.% have identity present but actor_id IS NULL — refusing to sever identity from ungrouped row',
-            v_sentinel_cnt, v_sentinel_tbl;
+          RAISE EXCEPTION '05E-5d SENTINEL (INV-05E-07): % row(s) in public.% carry an actor_id that is not this profile''s (expected %) — refusing to sever identity from a row whose grouping identifier is wrong or absent. See public.actor_id_integrity_violations().',
+            v_sentinel_cnt, v_sentinel_rec.tbl, v_actor_id;
         END IF;
       END LOOP;
+
+      -- A sentinel that inspected nothing would pass silently, which is how a vacuous gate
+      -- reads green. The seven tables the old list named are the floor.
+      IF v_sentinel_tbls < 7 THEN
+        RAISE EXCEPTION '05E-5d SENTINEL: discovered only % actor_id table(s); the catalog query is wrong and the check would pass vacuously', v_sentinel_tbls;
+      END IF;
     END;
 
     -- ====================================================================
@@ -7991,7 +8127,7 @@ BEGIN
     INTO v_ids, v_completed
     FROM done d;
 
-  -- @spec [Doc 06D §6.2 / §6.5 INV-06-08; SCL-119 (PROPOSED); owner brief 2026-09-23]
+  -- @spec [Doc 06D §6.2 / §6.5 INV-06-08; SCL-153 (PROPOSED); owner brief 2026-09-23]
   --
   -- A row the reconciler completes is one whose cascade COMMITTED but whose T3 never ran, so
   -- the scan in `complete_deletion_log` never happened for it. It cannot be run now: PS-5 of
@@ -8028,7 +8164,7 @@ BEGIN
       CONTINUE WHEN EXISTS (
         SELECT 1 FROM public.deletion_verification_records v WHERE v.log_id = v_id
       );
-      PERFORM public.record_deletion_verification(v_id, v_unverifiable, 'fail', NULL);
+      PERFORM public.record_deletion_verification(v_id, v_unverifiable, 'fail');
     END LOOP;
   END IF;
 
@@ -8066,10 +8202,10 @@ $$;
 
 
 --
--- Name: record_deletion_verification(uuid, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: record_deletion_verification(uuid, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid DEFAULT NULL::uuid) RETURNS uuid
+CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -8094,8 +8230,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  -- §6.3: all four documented layers, always. A record that silently omits a layer is the
-  -- shape audit P21 exists to catch, and it is cheaper to refuse it than to reconcile it.
+  -- §6.3: all four documented layers, always.
   FOREACH v_layer IN ARRAY ARRAY['identity', 'mastery', 'lisa', 'analytics'] LOOP
     IF jsonb_typeof(p_layers_verified -> v_layer) IS DISTINCT FROM 'object' THEN
       RAISE EXCEPTION 'record_deletion_verification: layers_verified has no % layer object — Doc 06D §6.3 requires all four (identity, mastery, lisa, analytics)', v_layer
@@ -8115,21 +8250,20 @@ BEGIN
     END LOOP;
   END IF;
 
+  -- Three lines, not four. The dropped fourth line was COALESCE(p_deleted_profile_id::text,'').
   v_canonical := p_log_id::text
               || E'\n' || p_outcome
-              || E'\n' || p_layers_verified::text
-              || E'\n' || COALESCE(p_deleted_profile_id::text, '');
+              || E'\n' || p_layers_verified::text;
   v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');
 
   INSERT INTO public.deletion_verification_records
-    (log_id, verification_outcome, layers_verified, proof_manifest_ref, deleted_profile_id)
+    (log_id, verification_outcome, layers_verified, proof_manifest_ref)
   VALUES
-    (p_log_id, p_outcome, p_layers_verified, v_hash, p_deleted_profile_id)
+    (p_log_id, p_outcome, p_layers_verified, v_hash)
   ON CONFLICT (log_id) DO UPDATE
     SET verification_outcome = EXCLUDED.verification_outcome,
         layers_verified      = EXCLUDED.layers_verified,
-        proof_manifest_ref   = EXCLUDED.proof_manifest_ref,
-        deleted_profile_id   = EXCLUDED.deleted_profile_id;
+        proof_manifest_ref   = EXCLUDED.proof_manifest_ref;
 
   RETURN p_log_id;
 END;
@@ -8137,10 +8271,10 @@ $$;
 
 
 --
--- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: COMMENT; Schema: public; Owner: -
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail) — there is no in_progress state because verification runs inside T3. Validates the §6.3 four-layer shape and refuses a pass whose in-scope layers are not verified, which makes §6.5 failure-condition (d) unreachable rather than merely alarmed. proof_manifest_ref is a SHA-256 over the canonical record per owner ruling B3; the manifest IS the record. Called by public.complete_deletion_log (T3) and public.reconcile_deletion_log; direct writes from application code are a defect.';
+COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail); there is no in_progress state because verification runs inside T3. Validates the §6.3 four-layer shape and refuses a pass whose in-scope layers are not verified, making §6.5 (d) unreachable. proof_manifest_ref is a SHA-256 over the canonical record (log_id, outcome, layers) per owner ruling B3. The deleted_profile_id parameter was removed 2026-09-25 (SCL-152) with the column. Called by public.complete_deletion_log (T3) and public.reconcile_deletion_log.';
 
 
 --
@@ -10448,7 +10582,7 @@ DECLARE
     'SELECT EXISTS (SELECT 1 FROM public.<table> WHERE <uuid column> = <deleted_profile_id>) '
     'for every uuid column of every base table in schema public '
     '(pg_attribute JOIN pg_class, relkind IN (''r'',''p''), NOT relispartition), '
-    'excluding deletion_verification_records.deleted_profile_id';
+    'with NO exclusions — the deleted_profile_id carve-out was dropped 2026-09-25 (SCL-152)';
 BEGIN
   IF p_profile_id IS NULL THEN
     RAISE EXCEPTION 'verify_deletion_layers: p_profile_id is required' USING ERRCODE = '22023';
@@ -10468,7 +10602,6 @@ BEGIN
        AND a.attnum > 0
        AND NOT a.attisdropped
        AND a.atttypid = 'uuid'::regtype
-       AND NOT (c.relname = 'deletion_verification_records' AND a.attname = 'deleted_profile_id')
      ORDER BY c.relname, a.attname
   LOOP
     v_layer := CASE
@@ -11386,7 +11519,6 @@ CREATE TABLE public.deletion_verification_records (
     verification_outcome text NOT NULL,
     layers_verified jsonb NOT NULL,
     proof_manifest_ref text NOT NULL,
-    deleted_profile_id uuid,
     CONSTRAINT deletion_verification_records_verification_outcome_check CHECK ((verification_outcome = ANY (ARRAY['pass'::text, 'fail'::text])))
 );
 
@@ -11395,7 +11527,7 @@ CREATE TABLE public.deletion_verification_records (
 -- Name: TABLE deletion_verification_records; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4 (the account_deletion_requests row it originally keyed on is deleted by the cascade at PS-5 and cannot be the correlation surface). Evidence side: no timestamp column, no uuid but log_id and the deliberate deleted_profile_id carve-out. Written terminal inside T3 by public.record_deletion_verification; direct writes are a defect.';
+COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4. Evidence side: no timestamp column and NO uuid but log_id. The deleted_profile_id carve-out SCL-100 granted was dropped 2026-09-25 (SCL-152) after production showed 41 retained rows carrying the deleted profile uuid in actor_id, which made the column a live join from the evidence side to the pseudonymous side. Absence is proven by public.verify_deletion_layers sweeping the catalog inside T3, which is what found that. Written terminal by public.record_deletion_verification; direct writes are a defect.';
 
 
 --
@@ -18625,6 +18757,14 @@ GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid,
 
 
 --
+-- Name: FUNCTION actor_id_integrity_violations(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.actor_id_integrity_violations() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.actor_id_integrity_violations() TO service_role;
+
+
+--
 -- Name: FUNCTION apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -19751,11 +19891,11 @@ GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, 
 
 
 --
--- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) TO service_role;
 
 
 --

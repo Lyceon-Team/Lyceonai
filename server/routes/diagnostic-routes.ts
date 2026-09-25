@@ -19,6 +19,7 @@ import { z } from "zod";
 import * as crypto from "node:crypto";
 import { logger } from "../logger";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import type { SupabaseUser } from "../middleware/supabase-auth";
 import {
   mapGenesisQuestionRow,
   isCanonicalRuntimeQuestion,
@@ -67,8 +68,14 @@ router.post("/sessions", async (req: Request, res: Response) => {
   const requestId = (req as Record<string, unknown>).requestId as
     | string
     | undefined;
+  // `SupabaseUser` (server/middleware/supabase-auth.ts) rather than a hand-rolled shape, and
+  // the difference is the defect this fixes: the inline `{ id: string; role?: string }` that
+  // used to be here NARROWED `actor_id` AWAY, so the only identifier in scope was the profile
+  // id and `const actorId = userId` looked like the only option. The canonical type carries
+  // `actor_id`; consuming it is what CLAUDE.md's single-source-of-truth rule asks for, and it
+  // makes the wrong value unreachable instead of merely discouraged.
   const user = (req as Record<string, unknown>).user as
-    | { id: string; role?: string }
+    | SupabaseUser
     | undefined;
   const userId = user?.id;
 
@@ -304,7 +311,33 @@ router.post("/sessions", async (req: Request, res: Response) => {
   // 9. Create session
   const sessionId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const actorId = userId;
+
+  // @spec [Doc 05E §3 Rule 4, §6 INV-05E-06 (actor_id is the SYNTHETIC grouping identifier);
+  // owner brief 2026-09-25 R2] | @implemented [2026-09-25]
+  //
+  // Read from the profile, never derived from the identity. `actor_id = userId` made the
+  // grouping identifier EQUAL to the identity key, so anonymization had nothing to sever: the
+  // retained row still carried the uuid that was the person's primary key, and
+  // `anonymized_actors` recorded a different actor that no row grouped under. Five production
+  // diagnostic sessions and 200 items were written that way before `verify_deletion_layers`
+  // found it on the 2026-09-23 deletion.
+  //
+  // FAILS CLOSED. A missing actor_id is a 500, not a fallback: writing a wrong one is the
+  // defect, and `?? userId` is how the same bug reached review-canonical.ts.
+  const actorId = user?.actor_id;
+  if (!actorId) {
+    logger.error(
+      "DIAGNOSTIC",
+      "actor_id_missing",
+      "Authenticated user carries no actor_id; refusing to write activity rows",
+      { userId, requestId },
+    );
+    return res.status(500).json({
+      error: "actor_id_unavailable",
+      message: "Could not resolve the grouping identifier for this session.",
+      requestId,
+    });
+  }
 
   const sessionMetadata: Record<string, unknown> = {
     session_start_idempotency_key: idempotency_key ?? null,
