@@ -253,6 +253,7 @@ type ReplayMessageRow = {
   message: string;
   source_session_item_id: string | null;
   created_at: string;
+  client_turn_id: string | null;
 };
 
 /**
@@ -271,7 +272,7 @@ async function loadMessagesForReplay(
   let query = supabaseServer
     .from("tutor_messages")
     .select(
-      "id, role, content_kind, message, source_session_item_id, created_at",
+      "id, role, content_kind, message, source_session_item_id, created_at, client_turn_id",
     )
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
@@ -2072,6 +2073,7 @@ router.get(
             content_kind: row.content_kind,
             message: row.message,
             created_at: row.created_at,
+            client_turn_id: row.client_turn_id,
           });
           continue;
         }
@@ -2106,6 +2108,7 @@ router.get(
           content_kind: row.content_kind,
           message: rowSerialized.content,
           created_at: row.created_at,
+          client_turn_id: row.client_turn_id,
         });
       }
 

@@ -107,6 +107,10 @@ export const conversationDetailMessageSchema = z.object({
   content_kind: z.string(),
   message: z.string(),
   created_at: z.string(),
+  // W2-10: the key the chat page reconciles its optimistic student bubble
+  // against. Null for rows written without one (tutor/system replies carry
+  // the turn's id too; legacy rows may not).
+  client_turn_id: z.string().nullable(),
 });
 export type ConversationDetailMessage = z.infer<
   typeof conversationDetailMessageSchema

@@ -191,11 +191,20 @@ function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
 // MessageBubble
 // ---------------------------------------------------------------------------
 
-function MessageBubble({ message }: { message: TutorMessage }) {
+function MessageBubble({
+  message,
+  pending = false,
+}: {
+  message: TutorMessage;
+  pending?: boolean;
+}) {
   const isStudent = message.role === "student";
   return (
     <div
       className={`flex gap-3 ${isStudent ? "justify-end" : "justify-start"}`}
+      data-testid={isStudent ? "student-bubble" : "tutor-bubble"}
+      data-client-turn-id={message.client_turn_id ?? undefined}
+      data-pending={pending ? "true" : undefined}
     >
       {!isStudent && <LisaAvatar />}
       <div
@@ -677,6 +686,17 @@ export default function ChatPage() {
 
   const [draft, setDraft] = useState("");
   const [turnState, setTurnState] = useState<TurnState>({ kind: "idle" });
+  // W2-10: the student's message as sent, shown at once — the thread itself
+  // renders from the conversation query, which refetches only after the turn
+  // resolves. Keyed by client_turn_id, the key the server persists: a retry
+  // reuses the id (same bubble, never a second one), and the bubble yields to
+  // the persisted row the moment the refetched thread carries that id. It is
+  // never cleared on failure — the text stays on screen above FailedTurn.
+  const [optimisticTurn, setOptimisticTurn] = useState<{
+    clientTurnId: string;
+    text: string;
+    sentAt: string;
+  } | null>(null);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dismissedPremium, setDismissedPremium] = useState(false);
@@ -688,9 +708,28 @@ export default function ChatPage() {
   const messages = conversationDetail?.messages ?? [];
   const conversation = conversationDetail?.conversation;
 
+  // Shown until the persisted student row with the same client_turn_id is in
+  // the thread — derived, not synced, so there is no frame where neither is.
+  const optimisticMessage: TutorMessage | null =
+    optimisticTurn !== null &&
+    !messages.some(
+      (m) =>
+        m.role === "student" &&
+        m.client_turn_id === optimisticTurn.clientTurnId,
+    )
+      ? {
+          message_id: `optimistic-${optimisticTurn.clientTurnId}`,
+          role: "student",
+          content_kind: "message",
+          message: optimisticTurn.text,
+          created_at: optimisticTurn.sentAt,
+          client_turn_id: optimisticTurn.clientTurnId,
+        }
+      : null;
+
   const isPaused = !!conversation?.crisis_paused_at;
   const isEnded = conversation?.status === "ended";
-  const hasMessages = messages.length > 0;
+  const hasMessages = messages.length > 0 || optimisticMessage !== null;
 
   // Crisis state detection — from the conversation detail or from the last
   // send response. The server sets crisis_paused_at; the client reads it.
@@ -714,7 +753,8 @@ export default function ChatPage() {
 
   // Scroll management
   const scrollTrigger =
-    messages.length * 2 + (turnState.kind === "thinking" ? 1 : 0);
+    (messages.length + (optimisticMessage ? 1 : 0)) * 2 +
+    (turnState.kind === "thinking" ? 1 : 0);
   useScrollToBottomOnChange(scrollAnchorRef, scrollTrigger);
 
   // Premium entitlement check
@@ -747,6 +787,7 @@ export default function ChatPage() {
     (id: string) => {
       setLocation(`/chat?conversationId=${encodeURIComponent(id)}`);
       setTurnState({ kind: "idle" });
+      setOptimisticTurn(null);
       setDraft("");
       setCrisisLane(null);
       setCrisisContent("");
@@ -784,6 +825,12 @@ export default function ChatPage() {
           : crypto.randomUUID();
 
       setTurnState({ kind: "thinking", clientTurnId });
+      // Same id on retry → the same bubble, updated in place.
+      setOptimisticTurn({
+        clientTurnId,
+        text: trimmed,
+        sentAt: new Date().toISOString(),
+      });
       setDraft("");
       sendMessageMutation.reset();
 
@@ -1092,6 +1139,16 @@ export default function ChatPage() {
             messages.map((message) => (
               <MessageBubble key={message.message_id} message={message} />
             ))}
+
+          {/* The student's just-sent message, before the thread refetches
+              (W2-10). Thinking and FailedTurn render below it. */}
+          {!isLoading && optimisticMessage && (
+            <MessageBubble
+              key={optimisticMessage.message_id}
+              message={optimisticMessage}
+              pending
+            />
+          )}
 
           {/* Thinking indicator */}
           {turnState.kind === "thinking" && <ThinkingIndicator />}
