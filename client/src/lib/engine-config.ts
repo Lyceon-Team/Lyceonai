@@ -126,6 +126,12 @@ export type EngineConfig = {
     diagnostic: boolean;
     /** Desmos panel + persisted calculator state. On for both. */
     calculator: boolean;
+    /**
+     * LISA beside the question, scoped to the served item (closure plan W4-1,
+     * launch scope 2026-09-25). Review first, practice after: on for review.
+     * The server decides what LISA may see — this only shows the panel.
+     */
+    tutor: boolean;
   };
 };
 
@@ -185,7 +191,7 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
   completionHref: "/practice",
   backHref: "/practice",
   backLabel: "Back to Practice",
-  features: { diagnostic: true, calculator: true },
+  features: { diagnostic: true, calculator: true, tutor: false },
 };
 
 /**
@@ -242,5 +248,5 @@ export const REVIEW_ENGINE_CONFIG: EngineConfig = {
   completionHref: "/review",
   backHref: "/review",
   backLabel: "Back to Review",
-  features: { diagnostic: false, calculator: true },
+  features: { diagnostic: false, calculator: true, tutor: true },
 };

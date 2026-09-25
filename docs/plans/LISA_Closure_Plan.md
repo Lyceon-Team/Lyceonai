@@ -249,7 +249,7 @@ student's message); output-only scanning is the fallback.
 
 | ID | Item | Proof | Owner |
 |---|---|---|---|
-| **W4-1** | LISA in practice and review | **PROMOTED TO LAUNCH SCOPE (2026-09-25)** — review is the priority; a core purpose of review is learning from mistakes with LISA. Review first, practice after. Review is a graded re-attempt: pre-submit LISA gets stem/passage/options only (CR-02B-29); post-submit, answer and explanation. One conversation per review item. Proof: a scoped turn from review, anti-leak holding pre-submit, discussion allowed post-submit | CC |
+| **W4-1** | LISA in practice and review | **PROMOTED TO LAUNCH SCOPE (2026-09-25)** — review is the priority; a core purpose of review is learning from mistakes with LISA. Review first, practice after. Review is a graded re-attempt: pre-submit LISA gets stem/passage/options only (CR-02B-29); post-submit, answer and explanation. One conversation per review item. Proof: a scoped turn from review, anti-leak holding pre-submit, discussion allowed post-submit. **Built (2026-09-25):** server review scope — review tables, ownership, item-anchored question (PR #888); client panel — Ask LISA beside the review question, chip naming it, close, scoped composer, one conversation per item (branch `…-w4-1-review-panel`). Practice keeps `features.tutor: false` until review is proven. Production proof owed | CC |
 | **W4-2** | Golden set Phase B | The judge reproduces Karl's verdicts on all ten gold responses, then scores the remaining 25 | CC + Karl |
 
 
