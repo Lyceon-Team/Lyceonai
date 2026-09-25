@@ -32,6 +32,7 @@ import {
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
 import {
+  EXAM_FEATURE_KEY,
   createExamSession,
   listExamForms,
   listExamModuleItems,
@@ -55,7 +56,9 @@ import {
   examWorkspaceSaveRequestSchema,
 } from "../../packages/shared/src/exam-runtime-schema";
 
-export const EXAM_FEATURE_KEY = "exam_full_length";
+// Defined beside the service so a non-route caller (the calendar adapter) reads the same
+// key without importing this router; re-exported so existing importers are unchanged.
+export { EXAM_FEATURE_KEY };
 const COMPONENT = "EXAM_ROUTES";
 
 const router = Router();
