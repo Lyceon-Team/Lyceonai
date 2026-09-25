@@ -36,6 +36,7 @@ const dbMocks = vi.hoisted(() => ({
 }));
 const accountMocks = vi.hoisted(() => ({
   upsertEntitlement: vi.fn(async () => ({})),
+  setProfileCountryCode: vi.fn(async () => undefined),
   mapStripeStatusToEntitlement: vi.fn((s: string) => ({
     tier: s === "active" ? "premium" : "free",
     status: s,
@@ -87,6 +88,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 vi.mock("../../server/lib/account", () => ({
+  setProfileCountryCode: accountMocks.setProfileCountryCode,
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
@@ -226,6 +228,43 @@ describe("INV-03-08 gates every subscription-lifecycle grant", () => {
     });
   }
 
+  // W3-3 (closure plan): the grant path records the billing country the gate
+  // approved, so crisis resources follow it (Doc 03 §4.6).
+  it("a grant carrying a billing country writes it to the student's profile (country_code)", async () => {
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB", "SG"]);
+    stripeApi.customersRetrieve.mockResolvedValue({
+      id: "cus_lifecycle",
+      address: { country: "sg" },
+    });
+    const process_ = await handler();
+    const { body, signature } = signedSubscriptionEvent(
+      "customer.subscription.created",
+    );
+    await process_(body, signature, "req_country_write");
+
+    expect(accountMocks.setProfileCountryCode).toHaveBeenCalledTimes(1);
+    // Normalised by the gate — the stored code is the one it approved.
+    expect(accountMocks.setProfileCountryCode).toHaveBeenCalledWith(
+      STUDENT_ID,
+      "SG",
+    );
+  });
+
+  it("a refused grant writes no country", async () => {
+    stripeApi.customersRetrieve.mockResolvedValue({
+      id: "cus_lifecycle",
+      address: { country: "FR" },
+    });
+    const process_ = await handler();
+    const { body, signature } = signedSubscriptionEvent(
+      "customer.subscription.created",
+    );
+    await expect(
+      process_(body, signature, "req_country_refused"),
+    ).rejects.toThrow();
+    expect(accountMocks.setProfileCountryCode).not.toHaveBeenCalled();
+  });
+
   it("does NOT gate a write that moves a student to free — refusing to revoke would leave premium in place", async () => {
     // The asymmetry that keeps the gate safe. If a country check could block a
     // REVOCATION, an unknown country would preserve access rather than remove it.
@@ -249,6 +288,8 @@ describe("INV-03-08 gates every subscription-lifecycle grant", () => {
       STUDENT_ID,
       expect.objectContaining({ tier: "free" }),
     );
+    // W3-3: a revocation leaves the last known country in place.
+    expect(accountMocks.setProfileCountryCode).not.toHaveBeenCalled();
   });
 });
 

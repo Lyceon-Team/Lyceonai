@@ -139,47 +139,15 @@ export type { CrisisResult, CrisisCategory };
 export { notifyCrisisEvent };
 
 // ── Regional Crisis Resources (Doc 03 §4.6) ───────────────────────────
-
-const DEFAULT_CRISIS_COUNTRY = "US";
-
-/**
- * Crisis-lane resources by billing country code. Youth-preferred lines
- * per V1 spec; adult general lines only where no youth-specific service
- * exists for the country.
- * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §3]
- */
-const CRISIS_RESOURCES: Readonly<Record<string, string>> = {
-  US: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
-  CA: "If you're in crisis, the 988 Suicide & Crisis Lifeline is there for you. Call or text 988. Real people, anytime.",
-  UK: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
-  GB: "If you're in crisis, Childline is there for you. Call 0800 1111. You can also call the Samaritans at 116 123. Real people, anytime.",
-  IE: "If you're in crisis, Childline Ireland is there for you. Call 1800 66 66 66. You can also call Pieta at 1800 247 247. Real people, anytime.",
-  AU: "If you're in crisis, Kids Helpline is there for you. Call 1800 55 1800. Real people, anytime.",
-  NZ: "If you're in crisis, Youthline is there for you. Call 0800 376 633 or text 234. You can also call 1737 for free. Real people, anytime.",
-  SG: "If you're in crisis, the Samaritans of Singapore (SOS) are there for you. Call 1767. Real people, anytime.",
-};
-
-/**
- * Safeguarding-lane resources by billing country code. Abuse/neglect
- * helplines — youth-preferred, distinct from the crisis (suicide/self-harm)
- * set. Template: "What you've shared matters. [Resource] is there for you —
- * call [number]. They listen, and you decide what happens next."
- * @spec [Layer1 PR 2 brief §2, §3]
- */
-const SAFEGUARDING_RESOURCES: Readonly<Record<string, string>> = {
-  US: "What you've shared matters. Childhelp is there for you — call 1-800-422-4453. You can also call RAINN at 1-800-656-4673. They listen, and you decide what happens next.",
-  CA: "What you've shared matters. Kids Help Phone is there for you — call 1-800-668-6868 or text CONNECT to 686868. They listen, and you decide what happens next.",
-  UK: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
-  GB: "What you've shared matters. Childline is there for you — call 0800 1111. They listen, and you decide what happens next.",
-  IE: "What you've shared matters. Childline Ireland is there for you — call 1800 66 66 66. They listen, and you decide what happens next.",
-  AU: "What you've shared matters. Kids Helpline is there for you — call 1800 55 1800. They listen, and you decide what happens next.",
-  NZ: "What you've shared matters. Youthline is there for you — call 0800 376 633 or text 234. They listen, and you decide what happens next.",
-  SG: "What you've shared matters. The National Anti-Violence Helpline is there for you — call 1800-777-0000. They listen, and you decide what happens next.",
-};
-
-const DEFAULT_CRISIS_RESPONSE = CRISIS_RESOURCES[DEFAULT_CRISIS_COUNTRY];
-const DEFAULT_SAFEGUARDING_RESPONSE =
-  SAFEGUARDING_RESOURCES[DEFAULT_CRISIS_COUNTRY];
+// The tables, the named default and the resolver live in `crisis-resources.ts`
+// — pure data with no imports, so any caller can use them. Re-exported here so
+// existing consumers keep their import site.
+export {
+  DEFAULT_CRISIS_COUNTRY,
+  getCrisisResponse,
+  resolveCrisisCountry,
+} from "./crisis-resources";
+export type { CrisisCountryResolution } from "./crisis-resources";
 
 // ── Layer 1: Text Normalization ───────────────────────────────────────
 
@@ -612,19 +580,6 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
  *
  * @spec [Doc-03_V3 §4.6, §21.2, Layer1 PR 2 brief §1–§3]
  */
-export function getCrisisResponse(
-  country: string,
-  category: CrisisCategory = "crisis",
-): string {
-  const upperCountry = country.toUpperCase().trim();
-  if (category === "safeguarding") {
-    return (
-      SAFEGUARDING_RESOURCES[upperCountry] ?? DEFAULT_SAFEGUARDING_RESPONSE
-    );
-  }
-  return CRISIS_RESOURCES[upperCountry] ?? DEFAULT_CRISIS_RESPONSE;
-}
-
 // ── Conversation Flagging ──────────────────────────────────────────────
 
 /**

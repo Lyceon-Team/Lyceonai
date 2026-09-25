@@ -72,6 +72,9 @@ import {
   evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
 import type { FlagForReviewResult } from "../services/tutor-crisis";
+// W3-3: the pure resolver, imported from its own module so the route always
+// runs the real one.
+import { resolveCrisisCountry } from "../services/crisis-resources";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -1337,8 +1340,30 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("country_code")
         .eq("id", studentId)
         .maybeSingle();
+      // W3-3: resources follow the student's billing country (Doc 03 §4.6).
+      // Unknown still resolves to the named default — and that is the one
+      // case worth an alert: a student in crisis may have been given numbers
+      // that do not work where they are. The student id is logged (digested
+      // by the logger); the crisis content never is.
+      const crisisCountry = resolveCrisisCountry(
+        profileRow?.country_code as string | null | undefined,
+      );
+      if (crisisCountry.defaulted) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_country_defaulted",
+          "Crisis resources resolved to the default country: this student's country is unknown or unsupported",
+          {
+            studentId,
+            conversationId: conversation.id,
+            category: crisisResult.category,
+            reason: crisisCountry.reason,
+            defaultCountry: crisisCountry.country,
+          },
+        );
+      }
       const crisisContent = getCrisisResponse(
-        (profileRow?.country_code as string | null) ?? "US",
+        crisisCountry.country,
         crisisResult.category,
       );
 
