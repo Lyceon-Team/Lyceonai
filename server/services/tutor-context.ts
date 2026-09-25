@@ -317,15 +317,21 @@ export async function resolveScope(
  * guaranteed by the user_id predicate (tutor-context.ts already queries
  * this table with ownership predicates — we do not weaken them).
  *
- * SCL-060: explanation is populated for all surfaces, pre-submit included —
- * it is internal context for model reasoning, not an anti-leak surface.
- * The correct_answer column is NEVER included in the select — it does not
- * appear on the wire. Anti-echo directive + INV-03-04 are the defenses.
+ * The correct_answer column is NEVER included in the select — it reaches
+ * the envelope only through the post-submit gate in resolveFullEnvelope.
+ *
+ * EXPLANATION IS POST-SUBMIT ONLY (closure plan W3-10, owner ruling
+ * 2026-09-25; SCL-144 PROPOSED, reversing SCL-060). SCL-060 sent the active
+ * question's explanation pre-submit as "internal context" behind an anti-echo
+ * directive, so the model held the explanation while the student was still
+ * working. CR-02B-29's principle is "cannot leak what it doesn't have":
+ * possession is the control, a prompt instruction is not. Pre-submit the
+ * column is not even selected.
  *
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
  */
-async function resolveQuestionContent(
+export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
   isPostSubmit: boolean,
@@ -338,7 +344,8 @@ async function resolveQuestionContent(
       .from("practice_session_items")
       .select(
         "question_stem, question_passage, question_options, question_item_type, " +
-          "question_explanation, selected_answer, ordinal",
+          "selected_answer, ordinal" +
+          (isPostSubmit ? ", question_explanation" : ""),
       )
       .eq("id", scope.source_session_item_id)
       .eq("user_id", studentId)
@@ -385,14 +392,14 @@ async function resolveQuestionContent(
         ? ("grid_in" as const)
         : ("mcq" as const);
 
-    // SCL-060: the active question's explanation is internal context —
-    // direction on how LISA should explain the question. Populated for
-    // all surfaces, pre-submit included. The anti-echo directive in
-    // renderItemBlock enforces at the prompt layer; INV-03-04 enforces
-    // at the output layer. This query resolves the ACTIVE question only
-    // (keyed by source_session_item_id). No multi-question delivery.
-    // @spec [SCL-060, INV-03-04, Doc-03D_V1.2 §6.2]
-    const explanation = (data.question_explanation as string) ?? null;
+    // Post-submit only (W3-10; SCL-144 PROPOSED, reversing SCL-060). The
+    // column was not selected pre-submit, so this is null there by
+    // construction — and the explicit gate keeps it null even if the select
+    // ever changes.
+    // @spec [CR-02B-29, Doc-02B_V4 §21 Question Awareness, INV-03-04; SCL-144]
+    const explanation = isPostSubmit
+      ? ((data.question_explanation as string) ?? null)
+      : null;
 
     return {
       stem: data.question_stem as string,
@@ -1213,10 +1220,9 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Question content (Doc 03A §5.4, Doc 03C §4.4, SCL-060): CONTENT,
-    // never canonical ID. SCL-060: explanation is internal context for
-    // all surfaces. Anti-echo directive (prompt) + INV-03-04 (output)
-    // are the defense layers.
+    // Question content (Doc 03A §5.4, Doc 03C §4.4): CONTENT, never
+    // canonical ID. Explanation is post-submit only (W3-10; SCL-144
+    // PROPOSED, reversing SCL-060) — resolveQuestionContent withholds it.
     question_content: questionContent,
     // Server-derived post-submit flag (Doc 03D §6.3): resolved from
     // practice_session_items.status by isPreSubmitForSurface. The worker
