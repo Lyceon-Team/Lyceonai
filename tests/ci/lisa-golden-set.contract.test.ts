@@ -111,11 +111,14 @@ describe("Class 1 — prompt assembly", () => {
 
       if (
         !fixture.isPostSubmit &&
-        fixture.request.question_content.explanation
+        fixture.request.question_content?.explanation
       ) {
-        it("pre-submit systemInstruction contains explanation context (SCL-060)", () => {
+        it("pre-submit systemInstruction does NOT carry the explanation (SCL-144, reversing SCL-060)", () => {
           const si = buildSystemInstruction(fixture.request);
-          expect(si).toContain("[AUTHORED EXPLANATION");
+          expect(si).not.toContain("[AUTHORED EXPLANATION");
+          expect(si).not.toContain(
+            fixture.request.question_content?.explanation ?? "",
+          );
         });
       }
 

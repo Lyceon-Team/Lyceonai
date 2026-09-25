@@ -155,4 +155,29 @@ describe("PR 2.1 — crisis notification dispatch", () => {
     );
     expect(loggerWarn).not.toHaveBeenCalled();
   });
+
+  // W2-6 (closure plan, 2026-09-24): the new-case alert names the CASE, in
+  // full, like the SLA breach alert. It used to show only the conversation id.
+  it("the new-case Slack message prints the full case id, not only the conversation id", async () => {
+    process.env.PUBLIC_SITE_URL = "https://lyceon.ai";
+    const caseId = "3d06effb-fe0a-46f5-bcf3-28adccfa64f7";
+
+    await notifyCrisisEvent({ ...payload, caseId });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const task = JSON.parse(String(init.body)) as {
+      task: { httpRequest: { body: string } };
+    };
+    const text = (
+      JSON.parse(
+        Buffer.from(task.task.httpRequest.body, "base64").toString("utf8"),
+      ) as { text: string }
+    ).text;
+    expect(text).toContain(`*Case:* \`${caseId}\``);
+    expect(text).toContain(
+      `<https://lyceon.ai/admin/crisis-review/${caseId}|Review this case →>`,
+    );
+    // Conversation id stays as context, metadata only.
+    expect(text).toContain("*Conversation:* `conv-1`");
+  });
 });

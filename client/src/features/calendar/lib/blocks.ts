@@ -44,6 +44,36 @@ export function sectionName(section: "M" | "RW"): string {
   return section === "M" ? "Math" : "Reading & Writing";
 }
 
+/**
+ * The chip label for a domain — the prototype's own abbreviations.
+ *
+ * @spec [Doc 05F §17.1; docs/design/calendar-prototype.html `SHORT`] | @implemented [2026-09-24]
+ *
+ * The canonical names are what the database stores and what the sheet's Domain select
+ * offers, and they are correct there. In a chip they are not: at 11.5px in a 132px column,
+ * "Problem Solving and Data Analysis 10" wraps to FOUR lines and is the least readable
+ * thing on the card. The prototype has always abbreviated here (`SHORT`, line 481); the
+ * build shipped the full names, which is the divergence, not the type size.
+ *
+ * A `Record<CanonicalDomain, string>` rather than a lookup with a fallback: a new domain is
+ * then a compile error here, where someone picks the short form deliberately, instead of
+ * silently rendering the long name again on one chip out of eight.
+ */
+const DOMAIN_CHIP: Readonly<Record<CanonicalDomain, string>> = {
+  Algebra: "Algebra",
+  "Advanced Math": "Adv Math",
+  "Problem Solving and Data Analysis": "Data Analysis",
+  "Geometry and Trigonometry": "Geo & Trig",
+  "Information and Ideas": "Info & Ideas",
+  "Craft and Structure": "Craft & Structure",
+  "Expression of Ideas": "Expression",
+  "Standard English Conventions": "Conventions",
+};
+
+export function domainChipLabel(domain: CanonicalDomain): string {
+  return DOMAIN_CHIP[domain];
+}
+
 export const TONE_LABEL: Readonly<Record<BlockTone, string>> = {
   math: "Math practice",
   rw: "Reading & Writing",

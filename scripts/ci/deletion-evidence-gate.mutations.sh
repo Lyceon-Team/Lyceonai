@@ -30,6 +30,10 @@ MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
 DISPATCH="server/lib/notifications/dispatch.ts"
 RECONSENT="server/services/email-reconsent-audit.ts"
 MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
+# The LATEST migration that (re)defines execute_account_deletion_cascade: the one whose body
+# the pipeline keeps. Resolved, not named, so a later redefinition (E6b: 20260930080000) cannot
+# silently turn M2/M3 into plants on an overwritten copy.
+MIGCASCADE="$(grep -l 'FUNCTION public.execute_account_deletion_cascade(' supabase/migrations/*.sql | sort | tail -1)"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
@@ -58,6 +62,7 @@ cp "$MIG5" "$BACKUP/mig5.sql"
 cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
+cp "$MIGCASCADE" "$BACKUP/migcascade.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
@@ -88,6 +93,7 @@ restore() {
   cp "$BACKUP/dispatch.ts" "$DISPATCH"
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
+  cp "$BACKUP/migcascade.sql" "$MIGCASCADE"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
@@ -159,18 +165,19 @@ echo "==> (M1) remove ORDER BY profile_id from the executor's due-request select
 plant M1 "$EXEC" 's.replace(".order(\"profile_id\", { ascending: true })", "")'
 expect_red M1 "C3.3 rank"
 
-# Targets MIGFK, not MIG: migration 20260917130000 REPLACES execute_account_deletion_cascade to
-# drop the steps the foreign keys now perform, so the cascade body lives there. Planting into the
-# older copy would mutate a function that the pipeline immediately overwrites — the same way M9
-# silently stopped biting when Phase 3 landed.
+# Targets MIGCASCADE, not MIG: the cascade body the pipeline keeps is the one in the LATEST
+# migration that replaces execute_account_deletion_cascade (20260917130000, then E6b's
+# 20260930080000). Planting into an older copy mutates a function the pipeline immediately
+# overwrites — the same way M9 silently stopped biting when Phase 3 landed, and M2/M3 did when
+# E6b redefined the cascade.
 echo "==> (M2) write evidence rows inside the cascade transaction (shared xmin)"
 # The consent rows, not the log rows: T3 re-stamps the log rows afterwards, which would hide
 # the leak from a current-version xmin read; the consent rows are never touched after T1.
-plant M2 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
+plant M2 "$MIGCASCADE" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
 expect_red M2 "C3.2 cross-universe xmin"
 
 echo "==> (M3) touch a live student's consent row inside the guardian's cascade transaction"
-plant M3 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
+plant M3 "$MIGCASCADE" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
 expect_red M3 "C3.4 guardian pre-clear"
 
 echo "==> (M4) give the log the genesis-style created_at timestamptz column"

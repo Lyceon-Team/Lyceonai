@@ -22,6 +22,7 @@
  */
 import { useDraggable } from "@dnd-kit/core";
 import type { ViewBlock } from "../lib/view-model";
+import { domainChipLabel } from "../lib/blocks";
 
 const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
   math: "math",
@@ -114,7 +115,7 @@ export function BlockCard({
         <div className="dom">
           {block.mix.map((entry) => (
             <span key={entry.domain}>
-              {entry.domain} {entry.count}
+              {domainChipLabel(entry.domain)} {entry.count}
             </span>
           ))}
         </div>

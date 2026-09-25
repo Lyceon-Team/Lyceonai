@@ -32,7 +32,8 @@ import {
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Calculator, Loader2 } from "lucide-react";
+import { AlertCircle, Calculator, Loader2, MessageCircle } from "lucide-react";
+import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import {
   type EngineConfig,
@@ -190,11 +191,13 @@ export default function CanonicalPracticePage(props: {
     submitBlocked,
     runtimeDisabled,
     setForceTakeover,
+    sessionItemId,
   } = useCanonicalPractice(props.section, sessionSpec, props.sessionId, engine);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
+  const [isTutorOpen, setIsTutorOpen] = React.useState(false);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
   >(null);
@@ -343,6 +346,28 @@ export default function CanonicalPracticePage(props: {
     </div>
   ) : null;
 
+  // W4-1: LISA beside the question, scoped to the served item. Shown only
+  // when the engine has it on and an item is being served.
+  const canAskTutor =
+    engine.features.tutor && !!sessionItemId && !!question && !runtimeDisabled;
+  const questionLabel = `Question ${currentIndex + 1}${
+    typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""
+  }`;
+  const tutorPanel =
+    canAskTutor && isTutorOpen && sessionItemId ? (
+      <aside
+        className="mt-6 h-[640px] lg:mt-0 lg:w-[400px] lg:shrink-0 lg:sticky lg:top-6"
+        data-testid="practice-tutor-aside"
+      >
+        <ScopedTutorPanel
+          sourceSurface={engine.domain === "review" ? "review" : "practice"}
+          sessionItemId={sessionItemId}
+          questionLabel={questionLabel}
+          onClose={() => setIsTutorOpen(false)}
+        />
+      </aside>
+    ) : null;
+
   const questionContent = (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -384,6 +409,19 @@ export default function CanonicalPracticePage(props: {
         </div>
         <div className="flex items-center gap-3">
           {calculatorToggle}
+          {canAskTutor && (
+            <Button
+              variant="outline"
+              type="button"
+              size="sm"
+              onClick={() => setIsTutorOpen((prev) => !prev)}
+              aria-expanded={isTutorOpen}
+              data-testid="practice-tutor-toggle"
+            >
+              <MessageCircle className="h-3.5 w-3.5 mr-1" />
+              {isTutorOpen ? "Hide LISA" : "Ask LISA"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -585,70 +623,83 @@ export default function CanonicalPracticePage(props: {
       currentIndex={currentIndex}
       totalQuestions={totalQuestions}
     >
-      {useSidePanel ? (
-        <div ref={panelGroupRef} data-testid="practice-panel-group-container">
-          <ResizablePanelGroup
-            direction="horizontal"
-            autoSaveId="lyceon-practice-calc-panel-px"
-            onLayout={handleGroupLayout}
-            className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
-          >
-            <ResizablePanel
-              defaultSize={QUESTION_DEFAULT_PCT}
-              minSize={questionMinPct}
-              style={{ minWidth: QUESTION_MIN_PX }}
+      <div
+        className={tutorPanel ? "lg:flex lg:items-start lg:gap-6" : undefined}
+      >
+        <div className={tutorPanel ? "min-w-0 lg:flex-1" : undefined}>
+          {useSidePanel ? (
+            <div
+              ref={panelGroupRef}
+              data-testid="practice-panel-group-container"
             >
-              <div className="p-6 h-full overflow-y-auto">
-                {questionContent}
-              </div>
-            </ResizablePanel>
-            <ResizableHandle
-              withHandle
-              aria-label="Resize question and calculator panels"
-              aria-orientation="vertical"
-              data-testid="practice-resize-handle"
-            />
-            <ResizablePanel
-              ref={calcPanelRef}
-              defaultSize={CALC_DEFAULT_PCT}
-              minSize={calcMinPct}
-              style={{ minWidth: CALC_MIN_PX }}
-              onResize={handleCalcPanelResize}
-              data-testid="practice-calc-panel"
-            >
-              {sidePanelCalculator}
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
-              {questionContent}
-            </Card>
-
-            <div className="lg:col-span-4 space-y-4">
-              <Card className="rounded-2xl border border-border/60 bg-card p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
-                  Session Guidance
-                </p>
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  {engine.labels.sessionGuidance}
-                </p>
-              </Card>
+              <ResizablePanelGroup
+                direction="horizontal"
+                autoSaveId="lyceon-practice-calc-panel-px"
+                onLayout={handleGroupLayout}
+                className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
+              >
+                <ResizablePanel
+                  defaultSize={QUESTION_DEFAULT_PCT}
+                  minSize={questionMinPct}
+                  style={{ minWidth: QUESTION_MIN_PX }}
+                >
+                  <div className="p-6 h-full overflow-y-auto">
+                    {questionContent}
+                  </div>
+                </ResizablePanel>
+                <ResizableHandle
+                  withHandle
+                  aria-label="Resize question and calculator panels"
+                  aria-orientation="vertical"
+                  data-testid="practice-resize-handle"
+                />
+                <ResizablePanel
+                  ref={calcPanelRef}
+                  defaultSize={CALC_DEFAULT_PCT}
+                  minSize={calcMinPct}
+                  style={{ minWidth: CALC_MIN_PX }}
+                  onResize={handleCalcPanelResize}
+                  data-testid="practice-calc-panel"
+                >
+                  {sidePanelCalculator}
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
+                  {questionContent}
+                </Card>
 
-          {/* Below-breakpoint calculator: render full-width to guarantee
+                <div className="lg:col-span-4 space-y-4">
+                  <Card className="rounded-2xl border border-border/60 bg-card p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                      Session Guidance
+                    </p>
+                    <p className="text-sm text-foreground/90 leading-relaxed">
+                      {engine.labels.sessionGuidance}
+                    </p>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Below-breakpoint calculator: render full-width to guarantee
               Desmos host ≥ DESMOS_HOST_MIN_PX. Never in the narrow col-span-4
               sidebar — that yields ~330px at 1024px viewport. */}
-          {showCalculator && !useSidePanel && (
-            <div className="mt-6" data-testid="stacked-calculator-container">
-              {stackedCalculator}
-            </div>
+              {showCalculator && !useSidePanel && (
+                <div
+                  className="mt-6"
+                  data-testid="stacked-calculator-container"
+                >
+                  {stackedCalculator}
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+        {tutorPanel}
+      </div>
       <MathReferenceSheet
         open={isReferenceOpen}
         onOpenChange={setIsReferenceOpen}

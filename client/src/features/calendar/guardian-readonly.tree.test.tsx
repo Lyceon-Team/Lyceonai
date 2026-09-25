@@ -111,6 +111,10 @@ const STUDENT_RESPONSE: CalendarReadyResponse = {
     created_at: "2026-09-21T09:00:00Z",
   },
   diagnostic_state: "baseline_ready",
+  // §17.2. The payload is `.strict()` and requires this, so a real response always carries
+  // it; a fixture that omitted it would hand `studentViewModel` an undefined engine list
+  // and only fail the day a test opened the create sheet.
+  enabled_block_types: ["practice", "review"],
 };
 
 /** The guardian payload as the SERVER builds it — sanitised, with no explanation keys. */

@@ -20,6 +20,7 @@ import rateLimit from "express-rate-limit";
 // Any duplicate tutor route under apps/api/** must remain unmounted.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
+import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
 import {
   getQuestions,
@@ -67,6 +68,8 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
+import examRuntimeRouter from "./routes/exam-runtime-routes";
+import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -364,6 +367,19 @@ const googleOAuthCallbackLimiter = rateLimit({
   message: { error: "Too many OAuth callback requests" },
 });
 
+// @spec [Doc-03A_V3.0 §18.7; owner ruling 2026-09-24 (W4-3)] | @implemented [2026-09-24]
+// Tutor runtime config is read from tutor_context_runtime_config ONCE per
+// process, starting at module load — on Vercel the app module is the boot
+// (app.listen below never runs there). Until this was wired, every key served
+// its hardcoded default on every request. The two routers that read config
+// wait for the load to settle (bounded at 3s) so a cold-start request cannot
+// race it. A failed load logs ERROR boot_load_failed and serves defaults.
+const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
+void TutorConfig.bootLoad();
+const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
+  TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
+};
+
 // Canonical tutor runtime endpoints:
 // POST /api/tutor/conversations
 // POST /api/tutor/messages
@@ -377,6 +393,7 @@ app.use(
   requireSupabaseAuth,
   requireStudentOnly,
   doubleCsrfProtection,
+  awaitTutorConfig,
   tutorRuntimeRouter,
 );
 
@@ -397,7 +414,7 @@ app.use("/api/auth", supabaseAuthRoutes);
 // Internal cron-only endpoints (CRON_SECRET-gated; e.g. scheduled legal-acceptance outbox drain).
 app.use("/api/internal", internalCronRoutes);
 // Internal memory routes (OIDC-gated; Cloud Tasks compaction writeback per Doc 03C §8.3).
-app.use("/api/internal", internalMemoryRoutes);
+app.use("/api/internal", awaitTutorConfig, internalMemoryRoutes);
 // Internal retention sweep (OIDC-gated; Cloud Scheduler per-tier jobs per Doc 03 §14.2).
 app.use("/api/internal", internalRetentionRoutes);
 
@@ -412,7 +429,6 @@ app.use(
   doubleCsrfProtection,
   profileRoutes,
 );
-
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
@@ -484,10 +500,18 @@ app.get(
 );
 // Admin crisis review surface — SEPARATE from /api/tutor/* per SCL-025.
 // §3.1 stands unchanged (student-only on /api/tutor/*). This is a different
-// authorization axis per SCL-025: read-only, scoped to crisis_flagged conversations,
-// every read audit-logged.
-// @spec [Doc-03_V3 §21.3, SCL-025]
-app.use("/api/admin/crisis-review", adminCrisisReviewRouter);
+// authorization axis per SCL-025: scoped to crisis_flagged conversations, every
+// read audit-logged. NOT read-only: POST /cases/:id/claim and
+// POST /cases/:id/disposition change case state, so the router is mounted with
+// doubleCsrfProtection like every other browser-facing mutating router (see the
+// CSRF note at the top of this file). GETs are ignored by the middleware. The
+// admin pages already send the token (apiRequest → csrfFetch).
+// @spec [Doc-03_V3 §21.3, SCL-025; closure plan W2-9] | @implemented [2026-09-24]
+app.use(
+  "/api/admin/crisis-review",
+  doubleCsrfProtection,
+  adminCrisisReviewRouter,
+);
 
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
@@ -649,6 +673,32 @@ app.use(
   requireStudentOrAdmin,
   doubleCsrfProtection,
   practiceCanonicalRouter,
+);
+
+// Full-length exam runtime (Doc 04A §16 student surface only — no admin routes)
+// @spec [Doc-04A_V2.2 §16, §16.1; E6] | @implemented [2026-09-24]
+// Practice's middleware stack: auth, student-or-admin, then CSRF (the middleware
+// ignores GET/HEAD/OPTIONS). Entitlement (exam_full_length) is step 2 of every
+// handler, inside the router, after auth.
+app.use(
+  "/api/tests",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  examRuntimeRouter,
+);
+
+// Full-length exam score report (Doc 04C §16.1 student reads only)
+// @spec [Doc-04C_V1.0 §16.1, §16.5; E7a] | @implemented [2026-09-25]
+// Same stack as the runtime. Ownership is decided before entitlement inside the
+// router (04C §16.5): a lapsed entitlement on an OWNED session is a 200
+// `unavailable` payload, a missing or foreign session a bare 403.
+app.use(
+  "/api/tests",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  examReportRouter,
 );
 
 // Review Canonical Routes (the mistake queue — practice's loop, a different pool)

@@ -21,10 +21,11 @@
 --   function was exercised against the real 6381-row bank metadata locally;
 --   that run is evidence in the E3 PR body, not part of this gate.
 --
--- The activation used by P2/C7 is the legitimate §8.4 Tier-3 step-5 UPDATE
---   (attestation fields populated; published_at stamped by the E2 status
---   machine), done inside the rolled-back transaction, exactly as
---   scripts/ci/scoring-catalogue-gates.sql does.
+-- Since E4 (20260930050000_activate_scoring_v1.sql, owner ruling) the pipeline
+--   ends with v1.0 ACTIVE: P2/C7/F*/I* publish against the real activation
+--   (e3_activate_v10 only asserts it), and P1/P1s prove a candidate and a
+--   superseded version are still refused, using versions made inside their
+--   rolled-back transactions.
 -- ============================================================================
 
 \set ON_ERROR_STOP 0
@@ -60,61 +61,24 @@ BEGIN
 END $f$;
 
 -- e3_make_form: a DRAFT form whose composition is exactly the ruled blueprint,
--- built from fresh synthetic published questions. Any pairing of the three
--- marginals is valid because every question is created for its own slot.
--- Question ids: SAT<sec>1 + <tag:2><module:2><pos:2>, e.g. SATM1V1011A? -> 6 chars.
+-- built from fresh synthetic published questions. Since E4 the body lives in
+-- scripts/ci/lib/exam-form-fixture.sql (extracted verbatim, shared with the
+-- scoring gates and the scoring parity harness); this alias keeps the call
+-- sites below unchanged. Same thresholds (19, 14), same ids, same answers.
+\ir lib/exam-form-fixture.sql
 CREATE FUNCTION pg_temp.e3_make_form(p_form uuid, p_tag text) RETURNS void
-LANGUAGE plpgsql AS $f$
-DECLARE
-  m record; p int; v_id text; v_diff int; v_dom text; v_grid boolean; acc int; k int;
+LANGUAGE sql AS $f$ SELECT pg_temp.exam_fixture_make_form(p_form, p_tag, 19, 14); $f$;
+
+-- e3_activate_v10: before E4 this performed the Tier-3 activation inside each
+-- rolled-back txn. E4 ruling (20260930050000_activate_scoring_v1.sql): the
+-- pipeline now ends with v1.0 ACTIVE and fully attested, so this only asserts
+-- that premise (it must NOT rewrite the real attestation fields).
+CREATE FUNCTION pg_temp.e3_activate_v10() RETURNS void LANGUAGE plpgsql AS $f$
 BEGIN
-  INSERT INTO public.test_forms (id, name, test_kind, status, score_table_version,
-    routing_threshold_rw, routing_threshold_m, break_duration_ms,
-    rw_module1_ms, rw_module2_ms, m_module1_ms, m_module2_ms)
-  VALUES (p_form, 'exg fixture ' || p_tag, 'full_length', 'draft', 'v1.0',
-          19, 14, 600000, 1920000, 1920000, 2100000, 2100000);
-
-  FOR m IN
-    SELECT * FROM (VALUES
-      ('RW', '1',  '01', 27, ARRAY[8, 11, 8],  0, ARRAY['Information and Ideas','Craft and Structure','Expression of Ideas','Standard English Conventions'], ARRAY[7, 8, 5, 7]),
-      ('RW', '2A', '2A', 27, ARRAY[14, 9, 4],  0, ARRAY['Information and Ideas','Craft and Structure','Expression of Ideas','Standard English Conventions'], ARRAY[7, 7, 6, 7]),
-      ('RW', '2B', '2B', 27, ARRAY[4, 9, 14],  0, ARRAY['Information and Ideas','Craft and Structure','Expression of Ideas','Standard English Conventions'], ARRAY[7, 7, 6, 7]),
-      ('M',  '1',  '01', 22, ARRAY[7, 9, 6],   3, ARRAY['Algebra','Advanced Math','Problem Solving and Data Analysis','Geometry and Trigonometry'], ARRAY[8, 7, 4, 3]),
-      ('M',  '2A', '2A', 22, ARRAY[11, 8, 3],  8, ARRAY['Algebra','Advanced Math','Problem Solving and Data Analysis','Geometry and Trigonometry'], ARRAY[7, 8, 3, 4]),
-      ('M',  '2B', '2B', 22, ARRAY[3, 8, 11],  8, ARRAY['Algebra','Advanced Math','Problem Solving and Data Analysis','Geometry and Trigonometry'], ARRAY[7, 8, 3, 4])
-    ) AS t(section, module, mcode, total, diffs, grid, doms, domn)
-  LOOP
-    FOR p IN 0 .. m.total - 1 LOOP
-      v_diff := CASE WHEN p < m.diffs[1] THEN 1 WHEN p < m.diffs[1] + m.diffs[2] THEN 2 ELSE 3 END;
-      acc := 0; v_dom := NULL;
-      FOR k IN 1 .. 4 LOOP
-        acc := acc + m.domn[k];
-        IF v_dom IS NULL AND p < acc THEN v_dom := m.doms[k]; END IF;
-      END LOOP;
-      v_grid := p < m.grid;
-      v_id := 'SAT' || m.section || '1' || p_tag || m.mcode || lpad(p::text, 2, '0');
-      INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem,
-                                    options, correct_answer, explanation, status, item_type,
-                                    correct_variants, published_at)
-      VALUES (v_id, m.section, 1, v_dom, ARRAY['exg-fixture'], v_diff, 'exg fixture',
-              CASE WHEN v_grid THEN '[]'::jsonb ELSE '["A","B","C","D"]'::jsonb END,
-              'A', 'exg fixture', 'published',
-              CASE WHEN v_grid THEN 'grid_in' ELSE 'mcq' END,
-              CASE WHEN v_grid THEN ARRAY['1'] ELSE NULL END, now());
-      INSERT INTO public.test_form_items (test_form_id, section, module, ordinal, question_id)
-      VALUES (p_form, m.section, m.module, p, v_id);
-    END LOOP;
-  END LOOP;
+  IF (SELECT status FROM public.scoring_model_versions WHERE version = 'v1.0') IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'EXG FAIL [premise]: v1.0 is not active after the pipeline';
+  END IF;
 END $f$;
-
--- e3_activate_v10: the legitimate Tier-3 activation (inside a rolled-back txn).
-CREATE FUNCTION pg_temp.e3_activate_v10() RETURNS void LANGUAGE sql AS $f$
-  UPDATE public.scoring_model_versions
-     SET status = 'active',
-         constants_sha256 = 'gate-fixture',
-         validation_packet_url = 'git://lyceon-spec/04B/v4.3/evidence_packet_v42/'
-   WHERE version = 'v1.0';
-$f$;
 
 -- ---------------------------------------------------------------------------
 -- SETUP (committed; the database is throwaway).
@@ -129,7 +93,7 @@ INSERT INTO auth.users (id, email) VALUES ('00000000-0000-0000-0000-00000000e3aa
 COMMIT;
 
 -- ---------------------------------------------------------------------------
--- G1 — privileges: RLS on all seven, no policies, no anon/authenticated grant,
+-- G1 — privileges: RLS on all seven, exactly the E4 + E6 policies, only E6's SELECT grants,
 -- service_role cannot UPDATE/DELETE the §5.5 append-only ledger.
 -- ---------------------------------------------------------------------------
 BEGIN;
@@ -141,16 +105,58 @@ BEGIN
      AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
                        'test_answer_submissions','test_session_answers','exam_runtime_outbox');
   IF v_n <> 7 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: RLS enabled on % of 7 tables', v_n; END IF;
+  -- E4 (20260930040000, D7): six SELECT-only policies for lyceon_scoring_owner
+  -- (not BYPASSRLS) that the §11.1 scoring functions need. E6
+  -- (20260930060000): exactly seven more — the student own-row reads (auth.uid(),
+  -- SCL-131), the published-forms read, the own-form items read and the outbox's
+  -- explicit no-client-access. Any other policy is still a failure.
   SELECT count(*) INTO v_n FROM pg_policies
    WHERE schemaname = 'public'
      AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
-                       'test_answer_submissions','test_session_answers','exam_runtime_outbox');
-  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % policies exist (G-EX-01 unresolved; expected none)', v_n; END IF;
+                       'test_answer_submissions','test_session_answers','exam_runtime_outbox')
+     AND NOT (policyname = tablename || '_scoring_owner_read' AND cmd = 'SELECT'
+              AND roles = ARRAY['lyceon_scoring_owner']::name[] AND qual = 'true'
+              AND tablename <> 'test_answer_submissions')
+     AND policyname NOT IN ('test_sessions_select_self', 'test_session_sections_select_self',
+                            'test_session_answers_select_self', 'test_answer_submissions_select_self',
+                            'test_forms_select_published', 'test_form_items_select_own_form',
+                            'exam_runtime_outbox_no_client_access');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % policies exist beyond the E4 scoring-owner reads and the E6 set', v_n; END IF;
+  SELECT count(*) INTO v_n FROM pg_policies
+   WHERE schemaname = 'public' AND policyname LIKE '%\_scoring\_owner\_read'
+     AND tablename IN ('test_forms','test_form_items','test_sessions','test_session_sections',
+                       'test_session_answers','exam_runtime_outbox');
+  IF v_n <> 6 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: expected the 6 E4 scoring-owner read policies, found %', v_n; END IF;
+  SELECT count(*) INTO v_n FROM pg_policies
+   WHERE schemaname = 'public'
+     AND ((policyname IN ('test_sessions_select_self', 'test_session_sections_select_self',
+                          'test_session_answers_select_self', 'test_answer_submissions_select_self',
+                          'test_forms_select_published', 'test_form_items_select_own_form')
+           AND cmd = 'SELECT' AND roles = ARRAY['authenticated']::name[])
+       OR (policyname = 'exam_runtime_outbox_no_client_access' AND qual = 'false'));
+  IF v_n <> 7 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: expected the 7 E6 policies, found %', v_n; END IF;
+  -- Grants: nothing for anon/PUBLIC; for authenticated only E6's SELECTs — the
+  -- whole test_sessions row, and column lists that leave out the routing path
+  -- (module2_path, module), thresholds and the replay body.
   SELECT count(*) INTO v_n FROM information_schema.role_table_grants
-   WHERE table_schema = 'public' AND grantee IN ('anon','authenticated','PUBLIC')
+   WHERE table_schema = 'public'
      AND table_name IN ('test_forms','test_form_items','test_sessions','test_session_sections',
-                        'test_answer_submissions','test_session_answers','exam_runtime_outbox');
-  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % anon/authenticated grant(s)', v_n; END IF;
+                        'test_answer_submissions','test_session_answers','exam_runtime_outbox')
+     AND (grantee IN ('anon','PUBLIC')
+          OR (grantee = 'authenticated' AND NOT (table_name = 'test_sessions' AND privilege_type = 'SELECT')));
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % table grant(s) beyond E6''s test_sessions SELECT', v_n; END IF;
+  SELECT count(*) INTO v_n FROM information_schema.column_privileges
+   WHERE table_schema = 'public' AND grantee IN ('anon','authenticated','PUBLIC')
+     AND (privilege_type <> 'SELECT'
+          OR table_name IN ('test_form_items', 'exam_runtime_outbox')
+          OR column_name IN ('module2_path', 'module', 'response_json', 'routing_threshold_rw',
+                             'routing_threshold_m', 'score_table_version',
+                             'routing_override_approved_by', 'routing_override_reason',
+                             'routing_override_ticket_id'))
+     AND table_name IN ('test_forms','test_form_items','test_sessions','test_session_sections',
+                        'test_answer_submissions','test_session_answers','exam_runtime_outbox')
+     AND NOT (table_name = 'test_sessions' AND privilege_type = 'SELECT');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'EXG FAIL [G1 privileges]: % column grant(s) expose a path/threshold/replay column or a non-SELECT', v_n; END IF;
   IF has_table_privilege('service_role', 'public.test_answer_submissions', 'UPDATE')
      OR has_table_privilege('service_role', 'public.test_answer_submissions', 'DELETE')
      OR NOT has_table_privilege('service_role', 'public.test_answer_submissions', 'INSERT') THEN
@@ -161,7 +167,7 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.validate_form_composition(uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'EXG FAIL [G1 privileges]: validate_form_composition EXECUTE is not service_role-only';
   END IF;
-  RAISE NOTICE 'ok   [G1 privileges] RLS on 7/7, 0 policies, 0 anon/authenticated grants, ledger append-only';
+  RAISE NOTICE 'ok   [G1 privileges] RLS on 7/7, the 6 E4 scoring-owner + 7 E6 policies and no other, authenticated: SELECT only, no path/threshold/replay column, ledger append-only';
 END $$;
 ROLLBACK;
 
@@ -229,23 +235,33 @@ SELECT pg_temp.e3_expect('C6 composition-unpublished-question',
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
--- P1 — v1.0 is 'candidate' (E2 owner ruling), so EVERY publish is rejected by
--- gate check (a) — shown on the composition-valid, in-range fixture form,
--- i.e. a form that would pass (b) and (c).
+-- P1 — gate check (a): a form bound to a CANDIDATE version cannot publish.
+-- E4 ruling (20260930050000_activate_scoring_v1.sql): before E4 v1.0 itself
+-- was the candidate and EVERY publish was refused; now v1.0 is active, so the
+-- candidate is created inside this rolled-back txn and the composition-valid,
+-- in-range draft is rebound to it (draft rows are mutable). Same assertion.
 -- ---------------------------------------------------------------------------
 BEGIN;
-DO $$ BEGIN
-  IF (SELECT status FROM public.scoring_model_versions WHERE version = 'v1.0') <> 'candidate' THEN
-    RAISE EXCEPTION 'EXG FAIL [P1 publish-rejected-candidate]: v1.0 is not candidate; this check''s premise changed';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.scoring_model_versions WHERE status = 'active') THEN
-    RAISE EXCEPTION 'EXG FAIL [P1 publish-rejected-candidate]: an active version exists; publishes are no longer universally refused';
-  END IF;
-END $$;
+INSERT INTO public.scoring_model_versions (version, formula_name, formula_doc_ref, status)
+VALUES ('zz_p1_cand', 'option_a_banded_ceiling', 'Doc 04B V4.3 §6', 'candidate');
+UPDATE public.test_forms SET score_table_version = 'zz_p1_cand' WHERE id = '00000000-0000-0000-0000-00000000e301';
 SELECT pg_temp.e3_expect('P1 publish-rejected-candidate',
   $q$UPDATE public.test_forms SET status = 'published', published_at = clock_timestamp()
       WHERE id = '00000000-0000-0000-0000-00000000e301'$q$,
-  '23000', 'Cannot publish: score_table_version v1.0 is in status candidate (must be active)');
+  '23000', 'Cannot publish: score_table_version zz_p1_cand is in status candidate (must be active)');
+ROLLBACK;
+
+-- ---------------------------------------------------------------------------
+-- P1s — gate check (a): a form bound to a SUPERSEDED version cannot publish
+-- (added with E4: once v1.0 is active, "not active" has a second face).
+-- v1.0 itself is superseded inside the rolled-back txn.
+-- ---------------------------------------------------------------------------
+BEGIN;
+UPDATE public.scoring_model_versions SET status = 'superseded' WHERE version = 'v1.0';
+SELECT pg_temp.e3_expect('P1s publish-rejected-superseded',
+  $q$UPDATE public.test_forms SET status = 'published', published_at = clock_timestamp()
+      WHERE id = '00000000-0000-0000-0000-00000000e301'$q$,
+  '23000', 'Cannot publish: score_table_version v1.0 is in status superseded (must be active)');
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
@@ -401,9 +417,10 @@ ROLLBACK;
 -- R1 / R2 — module2_path: first lock allowed; any rewrite refused.
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3501', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 INSERT INTO public.test_session_sections (test_session_id, section, state, module1_started_at)
 VALUES ('00000000-0000-0000-0000-0000000e3501', 'RW', 'module1_active', now());
@@ -431,9 +448,10 @@ ROLLBACK;
 -- the single canonical row (answer, last_submission_id). One row throughout.
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3502', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 CREATE TEMP TABLE _submit (key text, answer text) ON COMMIT DROP;
 CREATE FUNCTION pg_temp.e3_submit(p_key text, p_answer text) RETURNS void LANGUAGE plpgsql AS $f$
@@ -484,13 +502,17 @@ END $$;
 ROLLBACK;
 
 -- ---------------------------------------------------------------------------
--- D1 — account deletion: DELETE of the student's profile cascades through
--- test_sessions to sections, submissions and answers (nothing blocks).
+-- D1 — account deletion: DELETE of the student's profile SEVERS the session
+-- (student_id ON DELETE SET NULL, E6b / SCL-143, superseding the CASCADE of
+-- SCL-124) and nothing blocks. The session keeps its actor_id and its sections,
+-- submissions and answers. Removal is the cascade's hard_delete job
+-- (scripts/ci/exam-deletion-cascade-gates.sql).
 -- ---------------------------------------------------------------------------
 BEGIN;
-INSERT INTO public.test_sessions (id, student_id, test_form_id, state, mode, active_section, started_at,
+INSERT INTO public.test_sessions (id, student_id, actor_id, test_form_id, state, mode, active_section, started_at,
                                   grace_expires_at, attempt_number_for_form, is_first_seen_form_attempt)
 VALUES ('00000000-0000-0000-0000-0000000e3503', '00000000-0000-0000-0000-00000000e3aa',
+        (SELECT actor_id FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa'),
         '00000000-0000-0000-0000-00000000e301', 'active', 'strict', 'RW', now(), now() + interval '1 day', 1, true);
 INSERT INTO public.test_session_sections (test_session_id, section, state) VALUES
   ('00000000-0000-0000-0000-0000000e3503', 'RW', 'module1_active'),
@@ -504,16 +526,17 @@ INSERT INTO public.test_session_answers (test_session_id, section, module, ordin
 SELECT '00000000-0000-0000-0000-0000000e3503', 'RW', '1', 0, 'SATRW1V10100', 'A', id FROM s;
 DELETE FROM public.profiles WHERE id = '00000000-0000-0000-0000-00000000e3aa';
 DO $$
-DECLARE v_left int;
+DECLARE v_left int; v_sev int;
 BEGIN
-  SELECT (SELECT count(*) FROM public.test_sessions WHERE id = '00000000-0000-0000-0000-0000000e3503')
-       + (SELECT count(*) FROM public.test_session_sections WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
+  SELECT count(*) INTO v_sev FROM public.test_sessions
+   WHERE id = '00000000-0000-0000-0000-0000000e3503' AND student_id IS NULL AND actor_id IS NOT NULL;
+  SELECT (SELECT count(*) FROM public.test_session_sections WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
        + (SELECT count(*) FROM public.test_answer_submissions WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
        + (SELECT count(*) FROM public.test_session_answers WHERE test_session_id = '00000000-0000-0000-0000-0000000e3503')
     INTO v_left;
-  IF v_left <> 0 THEN
-    RAISE EXCEPTION 'EXG FAIL [D1 deletion-cascade]: % runtime row(s) survived the profile delete', v_left;
+  IF v_sev <> 1 OR v_left <> 4 THEN
+    RAISE EXCEPTION 'EXG FAIL [D1 deletion-severs]: severed session rows=% (want 1), children=% (want 4)', v_sev, v_left;
   END IF;
-  RAISE NOTICE 'ok   [D1 deletion-cascade] profile delete removed session, 2 sections, 1 submission, 1 answer';
+  RAISE NOTICE 'ok   [D1 deletion-severs] profile delete severed the session (student_id NULL, actor_id kept); 2 sections, 1 submission, 1 answer retained';
 END $$;
 ROLLBACK;

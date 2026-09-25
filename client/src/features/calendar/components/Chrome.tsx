@@ -18,6 +18,8 @@
  * backfilled would be a claim the data does not support.
  */
 import type { PlanTrigger, StreakSummary } from "@lyceon/shared/calendar";
+import type { SectionProjectionDto } from "@lyceon/shared";
+import { projectedRange } from "../lib/projection";
 import { bannerCopy } from "../copy/banner";
 import {
   dayOfMonth,
@@ -79,8 +81,14 @@ export function LeftRail({
   /**
    * §17.3's "Your schedule" card. ABSENT for a guardian, like every other control on this
    * surface — the difference is the missing prop, not a `readOnly` branch inside.
+   *
+   * SUMMARY ONLY — no control. The card used to carry its own "Change schedule" button, a
+   * second way into the settings sheet that the design dropped two revisions ago; the
+   * prototype's rail has the summary and no button (`docs/design/calendar-prototype.html`,
+   * the `plancard`). "Edit schedule" in the header is the single entry point, so there is
+   * one place to look for it and one control to keep working.
    */
-  schedule?: { summary: string; onEdit: () => void };
+  schedule?: { summary: string };
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
@@ -97,9 +105,6 @@ export function LeftRail({
         <div className="schedcard" data-testid="rail-schedule-card">
           <b>Your schedule</b>
           <span data-testid="rail-schedule-summary">{schedule.summary}</span>
-          <button type="button" onClick={schedule.onEdit}>
-            Change schedule
-          </button>
         </div>
       )}
 
@@ -191,6 +196,31 @@ function addSevenDays(date: string): string {
 
 // ── Top bar ─────────────────────────────────────────────────────────────────
 
+/**
+ * §17.1 — the header, in three zones of two rows each.
+ *
+ * @spec [Doc 05F §17.1; owner ruling 2026-09-24 (Brief 10 Step 4)]
+ * | @implemented [2026-09-24]
+ *
+ * The layout is the prototype's, slot for slot (`docs/design/calendar-prototype.html`,
+ * the `.top` grid and its six `.slot`s):
+ *
+ *   L1  ← Dashboard              C1  ‹ › Today · range · Week/Month     R1  1400 Target
+ *   L2  Edit schedule · Refresh  C2  🔥 6 day streak · 47 days to test   R2  680 – 1060 Projected
+ *
+ * The prototype's drag-to-rearrange mode and its Student/Parent toggle are demo devices and
+ * do not ship; the slots they moved around are what ships.
+ *
+ * EVERY NUMBER HERE CAN BE ABSENT, AND ABSENCE HAS COPY. A student with no target score, no
+ * test date or no Doc 05C projection sees a sentence telling them so — never a blank slot
+ * and never a zero. Since 20261002000000 (SCL-130) nothing in setup is required, so the
+ * all-absent header is the ordinary first visit rather than an edge case: 103 of 104
+ * students in production have no target today.
+ *
+ * THE PROJECTED RANGE IS READ, NOT COMPUTED. It is the sum of Doc 05C's two section rows
+ * and nothing else — see `../lib/projection`, whose whole contract is that it contains no
+ * arithmetic but `+`, enforced by `scripts/ci/calendar-projection-gate.mjs`.
+ */
 export function TopBar({
   backHref,
   rangeLabelText,
@@ -200,6 +230,8 @@ export function TopBar({
   onToday,
   streak,
   daysToTest,
+  targetScore,
+  projection,
   onRefresh,
   refreshPending,
   onEditSchedule,
@@ -213,94 +245,186 @@ export function TopBar({
   onToday: () => void;
   streak: StreakSummary | undefined;
   daysToTest: number | null;
+  /** §8.1, optional since SCL-130. `null` renders "Set a target", never a zero. */
+  targetScore: number | null;
+  /** Doc 05C's section rows, passed through untouched. `undefined` when none were served. */
+  projection: readonly SectionProjectionDto[] | undefined;
   /** Absent for a guardian — §16 gives them no write path, so no Refresh control exists. */
   onRefresh?: () => void;
   refreshPending?: boolean;
   /** §17.3. Absent for a guardian, for the same reason as `onRefresh`. */
   onEditSchedule?: () => void;
 }): JSX.Element {
+  const range = projectedRange(projection);
+
   return (
     <div className="top">
-      {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping the
-          history stack lands wherever the student happened to arrive from, including an
-          external referrer, and it cannot be middle-clicked or opened in a new tab. A
-          link to the dashboard is deterministic and behaves like every other link. */}
-      <Link href={backHref} className="back" data-testid="calendar-back-link">
-        <span aria-hidden="true">←</span> Dashboard
-      </Link>
-      <span className="topdiv" aria-hidden="true" />
-      <div className="arrows">
-        <button
-          type="button"
-          className="btn icon"
-          aria-label="Previous"
-          onClick={() => onStep(-1)}
-        >
-          ‹
-        </button>
-        <button
-          type="button"
-          className="btn icon"
-          aria-label="Next"
-          onClick={() => onStep(1)}
-        >
-          ›
-        </button>
-      </div>
-      <button type="button" className="btn" onClick={onToday}>
-        Today
-      </button>
-      <div className="range">{rangeLabelText}</div>
-      <div className="seg" role="group" aria-label="View">
-        <button
-          type="button"
-          aria-pressed={view === "week"}
-          onClick={() => onView("week")}
-        >
-          Week
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "month"}
-          onClick={() => onView("month")}
-        >
-          Month
-        </button>
-      </div>
-      <div className="spacer" />
-      {onEditSchedule === undefined ? null : (
-        <button
-          type="button"
-          className="btn sched"
-          onClick={onEditSchedule}
-          data-testid="topbar-edit-schedule"
-        >
-          <span aria-hidden="true">✎</span> Edit schedule
-        </button>
-      )}
-      {streak?.current === null || streak === undefined ? null : (
-        <div className="stat" title="Days in a row with study activity">
-          🔥 <b>{streak.current}</b> day streak
-          {streak.history_complete && streak.longest !== null ? (
-            <span className="muted"> · best {streak.longest}</span>
-          ) : null}
+      {/* ── L1 ─────────────────────────────────────────────────────────── */}
+      <div className="slot" data-slot="L1">
+        <div className="item" data-item="dashboard">
+          {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping
+              the history stack lands wherever the student happened to arrive from,
+              including an external referrer, and it cannot be middle-clicked or opened in
+              a new tab. A link to the dashboard is deterministic. */}
+          <Link
+            href={backHref}
+            className="back"
+            data-testid="calendar-back-link"
+          >
+            <span aria-hidden="true">←</span> Dashboard
+          </Link>
         </div>
-      )}
-      {daysToTest === null ? null : (
-        <div className="stat">
-          <b>{daysToTest}</b> days to test
+      </div>
+
+      {/* ── C1 ─────────────────────────────────────────────────────────── */}
+      <div className="slot" data-slot="C1">
+        <div className="item" data-item="nav">
+          <div className="navrow">
+            <div className="arrows">
+              <button
+                type="button"
+                className="btn icon"
+                aria-label="Previous"
+                onClick={() => onStep(-1)}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="btn icon"
+                aria-label="Next"
+                onClick={() => onStep(1)}
+              >
+                ›
+              </button>
+            </div>
+            <button type="button" className="btn" onClick={onToday}>
+              Today
+            </button>
+            <div className="range">{rangeLabelText}</div>
+          </div>
         </div>
-      )}
-      {onRefresh === undefined ? null : (
-        <button
-          type="button"
-          className="btn primary"
-          onClick={onRefresh}
-          disabled={refreshPending === true}
-        >
-          {refreshPending === true ? "Refreshing…" : "Refresh plan"}
-        </button>
-      )}
+        <div className="item" data-item="viewtoggle">
+          <div className="seg" role="group" aria-label="View">
+            <button
+              type="button"
+              aria-pressed={view === "week"}
+              onClick={() => onView("week")}
+            >
+              Week
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "month"}
+              onClick={() => onView("month")}
+            >
+              Month
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── R1: the target ─────────────────────────────────────────────── */}
+      <div className="slot" data-slot="R1">
+        <div className="item" data-item="target">
+          {targetScore === null ? (
+            <div
+              className="ptarget absent"
+              data-testid="calendar-target-absent"
+            >
+              Set a target
+            </div>
+          ) : (
+            <div className="ptarget" data-testid="calendar-target">
+              <b>{targetScore}</b> <span>Target</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── L2 ─────────────────────────────────────────────────────────── */}
+      <div className="slot" data-slot="L2">
+        {onEditSchedule === undefined ? null : (
+          <div className="item" data-item="edit">
+            <button
+              type="button"
+              className="btn sched"
+              onClick={onEditSchedule}
+              data-testid="topbar-edit-schedule"
+            >
+              <span aria-hidden="true">✎</span> Edit schedule
+            </button>
+          </div>
+        )}
+        {onRefresh === undefined ? null : (
+          <div className="item" data-item="refresh">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={onRefresh}
+              disabled={refreshPending === true}
+            >
+              {refreshPending === true ? "Refreshing…" : "Refresh plan"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── C2 ─────────────────────────────────────────────────────────── */}
+      <div className="slot" data-slot="C2">
+        {streak?.current === null || streak === undefined ? null : (
+          <div className="item" data-item="streak">
+            <div
+              className="streakline"
+              title="Days in a row with study activity"
+            >
+              🔥 <b>{streak.current}</b> day streak
+              {streak.history_complete && streak.longest !== null ? (
+                <span className="muted"> · best {streak.longest}</span>
+              ) : null}
+            </div>
+          </div>
+        )}
+        <div className="item" data-item="countdown">
+          {daysToTest === null ? (
+            <div
+              className="countline absent"
+              data-testid="calendar-countdown-absent"
+            >
+              Add your test date
+            </div>
+          ) : (
+            <div className="countline" data-testid="calendar-countdown">
+              <b>{daysToTest}</b> days to test
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── R2: Doc 05C's band, summed ─────────────────────────────────── */}
+      <div className="slot" data-slot="R2">
+        <div className="item" data-item="range">
+          {range === null ? (
+            // Doc 05C nulls a section's low/mid/high together below its Q4 gate, so this
+            // is "not enough answered questions yet", not a failure. Saying so beats a
+            // blank (looks broken) and beats a zero (200 is the floor of a real section,
+            // so 0 is not a score).
+            <div
+              className="prange absent"
+              data-testid="calendar-projection-absent"
+            >
+              Answer a few questions to see your projection
+            </div>
+          ) : (
+            <div className="prange" data-testid="calendar-projection">
+              <b>
+                {range.low} – {range.high}
+              </b>{" "}
+              <span>Projected</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

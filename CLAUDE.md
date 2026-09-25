@@ -72,6 +72,29 @@ pnpm -s run build && pnpm test
 
 A task is open until: build passes, tests pass, no invariant violated, result reproducible. Passing CI is necessary, not sufficient.
 
+## "Is it deployed?" — ask the catalog, never the ledger
+
+`schema_migrations` **stopped recording in June**. Migrations are applied out of band, so the
+ledger reports every migration since as unapplied. It is not a defect and it is not being fixed;
+it is simply not evidence. A report of "authored but not applied" sourced from it is a false
+claim about production, and it has been made.
+
+Answer the question from the catalog, against the database being asked about:
+
+| the question | the authority |
+|---|---|
+| is this function's body live? | `pg_proc.prosrc` — normalise CRs, then compare or `md5` |
+| is this constraint still there? | `pg_constraint` (and `pg_attribute` for a column) |
+| is this config value live? | the config table itself, e.g. `calendar_runtime_config` |
+| does this table/column exist? | `information_schema` / `pg_class` |
+
+Owner-run against production: never query or write production yourself. State what you would run
+and hand it over, or say the deployment state is unverified from here — which is honest, where a
+ledger reading is not. Where a migration's effect can be pinned in CI, pin it: gates `B-01` and
+`B-02` in `scripts/ci/calendar-schema-gates.sql` are the pattern — assert the body of whatever
+function is live at the end of the migration pipeline. (Learned 2026-09-24: five calendar
+migrations reported unapplied were all live in production.)
+
 ## Tooling
 
 - **`pnpm` only.** `npm` is prohibited (blocked by hook). No dependency changes without approval.
