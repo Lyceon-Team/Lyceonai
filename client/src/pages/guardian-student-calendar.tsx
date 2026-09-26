@@ -1,5 +1,6 @@
 /**
- * @spec [Doc_05F_Study_Calendar, §16 guardian read (R-08-22), §17.5 states]
+ * @spec [Doc_05F_Study_Calendar, §16 guardian read (R-08-22 REVERSED — SCL-173),
+ *        §17.5 states]
  *       [Doc_05F_formula_sheet.md §8 item 14 — the route is /api/students/:studentId/calendar]
  * @implemented [2026-09-23]
  *
@@ -11,12 +12,25 @@
  * `plan: null` and `explanations: []` and whose `controls` is `{ kind: "read_only" }`. So
  * there is no Start, Resume, Do-it-now, Remove, Move, edit field, Refresh, Regenerate or
  * drag handle to hide — the handlers those controls would need do not exist on this page,
- * and the explanation copy has no key to be looked up from. `guardian-calendar.tree.test.tsx`
+ * and the explanation copy has no key to be looked up from. `guardian-readonly.tree.test.tsx`
  * walks the rendered tree and asserts exactly that.
  *
- * NO TARGET SCORE ANYWHERE. R-08-22 and §16: the guardian payload has no profile at all, so
- * there is no exam date for the countdown either. `targetExamDate` is null, and the top bar
- * renders no countdown rather than a zero.
+ * THE TARGET, THE TEST DATE AND THE BAND ARE SERVED — and this paragraph used to say the
+ * exact opposite. Until 2026-09-26 it read "NO TARGET SCORE ANYWHERE … the guardian payload
+ * has no profile at all", which was true when written and false the moment the fields landed
+ * a few lines below. It is corrected rather than deleted because the reversal is the thing a
+ * reader of this file most needs to know.
+ *
+ * §16 as amended (SCL-173) withholds "no controls, no explanation copy, and no profile beyond
+ * `target_score` and `target_exam_date`". TWO clauses had to move, not one: R-08-22 named the
+ * target score, and the separate "no profile" clause independently caught the exam date,
+ * since that is a `student_study_profile` column (Doc 05F §7.1) named inside §10.1's plan
+ * input `profile` object. The owner's reason covers both — a stated goal and a stated date
+ * are facts about the goal, not controls.
+ *
+ * What is still withheld, and what this page therefore cannot pass on even by accident: the
+ * timezone, the study-day mask, the daily minutes, the exam weekday and the planner mode.
+ * They are not on the payload, so there is nothing here to forward.
  *
  * edge cases: §17.5's guardian pre-setup state is a plain "Not set up yet" — a guardian
  * cannot run setup, so offering the sheet would be offering a control that cannot work.
