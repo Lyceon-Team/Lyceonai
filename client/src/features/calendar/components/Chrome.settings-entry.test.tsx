@@ -41,6 +41,7 @@ function renderChrome(over: { onEditSchedule?: () => void } = {}): void {
         schedule={{ summary: "Mon–Fri · 1 hr a day" }}
       />
       <TopBar
+        viewer="student"
         backHref="/dashboard"
         rangeLabelText="21 – 27 September"
         view="week"

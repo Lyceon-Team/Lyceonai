@@ -311,8 +311,16 @@ describe("subject-scoped resources — one route, two callers", () => {
     expect(body).not.toContain("weighted");
     expect(body).not.toContain("version_no");
     expect(body).not.toContain("is_user_override");
-    expect(body).not.toContain("target_score");
     expect(body).not.toContain("membership_type");
+    // `target_score` WAS on this list until 2026-09-26. R-08-22 is reversed and §16's
+    // separate "no profile" clause is narrowed to admit the exam date too, so the two are
+    // asserted PRESENT here and the remaining profile columns carry the withholding.
+    expect(res.body.target_score).toBe(1400);
+    expect(res.body).toHaveProperty("target_exam_date");
+    expect(body).not.toContain("study_days_mask");
+    expect(body).not.toContain("daily_minutes");
+    expect(body).not.toContain("planner_mode");
+    expect(body).not.toContain("setup_completed_at");
     // §16 gives a guardian the same FACTS, so those are present rather than withheld.
     expect(res.body.facts.blocks_total).toBe(1);
     expect(Object.keys(res.body.streak).sort()).toEqual([

@@ -40,6 +40,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BLOCK_ROW,
+  PROFILE_ROW,
   SCENARIO_STUDENT,
   SCENARIO_TODAY,
   makeScenarioClient,
@@ -99,10 +100,48 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
   };
 });
 
-// Doc 05C's projection band is optional (§15) and its own vertical. Empty here keeps this
-// file about the calendar's own wire shape.
+// Doc 05C's band. It USED to return [] here, on the grounds that projections are their own
+// vertical — but since the owner's 2026-09-26 ruling the guardian payload carries them, and
+// an empty array would leave `projection` omitted and this gate blind to the very field it
+// now has to cover. Two rows, production's own values for the brief's student:
+// M 470 (380-560), RW 400 (300-500).
+const PROJECTION_ROWS = [
+  {
+    section: "M" as const,
+    projectedScoreMid: 470,
+    projectedScoreLow: 380,
+    projectedScoreHigh: 560,
+    relevantQuestionCount: 42,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+  {
+    section: "RW" as const,
+    projectedScoreMid: 400,
+    projectedScoreLow: 300,
+    projectedScoreHigh: 500,
+    relevantQuestionCount: 37,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+];
 vi.mock("../../apps/api/src/services/projection-read", () => ({
-  readSectionProjections: vi.fn(async () => []),
+  readSectionProjections: vi.fn(async () => [
+    {
+      section: "M" as const,
+      projectedScoreMid: 470,
+      projectedScoreLow: 380,
+      projectedScoreHigh: 560,
+      relevantQuestionCount: 42,
+      computedAt: "2026-09-25T00:00:00Z",
+    },
+    {
+      section: "RW" as const,
+      projectedScoreMid: 400,
+      projectedScoreLow: 300,
+      projectedScoreHigh: 500,
+      relevantQuestionCount: 37,
+      computedAt: "2026-09-25T00:00:00Z",
+    },
+  ]),
 }));
 
 // The adapters have their own contract tests (`calendar.launch-contract.*`). Here they only
@@ -212,10 +251,54 @@ describe("the guardian calendar's wire body parses with the client's own schema 
       BLOCK_ROW.block_id,
     );
 
-    // And §16's withholdings, now that there is a real block to withhold them from.
+    // THE THREE FIELDS §16 NOW ADMITS, asserted through the REAL serializer and the REAL
+    // client schema. `target_score` was on the absence list below until 2026-09-26; the
+    // reversal moved it up here, and this gate is what forced that edit to be deliberate
+    // rather than silent — exactly the drift #903 exists to prevent.
+    expect(parsedBody.target_score).toBe(PROFILE_ROW.target_score);
+    expect(parsedBody.target_exam_date).toBe(PROFILE_ROW.target_exam_date);
+    expect(parsedBody.projection).toEqual(PROJECTION_ROWS);
+    // Read 1:1, never recomputed: the band on the wire is Doc 05C's rows unchanged, so a
+    // future "helpful" transform in the serializer breaks this rather than shipping.
+    expect(parsedBody.projection?.[0]?.projectedScoreLow).toBe(380);
+    expect(parsedBody.projection?.[1]?.projectedScoreHigh).toBe(500);
+
+    // And §16's REMAINING withholdings, now that there is a real block to withhold them
+    // from. The two admitted profile fields are named above; every other profile column is
+    // still absent, and that is the half of the amended clause this asserts.
+    //
+    // The TOP-LEVEL KEY SET, exactly. This is a better statement of the amended clause than
+    // a substring sweep, and I know because my first attempt swept for "timezone" and went
+    // red: `timezone` is a legitimate per-DAY field of the guardian read model, telling the
+    // client which zone `local_date` belongs to. It is not the profile's timezone setting.
+    // A sweep cannot tell those apart; a key set can.
+    expect(Object.keys(parsedBody).sort()).toEqual([
+      "days",
+      "estimates",
+      "facts",
+      "projection",
+      "status",
+      "streak",
+      "target_exam_date",
+      "target_score",
+    ]);
+    // No profile column beyond the two admitted ones, checked by name at the top level.
+    for (const withheld of [
+      "study_days_mask",
+      "daily_minutes",
+      "full_length_weekday",
+      "planner_mode",
+      "setup_completed_at",
+      "bounds",
+      "enabled_block_types",
+      "profile",
+    ]) {
+      expect(parsedBody).not.toHaveProperty(withheld);
+    }
+    // And the nested leaks, which a key set cannot see: §17.6 copy at either level, plus the
+    // plan-internal fields `toGuardianCalendarDay` drops.
     const serialized = JSON.stringify(parsedBody);
     expect(serialized).not.toContain("explanation_key");
-    expect(serialized).not.toContain("target_score");
     expect(serialized).not.toContain("is_user_override");
     expect(serialized).not.toContain("version_no");
   });

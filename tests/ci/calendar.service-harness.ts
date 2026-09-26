@@ -223,7 +223,13 @@ export const SCENARIO_NOW = new Date("2026-09-21T18:00:00.000Z");
 
 export const PROFILE_ROW = {
   timezone: "America/Chicago",
-  target_exam_date: null,
+  /**
+   * A REAL DATE, not null. It was null until 2026-09-26, which was fine while nothing read
+   * it — but the guardian payload now carries `target_exam_date`, and a null fixture would
+   * let the wire gate assert the field "matches" while never proving a date survives the
+   * round trip. Production's own value for the student in Brief 13.
+   */
+  target_exam_date: "2026-12-05",
   target_score: 1400,
   study_days_mask: 127,
   daily_minutes: 60,
