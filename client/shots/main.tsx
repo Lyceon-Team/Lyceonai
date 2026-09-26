@@ -353,6 +353,26 @@ const NOOP_MUTATIONS = {
   launchPending: false,
 };
 
+/** Doc 05C's band, production's values for this student: M 470 (380-560), RW 400 (300-500). */
+const SHOT_PROJECTION = [
+  {
+    section: "M" as const,
+    projectedScoreMid: 470,
+    projectedScoreLow: 380,
+    projectedScoreHigh: 560,
+    relevantQuestionCount: 42,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+  {
+    section: "RW" as const,
+    projectedScoreMid: 400,
+    projectedScoreLow: 300,
+    projectedScoreHigh: 500,
+    relevantQuestionCount: 37,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+];
+
 function guardianResponse(
   from: string,
   to: string,
@@ -360,6 +380,11 @@ function guardianResponse(
   const student = readyResponse(from, to);
   return {
     status: "ready",
+    // Owner ruling 2026-09-26: R-08-22 reversed, §16's "no profile" clause narrowed to these
+    // two. Same values the student fixture carries — it is the same plan.
+    target_score: student.profile.target_score,
+    target_exam_date: student.profile.target_exam_date,
+    projection: SHOT_PROJECTION,
     days: student.days.map((day) => ({
       local_date: day.local_date,
       timezone: day.timezone,
@@ -419,6 +444,15 @@ function guardianResponse(
     })),
     facts: FACTS,
     streak: STREAK,
+    // PRE-EXISTING BUG, fixed here because it blocked the screenshot this change needs.
+    // `estimates` became REQUIRED on the guardian payload with the owner's ruling of
+    // 2026-09-22, and this fixture never gained it — so `?scene=guardian` has been throwing
+    // "Cannot read properties of undefined (reading 'review_seconds_per_unit')" and
+    // rendering a blank page ever since. Nothing caught it: `client/shots/` is outside
+    // tsconfig, so the missing required field was invisible to the compiler, and a dev-only
+    // harness has no test. Same shape as the finding in CLAUDE.md — a surface with weaker
+    // guarantees than the code it depicts.
+    estimates: ESTIMATES,
   };
 }
 
@@ -447,12 +481,57 @@ function Scene(): JSX.Element {
   }
 
   if (scene === "guardian") {
+    const guardian = guardianResponse(WEEK.from, WEEK.to);
+    return (
+      <CalendarView
+        model={guardianViewModel(guardian)}
+        today={TODAY}
+        viewerName="Study plan"
+        viewer="guardian"
+        targetExamDate={guardian.target_exam_date}
+        targetScore={guardian.target_score}
+        projection={guardian.projection}
+        streak={STREAK}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />
+    );
+  }
+
+  // The guardian header with NOTHING to show — the state 103 of 104 students in production
+  // are in. Its whole point is that each empty slot STATES a fact ("No target set", "No test
+  // date", "Not enough practice yet") where the student's would instruct an action. A
+  // guardian has no write path, so an instruction would point nowhere.
+  if (scene === "guardian-empty") {
     return (
       <CalendarView
         model={guardianViewModel(guardianResponse(WEEK.from, WEEK.to))}
         today={TODAY}
         viewerName="Study plan"
+        viewer="guardian"
         targetExamDate={null}
+        targetScore={null}
+        projection={undefined}
+        streak={STREAK}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />
+    );
+  }
+
+  // The same empty header as a STUDENT sees it, for the side-by-side that shows the
+  // difference is copy and nothing else.
+  if (scene === "student-empty") {
+    return (
+      <CalendarView
+        model={studentViewModel(readyResponse(WEEK.from, WEEK.to))}
+        today={TODAY}
+        viewerName="Karl Nkemzi"
+        viewer="student"
+        viewer="student"
+        targetExamDate={null}
+        targetScore={null}
+        projection={undefined}
         streak={STREAK}
         planUpdate={null}
         onRangeChange={() => {}}
@@ -478,6 +557,7 @@ function Scene(): JSX.Element {
         }}
         today={TODAY}
         viewerName="Karl Nkemzi"
+        viewer="student"
         targetExamDate={null}
         streak={STREAK}
         planUpdate={null}
@@ -520,6 +600,7 @@ function Scene(): JSX.Element {
       )}
       today={TODAY}
       viewerName="Karl Nkemzi"
+      viewer="student"
       targetExamDate="2026-11-07"
       streak={STREAK}
       planUpdate={{ versionNo: 2, trigger: "weekly" }}
