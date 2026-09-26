@@ -455,11 +455,14 @@ function ModuleRunner(props: {
         </div>
       )}
       <main className="flex min-h-0 flex-1">
-        {isMath && calculatorOpen && (
+        {/* Mounted for the whole Math module and collapsed when closed, as practice keeps it
+            (expanded={false}): closing no longer destroys the calculator, so reopening shows the
+            same graph and an edit inside the component's debounce window is not lost. */}
+        {isMath && (
           <aside
             id="exam-calculator-panel"
             aria-label="Graphing calculator"
-            className="flex w-full max-w-[520px] shrink-0 flex-col border-r border-[var(--exam-line)] bg-[var(--exam-surface)]"
+            className={`${calculatorOpen ? "flex" : "hidden"} w-full max-w-[520px] shrink-0 flex-col border-r border-[var(--exam-line)] bg-[var(--exam-surface)]`}
           >
             <div className="flex h-12 items-center justify-between border-b border-[var(--exam-line)] px-4">
               <span className="text-[13px] font-semibold">Graphing calculator</span>
@@ -473,7 +476,7 @@ function ModuleRunner(props: {
               </button>
             </div>
             <div className="min-h-0 flex-1">
-              <DesmosCalculator expanded fillHeight initialState={calculatorState} onStateChange={setCalculatorState} />
+              <DesmosCalculator expanded={calculatorOpen} fillHeight initialState={calculatorState} onStateChange={setCalculatorState} />
             </div>
           </aside>
         )}
