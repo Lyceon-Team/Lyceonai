@@ -643,6 +643,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-seams-gates.sh
 
+      # E9b: the calendar's reading of a real exam. Whole exams walked through the E6
+      # runtime functions and drained as the API does; then the scope shape, the next-test
+      # rule, the plan input's exam facts (missed_count, reviewed, weak_domains from 05B at
+      # weak_level_max), the session-scoped exam review, and the anonymised student.
+      # @spec [Doc_05F §7.4, §9.4, §10.1; formula sheet §2 step 4, §6; SCL-167 .. SCL-170] | @implemented [2026-09-25]
+      - name: Calendar full-length seam gates (G-08-02 — E9b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/calendar-full-length-gates.sh
+
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
   # questions into ephemeral Postgres, exercises select_practice_pool_random,
@@ -875,8 +890,23 @@ jobs:
       # engine must pass unchanged. Its own invocation: a shared run would let a rebuild
       # quietly satisfy another engine's contract. No PG environment because the file has
       # no database half to run -- not because one is being skipped.
-      - name: Calendar full-length launch contract (fail-open stub)
-        run: pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
+      # E9b flipped this file from the fail-open stub to the REAL exam engine (Doc 05F §9.1:
+      # an engine may be in enabled_block_types only with a contract test passing against the
+      # real engine). It drives the calendar's own day-edit and launch routes, sits a whole exam
+      # through /api/tests, and reads the plan input and the exam review that follows. Behind
+      # the summary gate, so a skipped test is red.
+      - name: Calendar full-length launch contract (REAL engine, real PostgreSQL — E9b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-full-length-contract.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-full-length-contract.json \
+            --file tests/ci/calendar.launch-contract.full_length.test.ts
 
       # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
       # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice

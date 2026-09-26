@@ -238,7 +238,12 @@ DECLARE
     -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
     -- beside the formula so a stored plan version traces to the exact SQL that
     -- made it. C-09 below asserts it names a migration timestamp.
-    'generator_version'];
+    'generator_version',
+    -- E9b / SCL-169, formula sheet §6: the planning definition of a weak domain,
+    -- read by calendar_build_plan_input (exams.weak_domains) AND by
+    -- calendar_compute_plan's explanation step. The parity gate pins its value
+    -- to the oracle's own `L <= 1`.
+    'weak_level_max'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
@@ -311,28 +316,31 @@ BEGIN
   END IF;
   RAISE NOTICE '    OK C-06 canonical_domain_order is the canonical eight, Math then Reading & Writing';
 
-  -- Sheet §8 item 12 / V-03. This used to pin the LAUNCH value, `["practice"]`. Review
-  -- shipped on 2026-09-22 and was enabled, so pinning that literal would now assert a
-  -- state the product has deliberately left -- the test pushing against the truth rather
-  -- than protecting it.
+  -- Sheet §8 item 12 / V-03 / Doc 05F §9.1, FLIPPED BY E9b (2026-09-25).
   --
-  -- What is still worth asserting, and is the part that can actually go wrong, is that
-  -- nothing is enabled whose ADAPTER is a fail-open stub. Enabling an engine before its
-  -- engine exists puts live Start controls on blocks with nothing behind them, which is
-  -- the one failure this gate was really there to prevent. full_length is that engine
-  -- today; it joins the list when its contract test passes against a real engine, and
-  -- this line moves with it.
-  IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-       @> '["full_length"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its adapter is still the fail-open stub (enabled_block_types = %)',
-      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
-  END IF;
+  -- History: this pinned the LAUNCH value ["practice"], then (after review
+  -- shipped) raised whenever full_length was enabled, because its adapter was a
+  -- fail-open stub and an enabled stub puts live Start controls on blocks with
+  -- nothing behind them. The exam engine has now shipped (E6-E9), its adapter is
+  -- real (server/services/calendar/adapters/full-length.ts), and §9.1's condition
+  -- for enabling it -- a contract test passing against the REAL engine -- is
+  -- tests/ci/calendar.launch-contract.full_length.test.ts.
+  --
+  -- So the assertion inverts: every engine the calendar_blocks.block_type CHECK
+  -- names must be enabled, and the database half of the full-length seam must
+  -- exist. Reverting 20261004010000 turns this red, which is the point: a
+  -- full-length block the generator is told not to plan would silently vanish
+  -- from every student's calendar again.
   IF NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-         @> '["practice"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 practice is not enabled, which no release has ever intended (enabled_block_types = %)',
+         @> '["practice","review","full_length"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 not every engine is enabled; practice, review and full_length all have real adapters (enabled_block_types = %)',
       (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK C-07 enabled_block_types = % — practice on, no stub engine enabled',
+  IF to_regprocedure('public.exam_next_form_for_student(uuid)') IS NULL
+     OR to_regprocedure('public.calendar_exam_review_scope(text,text)') IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its database seam (exam_next_form_for_student, calendar_exam_review_scope) is missing';
+  END IF;
+  RAISE NOTICE '    OK C-07 enabled_block_types = % — all three engines on, full-length seam present',
     (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
 
   -- The config history trigger pair is wired exactly as the other thirteen
@@ -636,14 +644,15 @@ DECLARE
 BEGIN
   WITH expected(name, len, md5) AS (VALUES
       ('calendar_acknowledge_version', 709, 'efea435c708ffec687802c7df28c0ee2'),
-      ('calendar_build_plan_input', 10839, '1d1e89a5e80cf30716508092eed1560b'),
+      ('calendar_build_plan_input', 14698, '418f6748a9b1aa5a9439f88dc8fe4757'),
       ('calendar_carry_started', 882, '1a34b4dec6664e8c13028098d7563ea0'),
-      ('calendar_compute_plan', 19393, '0567edbbd7b034ba7d54bd89942f526d'),
-      ('calendar_compute_plan_fallback', 7994, 'ed231d0bcf1c26e57d52cd7de11e8c5d'),
+      ('calendar_compute_plan', 20052, 'b55730b62121604d01e50d37ea8e86a3'),
+      ('calendar_compute_plan_fallback', 8363, '431fadefc7c68bbad9c4931a966a9e17'),
       ('calendar_do_it_now', 3921, 'cb08df2b79ae17e0b17e11af2cebcd33'),
       ('calendar_drop_today_for_system', 325, 'a037c331145e3afc8c94dc17b18a4cf4'),
       ('calendar_drop_unowned_dates', 336, 'afa423c5bf6382097610133e64707412'),
       ('calendar_edit_day', 2323, 'd03883155de01a174fd761426518ec36'),
+      ('calendar_exam_review_scope', 428, 'c74a9a309ec9c84944fe53f5f12298db'),
       ('calendar_is_known_timezone', 91, '946a562369e4d62e7ed74d83a529e890'),
       ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
       ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),
@@ -653,7 +662,7 @@ BEGIN
       ('calendar_regenerate_day', 7306, '6875bfde324a4b153899cd2d61696ae1'),
       ('calendar_regenerate_day_only', 199, '5d0b0a15caca7ea867cda145a35f2fec'),
       ('calendar_require_int', 238, '907d3f984f1b8c8f1b12384c574f0bd6'),
-      ('calendar_scope_is_valid', 3177, '3279a87f58e47efb8e8f38b74babefcd'),
+      ('calendar_scope_is_valid', 3552, '09fe6927d8b8e8b8bd597009853cc0dd'),
       ('calendar_validate_plan', 17209, '628372c06c754574ecf5b5f262f14518'),
       ('calendar_viewer_is_admin', 130, 'd0707346dc5e5486d8dd014ee386b79d'),
       ('calendar_weekly_candidates', 884, '562c5433b509895852bcb2462c87e955'),

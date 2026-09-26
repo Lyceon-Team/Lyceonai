@@ -383,6 +383,18 @@ export function CalendarView({
           { blockId: block.blockId, edited },
         );
       },
+      onEditFullLength: (scope) => {
+        // Same narrowing as the review arm: a full_length block's `target_count` is the
+        // literal 1, so only this arm of the union may be spread.
+        if (block.plan === null || block.plan.block_type !== "full_length")
+          return;
+        const edited = { ...block.plan, scope };
+        mutations.editDay(
+          day.date,
+          membersWithEdit(day, block.blockId, { scope }),
+          { blockId: block.blockId, edited },
+        );
+      },
       onRemove: () => {
         mutations.editDay(day.date, membersWithout(day, block.blockId), {
           removeBlockId: block.blockId,

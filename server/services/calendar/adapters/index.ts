@@ -17,7 +17,7 @@ import {
 import type { CalendarEngineAdapter } from "./types";
 import { practiceAdapter } from "./practice";
 import { reviewAdapter } from "./review";
-import { fullLengthAdapter } from "./stub";
+import { fullLengthAdapter } from "./full-length";
 
 const ADAPTERS: Readonly<Record<CalendarEngine, CalendarEngineAdapter>> = {
   practice: practiceAdapter,

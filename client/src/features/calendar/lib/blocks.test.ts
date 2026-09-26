@@ -89,7 +89,7 @@ function fullLengthBlock(): PlanBlock {
     ...storedFields,
     block_type: "full_length",
     section: null,
-    scope: { form_id: null },
+    scope: { form_id: null, exam_mode: "strict" },
     explanation_key: "exam_cadence",
     target_count: 1,
   };

@@ -16,12 +16,13 @@
  * the server making an HTTP call to itself to reach a function it can import. The practice
  * adapter made the same choice for the same reason and says so in as many words.
  *
- * THE POOL SPEC IS `{ mode: "queue" }`, a bare discriminant with no fields. A calendar
- * review block means "the work you owe", which is exactly the student's open queue in
+ * THE POOL SPEC IS THE BLOCK'S SCOPE, TRANSLATED. An ordinary review block is
+ * `{ mode: "queue" }`, a bare discriminant: "the work you owe", the student's open queue in
  * `review_due_by_date` order -- the same queue the generator sized the block against
- * (`calendar_build_plan_input`, joined to `servable_questions` since H5). `filter` mode
- * would be the calendar inventing a selection the plan never made, and `session` mode
- * belongs to "review this test", which is a different request.
+ * (`calendar_build_plan_input`, joined to `servable_questions` since H5). The exam review the
+ * generator places after a completed full-length is `{ mode: "session" }` naming that exam
+ * (E9b, SCL-170): "review this test", which §9.4 names as the exam-review seam. `filter` mode
+ * would be the calendar inventing a selection the plan never made, and is never sent.
  *
  * NO `platform` FIELD. `startOrReplayReviewSession` does not take one; review sets
  * `platform: 'web'` itself on the row. Passing one would be silently dropped.
@@ -38,7 +39,14 @@
 import { supabaseServer } from "../../../../apps/api/src/lib/supabase-server";
 import { startOrReplayReviewSession } from "../../../routes/review-canonical";
 import { logger } from "../../../logger";
-import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
+import {
+  err,
+  ok,
+  type ActivityUnit,
+  type PlanBlock,
+  type ReviewPoolSpec,
+  type ReviewScope,
+} from "@lyceon/shared";
 import { localDayWindowUtc, toIsoTimestamp } from "./local-day";
 import type {
   CalendarEngineAdapter,
@@ -46,6 +54,29 @@ import type {
   EngineCreateResult,
   EngineLifecycle,
 } from "./types";
+
+/**
+ * The block's scope, as review's pool spec (E9b / SCL-170, Doc 05F §9.4).
+ *
+ * A queue block is the open queue, as before. A SESSION block — the exam review the generator
+ * places after a completed full-length — reviews that one exam: `{ mode: "session", source }`,
+ * the shape `POST /api/review/sessions` accepts for "review this test". Completing it is what
+ * sets `exams.reviewed` in the plan input, which is what lets the block clear; a queue session
+ * is sourced from nothing and could never do that.
+ *
+ * The scope already passed `calendar_scope_is_valid` and the shared schema on its way here, so
+ * this is a translation, not a validation. Nothing about it is chosen by the adapter.
+ */
+function poolSpecOf(scope: ReviewScope): ReviewPoolSpec {
+  if (scope.mode === "queue") return { mode: "queue" };
+  return {
+    mode: "session",
+    source: {
+      source_engine: scope.source_engine,
+      source_session_id: scope.source_session_id,
+    },
+  };
+}
 
 async function create(
   block: PlanBlock,
@@ -62,8 +93,9 @@ async function create(
   const result = await startOrReplayReviewSession({
     studentId: ctx.student_id,
     actorId: ctx.actor_id,
-    // See the module note: the block IS the queue, so the spec carries nothing else.
-    poolSpec: { mode: "queue" },
+    // See the module note: the pool is what the block's own scope says, never a choice made
+    // here. A queue block is the open queue; a session block is that one session.
+    poolSpec: poolSpecOf(block.scope),
     // Required and non-nullable on this signature, unlike `idempotencyKey`. The launch
     // service always has one; there is no branch here that could pass null.
     clientInstanceId: ctx.client_instance_id,

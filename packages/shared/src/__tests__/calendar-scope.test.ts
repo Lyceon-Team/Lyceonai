@@ -88,11 +88,11 @@ describe("round-trips a row shaped like the DDL", () => {
     },
     {
       name: "full_length with a pinned form",
-      row: { block_type: "full_length", section: null, scope: { form_id: "FORM-A" } },
+      row: { block_type: "full_length", section: null, scope: { form_id: "FORM-A", exam_mode: "strict" } },
     },
     {
       name: "full_length left to Doc 04 rotation (B3: key present, value null)",
-      row: { block_type: "full_length", section: null, scope: { form_id: null } },
+      row: { block_type: "full_length", section: null, scope: { form_id: null, exam_mode: "lenient" } },
     },
   ] as const;
 
@@ -277,7 +277,7 @@ describe("rejects an invalid full_length scope with the rule that failed", () =>
       rejectionOf({
         block_type: "full_length",
         section: "RW",
-        scope: { form_id: null },
+        scope: { form_id: null, exam_mode: "strict" },
       }).rule,
     ).toBe("section_presence");
   });
@@ -290,7 +290,28 @@ describe("rejects an invalid full_length scope with the rule that failed", () =>
 
   it("a non-string form_id", () => {
     expect(
-      rejectionOf({ block_type: "full_length", section: null, scope: { form_id: 7 } }).rule,
+      rejectionOf({
+        block_type: "full_length",
+        section: null,
+        scope: { form_id: 7, exam_mode: "strict" },
+      }).rule,
+    ).toBe("scope_shape");
+  });
+
+  // SCL-167: exam_mode is the second REQUIRED key, in the exam engine's own vocabulary.
+  it("an absent exam_mode key — both keys are required-present (SCL-167)", () => {
+    expect(
+      rejectionOf({ block_type: "full_length", section: null, scope: { form_id: null } }).rule,
+    ).toBe("scope_shape");
+  });
+
+  it("an exam_mode the exam engine does not accept", () => {
+    expect(
+      rejectionOf({
+        block_type: "full_length",
+        section: null,
+        scope: { form_id: null, exam_mode: "untimed" },
+      }).rule,
     ).toBe("scope_shape");
   });
 
@@ -299,7 +320,7 @@ describe("rejects an invalid full_length scope with the rule that failed", () =>
       rejectionOf({
         block_type: "full_length",
         section: null,
-        scope: { form_id: null, module: 2 },
+        scope: { form_id: null, exam_mode: "strict", module: 2 },
       }).rule,
     ).toBe("scope_shape");
   });

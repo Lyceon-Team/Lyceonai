@@ -77,6 +77,9 @@ const COMPONENT = "EXAM_RUNTIME";
 
 // ── Result type ─────────────────────────────────────────────────────────────
 
+/** The entitlement feature key every student exam surface requires (Doc 01 features). */
+export const EXAM_FEATURE_KEY = "exam_full_length";
+
 export type ExamFailure = {
   status: number;
   code: ExamErrorCode;

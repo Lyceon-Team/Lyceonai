@@ -26,6 +26,7 @@
  */
 import type {
   CanonicalDomain,
+  FullLengthScope,
   NewBlock,
   PlanBlock,
   PlanMember,
@@ -83,7 +84,10 @@ function createdFrom(
     block: {
       block_type: "full_length",
       section: null,
-      scope: block.scope as Extract<
+      // E9b: the test and the timing are editable scope keys (SCL-167), so an edit's scope
+      // wins here exactly as it does for practice and review. This arm used to ignore
+      // `overrides.scope` because a full-length block had nothing to edit.
+      scope: (overrides.scope ?? block.scope) as Extract<
         PlanBlock,
         { block_type: "full_length" }
       >["scope"],
@@ -144,7 +148,7 @@ export type NewBlockDraft =
       mix: readonly { domain: CanonicalDomain; count: number }[];
     }
   | { block_type: "review"; count: number }
-  | { block_type: "full_length" };
+  | { block_type: "full_length"; scope: FullLengthScope };
 
 /**
  * A brand-new block on a day, for §17.2's "+ Add block".
@@ -205,10 +209,10 @@ function newBlockFrom(draft: NewBlockDraft): NewBlock {
   return {
     block_type: "full_length",
     section: null,
-    // `form_id` null means "Doc 04 rotation picks the form" — and the KEY must be present
-    // (owner ruling B3, 2026-09-17): the CHECK is `scope ?& ARRAY['form_id']`, so an absent
-    // key is a different shape and the database refuses it.
-    scope: { form_id: null },
+    // Both keys always present (SCL-167; owner ruling B3, 2026-09-17): the CHECK is
+    // `scope ?& ARRAY['form_id','exam_mode']`, so an absent key is a different shape and the
+    // database refuses it. `form_id` null means "the next test" (SCL-168).
+    scope: draft.scope,
     // §7.4: `calendar_blocks_full_length_single` makes this a CHECK, not a convention.
     target_count: 1,
     explanation_key: null,

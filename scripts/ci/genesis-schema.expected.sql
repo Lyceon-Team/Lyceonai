@@ -656,6 +656,15 @@ DECLARE
   -- Which engines the product has actually turned on. Read once, used twice below.
   v_review_on      boolean;
   v_full_length_on boolean;
+  -- E9b: the exam facts (05F §10.1 exams{}), all NULL unless full_length is on
+  -- AND the student has a completed exam.
+  v_weak_max       integer;
+  v_exam_id        uuid;
+  v_exam_date      date;
+  v_seams_applied  boolean := false;
+  v_missed         integer;
+  v_reviewed       boolean;
+  v_weak           jsonb := '[]'::jsonb;
 BEGIN
   SELECT * INTO v_profile FROM public.student_study_profile WHERE student_id = p_student_id;
   IF NOT FOUND THEN
@@ -717,11 +726,83 @@ BEGIN
   LEFT JOIN public.student_domain_mastery m
     ON m.student_id = p_student_id AND m.domain = d.domain;
 
-  -- The exams seam has no table yet: full-length is a rebuild vertical and its
-  -- adapter ships as a fail-open stub (G-08-02, sheet §8 item 12). Recording it
-  -- in degraded[] is the honest form — the alternative is a snapshot that claims
-  -- the student has never sat an exam, which is a different statement.
-  v_degraded := v_degraded || '"exams"'::jsonb;
+  -- E9b (G-08-02): the exams seam is real now. Every fact below is read from its
+  -- owner, never computed here, and all of them stay NULL while full_length is not
+  -- in enabled_block_types (the same "tell the generator the truth" rule as the
+  -- weekday above). "exams" is no longer pushed into degraded[]: the read either
+  -- finds an exam or finds none, and "none" is a fact, not a degradation.
+  --
+  --   last exam          the student's newest test_sessions row in state
+  --                      'completed' (Doc 04A terminal state), dated by
+  --                      completed_at in the profile's timezone (§8.2).
+  --   missed_count       its review-queue rows (source_engine 'full_length',
+  --                      source_session_id = the exam) that are still ACTIVE and
+  --                      SERVABLE -- the H5 rule: never plan against rows the review
+  --                      engine will refuse to serve. NULL until E9's seams event
+  --                      has applied, because before that the queue rows do not
+  --                      exist yet and "unknown" is not "zero".
+  --   reviewed           a COMPLETED session-mode review sourced from that exam
+  --                      (review_sessions.mode = 'session', filters naming it), OR
+  --                      the seams have applied and nothing from it is left
+  --                      outstanding. The second arm is load-bearing: the generator
+  --                      holds an exam-review debt open while missed_count = 0 and
+  --                      reviewed is not true, and while it is open it places no
+  --                      ordinary review at all -- so a perfect exam, or one whose
+  --                      misses were cleared in queue review, would otherwise
+  --                      suppress review for the whole horizon, forever.
+  --   weak_domains       Doc 05B's own student_domain_mastery levels (already in
+  --                      v_mastery above), filtered at weak_level_max -- the one
+  --                      definition calendar_compute_plan's explanation step reads
+  --                      too. A NULL level (below MIN_EVENTS_FOR_MASTERY) is
+  --                      unmeasured, never weak.
+  --   source_session_id  the exam's id, so the generator can name it in the
+  --                      exam-review block's session scope (05F §9.4).
+  --
+  -- ANONYMISED STUDENT: a de-identified exam carries student_id NULL, so it never
+  -- matches p_student_id here; the path terminates at this WHERE.
+  IF v_full_length_on THEN
+    v_weak_max := public.calendar_require_int(v_constants, 'weak_level_max');
+
+    SELECT s.id, (s.completed_at AT TIME ZONE v_profile.timezone)::date
+      INTO v_exam_id, v_exam_date
+    FROM public.test_sessions s
+    WHERE s.student_id = p_student_id
+      AND s.state = 'completed'
+    ORDER BY s.completed_at DESC, s.id DESC
+    LIMIT 1;
+
+    IF v_exam_id IS NOT NULL THEN
+      v_seams_applied := EXISTS (
+        SELECT 1 FROM public.exam_runtime_outbox o
+        WHERE o.aggregate_id = v_exam_id
+          AND o.event_type = 'test_session_scored'
+          AND o.result ->> 'outcome' = 'applied');
+
+      IF v_seams_applied THEN
+        SELECT count(*)::integer INTO v_missed
+        FROM public.review_schedule r
+        JOIN public.servable_questions sq ON sq.id = r.question_id
+        WHERE r.student_id = p_student_id
+          AND r.source_engine = 'full_length'
+          AND r.source_session_id = v_exam_id
+          AND r.status = 'active';
+      END IF;
+
+      v_reviewed := EXISTS (
+          SELECT 1 FROM public.review_sessions rs
+          WHERE rs.student_id = p_student_id
+            AND rs.mode = 'session'
+            AND rs.status = 'completed'
+            AND rs.filters ->> 'source_engine' = 'full_length'
+            AND rs.filters ->> 'source_session_id' = v_exam_id::text)
+        OR (v_seams_applied AND v_missed = 0);
+
+      SELECT COALESCE(jsonb_agg(t.m ->> 'domain' ORDER BY t.o), '[]'::jsonb) INTO v_weak
+      FROM jsonb_array_elements(COALESCE(v_mastery, '[]'::jsonb)) WITH ORDINALITY AS t(m, o)
+      WHERE jsonb_typeof(t.m -> 'mastery_level') = 'number'
+        AND (t.m ->> 'mastery_level')::integer <= v_weak_max;
+    END IF;
+  END IF;
 
   RETURN jsonb_build_object(
     'student_id', p_student_id,
@@ -782,23 +863,16 @@ BEGIN
         GROUP BY 1
       ) q), '[]'::jsonb) END,
 
-    -- Every field here is unconditionally NULL today: the exams seam has no table
-    -- and the adapter is a fail-open stub, which is why "exams" is in degraded[]
-    -- above. The gate is written anyway so that enabling full_length stays the ONE
-    -- switch that makes exam facts visible to the generator. Until the exam vertical
-    -- ships this CASE cannot change the result -- stated plainly rather than left for
-    -- a reader to work out, and asserted as a no-op by the parity suite.
-    'exams', CASE WHEN NOT v_full_length_on THEN jsonb_build_object(
-      'last_completed_local_date', NULL,
-      'days_since_exam', NULL,
-      'missed_count', NULL,
-      'reviewed', NULL,
-      'weak_domains', '[]'::jsonb) ELSE jsonb_build_object(
-      'last_completed_local_date', NULL,
-      'days_since_exam', NULL,
-      'missed_count', NULL,
-      'reviewed', NULL,
-      'weak_domains', '[]'::jsonb) END,
+    -- E9b: the facts gathered above. With full_length off, or no completed exam,
+    -- every field is NULL and weak_domains is [] -- exactly the shape the oracle
+    -- gives a student who has never sat one.
+    'exams', jsonb_build_object(
+      'last_completed_local_date', v_exam_date::text,
+      'days_since_exam', CASE WHEN v_exam_date IS NULL THEN NULL ELSE v_today - v_exam_date END,
+      'missed_count', v_missed,
+      'reviewed', CASE WHEN v_exam_id IS NULL THEN NULL ELSE v_reviewed END,
+      'weak_domains', v_weak,
+      'source_session_id', v_exam_id::text),
 
     -- The deficit rule measures a domain against what it has had over the
     -- window plus today (sheet §2 step 5). Only domain-level practice blocks
@@ -861,7 +935,7 @@ $$;
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §9.3. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday and exam facts NULL; review off -> review_due_by_date []. The generator therefore does not reserve budget for blocks calendar_plan_to_output would filter out (§10.2 / sheet §8 item 12).';
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday NULL and exams{} NULL; review off -> review_due_by_date []. With full_length on, exams{} carries the newest completed exam: date, days since, missed_count (active servable queue rows from it, NULL until its seams applied), reviewed, weak_domains (05B levels <= weak_level_max) and source_session_id (SCL-169).';
 
 
 --
@@ -911,6 +985,7 @@ DECLARE
   k_null_weight       integer;
   k_post_days         integer;
   k_post_mult         integer;
+  k_weak_max          integer;
   k_min_domain_q      integer;
   k_max_domains       integer;
   k_granularity       integer;
@@ -938,6 +1013,7 @@ DECLARE
   x_missed            integer;
   x_reviewed          boolean;
   x_weak              text[];
+  x_session           text;
 
   -- domain arrays, all aligned on canonical order
   d_dom               text[] := '{}';
@@ -1010,6 +1086,9 @@ BEGIN
   k_null_weight      := public.calendar_require_int(v_constants, 'null_level_weight');
   k_post_days        := public.calendar_require_int(v_constants, 'post_exam_emphasis_days');
   k_post_mult        := public.calendar_require_int(v_constants, 'post_exam_multiplier');
+  -- E9b: the one definition of "weak" for planning (sheet §6 L0-L1), read from
+  -- config so the builder's weak_domains and this explanation step cannot disagree.
+  k_weak_max         := public.calendar_require_int(v_constants, 'weak_level_max');
   k_min_domain_q     := public.calendar_require_int(v_constants, 'min_domain_questions');
   k_max_domains      := public.calendar_require_int(v_constants, 'max_domains_per_block');
   k_granularity      := public.calendar_require_int(v_constants, 'granularity');
@@ -1057,6 +1136,7 @@ BEGIN
                       THEN (p_input #> '{exams,reviewed}')::boolean ELSE NULL END;
   SELECT COALESCE(array_agg(t), '{}') INTO x_weak
   FROM jsonb_array_elements_text(COALESCE(p_input #> '{exams,weak_domains}', '[]'::jsonb)) t;
+  x_session    := p_input #>> '{exams,source_session_id}';
 
   ----------------------------------------------------------------------------
   -- Domain arrays, in canonical order. `mastery` carries the section for each
@@ -1106,7 +1186,7 @@ BEGIN
       d_why := d_why || 'exploring'::text;
     ELSE
       d_w := d_w || public.calendar_require_int(v_weight_by_level, d_lvl[v_i]::text);
-      d_why := d_why || (CASE WHEN d_lvl[v_i] <= 1 THEN 'weak'
+      d_why := d_why || (CASE WHEN d_lvl[v_i] <= k_weak_max THEN 'weak'
                               WHEN d_lvl[v_i] >= 3 THEN 'strength'
                               ELSE 'balanced' END)::text;
     END IF;
@@ -1152,7 +1232,7 @@ BEGIN
     IF v_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
         jsonb_build_object('block_type','full_length','section', NULL,
-                           'scope', jsonb_build_object('form_id', NULL),
+                           'scope', jsonb_build_object('form_id', NULL, 'exam_mode', 'strict'),
                            'target_count', 1, 'explanation_key', v_key)));
       v_pending_active := true;
       v_pending_size   := k_exam_review_dflt;
@@ -1186,8 +1266,11 @@ BEGIN
     IF v_pending_active THEN
       v_size := least(v_pending_size, v_budget / e_review_secs);
       IF v_size >= 1 THEN
+        -- E9b: a real exam review is a SESSION review of that exam (05F §9.4), so
+        -- completing it is what sets exams.reviewed. The placeholder stays queue:
+        -- no session exists yet. One helper serves both generators.
         v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
-                      'scope', jsonb_build_object('mode','queue'),
+                      'scope', public.calendar_exam_review_scope(v_pending_key, x_session),
                       'target_count', v_size, 'explanation_key', v_pending_key);
         v_budget := v_budget - v_size * e_review_secs;
         v_pending_active := false;
@@ -1351,6 +1434,7 @@ DECLARE
   x_last              date;
   x_reviewed          boolean;
   x_missed            integer;
+  x_session           text;
   fl                  jsonb;
   v_due               integer := 0;
   v_pending_active    boolean := false;
@@ -1406,6 +1490,8 @@ BEGIN
   x_missed   := CASE WHEN (p_input #>> '{exams,missed_count}') IS NULL THEN NULL
                      ELSE public.calendar_require_int(p_input -> 'exams', 'missed_count') END;
 
+  x_session  := p_input #>> '{exams,source_session_id}';
+
   fl := public.calendar_place_full_lengths(p_input);
 
   -- A single total is enough here: the fallback runs precisely when the
@@ -1432,7 +1518,7 @@ BEGIN
     IF v_fl_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
         jsonb_build_object('block_type','full_length','section', NULL,
-                           'scope', jsonb_build_object('form_id', NULL),
+                           'scope', jsonb_build_object('form_id', NULL, 'exam_mode', 'strict'),
                            'target_count', 1, 'explanation_key', v_fl_key)));
       v_pending_active := true;
       v_pending_size   := k_exam_review_dflt;
@@ -1462,8 +1548,11 @@ BEGIN
     IF v_pending_active THEN
       v_size := least(v_pending_size, v_budget / e_review_secs);
       IF v_size >= 1 THEN
+        -- E9b: a real exam review is a SESSION review of that exam (05F §9.4), so
+        -- completing it is what sets exams.reviewed. The placeholder stays queue:
+        -- no session exists yet. One helper serves both generators.
         v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
-                      'scope', jsonb_build_object('mode','queue'),
+                      'scope', public.calendar_exam_review_scope(v_pending_key, x_session),
                       'target_count', v_size, 'explanation_key', v_pending_key);
         v_budget := v_budget - v_size * e_review_secs;
         v_pending_active := false;
@@ -1745,6 +1834,35 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date. Started blocks injected if omitted, validated in student_edit mode, persisted with is_user_override = true. No budget check (R-08-19).';
+
+
+--
+-- Name: calendar_exam_review_scope(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_key = 'exam_review' THEN
+    IF p_session_id IS NULL THEN
+      RAISE EXCEPTION 'calendar_exam_review_scope: an exam_review block needs exams.source_session_id'
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN jsonb_build_object('mode', 'session', 'source_engine', 'full_length',
+                              'source_session_id', p_session_id);
+  END IF;
+  RETURN jsonb_build_object('mode', 'queue');
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) IS 'Doc 05F §9.4 / SCL-170: exam_review -> {"mode":"session","source_engine":"full_length","source_session_id"}; exam_review_placeholder -> {"mode":"queue"}. One helper for deterministic_v1 and fallback_v1.';
 
 
 --
@@ -2534,9 +2652,14 @@ CREATE FUNCTION public.calendar_scope_is_valid(p_block_type text, p_section text
       p_scope IS NOT NULL
       AND jsonb_typeof(p_scope) = 'object'
       AND p_section IS NULL
-      AND p_scope ?& ARRAY['form_id']
-      AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 1
+      -- E9b / SCL (05F §7.4 widened): two keys, both always present. form_id null
+      -- means "the next test" by exam_next_form_for_student; exam_mode is the
+      -- exam engine's own vocabulary (test_sessions.mode), never a calendar copy.
+      AND p_scope ?& ARRAY['form_id', 'exam_mode']
+      AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 2
       AND jsonb_typeof(p_scope -> 'form_id') IN ('string', 'null')
+      AND jsonb_typeof(p_scope -> 'exam_mode') = 'string'
+      AND p_scope ->> 'exam_mode' IN ('strict', 'lenient')
 
     ELSE false
   END;
@@ -5601,6 +5724,45 @@ CREATE FUNCTION public.exam_ms(p interval) RETURNS bigint
     AS $$
   SELECT floor(extract(epoch FROM p) * 1000)::bigint
 $$;
+
+
+--
+-- Name: exam_next_form_for_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_next_form_for_student(p_student_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT s.test_form_id
+       FROM test_sessions s
+      WHERE s.student_id = p_student_id
+        AND s.state IN ('created', 'active', 'section_break')
+      ORDER BY s.created_at DESC, s.id DESC
+      LIMIT 1),
+    (SELECT f.id
+       FROM test_forms f
+       LEFT JOIN LATERAL (
+         SELECT max(s.completed_at) AS last_completed
+           FROM test_sessions s
+          WHERE s.student_id = p_student_id
+            AND s.test_form_id = f.id
+            AND s.state = 'completed') c ON true
+      WHERE f.status = 'published'
+        AND f.is_selectable
+      ORDER BY c.last_completed IS NOT NULL,
+               c.last_completed,
+               f.published_at, f.name, f.id
+      LIMIT 1));
+$$;
+
+
+--
+-- Name: FUNCTION exam_next_form_for_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) IS 'SCL-168 (replaces the "Doc 04 rotation" Doc 05F §9.4 cites): the live session''s form; else the first selectable published form never completed (published_at, name, id); else the least recently completed. Deterministic.';
 
 
 --
@@ -18779,6 +18941,14 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
+-- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -19312,6 +19482,14 @@ GRANT ALL ON FUNCTION public.exam_module_workspace(p_student_id uuid, p_session_
 
 REVOKE ALL ON FUNCTION public.exam_ms(p interval) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.exam_ms(p interval) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_next_form_for_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) TO service_role;
 
 
 --
