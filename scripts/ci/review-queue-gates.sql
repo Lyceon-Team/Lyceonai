@@ -1,5 +1,6 @@
 -- ============================================================================
 -- R2 gates G1-G18 — the review queue, proven against a real database
+-- W4-7 gates G19-G22 — review_error_attempts.used_tutor (telemetry only)
 -- ============================================================================
 -- @spec [Ruled plan 2026-09-21 §3; Brief R2 §5 "Gates and plants"]
 -- @implemented [2026-09-21]
@@ -356,3 +357,125 @@ BEGIN
   RAISE NOTICE 'ok   [G10]: neither a re-UPDATE of a resolved owned row nor anonymization enqueues';
 END
 $gates_review$;
+
+-- ============================================================================
+-- W4-7 gates G19-G22 — used_tutor records whether LISA was used, and nothing
+-- reads it
+-- ============================================================================
+-- @spec [Doc-02B_V4 §16, CR-02B-16; closure plan W4-7; owner ruling W4-6]
+-- @implemented [2026-09-26]
+--
+-- plain English: a review attempt is `used_tutor = true` exactly when the
+--   student sent >=1 message to LISA on that item's conversation before
+--   submitting; a lookup failure never fails the submit; and no function or
+--   view other than the writer reads the column (it is telemetry, never
+--   formula-facing). Plants: scripts/ci/review-queue-gates.self-test.sh.
+DO $gates_used_tutor$
+DECLARE
+  v_student uuid := '00000000-aaaa-4000-8000-000000000001';
+  v_actor   uuid;
+  v_rs      uuid := '00000000-cccc-4000-8000-000000000019';
+  v_item_a  uuid := '00000000-eeee-4000-8000-000000000019';  -- messaged LISA
+  v_item_b  uuid := '00000000-eeee-4000-8000-000000000020';  -- conversation, no student message
+  v_item_c  uuid := '00000000-eeee-4000-8000-000000000021';  -- lookup fails
+  v_conv    uuid;
+  v_n       integer;
+  v_txt     text;
+BEGIN
+  SELECT actor_id INTO v_actor FROM public.profiles WHERE id = v_student;
+
+  INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, actor_id)
+  VALUES (v_rs, v_student, 'active', 'queue', '{}'::jsonb, 5, 'web', v_actor);
+
+  INSERT INTO public.review_session_items (
+    id, session_id, student_id, ordinal, question_id, question_stem, question_options,
+    question_correct_answer, question_explanation, question_domain, question_skill,
+    question_difficulty, question_section, status, actor_id)
+  SELECT i, v_rs, v_student, o, 'SATM1AAA001', 'stem', '[{"key":"A","text":"a"}]'::jsonb,
+         'A', 'exp', 'Algebra', 'ALG.01', 2, 'M', 'served', v_actor
+    FROM (VALUES (v_item_a, 1), (v_item_b, 2), (v_item_c, 3)) AS t(i, o);
+
+  -- ===================================================================== G19
+  -- A student message on the item's review conversation before submit -> true.
+  INSERT INTO public.tutor_conversations (student_id, entry_mode, source_surface, source_session_item_id)
+  VALUES (v_student, 'scoped_question', 'review', v_item_a) RETURNING id INTO v_conv;
+  INSERT INTO public.tutor_messages (conversation_id, student_id, role, content_kind, message)
+  VALUES (v_conv, v_student, 'student', 'message', 'g19'),
+         (v_conv, v_student, 'tutor',   'message', 'g19');
+
+  UPDATE public.review_session_items
+     SET status='answered', is_correct=false, outcome='incorrect', selected_answer='B',
+         time_spent_ms=1000, answered_at=now(), occurred_at=now()
+   WHERE id = v_item_a;
+
+  SELECT count(*) INTO v_n FROM public.review_error_attempts WHERE id = v_item_a AND used_tutor;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'G19 FAIL: the student messaged LISA on this item but used_tutor is not true (rows: %)', v_n;
+  END IF;
+  RAISE NOTICE 'ok   [G19]: a student message to LISA on the item before submit records used_tutor = true';
+
+  -- ===================================================================== G20
+  -- The conversation exists (the panel was open) but the student sent nothing on
+  -- it — only a tutor/system line — and the student DID message LISA on another
+  -- item. Neither counts: used_tutor = false.
+  INSERT INTO public.tutor_conversations (student_id, entry_mode, source_surface, source_session_item_id)
+  VALUES (v_student, 'scoped_question', 'review', v_item_b) RETURNING id INTO v_conv;
+  INSERT INTO public.tutor_messages (conversation_id, student_id, role, content_kind, message)
+  VALUES (v_conv, v_student, 'system', 'system_note', 'g20');
+
+  UPDATE public.review_session_items
+     SET status='answered', is_correct=false, outcome='incorrect', selected_answer='B',
+         time_spent_ms=1000, answered_at=now(), occurred_at=now()
+   WHERE id = v_item_b;
+
+  SELECT count(*) INTO v_n FROM public.review_error_attempts WHERE id = v_item_b AND NOT used_tutor;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'G20 FAIL: no student message on this item, yet used_tutor is not false (rows: %)', v_n;
+  END IF;
+  RAISE NOTICE 'ok   [G20]: an open conversation with no student message (and messages on another item) records used_tutor = false';
+
+  -- ===================================================================== G21
+  -- The lookup errors (its table is unreachable). The submit still commits: the
+  -- attempt is written with used_tutor = false. The sub-block ends on its own
+  -- sentinel so the planted breakage rolls back; any other error is the failure.
+  BEGIN
+    ALTER TABLE public.tutor_messages RENAME TO tutor_messages_g21_hidden;
+    UPDATE public.review_session_items
+       SET status='answered', is_correct=false, outcome='incorrect', selected_answer='B',
+           time_spent_ms=1000, answered_at=now(), occurred_at=now()
+     WHERE id = v_item_c;
+    SELECT count(*) INTO v_n FROM public.review_error_attempts WHERE id = v_item_c AND NOT used_tutor;
+    IF v_n <> 1 THEN
+      RAISE EXCEPTION 'G21 FAIL: after a lookup error the attempt was not written with used_tutor = false (rows: %)', v_n;
+    END IF;
+    RAISE EXCEPTION 'G21_SENTINEL';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'G21_SENTINEL' THEN
+      IF SQLERRM LIKE 'G21 FAIL%' THEN RAISE; END IF;
+      RAISE EXCEPTION 'G21 FAIL: a used_tutor lookup error broke the submit: %', SQLERRM;
+    END IF;
+  END;
+  RAISE NOTICE 'ok   [G21]: a used_tutor lookup error still writes the attempt, with used_tutor = false';
+
+  -- ===================================================================== G22
+  -- Nothing reads the column. The only SQL objects that may name it are the
+  -- writer and its lookup; a view, a mastery/KPI function or a report that
+  -- references used_tutor is a reader, and W4-6 says the flag changes nothing.
+  SELECT string_agg(obj, ', ' ORDER BY obj) INTO v_txt FROM (
+    SELECT 'function ' || p.proname AS obj
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.prosrc ILIKE '%used_tutor%'
+       AND p.proname NOT IN ('review_item_resolve', 'review_item_used_tutor')
+    UNION ALL
+    SELECT 'view ' || viewname FROM pg_views
+     WHERE schemaname = 'public' AND definition ILIKE '%used_tutor%'
+    UNION ALL
+    SELECT 'matview ' || matviewname FROM pg_matviews
+     WHERE schemaname = 'public' AND definition ILIKE '%used_tutor%'
+  ) readers;
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'G22 FAIL: used_tutor is telemetry only, but these read it: %', v_txt;
+  END IF;
+  RAISE NOTICE 'ok   [G22]: no SQL function or view other than the writer reads used_tutor';
+END
+$gates_used_tutor$;

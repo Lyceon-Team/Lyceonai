@@ -46,7 +46,7 @@ SQL
 fail() { echo "    SELF-TEST FAIL: $1"; exit 1; }
 
 # ---------------------------------------------------------------------------
-echo "==> baseline: G1-G5, G7-G10, G17, G18 must all pass on correct code"
+echo "==> baseline: G1-G5, G7-G10, G17-G22 must all pass on correct code"
 build_db
 psql -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/scripts/ci/review-queue-gates.sql" 2>&1 \
   | grep -E '^(psql.*)?NOTICE:  ok   \[' | sed 's/^.*NOTICE:  /    /' \
@@ -181,6 +181,16 @@ plant_sql G1 "DROP TRIGGER trg_practice_item_enqueue_review ON public.practice_s
 plant_sql G4 "ALTER TABLE public.review_schedule DROP CONSTRAINT uq_review_schedule_source_item;" "G4 FAIL"
 plant_sql G5 "DROP INDEX uq_review_schedule_open_question;" "G5 FAIL"
 plant_sql G18 "ALTER TABLE public.review_session_items DROP CONSTRAINT rsi_item_shape_chk;" "G18 FAIL"
+
+# W4-7 G19-G22: used_tutor. Each plant breaks exactly the property its gate names.
+# G19: the lookup never finds a message (the old hard-coded false).
+plant_sql G19 "CREATE OR REPLACE FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN RETURN false; END \$f\$;" "G19 FAIL"
+# G20: "panel open" counts — any conversation on the item, message or not.
+plant_sql G20 "CREATE OR REPLACE FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN RETURN EXISTS (SELECT 1 FROM public.tutor_conversations c WHERE c.student_id = p_student_id AND c.source_surface = 'review' AND c.source_session_item_id = p_item_id); END \$f\$;" "G20 FAIL"
+# G21: the lookup without its exception block — an error now fails the submit.
+plant_sql G21 "CREATE OR REPLACE FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN RETURN EXISTS (SELECT 1 FROM public.tutor_conversations c JOIN public.tutor_messages m ON m.conversation_id = c.id WHERE c.student_id = p_student_id AND c.source_surface = 'review' AND c.source_session_item_id = p_item_id AND m.role = 'student' AND m.content_kind = 'message'); END \$f\$;" "G21 FAIL"
+# G22: a reader appears — a view exposing the column.
+plant_sql G22 "CREATE VIEW public.g22_used_tutor_reader AS SELECT id, used_tutor FROM public.review_error_attempts;" "G22 FAIL"
 
 # G2/G9: remove the skipped branch from each trigger function.
 plant_sql G2 "CREATE OR REPLACE FUNCTION public.practice_item_enqueue_review() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS \$f\$ BEGIN IF NEW.user_id IS NULL THEN RETURN NULL; END IF; IF NEW.status='answered' AND NEW.is_correct=false THEN PERFORM public.review_queue_record(NEW.user_id, NEW.question_id, 'practice', NEW.session_id, NEW.id, 'incorrect', NEW.occurred_at); END IF; RETURN NULL; END \$f\$;" "G2 FAIL"
