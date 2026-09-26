@@ -86,11 +86,20 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
       model={guardianViewModel(calendar.data)}
       today={today}
       viewerName="Study plan"
-      targetExamDate={null}
-      // §16 withholds the target score from a guardian, as it withholds the controls and
-      // the explanation copy. No projection either: the guardian payload does not carry
-      // Doc 05C's rows, so the header renders its absence copy rather than a stale band.
-      targetScore={null}
+      // The absence copy only. Every populated readout is identical to the student's.
+      viewer="guardian"
+      // §16 as amended by the owner ruling of 2026-09-26: R-08-22 is reversed and the "no
+      // profile" clause is narrowed to admit exactly these two fields. The target is the
+      // student's stated goal and a projection with nothing to compare against is half a
+      // fact; the exam date is the other half of "N days to test". Everything else on the
+      // profile — timezone, day mask, daily minutes, exam weekday, planner mode — is still
+      // withheld, and the payload does not carry it, so this page cannot pass it on.
+      targetExamDate={calendar.data.target_exam_date}
+      targetScore={calendar.data.target_score}
+      // Doc 05C's rows, as served. `projectedRange` sums them and contains no arithmetic
+      // but `+` (enforced by scripts/ci/calendar-projection-gate.mjs), so the band a parent
+      // reads is the band the student reads.
+      projection={calendar.data.projection}
       streak={calendar.data.streak}
       planUpdate={null}
       onRangeChange={onRangeChange}

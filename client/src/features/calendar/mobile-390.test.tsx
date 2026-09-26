@@ -118,6 +118,7 @@ const RESPONSE = {
 function renderCalendar(): void {
   render(
     <CalendarView
+      viewer="student"
       model={studentViewModel(RESPONSE)}
       today={TODAY}
       viewerName="A Student"

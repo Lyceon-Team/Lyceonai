@@ -197,6 +197,33 @@ function addSevenDays(date: string): string {
 // ── Top bar ─────────────────────────────────────────────────────────────────
 
 /**
+ * The absence copy, one row per viewer — the ONLY text that differs between the two headers.
+ *
+ * Kept as a table rather than inline ternaries so that "a guardian is never shown an action"
+ * is a property you can read off one object instead of checking three call sites. Every
+ * guardian string is a statement of fact in the third person and none is addressed to the
+ * reader; a guardian has no write path (§16), so an instruction would point nowhere.
+ *
+ * The student strings are unchanged, and that matters: this brief must not quietly reword
+ * the student's header while adding the guardian's.
+ */
+const ABSENT_COPY = {
+  student: {
+    target: "Set a target",
+    testDate: "Add your test date",
+    projection: "Answer a few questions to see your projection",
+  },
+  guardian: {
+    target: "No target set",
+    testDate: "No test date",
+    projection: "Not enough practice yet",
+  },
+} as const satisfies Record<
+  "student" | "guardian",
+  { target: string; testDate: string; projection: string }
+>;
+
+/**
  * §17.1 — the header, in three zones of two rows each.
  *
  * @spec [Doc 05F §17.1; owner ruling 2026-09-24 (Brief 10 Step 4)]
@@ -223,6 +250,7 @@ function addSevenDays(date: string): string {
  */
 export function TopBar({
   backHref,
+  viewer,
   rangeLabelText,
   view,
   onView,
@@ -245,7 +273,24 @@ export function TopBar({
   onToday: () => void;
   streak: StreakSummary | undefined;
   daysToTest: number | null;
-  /** §8.1, optional since SCL-130. `null` renders "Set a target", never a zero. */
+  /**
+   * WHOSE PLAN THIS IS, and it changes only the ABSENCE copy. Every populated readout is
+   * byte-identical between the two — a guardian sees `1400 Target` and `680 – 1060
+   * Projected` in the same slots at the same sizes, because it is the same plan.
+   *
+   * What differs is what an empty slot may say. The student's copy is an instruction —
+   * "Set a target", "Add your test date" — and a guardian cannot do any of those things, so
+   * for them the same slot states a fact instead. Offering a parent an action they have no
+   * path to is worse than saying nothing: §16 gives them no write path at all.
+   *
+   * A REQUIRED PROP, deliberately, and not a branch on `readOnly`. Required because a
+   * defaulted one is forgettable and forgetting it renders CTAs at a guardian — the failure
+   * this exists to prevent, silently. Not derived from `readOnly` because `CalendarView`'s
+   * own rule is that the guardian difference lives in the props; a flag that means
+   * "read-only" today would quietly also mean "third person" tomorrow.
+   */
+  viewer: "student" | "guardian";
+  /** §8.1, optional since SCL-130. `null` renders the absence copy, never a zero. */
   targetScore: number | null;
   /** Doc 05C's section rows, passed through untouched. `undefined` when none were served. */
   projection: readonly SectionProjectionDto[] | undefined;
@@ -332,7 +377,7 @@ export function TopBar({
               className="ptarget absent"
               data-testid="calendar-target-absent"
             >
-              Set a target
+              {ABSENT_COPY[viewer].target}
             </div>
           ) : (
             <div className="ptarget" data-testid="calendar-target">
@@ -391,7 +436,7 @@ export function TopBar({
               className="countline absent"
               data-testid="calendar-countdown-absent"
             >
-              Add your test date
+              {ABSENT_COPY[viewer].testDate}
             </div>
           ) : (
             <div className="countline" data-testid="calendar-countdown">
@@ -413,7 +458,7 @@ export function TopBar({
               className="prange absent"
               data-testid="calendar-projection-absent"
             >
-              Answer a few questions to see your projection
+              {ABSENT_COPY[viewer].projection}
             </div>
           ) : (
             <div className="prange" data-testid="calendar-projection">

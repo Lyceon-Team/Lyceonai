@@ -44,6 +44,7 @@ function renderTopBar(
   render(
     <Router hook={hook}>
       <TopBar
+        viewer="student"
         backHref="/dashboard"
         rangeLabelText="21 – 27 September"
         view="week"
