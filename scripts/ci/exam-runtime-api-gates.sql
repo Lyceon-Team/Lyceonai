@@ -83,7 +83,12 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.exam_runtime_outbox WHERE payload ? 'student_id') THEN
     RAISE EXCEPTION 'E6G FAIL [OB1]: an outbox payload carries student_id';
   END IF;
-  IF (SELECT count(*) FROM public.exam_runtime_outbox o JOIN public.test_sessions s ON s.id = o.aggregate_id) <> 2 THEN
+  -- E9: each scored completion also enqueued one 'test_session_scored' event
+  -- (SCL-154), whose aggregate is the same session.
+  IF (SELECT count(*) FROM public.exam_runtime_outbox o JOIN public.test_sessions s ON s.id = o.aggregate_id
+       WHERE o.event_type <> 'test_session_scored') <> 2
+     OR (SELECT count(*) FROM public.exam_runtime_outbox o JOIN public.test_sessions s ON s.id = o.aggregate_id
+          WHERE o.event_type = 'test_session_scored') <> 2 THEN
     RAISE EXCEPTION 'E6G FAIL [OB1]: aggregate_id does not resolve to the session';
   END IF;
   PERFORM pg_temp.ok('OB1', 'completion payloads carry aggregate_id -> session, no student_id');
@@ -486,12 +491,18 @@ BEGIN
    WHERE student_id = '00000000-0000-0000-0000-0000000e6d04' AND state = 'active';   -- RW Module 2 active
   UPDATE public.test_sessions SET grace_expires_at = clock_timestamp() - interval '1 second' WHERE id IN (v_g, v_d);
   v := public.exam_abandonment_sweep();
-  IF (v->>'finalized')::int <> 2 OR (v->>'scored')::int <> 1
+  -- E9: the sweep also consumes pending seams events; the one enqueued by the
+  -- scoring it does in this pass is consumed by the next pass.
+  PERFORM public.exam_abandonment_sweep();
+  IF (v->>'finalized')::int <> 2 OR (v->>'score_failed')::int <> 0
      OR (SELECT state FROM public.test_sessions WHERE id = v_g) <> 'abandoned_final'
      OR (SELECT state FROM public.test_sessions WHERE id = v_d) <> 'partial_scored_abandoned'
      OR NOT EXISTS (SELECT 1 FROM public.score_runs WHERE test_session_id = v_d AND rw_scaled IS NOT NULL)
      OR EXISTS (SELECT 1 FROM public.exam_runtime_outbox WHERE status <> 'published')
-     OR (SELECT count(*) FROM public.score_runs) <> (SELECT count(*) FROM public.exam_runtime_outbox) THEN
+     OR (SELECT count(*) FROM public.score_runs)
+          <> (SELECT count(*) FROM public.exam_runtime_outbox WHERE event_type <> 'test_session_scored')
+     OR (SELECT count(*) FROM public.score_runs)
+          <> (SELECT count(*) FROM public.exam_runtime_outbox WHERE event_type = 'test_session_scored') THEN
     RAISE EXCEPTION 'E6G FAIL [SW1]: sweep %', v;
   END IF;
   PERFORM pg_temp.ok('SW1', format('sweep %s: untouched created session -> abandoned_final; RW-Module-2-active session -> RW timed out, partial_scored_abandoned, scored in the same run; every outbox row published', v));
