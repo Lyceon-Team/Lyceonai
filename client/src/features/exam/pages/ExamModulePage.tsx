@@ -464,9 +464,12 @@ function ModuleRunner(props: {
       <main className="flex min-h-0 flex-1">
         {/* E10b: a floating panel over the question, not a docked column. Mounted for the
             whole Math module and collapsed when closed (E10: expanded={false}), so closing
-            never destroys the graph. Review's fixed calculator box (CALC_MIN_PX x
-            CALC_COLUMN_HEIGHT_PX); Expand widens it to practice's split default and the full
-            height below the header, which it never crosses (the timer stays visible). */}
+            never destroys the graph. Size: review's fixed calculator box (CALC_MIN_PX x
+            CALC_COLUMN_HEIGHT_PX), adopted for consistency, not derived from anything in the
+            exam (see calculator-layout). Expand: neither practice nor review has an Expand
+            control, so there was no precedent; it borrows practice's split default
+            (CALC_DEFAULT_PCT) for width and takes the full height below the header, which the
+            panel never crosses (the timer stays visible). */}
         {isMath && (
           <FloatingPanel
             id="exam-calculator-panel"
