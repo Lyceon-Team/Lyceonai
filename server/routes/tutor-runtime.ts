@@ -72,6 +72,9 @@ import {
   evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
 import type { FlagForReviewResult } from "../services/tutor-crisis";
+// W3-3: the pure resolver, imported from its own module so the route always
+// runs the real one.
+import { resolveCrisisCountry } from "../services/crisis-resources";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -1337,8 +1340,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("country_code")
         .eq("id", studentId)
         .maybeSingle();
+      // W3-3: resources follow the student's billing country (Doc 03 §4.6).
+      // Unknown gets the named no-number response (owner ruling 2026-09-25)
+      // — and that is the one case worth an alert: a student in crisis was
+      // given no local number. The student id is logged (digested by the
+      // logger) so ops can find their country; the crisis content never is.
+      const crisisCountry = resolveCrisisCountry(
+        profileRow?.country_code as string | null | undefined,
+      );
+      if (crisisCountry.defaulted) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_country_defaulted",
+          "Crisis resources fell back to the no-number response: this student's country is unknown or unsupported",
+          {
+            studentId,
+            conversationId: conversation.id,
+            category: crisisResult.category,
+            reason: crisisCountry.reason,
+          },
+        );
+      }
       const crisisContent = getCrisisResponse(
-        (profileRow?.country_code as string | null) ?? "US",
+        crisisCountry.country,
         crisisResult.category,
       );
 

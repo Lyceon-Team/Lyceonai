@@ -11,7 +11,8 @@
  *   3. Safeguarding template never contains suicide/988 content (negative control)
  *   4. Crisis template never contains safeguarding content (negative control)
  *   5. Resource selection covers all 8 country codes + fallback
- *   6. DEFAULT_CRISIS_COUNTRY constant exists and is "US"
+ *   6. The fallback names no number (owner ruling 2026-09-25, W3-3) —
+ *      it replaced the US default
  *   7. Guardian isolation: crisis notification path has no guardian surface
  */
 import { describe, it, expect } from "vitest";
@@ -79,9 +80,11 @@ describe("Crisis Lane Routing — PR 2", () => {
       );
     });
 
-    it("falls back to US for unknown country", () => {
+    it("unknown country gets the no-number response, not the US line", () => {
       const response = getCrisisResponse("XX", "crisis");
-      expect(response).toContain("988");
+      expect(response).not.toContain("988");
+      expect(response).not.toMatch(/\d/);
+      expect(response).toContain("local emergency number");
     });
 
     it("handles lowercase country code", () => {
@@ -142,10 +145,12 @@ describe("Crisis Lane Routing — PR 2", () => {
       expect(response).toContain("1800-777-0000");
     });
 
-    it("falls back to US safeguarding for unknown country", () => {
+    it("unknown country gets the no-number safeguarding response, not the US lines", () => {
       const response = getCrisisResponse("ZZ", "safeguarding");
-      expect(response).toContain("Childhelp");
-      expect(response).toContain("RAINN");
+      expect(response).not.toContain("Childhelp");
+      expect(response).not.toContain("RAINN");
+      expect(response).not.toMatch(/\d/);
+      expect(response).toContain("What you've shared matters");
     });
   });
 
