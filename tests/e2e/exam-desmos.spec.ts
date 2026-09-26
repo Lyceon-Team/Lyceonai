@@ -46,10 +46,16 @@ test("Math module: calculator from the tools row, resume with it open, reference
 }) => {
   const desmosFailures: string[] = [];
   page.on("requestfailed", (req) => {
-    if (req.url().includes("desmos.com"))
-      desmosFailures.push(
-        `${new URL(req.url()).host} ${req.failure()?.errorText ?? ""}`,
-      );
+    try {
+      const u = new URL(req.url());
+      const host = u.hostname;
+      if (host === "desmos.com" || host.endsWith(".desmos.com"))
+        desmosFailures.push(
+          `${u.host} ${req.failure()?.errorText ?? ""}`,
+        );
+    } catch {
+      // Ignore malformed/non-standard URLs in requestfailed telemetry.
+    }
   });
 
   // A lenient sitting walked to Math Module 1 through the real API.
