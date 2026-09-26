@@ -699,8 +699,14 @@ SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 # route was written until 2026-09-25.
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 
+# Targets MIGCASCADE, not SENT: 20261008000000 REPLACES execute_account_deletion_cascade to
+# restore E9's exam_child_tables walk, so the sentinel body lives there now. Planting into
+# 20261005000000 mutates a function the pipeline immediately overwrites — the SEVENTH time this
+# harness has caught that (M2, M9, M17, M31, M90-M93 and M96 carry the same note). M95 still
+# targets SENT, correctly: actor_id_integrity_violations() is defined there and nothing
+# redefines it.
 echo "==> (M94) the sentinel goes back to asking only whether actor_id IS NULL"
-plant M94 "$SENT" 's.replace("          \x27AND (actor_id IS NULL OR actor_id <> $2)\x27,", "          \x27AND actor_id IS NULL\x27,", 1)'
+plant M94 "$MIGCASCADE" 's.replace("          \x27AND (actor_id IS NULL OR actor_id <> $2)\x27,", "          \x27AND actor_id IS NULL\x27,", 1)'
 expect_red M94 "C3.11 the sentinel refuses"
 
 echo "==> (M95) the integrity check stops comparing actor_id to the row's own identity"

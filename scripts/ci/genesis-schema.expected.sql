@@ -7072,21 +7072,6 @@ BEGIN
            AND a.attnum > 0 AND NOT a.attisdropped
            AND c.relname NOT IN ('profiles', 'anonymized_actors')
          ORDER BY c.relname
-      FOR v_sentinel_tbl, v_sentinel_col IN
-        SELECT * FROM (VALUES
-          ('practice_sessions',                'user_id'),
-          ('practice_session_items',           'user_id'),
-          ('review_sessions',                  'student_id'),
-          ('review_session_items',             'student_id'),
-          ('review_error_attempts',            'student_id'),
-          ('mastery_event_audit_log',          'student_id'),
-          ('mastery_domain_refresh_audit_log', 'student_id')) AS v(t, c)
-        UNION ALL
-        -- E9 commit 0: the student-keyed exam tables (test_sessions, score_runs)
-        -- come from the same list the hard_delete walk reads.
-        SELECT e.table_name, e.student_column
-          FROM public.exam_child_tables e
-         WHERE e.student_column IS NOT NULL
       LOOP
         CONTINUE WHEN v_sentinel_rec.idcol IS NULL;
         v_sentinel_col  := v_sentinel_rec.idcol;
