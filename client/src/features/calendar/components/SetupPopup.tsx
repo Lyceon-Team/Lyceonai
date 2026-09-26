@@ -51,13 +51,31 @@ const DAY_CHIPS: readonly { dow: number; label: string }[] = [
 ];
 
 /**
- * Mon–Fri and Saturday tests: the opening POSITION, not a stored value and not a
- * recommendation. `calendar_runtime_config` holds no default day-mask — it bounds minutes
- * and the exam horizon — so these two are the prototype's, and they exist so that a student
- * who presses straight through saves a week that makes sense rather than an empty one.
+ * Mon–Fri: the opening POSITION, not a stored value and not a recommendation.
+ * `calendar_runtime_config` holds no default day-mask — it bounds minutes and the exam
+ * horizon — so this one is the prototype's, and it exists so that a student who presses
+ * straight through saves a week that makes sense rather than an empty one.
+ *
+ * THE FULL-LENGTH DAY OPENS UNSET, and that is deliberate. R-08-27 (Doc 05F §122, §8.1
+ * `:448`) makes the test weekday OPTIONAL and independent of study days, and a full-length
+ * consumes the whole of its day's budget — no practice and no review are placed on it. So
+ * a pre-selected chip is not a harmless default: it spends a day of study time on a
+ * decision the student never made. It used to open on Saturday, which meant a student who
+ * pressed straight through had an exam booked every Saturday without ever seeing the row.
+ *
+ * This is the rule the exam-date field two panels up already follows, in its own words:
+ * "the opening position is a control's resting state, not a claim". The resting state of
+ * an OPTIONAL field is unanswered. Null stores as "no automatic exams" (the column is
+ * nullable for exactly that), and the student can pick a day here or later in the settings
+ * sheet, which offers the same chips including None.
+ *
+ * Owner ruling 2026-09-26, option (a): the pre-selection goes, the weekday itself is
+ * untouched. Saturday remains available and remains the spec's own worked example (§928),
+ * because the real SAT is sat on a Saturday morning — rehearsing on that weekday is the
+ * point, when the student chooses it.
  */
 const OPENING_DAYS = [1, 2, 3, 4, 5];
-const OPENING_FULL_LENGTH_WEEKDAY = 6;
+const OPENING_FULL_LENGTH_WEEKDAY: number | null = null;
 
 /** §8.1: 400..1600 in steps of 10. The slider cannot express anything else. */
 const SCORE_MIN = 400;
