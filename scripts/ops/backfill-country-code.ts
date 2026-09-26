@@ -23,6 +23,7 @@ import { parseArgs } from "util";
 import { z } from "zod";
 import { getStripeClient } from "../../server/lib/stripe/client";
 import {
+  blankToNull,
   planCountryBackfill,
   type CountryBackfillInput,
 } from "../../server/lib/stripe/country-backfill";
@@ -55,9 +56,10 @@ async function main(): Promise<void> {
     const customerId =
       typeof sub.customer === "string" ? sub.customer : sub.customer.id;
     const customer = await stripe.customers.retrieve(customerId);
+    // Blank (empty or whitespace) is no country — fall through to the session.
     const customerCountry = customer.deleted
       ? null
-      : (customer.address?.country ?? null);
+      : blankToNull(customer.address?.country);
     let sessionCountry: string | null = null;
     if (!customerCountry) {
       const sessions = await stripe.checkout.sessions.list({
