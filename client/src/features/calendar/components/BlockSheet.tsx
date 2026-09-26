@@ -7,8 +7,8 @@
  * edit carrying the whole day, and a started block shows why it cannot be changed.
  *
  * ENGINE-SPECIFIC FORMS, AS §17.2 REQUIRES. Practice gets domain and count rows; review gets
- * an items count; full-length gets neither, because Doc 04 assigns its form and this surface
- * has no say in it. The three are separate branches rather than one form with hidden fields:
+ * an items count; full-length gets the test and the timing (SCL-167, E9b), through the same
+ * `FullLengthFields` the create sheet renders. The three are separate branches rather than one form with hidden fields:
  * a field that is present-but-hidden is a field someone will later un-hide for the wrong
  * block type.
  *
@@ -27,7 +27,12 @@
  */
 import { useState } from "react";
 import { prefetchEngineChunk } from "../api/launch";
-import type { CanonicalDomain, PlanBlock } from "@lyceon/shared/calendar";
+import { FullLengthFields } from "./FullLengthFields";
+import type {
+  CanonicalDomain,
+  FullLengthScope,
+  PlanBlock,
+} from "@lyceon/shared/calendar";
 import { longDate } from "../lib/dates";
 import { reviewCountChoices } from "../lib/members";
 import { MixRows, type MixEntry } from "./MixRows";
@@ -39,6 +44,8 @@ export type BlockSheetActions = {
     mix: readonly { domain: CanonicalDomain; count: number }[],
   ) => void;
   onEditReviewCount: (count: number) => void;
+  /** SCL-167: the test and the timing of a full-length block. */
+  onEditFullLength: (scope: FullLengthScope) => void;
   onRemove: () => void;
   onLaunch: () => void;
   onDoItNow: () => void;
@@ -162,8 +169,16 @@ export function BlockSheet({
             </div>
           ) : null}
 
-          {/* Full-length: date only. Doc 04 assigns the form, so there is nothing to edit
-              here beyond which day it sits on — which the Move control below covers. */}
+          {plan !== null &&
+          plan.block_type === "full_length" &&
+          actions !== undefined ? (
+            <FullLengthFields
+              idPrefix="calendar-block"
+              scope={plan.scope}
+              disabled={locked}
+              onChange={actions.onEditFullLength}
+            />
+          ) : null}
 
           {block.explanations.length > 0 ? (
             <div className="why" data-testid="calendar-block-why">
@@ -237,9 +252,10 @@ export function BlockSheet({
                   {complete ? "Done" : block.started ? "Resume" : "Start"}
                 </button>
               ) : (
-                // Formula sheet item 12: the full-length adapter still answers
-                // `engine_unavailable`, so the control says so and never calls launch.
-                // Review left this branch on 2026-09-22 when its engine shipped.
+                // Formula sheet item 12: an engine whose adapter is still a fail-open stub
+                // answers `engine_unavailable`, so the control says so and never calls
+                // launch. Review left this branch on 2026-09-22 and full-length in E9b;
+                // none is here today, and the branch stays for the next one.
                 <button
                   type="button"
                   className="btn"

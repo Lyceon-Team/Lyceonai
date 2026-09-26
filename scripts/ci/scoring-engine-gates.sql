@@ -149,7 +149,6 @@ BEGIN
                            'public.compute_scaled_score_from_counts(text,int,int,int,int,int,int,int,int)',
                            'public.compute_section_scaled_score(uuid,text)',
                            'public.scoring_constants_snapshot_jsonb(text)',
-                           'public.emit_score_run_side_effects(uuid)',
                            'public.score_test_session_from_outbox(uuid)'] LOOP
     IF (SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = f::regprocedure) <> 'lyceon_scoring_owner' THEN
       RAISE EXCEPTION 'SEG FAIL [G1 privileges]: % is not owned by lyceon_scoring_owner', f;
@@ -157,10 +156,15 @@ BEGIN
     IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE') THEN
       RAISE EXCEPTION 'SEG FAIL [G1 privileges]: anon/authenticated can EXECUTE %', f;
     END IF;
-    IF has_function_privilege('service_role', f, 'EXECUTE') <> (f <> 'public.emit_score_run_side_effects(uuid)') THEN
+    IF NOT has_function_privilege('service_role', f, 'EXECUTE') THEN
       RAISE EXCEPTION 'SEG FAIL [G1 privileges]: service_role EXECUTE on % is wrong', f;
     END IF;
   END LOOP;
+  -- E9 (SCL-154): the E5 hook emit_score_run_side_effects is gone — the seams
+  -- run from their own outbox event, outside the scoring transaction.
+  IF to_regprocedure('public.emit_score_run_side_effects(uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'SEG FAIL [G1 privileges]: emit_score_run_side_effects still exists (04B §16.1: no side effect in the scoring transaction)';
+  END IF;
   IF NOT (SELECT bool_and(prosecdef) FROM pg_proc WHERE oid IN (
             'public.is_answer_correct(text,text)'::regprocedure, 'public.compute_section_scaled_score(uuid,text)'::regprocedure,
             'public.scoring_constants_snapshot_jsonb(text)'::regprocedure, 'public.score_test_session_from_outbox(uuid)'::regprocedure)) THEN

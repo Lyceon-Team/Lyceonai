@@ -206,12 +206,17 @@ export function primaryActionLabel(entry: {
  *
  * It is about the ENGINE being real, not about `enabled_block_types`. The flag decides
  * whether a review block is ever PLANNED; this decides whether one the student already
- * holds — from a hand-edited day, say — can be started. Full-length is still a fail-open
- * stub, so its control reads "Coming soon" and never calls launch: asking and being refused
- * is a worse experience than a control that tells the truth up front.
+ * holds — from a hand-edited day, say — can be started. Since E9b (2026-09-25) all three
+ * engines are real — the full-length adapter replaced its fail-open stub — so every block
+ * type is launchable. The function stays the one place the rule lives: the next engine to
+ * arrive as a stub makes it false again here, and the "Coming soon" branch returns with it.
  */
 export function isLaunchableBlockType(
   blockType: PlanBlock["block_type"],
 ): boolean {
-  return blockType === "practice" || blockType === "review";
+  return (
+    blockType === "practice" ||
+    blockType === "review" ||
+    blockType === "full_length"
+  );
 }

@@ -6,8 +6,9 @@
  *        reached from a production build."]
  * @implemented [2026-09-25]
  *
- * plain English: mounts the REAL /api/tests routers (runtime + 04C report) over a
- * throwaway database built from this repo's migrations. The only substitutions are
+ * plain English: mounts the REAL /api/tests routers (runtime + 04C report) and, since E9b,
+ * the REAL /api/calendar and /api/me routers, over a throwaway database built from this
+ * repo's migrations. The only substitutions are
  * the four imports in hooks.mjs (Supabase clients -> this Postgres; auth guards and
  * entitlement -> one fixed student). The real client runs unmodified under Vite and
  * reaches this server through Vite's /api proxy; it learns who is signed in from
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
 
   const { default: runtimeRouter } = await import("../../../server/routes/exam-runtime-routes");
   const { default: reportRouter } = await import("../../../server/routes/exam-report-routes");
+  const { calendarRouter, streakRouter } = await import("../../../server/routes/calendar-routes");
 
   const app = express();
   app.use(express.json());
@@ -64,6 +66,9 @@ async function main(): Promise<void> {
   );
   app.use("/api/tests", runtimeRouter);
   app.use("/api/tests", reportRouter);
+  // E9b: the calendar a full-length block is launched from (Doc 05F §15, §9.4).
+  app.use("/api/calendar", calendarRouter);
+  app.use("/api/me", streakRouter);
   // Anything else the app shell asks for is outside this harness.
   app.use("/api", (_req, res) => res.status(404).json({ error: { code: "not_in_harness", message: "Not served by the exam harness." } }));
 

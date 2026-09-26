@@ -97,7 +97,7 @@ function examBlock(blockId: string, date: string, ordinal: number): PlanBlock {
     scheduled_date: date,
     block_type: "full_length",
     section: null,
-    scope: { form_id: null },
+    scope: { form_id: null, exam_mode: "strict" },
     target_count: 1,
     source: "auto",
     derived_from_block_id: null,

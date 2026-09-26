@@ -2,10 +2,15 @@
  * The harness's one Postgres connection, shared by the stubs.
  * @implemented [2026-09-25]
  */
-import type { Client } from "pg";
+import pg, { type Client } from "pg";
 import { makePgSupabase } from "../../helpers/pg-supabase";
 
 let client: Client | null = null;
+
+// PostgREST sends dates and timestamps as STRINGS; node-pg parses them into Date objects.
+// The calendar's row schemas are written against the real transport, so the harness reads
+// them the way production does (E9b). Harness process only.
+for (const oid of [1082, 1114, 1184]) pg.types.setTypeParser(oid, (v: string) => v);
 
 export function setHarnessPg(pg: Client): void {
   client = pg;

@@ -27,12 +27,16 @@
  * a new block every time it fires. "Nothing is written until the student confirms" is the
  * requirement.
  *
- * edge cases: only engines in `enabled_block_types` are offered, so full-length is absent
- * until it ships — the same list `calendar_validate_plan` checks a created block against
- * (V-03), served on the payload rather than restated here.
+ * edge cases: only engines in `enabled_block_types` are offered — the same list
+ * `calendar_validate_plan` checks a created block against (V-03), served on the payload rather
+ * than restated here. A full-length block offers the test and the timing (SCL-167), through the
+ * same `FullLengthFields` the edit sheet uses.
  */
 import { useEffect, useState } from "react";
-import type { CalendarBlockType } from "@lyceon/shared/calendar";
+import type {
+  CalendarBlockType,
+  FullLengthScope,
+} from "@lyceon/shared/calendar";
 import { sectionName } from "../lib/blocks";
 import { longDate } from "../lib/dates";
 import {
@@ -41,6 +45,7 @@ import {
   reviewCountChoices,
   type NewBlockDraft,
 } from "../lib/members";
+import { FullLengthFields } from "./FullLengthFields";
 import { MixRows, type MixEntry } from "./MixRows";
 
 /** The label each engine wears in the picker. Full words; the wire's names are not copy. */
@@ -57,6 +62,11 @@ const ENGINE_BLURB: Readonly<Record<CalendarBlockType, string>> = {
 };
 
 /** The opening mix: one domain, one granularity step. The student changes it or doesn't. */
+const OPENING_FULL_LENGTH: FullLengthScope = {
+  form_id: null,
+  exam_mode: "strict",
+};
+
 function openingMix(): MixEntry[] {
   return [{ domain: "Algebra", count: MIX_GRANULARITY }];
 }
@@ -83,6 +93,9 @@ export function CreateBlockSheet({
   const [section, setSection] = useState<"M" | "RW">("M");
   const [mix, setMix] = useState<MixEntry[]>(openingMix);
   const [reviewCount, setReviewCount] = useState<number>(10);
+  // What a GENERATED full-length block carries: the next test, test-day timing (SCL-167).
+  const [fullLength, setFullLength] =
+    useState<FullLengthScope>(OPENING_FULL_LENGTH);
 
   // Reopening on another day must not inherit the last day's half-filled form. This is not
   // derived state — it is a reset on an external event, which is what an effect is for.
@@ -92,6 +105,7 @@ export function CreateBlockSheet({
     setSection("M");
     setMix(openingMix());
     setReviewCount(10);
+    setFullLength(OPENING_FULL_LENGTH);
   }, [open, date]);
 
   // Switching section invalidates the domains: they belong to the section that was chosen
@@ -115,7 +129,7 @@ export function CreateBlockSheet({
           : null
         : engine === "review"
           ? { block_type: "review", count: reviewCount }
-          : { block_type: "full_length" };
+          : { block_type: "full_length", scope: fullLength };
 
   return (
     <>
@@ -204,9 +218,12 @@ export function CreateBlockSheet({
           ) : null}
 
           {engine === "full_length" ? (
-            <div className="hint" data-testid="calendar-create-fl-note">
-              Doc 04 picks the form when the test starts. There is nothing to set here.
-            </div>
+            <FullLengthFields
+              idPrefix="calendar-create"
+              scope={fullLength}
+              disabled={pending}
+              onChange={setFullLength}
+            />
           ) : null}
         </div>
 
