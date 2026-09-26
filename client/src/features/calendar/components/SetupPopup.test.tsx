@@ -61,8 +61,52 @@ describe("pressing straight through", () => {
     // a real week rather than an empty one.
     expect(body.study_days_mask).toBeGreaterThan(0);
     expect(body.daily_minutes).toBe(60);
-    expect(body.full_length_weekday).toBe(6);
+    // ...but the OPTIONAL test weekday is not one of them. R-08-27 makes it optional, and a
+    // full-length spends its whole day's budget, so pressing straight through must not book
+    // a recurring exam the student never chose. Null is "no automatic exams".
+    expect(body.full_length_weekday).toBeNull();
     expect(body.timezone.length).toBeGreaterThan(0);
+  });
+
+  // R-08-27 makes the full-length weekday OPTIONAL, and a full-length spends the whole of
+  // its day's budget — no practice, no review is placed beside it. So the resting state of
+  // this row has to be unanswered: a pre-selected chip books a recurring exam, and spends a
+  // day of study time a week, on a decision the student never made. It opened on Saturday
+  // until the owner's 2026-09-26 ruling (a).
+  //
+  // The second case is the guard on the first. "Do not pre-select Saturday" is not "Saturday
+  // is wrong" — the real SAT is sat on a Saturday morning and §928's own worked example is a
+  // Saturday exam, so the chip must still store 6 when the student picks it. Without this,
+  // the obvious over-correction (dropping Saturday, or coercing the weekday) passes.
+  it("the test-day row opens UNANSWERED — None is the pressed chip", () => {
+    open();
+    // The row lives on the schedule panel, reached without answering anything.
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const row = screen.getByTestId("calendar-setup-fl");
+    const chips = Array.from(row.querySelectorAll("button"));
+    const pressed = chips.filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]!.textContent).toBe("None");
+    // Prove the row is non-trivial before trusting what is absent from it: every weekday is
+    // on offer, Saturday included, and none of them is pre-pressed.
+    expect(chips.length).toBe(8);
+    const sat = chips.find((c) => c.textContent === "Sat")!;
+    expect(sat.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("choosing Saturday still stores Saturday (the weekday itself is untouched)", () => {
+    const { submitted } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const row = screen.getByTestId("calendar-setup-fl");
+    const sat = Array.from(row.querySelectorAll("button")).find(
+      (c) => c.textContent === "Sat",
+    )!;
+    fireEvent.click(sat);
+    expect(sat.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.full_length_weekday).toBe(6);
   });
 
   it("no control is ever disabled or required — there is nothing to fail", () => {
