@@ -13,55 +13,19 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
-  CONFIG_ROWS,
-  PRACTICE_CONFIG_ROW,
-  makeFakeClient,
-  okReply,
+  PROFILE_ROW,
+  SCENARIO_NOW,
+  SCENARIO_STUDENT,
+  SCENARIO_TODAY,
+  makeScenarioClient,
+  type ScenarioOptions,
   type FakeClient,
-  type QueryState,
 } from "./calendar.service-harness";
 
-const STUDENT = "11111111-1111-1111-1111-111111111111";
-const BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-const TODAY = "2026-09-21";
-/** 2026-09-21T18:00:00Z is still the 21st in Chicago (UTC−5) and in New York (UTC−4). */
-const NOW = new Date("2026-09-21T18:00:00.000Z");
-
-const PROFILE = {
-  timezone: "America/Chicago",
-  target_exam_date: null,
-  target_score: 1400,
-  study_days_mask: 127,
-  daily_minutes: 60,
-  full_length_weekday: 6,
-  planner_mode: "auto" as const,
-  setup_completed_at: "2026-09-01T00:00:00.000Z",
-};
-
-const BLOCK_ROW = {
-  block_id: BLOCK_ID,
-  scheduled_date: TODAY,
-  block_type: "practice",
-  section: "M",
-  scope: {
-    level: "domain",
-    mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }],
-  },
-  target_count: 20,
-  source: "auto",
-  derived_from_block_id: null,
-  explanation_key: "weighted",
-};
-
-const PLAN_ROW = {
-  scheduled_date: TODAY,
-  timezone: "America/Chicago",
-  is_user_override: false,
-  version_no: 3,
-  block_id: BLOCK_ID,
-  display_ordinal: 1,
-  membership_type: "created",
-};
+const STUDENT = SCENARIO_STUDENT;
+const TODAY = SCENARIO_TODAY;
+const NOW = SCENARIO_NOW;
+const PROFILE = PROFILE_ROW;
 
 let client: FakeClient;
 
@@ -105,63 +69,11 @@ vi.mock("../../server/services/calendar/adapters", () => ({
 const { readCalendar, readGuardianCalendar } =
   await import("../../server/services/calendar/read-service");
 
-type ScenarioOptions = {
-  profile?: typeof PROFILE | null;
-  /** The zones `calendar_is_known_timezone` answers true for. */
-  knownZones?: readonly string[];
-  acceptedVersions?: number;
-  planRows?: (typeof PLAN_ROW)[];
-  units?: number;
-  unacknowledged?: {
-    version_no: number;
-    trigger: string;
-    created_at: string;
-  } | null;
-};
+type LocalScenarioOptions = ScenarioOptions & { units?: number };
 
-function scenario(options: ScenarioOptions = {}): void {
-  const profile = options.profile === undefined ? PROFILE : options.profile;
-  const planRows = options.planRows ?? [PLAN_ROW];
+function scenario(options: LocalScenarioOptions = {}): void {
   answeredUnits = options.units ?? 0;
-
-  client = makeFakeClient({
-    tables: {
-      calendar_runtime_config: () => okReply(CONFIG_ROWS),
-      practice_runtime_config: () => okReply([PRACTICE_CONFIG_ROW]),
-      student_study_profile: (state: QueryState) =>
-        state.columns.includes("last_acknowledged")
-          ? okReply({ last_acknowledged_nonstudent_version_no: 0 })
-          : okReply(profile),
-      calendar_plan_versions: (state: QueryState) => {
-        if (state.head) return okReply(null, options.acceptedVersions ?? 0);
-        if (state.columns.includes("input_snapshot")) {
-          return okReply([
-            {
-              version_no: 3,
-              input_snapshot: { profile: { study_days_mask: 127 } },
-            },
-          ]);
-        }
-        return okReply(options.unacknowledged ?? null);
-      },
-      calendar_current_plan: () => okReply(planRows),
-      calendar_blocks: () => okReply([BLOCK_ROW]),
-      calendar_block_launches: () => okReply([]),
-      student_overall_kpi: () =>
-        okReply({ current_streak_days: 4, longest_streak_days: 9 }),
-    },
-    rpcs: {
-      calendar_persist_version: () =>
-        okReply({ version_no: 1, validator_result: "accepted" }),
-      student_diagnostic_state: () => okReply("baseline_ready"),
-      calendar_is_known_timezone: (args) =>
-        okReply(
-          (options.knownZones ?? ["America/Chicago"]).includes(
-            String(args.p_timezone),
-          ),
-        ),
-    },
-  });
+  client = makeScenarioClient(options);
 }
 
 const read = () => readCalendar({ student_id: STUDENT, query: {}, now: NOW });
@@ -241,7 +153,7 @@ describe("R-08-04 — the first entitled open generates the first plan", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok || result.value.status !== "setup_required") return;
-    // Every value traces to a `calendar_runtime_config` row in CONFIG_ROWS. Change a row
+    // Every value traces to a `calendar_runtime_config` row in the harness's CONFIG_ROWS. Change a row
     // and this changes with it, which is the property that keeps the setup sheet's chips
     // and the server's own validation from disagreeing.
     expect(result.value.defaults.daily_minutes_presets).toEqual([

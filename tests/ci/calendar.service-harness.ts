@@ -205,6 +205,130 @@ export const PRACTICE_CONFIG_ROW = {
   value: 90,
 };
 
+// ── One canonical realistic scenario, shared ────────────────────────────────
+//
+// These rows were local consts in `calendar.read-service.test.ts` and are hoisted here so
+// the wire-contract test parses the SAME plan the service test asserts on. Two copies would
+// let one test's fixture drift from the other's and both stay green — the duplication
+// CLAUDE.md calls a defect even when no two edits touch the same line.
+//
+// `vi.mock` factories still live in each test file: vitest hoists them above imports, so
+// they cannot be shared from here. Only the DATA moves, which is the half that drifts.
+
+export const SCENARIO_STUDENT = "11111111-1111-1111-1111-111111111111";
+export const SCENARIO_BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+export const SCENARIO_TODAY = "2026-09-21";
+/** 2026-09-21T18:00:00Z is still the 21st in Chicago (UTC−5) and in New York (UTC−4). */
+export const SCENARIO_NOW = new Date("2026-09-21T18:00:00.000Z");
+
+export const PROFILE_ROW = {
+  timezone: "America/Chicago",
+  target_exam_date: null,
+  target_score: 1400,
+  study_days_mask: 127,
+  daily_minutes: 60,
+  full_length_weekday: 6,
+  planner_mode: "auto" as const,
+  setup_completed_at: "2026-09-01T00:00:00.000Z",
+};
+
+/**
+ * A practice block whose mix carries `explanation_key` — deliberately. The guardian
+ * projection must strip it at the per-domain level as well as the block level (§16), and a
+ * fixture without it would let that leak through untested.
+ */
+export const BLOCK_ROW = {
+  block_id: SCENARIO_BLOCK_ID,
+  scheduled_date: SCENARIO_TODAY,
+  block_type: "practice",
+  section: "M",
+  scope: {
+    level: "domain",
+    mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }],
+  },
+  target_count: 20,
+  source: "auto",
+  derived_from_block_id: null,
+  explanation_key: "weighted",
+};
+
+export const PLAN_ROW = {
+  scheduled_date: SCENARIO_TODAY,
+  timezone: "America/Chicago",
+  is_user_override: false,
+  version_no: 3,
+  block_id: SCENARIO_BLOCK_ID,
+  display_ordinal: 1,
+  membership_type: "created",
+};
+
+export type ScenarioOptions = {
+  profile?: typeof PROFILE_ROW | null;
+  /** The zones `calendar_is_known_timezone` answers true for. */
+  knownZones?: readonly string[];
+  acceptedVersions?: number;
+  planRows?: (typeof PLAN_ROW)[];
+  unacknowledged?: {
+    version_no: number;
+    trigger: string;
+    created_at: string;
+  } | null;
+};
+
+/**
+ * THE canonical fake database for a calendar read. Extracted from
+ * `calendar.read-service.test.ts` so the wire-contract test drives the real serializer over
+ * the SAME rows the service test asserts on — two hand-built scenarios would let the
+ * serializer satisfy one and not the other, and both files would stay green.
+ *
+ * It returns the client rather than assigning it, because each test file owns its own
+ * `vi.mock` factory for `supabase-server` (vitest hoists those above imports, so they cannot
+ * live here).
+ */
+export function makeScenarioClient(options: ScenarioOptions = {}): FakeClient {
+  const profile = options.profile === undefined ? PROFILE_ROW : options.profile;
+  const planRows = options.planRows ?? [PLAN_ROW];
+
+  return makeFakeClient({
+    tables: {
+      calendar_runtime_config: () => okReply(CONFIG_ROWS),
+      practice_runtime_config: () => okReply([PRACTICE_CONFIG_ROW]),
+      student_study_profile: (state: QueryState) =>
+        state.columns.includes("last_acknowledged")
+          ? okReply({ last_acknowledged_nonstudent_version_no: 0 })
+          : okReply(profile),
+      calendar_plan_versions: (state: QueryState) => {
+        if (state.head) return okReply(null, options.acceptedVersions ?? 0);
+        if (state.columns.includes("input_snapshot")) {
+          return okReply([
+            {
+              version_no: 3,
+              input_snapshot: { profile: { study_days_mask: 127 } },
+            },
+          ]);
+        }
+        return okReply(options.unacknowledged ?? null);
+      },
+      calendar_current_plan: () => okReply(planRows),
+      calendar_blocks: () => okReply([BLOCK_ROW]),
+      calendar_block_launches: () => okReply([]),
+      student_overall_kpi: () =>
+        okReply({ current_streak_days: 4, longest_streak_days: 9 }),
+    },
+    rpcs: {
+      calendar_persist_version: () =>
+        okReply({ version_no: 1, validator_result: "accepted" }),
+      student_diagnostic_state: () => okReply("baseline_ready"),
+      calendar_is_known_timezone: (args) =>
+        okReply(
+          (options.knownZones ?? ["America/Chicago"]).includes(
+            String(args.p_timezone),
+          ),
+        ),
+    },
+  });
+}
+
 export const okReply = (data: unknown, count?: number): FakeReply =>
   count === undefined ? { data, error: null } : { data, error: null, count };
 

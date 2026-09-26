@@ -95,6 +95,35 @@ ledger reading is not. Where a migration's effect can be pinned in CI, pin it: g
 function is live at the end of the migration pipeline. (Learned 2026-09-24: five calendar
 migrations reported unapplied were all live in production.)
 
+## The test layer has weaker guarantees than the code it guards
+
+**`tsconfig.json` excludes `**/*.test.ts` and `**/*.test.tsx`**, so `strict`,
+`noUnusedLocals` and `noUncheckedIndexedAccess` never see a test file. `pnpm -s run build`
+passing says nothing about them. The lint bot on a PR is standing where the compiler would
+otherwise be — treat its findings on test files as compiler errors, not style notes.
+
+The consequence that matters is not dead imports; it is **fixtures**. A hand-written fixture
+can assert a shape nothing in the system produces, and then both the fixture and the code it
+guards pass against something neither of them emits. Two instances, both found the hard way:
+
+- `violations: ["V-05", "V-10"]` — bare strings, where `calendar_validate_plan` has only ever
+  returned objects (`{rule, date, detail}`). The fixture agreed with the bug, so the suite
+  stayed green while production served `rule_ids=[]`. (SCL-137.)
+- The guardian calendar's payload and its schema were each tested against hand-written
+  objects, and neither test ever saw the route's `{ok: true, ...}` envelope. A 200 rendered an
+  error state. (SCL-171's sibling finding, `tests/ci/calendar.wire-contract.test.ts`.)
+
+So, when a test guards a boundary:
+
+- **Derive the fixture from real output**, not from what the shape ought to be. Call the real
+  function, or the real route, and assert on what comes back.
+- **One scenario, shared.** Two hand-built fixtures for one resource drift, and both files stay
+  green while they do (`tests/ci/calendar.service-harness.ts` is the calendar's).
+- **Assert presence before absence.** An anti-leak assertion over an empty collection passes
+  for the wrong reason; prove the payload is non-trivial first.
+- A round-trip test — real producer through real consumer — catches what neither side's own
+  tests can, because the mismatch lives between them.
+
 ## Tooling
 
 - **`pnpm` only.** `npm` is prohibited (blocked by hook). No dependency changes without approval.
