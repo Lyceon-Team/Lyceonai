@@ -74,16 +74,47 @@ BEGIN
   RAISE NOTICE '    OK Z-02 a replayed idempotency key returns the stored response and writes nothing';
 
   ---------------------------------------------------------------- Z-03
-  -- enabled_block_types is ["practice"] at launch, so only practice is
-  -- persisted even though the formula computed review and full-length too.
-  SELECT count(DISTINCT b.block_type), string_agg(DISTINCT b.block_type, ',')
+  -- V-03 at the writer: every persisted block type is one enabled_block_types
+  -- names. This used to pin the LAUNCH literal ["practice"]; review (2026-09-22)
+  -- and full_length (E9b, 20261004010000) have since been enabled, so the gate
+  -- now reads the live list rather than asserting a state the product has left.
+  --
+  -- S1 has a Saturday full_length_weekday, so with full_length enabled the
+  -- formula places an exam and it must reach the persisted plan.
+  SELECT count(DISTINCT b.block_type), string_agg(DISTINCT b.block_type, ',' ORDER BY b.block_type)
     INTO v_n, v_txt
   FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
   WHERE cp.student_id = S1;
-  IF v_txt IS DISTINCT FROM 'practice' THEN
-    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 persisted block types are % but enabled_block_types is ["practice"]', v_txt;
+  IF EXISTS (
+    SELECT 1
+    FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+    WHERE cp.student_id = S1
+      AND NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
+              @> jsonb_build_array(b.block_type)) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 persisted block types are % but enabled_block_types is %',
+      v_txt, (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK Z-03 only enabled block types are persisted (V-03 holds at the writer)';
+  IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types') @> '["full_length"]'::jsonb
+     AND v_txt NOT LIKE '%full_length%' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 full_length is enabled and S1 has a test weekday, but no full_length block was persisted (%)', v_txt;
+  END IF;
+  -- The filter itself, planted: narrow the list to ["practice"] inside a
+  -- sub-block, regenerate, and require practice only. The sub-block ends by
+  -- raising its own sentinel, which rolls back the narrowed config and the
+  -- extra version; any OTHER error propagates and fails the gate.
+  BEGIN
+    UPDATE public.calendar_runtime_config SET value = '["practice"]'::jsonb WHERE key = 'enabled_block_types';
+    PERFORM public.calendar_persist_version(S1, 'student_refresh', 'student', 'v1', NULL);
+    IF EXISTS (
+      SELECT 1 FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+      WHERE cp.student_id = S1 AND cp.scheduled_date >= v_today AND b.block_type <> 'practice') THEN
+      RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 with enabled_block_types ["practice"] a non-practice block was persisted';
+    END IF;
+    RAISE EXCEPTION 'z03 plant rolled back' USING ERRCODE = 'LYZ03';
+  EXCEPTION WHEN SQLSTATE 'LYZ03' THEN
+    NULL;  -- the sentinel above: the plant ran to completion and is now undone
+  END;
+  RAISE NOTICE '    OK Z-03 persisted types (%) are all enabled, and a narrowed list filters the rest (V-03 at the writer)', v_txt;
 
   ---------------------------------------------------------------- Z-04
   -- Every version allocates the next version_no, and a second student's

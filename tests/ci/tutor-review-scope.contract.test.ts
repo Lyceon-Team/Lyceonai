@@ -309,3 +309,54 @@ describe("POST /conversations and /messages on a review item", () => {
     expect(env.question_content?.explanation).toBe(EXPLANATION);
   });
 });
+
+// ── W4-4: looking up an item's conversation without creating one ──────────
+
+describe("GET /conversations?source_session_item_id — read-only, owner-scoped", () => {
+  function seedConv(studentId: string, itemId: string): string {
+    return db.current.seed("tutor_conversations", {
+      student_id: studentId,
+      entry_mode: "scoped_question",
+      source_surface: "review",
+      surface: "review",
+      source_session_item_id: itemId,
+      status: "active",
+      updated_at: "2026-09-23T11:00:00.000Z",
+    }).id as string;
+  }
+
+  it("returns only the caller's conversation for that item", async () => {
+    const itemId = seedReview();
+    const otherItem = seedReview();
+    const mine = seedConv(STUDENT_ID, itemId);
+    seedConv(STUDENT_ID, otherItem);
+    seedConv(OTHER_STUDENT, itemId);
+
+    const res = await request(makeApp()).get(
+      `/api/tutor/conversations?source_surface=review&status=active&source_session_item_id=${itemId}`,
+    );
+    expect(res.status).toBe(200);
+    const ids = (
+      res.body.data.conversations as Array<{ conversation_id: string }>
+    ).map((c) => c.conversation_id);
+    expect(ids).toEqual([mine]);
+  });
+
+  it("creates nothing", async () => {
+    const itemId = seedReview();
+    const before = db.current.rows("tutor_conversations").length;
+    const res = await request(makeApp()).get(
+      `/api/tutor/conversations?source_session_item_id=${itemId}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data.conversations).toEqual([]);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(before);
+  });
+
+  it("rejects a non-uuid item id", async () => {
+    const res = await request(makeApp()).get(
+      "/api/tutor/conversations?source_session_item_id=not-a-uuid",
+    );
+    expect(res.status).toBe(400);
+  });
+});

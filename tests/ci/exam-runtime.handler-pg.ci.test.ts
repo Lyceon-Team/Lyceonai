@@ -398,14 +398,17 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
       }
 
       // Scored inline: no scoring call and no sweep in this file.
+      // E9 (SCL-154): the completion is followed by its 'test_session_scored'
+      // event, consumed by the hand-off's second call. Neither carries identity.
       const outbox = await pg.query(
-        `SELECT id, event_type, status, payload ? 'student_id' AS has_student FROM public.exam_runtime_outbox WHERE aggregate_id = $1`,
+        `SELECT id, event_type, status, payload ? 'student_id' AS has_student FROM public.exam_runtime_outbox
+          WHERE aggregate_id = $1 ORDER BY created_at, event_type`,
         [sid],
       );
-      expect(outbox.rows).toHaveLength(1);
-      expect(outbox.rows[0].event_type).toBe("test_session_completed");
-      expect(outbox.rows[0].status).toBe("published");
-      expect(outbox.rows[0].has_student).toBe(false);
+      expect(outbox.rows.map((r) => [r.event_type, r.status, r.has_student])).toEqual([
+        ["test_session_completed", "published", false],
+        ["test_session_scored", "published", false],
+      ]);
       const score = await pg.query(
         `SELECT rw_module2_path, rw_scaled, math_module2_path, math_scaled, total_scaled
            FROM public.score_runs WHERE test_session_id = $1`,

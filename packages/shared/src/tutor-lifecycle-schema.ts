@@ -71,6 +71,10 @@ export const listConversationsQuerySchema = z.object({
     .optional(),
   surface: conversationSurfaceSchema.optional(),
   status: conversationStatusSchema.optional(),
+  // W4-4: find the item's existing thread WITHOUT creating one — the review
+  // panel is always open, and a conversation is created only on the first
+  // real message. Read-only; still scoped to the authenticated student.
+  source_session_item_id: z.string().uuid().optional(),
 });
 export type ListConversationsQuery = z.infer<
   typeof listConversationsQuerySchema

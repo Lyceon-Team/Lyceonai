@@ -24,7 +24,7 @@ DB=exam_deletion_cascade_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-EXPECTED_IDS="S1 W1 N1 T1 SN1 SN2 A1 A2 A3 P1 P2 H1 R1 C1"
+EXPECTED_IDS="S1 W1 N1 T1 SN1 SN2 A1 A2 A3 P1 P2 H1 R1 C1 L1 L2 L3 L4"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 
