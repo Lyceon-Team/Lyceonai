@@ -48,7 +48,8 @@ const TEST_USER_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 /**
  * Minimal PG-backed Supabase-like query builder.
  * Supports the chain patterns used by upsertEntitlement, getEntitlementForProfile,
- * tryInsertWebhookEventGate, and rollbackWebhookEventGate.
+ * tryInsertWebhookEventGate, rollbackWebhookEventGate, and (W3-3)
+ * setProfileCountryCode's `.update().eq()`.
  */
 class PgQueryBuilder {
   private pgClient: Client;
@@ -58,6 +59,7 @@ class PgQueryBuilder {
   private upsertData: Record<string, unknown> | null = null;
   private upsertConflict: string | null = null;
   private insertData: Record<string, unknown> | null = null;
+  private updateData: Record<string, unknown> | null = null;
   private deleteMode = false;
 
   constructor(pgClient: Client, table: string) {
@@ -83,6 +85,11 @@ class PgQueryBuilder {
 
   insert(data: Record<string, unknown>): this {
     this.insertData = data;
+    return this;
+  }
+
+  update(data: Record<string, unknown>): this {
+    this.updateData = data;
     return this;
   }
 
@@ -148,6 +155,16 @@ class PgQueryBuilder {
           const colNames = cols.map((c) => `"${c}"`).join(", ");
           const sql = `INSERT INTO public."${this.table}" (${colNames}) VALUES (${placeholders})`;
           await this.pgClient.query(sql, vals);
+          resolve({ data: null, error: null });
+          return;
+        }
+        if (this.updateData) {
+          const cols = Object.keys(this.updateData);
+          const vals = Object.values(this.updateData);
+          const setSql = cols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
+          const { sql: whereSql, params } = this.buildWhere(cols.length + 1);
+          const sql = `UPDATE public."${this.table}" SET ${setSql}${whereSql}`;
+          await this.pgClient.query(sql, [...vals, ...params]);
           resolve({ data: null, error: null });
           return;
         }
@@ -663,6 +680,13 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
       },
     });
 
+    // W3-3: the payer's billing country, lower-case as a client might send it.
+    // The gate normalises it and the writer records it on the profile.
+    stripeApi.customersRetrieve.mockResolvedValueOnce({
+      id: "cus_period_proof",
+      address: { country: "sg" },
+    });
+
     const event = {
       id: "evt_period_proof",
       type: "customer.subscription.created",
@@ -708,5 +732,13 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
     // The price comes off the SAME item as the periods (SCL-045), so the two
     // can never describe different students.
     expect(row.rows[0].stripe_price_id).toBe("price_period_proof");
+
+    // W3-3: the same grant recorded the approved billing country on the
+    // student's profile, in real PostgreSQL, normalised by the gate.
+    const profile = await testPg!.query(
+      `SELECT country_code FROM public.profiles WHERE id = $1`,
+      [TEST_USER_ID],
+    );
+    expect(profile.rows[0].country_code).toBe("SG");
   });
 });
