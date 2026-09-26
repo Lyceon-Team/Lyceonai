@@ -259,20 +259,22 @@ describe.skipIf(!PG_AVAILABLE)(
       };
 
       const res = await pg.query(
-        `SELECT public.record_deletion_verification($1, $2::jsonb, $3, $4) AS r`,
-        [logId, JSON.stringify(layers), "pass", deadProfile],
+        `SELECT public.record_deletion_verification($1, $2::jsonb, $3) AS r`,
+        [logId, JSON.stringify(layers), "pass"],
       );
       expect(res.rows[0].r).toBe(logId);
 
       const row = await pg.query(
         `SELECT log_id, verification_outcome, layers_verified::text AS layers_text,
-                proof_manifest_ref, deleted_profile_id
+                proof_manifest_ref
            FROM public.deletion_verification_records WHERE log_id = $1`,
         [logId],
       );
       expect(row.rowCount).toBe(1);
       expect(row.rows[0].verification_outcome).toBe("pass");
-      expect(row.rows[0].deleted_profile_id).toBe(deadProfile);
+      // The record stores NO profile uuid — the carve-out is gone (SCL-152). `deadProfile`
+      // must not appear anywhere in the row.
+      expect(JSON.stringify(row.rows[0])).not.toContain(deadProfile);
 
       // B3 as ruled: the manifest IS this record, and proof_manifest_ref is a SHA-256 over
       // its canonicalised form. Recomputing it here proves the hash is derived, not decorative.
@@ -282,7 +284,6 @@ describe.skipIf(!PG_AVAILABLE)(
         row.rows[0].log_id,
         row.rows[0].verification_outcome,
         row.rows[0].layers_text,
-        row.rows[0].deleted_profile_id,
       ].join("\n");
       const expected =
         "sha256:" +
@@ -290,8 +291,72 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(row.rows[0].proof_manifest_ref).toBe(expected);
     });
 
-    // ══ P6.6 — the carve-out, proven rather than asserted ══════════════════════
-    it("P6.6 the deleted profile's uuid survives ONLY on the evidence side — every retained uuid column swept", async () => {
+    // ══ P6.7 — §6.4 step 2, which was specified and never implemented ══════════
+    it("P6.7 the write path refuses a pass whose in-scope layers are not verified, and a record missing a layer", async () => {
+      const log = await pg.query(
+        `INSERT INTO public.deletion_request_log
+           (subject_email, requester_email, request_channel, requested_on, status)
+         VALUES ('p67@p6.test', 'p67@p6.test', 'self_service_web', current_date, 'completed')
+         RETURNING log_id`,
+      );
+      const logId = log.rows[0].log_id as string;
+      const layer = (verified: boolean): Record<string, unknown> => ({
+        verified,
+        canonical_owner: "test",
+        out_of_scope: false,
+      });
+      const full = (masteryVerified: boolean): string =>
+        JSON.stringify({
+          identity: layer(true),
+          mastery: layer(masteryVerified),
+          lisa: layer(true),
+          analytics: {
+            verified: false,
+            out_of_scope: true,
+            out_of_scope_reason: "Doc 07 forward-ref",
+          },
+        });
+
+      // §6.5 condition (d) pages on exactly this row hours after it is written. The write path
+      // can make it impossible instead, which is what "eliminate the hazard, not the alarm"
+      // meant when the same argument removed `in_progress`.
+      await expect(
+        pg.query(
+          `SELECT public.record_deletion_verification($1, $2::jsonb, 'pass')`,
+          [logId, full(false)],
+        ),
+      ).rejects.toThrow(/pass requires the mastery layer/);
+
+      // …and a record that omits a layer altogether — the shape audit P21 exists to catch
+      await expect(
+        pg.query(
+          `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail')`,
+          [logId, JSON.stringify({ identity: layer(false) })],
+        ),
+      ).rejects.toThrow(/no mastery layer object/);
+
+      // Neither attempt left anything behind: a refused write is not a partial one.
+      const after = await pg.query(
+        `SELECT count(*)::int AS n FROM public.deletion_verification_records WHERE log_id = $1`,
+        [logId],
+      );
+      expect(after.rows[0].n).toBe(0);
+
+      // A `fail` with all four layers present and none verified IS allowed — that is the
+      // reconciler's record, and refusing it would push the harness back to silence.
+      await pg.query(
+        `SELECT public.record_deletion_verification($1, $2::jsonb, 'fail')`,
+        [logId, full(false)],
+      );
+      const row = await pg.query(
+        `SELECT verification_outcome FROM public.deletion_verification_records WHERE log_id = $1`,
+        [logId],
+      );
+      expect(row.rows[0].verification_outcome).toBe("fail");
+    });
+
+    // ══ P6.6 — absence, now absolute: the carve-out it was written for is gone ══
+    it("P6.6 the deleted profile's uuid survives NOWHERE — every uuid column in the schema swept", async () => {
       await seedFlaggedStudentWithCase();
 
       // `audit_logs` is the case this sweep exists for, and it has to be SEEDED or the sweep
@@ -307,6 +372,12 @@ describe.skipIf(!PG_AVAILABLE)(
       );
 
       await pg.query(`DELETE FROM public.profiles WHERE id = $1`, [SUBJECT]);
+      // …and the auth user with it, which is what the cascade does (both DELETEs are in
+      // execute_account_deletion_cascade). Added 2026-09-23: this test deleted only the
+      // profile row, and `public.verify_deletion_layers` — which checks auth.users, a schema
+      // this test's own sweep never looks at — reported the identity layer unverified for a
+      // deletion the test called complete. The scan was right; the seed was half a deletion.
+      await pg.query(`DELETE FROM auth.users WHERE id = $1`, [SUBJECT]);
       // the same call the cascade makes — the only path that clears those two columns
       await pg.query(
         `SELECT public.apply_audit_logs_retention('strip_identity', $1)`,
@@ -319,13 +390,15 @@ describe.skipIf(!PG_AVAILABLE)(
          VALUES ('sweep@p6.test', 'sweep@p6.test', 'self_service_web', current_date, 'completed')
          RETURNING log_id`,
       );
+      // The layers come from the REAL scan, not a hand-written literal. Two reasons: the write
+      // path now refuses a `pass` whose in-scope layers are not all verified (Doc 06D §6.3 /
+      // §6.5 (d), migration 20260930000000), so a literal would have to restate what the scan
+      // concludes; and a hand-written `verified: true` is the assertion this whole file exists
+      // to distrust. If the sweep below finds a hit, this call has already failed.
       await pg.query(
-        `SELECT public.record_deletion_verification($1, $2::jsonb, 'pass', $3)`,
-        [
-          log.rows[0].log_id,
-          JSON.stringify({ identity: { verified: true, out_of_scope: false } }),
-          SUBJECT,
-        ],
+        `SELECT public.record_deletion_verification(
+           $1, public.verify_deletion_layers($2), 'pass')`,
+        [log.rows[0].log_id, SUBJECT],
       );
 
       // Every uuid column in the public schema, swept for the dead profile's id. The carve-out
@@ -348,9 +421,13 @@ describe.skipIf(!PG_AVAILABLE)(
         );
         if (hit.rows[0].n > 0) holders.push(`${table_name}.${column_name}`);
       }
-      expect(holders).toEqual([
-        "deletion_verification_records.deleted_profile_id",
-      ]);
+      // NOTHING retains the uuid — not even the evidence side. This used to expect exactly
+      // one holder, `deletion_verification_records.deleted_profile_id`; that column is gone
+      // (SCL-152) and the assertion is now the absolute one the design always wanted. It is
+      // also the assertion that, had it been this strict and had the writers been correct,
+      // would have described production accurately — instead of tolerating a stored key that
+      // turned out to join to 41 retained actor_id rows.
+      expect(holders).toEqual([]);
     });
   },
 );
