@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 /**
- * @spec [Doc-02B_V4 §21 (Question Awareness), CR-02B-29; closure plan W4-1]
- * @implemented 2026-09-25
+ * @spec [Doc-02B_V4 §21 (Question Awareness), CR-02B-29; closure plan W4-1,
+ *        W4-4 (LISA always open in review; no conversation on load)]
+ * @implemented 2026-09-25 | @updated 2026-09-25 — W4-4
  *
- * plain English: LISA beside a review question. The panel names the question,
- * closes, opens ONE conversation per review item, and — before the student
- * answers — what reaches the model carries the question and neither the
- * answer nor the explanation.
+ * plain English: LISA is open beside every review question, and being open
+ * costs nothing: on load the panel only LOOKS for the item's conversation (a
+ * GET) and shows an opener — an invitation, not a message. The conversation
+ * is created on the student's first real message, and only then. One
+ * conversation per item; before submit, the wire carries the question and
+ * neither the answer nor the explanation.
  *
  * Nothing is mocked between the panel and the envelope: the REAL tutor-client
  * hooks call `apiRequest`, routed through supertest into the REAL tutor router,
- * which builds the REAL envelope over the in-memory DB. Only the worker call is
- * replaced, and the envelope handed to it is exactly what would go on the wire.
+ * which builds the REAL envelope over the in-memory DB. Every request is
+ * recorded, so "zero POST /conversations" is a count, not an assumption.
  */
 import React from "react";
 import express from "express";
@@ -88,6 +91,15 @@ function makeApp(): express.Express {
 
 // ── Client transport: apiRequest → supertest → the real router ─────────────
 
+type Call = { method: string; path: string };
+const calls: Call[] = [];
+
+function conversationCreates(): Call[] {
+  return calls.filter(
+    (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+  );
+}
+
 vi.mock("@/lib/queryClient", async () => {
   const { parseApiErrorFromResponse } = await import("@/lib/api-error");
   return {
@@ -104,6 +116,7 @@ vi.mock("@/lib/queryClient", async () => {
               .set("Content-Type", "application/json")
               .send(options?.body ?? "{}")
           : await agent.get(url);
+      calls.push({ method, path: url });
       const response = new Response(JSON.stringify(res.body), {
         status: res.status,
         headers: { "Content-Type": "application/json" },
@@ -119,7 +132,11 @@ vi.mock("@/components/billing/PremiumUpgradePrompt", () => ({
   PremiumUpgradePrompt: () => null,
 }));
 
-import { ScopedTutorPanel } from "./ScopedTutorPanel";
+import {
+  OPENER_BODY,
+  OPENER_TITLE,
+  ScopedTutorPanel,
+} from "./ScopedTutorPanel";
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -185,7 +202,16 @@ function conversationsFor(itemId: string): Array<Record<string, unknown>> {
 
 type Props = React.ComponentProps<typeof ScopedTutorPanel>;
 
-function renderPanel(props: Props): {
+function props(itemId: string, label = "Question 1 / 5"): Props {
+  return {
+    sourceSurface: "review",
+    sessionItemId: itemId,
+    questionLabel: label,
+    onHide: vi.fn(),
+  };
+}
+
+function renderPanel(p: Props): {
   rerender: (next: Props) => void;
   unmount: () => void;
 } {
@@ -195,17 +221,56 @@ function renderPanel(props: Props): {
       mutations: { retry: false },
     },
   });
-  const wrap = (p: Props): React.ReactElement => (
+  const wrap = (x: Props): React.ReactElement => (
     <QueryClientProvider client={qc}>
-      <ScopedTutorPanel {...p} />
+      <ScopedTutorPanel {...x} />
     </QueryClientProvider>
   );
-  const r = render(wrap(props));
+  const r = render(wrap(p));
   return { rerender: (next) => r.rerender(wrap(next)), unmount: r.unmount };
 }
 
-async function composerReady(): Promise<void> {
+/** The panel has finished looking and is ready for the student. */
+async function ready(): Promise<void> {
   await screen.findByLabelText("Message");
+}
+
+function send(text: string): void {
+  fireEvent.change(screen.getByLabelText("Message"), {
+    target: { value: text },
+  });
+  fireEvent.submit(
+    screen.getByRole("form", { name: /send a message to lisa/i }),
+  );
+}
+
+function seedConversation(
+  itemId: string,
+  messages: Array<{ role: "student" | "tutor"; message: string }>,
+): string {
+  const conv = db.current.seed("tutor_conversations", {
+    student_id: STUDENT_ID,
+    entry_mode: "scoped_question",
+    source_surface: "review",
+    surface: "review",
+    source_session_id: null,
+    source_session_item_id: itemId,
+    source_question_row_id: QUESTION_ID,
+    source_question_canonical_id: QUESTION_ID,
+    status: "active",
+    updated_at: "2026-09-23T11:00:00.000Z",
+  });
+  messages.forEach((m, i) =>
+    db.current.seed("tutor_messages", {
+      conversation_id: conv.id,
+      role: m.role,
+      content_kind: "message",
+      message: m.message,
+      client_turn_id: m.role === "student" ? crypto.randomUUID() : null,
+      created_at: `2026-09-23T11:00:0${i}.000Z`,
+    }),
+  );
+  return conv.id as string;
 }
 
 beforeEach(() => {
@@ -214,6 +279,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-23T12:00:00.000Z"));
   db.current = new FakeTutorDb();
+  calls.length = 0;
   orchestrateTurn.mockReset();
   orchestrateTurn.mockResolvedValue(workerReply());
   db.current.seed("questions", {
@@ -231,46 +297,79 @@ afterEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
-describe("W4-1 — LISA panel on a review item", () => {
-  it("names the question under review, and opens a review conversation scoped to the item", async () => {
+describe("W4-4 — open on load, and nothing created by being open", () => {
+  it("on load: the chip names the question, the opener is shown, and ZERO POST /conversations", async () => {
     const itemId = seedReviewItem(1);
-    renderPanel({
-      sourceSurface: "review",
-      sessionItemId: itemId,
-      questionLabel: "Question 3 / 10",
-      onClose: vi.fn(),
-    });
+    renderPanel(props(itemId, "Question 3 / 10"));
+    await ready();
 
     expect(screen.getByTestId("tutor-question-chip").textContent).toBe(
       "Question 3 / 10",
     );
-    await composerReady();
+    const opener = screen.getByTestId("tutor-opener");
+    expect(opener.textContent).toContain(OPENER_TITLE);
+    expect(opener.textContent).toContain(OPENER_BODY);
 
+    expect(conversationCreates()).toHaveLength(0);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(0);
+    // It looked — with a GET scoped to this item.
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "GET" &&
+          c.path.startsWith("/api/tutor/conversations?") &&
+          c.path.includes(`source_session_item_id=${itemId}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("the opener is not a message: no bubble, nothing persisted, not in the thread", async () => {
+    renderPanel(props(seedReviewItem(1)));
+    await ready();
+    expect(screen.queryAllByTestId("tutor-bubble")).toHaveLength(0);
+    expect(screen.queryAllByTestId("student-bubble")).toHaveLength(0);
+    expect(db.current.rows("tutor_messages")).toHaveLength(0);
+  });
+
+  it("the FIRST message creates the conversation — exactly once — and the opener is gone", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+
+    send("where do I start?");
+    // Gone at once — the student's text replaces it, before the reply.
+    expect(screen.queryByTestId("tutor-opener")).toBeNull();
+    expect(screen.getAllByTestId("student-bubble")[0].textContent).toContain(
+      "where do I start?",
+    );
+
+    await screen.findByText(TUTOR_TEXT);
+    expect(screen.queryByTestId("tutor-opener")).toBeNull();
+    expect(conversationCreates()).toHaveLength(1);
     const [conv] = conversationsFor(itemId);
     expect(conv?.entry_mode).toBe("scoped_question");
     expect(conv?.source_surface).toBe("review");
     expect(conv?.source_question_row_id).toBe(QUESTION_ID);
+    // The first message went through the turn machine exactly once.
+    expect(orchestrateTurn).toHaveBeenCalledTimes(1);
+    const studentRows = db.current
+      .rows("tutor_messages")
+      .filter((r) => r.role === "student");
+    expect(studentRows).toHaveLength(1);
+    expect(studentRows[0].message).toBe("where do I start?");
+
+    // A second message goes to the same conversation; no second create.
+    send("and then?");
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(2));
+    expect(conversationCreates()).toHaveLength(1);
   });
 
-  it("BEFORE the student answers: a turn from the panel sends the question, and neither the answer nor the explanation", async () => {
-    const itemId = seedReviewItem(1);
-    renderPanel({
-      sourceSurface: "review",
-      sessionItemId: itemId,
-      questionLabel: "Question 1 / 5",
-      onClose: vi.fn(),
-    });
-    await composerReady();
-
-    fireEvent.change(screen.getByLabelText("Message"), {
-      target: { value: "where do I start?" },
-    });
-    fireEvent.submit(
-      screen.getByRole("form", { name: /send a message to lisa/i }),
-    );
-
+  it("BEFORE the student answers: the first turn's wire carries the question, and neither the answer nor the explanation", async () => {
+    renderPanel(props(seedReviewItem(1)));
+    await ready();
+    send("where do I start?");
     await screen.findByText(TUTOR_TEXT);
-    expect(orchestrateTurn).toHaveBeenCalledTimes(1);
+
     const env = orchestrateTurn.mock.calls[0][0] as {
       source_surface: string;
       is_post_submit: boolean;
@@ -285,76 +384,55 @@ describe("W4-1 — LISA panel on a review item", () => {
     expect(JSON.stringify(env)).not.toContain("zqx-panel-explanation");
   });
 
-  it("one conversation per item: closing and reopening the panel returns to the same thread", async () => {
+  it("revisit: an item with a thread shows that thread — found by GET, zero POST, no opener", async () => {
     const itemId = seedReviewItem(1);
-    const props: Props = {
-      sourceSurface: "review",
-      sessionItemId: itemId,
-      questionLabel: "Question 1 / 5",
-      onClose: vi.fn(),
-    };
-    const first = renderPanel(props);
-    await composerReady();
-    fireEvent.change(screen.getByLabelText("Message"), {
-      target: { value: "where do I start?" },
-    });
-    fireEvent.submit(
-      screen.getByRole("form", { name: /send a message to lisa/i }),
-    );
-    await screen.findByText(TUTOR_TEXT);
-    first.unmount();
+    seedConversation(itemId, [
+      { role: "student", message: "where do I start?" },
+      { role: "tutor", message: TUTOR_TEXT },
+    ]);
+    renderPanel(props(itemId));
 
-    renderPanel(props);
-    // The earlier exchange is there — the same conversation, not a new one.
     await screen.findByText(TUTOR_TEXT);
-    expect(conversationsFor(itemId)).toHaveLength(1);
+    expect(screen.queryByTestId("tutor-opener")).toBeNull();
+    expect(conversationCreates()).toHaveLength(0);
   });
 
-  it("moving to the next item opens THAT item's conversation; the previous thread does not follow", async () => {
+  it("a conversation that exists with no messages still shows the opener, and creates nothing", async () => {
+    const itemId = seedReviewItem(1);
+    seedConversation(itemId, []);
+    renderPanel(props(itemId));
+    await screen.findByTestId("tutor-opener");
+    expect(conversationCreates()).toHaveLength(0);
+  });
+
+  it("moving to the next item: its own opener, the previous thread does not follow, still zero creates for it", async () => {
     const first = seedReviewItem(1);
     const second = seedReviewItem(2);
-    const view = renderPanel({
-      sourceSurface: "review",
-      sessionItemId: first,
-      questionLabel: "Question 1 / 5",
-      onClose: vi.fn(),
-    });
-    await composerReady();
-    fireEvent.change(screen.getByLabelText("Message"), {
-      target: { value: "where do I start?" },
-    });
-    fireEvent.submit(
-      screen.getByRole("form", { name: /send a message to lisa/i }),
-    );
+    const view = renderPanel(props(first, "Question 1 / 5"));
+    await ready();
+    send("where do I start?");
     await screen.findByText(TUTOR_TEXT);
+    expect(conversationCreates()).toHaveLength(1);
 
-    view.rerender({
-      sourceSurface: "review",
-      sessionItemId: second,
-      questionLabel: "Question 2 / 5",
-      onClose: vi.fn(),
-    });
-
-    await waitFor(() => expect(conversationsFor(second)).toHaveLength(1));
+    view.rerender(props(second, "Question 2 / 5"));
+    await screen.findByTestId("tutor-opener");
     expect(screen.getByTestId("tutor-question-chip").textContent).toBe(
       "Question 2 / 5",
     );
-    await screen.findByText("Ask LISA about this question.");
     expect(screen.queryByText(TUTOR_TEXT)).toBeNull();
-    expect(conversationsFor(first)[0]?.id).not.toBe(
-      conversationsFor(second)[0]?.id,
-    );
+    expect(conversationCreates()).toHaveLength(1);
+    expect(conversationsFor(second)).toHaveLength(0);
+
+    // Back to the first: its thread, by GET.
+    view.rerender(props(first, "Question 1 / 5"));
+    await screen.findByText(TUTOR_TEXT);
+    expect(conversationCreates()).toHaveLength(1);
   });
 
-  it("the close control closes the panel", async () => {
-    const onClose = vi.fn();
-    renderPanel({
-      sourceSurface: "review",
-      sessionItemId: seedReviewItem(1),
-      questionLabel: "Question 1 / 5",
-      onClose,
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Close LISA" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+  it("Hide LISA calls onHide", async () => {
+    const p = props(seedReviewItem(1));
+    renderPanel(p);
+    fireEvent.click(screen.getByRole("button", { name: "Hide LISA" }));
+    expect(p.onHide).toHaveBeenCalledTimes(1);
   });
 });
