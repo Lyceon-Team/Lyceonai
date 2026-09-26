@@ -528,7 +528,6 @@ function Scene(): JSX.Element {
         today={TODAY}
         viewerName="Karl Nkemzi"
         viewer="student"
-        viewer="student"
         targetExamDate={null}
         targetScore={null}
         projection={undefined}
@@ -559,6 +558,10 @@ function Scene(): JSX.Element {
         viewerName="Karl Nkemzi"
         viewer="student"
         targetExamDate={null}
+        // FOURTH instance, same one-line shape. A student who has not run setup has no
+        // target, so this is `null` — the ABSENT branch, "Set a target" — where before it
+        // was `undefined` and rendered an empty populated branch.
+        targetScore={null}
         streak={STREAK}
         planUpdate={null}
         onRangeChange={() => {}}
@@ -602,6 +605,14 @@ function Scene(): JSX.Element {
       viewerName="Karl Nkemzi"
       viewer="student"
       targetExamDate="2026-11-07"
+      // THIRD INSTANCE of the same harness bug, found the same way. `targetScore` is a
+      // REQUIRED prop and this scene never passed it, so the header rendered "Target" with
+      // no number in every committed shot — `undefined` is neither a number nor `null`, so
+      // it took the POPULATED branch with nothing in it rather than the absent one. Same
+      // root cause as the missing `estimates`: `client/shots/` is outside tsconfig, so a
+      // missing required prop is invisible here in a way it could never be in `client/src`.
+      targetScore={readyResponse(range.from, range.to).profile.target_score}
+      projection={SHOT_PROJECTION}
       streak={STREAK}
       planUpdate={{ versionNo: 2, trigger: "weekly" }}
       onRangeChange={() => {}}
