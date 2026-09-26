@@ -72,6 +72,9 @@ import {
   evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
 import type { FlagForReviewResult } from "../services/tutor-crisis";
+// W3-3: the pure resolver, imported from its own module so the route always
+// runs the real one.
+import { resolveCrisisCountry } from "../services/crisis-resources";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -84,7 +87,10 @@ import {
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
-import type { ConversationDetail } from "../../packages/shared/src/tutor-lifecycle-schema";
+import {
+  listConversationsQuerySchema,
+  type ConversationDetail,
+} from "../../packages/shared/src/tutor-lifecycle-schema";
 
 const router = Router();
 
@@ -141,16 +147,6 @@ const endConversationSchema = z.object({
 
 const resumeConversationSchema = z.object({
   idempotency_key: z.string().uuid().optional(),
-});
-
-const surfaceSchema = z.enum(["standalone", "practice", "review"]);
-
-const listConversationsQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(100).optional(),
-  cursor: z.string().min(1).optional(),
-  source_surface: sourceSurfaceSchema.optional(),
-  surface: surfaceSchema.optional(),
-  status: z.enum(["active", "ended"]).optional(),
 });
 
 const fetchConversationQuerySchema = z.object({
@@ -1344,8 +1340,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("country_code")
         .eq("id", studentId)
         .maybeSingle();
+      // W3-3: resources follow the student's billing country (Doc 03 §4.6).
+      // Unknown gets the named no-number response (owner ruling 2026-09-25)
+      // — and that is the one case worth an alert: a student in crisis was
+      // given no local number. The student id is logged (digested by the
+      // logger) so ops can find their country; the crisis content never is.
+      const crisisCountry = resolveCrisisCountry(
+        profileRow?.country_code as string | null | undefined,
+      );
+      if (crisisCountry.defaulted) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_country_defaulted",
+          "Crisis resources fell back to the no-number response: this student's country is unknown or unsupported",
+          {
+            studentId,
+            conversationId: conversation.id,
+            category: crisisResult.category,
+            reason: crisisCountry.reason,
+          },
+        );
+      }
       const crisisContent = getCrisisResponse(
-        (profileRow?.country_code as string | null) ?? "US",
+        crisisCountry.country,
         crisisResult.category,
       );
 
@@ -2209,6 +2226,12 @@ router.get(
       }
       if (parsedQuery.data.source_surface) {
         query = query.eq("source_surface", parsedQuery.data.source_surface);
+      }
+      if (parsedQuery.data.source_session_item_id) {
+        query = query.eq(
+          "source_session_item_id",
+          parsedQuery.data.source_session_item_id,
+        );
       }
       query = parsedQuery.data.status
         ? query.eq("status", parsedQuery.data.status)

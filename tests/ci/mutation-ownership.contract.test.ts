@@ -37,6 +37,8 @@ const authMocks = vi.hoisted(() => ({
 
 // Apply mocks before any imports
 vi.mock("../../server/lib/account", () => ({
+  // W3-3: the grant path now records the billing country on the profile.
+  setProfileCountryCode: vi.fn(async () => undefined),
   revokeGuardianLink: accountMocks.revokeGuardianLink,
   isGuardianLinkedToStudent: accountMocks.isGuardianLinkedToStudent,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
