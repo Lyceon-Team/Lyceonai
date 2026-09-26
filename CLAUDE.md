@@ -111,7 +111,7 @@ guards pass against something neither of them emits. Two instances, both found t
   stayed green while production served `rule_ids=[]`. (SCL-137.)
 - The guardian calendar's payload and its schema were each tested against hand-written
   objects, and neither test ever saw the route's `{ok: true, ...}` envelope. A 200 rendered an
-  error state. (SCL-167's sibling finding, `tests/ci/calendar.wire-contract.test.ts`.)
+  error state. (SCL-171's sibling finding, `tests/ci/calendar.wire-contract.test.ts`.)
 
 So, when a test guards a boundary:
 
