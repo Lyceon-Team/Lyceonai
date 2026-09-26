@@ -9293,7 +9293,7 @@ BEGIN
       NEW.id, NEW.id, NEW.student_id, NEW.question_id,
       NEW.selected_answer, NEW.is_correct,
       NEW.time_spent_ms / 1000, NEW.client_attempt_id,
-      false,                      -- ruling 9: LISA is out at launch
+      public.review_item_used_tutor(NEW.student_id, NEW.id),  -- W4-7: telemetry only
       NEW.question_section, NEW.question_domain, NEW.question_skill,
       NEW.question_difficulty, NEW.occurred_at, NEW.actor_id
     );
@@ -9320,6 +9320,45 @@ BEGIN
   RETURN NULL;
 END
 $$;
+
+
+--
+-- Name: review_item_used_tutor(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_used boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.tutor_conversations c
+      JOIN public.tutor_messages m ON m.conversation_id = c.id
+     WHERE c.student_id = p_student_id
+       AND c.source_surface = 'review'
+       AND c.source_session_item_id = p_item_id
+       AND m.role = 'student'
+       AND m.content_kind = 'message'
+  ) INTO v_used;
+  RETURN v_used;
+EXCEPTION WHEN OTHERS THEN
+  -- Analytics must never break a submission. Reported, not swallowed: the
+  -- SQLSTATE is enough to find the cause, and nothing about the student is
+  -- written to the log.
+  RAISE WARNING 'review_item_used_tutor: lookup failed (SQLSTATE %), recording used_tutor = false', SQLSTATE;
+  RETURN false;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_item_used_tutor(p_student_id uuid, p_item_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) IS 'W4-7 / Doc 02B §16: true when the student sent >=1 message to LISA on this review item''s conversation. Telemetry only — never read by mastery, scoring, selection or UI. Never raises: an error returns false with a WARNING.';
 
 
 --
@@ -20307,6 +20346,13 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 --
 
 REVOKE ALL ON FUNCTION public.review_item_resolve() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_item_used_tutor(p_student_id uuid, p_item_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) FROM PUBLIC;
 
 
 --
