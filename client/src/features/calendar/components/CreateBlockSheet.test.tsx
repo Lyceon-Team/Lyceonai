@@ -163,7 +163,7 @@ describe("the created block's scope validates", () => {
       mix: [{ domain: "Algebra", count: 5 }],
     },
     { block_type: "review", count: 10 },
-    { block_type: "full_length" },
+    { block_type: "full_length", scope: { form_id: null, exam_mode: "strict" } },
   ];
 
   for (const draft of DRAFTS) {

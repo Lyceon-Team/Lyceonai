@@ -329,7 +329,7 @@ describe("mutations", () => {
             block: {
               block_type: "full_length",
               section: null,
-              scope: { form_id: null },
+              scope: { form_id: null, exam_mode: "strict" },
               target_count: 2,
               explanation_key: "exam_cadence",
             },

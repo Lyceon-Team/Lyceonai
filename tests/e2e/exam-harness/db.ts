@@ -86,5 +86,14 @@ export async function buildHarnessDb(): Promise<Client> {
     `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, 'student@example.test', 'student', 'Sam Rivera')`,
     [STUDENT_ID],
   );
+  // E9b: a finished calendar setup (UTC, every day, 60 minutes, no test weekday), so the
+  // first open of /calendar generates the plan (R-08-04) and the student can add a
+  // full-length block to today.
+  await pg.query(
+    `INSERT INTO public.student_study_profile
+       (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
+     VALUES ($1, 'UTC', 127, 60, NULL, 1400, now())`,
+    [STUDENT_ID],
+  );
   return pg;
 }

@@ -8,9 +8,9 @@
  *
  * plain English: one shape per engine, so the calendar can launch a block and read
  * back what the student did without knowing anything about how that engine works.
- * Practice is real. Review and full-length are stubs that fail OPEN — they answer
- * "not available" as data, and the calendar renders a plan around them rather than
- * a 500.
+ * All three are real: practice, review (2026-09-22) and full-length (E9b, 2026-09-25).
+ * An engine that is not built yet fails OPEN — it answers "not available" as data, and
+ * the calendar renders a plan around it rather than a 500.
  *
  * WHAT IS DELIBERATELY NOT HERE. §9.1 also lists `matches` and `scopeOf`. Those are
  * served by `unitMatchesBlock` in `@lyceon/shared` calendar/allocate, which the §13

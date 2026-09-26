@@ -131,6 +131,19 @@ SELECT pg_temp.request_deletion(s) FROM unnest(ARRAY[
   '00000000-0000-0000-0000-000000e6b0a1', '00000000-0000-0000-0000-000000e6b0b2',
   '00000000-0000-0000-0000-000000e6b0d4', '00000000-0000-0000-0000-000000e6b0e5']::uuid[]) AS s;
 
+-- E9 (SCL-154): every scoring above enqueued a 'test_session_scored' event.
+-- Consume them now, as the API's follow-up call would, so the "before"
+-- footprints are settled and a later sweep has nothing of theirs to touch.
+DO $$
+DECLARE e record; v jsonb;
+BEGIN
+  FOR e IN SELECT id FROM public.exam_runtime_outbox
+            WHERE event_type = 'test_session_scored' AND status = 'pending' ORDER BY created_at LOOP
+    v := public.exam_score_outbox_event(e.id);
+    IF NOT (v->>'ok')::boolean THEN RAISE EXCEPTION 'EDC FAIL [fixture]: seams event % -> %', e.id, v; END IF;
+  END LOOP;
+END $$;
+
 -- Frozen "before" footprints (plain tables: they outlive each check's statement)
 CREATE TEMP TABLE _sess AS
   SELECT p.id AS student, p.actor_id, pg_temp.sessions_of(p.id) AS sessions
@@ -515,4 +528,111 @@ BEGIN
     RAISE EXCEPTION 'EDC FAIL [C1]: control rows changed in %', v_diff;
   END IF;
   PERFORM pg_temp.ok('C1', 'control student: all 9 exam tables byte-identical');
+END $$;
+
+-- ===========================================================================
+-- E9 commit 0 — the list the cascade reads (public.exam_child_tables)
+-- ===========================================================================
+-- Every table reachable from test_sessions by following foreign keys backwards
+-- (children, grandchildren, ...), excluding test_sessions itself.
+CREATE FUNCTION pg_temp.fk_descendants_of_test_sessions()
+RETURNS TABLE (tbl text) LANGUAGE sql AS $f$
+  WITH RECURSIVE d(rel) AS (
+    SELECT 'public.test_sessions'::regclass
+    UNION
+    SELECT c.conrelid::regclass
+      FROM pg_constraint c JOIN d ON c.confrelid = d.rel
+     WHERE c.contype = 'f' AND c.conrelid <> c.confrelid
+  )
+  SELECT c.relname::text
+    FROM d JOIN pg_class c ON c.oid = d.rel
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relname <> 'test_sessions';
+$f$;
+
+CREATE FUNCTION pg_temp.list_missing() RETURNS text LANGUAGE sql AS $f$
+  SELECT string_agg(tbl, ', ' ORDER BY tbl)
+    FROM pg_temp.fk_descendants_of_test_sessions()
+   WHERE tbl NOT IN (SELECT table_name FROM public.exam_child_tables);
+$f$;
+
+-- L1 — the guard: no table with an FK path to test_sessions is off the list,
+--      and the guard itself turns red on a planted one (then rolls it back).
+DO $$
+DECLARE v_missing text; v_planted text;
+BEGIN
+  v_missing := pg_temp.list_missing();
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'EDC FAIL [L1]: exam tables with an FK path to test_sessions missing from exam_child_tables: %', v_missing;
+  END IF;
+  BEGIN
+    CREATE TABLE public.zz_e9_planted_exam_child (
+      test_session_id uuid REFERENCES public.test_sessions(id));
+    CREATE TABLE public.zz_e9_planted_grandchild (
+      parent uuid, FOREIGN KEY (parent) REFERENCES public.test_answer_submissions(id));
+    v_planted := pg_temp.list_missing();
+    RAISE EXCEPTION 'plant rollback';
+  EXCEPTION WHEN raise_exception THEN
+    NULL; -- the savepoint undoes both planted tables
+  END;
+  IF v_planted IS DISTINCT FROM 'zz_e9_planted_exam_child, zz_e9_planted_grandchild' THEN
+    RAISE EXCEPTION 'EDC FAIL [L1]: the guard did not see planted child + grandchild (saw %)', v_planted;
+  END IF;
+  PERFORM pg_temp.ok('L1', format('every FK descendant of test_sessions is listed (%s); planted child + grandchild -> guard red',
+    (SELECT count(*) FROM pg_temp.fk_descendants_of_test_sessions())));
+END $$;
+
+-- L2 — every list row names a real table and real key / student columns.
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(e.table_name, ', ') INTO v_bad
+    FROM public.exam_child_tables e
+   WHERE to_regclass('public.' || e.table_name) IS NULL
+      OR NOT EXISTS (SELECT 1 FROM information_schema.columns c
+                      WHERE c.table_schema = 'public' AND c.table_name = e.table_name AND c.column_name = e.key_column)
+      OR (e.student_column IS NOT NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns c
+                      WHERE c.table_schema = 'public' AND c.table_name = e.table_name AND c.column_name = e.student_column));
+  IF v_bad IS NOT NULL THEN RAISE EXCEPTION 'EDC FAIL [L2]: list rows naming a missing table/column: %', v_bad; END IF;
+  IF has_table_privilege('service_role', 'public.exam_child_tables', 'INSERT,UPDATE,DELETE')
+     OR has_table_privilege('authenticated', 'public.exam_child_tables', 'SELECT') THEN
+    RAISE EXCEPTION 'EDC FAIL [L2]: exam_child_tables is writable by service_role or readable by authenticated';
+  END IF;
+  PERFORM pg_temp.ok('L2', format('%s list rows, every table/key/student column exists; server-owned (no client grant)',
+    (SELECT count(*) FROM public.exam_child_tables)));
+END $$;
+
+-- L3 — delete order: every FK between two `delete` rows has the child first.
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(ch.table_name || ' -> ' || pa.table_name, ', ') INTO v_bad
+    FROM pg_constraint c
+    JOIN public.exam_child_tables ch ON ch.table_name = c.conrelid::regclass::text
+    JOIN public.exam_child_tables pa ON pa.table_name = c.confrelid::regclass::text
+   WHERE c.contype = 'f' AND c.conrelid <> c.confrelid
+     AND ch.action = 'delete' AND pa.action = 'delete'
+     AND ch.ordinal > pa.ordinal;
+  IF v_bad IS NOT NULL THEN RAISE EXCEPTION 'EDC FAIL [L3]: parent deleted before child: %', v_bad; END IF;
+  PERFORM pg_temp.ok('L3', 'every FK between two delete rows is walked child before parent');
+END $$;
+
+-- L4 — the cascade READS the list: a later CREATE OR REPLACE built from an
+--      older body (hand-written exam DELETEs) would leave L1-L3 green while the
+--      list went unread. The deployed body must name exam_child_tables and must
+--      not DELETE any listed table by name.
+DO $$
+DECLARE v_def text; v_bad text;
+BEGIN
+  v_def := pg_get_functiondef('public.execute_account_deletion_cascade(uuid, text)'::regprocedure);
+  IF position('public.exam_child_tables' IN v_def) = 0 THEN
+    RAISE EXCEPTION 'EDC FAIL [L4]: execute_account_deletion_cascade does not read public.exam_child_tables';
+  END IF;
+  SELECT string_agg(e.table_name, ', ') INTO v_bad
+    FROM public.exam_child_tables e
+   WHERE v_def ~* ('DELETE\s+FROM\s+(public\.)?' || e.table_name || '\M');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'EDC FAIL [L4]: listed exam tables deleted by hand in the cascade: %', v_bad;
+  END IF;
+  PERFORM pg_temp.ok('L4', 'the deployed cascade reads exam_child_tables and deletes no listed table by hand');
 END $$;

@@ -149,13 +149,12 @@ describe("practiceStateKey — the one string that stops the prefetch rotting", 
 // ── isLaunchable (formula sheet §8 item 12) ─────────────────────────────────
 
 describe("isLaunchable", () => {
-  it("is true for the engines that are REAL — practice and, since 2026-09-22, review", () => {
+  it("is true for the engines that are REAL — practice, review (2026-09-22) and full-length (E9b)", () => {
     expect(isLaunchable({ block_type: "practice" })).toBe(true);
     expect(isLaunchable({ block_type: "review" })).toBe(true);
-    // Full-length is still the fail-open stub, so its control reads "Coming soon" and
-    // never calls launch. When the exam vertical ships, this line moves and the sheet's
-    // branch goes with it.
-    expect(isLaunchable({ block_type: "full_length" })).toBe(false);
+    // E9b: the exam vertical shipped and its adapter replaced the fail-open stub, so this
+    // line moved from false to true exactly as it said it would.
+    expect(isLaunchable({ block_type: "full_length" })).toBe(true);
   });
 
   it("is the SAME rule the view model uses — one definition, not two that agree by luck", () => {
