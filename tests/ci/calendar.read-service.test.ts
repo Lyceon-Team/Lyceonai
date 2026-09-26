@@ -417,7 +417,7 @@ describe("§16 — the guardian read", () => {
     });
   });
 
-  it("carries no profile, no version_no and no override flag", async () => {
+  it("carries the two admitted profile fields and the band — and no other profile key, no version_no, no override flag", async () => {
     scenario({ acceptedVersions: 1 });
 
     const result = await readGuardianCalendar({
@@ -436,13 +436,39 @@ describe("§16 — the guardian read", () => {
       // this test exists to catch.
       "estimates",
       "facts",
+      // NO "projection" HERE, and that is correct rather than an omission. This file mocks
+      // Doc 05C's read as empty (see the top), and the field is optional on the wire — an
+      // empty band omits the key instead of serving an empty array, exactly as the student
+      // payload does. Its PRESENCE is proved where the rows are real:
+      // `tests/ci/calendar.wire-contract.test.ts`, which drives this same serializer with
+      // two section rows and asserts the band arrives 1:1.
       "status",
       "streak",
+      // The TWO profile fields §16 now admits, and the reason this test's name changed.
+      // R-08-22 is reversed and the "no profile" clause is narrowed to exactly these — so
+      // the assertion is no longer "no profile" but "no profile BEYOND these two", and the
+      // list below is where that boundary is enforced. `timezone`, `study_days_mask`,
+      // `daily_minutes`, `full_length_weekday`, `planner_mode` and `setup_completed_at` are
+      // still withheld, and their absence from this array is what says so.
+      "target_exam_date",
+      "target_score",
     ]);
+    // Said outright, so a future reader does not take the gap above for a leak: with no
+    // Doc 05C rows the key is ABSENT, not null and not [].
+    expect(result.value).not.toHaveProperty("projection");
     const serialized = JSON.stringify(result.value);
     expect(serialized).not.toContain("version_no");
     expect(serialized).not.toContain("is_user_override");
-    expect(serialized).not.toContain("target_score");
+    // The remaining profile columns, by name. NOT a sweep for "timezone": that string is a
+    // legitimate per-DAY field of the guardian read model, naming the zone `local_date`
+    // belongs to, so sweeping for it fails against a correct payload.
+    expect(serialized).not.toContain("study_days_mask");
+    expect(serialized).not.toContain("daily_minutes");
+    expect(serialized).not.toContain("planner_mode");
+    expect(serialized).not.toContain("setup_completed_at");
+    // And the two that ARE served now carry the profile's own values, not defaults.
+    expect(result.value.target_score).toBe(PROFILE_ROW.target_score);
+    expect(result.value.target_exam_date).toBe(PROFILE_ROW.target_exam_date);
   });
 
   it("carries no explanation_key ANYWHERE — not on the block, not inside the mix", async () => {

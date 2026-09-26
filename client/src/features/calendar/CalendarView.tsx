@@ -137,6 +137,12 @@ export type CalendarViewProps = {
     error: string | null;
   };
   today: string;
+  /**
+   * Passed straight to `TopBar`, where it selects the ABSENCE copy and nothing else. Required
+   * for the reason given there: a defaulted viewer is forgettable, and forgetting it shows a
+   * guardian actions they cannot take.
+   */
+  viewer: "student" | "guardian";
   viewerName: string;
   /** The student's exam date, for the countdown. Null when they have not set one. */
   targetExamDate: string | null;
@@ -191,6 +197,7 @@ export function CalendarView({
   today,
   targetScore,
   projection,
+  viewer,
   viewerName,
   targetExamDate,
   streak,
@@ -470,6 +477,7 @@ export function CalendarView({
         <div className="main">
           <TopBar
             backHref={backHref}
+            viewer={viewer}
             targetScore={targetScore}
             projection={projection}
             rangeLabelText={rangeLabel(view, cursor)}
@@ -641,4 +649,3 @@ export function CalendarView({
     </div>
   );
 }
-
