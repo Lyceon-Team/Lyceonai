@@ -31,6 +31,8 @@ import type {
 } from "@lyceon/shared/exam-runtime-schema";
 import { isValidGridInFormat } from "@/components/practice/NumericEntryInput";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
+import { FloatingPanel } from "@/components/math/FloatingPanel";
+import { CALC_COLUMN_HEIGHT_PX, CALC_DEFAULT_PCT, CALC_MIN_PX } from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
@@ -202,6 +204,8 @@ function ModuleRunner(props: {
   const [calculatorState, setCalculatorState] = useState<unknown>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const leaving = useRef(false);
+  const calculatorButton = useRef<HTMLButtonElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const gridTimer = useRef<number | null>(null);
   /** The last value handed to the queue per question: blur and navigation both commit. */
   const lastSent = useRef<Map<number, string | null>>(new Map());
@@ -422,6 +426,7 @@ function ModuleRunner(props: {
   const tools = isMath ? (
     <>
       <button
+        ref={calculatorButton}
         type="button"
         aria-pressed={calculatorOpen}
         aria-controls="exam-calculator-panel"
@@ -448,37 +453,34 @@ function ModuleRunner(props: {
 
   return (
     <div className="exam-root flex h-screen flex-col" data-testid="exam-module">
-      <ExamHeader section={section} module={module} timer={<ExamTimer remainingMs={clock.remainingMs} />} tools={tools} />
+      <div ref={headerRef} className="shrink-0">
+        <ExamHeader section={section} module={module} timer={<ExamTimer remainingMs={clock.remainingMs} />} tools={tools} />
+      </div>
       {saveError !== null && (
         <div role="alert" className="border-b border-[var(--exam-line)] bg-[#FBF1E6] px-6 py-2 text-sm">
           {saveError}
         </div>
       )}
       <main className="flex min-h-0 flex-1">
-        {/* Mounted for the whole Math module and collapsed when closed, as practice keeps it
-            (expanded={false}): closing no longer destroys the calculator, so reopening shows the
-            same graph and an edit inside the component's debounce window is not lost. */}
+        {/* E10b: a floating panel over the question, not a docked column. Mounted for the
+            whole Math module and collapsed when closed (E10: expanded={false}), so closing
+            never destroys the graph. Review's fixed calculator box (CALC_MIN_PX x
+            CALC_COLUMN_HEIGHT_PX); Expand widens it to practice's split default and the full
+            height below the header, which it never crosses (the timer stays visible). */}
         {isMath && (
-          <aside
+          <FloatingPanel
             id="exam-calculator-panel"
-            aria-label="Graphing calculator"
-            className={`${calculatorOpen ? "flex" : "hidden"} w-full max-w-[520px] shrink-0 flex-col border-r border-[var(--exam-line)] bg-[var(--exam-surface)]`}
+            title="Calculator"
+            open={calculatorOpen}
+            onClose={() => setCalculatorOpen(false)}
+            returnFocusRef={calculatorButton}
+            topBoundRef={headerRef}
+            width={CALC_MIN_PX}
+            height={CALC_COLUMN_HEIGHT_PX}
+            expandedWidthPct={CALC_DEFAULT_PCT}
           >
-            <div className="flex h-12 items-center justify-between border-b border-[var(--exam-line)] px-4">
-              <span className="text-[13px] font-semibold">Graphing calculator</span>
-              <button
-                type="button"
-                aria-label="Close calculator"
-                onClick={() => setCalculatorOpen(false)}
-                className="min-h-[44px] min-w-[44px] text-lg text-[var(--exam-muted)]"
-              >
-                ×
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">
-              <DesmosCalculator expanded={calculatorOpen} fillHeight initialState={calculatorState} onStateChange={setCalculatorState} />
-            </div>
-          </aside>
+            <DesmosCalculator expanded={calculatorOpen} fillHeight initialState={calculatorState} onStateChange={setCalculatorState} />
+          </FloatingPanel>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {view.kind === "review" ? (

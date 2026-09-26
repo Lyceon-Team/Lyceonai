@@ -16,6 +16,7 @@
  */
 import React from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -153,9 +154,15 @@ vi.mock("@/contexts/SupabaseAuthContext", () => ({
 }));
 
 import ExamModulePage from "./ExamModulePage";
+import {
+  CALC_COLUMN_HEIGHT_PX,
+  CALC_DEFAULT_PCT,
+  CALC_MIN_PX,
+} from "@/components/math/calculator-layout";
+import { CALC_MIN_PX as PRACTICE_CALC_MIN_PX } from "@/components/practice/CanonicalPracticePage";
 
-function mount(path: string): void {
-  const { hook } = memoryLocation({ path, record: true });
+function mount(path: string): (to: string) => void {
+  const { hook, navigate } = memoryLocation({ path, record: true });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -174,6 +181,13 @@ function mount(path: string): void {
       </Router>
     </QueryClientProvider>,
   );
+  // A module change as the page sees it: the server's position moves first (cache dropped,
+  // so the next read is fresh), then the URL follows.
+  return (to: string) =>
+    act(() => {
+      client.clear();
+      navigate(to);
+    });
 }
 
 const M1 = `/tests/${SID}/M/1`;
@@ -209,7 +223,7 @@ describe("E10 exam calculator wiring", () => {
     expect(
       screen.getByTestId("desmos-probe").getAttribute("data-expanded"),
     ).toBe("false");
-    expect(panel().className).toMatch(/\bhidden\b/);
+    expect(panel().style.display).toBe("none");
 
     const toggle = screen.getByRole("button", { name: "Calculator" });
     fireEvent.click(toggle);
@@ -217,13 +231,13 @@ describe("E10 exam calculator wiring", () => {
     expect(
       screen.getByTestId("desmos-probe").getAttribute("data-expanded"),
     ).toBe("true");
-    expect(panel().className).not.toMatch(/\bhidden\b/);
+    expect(panel().style.display).toBe("flex");
 
     fireEvent.click(screen.getByRole("button", { name: "Close calculator" }));
     expect(
       screen.getByTestId("desmos-probe").getAttribute("data-expanded"),
     ).toBe("false");
-    expect(panel().className).toMatch(/\bhidden\b/);
+    expect(panel().style.display).toBe("none");
     // Not destroyed: one mount, no unmount — reopening shows the same graph.
     expect(probe.mounts).toBe(1);
     expect(probe.unmounts).toBe(0);
@@ -281,5 +295,161 @@ describe("E10 exam calculator wiring", () => {
     expect(
       screen.getByTestId("desmos-probe").getAttribute("data-expanded"),
     ).toBe("true");
+  });
+});
+
+describe("E10b floating calculator", () => {
+  // jsdom has no pointer capture; the panel only needs the calls to exist.
+  beforeEach(() => {
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    Element.prototype.hasPointerCapture = vi.fn(() => true);
+  });
+
+  async function openCalculator(): Promise<HTMLElement> {
+    await screen.findByTestId("exam-module");
+    fireEvent.click(screen.getByRole("button", { name: "Calculator" }));
+    return panel();
+  }
+
+  function drag(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): void {
+    const bar = screen.getByTestId("floating-panel-drag-bar");
+    fireEvent.pointerDown(bar, {
+      pointerId: 1,
+      button: 0,
+      clientX: from.x,
+      clientY: from.y,
+    });
+    fireEvent.pointerMove(bar, { pointerId: 1, clientX: to.x, clientY: to.y });
+    fireEvent.pointerUp(bar, { pointerId: 1, clientX: to.x, clientY: to.y });
+  }
+
+  it("is practice/review's size: CALC_MIN_PX x CALC_COLUMN_HEIGHT_PX, read from the shared module", async () => {
+    mount(M1);
+    const p = await openCalculator();
+    expect(CALC_MIN_PX).toBe(PRACTICE_CALC_MIN_PX);
+    expect(p.style.width).toBe(`${CALC_MIN_PX}px`);
+    expect(p.style.height).toBe(`${CALC_COLUMN_HEIGHT_PX}px`);
+    expect([CALC_MIN_PX, CALC_COLUMN_HEIGHT_PX]).toEqual([496, 640]);
+  });
+
+  it("drags by its header bar, stays inside the viewport, and keeps its place across close/reopen", async () => {
+    mount(M1);
+    const p = await openCalculator();
+    const start = { x: parseFloat(p.style.left), y: parseFloat(p.style.top) };
+    drag(
+      { x: start.x + 10, y: start.y + 10 },
+      { x: start.x + 210, y: start.y + 60 },
+    );
+    expect([parseFloat(p.style.left), parseFloat(p.style.top)]).toEqual([
+      start.x + 200,
+      start.y + 50,
+    ]);
+
+    // Far past the right/bottom edges: clamped to the viewport.
+    drag({ x: 300, y: 100 }, { x: 5000, y: 5000 });
+    expect(parseFloat(p.style.left)).toBe(window.innerWidth - CALC_MIN_PX);
+    expect(parseFloat(p.style.top)).toBe(
+      window.innerHeight - CALC_COLUMN_HEIGHT_PX,
+    );
+    const moved = [p.style.left, p.style.top];
+
+    fireEvent.click(screen.getByRole("button", { name: "Close calculator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Calculator" }));
+    expect([panel().style.left, panel().style.top]).toEqual(moved);
+  });
+
+  it("never crosses the header, so the timer stays visible", async () => {
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        top: 0,
+        left: 0,
+        right: 1024,
+        bottom: 74,
+        width: 1024,
+        height: 74,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    mount(M1);
+    const p = await openCalculator();
+    drag({ x: 100, y: 120 }, { x: 100, y: -400 });
+    expect(parseFloat(p.style.top)).toBe(74);
+    // A viewport too short for 640px shrinks the panel below the header; it never overlaps it.
+    expect(parseFloat(p.style.height)).toBeLessThanOrEqual(
+      window.innerHeight - 74,
+    );
+    rect.mockRestore();
+  });
+
+  it("starting a drag moves no focus and reaches nothing underneath", async () => {
+    mount(M1);
+    await openCalculator();
+    const next = screen.getByRole("button", { name: "Next" });
+    next.focus();
+    const bar = screen.getByTestId("floating-panel-drag-bar");
+    // false = default prevented: no focus change (a half-typed grid-in keeps focus), no text selection.
+    expect(fireEvent.mouseDown(bar, { button: 0 })).toBe(false);
+    expect(
+      fireEvent.pointerDown(bar, {
+        pointerId: 2,
+        button: 0,
+        clientX: 50,
+        clientY: 120,
+      }),
+    ).toBe(false);
+    expect(document.activeElement).toBe(next);
+    fireEvent.pointerUp(bar, { pointerId: 2 });
+  });
+
+  it("Expand widens it to practice's split default and the full height below the header", async () => {
+    mount(M1);
+    const p = await openCalculator();
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(p.getAttribute("data-expanded")).toBe("true");
+    expect(p.style.width).toBe(
+      `${Math.max(CALC_MIN_PX, Math.round((window.innerWidth * CALC_DEFAULT_PCT) / 100))}px`,
+    );
+    expect(p.style.height).toBe(`${window.innerHeight - 16}px`);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(p.style.width).toBe(`${CALC_MIN_PX}px`);
+  });
+
+  it("keyboard: opening focuses the panel; Escape closes it and focus returns to Calculator", async () => {
+    mount(M1);
+    const p = await openCalculator();
+    expect(document.activeElement).toBe(p);
+    fireEvent.keyDown(p, { key: "Escape" });
+    expect(p.style.display).toBe("none");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Calculator" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Calculator" }));
+    screen.getByRole("button", { name: "Close calculator" }).focus();
+    fireEvent.click(screen.getByRole("button", { name: "Close calculator" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Calculator" }),
+    );
+  });
+
+  it("does not outlive the Math module: leaving it for Reading and Writing unmounts the panel", async () => {
+    const go = mount(M1);
+    await openCalculator();
+    expect(probe.mounts).toBe(1);
+    fake.section = "RW";
+    go(RW1);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Reference" })).toBeNull(),
+    );
+    await screen.findByTestId("exam-module");
+    expect(document.getElementById("exam-calculator-panel")).toBeNull();
+    expect(screen.queryByTestId("desmos-probe")).toBeNull();
+    expect(probe.unmounts).toBe(1);
   });
 });

@@ -117,6 +117,94 @@ test("Math module: calculator from the tools row, resume with it open, reference
   }
   await shot(page, "01-math-calculator-open");
 
+  // ── E10b: floating, practice/review's size, movable, never over the timer ──
+  const timer = page.getByTestId("exam-timer");
+  const bar = page.getByTestId("floating-panel-drag-bar");
+  const box0 = (await panel.boundingBox())!;
+  expect([Math.round(box0.width), Math.round(box0.height)]).toEqual([496, 640]);
+  const timerBox = (await timer.boundingBox())!;
+  expect(box0.y).toBeGreaterThanOrEqual(timerBox.y + timerBox.height);
+
+  // Drag it across the answer choices: nothing underneath is selected by the drag.
+  const pressedBefore = await page
+    .locator('[data-testid="exam-choice"] button[aria-pressed="true"]')
+    .count();
+  const barBox = (await bar.boundingBox())!;
+  await page.mouse.move(barBox.x + 60, barBox.y + barBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(barBox.x + 560, barBox.y + 140, { steps: 8 });
+  await page.mouse.up();
+  const box1 = (await panel.boundingBox())!;
+  expect(Math.round(box1.x - box0.x)).toBe(500);
+  // Down by 140, or as far as the viewport's bottom edge allows (832 - 640).
+  expect(Math.round(box1.y)).toBe(
+    Math.round(Math.min(box0.y + 140, 832 - 640)),
+  );
+  expect(
+    await page
+      .locator('[data-testid="exam-choice"] button[aria-pressed="true"]')
+      .count(),
+  ).toBe(pressedBefore);
+  await shot(page, "01b-calculator-moved");
+
+  // A drag mid-entry does not blur a grid-in: type, drag the panel, keep typing.
+  const gridIn = page.locator('input[placeholder^="e.g."]').first();
+  // The sitting is reused across runs, so search both ways from wherever it stands.
+  let forward = true;
+  for (let i = 0; i < 50 && !(await gridIn.isVisible()); i++) {
+    const next = page.getByTestId("exam-next");
+    if (forward && (await next.isVisible())) await next.click();
+    else {
+      forward = false;
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+    }
+  }
+  await expect(gridIn).toBeVisible();
+  await gridIn.fill("");
+  await gridIn.click();
+  await page.keyboard.type("1");
+  const barMid = (await bar.boundingBox())!;
+  await page.mouse.move(barMid.x + 60, barMid.y + barMid.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(barMid.x + 20, barMid.y + 30, { steps: 5 });
+  await page.mouse.up();
+  await expect(gridIn).toBeFocused();
+  await page.keyboard.type("2");
+  await expect(gridIn).toHaveValue("12");
+
+  // Dragged at the header: it stops at the header's edge; the timer stays visible.
+  const barBox1 = (await bar.boundingBox())!;
+  await page.mouse.move(barBox1.x + 60, barBox1.y + barBox1.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(barBox1.x + 60, 0, { steps: 6 });
+  await page.mouse.up();
+  const boxTop = (await panel.boundingBox())!;
+  expect(boxTop.y).toBeGreaterThanOrEqual(timerBox.y + timerBox.height);
+  await expect(timer).toBeVisible();
+
+  // Expand, then back.
+  await panel.getByRole("button", { name: "Expand" }).click();
+  await expect(panel).toHaveAttribute("data-expanded", "true");
+  await page.waitForTimeout(REACHABLE ? 1_000 : 300);
+  await shot(page, "01c-calculator-expanded");
+  await panel.getByRole("button", { name: "Collapse" }).click();
+
+  // Keyboard: Escape closes it and focus returns to the Calculator button.
+  await panel.focus();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Calculator", exact: true }),
+  ).toBeFocused();
+  // Reopened by keyboard, in the place it was left.
+  await page.keyboard.press("Enter");
+  await expect(panel).toBeVisible();
+  const boxAgain = (await panel.boundingBox())!;
+  expect([Math.round(boxAgain.x), Math.round(boxAgain.y)]).toEqual([
+    Math.round(boxTop.x),
+    Math.round(boxTop.y),
+  ]);
+
   // ── Resume: reload mid-module with the calculator open ────────────────────
   const counter = page.getByRole("button", { name: /^Question \d+ of \d+/ });
   const onScreen = (await counter.textContent()) ?? "";
