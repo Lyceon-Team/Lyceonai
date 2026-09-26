@@ -2158,7 +2158,23 @@ Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a
 Version: Doc 03A → V3.1 (config table reference + FK type corrections).
 No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
   Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
-SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | OPEN (owner-promoted 2026-08-14)
+SCL-175 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | OPEN (owner-promoted 2026-08-14)
+Id: `SCL-175`, RENUMBERED from `SCL-024` on 2026-09-26 under the owner's standing authority of that
+  date to resolve every duplicate id in this file. Two entries headed `SCL-024`: 2026-08-04 (config
+  table shape + question FK type) and this one, 2026-08-06. The register's HARD OVERRIDE decides it —
+  the LATER allocation renumbers, measured by the entry's own date — so 08-04 keeps `SCL-024` and this
+  entry moves. Blast radius measured before the move, not assumed: every reference to `SCL-024` outside
+  this file names the 08-04 entry — `docs/Spec/Doc 03D — LISA Evaluation & Quality V1.2.md:316,651`
+  ("SCL-024 concerns config table shape and question FK types"), `server/services/tutor-config.ts:2,175`
+  (as `SCL-024a`, the Doc 01A §8 config template) and `.github/workflows/ci.yml:65` (a mention of the
+  collision itself). NOTHING outside this file cited this 08-06 entry, so no citation breaks — which
+  matters because the Doc 03D citation is in `docs/Spec`, read-only and unfixable from here.
+  New id derived at the moment of use: `git fetch --all --prune`, then `git grep -hoE 'SCL-[0-9]{3}'`
+  over `docs/SpecAudit/SPEC_CHANGES_LOG.md` across all 114 remote refs (max `SCL-174`), then every one
+  of the 7 open PRs (#919 #918 #917 #916 #915 #861 #728) for numbers not yet on a branch — none above
+  174. Allocated 175, 176, 177 in one pass, ascending by each entry's own date; this is the first.
+  Internal references to `SCL-024(b)` below are UNCHANGED and remain correct: they point at the 08-04
+  entry, which this change does not move.
 Change: Extends SCL-024(b) to cover a fifth column and the wire-contract Zod schemas that carry
   the same UUID assumption.
   (c) Fifth column: tutor_instruction_assignments.source_question_row_id (§18.4). SCL-024(b) listed
@@ -2662,7 +2678,8 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - Doc 03B §6.5 — SCL-027 (confirm step 5/6 ordering inversion: payload validation before ownership check)
 - Doc 03A §7.3/§10.3 — SCL-026 (update §7.3 to V1 per-turn capture; add learner_observation to §10.3 orchestrator response contract)
 - Doc 03B §3.1, Doc 03 §21.3, Doc 07E — SCL-025 (safety review is separate surface; amend §21.3 tooling to keep content in Supabase)
-- Doc 03A §18.7/§18.1/§18.2/§18.4/§18.5, Doc 03B §4.1 — SCL-024 (config table → Doc 01A §8; retype question FK columns UUID→TEXT; wire-contract Zod schemas)
+- Doc 03A §18.7/§18.1/§18.2/§18.5 — SCL-024 (config table → Doc 01A §8; retype four question FK columns UUID→TEXT)
+- Doc 03A §18.4, Doc 03B §4.1 — SCL-175 (fifth question-FK column; wire-contract Zod schemas) — renumbered from SCL-024 on 2026-09-26
 - Doc 03C, Doc 03C.1, Doc 03A — SCL-023 (add crisis classifier stage; add classifier_class alias; add crisis test scenarios; rename §4.5)
 - questions_governance.md §A.4 — SCL-022 (review skill-classification disambiguation table and tiebreak rule)
 - questions_governance.md §A.3/§A.8 — SCL-021 (confirm value-equivalence correctness model; align with Doc 04B)
@@ -3730,8 +3747,22 @@ APPLIED, 2026-09-25. Flipped under SCL-159, same reasoning as SCL-151. **Owner-v
 Owner action (3) is now CLOSED by **SCL-160**: a carve-out weakening a structural invariant must name its premise, and that premise must be asserted by a gate reading the live catalog or live data, never by a test reading seeded data; if it cannot be expressed as a catalog query, the carve-out is refused. Owner actions (1) and (2) are superseded by SCL-159 — no spec amendment. Nothing on this entry remains open.
 Build artifact: `supabase/migrations/20261007000000_deletion_verification_drop_deleted_profile_id.sql`; `tests/ci/deletion-evidence-bundle.pg.ci.test.ts` (C3.1 exception list removed, C3.6/C3.9 updated), `tests/ci/deletion-phase-6.pg.ci.test.ts` (P6.5 3-arg, P6.6 renamed and absolute); mutation M96 retargeted.
 
-SCL-171 | 2026-09-26 | Doc 03 §4.6's regional crisis resource table lists adult lines where the built system gives students youth lines, has one lane where the built system has two, and says nothing about a student whose country is unknown or outside Tier-1 | PROPOSED
-Id: `SCL-171` allocated 2026-09-26 as max+1 at the moment of use, after `git fetch --all --prune`, across all 103 remote refs (`git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md`). Highest anywhere is `SCL-170` (on `origin/main`, `origin/exam`, `origin/claude/e9b-calendar-seam`). Every open PR's head is one of the scanned refs (#901 carries SCL-164–166, #903 SCL-167–168). Two allocations in this session: SCL-171 (this entry) and SCL-172.
+SCL-176 | 2026-09-26 | Doc 03 §4.6's regional crisis resource table lists adult lines where the built system gives students youth lines, has one lane where the built system has two, and says nothing about a student whose country is unknown or outside Tier-1 | PROPOSED
+Id: `SCL-176`, RENUMBERED from `SCL-171` on 2026-09-26 under the owner's standing authority of that
+  date, which explicitly covers touching another workstream's entries this once. This entry and the
+  2026-09-25 entry now headed `SCL-171` both held that id: this one was allocated by #906 in a scan
+  that was correct when it ran, and the other pair had ALREADY renumbered once (from `SCL-167`/`SCL-168`)
+  into the same numbers. Neither branch was wrong and neither was red alone — the same shape as the
+  collision described under the 09-25 `SCL-171`. The HARD OVERRIDE decides it: the LATER allocation
+  renumbers, measured by the entry's own date, and 09-26 is later than 09-25. Blast radius agrees with
+  the rule rather than fighting it — renumbering this pair breaks exactly ONE citation outside this
+  file, `docs/plans/LISA_Closure_Plan.md:263` (row W4-9) on `origin/lisa`, whose owner updates it;
+  renumbering the other pair instead would have broken `CLAUDE.md:145` on every branch. Measured across
+  all 114 remote refs.
+  New id derived at the moment of use (max `SCL-174` across 114 refs; all 7 open PRs checked for
+  numbers not yet on a branch, none above 174). Allocated 175, 176, 177 ascending by entry date; this
+  is the second, and `SCL-177` below is its pair — they stay adjacent because they are one filing.
+ORIGINAL ALLOCATION RECORD, retained: `SCL-171` allocated 2026-09-26 as max+1 at the moment of use, after `git fetch --all --prune`, across all 103 remote refs (`git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md`). Highest anywhere is `SCL-170` (on `origin/main`, `origin/exam`, `origin/claude/e9b-calendar-seam`). Every open PR's head is one of the scanned refs (#901 carries SCL-164–166, #903 SCL-167–168). Two allocations in this session: SCL-171 (this entry) and SCL-172.
 Change: amend Doc 03 §4.6 so the resource table is the one students actually receive: youth-specific lines where the code has them, two lanes (crisis and safeguarding) rather than one, ISO `GB` as the key, and a named response for the country the table does not cover.
 WAS, verbatim (`docs/Spec/Doc 03 — LISA (AI Tutor System).md:376-386`):
   "**Regional crisis resources (V1 Tier 1 countries):**
@@ -3780,8 +3811,11 @@ Relation to other entries: SCL-DRAFT-A-declared-country (2026-08-31) proposes a 
 Owner action: amend Doc 03 §4.6 — replace the table with the two-lane table above keyed `GB` (with `UK` as an alias), add the unknown-country rule and both no-number texts, and add the WARN as the operational signal. Amend §21.2 step 3 ("Regional crisis resource selected from billing address country") to name the fallback. Verify the CA crisis-lane naming.
 Build artifact: `server/services/crisis-resources.ts` (`CRISIS_RESOURCES`, `SAFEGUARDING_RESOURCES`, `UNKNOWN_COUNTRY_*`, `resolveCrisisCountry`); `server/routes/tutor-runtime.ts` (crisis turn, WARN); `server/lib/stripe/webhook-handler.ts` + `server/lib/account.ts` `setProfileCountryCode` (the write path); `tests/ci/crisis-country-resources.contract.test.ts`, `tests/ci/crisis-lane-routing.unit.test.ts`, `tests/ci/entitlement-write-path.ci.test.ts`.
 
-SCL-172 | 2026-09-26 | Doc 03 §21.3 names a crisis review owner, an SLA and a list of review actions but no procedure; the procedure is DEFERRED POST-LAUNCH by owner decision, and the spec should say so | PROPOSED
-Id: `SCL-172`, allocated in the same scan as SCL-171 (max `SCL-170` across 103 refs and all open PRs); second of two allocations this session.
+SCL-177 | 2026-09-26 | Doc 03 §21.3 names a crisis review owner, an SLA and a list of review actions but no procedure; the procedure is DEFERRED POST-LAUNCH by owner decision, and the spec should say so | PROPOSED
+Id: `SCL-177`, RENUMBERED from `SCL-172` on 2026-09-26 in the same pass and for the same collision as
+  `SCL-176` above; see that entry for the rule applied, the blast-radius measurement and the derivation.
+  Third and last of the three ids allocated in that pass.
+ORIGINAL ALLOCATION RECORD, retained: `SCL-172`, allocated in the same scan as SCL-171 (max `SCL-170` across 103 refs and all open PRs); second of two allocations this session.
 Change: record in §21.3 that the safety-review PROCEDURE — how a reviewer works a case from flag to close — is deliberately not specified for launch, so the gap is a stated decision rather than an omission.
 WAS, verbatim (`docs/Spec/Doc 03 — LISA (AI Tutor System).md:1598-1613`):
   "Flagged conversations are routed to a safety review queue for human review. …
