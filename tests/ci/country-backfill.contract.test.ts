@@ -7,7 +7,10 @@
  * it cannot justify. It writes nothing itself; the owner applies its output.
  */
 import { describe, expect, it } from "vitest";
-import { planCountryBackfill } from "../../server/lib/stripe/country-backfill";
+import {
+  blankToNull,
+  planCountryBackfill,
+} from "../../server/lib/stripe/country-backfill";
 
 const TIER1 = ["US", "CA", "GB", "AU", "NZ", "IE", "SG"];
 const A = "11111111-1111-4111-8111-111111111111";
@@ -38,17 +41,45 @@ describe("W3-3 — country backfill planner", () => {
       { profileId: D, reason: "ineligible_country", country: "FR" },
     ]);
     expect(plan.sql).toEqual([
-      `UPDATE public.profiles SET country_code = 'SG' WHERE id = '${A}' AND country_code IS NULL;`,
-      `UPDATE public.profiles SET country_code = 'IE' WHERE id = '${B}' AND country_code IS NULL;`,
+      `UPDATE public.profiles SET country_code = 'SG' WHERE id = '${A}' AND (country_code IS NULL OR btrim(country_code) = '');`,
+      `UPDATE public.profiles SET country_code = 'IE' WHERE id = '${B}' AND (country_code IS NULL OR btrim(country_code) = '');`,
     ]);
   });
 
-  it("every statement is guarded — it never overwrites a country the live path has written", () => {
+  it("every statement is guarded — it fills a blank row (null, '' or whitespace) and never overwrites a country the live path has written", () => {
     const plan = planCountryBackfill(
       [{ profileId: A, customerCountry: "US", sessionCountry: null }],
       TIER1,
     );
-    expect(plan.sql[0]).toMatch(/AND country_code IS NULL;$/);
+    expect(plan.sql[0]).toMatch(
+      /AND \(country_code IS NULL OR btrim\(country_code\) = ''\);$/,
+    );
+  });
+
+  it("a blank Stripe value is no country: '' or whitespace on the Customer falls through to the Checkout Session, and blank on both is reported, not evaluated", () => {
+    expect(blankToNull("")).toBeNull();
+    expect(blankToNull("   ")).toBeNull();
+    expect(blankToNull(undefined)).toBeNull();
+    expect(blankToNull(" sg ")).toBe("sg");
+
+    const plan = planCountryBackfill(
+      [
+        { profileId: A, customerCountry: "", sessionCountry: "AU" },
+        { profileId: B, customerCountry: "  ", sessionCountry: " nz " },
+        { profileId: C, customerCountry: "", sessionCountry: "  " },
+      ],
+      TIER1,
+    );
+    expect(plan.updates).toEqual([
+      { profileId: A, country: "AU", source: "checkout_session" },
+      { profileId: B, country: "NZ", source: "checkout_session" },
+    ]);
+    // Before this change, whitespace was truthy: it was evaluated as a country
+    // and reported as `ineligible_country` with country "" — B never reached
+    // its Checkout Session, and C got the wrong reason.
+    expect(plan.unresolved).toEqual([
+      { profileId: C, reason: "no_address", country: null },
+    ]);
   });
 
   it("refuses a non-uuid profile id and a malformed Tier-1 list — nothing unvalidated reaches SQL", () => {

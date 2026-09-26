@@ -21,12 +21,33 @@
  *    resolver fall back to the default anyway, and recording it as if it were
  *    a served country would hide an entitlement that should not exist (the
  *    SCL-047 egress case). It is reported instead.
- *  - The UPDATE is guarded by `country_code IS NULL`, so it never overwrites a
- *    value the live grant path has written since the export was taken.
+ *  - The UPDATE is guarded to fire only while the row is still BLANK, so it
+ *    never overwrites a value the live grant path has written since the export
+ *    was taken.
+ *  - BLANK means null, empty or whitespace-only — on both sides. Production
+ *    holds at least one `country_code = ''` (2026-09-26); no application path
+ *    writes one (the grant path writes a validated Tier-1 code and students
+ *    have no UPDATE on `profiles`), so it came from an out-of-band write. A
+ *    guard of `IS NULL` alone would skip that student forever. Stripe's side is
+ *    read the same way, so an empty address country falls through to the
+ *    Checkout Session instead of being evaluated as a country.
  */
 import { evaluateCountryEligibility } from "./country-eligibility";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A country value that is null, empty or whitespace-only is no country. */
+export function blankToNull(country: string | null | undefined): string | null {
+  const trimmed = country?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * The SQL twin of `blankToNull`, for the UPDATE guard: true while the stored
+ * value is null, empty or whitespace-only.
+ */
+export const BLANK_COUNTRY_SQL =
+  "(country_code IS NULL OR btrim(country_code) = '')";
 
 export type CountryBackfillInput = {
   profileId: string;
@@ -65,9 +86,11 @@ export function planCountryBackfill(
     if (!UUID.test(input.profileId)) {
       throw new Error("planCountryBackfill: profileId is not a uuid");
     }
-    const source: "customer" | "checkout_session" | null = input.customerCountry
+    const customerCountry = blankToNull(input.customerCountry);
+    const sessionCountry = blankToNull(input.sessionCountry);
+    const source: "customer" | "checkout_session" | null = customerCountry
       ? "customer"
-      : input.sessionCountry
+      : sessionCountry
         ? "checkout_session"
         : null;
     if (source === null) {
@@ -78,8 +101,7 @@ export function planCountryBackfill(
       });
       continue;
     }
-    const raw =
-      source === "customer" ? input.customerCountry : input.sessionCountry;
+    const raw = source === "customer" ? customerCountry : sessionCountry;
     const verdict = evaluateCountryEligibility(raw, tier1);
     if (verdict.verdict !== "eligible") {
       plan.unresolved.push({
@@ -98,7 +120,7 @@ export function planCountryBackfill(
     });
     plan.sql.push(
       `UPDATE public.profiles SET country_code = '${verdict.country}' ` +
-        `WHERE id = '${input.profileId}' AND country_code IS NULL;`,
+        `WHERE id = '${input.profileId}' AND ${BLANK_COUNTRY_SQL};`,
     );
   }
 
