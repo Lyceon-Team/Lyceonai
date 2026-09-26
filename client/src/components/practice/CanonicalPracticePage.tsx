@@ -30,6 +30,19 @@ import {
   PracticeSectionParam,
 } from "@/hooks/useCanonicalPractice";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
+import {
+  APP_HORIZONTAL_PADDING,
+  BREAKPOINT_EXTRA,
+  CALC_COLUMN_HEIGHT_PX,
+  CALC_DEFAULT_PCT,
+  CALC_MIN_PCT,
+  CALC_MIN_PX,
+  DIVIDER_PX,
+  QUESTION_DEFAULT_PCT,
+  QUESTION_MIN_PCT,
+  QUESTION_MIN_PX,
+  SPLIT_BREAKPOINT,
+} from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calculator, Loader2, MessageCircle } from "lucide-react";
@@ -62,36 +75,15 @@ const DIFFICULTY_COLORS: Record<PracticeDifficulty, string> = {
   hard: "bg-red-50 text-red-700 border-red-200",
 };
 
-/* ── Layout pixel constraints (exported for test assertions) ── */
-export const DESMOS_HOST_MIN_PX = 480;
-export const CALC_PANEL_PAD_PX = 16;
-export const CALC_MIN_PX = DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX; // 496
-export const QUESTION_MIN_PX = 500;
-const DIVIDER_PX = 14; // conservative; actual CSS is w-px, but grip + hit area widen
-const APP_HORIZONTAL_PADDING = 32;
-const BREAKPOINT_EXTRA = 20;
-export const SPLIT_BREAKPOINT =
-  CALC_MIN_PX +
-  QUESTION_MIN_PX +
-  DIVIDER_PX +
-  APP_HORIZONTAL_PADDING +
-  BREAKPOINT_EXTRA; // 1062
-
-/**
- * Static percentages computed once at the known-minimum container width
- * (SPLIT_BREAKPOINT − APP_HORIZONTAL_PADDING). These give the library a soft
- * bound that prevents it from allocating less than the pixel minimum during
- * drag at the breakpoint container width. The CSS `min-width` on each panel
- * is the TRUE pixel floor (browser-enforced, continuous); these percentages
- * are a secondary initial constraint only.
- */
-const CONTAINER_AT_BREAKPOINT = SPLIT_BREAKPOINT - APP_HORIZONTAL_PADDING; // 1030
-const CALC_MIN_PCT = Math.ceil((CALC_MIN_PX / CONTAINER_AT_BREAKPOINT) * 100); // 49
-const QUESTION_MIN_PCT = Math.ceil(
-  (QUESTION_MIN_PX / CONTAINER_AT_BREAKPOINT) * 100,
-); // 49
-const CALC_DEFAULT_PCT = CALC_MIN_PCT; // 49
-const QUESTION_DEFAULT_PCT = 100 - CALC_DEFAULT_PCT; // 51
+/* ── Layout pixel constraints: defined in components/math/calculator-layout (E10b);
+ * re-exported here, where the practice tests import them. ── */
+export {
+  CALC_MIN_PX,
+  CALC_PANEL_PAD_PX,
+  DESMOS_HOST_MIN_PX,
+  QUESTION_MIN_PX,
+  SPLIT_BREAKPOINT,
+} from "@/components/math/calculator-layout";
 
 /*
  * W4-4 — review with LISA always open. Three panels share the width:
@@ -776,11 +768,14 @@ export default function CanonicalPracticePage(props: {
       </div>
 
       <div
-        className="relative h-[640px] w-full lg:sticky lg:top-24 lg:shrink-0"
+        className="relative w-full lg:sticky lg:top-24 lg:shrink-0"
         style={
           tutorSideBySide
-            ? { width: calcOverTutor ? CALC_MIN_PX : TUTOR_PANEL_PX }
-            : undefined
+            ? {
+                height: CALC_COLUMN_HEIGHT_PX,
+                width: calcOverTutor ? CALC_MIN_PX : TUTOR_PANEL_PX,
+              }
+            : { height: CALC_COLUMN_HEIGHT_PX }
         }
         data-testid="review-tutor-column"
       >

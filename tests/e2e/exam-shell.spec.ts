@@ -358,10 +358,19 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   await expect(page.locator("#exam-calculator-panel")).toBeVisible();
   await page.waitForTimeout(1500);
   await shot(page, "08-math-calculator");
-  // G-EX-08: the embed was requested with a key and the environment refused it.
+  // G-EX-08. E7b ran where desmos.com is refused at the proxy (CONNECT 403), so it could only
+  // record the refusal. E10: where desmos.com is reachable (E2E_DESMOS_REACHABLE=1), the real
+  // embed must load — no failed request, no error state, a Desmos container in the panel. A
+  // refused fetch proves nothing about the exam, so it is logged, never passed as G-EX-08.
   // eslint-disable-next-line no-console -- evidence line
   console.log("DESMOS REQUEST FAILURES", JSON.stringify(desmosFailures));
-  expect(desmosFailures.length).toBeGreaterThan(0);
+  if (process.env.E2E_DESMOS_REACHABLE === "1") {
+    await expect(page.locator("#exam-calculator-panel .dcg-container").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("desmos-calculator-error")).toHaveCount(0);
+    expect(desmosFailures).toEqual([]);
+  } else {
+    expect(desmosFailures.length).toBeGreaterThan(0);
+  }
   await page.getByRole("button", { name: "Close calculator" }).click();
   await page.getByRole("button", { name: "Reference" }).click();
   await page.waitForTimeout(500);
