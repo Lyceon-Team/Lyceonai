@@ -505,7 +505,8 @@ describe("LISA-FULL-007: static gate — serializer chokepoint enforcement", () 
 //     UPDATED 2026-09-21 (R3): the example this used to name,
 //     review-session-routes.ts, was deleted in R1 and its replacement
 //     (server/routes/review-canonical.ts) does not touch tutor_messages at all —
-//     LISA is out of review at launch (ruled plan ruling 9, used_tutor stays false).
+//     LISA was out of review at launch (ruled plan ruling 9). Since W4-7 the DB
+//     trigger reads tutor_messages for `used_tutor`, but no route does.
 //     The exclusion is kept because the RULE still needs it; only the illustration
 //     was stale.
 //   - Files that return `content` in error shapes or non-tutor contexts are

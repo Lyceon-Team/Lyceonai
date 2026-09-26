@@ -99,8 +99,10 @@ describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime 
   // tutor_interactions) is unchanged and still enforced, so this is the narrower
   // of the two checks, not the only one.
   //
-  // Ruled plan §3 ruling 9 puts LISA out of review at launch and holds `used_tutor`
-  // at false, so R3's review submit should query no tutor table at all. That makes
+  // Ruled plan §3 ruling 9 put LISA out of review at launch and held `used_tutor`
+  // at false. UPDATED 2026-09-26 (W4-7): LISA is in review and the DB trigger now
+  // sets `used_tutor` from an EXISTS on tutor_messages (role/content_kind only, no
+  // content read); the TS review submit route still queries no tutor table. That makes
   // this assertion cheap to restore and worth restoring — "out at launch" implies a
   // later wave that re-wires it, and this is the guard for that wave:
   //
