@@ -3730,6 +3730,82 @@ APPLIED, 2026-09-25. Flipped under SCL-159, same reasoning as SCL-151. **Owner-v
 Owner action (3) is now CLOSED by **SCL-160**: a carve-out weakening a structural invariant must name its premise, and that premise must be asserted by a gate reading the live catalog or live data, never by a test reading seeded data; if it cannot be expressed as a catalog query, the carve-out is refused. Owner actions (1) and (2) are superseded by SCL-159 — no spec amendment. Nothing on this entry remains open.
 Build artifact: `supabase/migrations/20261007000000_deletion_verification_drop_deleted_profile_id.sql`; `tests/ci/deletion-evidence-bundle.pg.ci.test.ts` (C3.1 exception list removed, C3.6/C3.9 updated), `tests/ci/deletion-phase-6.pg.ci.test.ts` (P6.5 3-arg, P6.6 renamed and absolute); mutation M96 retargeted.
 
+SCL-171 | 2026-09-26 | Doc 03 §4.6's regional crisis resource table lists adult lines where the built system gives students youth lines, has one lane where the built system has two, and says nothing about a student whose country is unknown or outside Tier-1 | PROPOSED
+Id: `SCL-171` allocated 2026-09-26 as max+1 at the moment of use, after `git fetch --all --prune`, across all 103 remote refs (`git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md`). Highest anywhere is `SCL-170` (on `origin/main`, `origin/exam`, `origin/claude/e9b-calendar-seam`). Every open PR's head is one of the scanned refs (#901 carries SCL-164–166, #903 SCL-167–168). Two allocations in this session: SCL-171 (this entry) and SCL-172.
+Change: amend Doc 03 §4.6 so the resource table is the one students actually receive: youth-specific lines where the code has them, two lanes (crisis and safeguarding) rather than one, ISO `GB` as the key, and a named response for the country the table does not cover.
+WAS, verbatim (`docs/Spec/Doc 03 — LISA (AI Tutor System).md:376-386`):
+  "**Regional crisis resources (V1 Tier 1 countries):**
+   | US | 988 Suicide & Crisis Lifeline (call or text 988\) |
+   | CA | Talk Suicide Canada (1-833-456-4566) or text 45645 |
+   | UK | Samaritans (116 123\) |
+   | IE | Samaritans Ireland (116 123\) |
+   | AU | Lifeline (13 11 14\) |
+   | NZ | Lifeline Aotearoa (0800 543 354\) |
+   | SG | Samaritans of Singapore (1-767) |"
+  And (`:392`): "The orchestration layer (Doc 03C) selects the appropriate regional resource based on billing address country (not IP, per Doc 03A context resolution authority)."
+  The section is silent on (a) a student whose country is unknown or not in the table, and (b) the abuse/neglect lane: §4.6's own signal list includes "Mentions of family violence or abuse" (`:365`), but the table has only suicide/crisis lines.
+IS, as built on `lisa` (`server/services/crisis-resources.ts`, PR #900; tables moved unchanged from `tutor-crisis.ts`):
+  Two lanes, selected by the classifier's `category` (`crisis` | `safeguarding`), each keyed by ISO 3166-1 alpha-2 with `UK` accepted as an alias of `GB` (Stripe returns `GB`; §4.6 writes `UK`).
+  Crisis lane (`:39-47`):
+   | US | 988 Suicide & Crisis Lifeline — call or text 988 |
+   | CA | 988 — call or text 988 |
+   | GB | Childline 0800 1111; Samaritans 116 123 |
+   | IE | Childline Ireland 1800 66 66 66; Pieta 1800 247 247 |
+   | AU | Kids Helpline 1800 55 1800 |
+   | NZ | Youthline 0800 376 633 or text 234; 1737 |
+   | SG | Samaritans of Singapore (SOS) 1767 |
+  Safeguarding lane (`:57-65`):
+   | US | Childhelp 1-800-422-4453; RAINN 1-800-656-4673 |
+   | CA | Kids Help Phone 1-800-668-6868 or text CONNECT to 686868 |
+   | GB | Childline 0800 1111 |
+   | IE | Childline Ireland 1800 66 66 66 |
+   | AU | Kids Helpline 1800 55 1800 |
+   | NZ | Youthline 0800 376 633 or text 234 |
+   | SG | National Anti-Violence Helpline 1800-777-0000 |
+  Unknown or out-of-table country — NEW, the spec has no text for it (`:28-31`): a student whose `profiles.country_code` is null, blank, or not a key above receives a response that NAMES NO NUMBER, in either lane:
+   crisis: "If you're in crisis, please reach out to someone right now. Call your local emergency number, or talk to a trusted adult — a parent, teacher, school counselor, or doctor. You don't have to go through this alone."
+   safeguarding: "What you've shared matters. Please tell a trusted adult — a parent, teacher, school counselor, or doctor. If you're in danger right now, call your local emergency number."
+  Every such resolution is logged at WARN (`crisis_country_defaulted`: student id digested, conversation id, category, reason `no_country` | `unsupported_country`; no crisis content), so ops can find the student.
+  Source of the country, unchanged from `:392` and now actually wired: the billing country the INV-03-08 grant gate approved (`Customer.address.country`), written to `profiles.country_code` on every premium grant (PR #900).
+Rationale:
+  - Youth lines are correct for this product (owner ruling 2026-09-25): students are 15–18, and the youth services (Childline, Childline Ireland, Kids Helpline, Youthline, Kids Help Phone) are staffed for them; the spec's adult lines were chosen without that constraint. The code is right; the spec is stale.
+  - The no-number fallback (owner ruling 2026-09-25): a hotline number is right in exactly one country. Before PR #900 an unknown country received the US lines — a student outside the US calling 988 reaches nothing. An honest pointer to local emergency services and a trusted adult works everywhere. The two texts above are verbatim as merged in PR #900.
+  - Two lanes: a disclosure of abuse needs an abuse line, not a suicide line; §4.6 already detects both signals but routes only one.
+  - Proven in production 2026-09-26 (closure plan W3-3): `country_code = SG` returns Samaritans of Singapore 1767; `XX` and null return the no-number fallback; no 988.
+Divergences recorded for the owner, NOT resolved by this entry (number and naming verification is the owner's, and is out of scope):
+  - CA crisis lane: the spec's Talk Suicide Canada was replaced in Canada by 9-8-8 (Suicide Crisis Helpline, launched 2023-11-30); the code uses 988 but names it "988 Suicide & Crisis Lifeline", which is the US service's name. The number is right for Canada; the name should be verified.
+  - GB and IE crisis lanes add an adult line (Samaritans, Pieta) alongside the youth line; the spec's adult-only choice survives there as the second number.
+  - §4.6's template response ("Hey, that sounds heavy. … I'll be here when you come back.", `:388-390`) is not the built wording; this entry does not amend the template.
+Relation to other entries: SCL-DRAFT-A-declared-country (2026-08-31) proposes a second, self-declared country column and records that the crisis path is its natural consumer. This entry does not depend on it and does not decide it; if it lands, §4.6's `:392` must say which column the crisis path reads.
+Owner action: amend Doc 03 §4.6 — replace the table with the two-lane table above keyed `GB` (with `UK` as an alias), add the unknown-country rule and both no-number texts, and add the WARN as the operational signal. Amend §21.2 step 3 ("Regional crisis resource selected from billing address country") to name the fallback. Verify the CA crisis-lane naming.
+Build artifact: `server/services/crisis-resources.ts` (`CRISIS_RESOURCES`, `SAFEGUARDING_RESOURCES`, `UNKNOWN_COUNTRY_*`, `resolveCrisisCountry`); `server/routes/tutor-runtime.ts` (crisis turn, WARN); `server/lib/stripe/webhook-handler.ts` + `server/lib/account.ts` `setProfileCountryCode` (the write path); `tests/ci/crisis-country-resources.contract.test.ts`, `tests/ci/crisis-lane-routing.unit.test.ts`, `tests/ci/entitlement-write-path.ci.test.ts`.
+
+SCL-172 | 2026-09-26 | Doc 03 §21.3 names a crisis review owner, an SLA and a list of review actions but no procedure; the procedure is DEFERRED POST-LAUNCH by owner decision, and the spec should say so | PROPOSED
+Id: `SCL-172`, allocated in the same scan as SCL-171 (max `SCL-170` across 103 refs and all open PRs); second of two allocations this session.
+Change: record in §21.3 that the safety-review PROCEDURE — how a reviewer works a case from flag to close — is deliberately not specified for launch, so the gap is a stated decision rather than an omission.
+WAS, verbatim (`docs/Spec/Doc 03 — LISA (AI Tutor System).md:1598-1613`):
+  "Flagged conversations are routed to a safety review queue for human review. …
+   * Owner: Founder or designated ops lead (primary reviewer)
+   * Backup: Second designated reviewer for on-call coverage
+   * Tooling: Shared ticketing system (Linear, Asana, or similar) with crisis-flagged conversations routed as high-priority tickets
+   * SLA: Review within 48 hours of flag at launch; tighter SLA (24 hours) target after 30 days of operational experience
+   **Review actions:**
+   * Confirm classification (true positive / false positive)
+   * Check if student continued using LISA after crisis signal (engagement pattern)
+   * If concerning pattern, reach out to student via support email (if contact opted-in) with resources
+   * If minor and escalation warranted, engage guardian per Doc 01 V6 guardian contact model
+   * Update classifier training data for false positives (feedback loop)"
+  What §21.3 does not say: when "concerning pattern" or "escalation warranted" is met; who decides and how that decision is recorded; what a reviewer writes on the case; what "resolved" requires; what happens when the SLA is missed; how the backup is engaged. The review actions are a checklist of things a reviewer MAY do, not a procedure for doing them.
+IS, as built and as run (the mechanics exist; the procedure does not):
+  - Tooling: NOT a ticketing system. An admin dashboard (`client/src/pages/admin/CrisisReviewList.tsx`, `CrisisReviewDetail.tsx`; `server/routes/admin-crisis-review.ts`) over `crisis_review_cases`, with Slack alerts to `#lyceon-crisis` on flag and per-message escalation (closure plan C-03, C-04).
+  - Lifecycle: `status` `open` → `in_review` (claim) → `resolved`; `disposition` `true_positive` | `false_positive` (§21.3 review action 1); every view, status change, disposition and note audited (`crisis_review_audit_log.action`).
+  - SLA: 48 hours (`public.crisis_review_sla_hours()`, the single definition), matching §21.3's launch figure; an hourly Cloud Scheduler sweep (`infra/terraform/cloud-scheduler-crisis.tf`, `15 * * * *`) raises a Slack breach alert (closure plan W2-2, W2-2a).
+  - Exercised for real 2026-09-26: the owner worked all 11 open cases to resolution through the dashboard — the first use of the dashboard, the claim flow and its CSRF protection (closure plan W2-2b).
+  So a reviewer can be alerted, claim, record a disposition and resolve inside the SLA; what they should DO between claim and resolve is decided case by case by the owner.
+Decision (owner, 2026-09-26): the review procedure is DEFERRED POST-LAUNCH. At launch the owner is the reviewer, uses the dashboard, and applies §21.3's review actions by judgment. A written procedure is owed before a second reviewer works cases alone, and in any case before the V2 staffing triggers §21.3 already names.
+Rationale: the risk this entry retires is invisibility, not the gap itself. A spec that names an owner and an SLA reads as if the protocol exists; recording the deferral makes the gap an accepted, dated decision that an auditor, a new reviewer or a later spec revision can see — and removes the ticketing-system tooling line, which describes something that was never built.
+Owner action: amend Doc 03 §21.3 — (1) replace the Tooling bullet with the admin dashboard and Slack alerts; (2) add a line stating that the case-handling procedure (escalation criteria, guardian-contact decision and record, resolution requirements, missed-SLA handling, backup engagement) is DEFERRED POST-LAUNCH by owner decision 2026-09-26, the owner reviewing by judgment against the review actions until it is written; (3) name the trigger for writing it: before any second reviewer works cases unsupervised.
+Build artifact: none — no code changes with this entry. Evidence: `supabase/migrations/20260813000000_crisis_review_queue.sql` (status, disposition, audit), `supabase/migrations/20260922100000_crisis_flag_atomic.sql` (`crisis_review_sla_hours()`), the admin files above; closure plan rows C-03, C-04, W2-2, W2-2a, W2-2b.
 SCL-159 | 2026-09-25 | REGISTER SEMANTICS: locked documents are not amended; the register IS the change record. APPLIED means the change is live in code, database or configuration and this entry records it — not that spec text landed | RULING
 Id: `SCL-159` re-derived at the moment of use, 2026-09-25, after `git fetch --all --prune`, by `git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md` across every remote ref. Highest allocated anywhere is `SCL-158` (SCL-154..158 on `origin/exam` and `origin/claude/e9-exam-seams`). Every open PR checked: #900 and #897 sit on `origin/lisa`/`origin/claude/wizardly-franklin-ucty85-w3-3-country`, #898 on `origin/exam`, #861 on `origin/cleanup`, #728 is dependabot and carries no entry — all in-repo branches already covered by the fetch. Eight entries allocated this session, sequentially: SCL-159 and SCL-160 (the two rulings), then SCL-161 through SCL-166 from the coverage audit below.
 Change: owner ruling (Karl, 2026-09-25). The locked corpus under `docs/Spec/` will NOT be edited. The register is the change record, not a queue of pending edits to the documents. Consequently the STATUS VALUES ruling of 2026-09-16 is re-read, WITHOUT coining a fourth value:
