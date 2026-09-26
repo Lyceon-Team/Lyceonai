@@ -65,6 +65,7 @@ async function parsed<T>(
         };
   },
   resource: string,
+  transportKeys: readonly string[] = CALENDAR_TRANSPORT_KEYS,
 ): Promise<T> {
   // A 200 whose body is not JSON at all — a proxy or CDN error page, the classic
   // "Unexpected token <" — must take the SAME path as a body that parses but does not
@@ -80,7 +81,7 @@ async function parsed<T>(
       `${resource}: the server returned a body this client cannot read. This is a contract mismatch, not an empty result.`,
     );
   }
-  const payload = stripRequestId(body);
+  const payload = stripTransport(body, transportKeys);
   const result = schema.safeParse(payload);
   if (!result.success) {
     const paths = result.error.issues
@@ -97,13 +98,48 @@ async function parsed<T>(
   return result.data;
 }
 
-/** See the module note: `requestId` is transport correlation, not payload. */
-function stripRequestId(body: unknown): unknown {
+/**
+ * THE TRANSPORT ENVELOPE IS PER SURFACE, AND THAT IS WHY THIS IS A PARAMETER.
+ *
+ * `/api/calendar/*` wraps a payload with `requestId` and nothing else
+ * (`calendar-routes.ts:538`). `/api/students/:id/*` wraps it with `ok: true` AS WELL —
+ * every resource on that mount answers `{ ok: true, ...body, requestId }`
+ * (`student-resources.ts:230` for the `resource()` helper, `:450` for the calendar
+ * registration), because `ok` is that surface's success marker.
+ *
+ * `ok` IS NOT STRIPPED GLOBALLY, and it must not become so. On
+ * `POST /api/calendar/acknowledge` the whole payload is `{ ok: true }`
+ * (`acknowledgeResponseSchema`, `packages/shared/src/calendar/api.ts:431-433`), so a blanket
+ * strip would delete the one field that response carries and turn a working route into a
+ * parse failure — trading this defect for its mirror image.
+ *
+ * WHY THIS IS THE LAYER THAT WAS WRONG. The guardian payload was valid: the server parses it
+ * through the SAME `.strict()` schema before answering and 500s if it fails
+ * (`read-service.ts:793-812`), so production's 200 proves it satisfied the schema. What did
+ * not survive was the envelope — this client knew `/api/calendar`'s and was pointed at
+ * `/api/students`'s. Loosening the guardian schema to `.passthrough()` would have hidden that
+ * by also accepting any withheld field a future serializer leaks, which is the one thing
+ * `.strict()` is here to prevent.
+ */
+const CALENDAR_TRANSPORT_KEYS = ["requestId"] as const;
+
+/** `/api/students/:studentId/*` — `ok` is the surface's success marker, not payload. */
+const SUBJECT_TRANSPORT_KEYS = ["requestId", "ok"] as const;
+
+function stripTransport(body: unknown, keys: readonly string[]): unknown {
   if (typeof body !== "object" || body === null || Array.isArray(body))
     return body;
-  if (!("requestId" in body)) return body;
-  const { requestId: _requestId, ...rest } = body as Record<string, unknown>;
-  return rest;
+  const rest: Record<string, unknown> = {
+    ...(body as Record<string, unknown>),
+  };
+  let removed = false;
+  for (const key of keys) {
+    if (key in rest) {
+      delete rest[key];
+      removed = true;
+    }
+  }
+  return removed ? rest : body;
 }
 
 function jsonBody(value: unknown): {
@@ -162,6 +198,7 @@ export async function fetchGuardianCalendar(
     response,
     guardianCalendarResponseSchema,
     "GET /api/students/:id/calendar",
+    SUBJECT_TRANSPORT_KEYS,
   );
 }
 
