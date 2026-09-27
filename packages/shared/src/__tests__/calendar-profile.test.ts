@@ -35,6 +35,7 @@ describe("study profile read shape", () => {
     study_days_mask: 62,
     daily_minutes: 45,
     full_length_weekday: 6,
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   };
@@ -182,5 +183,66 @@ describe("profile upsert", () => {
     expect(upsert({ planner_mode: "auto", streak: 4, idempotency_key: KEY }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * `full_length_pair` (20261009000000) makes the weekday and the interval one decision in the
+ * database. These are the tests that make it one decision at the BOUNDARY too, so the refusal
+ * is a 400 that names the field rather than a 23514 the service reports as a write failure.
+ *
+ * The body is a partial update, so "send both or neither" is what makes the merged row
+ * provably valid without this schema ever reading the stored one.
+ */
+describe("the exam schedule is one setting (full_length_pair)", () => {
+  const both = (weekday: number | null, weeks: number | null) =>
+    upsert({
+      full_length_weekday: weekday,
+      full_length_interval_weeks: weeks,
+      idempotency_key: KEY,
+    });
+
+  it("accepts a day and a cadence together", () => {
+    expect(both(6, 2).success).toBe(true);
+    expect(both(0, 1).success).toBe(true);
+    expect(both(3, 4).success).toBe(true);
+  });
+
+  it("accepts both null — 'I'll add them myself' is an answer", () => {
+    expect(both(null, null).success).toBe(true);
+  });
+
+  it("refuses a weekday with no cadence, and says which field is missing", () => {
+    const result = upsert({ full_length_weekday: 6, idempotency_key: KEY });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+      "full_length_interval_weeks",
+    );
+  });
+
+  it("refuses a cadence with no weekday, and says which field is missing", () => {
+    const result = upsert({ full_length_interval_weeks: 2, idempotency_key: KEY });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+      "full_length_weekday",
+    );
+  });
+
+  it("refuses half an 'off': one null and one set is neither on nor off", () => {
+    expect(both(6, null).success).toBe(false);
+    expect(both(null, 2).success).toBe(false);
+  });
+
+  it("refuses a cadence outside the four §8.1 offers", () => {
+    expect(both(6, 5).success).toBe(false);
+    expect(both(6, 0).success).toBe(false);
+    expect(both(6, -1).success).toBe(false);
+    expect(both(6, 2.5).success).toBe(false);
+  });
+
+  it("leaves a body that names NEITHER half alone — the pair it does not touch stays valid", () => {
+    expect(upsert({ daily_minutes: 60, idempotency_key: KEY }).success).toBe(true);
   });
 });

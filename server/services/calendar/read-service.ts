@@ -712,6 +712,7 @@ async function setupDefaults(
     daily_minutes_min: config.bounds.daily_minutes_min,
     daily_minutes_max: config.bounds.daily_minutes_max,
     target_exam_date_max_days: config.bounds.target_exam_date_max_days,
+    default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
   };
 }
 

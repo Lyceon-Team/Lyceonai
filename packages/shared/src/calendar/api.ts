@@ -27,6 +27,7 @@ import { sectionProjectionSchema } from "../student-resources.js";
 import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
 import {
+  fullLengthIntervalWeeksSchema,
   studyProfileBoundsSchema,
   studyProfileSchema,
   targetScoreSchema,
@@ -163,6 +164,13 @@ export const calendarSetupDefaultsSchema = z
     daily_minutes_min: z.number().int().positive(),
     daily_minutes_max: z.number().int().positive(),
     target_exam_date_max_days: z.number().int().positive(),
+    // §8.1: the cadence the frequency control OPENS on, from
+    // `default_full_length_interval_weeks` (20261009000000). A prefill, exactly like
+    // `timezone` above — nothing is stored until the student saves, and the generator never
+    // reads this key, so an operator changing it cannot re-space anyone's existing exams.
+    // Bounded by the same schema the write path uses, so the form can never be prefilled
+    // with a cadence the upsert would then refuse.
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;

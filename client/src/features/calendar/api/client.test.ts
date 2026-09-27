@@ -103,6 +103,7 @@ const READY_BODY = {
     study_days_mask: 62,
     daily_minutes: 45,
     full_length_weekday: 6,
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   },

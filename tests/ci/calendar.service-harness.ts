@@ -178,13 +178,21 @@ export function makeFakeClient(options: {
   };
 }
 
-/** The six §8.1/§12.5/§10.2 rows, as `calendar_runtime_config` holds them. */
+/**
+ * The §8.1/§12.5/§10.2 rows this layer reads, as `calendar_runtime_config` holds them —
+ * every key in `CALENDAR_CONFIG_KEYS`, because the accessor throws on the first one missing.
+ * (The count was previously given as "six" while the list held nine; a number that drifts
+ * every time a key is added is worse than no number.)
+ */
 export const CONFIG_ROWS: { key: string; value: unknown }[] = [
   { key: "daily_minutes_min", value: 15 },
   { key: "daily_minutes_max", value: 180 },
   { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
   { key: "target_exam_date_max_days", value: 540 },
   { key: "weekly_job_interval_minutes", value: 1440 },
+  // §8.1, 20261009000000. The cadence the frequency control opens on — a surface prefill,
+  // which is why the generator never reads it.
+  { key: "default_full_length_interval_weeks", value: 2 },
   { key: "horizon_days", value: 14 },
   { key: "generator_version", value: "20260917140000" },
   // §17.1's "~N min" readout. Calendar-owned (SCL-08-F); its practice counterpart lives in
@@ -234,6 +242,7 @@ export const PROFILE_ROW = {
   study_days_mask: 127,
   daily_minutes: 60,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto" as const,
   setup_completed_at: "2026-09-01T00:00:00.000Z",
 };

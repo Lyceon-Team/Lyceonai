@@ -51,6 +51,28 @@ export type StudyDaysMask = z.infer<typeof studyDaysMaskSchema>;
 /** `full_length_weekday smallint CHECK (BETWEEN 0 AND 6)`, same Sunday-is-0 convention. */
 export const postgresDowSchema = z.number().int().min(0).max(6);
 
+export const FULL_LENGTH_INTERVAL_WEEKS_MIN = 1;
+export const FULL_LENGTH_INTERVAL_WEEKS_MAX = 4;
+
+/**
+ * `full_length_interval_weeks smallint CHECK (... IN (1,2,3,4))` (20261009000000) — WEEKS
+ * between full-length practice tests, as the student chose them.
+ *
+ * Weeks, not a label. Weekly / Every 2 weeks / Every 3 weeks / Monthly is the UI's rendering
+ * of 1/2/3/4, so changing that copy never migrates data and never touches this schema.
+ *
+ * NOT read from config. `default_full_length_interval_weeks` is the value the setup form
+ * OPENS on and its bounds match these; this range is the closed set of cadences §8.1 offers,
+ * which is a domain, not a tunable. An operator widening a config row must not make a fifth
+ * cadence storable — the column CHECK would refuse it anyway, and refusing it here means the
+ * student gets a 400 instead of a write failure.
+ */
+export const fullLengthIntervalWeeksSchema = z
+  .number()
+  .int()
+  .min(FULL_LENGTH_INTERVAL_WEEKS_MIN)
+  .max(FULL_LENGTH_INTERVAL_WEEKS_MAX);
+
 export function isStudyDay(mask: StudyDaysMask, postgresDow: number): boolean {
   if (postgresDow < 0 || postgresDow > 6) return false;
   return ((mask >> postgresDow) & 1) === 1;
@@ -106,6 +128,12 @@ export const studyProfileSchema = z
     study_days_mask: studyDaysMaskSchema,
     daily_minutes: dailyMinutesSchema,
     full_length_weekday: postgresDowSchema.nullable(),
+    // NULLABLE BUT REQUIRED, like its weekday. Present-and-null is how the client learns
+    // "this student has no automatic full-lengths"; absent would make it indistinguishable
+    // from "the server did not send it", and a surface cannot render a distinction it
+    // cannot see. The two travel together because they ARE one decision (`full_length_pair`,
+    // 20261009000000).
+    full_length_interval_weeks: fullLengthIntervalWeeksSchema.nullable(),
     planner_mode: plannerModeSchema,
     setup_completed_at: z.string().nullable(),
   })
@@ -167,6 +195,9 @@ const studyProfileUpsertBaseSchema = z
     study_days_mask: studyDaysMaskSchema.optional(),
     daily_minutes: dailyMinutesSchema.optional(),
     full_length_weekday: postgresDowSchema.nullable().optional(),
+    full_length_interval_weeks: fullLengthIntervalWeeksSchema
+      .nullable()
+      .optional(),
     planner_mode: plannerModeSchema.optional(),
     idempotency_key: z.string().uuid(),
   })
@@ -194,6 +225,44 @@ export function makeStudyProfileUpsertSchema(
         path: [],
         message: "a profile update must change at least one field",
       });
+    }
+
+    // ── THE EXAM SCHEDULE IS ONE DECISION, SO IT IS EDITED AS ONE ──────────
+    //
+    // `full_length_pair` (20261009000000) requires the weekday and the interval to be null
+    // together or set together. This body is a PARTIAL update — the settings sheet sends
+    // only what changed — so a request naming just one half would merge into a row the
+    // database refuses, and the refusal would arrive as a raw 23514 that the service reports
+    // as `{kind:"write_failed"}`: a decision served as a fault, and a 500-shaped answer to
+    // what is really a 400.
+    //
+    // Requiring BOTH whenever EITHER appears is what makes that unreachable, and it needs no
+    // knowledge of the stored row to do it: a body that names neither leaves a pair that was
+    // already valid, and a body that names both fully determines the new one. Checking the
+    // post-merge state instead would mean reading the current profile into this schema, which
+    // would make a pure validator depend on database state to say what is well-formed.
+    const namesDay = body.full_length_weekday !== undefined;
+    const namesWeeks = body.full_length_interval_weeks !== undefined;
+    if (namesDay !== namesWeeks) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [namesDay ? "full_length_interval_weeks" : "full_length_weekday"],
+        message:
+          "full_length_weekday and full_length_interval_weeks are one setting: send both or neither",
+      });
+    } else if (namesDay && namesWeeks) {
+      // Both named, so both must agree about whether there are exams at all. "Saturdays, at
+      // no frequency" and "every 2 weeks, on no day" are the two halves of the same defect.
+      const dayOff = body.full_length_weekday === null;
+      const weeksOff = body.full_length_interval_weeks === null;
+      if (dayOff !== weeksOff) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [dayOff ? "full_length_weekday" : "full_length_interval_weeks"],
+          message:
+            "to turn full-lengths off, send both full_length_weekday and full_length_interval_weeks as null",
+        });
+      }
     }
 
     if (body.daily_minutes !== undefined) {

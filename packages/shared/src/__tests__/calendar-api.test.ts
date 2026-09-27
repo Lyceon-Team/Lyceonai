@@ -49,6 +49,7 @@ const PROFILE = {
   study_days_mask: 62,
   daily_minutes: 45,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T18:00:00Z",
 } as const;
@@ -169,6 +170,7 @@ describe("GET /api/calendar", () => {
         daily_minutes_min: 15,
         daily_minutes_max: 180,
         target_exam_date_max_days: 540,
+        default_full_length_interval_weeks: 2,
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -499,6 +501,7 @@ describe("guardian read (§16, R-08-22)", () => {
           daily_minutes_min: 15,
           daily_minutes_max: 180,
           target_exam_date_max_days: 540,
+          default_full_length_interval_weeks: 2,
         },
       }).success,
     ).toBe(false);
