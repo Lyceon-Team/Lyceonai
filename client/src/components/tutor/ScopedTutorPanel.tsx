@@ -26,6 +26,17 @@
  * The thread is drawn with the same parts and turn machine as the standalone
  * chat (`TutorThreadParts`, `useTutorTurn`): optimistic send, retry on the
  * same client_turn_id, crisis card and pause all behave identically.
+ *
+ * W4-11 — AN UNPAID STUDENT NEVER HOLDS A COMPOSER. The on-load lookup is a
+ * tutor request like any other, so the server refuses it for an unpaid
+ * student before anything is typed. That refusal — and only that, never a
+ * client-side guess — swaps the opener and the composer for the LISA upgrade
+ * card. The same holds inside a thread: a conversation whose load or next
+ * send is refused (entitlement lapsed) loses its composer to the card. The
+ * question and Desmos are outside this panel and are untouched. Why the
+ * composer must go rather than be disabled on send: the server checks
+ * entitlement before crisis detection (Doc 03B §6.5, kept by owner ruling
+ * 2026-09-27), so a refused student's message is never read at all.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -40,11 +51,10 @@ import {
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
-import { mapTutorErrorToPremiumReason } from "@/lib/api-error";
 import {
-  PremiumUpgradePrompt,
-  type PremiumPromptReason,
-} from "@/components/billing/PremiumUpgradePrompt";
+  LisaUpgradeCard,
+  isLisaEntitlementDenial,
+} from "@/components/tutor/LisaUpgradeCard";
 import {
   Composer,
   CrisisSupportCard,
@@ -144,9 +154,10 @@ export function ScopedTutorPanel({
   };
 
   const createError = createConversation.error;
-  const createPremiumReason: PremiumPromptReason | null = createError
-    ? (mapTutorErrorToPremiumReason(createError) as PremiumPromptReason | null)
-    : null;
+  // Refused by the server, on load or on the first send. Never inferred here.
+  const denied =
+    isLisaEntitlementDenial(existing.error) ||
+    isLisaEntitlementDenial(createError);
 
   const pendingMessage: TutorMessage | null = pendingHere
     ? {
@@ -195,6 +206,8 @@ export function ScopedTutorPanel({
           firstMessage={startedHere?.firstMessage ?? null}
           onEnded={onHide}
         />
+      ) : denied ? (
+        <LisaUpgradeCard />
       ) : existing.isLoading ? (
         <div
           className="flex flex-1 items-center justify-center p-6"
@@ -229,12 +242,6 @@ export function ScopedTutorPanel({
                 — try sending it again.
               </p>
             )}
-            {!pendingMessage && createPremiumReason && (
-              <PremiumUpgradePrompt
-                featureBenefit="the interactive tutor"
-                mode="inline"
-              />
-            )}
           </div>
           <Composer
             draft={draft}
@@ -242,7 +249,7 @@ export function ScopedTutorPanel({
             onSubmit={() => {
               if (draft.trim()) startConversation(draft.trim());
             }}
-            disabled={!!pendingMessage || !!createPremiumReason}
+            disabled={!!pendingMessage}
             placeholder={
               pendingMessage ? "LISA is responding..." : COMPOSER_PLACEHOLDER
             }
@@ -263,7 +270,11 @@ function ScopedThread({
   firstMessage: string | null;
   onEnded: () => void;
 }) {
-  const { data: detail, isLoading } = useConversation(conversationId);
+  const {
+    data: detail,
+    isLoading,
+    error: detailError,
+  } = useConversation(conversationId);
   const endConversation = useEndConversation();
   const [draft, setDraft] = useState("");
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -288,6 +299,8 @@ function ScopedThread({
   const isEnded = conversation?.status === "ended";
   const isThinking = turnState.kind === "thinking";
   const hasMessages = messages.length > 0 || optimisticMessage !== null;
+  // Entitlement lapsed: the thread would not load, or the last send was refused.
+  const denied = isLisaEntitlementDenial(detailError) || premiumReason !== null;
 
   useScrollToBottomOnChange(
     scrollAnchorRef,
@@ -337,13 +350,8 @@ function ScopedThread({
 
         {/* A conversation with no messages yet (e.g. one opened before
             W4-4) still shows the invitation, not an empty thread. */}
-        {!isLoading && !hasMessages && firstMessage === null && <TutorOpener />}
-
-        {premiumReason && (
-          <PremiumUpgradePrompt
-            featureBenefit="the interactive tutor"
-            mode="inline"
-          />
+        {!isLoading && !denied && !hasMessages && firstMessage === null && (
+          <TutorOpener />
         )}
 
         {!isLoading &&
@@ -384,12 +392,14 @@ function ScopedThread({
           endPending={endConversation.isPending}
           resumePending={resumePending}
         />
-      ) : isEnded ? null : (
+      ) : isEnded ? null : denied ? (
+        <LisaUpgradeCard />
+      ) : (
         <Composer
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={submit}
-          disabled={isThinking || isPaused || isEnded || !!premiumReason}
+          disabled={isThinking || isPaused || isEnded}
           placeholder={
             isThinking ? "LISA is responding..." : COMPOSER_PLACEHOLDER
           }
