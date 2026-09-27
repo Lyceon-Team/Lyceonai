@@ -47,7 +47,13 @@ export const QUESTION_DEFAULT_PCT = 100 - CALC_DEFAULT_PCT; // 51
 /**
  * W4-4: review's column beside the question, 640px tall. Between `lg` and
  * THREE_PANEL_BREAKPOINT the calculator is laid over it at CALC_MIN_PX wide, so
- * CALC_MIN_PX x CALC_COLUMN_HEIGHT_PX is the calculator's one fixed-size box, and the
- * size of the exam's floating calculator (E10b, owner ruling 2026-09-26).
+ * CALC_MIN_PX x CALC_COLUMN_HEIGHT_PX is the calculator's one fixed-size box.
+ *
+ * NOT DERIVED FOR THE EXAM. 640 is review's LISA column height: it exists because
+ * review's middle breakpoint lays the calculator over that column. The exam has no LISA
+ * column and nothing in the exam produces 640. The exam's floating calculator adopts
+ * this box for CONSISTENCY across surfaces (E10b, owner ruling 2026-09-26: practice and
+ * review size the calculator differently; follow review, the newer, and the only fixed
+ * size). Changing it for the exam's own reasons means giving the exam its own constant.
  */
 export const CALC_COLUMN_HEIGHT_PX = 640;
