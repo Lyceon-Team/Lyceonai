@@ -91,6 +91,31 @@ if [ -n "$SECDEF_BAD" ]; then
 fi
 echo "    OK none exposed (self-test flagged its probe)"
 
+echo "==> A.7 actor_id integrity: the grouping identifier is never the identity key"
+# Doc 05E §3 Rule 4 / INV-05E-07 as strengthened 2026-09-25 (SCL-151). A fresh schema has no
+# rows, so a bare run is necessarily clean — which would be a vacuous gate. Plant the exact
+# production defect first and require the check to name it, exactly as the SECDEF gate above
+# self-tests its own probe.
+ACTOR_SELFTEST=$(cd "$ROOT" && psql_db "$DB1" -tA <<'SQL'
+BEGIN;
+INSERT INTO auth.users (id, email) VALUES ('dddddddd-0000-4000-8000-00000000000d','actorgate@ci.test');
+INSERT INTO public.practice_sessions (user_id, actor_id, mode, target_count, platform)
+  VALUES ('dddddddd-0000-4000-8000-00000000000d','dddddddd-0000-4000-8000-00000000000d','flow',5,'web');
+SELECT viol_table || ' :: ' || viol_kind FROM public.actor_id_integrity_violations();
+ROLLBACK;
+SQL
+)
+grep -q "practice_sessions :: actor_id equals the row's own identity value" <<<"$ACTOR_SELFTEST" \
+  || { echo "FAIL: A.7 self-test — the check did not flag actor_id = identity"; sed 's/^/      /' <<<"$ACTOR_SELFTEST"; exit 1; }
+ACTOR_BAD=$(cd "$ROOT" && psql_db "$DB1" -tA -F' : ' -c "SELECT * FROM public.actor_id_integrity_violations();")
+if [ -n "$ACTOR_BAD" ]; then
+  echo "FAIL: actor_id integrity violations (Doc 05E §3 Rule 4 / INV-05E-07):"
+  sed 's/^/      /' <<<"$ACTOR_BAD"
+  echo "      fix: resolve actor_id from profiles.actor_id at the write site; never from the identity."
+  exit 1
+fi
+echo "    OK clean (self-test flagged its probe)"
+
 echo "==> B.1 profiles.id -> auth.users ON DELETE RESTRICT"
 DELTYPE=$(psql_db "$DB1" -tAc "select confdeltype::text from pg_constraint where conrelid='public.profiles'::regclass and contype='f' and confrelid='auth.users'::regclass;")
 [ "$DELTYPE" = "r" ] || { echo "FAIL: profiles.id FK confdeltype='$DELTYPE' (expected 'r' RESTRICT)"; exit 1; }
