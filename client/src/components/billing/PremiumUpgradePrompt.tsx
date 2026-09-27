@@ -48,12 +48,14 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   resolveCtaCopy,
   resolveCtaDestination,
+  type BillingCtaPitch,
   type BillingCtaState,
 } from "@/lib/billing-cta";
 
 /**
- * Kept only because `chat.tsx` and `full-test.tsx` type their own local denial
- * state with it. This component no longer accepts it as a prop.
+ * Kept only because `chat.tsx` types its own local denial state with it
+ * (`full-test.tsx` was deleted by the E1 exam deletion ruling, 2026-09-23).
+ * This component no longer accepts it as a prop.
  *
  * THE PROP IS DELETED, not deprecated (owner ruling 2026-09-03). Three of these
  * five values — `payment_past_due`, `subscription_canceled`,
@@ -84,6 +86,12 @@ export type PremiumUpgradePromptProps = {
    * calendar and a lock on mastery are different disappointments.
    */
   readonly featureBenefit?: string;
+  /**
+   * The surface's own words for a student who has never paid (W4-11: LISA's).
+   * Copy only — the state, the destination and every other state's copy are
+   * unchanged. See `BillingCtaPitch`.
+   */
+  readonly pitch?: BillingCtaPitch;
   readonly mode?: "floating" | "inline";
   readonly onDismiss?: () => void;
 };
@@ -129,6 +137,7 @@ function stateFromBilling(
 export function PremiumUpgradePrompt({
   state,
   featureBenefit,
+  pitch,
   mode = "inline",
   onDismiss,
 }: PremiumUpgradePromptProps) {
@@ -160,7 +169,10 @@ export function PremiumUpgradePrompt({
 
   const resolved: BillingCtaState =
     state ?? stateFromBilling(billingStatus, isGuardian);
-  const copy = resolveCtaCopy(resolved, { featureBenefit });
+  const copy = resolveCtaCopy(resolved, {
+    ...(featureBenefit !== undefined ? { featureBenefit } : {}),
+    ...(pitch !== undefined ? { pitch } : {}),
+  });
 
   /**
    * The destination is a pure function of the role, checked against the role's

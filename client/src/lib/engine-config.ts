@@ -127,11 +127,11 @@ export type EngineConfig = {
     /** Desmos panel + persisted calculator state. On for both. */
     calculator: boolean;
     /**
-     * The "Review tagging is available in full-length exam mode" hint above the
-     * question. Practice-only: on a review session it is both irrelevant and
-     * actively confusing, sitting a few pixels from the word "Review".
+     * LISA beside the question, scoped to the served item (closure plan W4-1,
+     * launch scope 2026-09-25). Review first, practice after: on for review.
+     * The server decides what LISA may see — this only shows the panel.
      */
-    examTagHint: boolean;
+    tutor: boolean;
   };
 };
 
@@ -191,7 +191,7 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
   completionHref: "/practice",
   backHref: "/practice",
   backLabel: "Back to Practice",
-  features: { diagnostic: true, calculator: true, examTagHint: true },
+  features: { diagnostic: true, calculator: true, tutor: false },
 };
 
 /**
@@ -248,5 +248,5 @@ export const REVIEW_ENGINE_CONFIG: EngineConfig = {
   completionHref: "/review",
   backHref: "/review",
   backLabel: "Back to Review",
-  features: { diagnostic: false, calculator: true, examTagHint: false },
+  features: { diagnostic: false, calculator: true, tutor: true },
 };

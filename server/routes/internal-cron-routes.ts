@@ -8,6 +8,11 @@ import {
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
 import { getBreachedCases } from "../services/crisis-review-queue";
+import { notifySlaBreaches } from "../services/crisis-notification";
+import {
+  oidcAuthMiddlewareWithConfigGuard,
+  type OidcConfigReader,
+} from "../../packages/shared/internal-auth/verify-oidc-middleware";
 import {
   sweepStalePracticeSessions,
   STALE_PRACTICE_SESSION_TTL_DAYS,
@@ -123,31 +128,45 @@ router.get(
 );
 
 /**
- * GET /api/internal/crisis-sla-sweep
- * @spec [Doc-03_V3 §21.3] Cloud Scheduler SLA breach sweep. Finds open crisis
- * review cases past their 48h SLA deadline and logs a HIGH alert for each.
- * Does not auto-resolve or auto-escalate — the sweep is an alerting mechanism
- * so ops can prioritize breached cases.
+ * POST /api/internal/crisis-sla-sweep
+ * @spec [Doc-03_V3 §21.3; Doc-03C_V3 §9.3; CC Brief "Close the LISA Vertical" PR 2.2]
+ * @implemented 2026-08-13 | rescheduled 2026-09-23
  *
- * @implemented 2026-08-13
+ * plain English: finds open crisis review cases past their 48h SLA deadline
+ * and logs an ERROR alert for each run that finds any. Does not auto-resolve
+ * or auto-escalate — the sweep is an alerting mechanism so ops can
+ * prioritize breached cases.
  *
- * trade-offs: Alerting only, no auto-action. At V1 scale (founder-staffed),
- * the sweep surfaces overdue cases via structured logging. Cloud Monitoring
- * alert policies pick up the log entries and route to the on-call channel.
- * At V2 scale, this should emit to PagerDuty/Slack directly.
+ * WHY POST + OIDC (was GET + CRON_SECRET). Nothing ever called the GET: it
+ * was in neither vercel.json nor infra/terraform. An hourly cadence (this
+ * handler's documented schedule) cannot live in vercel.json — the Hobby plan
+ * rejects any cron more frequent than daily (see baseline-pending-sweep
+ * below) — so the caller is Cloud Scheduler
+ * (`google_cloud_scheduler_job.crisis_sla_sweep`, infra/terraform/
+ * cloud-scheduler-crisis.tf), which signs an OIDC token rather than sending
+ * CRON_SECRET. The guard is the same one the retention sweep uses: `aud`
+ * must equal CRISIS_SLA_SWEEP_OIDC_AUDIENCE and `email` must equal
+ * CLOUD_TASKS_SERVICE_ACCOUNT. Deliberately NO fallback to
+ * CLOUD_TASKS_OIDC_AUDIENCE: that is a different URL, so a fallback could only
+ * convert a visible "config missing" 500 (ERROR) into an hourly 401.
  *
- * IAM requirements (report only — Karl provisions):
- *   - Cloud Scheduler job: `crisis-sla-sweep` targeting this endpoint.
- *   - Runs every hour (0 * * * *).
- *   - Uses CRON_SECRET for auth (same as other cron endpoints).
+ * ALERTING (closure plan W2-2a, 2026-09-24). A sweep that finds breaches
+ * logs ERROR `sla_breach_detected` AND posts one Slack message naming every
+ * breached case to LYCEON_CRISIS_ALERTS, through the same Cloud Tasks path a
+ * new case uses (notifySlaBreaches). Before this the sweep stopped at the log
+ * line. Breached means unresolved — open OR claimed (in_review) — past the
+ * deadline, and the alert repeats on every sweep while the breach stands;
+ * the turn-path two-minute throttle does not apply to a scheduled sweep.
  */
-router.get(
+const readSlaSweepOidcConfig: OidcConfigReader = () => ({
+  expectedAudience: process.env.CRISIS_SLA_SWEEP_OIDC_AUDIENCE,
+  expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+});
+
+router.post(
   "/crisis-sla-sweep",
-  async (req: Request, res: Response): Promise<void> => {
-    if (!cronAuthorized(req)) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  oidcAuthMiddlewareWithConfigGuard(readSlaSweepOidcConfig),
+  async (_req: Request, res: Response): Promise<void> => {
     try {
       const breachedCases = await getBreachedCases();
 
@@ -162,6 +181,13 @@ router.get(
             caseIds: breachedCases.map((c) => c.id as string),
             oldestDeadline: breachedCases[0]?.sla_deadline,
           },
+        );
+        await notifySlaBreaches(
+          breachedCases.map((c) => ({
+            caseId: String(c.id),
+            status: c.status === "in_review" ? "in_review" : "open",
+            slaDeadline: String(c.sla_deadline),
+          })),
         );
       } else {
         logger.info(

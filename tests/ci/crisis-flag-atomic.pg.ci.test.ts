@@ -225,7 +225,16 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("D1.6 — a source newer than the CHECK constraint degrades, it does not fail (WS-L8 4b)", async () => {
-      // Simulate production running the pre-20260819 constraint.
+      // Simulate production running the pre-20260819 constraint. The live
+      // definition is saved and restored verbatim: a hard-coded restore here
+      // silently dropped every value a later migration adds (found by W3-5's
+      // 'model_armor_dangerous').
+      const saved = await pg.query(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+          WHERE conrelid = 'public.crisis_review_cases'::regclass
+            AND conname = 'crisis_review_cases_source_check'`,
+      );
+      const liveDef = saved.rows[0].def as string;
       await pg.query(
         `ALTER TABLE public.crisis_review_cases
            DROP CONSTRAINT IF EXISTS crisis_review_cases_source_check`,
@@ -249,9 +258,7 @@ describe.skipIf(!PG_AVAILABLE)(
         );
         await pg.query(
           `ALTER TABLE public.crisis_review_cases
-             ADD CONSTRAINT crisis_review_cases_source_check
-             CHECK (source IN ('signature', 'model', 'both', 'classifier_degraded',
-                               'classifier_degraded_no_floor', 'infrastructure_failure'))`,
+             ADD CONSTRAINT crisis_review_cases_source_check ${liveDef}`,
         );
       }
     });
@@ -286,7 +293,8 @@ describe.skipIf(!PG_AVAILABLE)(
       const r = await pg.query(
         `SELECT s AS src, public.crisis_source_fallback(s) AS fb
            FROM unnest(ARRAY['signature','model','both','classifier_degraded',
-                             'classifier_degraded_no_floor','infrastructure_failure']) AS s`,
+                             'classifier_degraded_no_floor','infrastructure_failure',
+                             'model_armor_dangerous']) AS s`,
       );
       const map = Object.fromEntries(
         (r.rows as { src: string; fb: string | null }[]).map((x) => [
@@ -301,7 +309,16 @@ describe.skipIf(!PG_AVAILABLE)(
         classifier_degraded: null,
         classifier_degraded_no_floor: "classifier_degraded",
         infrastructure_failure: "classifier_degraded",
+        // W3-5: deliberately NO fallback — it is not a classifier signal.
+        model_armor_dangerous: null,
       });
+    });
+
+    it("D1.13 — W3-5: source model_armor_dangerous persists as itself (migration 20261003000000)", async () => {
+      const result = await flag({ source: "model_armor_dangerous" });
+      expect(result.already_existed).toBe(false);
+      expect(result.persisted_source).toBe("model_armor_dangerous");
+      expect(await state()).toEqual({ flagged: true, cases: 1 });
     });
 
     it("D1.10 — the function is not callable by anon or authenticated", async () => {

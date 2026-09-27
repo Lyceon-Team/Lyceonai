@@ -21,13 +21,14 @@
  * validator rule V-09 (generated mode only) and is exported here as a constant for copy
  * lookup, not folded into the shape.
  *
- * edge cases: `full_length` scope is `{form_id}` REQUIRED-PRESENT with a NULLABLE value
- * (owner ruling B3, 2026-09-17) — the key is always there, the value is null for Doc 04
- * rotation. A practice mix is an ARRAY and its order is meaningful (the migration's §18
+ * edge cases: `full_length` scope is `{form_id, exam_mode}`, both REQUIRED-PRESENT, with a
+ * NULLABLE `form_id` (owner ruling B3, 2026-09-17; widened by SCL-167) — the key is always
+ * there, the value is null for "the next test". A practice mix is an ARRAY and its order is meaningful (the migration's §18
  * comment: jsonb sorts object keys, so an object would silently re-sort the mix).
  */
 import { z } from "zod";
 import { masterySectionSchema, type MasterySection } from "../mastery-levels.js";
+import { examModeSchema } from "../exam-runtime-schema.js";
 import { err, ok, type Result } from "../result.js";
 
 // ── Sections and canonical domains ──────────────────────────────────────────
@@ -256,13 +257,24 @@ export type ReviewScope = z.infer<typeof reviewScopeSchema>;
 // ── Full-length scope ───────────────────────────────────────────────────────
 
 /**
- * `{"form_id": string | null}`. The CHECK requires the key to be PRESENT
- * (`scope ?& ARRAY['form_id']`, exactly one key) and allows the value to be JSON null,
- * which means "Doc 04 rotation picks the form". Optional-key would be a different shape and
- * the database would reject it (owner ruling B3, 2026-09-17).
+ * `{"form_id": string | null, "exam_mode": "strict" | "lenient"}` — SCL-167 (E9b).
+ *
+ * @spec [Doc_05F §7.4 as widened by SCL-167, §9.4, §17.2] | @implemented [2026-09-25]
+ *
+ * Both keys REQUIRED-PRESENT, exactly as `calendar_scope_is_valid` states them
+ * (`scope ?& ARRAY['form_id','exam_mode']`, exactly two keys). `form_id` is nullable:
+ * null means "the next test", which `exam_next_form_for_student` picks (SCL-168). An
+ * optional key would be a different shape and the database would reject it (owner
+ * ruling B3, 2026-09-17, carried to the second key).
+ *
+ * `exam_mode` is the EXAM ENGINE'S own vocabulary, `examModeSchema` — the enum
+ * `test_sessions.mode` is checked against — reused rather than restated, so the
+ * calendar cannot name a timing the engine does not accept. `strict` is test-day
+ * timing and the default a generated block carries: a calendar-placed full-length is a
+ * rehearsal, and practice timing is the deliberate opt-out (owner ruling, E9b).
  */
 export const fullLengthScopeSchema = z
-  .object({ form_id: z.string().nullable() })
+  .object({ form_id: z.string().nullable(), exam_mode: examModeSchema })
   .strict();
 export type FullLengthScope = z.infer<typeof fullLengthScopeSchema>;
 

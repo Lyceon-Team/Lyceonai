@@ -69,16 +69,17 @@ export function stateKeyForEngine(
     return practiceStateKey(sessionId, clientInstanceId);
   if (blockType === "review")
     return reviewStateKey(sessionId, clientInstanceId);
-  // full_length has no resume shell to warm yet. Null means "navigate without
-  // prefetching", never "prefetch the wrong key".
+  // full_length's session hub reads its state through the exam surface's own query key
+  // (examKeys.session), not a URL key, so there is no URL to warm here. Null means
+  // "navigate without prefetching", never "prefetch the wrong key".
   return null;
 }
 
 /**
- * §15.1 + formula sheet item 12. Review joined practice on 2026-09-22; full-length is still
- * a fail-open stub, so its control reads "Coming soon", is disabled, and never calls launch
- * — asking and being refused is a worse experience than a control that tells the truth up
- * front.
+ * §15.1 + formula sheet item 12. Review joined practice on 2026-09-22 and full-length joined
+ * both in E9b (2026-09-25). An engine that is still a fail-open stub reads "Coming soon", is
+ * disabled, and never calls launch — asking and being refused is a worse experience than a
+ * control that tells the truth up front.
  *
  * This is about the ENGINE being real, not about the flag. `enabled_block_types` decides
  * whether a review block is ever PLANNED; this decides whether one a student holds can be
@@ -98,6 +99,9 @@ export function isLaunchable(block: Pick<PlanBlock, "block_type">): boolean {
 export function prefetchEngineChunk(blockType: PlanBlock["block_type"]): void {
   if (blockType === "practice") void import("@/pages/resume-practice");
   if (blockType === "review") void import("@/pages/resume-review");
+  // E9b: `/tests/:id` mounts the exam's session hub (App.tsx).
+  if (blockType === "full_length")
+    void import("@/features/exam/pages/ExamSessionPage");
 }
 
 /** @deprecated Use `prefetchEngineChunk`. Kept so no call site breaks mid-change. */

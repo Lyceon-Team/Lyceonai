@@ -30,6 +30,10 @@ MIG5="supabase/migrations/20260917120000_deletion_sweeps_and_config.sql"
 DISPATCH="server/lib/notifications/dispatch.ts"
 RECONSENT="server/services/email-reconsent-audit.ts"
 MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
+# The LATEST migration that (re)defines execute_account_deletion_cascade: the one whose body
+# the pipeline keeps. Resolved, not named, so a later redefinition (E6b: 20260930080000) cannot
+# silently turn M2/M3 into plants on an overwritten copy.
+MIGCASCADE="$(grep -l 'FUNCTION public.execute_account_deletion_cascade(' supabase/migrations/*.sql | sort | tail -1)"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
@@ -44,6 +48,10 @@ RETROUTE="server/routes/internal-retention-routes.ts"
 OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
 ANASURF="client/src/lib/analytics-surface.ts"
 APPTSX="client/src/App.tsx"
+VERIF="supabase/migrations/20260930000000_deletion_verification_in_t3.sql"
+SENT="supabase/migrations/20261005000000_actor_id_integrity_sentinel.sql"
+CARVE="supabase/migrations/20261007000000_deletion_verification_drop_deleted_profile_id.sql"
+DIAG="server/routes/diagnostic-routes.ts"
 JSON="/tmp/vitest-deletion-evidence-mutations.json"
 BACKUP="$(mktemp -d)"
 cp "$EXEC" "$BACKUP/exec.ts"
@@ -54,6 +62,7 @@ cp "$MIG5" "$BACKUP/mig5.sql"
 cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
+cp "$MIGCASCADE" "$BACKUP/migcascade.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
@@ -68,6 +77,10 @@ cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
 cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
 cp "$APPTSX"     "$BACKUP/App.tsx"
+cp "$VERIF"      "$BACKUP/deletion_verification_in_t3.sql"
+cp "$SENT"       "$BACKUP/actor_id_integrity_sentinel.sql"
+cp "$CARVE"      "$BACKUP/drop_deleted_profile_id.sql"
+cp "$DIAG"       "$BACKUP/diagnostic-routes.ts"
 # ONE restore covering every file any mutation below may touch, hoisted here so the trap is
 # armed before the first plant. A per-block restore() would leave a mutation on disk if a later
 # block redefined it.
@@ -80,6 +93,7 @@ restore() {
   cp "$BACKUP/dispatch.ts" "$DISPATCH"
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
+  cp "$BACKUP/migcascade.sql" "$MIGCASCADE"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
@@ -94,6 +108,10 @@ restore() {
   cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
   cp "$BACKUP/analytics-surface.ts" "$ANASURF"
   cp "$BACKUP/App.tsx" "$APPTSX"
+  cp "$BACKUP/deletion_verification_in_t3.sql" "$VERIF"
+  cp "$BACKUP/actor_id_integrity_sentinel.sql" "$SENT"
+  cp "$BACKUP/drop_deleted_profile_id.sql" "$CARVE"
+  cp "$BACKUP/diagnostic-routes.ts" "$DIAG"
 }
 trap 'restore; rm -rf "$BACKUP"' EXIT
 fails=0
@@ -147,18 +165,19 @@ echo "==> (M1) remove ORDER BY profile_id from the executor's due-request select
 plant M1 "$EXEC" 's.replace(".order(\"profile_id\", { ascending: true })", "")'
 expect_red M1 "C3.3 rank"
 
-# Targets MIGFK, not MIG: migration 20260917130000 REPLACES execute_account_deletion_cascade to
-# drop the steps the foreign keys now perform, so the cascade body lives there. Planting into the
-# older copy would mutate a function that the pipeline immediately overwrites — the same way M9
-# silently stopped biting when Phase 3 landed.
+# Targets MIGCASCADE, not MIG: the cascade body the pipeline keeps is the one in the LATEST
+# migration that replaces execute_account_deletion_cascade (20260917130000, then E6b's
+# 20260930080000). Planting into an older copy mutates a function the pipeline immediately
+# overwrites — the same way M9 silently stopped biting when Phase 3 landed, and M2/M3 did when
+# E6b redefined the cascade.
 echo "==> (M2) write evidence rows inside the cascade transaction (shared xmin)"
 # The consent rows, not the log rows: T3 re-stamps the log rows afterwards, which would hide
 # the leak from a current-version xmin read; the consent rows are never touched after T1.
-plant M2 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
+plant M2 "$MIGCASCADE" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.deletion_consent_evidence SET minor = minor;\n", 1)'
 expect_red M2 "C3.2 cross-universe xmin"
 
 echo "==> (M3) touch a live student's consent row inside the guardian's cascade transaction"
-plant M3 "$MIGFK" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
+plant M3 "$MIGCASCADE" 's.replace("    ON CONFLICT (actor_id) DO NOTHING;\n", "    ON CONFLICT (actor_id) DO NOTHING;\n    UPDATE public.guardian_consent_requests SET guardian_email = guardian_email;\n", 1)'
 expect_red M3 "C3.4 guardian pre-clear"
 
 echo "==> (M4) give the log the genesis-style created_at timestamptz column"
@@ -240,8 +259,13 @@ echo "==> (M16) the audit_logs guard silently swallows the mutation instead of r
 plant M16 "$MIG3" 's.replace("  RAISE EXCEPTION \x27Table % is append-only; UPDATE and DELETE are not permitted\x27, TG_TABLE_NAME;", "  RETURN NULL;", 1)'
 expect_red M16 "P3.1 audit_logs refuses"
 
+# Targets VERIF, not MIG3: migration 20260930000000 REPLACES complete_deletion_log to add the
+# T3 verification write, so this audit insert now lives there. Caught by this harness on the
+# same day the replacement landed — the third time a mutation has been left pointing at a body
+# a later migration overwrites (see M2 and M9). The rule is the same each time: plant into the
+# LAST migration that defines the function, not the one that first did.
 echo "==> (M17) profile_hard_deleted written WITH the deleted profile ids"
-plant M17 "$MIG3" 's.replace("  SELECT NULL, NULL, \x27profile_hard_deleted\x27, NULL,", "  SELECT c.profile_id, c.profile_id, \x27profile_hard_deleted\x27, NULL,", 1)'
+plant M17 "$CARVE" 's.replace("  SELECT NULL, NULL, \x27profile_hard_deleted\x27, NULL,", "  SELECT c.profile_id, c.profile_id, \x27profile_hard_deleted\x27, NULL,", 1)'
 expect_red M17 "P3.5 profile_hard_deleted"
 
 echo "==> (M18) the evidence sweep DELETES the row instead of stripping it"
@@ -352,15 +376,17 @@ expect_red M30 "P6.2 the crisis case survives the deletion"
 
 # The manifest hash must be DERIVED from the record, not stamped. A constant passes every
 # other assertion in the file and proves nothing about the record's integrity.
+# Targets VERIF, not MIG6, for the same reason as M17: 20260930000000 replaces
+# record_deletion_verification to add the §6.3 shape validation, so the hash line is there now.
 echo "==> (M31) proof_manifest_ref is a constant instead of a digest of the record"
-plant M31 "$MIG6" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
+plant M31 "$CARVE" "s.replace(\"v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');\", \"v_hash := 'sha256:constant';\", 1)"
 expect_red M31 "P6.5 a verification record is written"
 
 # The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
 # verification record is no longer the only place it survives.
 echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
 plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
-expect_red M32 "P6.6 the deleted profile's uuid survives ONLY on the evidence side"
+expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
 
 # =============================================================================
 # Operational-log retention (v3 §6.7 / SCL-101) — B1
@@ -633,6 +659,74 @@ expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
 echo "==> (M89) /tutor is allowed although its SPA route is role-gated"
 plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
 expect_red M89 "E1.11 — /tutor is public AND role-gated, and deny wins"
+
+# ── The verification record's wiring ────────────────────────────────────────────
+# These four exist because the mechanism they guard was BUILT, SHAPED CORRECTLY AND TESTED,
+# and still produced nothing in production: `deletion_verification_records` had a table, a
+# validated writer and a passing Phase 6 suite, and no path from the executor ever reached the
+# writer. M90 is that defect, planted deliberately — the mutation that would have caught the
+# 2026-09-23 deletion instead of the deletion catching us.
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+echo "==> (M90) T3 scans and then throws the result away (the 2026-09-23 defect, planted)"
+# Retargeted at CARVE 2026-09-25: migration 20261007000000 replaces complete_deletion_log,
+# record_deletion_verification, reconcile_deletion_log and verify_deletion_layers to drop the
+# deleted_profile_id carve-out, so all four bodies live there now. Six mutations stopped biting
+# in one change; the harness caught every one. Same rule as M2/M9/M17/M31/M96 — plant into the
+# LAST migration that defines the function.
+plant M90 "$CARVE" 's.replace("    PERFORM public.record_deletion_verification(v_comp.log_id, v_layers, v_outcome);\n", "", 1)'
+expect_red M90 "C3.9 verification record"
+
+echo "==> (M91) the outcome stops depending on the identity sweep"
+plant M91 "$CARVE" 's.replace("      WHEN (v_layers -> \x27identity\x27 ->> \x27verified\x27) = \x27true\x27", "      WHEN true", 1)'
+expect_red M91 "C3.10 a deletion that leaves residue"
+
+echo "==> (M92) the reconciler completes a row and records nothing for it"
+plant M92 "$CARVE" 's.replace("PERFORM public.record_deletion_verification(v_id, v_unverifiable, \x27fail\x27);", "PERFORM 1;", 1)'
+expect_red M92 "C3.6 rolled-back cascade"
+
+SUITE="tests/ci/deletion-phase-6.pg.ci.test.ts"
+echo "==> (M93) the write path accepts a pass whose in-scope layers are not verified"
+plant M93 "$CARVE" 's.replace("  IF p_outcome = \x27pass\x27 THEN", "  IF false THEN", 1)'
+expect_red M93 "P6.7 the write path refuses a pass"
+
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+# ── actor_id: the grouping identifier must never be the identity key ────────────
+# M94 is the mutation the owner brief names: revert the sentinel to the nullity-only check it
+# shipped with, and the deletion of a profile whose rows carry actor_id = its own id goes
+# through without complaint. That is the state production was in from the day the diagnostic
+# route was written until 2026-09-25.
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
+
+# Targets MIGCASCADE, not SENT: 20261008000000 REPLACES execute_account_deletion_cascade to
+# restore E9's exam_child_tables walk, so the sentinel body lives there now. Planting into
+# 20261005000000 mutates a function the pipeline immediately overwrites — the SEVENTH time this
+# harness has caught that (M2, M9, M17, M31, M90-M93 and M96 carry the same note). M95 still
+# targets SENT, correctly: actor_id_integrity_violations() is defined there and nothing
+# redefines it.
+echo "==> (M94) the sentinel goes back to asking only whether actor_id IS NULL"
+plant M94 "$MIGCASCADE" 's.replace("          \x27AND (actor_id IS NULL OR actor_id <> $2)\x27,", "          \x27AND actor_id IS NULL\x27,", 1)'
+expect_red M94 "C3.11 the sentinel refuses"
+
+echo "==> (M95) the integrity check stops comparing actor_id to the row's own identity"
+plant M95 "$SENT" 's.replace("    EXECUTE format(\x27SELECT count(*) FROM public.%1$I WHERE %2$I IS NOT NULL AND actor_id = %2$I\x27,\n                   r.tbl, v_idcol) INTO v_n;", "    v_n := 0;", 1)'
+expect_red M95 "C3.11 the sentinel refuses"
+
+# Targets CARVE, not VERIF: 20261007000000 REPLACES verify_deletion_layers to drop the
+# exclusion, so the body lives there now. Planting into 20260930000000 mutates a function the
+# pipeline immediately overwrites — the FOURTH time this harness has caught that (M2, M9, M17
+# and M31 carry the same note). The rule, again: plant into the LAST migration that defines it.
+echo "==> (M96) the scan stops naming WHERE the residue is"
+plant M96 "$CARVE" 's.replace("      \x27residual_columns\x27, to_jsonb(v_residual),", "      \x27residual_columns\x27, to_jsonb(ARRAY[]::text[]),", 1)'
+expect_red M96 "C3.12 the scan reports"
+
+SUITE="tests/ci/actor-id-writer.contract.test.ts"
+echo "==> (M97) the diagnostic writer goes back to using the identity as the actor"
+plant M97 "$DIAG" 's.replace("  const actorId = user?.actor_id;", "  const actorId = userId;", 1)'
+expect_red M97 "D1.1 the diagnostic route resolves actor_id from the profile"
+
+SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 
 echo "==> (29k) restored: the analytics-surface suite must be green again"
 again="$(run_suite)"

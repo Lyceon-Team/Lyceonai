@@ -35,3 +35,14 @@ variable "app_base_url" {
     error_message = "app_base_url must be an https origin with no path and no trailing slash."
   }
 }
+
+variable "bff_service_account_email" {
+  description = <<-EOT
+    Identity of the Vercel BFF — the `client_email` inside GCP_SERVICE_ACCOUNT_JSON.
+    Holds roles/cloudtasks.enqueuer (granted out of band 2026-09-23) and, via
+    cloud-tasks.tf, actAs on lisa-cloud-tasks so it can create OIDC-signed tasks.
+    Verify the default against the key actually deployed before applying.
+  EOT
+  type        = string
+  default     = "lyceon-server-sa@replit-cop.iam.gserviceaccount.com"
+}

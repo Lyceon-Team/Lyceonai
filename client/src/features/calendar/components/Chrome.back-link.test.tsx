@@ -29,6 +29,7 @@ function renderTopBar(backHref: string, path = "/calendar") {
   return render(
     <Router hook={hook}>
       <TopBar
+        viewer="student"
         backHref={backHref}
         rangeLabelText="21 – 27 September"
         view="week"

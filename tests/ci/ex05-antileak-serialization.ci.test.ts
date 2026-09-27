@@ -15,67 +15,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 describe("EX-05: difficultyBucket stripped from client-facing serialization", () => {
-  it("SubmitModuleResult.nextModule does NOT contain difficultyBucket", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../apps/api/src/services/fullLengthExam.ts"),
-      "utf-8",
-    );
-    const submitResultBlock = src.match(
-      /export interface SubmitModuleResult\s*\{[\s\S]*?\n\}/,
-    );
-    expect(submitResultBlock).not.toBeNull();
-    expect(submitResultBlock![0]).not.toContain("difficultyBucket");
-  });
-
-  it("ExamReviewModule does NOT contain difficultyBucket", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../apps/api/src/services/fullLengthExam.ts"),
-      "utf-8",
-    );
-    const reviewModuleBlock = src.match(
-      /export interface ExamReviewModule\s*\{[\s\S]*?\n\}/,
-    );
-    expect(reviewModuleBlock).not.toBeNull();
-    expect(reviewModuleBlock![0]).not.toContain("difficultyBucket");
-  });
-
-  it("review mapping does NOT populate difficultyBucket", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../apps/api/src/services/fullLengthExam.ts"),
-      "utf-8",
-    );
-    const reviewFn = src.match(
-      /async function getExamReviewAfterCompletion[\s\S]*?^}/m,
-    );
-    expect(reviewFn).not.toBeNull();
-    expect(reviewFn![0]).not.toMatch(/difficultyBucket\s*:/);
-    expect(reviewFn![0]).not.toMatch(/difficulty_bucket/);
-  });
-
-  it("FullLengthReviewView.tsx does NOT reference difficultyBucket", () => {
-    const src = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../client/src/components/full-length-exam/FullLengthReviewView.tsx",
-      ),
-      "utf-8",
-    );
-    expect(src).not.toContain("difficultyBucket");
-    expect(src).not.toContain("difficulty_bucket");
-  });
-
-  it("ExamRunner.tsx does NOT reference difficultyBucket", () => {
-    const src = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../client/src/components/full-length-exam/ExamRunner.tsx",
-      ),
-      "utf-8",
-    );
-    expect(src).not.toContain("difficultyBucket");
-    expect(src).not.toContain("difficulty_bucket");
-  });
-
+  // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+  // pending Doc 04 rebuild. The five file-specific assertions that lived here read
+  // apps/api/src/services/fullLengthExam.ts, FullLengthReviewView.tsx and
+  // ExamRunner.tsx, all deleted. The client-wide scan below is engine-agnostic and
+  // stays: it still proves no client surface names difficultyBucket.
   it("no client-facing file in client/ references difficultyBucket", () => {
     const clientDir = path.resolve(__dirname, "../../client/src");
     const violations: string[] = [];

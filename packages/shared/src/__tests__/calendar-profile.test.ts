@@ -59,12 +59,28 @@ describe("study profile read shape", () => {
     expect(studyProfileSchema.safeParse({ ...row, study_days_mask: 0 }).success).toBe(false);
   });
 
-  it("refuses a completed setup with no target score (setup_requires_target_score)", () => {
+  // INVERTED 2026-09-24 (SCL-130, R-08-17 reversed). This case used to assert the
+  // opposite — that a completed setup with no target score was unconstructible, mirroring
+  // the `setup_requires_target_score` CHECK. 20261002000000 drops that CHECK because
+  // nothing in setup is required, so the very profile this once refused is now the one a
+  // student who presses straight through ends up with. Asserting it POSITIVELY is the
+  // point: a refinement quietly reintroduced here would put the field back in front of
+  // every client, since this schema is what they all parse through.
+  it("ACCEPTS a completed setup with no target score — nothing in setup is required", () => {
     const parsed = studyProfileSchema.safeParse({ ...row, target_score: null });
-    expect(parsed.success).toBe(false);
+    expect(parsed.success).toBe(true);
   });
 
-  it("allows a target score with setup not yet complete", () => {
+  it("accepts a completed setup with BOTH target fields null — press straight through", () => {
+    const parsed = studyProfileSchema.safeParse({
+      ...row,
+      target_score: null,
+      target_exam_date: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("allows a null target score with setup not yet complete", () => {
     expect(
       studyProfileSchema.safeParse({ ...row, target_score: null, setup_completed_at: null })
         .success,

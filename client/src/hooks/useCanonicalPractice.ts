@@ -807,5 +807,7 @@ export function useCanonicalPractice(
     submitBlocked,
     runtimeDisabled,
     setForceTakeover,
+    /** The served item's id — what a scoped LISA conversation anchors to (W4-1). */
+    sessionItemId,
   };
 }

@@ -70,6 +70,52 @@ RLS_OFF=$(psql_db "$DB1" -tAc "select count(*) from pg_tables where schemaname='
 [ "$RLS_OFF" = "0" ] || { echo "FAIL: $RLS_OFF public table(s) without RLS"; exit 1; }
 echo "    OK all RLS-enabled"
 
+echo "==> A.6 no public SECURITY DEFINER function is exposed to anon / unguarded to authenticated"
+# Self-test first: a deliberately unrevoked SECURITY DEFINER function must be
+# flagged, or the check proves nothing. Created and dropped in one transaction.
+SELFTEST=$(cd "$ROOT" && psql_db "$DB1" -tA <<'SQL'
+BEGIN;
+CREATE FUNCTION public.__secdef_gate_selftest() RETURNS integer
+  LANGUAGE sql SECURITY DEFINER AS $f$ SELECT 1 $f$;
+\i scripts/ci/secdef-exposure.sql
+ROLLBACK;
+SQL
+)
+grep -q '__secdef_gate_selftest' <<<"$SELFTEST" || { echo "FAIL: A.6 self-test — the gate did not flag an unrevoked SECURITY DEFINER function"; exit 1; }
+SECDEF_BAD=$(cd "$ROOT" && psql_db "$DB1" -tA -F' : ' -f scripts/ci/secdef-exposure.sql)
+if [ -n "$SECDEF_BAD" ]; then
+  echo "FAIL: SECURITY DEFINER functions reachable at /rest/v1/rpc without a caller check:"
+  sed 's/^/      /' <<<"$SECDEF_BAD"
+  echo "      fix: REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated; GRANT EXECUTE ... TO service_role;"
+  exit 1
+fi
+echo "    OK none exposed (self-test flagged its probe)"
+
+echo "==> A.7 actor_id integrity: the grouping identifier is never the identity key"
+# Doc 05E §3 Rule 4 / INV-05E-07 as strengthened 2026-09-25 (SCL-151). A fresh schema has no
+# rows, so a bare run is necessarily clean — which would be a vacuous gate. Plant the exact
+# production defect first and require the check to name it, exactly as the SECDEF gate above
+# self-tests its own probe.
+ACTOR_SELFTEST=$(cd "$ROOT" && psql_db "$DB1" -tA <<'SQL'
+BEGIN;
+INSERT INTO auth.users (id, email) VALUES ('dddddddd-0000-4000-8000-00000000000d','actorgate@ci.test');
+INSERT INTO public.practice_sessions (user_id, actor_id, mode, target_count, platform)
+  VALUES ('dddddddd-0000-4000-8000-00000000000d','dddddddd-0000-4000-8000-00000000000d','flow',5,'web');
+SELECT viol_table || ' :: ' || viol_kind FROM public.actor_id_integrity_violations();
+ROLLBACK;
+SQL
+)
+grep -q "practice_sessions :: actor_id equals the row's own identity value" <<<"$ACTOR_SELFTEST" \
+  || { echo "FAIL: A.7 self-test — the check did not flag actor_id = identity"; sed 's/^/      /' <<<"$ACTOR_SELFTEST"; exit 1; }
+ACTOR_BAD=$(cd "$ROOT" && psql_db "$DB1" -tA -F' : ' -c "SELECT * FROM public.actor_id_integrity_violations();")
+if [ -n "$ACTOR_BAD" ]; then
+  echo "FAIL: actor_id integrity violations (Doc 05E §3 Rule 4 / INV-05E-07):"
+  sed 's/^/      /' <<<"$ACTOR_BAD"
+  echo "      fix: resolve actor_id from profiles.actor_id at the write site; never from the identity."
+  exit 1
+fi
+echo "    OK clean (self-test flagged its probe)"
+
 echo "==> B.1 profiles.id -> auth.users ON DELETE RESTRICT"
 DELTYPE=$(psql_db "$DB1" -tAc "select confdeltype::text from pg_constraint where conrelid='public.profiles'::regclass and contype='f' and confrelid='auth.users'::regclass;")
 [ "$DELTYPE" = "r" ] || { echo "FAIL: profiles.id FK confdeltype='$DELTYPE' (expected 'r' RESTRICT)"; exit 1; }

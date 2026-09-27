@@ -63,10 +63,15 @@
  *                                is nobody today (`profiles.country_code` is
  *                                null on 0 of 115 rows). Adding it would change
  *                                no outcome until that column is populated.
- *   customer.updated             NOT WIRED. The egress case, and it belongs to
- *                                SCL-047 rather than here: it needs
- *                                `profiles.country_code` to be written first,
- *                                which is SCL-046's own owner action.
+ *   customer.updated             WIRED since (SCL-047): `handleCustomerUpdated`
+ *                                sets cancel_at_period_end when the billing
+ *                                country leaves Tier-1. Access runs to period
+ *                                end. (This line said NOT WIRED until
+ *                                2026-09-25, after the handler had landed.)
+ *
+ * `profiles.country_code` IS WRITTEN since 2026-09-25 (closure plan W3-3): the
+ * entitlement writers in `webhook-handler.ts` record the country this gate
+ * approved, on every grant, and the crisis resources are chosen from it.
  *
  * The gate is INERT UNTIL THE OWNER APPLIES `docs/plans/Owner_DML_tier_1_countries.sql`,
  * and inert means DENY. That is the fail-closed default ruled on 2026-08-27,

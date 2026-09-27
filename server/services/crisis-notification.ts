@@ -29,9 +29,12 @@
  *     roles/cloudtasks.enqueuer to that service identity.
  *
  * edge cases:
- *   - No GCP credentials available (local dev): skip silently.
+ *   - No GCP credentials, or the token mint fails: log ERROR with the reason,
+ *     skip. Never throws (the mint used to throw into the turn's catch-all).
  *   - Cloud Tasks API failure: log error, do not throw.
- *   - Missing env vars: log warning on first call, skip.
+ *   - LYCEON_CRISIS_ALERTS unset: log ERROR, skip.
+ *   - Queue region is CLOUD_TASKS_LOCATION (Terraform `var.region`), never
+ *     VERTEX_LOCATION.
  *
  * IAM requirements (report only — Karl provisions):
  *   - Service account: Express server identity needs `roles/cloudtasks.enqueuer`
@@ -40,19 +43,20 @@
  *   - Target: LYCEON_CRISIS_ALERTS must be a Slack incoming webhook URL.
  */
 import { logger } from "../logger";
+import {
+  cloudTasksApiUrl,
+  resolveCloudTasksAccess,
+} from "./cloud-tasks-enqueue";
+import type { CrisisSource } from "../../packages/shared/src/crisis-flag-schema";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
 type CrisisNotificationPayload = {
   caseId: string;
   conversationId: string;
-  source:
-    | "signature"
-    | "model"
-    | "both"
-    | "classifier_degraded"
-    | "classifier_degraded_no_floor"
-    | "infrastructure_failure";
+  // The shared enum, not a hand-written copy: a copy here is how a new
+  // database source value reaches the alert with no label.
+  source: CrisisSource;
   slaDeadline: string;
   timestamp: string;
 };
@@ -63,13 +67,6 @@ export type { CrisisNotificationPayload };
 
 const CLOUD_TASKS_QUEUE_NAME =
   process.env.CRISIS_CLOUD_TASKS_QUEUE ?? "lisa-crisis-notification";
-
-const GCP_PROJECT_ID =
-  process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
-
-const GCP_LOCATION = process.env.VERTEX_LOCATION ?? "us-central1";
-
-const NOTIFICATION_TARGET_URL = process.env.LYCEON_CRISIS_ALERTS;
 
 // ── Source Labels ─────────────────────────────────────────────────────
 
@@ -83,6 +80,8 @@ const SOURCE_LABELS: Readonly<
   classifier_degraded_no_floor:
     "Classifier degraded, no crisis signatures — fail closed",
   infrastructure_failure: "Infrastructure failure — fail closed",
+  model_armor_dangerous:
+    "Model Armor blocked input (dangerous) — not a clinical signal; review",
 };
 
 // ── Slack Payload Builder ─────────────────────────────────────────────
@@ -96,9 +95,7 @@ const SOURCE_LABELS: Readonly<
  */
 function buildSlackPayload(payload: CrisisNotificationPayload): string {
   const siteUrl = (process.env.PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
-  const reviewUrl = siteUrl
-    ? `${siteUrl}/admin/crisis-review/${payload.caseId}`
-    : `(PUBLIC_SITE_URL not configured — case ID: ${payload.caseId})`;
+  const reviewUrl = `${siteUrl}/admin/crisis-review/${payload.caseId}`;
 
   const reason = SOURCE_LABELS[payload.source];
 
@@ -108,12 +105,19 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
 
   const linkLine = siteUrl
     ? `<${reviewUrl}|Review this case →>`
-    : `Case ID: \`${payload.caseId}\``;
+    : `(PUBLIC_SITE_URL not configured — no review link)`;
 
+  // @spec [SCL-025(c); closure plan W2-6] | @implemented [2026-09-24]
+  // The case id is printed in full, as the SLA breach alert already does: it
+  // is the key an operator looks up in the admin surface and the database.
+  // Before this it appeared only inside the review link's URL, while the
+  // visible id was the conversation's — the wrong row to look up. Both are
+  // opaque UUIDs (metadata, not PII); the conversation id stays for context.
   const slackBody = {
     text: [
       `🚨 *Crisis Review Case*`,
       ``,
+      `*Case:* \`${payload.caseId}\``,
       `*Reason:* ${reason}`,
       `*SLA Deadline:* ${slaFormatted}`,
       `*Conversation:* \`${payload.conversationId}\``,
@@ -123,34 +127,6 @@ function buildSlackPayload(payload: CrisisNotificationPayload): string {
   };
 
   return JSON.stringify(slackBody);
-}
-
-// ── GCP Auth Helper ───────────────────────────────────────────────────
-
-/**
- * Gets an access token from the GCP metadata server (Cloud Run environment).
- * Returns null if not running on GCP (local dev).
- */
-async function getGcpAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: AbortSignal.timeout(2000),
-      },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { access_token?: string };
-    return data.access_token ?? null;
-  } catch {
-    // Not running on GCP — expected in local dev
-    return null;
-  }
 }
 
 // ── Cloud Tasks Enqueue ───────────────────────────────────────────────
@@ -169,44 +145,135 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function notifyCrisisEvent(
   payload: CrisisNotificationPayload,
 ): Promise<void> {
-  if (!GCP_PROJECT_ID) {
-    logger.warn(
-      "CRISIS_NOTIFICATION",
-      "missing_project_id",
-      "GCP_PROJECT_ID not set; crisis notification skipped",
-    );
-    return;
-  }
+  logger.info(
+    "CRISIS_NOTIFICATION",
+    "dispatch_entered",
+    "crisis notification dispatch entered",
+    { caseId: payload.caseId, source: payload.source },
+  );
+  await enqueueSlackAlert(buildSlackPayload(payload), {
+    caseId: payload.caseId,
+  });
+}
 
-  if (!NOTIFICATION_TARGET_URL) {
-    logger.warn(
+// ── SLA breach alert (W2-2a) ──────────────────────────────────────────
+
+/** Metadata-only view of a breached case — no conversation content. */
+export type BreachedCaseSummary = {
+  caseId: string;
+  status: "open" | "in_review";
+  slaDeadline: string;
+};
+
+/** Cases listed individually in one breach message; the rest are counted. */
+const BREACH_ALERT_MAX_LISTED = 20;
+
+function buildSlaBreachSlackPayload(
+  cases: readonly BreachedCaseSummary[],
+  now: Date,
+): string {
+  const siteUrl = (process.env.PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
+  const lines = cases.slice(0, BREACH_ALERT_MAX_LISTED).map((c) => {
+    const overdueHours = Math.max(
+      0,
+      Math.floor(
+        (now.getTime() - new Date(c.slaDeadline).getTime()) / 3_600_000,
+      ),
+    );
+    const state =
+      c.status === "in_review" ? "claimed, unresolved" : "unclaimed";
+    const ref = siteUrl
+      ? `<${siteUrl}/admin/crisis-review/${c.caseId}|${c.caseId}>`
+      : `\`${c.caseId}\``;
+    return `• ${ref} — ${state}, ${overdueHours}h past SLA`;
+  });
+  const extra = cases.length - BREACH_ALERT_MAX_LISTED;
+  if (extra > 0) lines.push(`• …and ${extra} more`);
+
+  return JSON.stringify({
+    text: [
+      `⏰ *Crisis review SLA breached — ${cases.length} case(s)*`,
+      ``,
+      ...lines,
+    ].join("\n"),
+  });
+}
+
+/**
+ * @spec [Doc-03_V3 §21.3; closure plan W2-2a] | @implemented [2026-09-24]
+ *
+ * plain English: posts ONE Slack message per sweep naming every breached
+ * case, through the same Cloud Tasks → LYCEON_CRISIS_ALERTS path a new case
+ * uses. Before this the sweep logged `sla_breach_detected` at ERROR and
+ * stopped, so escalation ended in a log line.
+ *
+ * Policy (owner view, 2026-09-24): a breach notifies on every sweep while it
+ * stands, claimed or not — a claimed-but-unresolved case past its deadline is
+ * exactly what a breach means. The turn-path throttle
+ * (evaluateNotificationPolicy) is NOT applied: it suppresses repeat SIGNALS
+ * within two minutes, and an hourly sweep is not a signal.
+ *
+ * Metadata only: case id, claimed/unclaimed, hours overdue, admin link. Never
+ * throws; every skip logs ERROR (see enqueueSlackAlert).
+ */
+export async function notifySlaBreaches(
+  cases: readonly BreachedCaseSummary[],
+  now: Date = new Date(),
+): Promise<void> {
+  if (cases.length === 0) return;
+  await enqueueSlackAlert(buildSlaBreachSlackPayload(cases, now), {
+    alert: "sla_breach",
+    caseIds: cases.map((c) => c.caseId),
+  });
+}
+
+// ── The one enqueue path ──────────────────────────────────────────────
+
+/**
+ * Enqueues a Slack message to LYCEON_CRISIS_ALERTS via Cloud Tasks. Shared by
+ * the new-case alert and the SLA breach alert so there is one delivery path.
+ * `context` is metadata only (case ids); it is attached to every log line.
+ */
+async function enqueueSlackAlert(
+  slackPayload: string,
+  context: Record<string, unknown>,
+): Promise<void> {
+  // @spec [Doc-03_V3 §21.2 step 5; CC Brief "Close the LISA Vertical" PR 2.1]
+  // Every skip below is ERROR, not WARN: a crisis alert that is not sent is an
+  // operator-facing failure, and only error-level entries reach the error
+  // monitor (server/logger.ts). These guards used to log at WARN, which is why
+  // the queue could receive zero tasks without anyone being told.
+  const targetUrl = process.env.LYCEON_CRISIS_ALERTS;
+  if (!targetUrl) {
+    logger.error(
       "CRISIS_NOTIFICATION",
       "missing_target_url",
-      "LYCEON_CRISIS_ALERTS not set; crisis notification skipped",
+      "LYCEON_CRISIS_ALERTS not set; crisis notification NOT sent",
+      undefined,
+      context,
     );
     return;
   }
 
-  const accessToken = await getGcpAccessToken();
-  if (!accessToken) {
-    logger.debug(
+  const access = await resolveCloudTasksAccess();
+  if (!access.ok) {
+    logger.error(
       "CRISIS_NOTIFICATION",
-      "no_gcp_credentials",
-      "GCP credentials not available (local dev); crisis notification skipped",
+      "gcp_access_unavailable",
+      "GCP credentials or access token unavailable; crisis notification NOT sent",
+      { reason: access.reason, detail: access.detail },
+      context,
     );
     return;
   }
 
-  const queuePath = `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/queues/${CLOUD_TASKS_QUEUE_NAME}`;
-  const apiUrl = `https://cloudtasks.googleapis.com/v2/${queuePath}/tasks`;
-
-  const slackPayload = buildSlackPayload(payload);
+  const apiUrl = cloudTasksApiUrl(access.projectId, CLOUD_TASKS_QUEUE_NAME);
 
   const taskBody = {
     task: {
       httpRequest: {
         httpMethod: "POST",
-        url: NOTIFICATION_TARGET_URL,
+        url: targetUrl,
         headers: {
           "Content-Type": "application/json",
         },
@@ -219,7 +286,7 @@ export async function notifyCrisisEvent(
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${access.accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(taskBody),
@@ -233,7 +300,7 @@ export async function notifyCrisisEvent(
         "enqueue_failed",
         "Cloud Tasks enqueue failed; ops notification may be delayed",
         { statusCode: response.status, errorText },
-        { caseId: payload.caseId },
+        context,
       );
       return;
     }
@@ -242,7 +309,7 @@ export async function notifyCrisisEvent(
       "CRISIS_NOTIFICATION",
       "enqueued",
       "crisis notification task enqueued to Cloud Tasks",
-      { caseId: payload.caseId, queue: CLOUD_TASKS_QUEUE_NAME },
+      { ...context, queue: CLOUD_TASKS_QUEUE_NAME },
     );
   } catch (err: unknown) {
     logger.error(
@@ -250,7 +317,7 @@ export async function notifyCrisisEvent(
       "enqueue_error",
       "failed to enqueue crisis notification task",
       err instanceof Error ? err : undefined,
-      { caseId: payload.caseId },
+      context,
     );
     // Fire-and-forget: do not throw
   }

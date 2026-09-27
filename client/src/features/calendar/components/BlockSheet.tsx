@@ -7,8 +7,8 @@
  * edit carrying the whole day, and a started block shows why it cannot be changed.
  *
  * ENGINE-SPECIFIC FORMS, AS §17.2 REQUIRES. Practice gets domain and count rows; review gets
- * an items count; full-length gets neither, because Doc 04 assigns its form and this surface
- * has no say in it. The three are separate branches rather than one form with hidden fields:
+ * an items count; full-length gets the test and the timing (SCL-167, E9b), through the same
+ * `FullLengthFields` the create sheet renders. The three are separate branches rather than one form with hidden fields:
  * a field that is present-but-hidden is a field someone will later un-hide for the wrong
  * block type.
  *
@@ -27,15 +27,15 @@
  */
 import { useState } from "react";
 import { prefetchEngineChunk } from "../api/launch";
-import type { CanonicalDomain, PlanBlock } from "@lyceon/shared/calendar";
-import { domainsForSection } from "../lib/blocks";
+import { FullLengthFields } from "./FullLengthFields";
+import type {
+  CanonicalDomain,
+  FullLengthScope,
+  PlanBlock,
+} from "@lyceon/shared/calendar";
 import { longDate } from "../lib/dates";
-import {
-  MAX_DOMAINS_PER_BLOCK,
-  MIX_GRANULARITY,
-  mixCountChoices,
-  reviewCountChoices,
-} from "../lib/members";
+import { reviewCountChoices } from "../lib/members";
+import { MixRows, type MixEntry } from "./MixRows";
 import { TONE_LABEL } from "../lib/blocks";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 
@@ -44,6 +44,8 @@ export type BlockSheetActions = {
     mix: readonly { domain: CanonicalDomain; count: number }[],
   ) => void;
   onEditReviewCount: (count: number) => void;
+  /** SCL-167: the test and the timing of a full-length block. */
+  onEditFullLength: (scope: FullLengthScope) => void;
   onRemove: () => void;
   onLaunch: () => void;
   onDoItNow: () => void;
@@ -61,6 +63,11 @@ export type BlockSheetProps = {
   actions?: BlockSheetActions;
 };
 
+/**
+ * The editing path's wrapper over the shared rows: it pulls the mix out of the stored block
+ * and hands the control what it needs. The rows themselves live in `MixRows` so §17.2's
+ * create form renders exactly the same editor — see that file's note.
+ */
 function MixEditor({
   block,
   disabled,
@@ -68,9 +75,7 @@ function MixEditor({
 }: {
   block: PlanBlock & { block_type: "practice" };
   disabled: boolean;
-  onChange: (
-    mix: readonly { domain: CanonicalDomain; count: number }[],
-  ) => void;
+  onChange: (mix: readonly MixEntry[]) => void;
 }): JSX.Element {
   const mix =
     block.scope.level === "domain"
@@ -79,76 +84,13 @@ function MixEditor({
           count: entry.count,
         }))
       : [];
-  const available = domainsForSection(block.section);
-  const used = new Set(mix.map((entry) => entry.domain));
-  const nextUnused = available.find((domain) => !used.has(domain));
-
   return (
-    <div className="field">
-      <label>What this session covers</label>
-      {mix.map((entry, index) => (
-        <div className="mixrow" key={entry.domain}>
-          <select
-            disabled={disabled}
-            value={entry.domain}
-            aria-label={`Domain ${index + 1}`}
-            onChange={(event) => {
-              const domain = event.target.value as CanonicalDomain;
-              onChange(
-                mix.map((row, i) => (i === index ? { ...row, domain } : row)),
-              );
-            }}
-          >
-            {/* Only this block's own section. Offering a Math domain on a Reading & Writing
-                block would offer a choice the database CHECK refuses. */}
-            {available.map((domain) => (
-              <option key={domain} value={domain}>
-                {domain}
-              </option>
-            ))}
-          </select>
-          <select
-            disabled={disabled}
-            value={entry.count}
-            aria-label={`Questions for ${entry.domain}`}
-            onChange={(event) => {
-              const count = Number(event.target.value);
-              onChange(
-                mix.map((row, i) => (i === index ? { ...row, count } : row)),
-              );
-            }}
-          >
-            {mixCountChoices().map((count) => (
-              <option key={count} value={count}>
-                {count} questions
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={disabled || mix.length <= 1}
-            aria-label={`Remove ${entry.domain}`}
-            onClick={() => onChange(mix.filter((_, i) => i !== index))}
-          >
-            ✕
-          </button>
-        </div>
-      ))}
-      {!disabled &&
-      mix.length < MAX_DOMAINS_PER_BLOCK &&
-      nextUnused !== undefined ? (
-        <button
-          type="button"
-          className="btn"
-          style={{ width: "100%" }}
-          onClick={() =>
-            onChange([...mix, { domain: nextUnused, count: MIX_GRANULARITY }])
-          }
-        >
-          + Add a domain
-        </button>
-      ) : null}
-    </div>
+    <MixRows
+      section={block.section}
+      mix={mix}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -227,8 +169,16 @@ export function BlockSheet({
             </div>
           ) : null}
 
-          {/* Full-length: date only. Doc 04 assigns the form, so there is nothing to edit
-              here beyond which day it sits on — which the Move control below covers. */}
+          {plan !== null &&
+          plan.block_type === "full_length" &&
+          actions !== undefined ? (
+            <FullLengthFields
+              idPrefix="calendar-block"
+              scope={plan.scope}
+              disabled={locked}
+              onChange={actions.onEditFullLength}
+            />
+          ) : null}
 
           {block.explanations.length > 0 ? (
             <div className="why" data-testid="calendar-block-why">
@@ -302,9 +252,10 @@ export function BlockSheet({
                   {complete ? "Done" : block.started ? "Resume" : "Start"}
                 </button>
               ) : (
-                // Formula sheet item 12: the full-length adapter still answers
-                // `engine_unavailable`, so the control says so and never calls launch.
-                // Review left this branch on 2026-09-22 when its engine shipped.
+                // Formula sheet item 12: an engine whose adapter is still a fail-open stub
+                // answers `engine_unavailable`, so the control says so and never calls
+                // launch. Review left this branch on 2026-09-22 and full-length in E9b;
+                // none is here today, and the branch stays for the next one.
                 <button
                   type="button"
                   className="btn"

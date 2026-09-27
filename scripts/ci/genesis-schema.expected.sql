@@ -101,6 +101,105 @@ $$;
 
 
 --
+-- Name: actor_id_integrity_violations(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.actor_id_integrity_violations() RETURNS TABLE(viol_table text, viol_identity_column text, viol_kind text, viol_rows bigint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  r       record;
+  v_idcol text;
+  v_n     bigint;
+BEGIN
+  -- (0) profiles itself: actor_id must never BE the primary key it is meant to replace.
+  SELECT count(*) INTO v_n FROM public.profiles p WHERE p.actor_id = p.id;
+  IF v_n > 0 THEN
+    viol_table := 'profiles'; viol_identity_column := 'id';
+    viol_kind  := 'actor_id equals the profile''s own id — the grouping identifier IS the identity key';
+    viol_rows  := v_n; RETURN NEXT;
+  END IF;
+
+  FOR r IN
+    SELECT c.relname AS tbl,
+           (SELECT a2.attname
+              FROM pg_attribute a2
+             WHERE a2.attrelid = c.oid AND a2.attnum > 0 AND NOT a2.attisdropped
+               AND a2.attname IN ('user_id', 'student_id')
+             ORDER BY a2.attname LIMIT 1) AS idcol
+      FROM pg_attribute a
+      JOIN pg_class     c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind = 'r'
+       AND NOT c.relispartition
+       AND a.attname = 'actor_id'
+       AND a.attnum > 0 AND NOT a.attisdropped
+       AND c.relname NOT IN ('profiles', 'anonymized_actors')
+     ORDER BY c.relname
+  LOOP
+    CONTINUE WHEN r.idcol IS NULL;   -- no identity column: nothing to compare against
+    v_idcol := r.idcol;
+
+    -- (a) the original nullity check, kept: a retained row with identity present and no
+    --     grouping identifier cannot be anonymized at all (INV-05E-07 as it always was).
+    EXECUTE format('SELECT count(*) FROM public.%I WHERE %I IS NOT NULL AND actor_id IS NULL',
+                   r.tbl, v_idcol) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'identity present but actor_id IS NULL';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (b) THE DEFECT: actor_id equals the row's own identity value.
+    -- all-positional: format() refuses a mix of %I and %1$I in one string
+    EXECUTE format('SELECT count(*) FROM public.%1$I WHERE %2$I IS NOT NULL AND actor_id = %2$I',
+                   r.tbl, v_idcol) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id equals the row''s own identity value';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (c) the general form of (b): actor_id is SOME profile's primary key. Catches a row
+    --     pointing at a third party's identity key, which (b) cannot see.
+    EXECUTE format('SELECT count(*) FROM public.%I t WHERE EXISTS '
+                   '(SELECT 1 FROM public.profiles p WHERE p.id = t.actor_id)', r.tbl) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id is a profiles.id — an identity key used as a grouping identifier';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+
+    -- (d) actor_id resolves to no known actor. A live row's actor must exist in `profiles`; an
+    --     orphaned row's actor must appear in `anonymized_actors`, which is the only surviving
+    --     statement that the actor was anonymized. Neither means the value was invented.
+    EXECUTE format(
+      'SELECT count(*) FROM public.%I t WHERE t.actor_id IS NOT NULL '
+      'AND NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.actor_id = t.actor_id) '
+      'AND NOT EXISTS (SELECT 1 FROM public.anonymized_actors l WHERE l.actor_id = t.actor_id)',
+      r.tbl) INTO v_n;
+    IF v_n > 0 THEN
+      viol_table := r.tbl; viol_identity_column := v_idcol;
+      viol_kind  := 'actor_id matches no profiles.actor_id and no anonymized_actors row';
+      viol_rows  := v_n; RETURN NEXT;
+    END IF;
+  END LOOP;
+
+  RETURN;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION actor_id_integrity_violations(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.actor_id_integrity_violations() IS 'Doc 05E §6 INV-05E-07, strengthened per owner brief 2026-09-25 R2 and SCL-151. Catalog-driven: covers every public base table carrying an actor_id column plus an identity column, including tables added after this migration, with no list to edit. Four violation classes: NULL actor_id with identity present; actor_id equal to the row''s own identity; actor_id equal to any profiles.id; actor_id resolving to neither a live profile nor an anonymized_actors row. Zero rows = pass. The predecessor checked only nullity, which is why two write paths set actor_id to the profile id undetected until the Doc 06D §6.3 scan found it on a real deletion.';
+
+
+--
 -- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -656,6 +755,15 @@ DECLARE
   -- Which engines the product has actually turned on. Read once, used twice below.
   v_review_on      boolean;
   v_full_length_on boolean;
+  -- E9b: the exam facts (05F §10.1 exams{}), all NULL unless full_length is on
+  -- AND the student has a completed exam.
+  v_weak_max       integer;
+  v_exam_id        uuid;
+  v_exam_date      date;
+  v_seams_applied  boolean := false;
+  v_missed         integer;
+  v_reviewed       boolean;
+  v_weak           jsonb := '[]'::jsonb;
 BEGIN
   SELECT * INTO v_profile FROM public.student_study_profile WHERE student_id = p_student_id;
   IF NOT FOUND THEN
@@ -717,11 +825,83 @@ BEGIN
   LEFT JOIN public.student_domain_mastery m
     ON m.student_id = p_student_id AND m.domain = d.domain;
 
-  -- The exams seam has no table yet: full-length is a rebuild vertical and its
-  -- adapter ships as a fail-open stub (G-08-02, sheet §8 item 12). Recording it
-  -- in degraded[] is the honest form — the alternative is a snapshot that claims
-  -- the student has never sat an exam, which is a different statement.
-  v_degraded := v_degraded || '"exams"'::jsonb;
+  -- E9b (G-08-02): the exams seam is real now. Every fact below is read from its
+  -- owner, never computed here, and all of them stay NULL while full_length is not
+  -- in enabled_block_types (the same "tell the generator the truth" rule as the
+  -- weekday above). "exams" is no longer pushed into degraded[]: the read either
+  -- finds an exam or finds none, and "none" is a fact, not a degradation.
+  --
+  --   last exam          the student's newest test_sessions row in state
+  --                      'completed' (Doc 04A terminal state), dated by
+  --                      completed_at in the profile's timezone (§8.2).
+  --   missed_count       its review-queue rows (source_engine 'full_length',
+  --                      source_session_id = the exam) that are still ACTIVE and
+  --                      SERVABLE -- the H5 rule: never plan against rows the review
+  --                      engine will refuse to serve. NULL until E9's seams event
+  --                      has applied, because before that the queue rows do not
+  --                      exist yet and "unknown" is not "zero".
+  --   reviewed           a COMPLETED session-mode review sourced from that exam
+  --                      (review_sessions.mode = 'session', filters naming it), OR
+  --                      the seams have applied and nothing from it is left
+  --                      outstanding. The second arm is load-bearing: the generator
+  --                      holds an exam-review debt open while missed_count = 0 and
+  --                      reviewed is not true, and while it is open it places no
+  --                      ordinary review at all -- so a perfect exam, or one whose
+  --                      misses were cleared in queue review, would otherwise
+  --                      suppress review for the whole horizon, forever.
+  --   weak_domains       Doc 05B's own student_domain_mastery levels (already in
+  --                      v_mastery above), filtered at weak_level_max -- the one
+  --                      definition calendar_compute_plan's explanation step reads
+  --                      too. A NULL level (below MIN_EVENTS_FOR_MASTERY) is
+  --                      unmeasured, never weak.
+  --   source_session_id  the exam's id, so the generator can name it in the
+  --                      exam-review block's session scope (05F §9.4).
+  --
+  -- ANONYMISED STUDENT: a de-identified exam carries student_id NULL, so it never
+  -- matches p_student_id here; the path terminates at this WHERE.
+  IF v_full_length_on THEN
+    v_weak_max := public.calendar_require_int(v_constants, 'weak_level_max');
+
+    SELECT s.id, (s.completed_at AT TIME ZONE v_profile.timezone)::date
+      INTO v_exam_id, v_exam_date
+    FROM public.test_sessions s
+    WHERE s.student_id = p_student_id
+      AND s.state = 'completed'
+    ORDER BY s.completed_at DESC, s.id DESC
+    LIMIT 1;
+
+    IF v_exam_id IS NOT NULL THEN
+      v_seams_applied := EXISTS (
+        SELECT 1 FROM public.exam_runtime_outbox o
+        WHERE o.aggregate_id = v_exam_id
+          AND o.event_type = 'test_session_scored'
+          AND o.result ->> 'outcome' = 'applied');
+
+      IF v_seams_applied THEN
+        SELECT count(*)::integer INTO v_missed
+        FROM public.review_schedule r
+        JOIN public.servable_questions sq ON sq.id = r.question_id
+        WHERE r.student_id = p_student_id
+          AND r.source_engine = 'full_length'
+          AND r.source_session_id = v_exam_id
+          AND r.status = 'active';
+      END IF;
+
+      v_reviewed := EXISTS (
+          SELECT 1 FROM public.review_sessions rs
+          WHERE rs.student_id = p_student_id
+            AND rs.mode = 'session'
+            AND rs.status = 'completed'
+            AND rs.filters ->> 'source_engine' = 'full_length'
+            AND rs.filters ->> 'source_session_id' = v_exam_id::text)
+        OR (v_seams_applied AND v_missed = 0);
+
+      SELECT COALESCE(jsonb_agg(t.m ->> 'domain' ORDER BY t.o), '[]'::jsonb) INTO v_weak
+      FROM jsonb_array_elements(COALESCE(v_mastery, '[]'::jsonb)) WITH ORDINALITY AS t(m, o)
+      WHERE jsonb_typeof(t.m -> 'mastery_level') = 'number'
+        AND (t.m ->> 'mastery_level')::integer <= v_weak_max;
+    END IF;
+  END IF;
 
   RETURN jsonb_build_object(
     'student_id', p_student_id,
@@ -782,23 +962,16 @@ BEGIN
         GROUP BY 1
       ) q), '[]'::jsonb) END,
 
-    -- Every field here is unconditionally NULL today: the exams seam has no table
-    -- and the adapter is a fail-open stub, which is why "exams" is in degraded[]
-    -- above. The gate is written anyway so that enabling full_length stays the ONE
-    -- switch that makes exam facts visible to the generator. Until the exam vertical
-    -- ships this CASE cannot change the result -- stated plainly rather than left for
-    -- a reader to work out, and asserted as a no-op by the parity suite.
-    'exams', CASE WHEN NOT v_full_length_on THEN jsonb_build_object(
-      'last_completed_local_date', NULL,
-      'days_since_exam', NULL,
-      'missed_count', NULL,
-      'reviewed', NULL,
-      'weak_domains', '[]'::jsonb) ELSE jsonb_build_object(
-      'last_completed_local_date', NULL,
-      'days_since_exam', NULL,
-      'missed_count', NULL,
-      'reviewed', NULL,
-      'weak_domains', '[]'::jsonb) END,
+    -- E9b: the facts gathered above. With full_length off, or no completed exam,
+    -- every field is NULL and weak_domains is [] -- exactly the shape the oracle
+    -- gives a student who has never sat one.
+    'exams', jsonb_build_object(
+      'last_completed_local_date', v_exam_date::text,
+      'days_since_exam', CASE WHEN v_exam_date IS NULL THEN NULL ELSE v_today - v_exam_date END,
+      'missed_count', v_missed,
+      'reviewed', CASE WHEN v_exam_id IS NULL THEN NULL ELSE v_reviewed END,
+      'weak_domains', v_weak,
+      'source_session_id', v_exam_id::text),
 
     -- The deficit rule measures a domain against what it has had over the
     -- window plus today (sheet §2 step 5). Only domain-level practice blocks
@@ -861,7 +1034,7 @@ $$;
 -- Name: FUNCTION calendar_build_plan_input(p_student_id uuid, p_dates date[]); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §9.3. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday and exam facts NULL; review off -> review_due_by_date []. The generator therefore does not reserve budget for blocks calendar_plan_to_output would filter out (§10.2 / sheet §8 item 12).';
+COMMENT ON FUNCTION public.calendar_build_plan_input(p_student_id uuid, p_dates date[]) IS 'Doc 05F §10.1. Builds the plan input snapshot. Engines absent from enabled_block_types are reported as absent: full_length off -> profile.full_length_weekday NULL and exams{} NULL; review off -> review_due_by_date []. With full_length on, exams{} carries the newest completed exam: date, days since, missed_count (active servable queue rows from it, NULL until its seams applied), reviewed, weak_domains (05B levels <= weak_level_max) and source_session_id (SCL-169).';
 
 
 --
@@ -911,6 +1084,7 @@ DECLARE
   k_null_weight       integer;
   k_post_days         integer;
   k_post_mult         integer;
+  k_weak_max          integer;
   k_min_domain_q      integer;
   k_max_domains       integer;
   k_granularity       integer;
@@ -938,6 +1112,7 @@ DECLARE
   x_missed            integer;
   x_reviewed          boolean;
   x_weak              text[];
+  x_session           text;
 
   -- domain arrays, all aligned on canonical order
   d_dom               text[] := '{}';
@@ -1010,6 +1185,9 @@ BEGIN
   k_null_weight      := public.calendar_require_int(v_constants, 'null_level_weight');
   k_post_days        := public.calendar_require_int(v_constants, 'post_exam_emphasis_days');
   k_post_mult        := public.calendar_require_int(v_constants, 'post_exam_multiplier');
+  -- E9b: the one definition of "weak" for planning (sheet §6 L0-L1), read from
+  -- config so the builder's weak_domains and this explanation step cannot disagree.
+  k_weak_max         := public.calendar_require_int(v_constants, 'weak_level_max');
   k_min_domain_q     := public.calendar_require_int(v_constants, 'min_domain_questions');
   k_max_domains      := public.calendar_require_int(v_constants, 'max_domains_per_block');
   k_granularity      := public.calendar_require_int(v_constants, 'granularity');
@@ -1057,6 +1235,7 @@ BEGIN
                       THEN (p_input #> '{exams,reviewed}')::boolean ELSE NULL END;
   SELECT COALESCE(array_agg(t), '{}') INTO x_weak
   FROM jsonb_array_elements_text(COALESCE(p_input #> '{exams,weak_domains}', '[]'::jsonb)) t;
+  x_session    := p_input #>> '{exams,source_session_id}';
 
   ----------------------------------------------------------------------------
   -- Domain arrays, in canonical order. `mastery` carries the section for each
@@ -1106,7 +1285,7 @@ BEGIN
       d_why := d_why || 'exploring'::text;
     ELSE
       d_w := d_w || public.calendar_require_int(v_weight_by_level, d_lvl[v_i]::text);
-      d_why := d_why || (CASE WHEN d_lvl[v_i] <= 1 THEN 'weak'
+      d_why := d_why || (CASE WHEN d_lvl[v_i] <= k_weak_max THEN 'weak'
                               WHEN d_lvl[v_i] >= 3 THEN 'strength'
                               ELSE 'balanced' END)::text;
     END IF;
@@ -1152,7 +1331,7 @@ BEGIN
     IF v_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
         jsonb_build_object('block_type','full_length','section', NULL,
-                           'scope', jsonb_build_object('form_id', NULL),
+                           'scope', jsonb_build_object('form_id', NULL, 'exam_mode', 'strict'),
                            'target_count', 1, 'explanation_key', v_key)));
       v_pending_active := true;
       v_pending_size   := k_exam_review_dflt;
@@ -1186,8 +1365,11 @@ BEGIN
     IF v_pending_active THEN
       v_size := least(v_pending_size, v_budget / e_review_secs);
       IF v_size >= 1 THEN
+        -- E9b: a real exam review is a SESSION review of that exam (05F §9.4), so
+        -- completing it is what sets exams.reviewed. The placeholder stays queue:
+        -- no session exists yet. One helper serves both generators.
         v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
-                      'scope', jsonb_build_object('mode','queue'),
+                      'scope', public.calendar_exam_review_scope(v_pending_key, x_session),
                       'target_count', v_size, 'explanation_key', v_pending_key);
         v_budget := v_budget - v_size * e_review_secs;
         v_pending_active := false;
@@ -1351,6 +1533,7 @@ DECLARE
   x_last              date;
   x_reviewed          boolean;
   x_missed            integer;
+  x_session           text;
   fl                  jsonb;
   v_due               integer := 0;
   v_pending_active    boolean := false;
@@ -1406,6 +1589,8 @@ BEGIN
   x_missed   := CASE WHEN (p_input #>> '{exams,missed_count}') IS NULL THEN NULL
                      ELSE public.calendar_require_int(p_input -> 'exams', 'missed_count') END;
 
+  x_session  := p_input #>> '{exams,source_session_id}';
+
   fl := public.calendar_place_full_lengths(p_input);
 
   -- A single total is enough here: the fallback runs precisely when the
@@ -1432,7 +1617,7 @@ BEGIN
     IF v_fl_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
         jsonb_build_object('block_type','full_length','section', NULL,
-                           'scope', jsonb_build_object('form_id', NULL),
+                           'scope', jsonb_build_object('form_id', NULL, 'exam_mode', 'strict'),
                            'target_count', 1, 'explanation_key', v_fl_key)));
       v_pending_active := true;
       v_pending_size   := k_exam_review_dflt;
@@ -1462,8 +1647,11 @@ BEGIN
     IF v_pending_active THEN
       v_size := least(v_pending_size, v_budget / e_review_secs);
       IF v_size >= 1 THEN
+        -- E9b: a real exam review is a SESSION review of that exam (05F §9.4), so
+        -- completing it is what sets exams.reviewed. The placeholder stays queue:
+        -- no session exists yet. One helper serves both generators.
         v_blocks := v_blocks || jsonb_build_object('block_type','review','section', NULL,
-                      'scope', jsonb_build_object('mode','queue'),
+                      'scope', public.calendar_exam_review_scope(v_pending_key, x_session),
                       'target_count', v_size, 'explanation_key', v_pending_key);
         v_budget := v_budget - v_size * e_review_secs;
         v_pending_active := false;
@@ -1745,6 +1933,35 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_members jsonb, p_generator_version text, p_idempotency_key uuid) IS 'Doc 05F §12.4. Full desired member list for one date. Started blocks injected if omitted, validated in student_edit mode, persisted with is_user_override = true. No budget check (R-08-19).';
+
+
+--
+-- Name: calendar_exam_review_scope(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_key = 'exam_review' THEN
+    IF p_session_id IS NULL THEN
+      RAISE EXCEPTION 'calendar_exam_review_scope: an exam_review block needs exams.source_session_id'
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN jsonb_build_object('mode', 'session', 'source_engine', 'full_length',
+                              'source_session_id', p_session_id);
+  END IF;
+  RETURN jsonb_build_object('mode', 'queue');
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) IS 'Doc 05F §9.4 / SCL-170: exam_review -> {"mode":"session","source_engine":"full_length","source_session_id"}; exam_review_placeholder -> {"mode":"queue"}. One helper for deterministic_v1 and fallback_v1.';
 
 
 --
@@ -2534,9 +2751,14 @@ CREATE FUNCTION public.calendar_scope_is_valid(p_block_type text, p_section text
       p_scope IS NOT NULL
       AND jsonb_typeof(p_scope) = 'object'
       AND p_section IS NULL
-      AND p_scope ?& ARRAY['form_id']
-      AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 1
+      -- E9b / SCL (05F §7.4 widened): two keys, both always present. form_id null
+      -- means "the next test" by exam_next_form_for_student; exam_mode is the
+      -- exam engine's own vocabulary (test_sessions.mode), never a calendar copy.
+      AND p_scope ?& ARRAY['form_id', 'exam_mode']
+      AND (SELECT count(*) FROM jsonb_object_keys(p_scope)) = 2
       AND jsonb_typeof(p_scope -> 'form_id') IN ('string', 'null')
+      AND jsonb_typeof(p_scope -> 'exam_mode') = 'string'
+      AND p_scope ->> 'exam_mode' IN ('strict', 'lenient')
 
     ELSE false
   END;
@@ -3143,7 +3365,24 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
   WHERE ra.student_id = p_student_id
     AND ra.section    = p_section
     AND ra.domain     = p_domain
-    AND (p_entity_type = 'domain' OR ra.skill = p_skill);
+    AND (p_entity_type = 'domain' OR ra.skill = p_skill)
+
+  UNION ALL
+
+  -- Full-length events (E9, SCL owner ruling R3): answered items of SUBMITTED
+  -- sections only, from public.full_length_answer_events (exam answers joined
+  -- through test_form_items to questions). An unsubmitted section yields no
+  -- row, so apply_mastery_event raises MASTERY_EVENT_NOT_DERIVED for it
+  -- whatever section_state the caller claims.
+  SELECT
+    fe.event_id, fe.event_source_kind, fe.source_family,
+    fe.section, fe.domain, fe.skill, fe.difficulty,
+    fe.correct, fe.occurred_at, fe.question_id
+  FROM public.full_length_answer_events fe
+  WHERE fe.student_id = p_student_id
+    AND fe.section    = p_section
+    AND fe.domain     = p_domain
+    AND (p_entity_type = 'domain' OR fe.skill = p_skill);
 $$;
 
 
@@ -3621,6 +3860,10 @@ DECLARE
   v_profile   uuid;
   v_stripped  bigint := 0;
   v_strip     jsonb;
+  v_verified  bigint := 0;
+  v_comp      record;
+  v_layers    jsonb;
+  v_outcome   text;
 BEGIN
   v_json := p_completions::jsonb;
   IF v_json IS NULL OR jsonb_typeof(v_json) <> 'array' THEN
@@ -3670,6 +3913,43 @@ BEGIN
     v_stripped := v_stripped + COALESCE((v_strip ->> 'rows')::bigint, 0);
   END LOOP;
 
+  -- @spec [Doc 06D §6.2 / §6.3 / §6.5 INV-06-08; SCL-091, SCL-100, SCL-153 (PROPOSED);
+  -- owner brief 2026-09-23] | @implemented [2026-09-23]
+  --
+  -- THE EXECUTABLE PROOF. One verification record per deletion completed by THIS call, written
+  -- in THIS transaction — the same one that just set `status = 'completed'` above. That is the
+  -- whole point of its being here: T3 is the evidence-side transaction, so the record shares an
+  -- xmin with the log row it proves and with nothing on the actor_id side.
+  --
+  -- It runs AFTER the audit strip immediately above, not before: the strip is the last write
+  -- that removes the uuid from a retained row, so scanning first would find residue the
+  -- deletion had in fact already dealt with, and record a fail for a clean deletion.
+  --
+  -- The outcome is DERIVED from the scan, never asserted. `pass` requires all three in-scope
+  -- layers verified; anything else is a `fail` row, which §6.5 (b) pages on. A deletion that
+  -- did not fully take is a fail RECORD, not a missing one — an absent row and a failed one
+  -- are not the same claim, and only one of them can be investigated.
+  FOR v_comp IN
+    SELECT c.log_id, c.profile_id
+      FROM _completions c
+      JOIN public.deletion_request_log l ON l.log_id = c.log_id
+     WHERE l.status = 'completed'
+       AND c.profile_id IS NOT NULL
+     ORDER BY c.log_id
+  LOOP
+    v_layers := public.verify_deletion_layers(v_comp.profile_id);
+    v_outcome := CASE
+      WHEN (v_layers -> 'identity' ->> 'verified') = 'true'
+       AND (v_layers -> 'mastery'  ->> 'verified') = 'true'
+       AND (v_layers -> 'lisa'     ->> 'verified') = 'true'
+      THEN 'pass' ELSE 'fail'
+    END;
+    -- profile_id is still READ (the scan needs it, and the audit strip above uses it) and is
+    -- still never STORED — that is the whole point of the carve-out's removal.
+    PERFORM public.record_deletion_verification(v_comp.log_id, v_layers, v_outcome);
+    v_verified := v_verified + 1;
+  END LOOP;
+
   -- One row per completed deletion, with NO ids from the start: §5.1 retains "action type,
   -- timestamp, status code" and nothing else once a profile is hard-deleted. Written NULL rather
   -- than written-then-stripped, so this row never needs the exemption at all.
@@ -3683,7 +3963,8 @@ BEGIN
   RETURN jsonb_build_object(
     'completed', v_completed,
     'billing_records', v_billing,
-    'audit_rows_stripped', v_stripped
+    'audit_rows_stripped', v_stripped,
+    'verification_records', v_verified
   );
 END;
 $$;
@@ -3839,6 +4120,87 @@ BEGIN
 
   total_events := v_total; acc_test := v_acc_test; acc_practice := v_acc_practice; acc_review := v_acc_review;
   mastery_score := v_mastery_score; mastery_pct := v_mastery_pct; mastery_level := v_mastery_level;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: compute_scaled_score_from_counts(text, integer, integer, integer, integer, integer, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) RETURNS TABLE(scaled integer, ceiling numeric, deduction numeric, raw_floor numeric, path_floor numeric, effective_floor numeric, s_raw numeric)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  c_alpha       numeric;
+  c_ceil_floor  numeric;
+  c_ceil_max    numeric;
+  c_d_easy      numeric;
+  c_d_med       numeric;
+  c_d_hard      numeric;
+  c_raw_base    numeric;
+  c_raw_mult    numeric;
+  c_path_a_fl   numeric;
+  c_path_b_base numeric;
+  c_path_b_bon  numeric;
+  c_path_b_cap  numeric;
+  c_round       int;
+
+  v_ceiling      numeric;
+  v_deduction    numeric;
+  v_raw_floor    numeric;
+  v_path_floor   numeric;
+  v_floor        numeric;
+  v_s_raw        numeric;
+  v_s_clamped    numeric;
+  v_scaled       int;
+BEGIN
+  IF p_n1 IS NULL OR p_n_total IS NULL OR p_n1 <= 0 OR p_n_total <= 0 THEN
+    RAISE EXCEPTION 'compute_scaled_score_from_counts: presented item counts must be positive (N1=%, N_total=%)',
+      p_n1, p_n_total;
+  END IF;
+
+  c_alpha       := scoring_constant(p_version, 'alpha_ceiling_exponent');
+  c_ceil_floor  := scoring_constant(p_version, 'ceiling_floor');
+  c_ceil_max    := scoring_constant(p_version, 'ceiling_max');
+  c_d_easy      := scoring_constant(p_version, 'deduction_easy');
+  c_d_med       := scoring_constant(p_version, 'deduction_medium');
+  c_d_hard      := scoring_constant(p_version, 'deduction_hard');
+  c_raw_base    := scoring_constant(p_version, 'raw_floor_base');
+  c_raw_mult    := scoring_constant(p_version, 'raw_floor_multiplier');
+  c_path_a_fl   := scoring_constant(p_version, 'path_a_floor');
+  c_path_b_base := scoring_constant(p_version, 'path_b_floor_base');
+  c_path_b_bon  := scoring_constant(p_version, 'path_b_floor_bonus_per_m1_point');
+  c_path_b_cap  := scoring_constant(p_version, 'path_b_floor_cap');
+  c_round       := scoring_constant(p_version, 'round_to_nearest')::int;
+
+  v_ceiling := GREATEST(c_ceil_floor, c_ceil_max * (p_r1::numeric / p_n1) ^ c_alpha);
+  v_deduction := c_d_easy * p_m2_easy_wrong + c_d_med * p_m2_medium_wrong + c_d_hard * p_m2_hard_wrong;
+  v_raw_floor := c_raw_base + c_raw_mult * ((p_r1 + p_r2)::numeric / p_n_total);
+
+  IF p_r1 >= p_routing_threshold THEN
+    v_path_floor := LEAST(c_path_b_cap, c_path_b_base + c_path_b_bon * (p_r1 - p_routing_threshold));
+  ELSE
+    v_path_floor := c_path_a_fl;
+  END IF;
+
+  v_floor := GREATEST(v_raw_floor, v_path_floor);
+  v_s_raw := v_ceiling - v_deduction;
+  v_s_clamped := GREATEST(v_floor, LEAST(c_ceil_max, v_s_raw));
+
+  -- §6.3 round half up to R_round. D4: half of R_round, not a literal.
+  -- MUST match Python reference: int(math.floor((s_clamped + 5) / 10) * 10)
+  v_scaled := (floor((v_s_clamped + c_round::numeric / 2) / c_round) * c_round)::int;
+
+  scaled          := v_scaled;
+  ceiling         := v_ceiling;
+  deduction       := v_deduction;
+  raw_floor       := v_raw_floor;
+  path_floor      := v_path_floor;
+  effective_floor := v_floor;
+  s_raw           := v_s_raw;
   RETURN NEXT;
 END;
 $$;
@@ -4159,6 +4521,158 @@ $$;
 
 
 --
+-- Name: compute_section_scaled_score(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) RETURNS TABLE(scaled integer, module1_correct integer, module2_correct integer, module2_path text, m2_easy_wrong integer, m2_medium_wrong integer, m2_hard_wrong integer, ceiling numeric, deduction numeric, raw_floor numeric, path_floor numeric, effective_floor numeric, s_raw numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_section_code        text;        -- 04A section code: 'RW' or 'M'
+  v_m2_module           text;        -- '2A' or '2B' for the routed path
+  v_test_form_id        uuid;
+  v_score_table_version text;
+  v_routing_threshold   int;
+  v_n1                  int;
+  v_n_total             int;
+  v_module2_path        text;
+  v_section_state       text;
+
+  v_r1           int;
+  v_r2           int;
+  v_n_e_m2       int;
+  v_n_m_m2       int;
+  v_n_h_m2       int;
+  v_n_unbucketed int;
+  f              record;
+BEGIN
+  -- SECTION-CODE MAPPING (§11.2 / §11.4 — derived once, used everywhere)
+  v_section_code := CASE
+    WHEN p_section = 'rw'   THEN 'RW'
+    WHEN p_section = 'math' THEN 'M'
+    ELSE NULL
+  END;
+  IF v_section_code IS NULL THEN
+    RAISE EXCEPTION 'Unknown section: %. Expected ''rw'' or ''math''.', p_section;
+  END IF;
+
+  -- LOAD FORM AND SECTION CONTEXT (from 04A's canonical schema)
+  SELECT ts.test_form_id, tf.score_table_version,
+         CASE WHEN p_section = 'rw' THEN tf.routing_threshold_rw
+              ELSE tf.routing_threshold_m END
+  INTO v_test_form_id, v_score_table_version, v_routing_threshold
+  FROM test_sessions ts
+  JOIN test_forms tf ON tf.id = ts.test_form_id
+  WHERE ts.id = p_test_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session or form not found: session_id=%', p_test_session_id;
+  END IF;
+
+  SELECT tss.state, tss.module2_path
+  INTO v_section_state, v_module2_path
+  FROM test_session_sections tss
+  WHERE tss.test_session_id = p_test_session_id
+    AND tss.section = v_section_code;
+
+  IF v_section_state IS NULL THEN
+    RAISE EXCEPTION 'Section state not found: session=%, section=%',
+                    p_test_session_id, p_section;
+  END IF;
+
+  -- Section must be in 'submitted' state to be scored (§19.1)
+  IF v_section_state <> 'submitted' THEN
+    RAISE EXCEPTION 'Section not scoreable: state=%, expected=submitted', v_section_state;
+  END IF;
+
+  -- module2_path MUST be locked at this point (04A invariant §2.3)
+  IF v_module2_path IS NULL THEN
+    RAISE EXCEPTION 'Module 2 path not locked for scoreable section';
+  END IF;
+
+  v_m2_module := '2' || v_module2_path;  -- '2A' or '2B'
+
+  -- N1 and N_total from the canonical form items (the only source, SCL-127)
+  SELECT
+    COUNT(*) FILTER (WHERE i.module = '1'),
+    COUNT(*)
+  INTO v_n1, v_n_total
+  FROM test_form_items i
+  WHERE i.test_form_id = v_test_form_id
+    AND i.section = v_section_code
+    AND i.module IN ('1', v_m2_module);
+
+  -- M1 CORRECT (LEFT JOIN from presented items — missing answers are wrong)
+  SELECT COUNT(*) FILTER (WHERE is_answer_correct(a.answer, i.question_id))
+  INTO v_r1
+  FROM test_form_items i
+  LEFT JOIN test_session_answers a
+    ON a.test_session_id = p_test_session_id
+   AND a.section         = i.section
+   AND a.module          = i.module
+   AND a.ordinal         = i.ordinal
+   AND a.question_id     = i.question_id
+  WHERE i.test_form_id = v_test_form_id
+    AND i.section      = v_section_code
+    AND i.module       = '1';
+
+  -- M2 CORRECT AND M2 WRONG BY DIFFICULTY (routed path only; LEFT JOIN).
+  -- D1 (owner ruling 2026-09-24, Doc 02A INV-02A-05): 1 = easy, 2 = medium, 3 = hard.
+  SELECT
+    COUNT(*) FILTER (WHERE c.is_correct),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 1),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 2),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty = 3),
+    COUNT(*) FILTER (WHERE NOT c.is_correct AND c.difficulty IS DISTINCT FROM 1
+                                            AND c.difficulty IS DISTINCT FROM 2
+                                            AND c.difficulty IS DISTINCT FROM 3)
+  INTO v_r2, v_n_e_m2, v_n_m_m2, v_n_h_m2, v_n_unbucketed
+  FROM (
+    SELECT q.difficulty, is_answer_correct(a.answer, i.question_id) AS is_correct
+    FROM test_form_items i
+    JOIN questions q ON q.id = i.question_id
+    LEFT JOIN test_session_answers a
+      ON a.test_session_id = p_test_session_id
+     AND a.section         = i.section
+     AND a.module          = i.module
+     AND a.ordinal         = i.ordinal
+     AND a.question_id     = i.question_id
+    WHERE i.test_form_id = v_test_form_id
+      AND i.section      = v_section_code
+      AND i.module       = v_m2_module
+  ) c;
+
+  IF v_n_unbucketed > 0 THEN
+    RAISE WARNING 'compute_section_scaled_score: % wrong M2 item(s) with a difficulty outside the bucket codes (session=%, section=%)',
+      v_n_unbucketed, p_test_session_id, p_section;
+  END IF;
+
+  -- APPLY THE CANONICAL FORMULA (locked v1.0) — D3
+  SELECT * INTO f
+  FROM compute_scaled_score_from_counts(
+    v_score_table_version, v_r1, v_r2, v_n_e_m2, v_n_m_m2, v_n_h_m2,
+    v_n1, v_n_total, v_routing_threshold);
+
+  scaled          := f.scaled;
+  module1_correct := v_r1;
+  module2_correct := v_r2;
+  module2_path    := v_module2_path;
+  m2_easy_wrong   := v_n_e_m2;
+  m2_medium_wrong := v_n_m_m2;
+  m2_hard_wrong   := v_n_h_m2;
+  ceiling         := f.ceiling;
+  deduction       := f.deduction;
+  raw_floor       := f.raw_floor;
+  path_floor      := f.path_floor;
+  effective_floor := f.effective_floor;
+  s_raw           := f.s_raw;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
 -- Name: compute_streak_days(uuid, text, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4462,6 +4976,219 @@ $$;
 
 
 --
+-- Name: enforce_form_publish_gate(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_form_publish_gate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_version_status text;
+  v_within_range   boolean;
+  v_override_set   boolean;
+BEGIN
+  -- D6: a row may not be born past draft (would bypass the whole gate).
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'draft' THEN
+      RAISE EXCEPTION 'Cannot insert test_form % with status %: forms are created as draft and published through the gate',
+        NEW.id, NEW.status
+        USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- Only fire on the draft → published transition
+  IF NOT (OLD.status = 'draft' AND NEW.status = 'published') THEN
+    RETURN NEW;
+  END IF;
+
+  -- Gate check (a): score_table_version exists and is currently active
+  SELECT status INTO v_version_status
+    FROM scoring_model_versions
+    WHERE version = NEW.score_table_version;
+
+  IF v_version_status IS NULL THEN
+    RAISE EXCEPTION 'Cannot publish: score_table_version % does not exist in scoring_model_versions',
+      NEW.score_table_version
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  IF v_version_status <> 'active' THEN
+    RAISE EXCEPTION 'Cannot publish: score_table_version % is in status % (must be active)',
+      NEW.score_table_version, v_version_status
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- Gate check (b): routing thresholds in expected range OR override recorded
+  v_within_range :=
+    NEW.routing_threshold_rw BETWEEN 18 AND 21
+    AND NEW.routing_threshold_m BETWEEN 13 AND 16;
+
+  v_override_set :=
+    NEW.routing_override_approved_by IS NOT NULL
+    AND NEW.routing_override_reason IS NOT NULL;
+
+  IF NOT (v_within_range OR v_override_set) THEN
+    RAISE EXCEPTION 'Cannot publish: routing thresholds (RW=%, M=%) outside expected range (RW 18-21, M 13-16) and no override recorded',
+      NEW.routing_threshold_rw, NEW.routing_threshold_m
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- Gate check (c) (D6): composition. The §6.3 handler still calls this first.
+  PERFORM validate_form_composition(NEW.id);
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_module2_path_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_module2_path_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.module2_path IS NOT NULL
+     AND NEW.module2_path IS DISTINCT FROM OLD.module2_path THEN
+    RAISE EXCEPTION 'module2_path is immutable once set';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_published_form_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_published_form_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status <> 'draft' THEN
+      RAISE EXCEPTION 'Cannot delete test_form %: % forms are retained for historical scoring and audit.',
+        OLD.id, OLD.status;
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status
+     AND NOT ((OLD.status = 'draft' AND NEW.status = 'published')
+           OR (OLD.status = 'published' AND NEW.status = 'archived')) THEN
+    RAISE EXCEPTION 'Illegal test_forms status transition % -> % (lifecycle is draft -> published -> archived, one-way).',
+      OLD.status, NEW.status;
+  END IF;
+
+  IF OLD.status IN ('published', 'archived') AND (
+    NEW.score_table_version IS DISTINCT FROM OLD.score_table_version OR
+    NEW.routing_threshold_rw IS DISTINCT FROM OLD.routing_threshold_rw OR
+    NEW.routing_threshold_m IS DISTINCT FROM OLD.routing_threshold_m OR
+    NEW.routing_override_approved_by IS DISTINCT FROM OLD.routing_override_approved_by OR
+    NEW.routing_override_reason IS DISTINCT FROM OLD.routing_override_reason OR
+    NEW.routing_override_ticket_id IS DISTINCT FROM OLD.routing_override_ticket_id OR
+    NEW.break_duration_ms IS DISTINCT FROM OLD.break_duration_ms OR
+    NEW.rw_module1_ms IS DISTINCT FROM OLD.rw_module1_ms OR
+    NEW.rw_module2_ms IS DISTINCT FROM OLD.rw_module2_ms OR
+    NEW.m_module1_ms IS DISTINCT FROM OLD.m_module1_ms OR
+    NEW.m_module2_ms IS DISTINCT FROM OLD.m_module2_ms
+  ) THEN
+    RAISE EXCEPTION 'Published forms are immutable. Archive and republish.';
+  END IF;
+  -- is_selectable and retired_for_new_sessions_at are intentionally mutable post-publish.
+  -- They are operational toggles for retiring a form from new selection without
+  -- archiving (which would also break historical reproducibility on running sessions).
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_published_form_items_immutability(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_published_form_items_immutability() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_form   uuid;
+  v_status text;
+BEGIN
+  FOREACH v_form IN ARRAY (
+    CASE TG_OP
+      WHEN 'INSERT' THEN ARRAY[NEW.test_form_id]
+      WHEN 'DELETE' THEN ARRAY[OLD.test_form_id]
+      ELSE ARRAY[OLD.test_form_id, NEW.test_form_id]
+    END)
+  LOOP
+    SELECT status INTO v_status FROM test_forms WHERE id = v_form FOR SHARE;
+    IF v_status IS DISTINCT FROM 'draft' AND v_status IS NOT NULL THEN
+      RAISE EXCEPTION 'test_form_items of % form % are immutable (% refused). Archive and republish.',
+        v_status, v_form, TG_OP;
+    END IF;
+  END LOOP;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+
+--
+-- Name: enforce_scoring_version_status_machine(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_scoring_version_status_machine() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Block illegal transitions
+  IF OLD.status = 'active' AND NEW.status = 'candidate' THEN
+    RAISE EXCEPTION 'Cannot downgrade scoring_model_versions from active to candidate';
+  END IF;
+  IF OLD.status = 'superseded' AND NEW.status <> 'superseded' THEN
+    RAISE EXCEPTION 'Cannot revive a superseded scoring_model_version';
+  END IF;
+
+  -- Stamp transition timestamps
+  IF OLD.status = 'candidate' AND NEW.status = 'active' THEN
+    NEW.published_at := COALESCE(NEW.published_at, now());
+  END IF;
+  IF OLD.status = 'active' AND NEW.status = 'superseded' THEN
+    NEW.superseded_at := COALESCE(NEW.superseded_at, now());
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_single_active_scoring_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_single_active_scoring_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.status = 'active' THEN
+    IF EXISTS (
+      SELECT 1 FROM scoring_model_versions
+      WHERE status = 'active' AND version <> NEW.version
+    ) THEN
+      RAISE EXCEPTION 'Only one scoring model version may be active at a time';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: entitlement_active(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4477,6 +5204,1541 @@ $$;
 
 
 --
+-- Name: exam_abandonment_sweep(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_abandonment_sweep(p_limit integer DEFAULT 100) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row       record;
+  v_finalized int := 0;
+  v_failed    int := 0;
+  v_scored    int := 0;
+  v_unscored  int := 0;
+  v_res       jsonb;
+  v_state     text;
+BEGIN
+  FOR v_row IN
+    SELECT id FROM test_sessions
+     WHERE state IN ('created', 'active', 'section_break')
+       AND clock_timestamp() > grace_expires_at
+     ORDER BY grace_expires_at
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      PERFORM exam_advance_session(v_row.id, clock_timestamp());
+      v_finalized := v_finalized + 1;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+      RAISE WARNING 'exam_abandonment_sweep: session % not finalised (sqlstate %)', v_row.id, v_state;
+      v_failed := v_failed + 1;
+    END;
+  END LOOP;
+
+  FOR v_row IN
+    SELECT id FROM exam_runtime_outbox
+     WHERE status = 'pending'
+     ORDER BY created_at
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  LOOP
+    v_res := exam_score_outbox_event(v_row.id);
+    IF (v_res->>'ok')::boolean THEN v_scored := v_scored + 1; ELSE v_unscored := v_unscored + 1; END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('finalized', v_finalized, 'finalize_failed', v_failed,
+                            'scored', v_scored, 'score_failed', v_unscored);
+END;
+$$;
+
+
+--
+-- Name: exam_advance_session(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_advance_session(p_session_id uuid, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_s        test_sessions%ROWTYPE;
+  v_outbox   uuid;
+  v_ids      uuid[] := ARRAY[]::uuid[];
+  v_break_at timestamptz;
+  v_sec      record;
+BEGIN
+  SELECT * INTO v_s FROM test_sessions WHERE id = p_session_id FOR UPDATE;
+  IF NOT FOUND OR v_s.state IN ('completed', 'abandoned_final', 'partial_scored_abandoned') THEN
+    RETURN jsonb_build_object('finalized', false, 'outbox_ids', to_jsonb(v_ids));
+  END IF;
+
+  -- 1. past grace
+  IF p_now > v_s.grace_expires_at THEN
+    v_outbox := exam_finalize_session(p_session_id, p_now);
+    IF v_outbox IS NOT NULL THEN v_ids := v_ids || v_outbox; END IF;
+    RETURN jsonb_build_object('finalized', true, 'outbox_ids', to_jsonb(v_ids));
+  END IF;
+
+  -- 2. strict break is bounded (lenient: unbounded, up to grace)
+  IF v_s.state = 'section_break' AND v_s.mode = 'strict' THEN
+    SELECT sec.module2_submitted_at + f.break_duration_ms * interval '1 millisecond'
+      INTO v_break_at
+      FROM test_session_sections sec JOIN test_forms f ON f.id = v_s.test_form_id
+     WHERE sec.test_session_id = p_session_id AND sec.section = 'RW';
+    IF v_break_at IS NOT NULL AND p_now >= v_break_at THEN
+      PERFORM exam_start_module_internal(p_session_id, 'M', '1', v_break_at);
+    END IF;
+  END IF;
+
+  -- 3. expired active modules
+  FOR v_sec IN
+    SELECT section, state FROM test_session_sections
+     WHERE test_session_id = p_session_id AND state IN ('module1_active', 'module2_active')
+     ORDER BY CASE section WHEN 'RW' THEN 1 ELSE 2 END
+  LOOP
+    IF exam_remaining_ms(p_session_id, v_sec.section, p_now) <= 0 THEN
+      IF v_sec.state = 'module1_active' THEN
+        PERFORM exam_submit_module1_internal(p_session_id, v_sec.section, 'timeout', p_now);
+      ELSE
+        v_outbox := exam_submit_module2_internal(p_session_id, v_sec.section, 'timeout', p_now);
+        IF v_outbox IS NOT NULL THEN v_ids := v_ids || v_outbox; END IF;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('finalized', false, 'outbox_ids', to_jsonb(v_ids));
+END;
+$$;
+
+
+--
+-- Name: exam_answer_option_map(uuid, uuid, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_answer_option_map(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_owner uuid;
+  v_phys  text;
+  v_row   record;
+BEGIN
+  SELECT student_id INTO v_owner FROM test_sessions WHERE id = p_session_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 404, 'error', jsonb_build_object('code', 'session_not_found', 'message', 'Session not available.'));
+  END IF;
+  IF v_owner IS DISTINCT FROM p_student_id THEN
+    RETURN jsonb_build_object('status', 403, 'error', jsonb_build_object('code', 'forbidden', 'message', 'Session not available.'));
+  END IF;
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  SELECT fi.question_id, q.item_type, si.option_token_map
+    INTO v_row
+    FROM test_sessions s
+    JOIN test_form_items fi
+      ON fi.test_form_id = s.test_form_id AND fi.section = p_section
+     AND fi.module = v_phys AND fi.ordinal = p_ordinal
+    JOIN questions q ON q.id = fi.question_id
+    LEFT JOIN test_session_items si
+      ON si.test_session_id = s.id AND si.section = fi.section
+     AND si.module = fi.module AND si.ordinal = fi.ordinal
+   WHERE s.id = p_session_id;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'question_id', v_row.question_id,
+    'item_type', v_row.item_type,
+    'option_token_map', v_row.option_token_map));
+END;
+$$;
+
+
+--
+-- Name: exam_apply_scored_seams(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_apply_scored_seams(p_outbox_event_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_ev      exam_runtime_outbox%ROWTYPE;
+  v_run     score_runs%ROWTYPE;
+  v_s       test_sessions%ROWTYPE;
+  v_at      timestamptz;
+  v_review  int := 0;
+  v_mastery int := 0;
+  v_proj    int := 0;
+  it        record;
+BEGIN
+  SELECT * INTO v_ev FROM exam_runtime_outbox
+   WHERE id = p_outbox_event_id AND event_type = 'test_session_scored';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'EXAM_SEAMS_EVENT_NOT_FOUND: %', p_outbox_event_id;
+  END IF;
+
+  SELECT * INTO v_run FROM score_runs WHERE id = (v_ev.payload ->> 'score_run_id')::uuid;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'EXAM_SEAMS_SCORE_RUN_NOT_FOUND: %', v_ev.payload ->> 'score_run_id';
+  END IF;
+  SELECT * INTO v_s FROM test_sessions WHERE id = v_run.test_session_id;
+
+  -- E6b: identity is read when the seams run, never carried in the payload.
+  IF v_s.student_id IS NULL
+     OR NOT EXISTS (SELECT 1 FROM profiles p WHERE p.id = v_s.student_id) THEN
+    RETURN jsonb_build_object('outcome', 'skipped_no_student',
+                              'review_enqueued', 0, 'mastery_applied', 0, 'projection_outbox', 0);
+  END IF;
+
+  v_at := COALESCE(v_s.completed_at, v_s.abandoned_at, v_run.computed_at);
+
+  -- R4 — review: served items of submitted modules, wrong or blank.
+  FOR it IN
+    SELECT i.section, i.module, i.ordinal, i.question_id, a.answer
+      FROM test_session_items i
+      JOIN test_session_sections sec
+        ON sec.test_session_id = i.test_session_id AND sec.section = i.section
+      LEFT JOIN test_session_answers a
+        ON a.test_session_id = i.test_session_id AND a.section = i.section
+       AND a.module = i.module AND a.ordinal = i.ordinal
+     WHERE i.test_session_id = v_s.id
+       AND (   (i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
+            OR (i.module <> '1' AND sec.state = 'submitted'))
+       AND NOT is_answer_correct(a.answer, i.question_id)
+     ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END, i.module, i.ordinal
+  LOOP
+    PERFORM review_queue_record(
+      v_s.student_id, it.question_id, 'full_length', v_s.id,
+      md5('full_length:' || v_s.id::text || ':' || it.section || ':' || it.module || ':' || it.ordinal::text)::uuid,
+      CASE WHEN it.answer IS NULL OR btrim(it.answer) = '' THEN 'skipped' ELSE 'incorrect' END,
+      v_at);
+    v_review := v_review + 1;
+  END LOOP;
+
+  -- R3 — mastery: the answered items of submitted sections.
+  FOR it IN
+    SELECT * FROM full_length_answer_events fe
+     WHERE fe.test_session_id = v_s.id
+     ORDER BY fe.occurred_at, fe.event_id
+  LOOP
+    PERFORM apply_mastery_event(
+      v_s.student_id, it.section, it.domain, it.skill, it.difficulty,
+      it.source_family, it.event_source_kind, it.correct, it.occurred_at,
+      it.event_id, it.question_id, 'submitted');
+    v_mastery := v_mastery + 1;
+  END LOOP;
+
+  -- R2 — projection refresh request: a COMPLETED session only.
+  IF v_s.state = 'completed' THEN
+    INSERT INTO projection_refresh_outbox (student_id, reason, test_session_id)
+    VALUES (v_s.student_id, 'full_length_completed', v_s.id)
+    ON CONFLICT (test_session_id) WHERE test_session_id IS NOT NULL DO NOTHING;
+    GET DIAGNOSTICS v_proj = ROW_COUNT;
+  END IF;
+
+  RETURN jsonb_build_object('outcome', 'applied',
+                            'review_enqueued', v_review,
+                            'mastery_applied', v_mastery,
+                            'projection_outbox', v_proj);
+END;
+$$;
+
+
+--
+-- Name: exam_create_session(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now      timestamptz := clock_timestamp();
+  v_form     test_forms%ROWTYPE;
+  v_existing test_sessions%ROWTYPE;
+  v_adv      jsonb;
+  v_ids      jsonb := '[]'::jsonb;
+  v_attempt  int;
+  v_id       uuid;
+  v_actor_id uuid;
+BEGIN
+  SELECT * INTO v_form FROM test_forms WHERE id = p_test_form_id;
+  IF NOT FOUND OR v_form.status <> 'published' THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', 'form_not_published', 'message', 'The form is not published.'), 'outbox_ids', v_ids);
+  END IF;
+  IF NOT v_form.is_selectable THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', 'form_not_available', 'message', 'The form is not available for new sessions.'), 'outbox_ids', v_ids);
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext('test_session_create:' || p_student_id::text));
+
+  SELECT * INTO v_existing FROM test_sessions
+   WHERE student_id = p_student_id AND state IN ('created', 'active', 'section_break');
+  IF FOUND THEN
+    v_adv := exam_advance_session(v_existing.id, v_now);
+    v_ids := v_adv->'outbox_ids';
+    SELECT * INTO v_existing FROM test_sessions WHERE id = v_existing.id;
+    IF v_existing.state IN ('created', 'active', 'section_break') THEN
+      IF v_existing.test_form_id = p_test_form_id THEN
+        RETURN jsonb_build_object('status', 200,
+          'body', exam_session_body(v_existing.id, v_now), 'outbox_ids', v_ids);
+      END IF;
+      RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+          'code', 'existing_active_session',
+          'message', 'Another full-length session is in progress.',
+          'session_id', v_existing.id), 'outbox_ids', v_ids);
+    END IF;
+  END IF;
+
+  SELECT count(*)::int + 1 INTO v_attempt FROM test_sessions
+   WHERE student_id = p_student_id AND test_form_id = p_test_form_id
+     AND state IN ('completed', 'abandoned_final', 'partial_scored_abandoned');
+
+  -- E6b (Doc 05E §8 step 2, INV-05E-06): stamp the student's one grouping id.
+  -- Fail closed without it (INV-05E-07), as apply_mastery_event does.
+  SELECT actor_id INTO v_actor_id FROM profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'EXAM_SESSION_NO_ACTOR_ID: no actor_id for student %', p_student_id;
+  END IF;
+
+  INSERT INTO test_sessions (student_id, actor_id, test_form_id, state, mode, grace_expires_at,
+                             attempt_number_for_form, is_first_seen_form_attempt)
+  VALUES (p_student_id, v_actor_id, p_test_form_id, 'created', p_mode,
+          v_now + exam_runtime_setting('test_level_grace_window'),
+          v_attempt, v_attempt = 1)
+  RETURNING id INTO v_id;
+
+  INSERT INTO test_session_sections (test_session_id, section, state)
+  VALUES (v_id, 'RW', 'not_started'), (v_id, 'M', 'not_started');
+
+  RETURN jsonb_build_object('status', 201, 'body', exam_session_body(v_id, v_now), 'outbox_ids', v_ids);
+END;
+$$;
+
+
+--
+-- Name: exam_finalize_session(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_finalize_session(p_session_id uuid, p_now timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_sec    record;
+  v_outbox uuid;
+  v_state  text;
+BEGIN
+  FOR v_sec IN
+    SELECT section, state FROM test_session_sections
+     WHERE test_session_id = p_session_id AND state IN ('module1_active', 'module2_active')
+     ORDER BY CASE section WHEN 'RW' THEN 1 ELSE 2 END
+  LOOP
+    IF v_sec.state = 'module1_active' THEN
+      PERFORM exam_submit_module1_internal(p_session_id, v_sec.section, 'timeout', p_now);
+    ELSE
+      v_outbox := exam_submit_module2_internal(p_session_id, v_sec.section, 'timeout', p_now);
+    END IF;
+  END LOOP;
+
+  SELECT state INTO v_state FROM test_sessions WHERE id = p_session_id;
+  IF v_state = 'completed' THEN
+    RETURN v_outbox;           -- the last Module 2 timeout completed the exam
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM test_session_sections
+              WHERE test_session_id = p_session_id AND state = 'submitted') THEN
+    UPDATE test_sessions
+       SET state = 'partial_scored_abandoned', abandoned_at = p_now, active_section = NULL
+     WHERE id = p_session_id;
+    INSERT INTO exam_runtime_outbox (event_type, aggregate_id, payload)
+    VALUES ('test_session_partial_scored_abandoned', p_session_id,
+            exam_outbox_payload(p_session_id, 'test_session_partial_scored_abandoned'))
+    RETURNING id INTO v_outbox;
+  ELSE
+    UPDATE test_sessions
+       SET state = 'abandoned_final', abandoned_at = p_now, active_section = NULL
+     WHERE id = p_session_id;
+    v_outbox := NULL;
+  END IF;
+  RETURN v_outbox;
+END;
+$$;
+
+
+--
+-- Name: exam_fold_heartbeat(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_fold_heartbeat(p_session_id uuid, p_section text, p_now timestamp with time zone) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE test_session_sections sec
+     SET active_paused_ms = sec.active_paused_ms + CASE
+           WHEN s.mode = 'lenient'
+            AND sec.last_active_at IS NOT NULL
+            AND p_now - sec.last_active_at > exam_runtime_setting('heartbeat_pause_threshold')
+           THEN exam_ms(p_now - sec.last_active_at)
+           ELSE 0
+         END,
+         last_active_at = p_now
+    FROM test_sessions s
+   WHERE s.id = sec.test_session_id
+     AND sec.test_session_id = p_session_id
+     AND sec.section = p_section
+     AND sec.state IN ('module1_active', 'module2_active')
+$$;
+
+
+--
+-- Name: exam_grade_module1(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_grade_module1(p_session_id uuid, p_section text) RETURNS integer
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT count(*)::int
+    FROM test_session_answers a
+    JOIN test_sessions s ON s.id = a.test_session_id
+    JOIN test_form_items fi
+      ON fi.test_form_id = s.test_form_id
+     AND fi.section = a.section AND fi.module = a.module
+     AND fi.ordinal = a.ordinal AND fi.question_id = a.question_id
+   WHERE a.test_session_id = p_session_id
+     AND a.section = p_section
+     AND a.module = '1'
+     AND is_answer_correct(a.answer, a.question_id)
+$$;
+
+
+--
+-- Name: exam_heartbeat(uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_heartbeat(p_student_id uuid, p_session_id uuid, p_section text, p_ordinal integer DEFAULT NULL::integer) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_state text;
+  v_phys  text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  PERFORM exam_fold_heartbeat(p_session_id, p_section, v_now);
+
+  IF p_ordinal IS NOT NULL THEN
+    SELECT state INTO v_state FROM test_session_sections
+     WHERE test_session_id = p_session_id AND section = p_section;
+    v_phys := CASE v_state
+                WHEN 'module1_active' THEN '1'
+                WHEN 'module2_active' THEN exam_physical_module(p_session_id, p_section, '2')
+              END;
+    IF v_phys IS NULL OR NOT EXISTS (
+         SELECT 1 FROM test_sessions s
+           JOIN test_form_items fi
+             ON fi.test_form_id = s.test_form_id AND fi.section = p_section
+            AND fi.module = v_phys AND fi.ordinal = p_ordinal
+          WHERE s.id = p_session_id) THEN
+      RETURN jsonb_build_object('status', 400, 'error', jsonb_build_object(
+        'code', 'invalid_request', 'message', 'The position is not an item of the active module.'),
+        'outbox_ids', v_touch->'outbox_ids');
+    END IF;
+    UPDATE test_session_sections
+       SET current_module = v_phys, current_ordinal = p_ordinal
+     WHERE test_session_id = p_session_id AND section = p_section;
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+    'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_list_forms(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_list_forms(p_student_id uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object('status', 200, 'body', jsonb_build_object('forms', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'test_form_id', f.id,
+             'name', f.name,
+             'is_selectable', f.is_selectable AND f.status = 'published',
+             'question_count', (SELECT count(*) FROM test_form_items fi
+                                 WHERE fi.test_form_id = f.id AND fi.module IN ('1', '2A')),
+             'break_duration_ms', f.break_duration_ms,
+             'sections', jsonb_build_array(
+               jsonb_build_object('section', 'RW',
+                 'questions_per_module', (SELECT count(*) FROM test_form_items fi
+                                           WHERE fi.test_form_id = f.id AND fi.section = 'RW' AND fi.module = '1'),
+                 'module1_ms', f.rw_module1_ms, 'module2_ms', f.rw_module2_ms),
+               jsonb_build_object('section', 'M',
+                 'questions_per_module', (SELECT count(*) FROM test_form_items fi
+                                           WHERE fi.test_form_id = f.id AND fi.section = 'M' AND fi.module = '1'),
+                 'module1_ms', f.m_module1_ms, 'module2_ms', f.m_module2_ms)),
+             'latest_session', (
+               SELECT jsonb_build_object(
+                        'session_id', s.id,
+                        'state', s.state,
+                        'mode', s.mode,
+                        'attempt_number_for_form', s.attempt_number_for_form,
+                        'grace_expires_at', s.grace_expires_at,
+                        'completed_at', s.completed_at,
+                        'abandoned_at', s.abandoned_at,
+                        'score_total_present', r.total_scaled IS NOT NULL,
+                        'score_partial_present', r.partial_display_scaled IS NOT NULL,
+                        'failed_outbox_id', CASE WHEN r.id IS NULL THEN (
+                            SELECT o.id FROM exam_runtime_outbox o
+                             WHERE o.aggregate_id = s.id AND o.status = 'failed'
+                             ORDER BY o.created_at DESC LIMIT 1) END)
+                 FROM test_sessions s
+                 LEFT JOIN score_runs r ON r.test_session_id = s.id
+                WHERE s.test_form_id = f.id AND s.student_id = p_student_id
+                ORDER BY s.created_at DESC, s.id DESC LIMIT 1))
+           ORDER BY f.published_at, f.name, f.id)
+      FROM test_forms f
+     WHERE (f.status = 'published' AND f.is_selectable)
+        OR (f.status IN ('published', 'archived')
+            AND EXISTS (SELECT 1 FROM test_sessions s2
+                         WHERE s2.test_form_id = f.id AND s2.student_id = p_student_id))),
+    '[]'::jsonb)))
+$$;
+
+
+--
+-- Name: exam_module_duration_ms(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_module_duration_ms(p_form_id uuid, p_section text, p_module text) RETURNS integer
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN p_section = 'RW' AND p_module = '1' THEN f.rw_module1_ms
+           WHEN p_section = 'RW'                   THEN f.rw_module2_ms
+           WHEN p_module = '1'                     THEN f.m_module1_ms
+           ELSE f.m_module2_ms
+         END
+    FROM test_forms f WHERE f.id = p_form_id
+$$;
+
+
+--
+-- Name: exam_module_items(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_module_items(p_student_id uuid, p_session_id uuid, p_section text, p_module text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_sec   text;
+  v_phys  text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF NOT ((p_module = '1' AND v_sec = 'module1_active') OR (p_module = '2' AND v_sec = 'module2_active')) THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', CASE
+                WHEN p_module = '1' AND v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN 'module_submitted'
+                WHEN p_module = '2' AND v_sec = 'submitted' THEN 'module_submitted'
+                ELSE 'module_not_started' END,
+      'message', 'This module is not active.',
+      'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now),
+    'items', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'ordinal', fi.ordinal,
+               'question_id', fi.question_id,
+               'item_type', q.item_type,
+               'stem', q.stem,
+               'passage', q.passage,
+               'options', q.options,
+               'assets', q.assets,
+               'served', si.test_session_id IS NOT NULL,
+               'option_order', to_jsonb(si.option_order),
+               'option_token_map', si.option_token_map,
+               'has_answer', a.test_session_id IS NOT NULL,
+               'current_answer', a.answer)
+             ORDER BY fi.ordinal)
+        FROM test_sessions s
+        JOIN test_form_items fi
+          ON fi.test_form_id = s.test_form_id AND fi.section = p_section AND fi.module = v_phys
+        JOIN questions q ON q.id = fi.question_id
+        LEFT JOIN test_session_items si
+          ON si.test_session_id = s.id AND si.section = fi.section
+         AND si.module = fi.module AND si.ordinal = fi.ordinal
+        LEFT JOIN test_session_answers a
+          ON a.test_session_id = s.id AND a.section = fi.section
+         AND a.module = fi.module AND a.ordinal = fi.ordinal
+       WHERE s.id = p_session_id), '[]'::jsonb)),
+    'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_module_workspace(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_module_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_sec   text;
+  v_phys  text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF NOT ((p_module = '1' AND v_sec = 'module1_active') OR (p_module = '2' AND v_sec = 'module2_active')) THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', CASE
+                WHEN p_module = '1' AND v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN 'module_submitted'
+                WHEN p_module = '2' AND v_sec = 'submitted' THEN 'module_submitted'
+                ELSE 'module_not_started' END,
+      'message', 'This module is not active.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now),
+    'items', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'ordinal', w.ordinal,
+               'marked_for_review', w.marked_for_review,
+               'eliminated_option_ids', to_jsonb(w.eliminated_option_ids),
+               'highlights', w.highlights)
+             ORDER BY w.ordinal)
+        FROM test_session_item_workspace w
+       WHERE w.test_session_id = p_session_id AND w.section = p_section AND w.module = v_phys),
+      '[]'::jsonb)),
+    'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_ms(interval); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_ms(p interval) RETURNS bigint
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT floor(extract(epoch FROM p) * 1000)::bigint
+$$;
+
+
+--
+-- Name: exam_next_form_for_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_next_form_for_student(p_student_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT s.test_form_id
+       FROM test_sessions s
+      WHERE s.student_id = p_student_id
+        AND s.state IN ('created', 'active', 'section_break')
+      ORDER BY s.created_at DESC, s.id DESC
+      LIMIT 1),
+    (SELECT f.id
+       FROM test_forms f
+       LEFT JOIN LATERAL (
+         SELECT max(s.completed_at) AS last_completed
+           FROM test_sessions s
+          WHERE s.student_id = p_student_id
+            AND s.test_form_id = f.id
+            AND s.state = 'completed') c ON true
+      WHERE f.status = 'published'
+        AND f.is_selectable
+      ORDER BY c.last_completed IS NOT NULL,
+               c.last_completed,
+               f.published_at, f.name, f.id
+      LIMIT 1));
+$$;
+
+
+--
+-- Name: FUNCTION exam_next_form_for_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) IS 'SCL-168 (replaces the "Doc 04 rotation" Doc 05F §9.4 cites): the live session''s form; else the first selectable published form never completed (published_at, name, id); else the least recently completed. Deterministic.';
+
+
+--
+-- Name: exam_outbox_payload(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_outbox_payload(p_session_id uuid, p_event_type text) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'test_session_id', s.id,
+           'test_form_id', s.test_form_id,
+           'score_table_version', f.score_table_version,
+           'mode', s.mode,
+           'is_first_seen_form_attempt', s.is_first_seen_form_attempt,
+           'attempt_number_for_form', s.attempt_number_for_form)
+      || CASE WHEN p_event_type = 'test_session_completed'
+              THEN jsonb_build_object('completed_at', s.completed_at)
+              ELSE jsonb_build_object('abandoned_at', s.abandoned_at) END
+      || jsonb_build_object('sections', (
+           SELECT jsonb_agg(
+                    CASE WHEN p_event_type = 'test_session_completed'
+                         THEN jsonb_build_object('section', sec.section, 'module2_path', sec.module2_path)
+                         ELSE jsonb_build_object('section', sec.section,
+                                                 'section_state', sec.state,
+                                                 'module2_path', sec.module2_path,
+                                                 'scoreable', sec.state = 'submitted') END
+                    ORDER BY CASE sec.section WHEN 'RW' THEN 1 ELSE 2 END)
+             FROM test_session_sections sec WHERE sec.test_session_id = s.id))
+    FROM test_sessions s JOIN test_forms f ON f.id = s.test_form_id
+   WHERE s.id = p_session_id
+$$;
+
+
+--
+-- Name: exam_physical_module(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_physical_module(p_session_id uuid, p_section text, p_module text) RETURNS text
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE p_module
+           WHEN '1' THEN '1'
+           WHEN '2' THEN (SELECT '2' || s.module2_path FROM test_session_sections s
+                           WHERE s.test_session_id = p_session_id AND s.section = p_section)
+         END
+$$;
+
+
+--
+-- Name: exam_record_item_options(uuid, uuid, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_record_item_options(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_rows jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_sec   text;
+  v_phys  text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF NOT ((p_module = '1' AND v_sec = 'module1_active') OR (p_module = '2' AND v_sec = 'module2_active')) THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', 'module_submitted', 'message', 'This module is not active.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  INSERT INTO test_session_items (test_session_id, section, module, ordinal, question_id,
+                                  option_order, option_token_map)
+  SELECT p_session_id, p_section, v_phys, fi.ordinal, fi.question_id,
+         CASE WHEN r.option_order IS NULL OR jsonb_typeof(r.option_order) = 'null' THEN NULL
+              ELSE ARRAY(SELECT jsonb_array_elements_text(r.option_order)) END,
+         CASE WHEN jsonb_typeof(r.option_token_map) = 'object' THEN r.option_token_map END
+    FROM jsonb_to_recordset(p_rows) AS r(ordinal int, question_id text,
+                                         option_order jsonb, option_token_map jsonb)
+    JOIN test_sessions s ON s.id = p_session_id
+    JOIN test_form_items fi
+      ON fi.test_form_id = s.test_form_id AND fi.section = p_section AND fi.module = v_phys
+     AND fi.ordinal = r.ordinal AND fi.question_id = r.question_id
+  ON CONFLICT (test_session_id, section, module, ordinal) DO NOTHING;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object('items', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'ordinal', si.ordinal, 'question_id', si.question_id,
+             'option_order', to_jsonb(si.option_order), 'option_token_map', si.option_token_map)
+           ORDER BY si.ordinal)
+      FROM test_session_items si
+     WHERE si.test_session_id = p_session_id AND si.section = p_section AND si.module = v_phys),
+    '[]'::jsonb)), 'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_remaining_ms(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_remaining_ms(p_session_id uuid, p_section text, p_now timestamp with time zone) RETURNS bigint
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_mode    text;
+  v_sec     test_session_sections%ROWTYPE;
+  v_expires timestamptz;
+  v_paused  bigint := 0;
+BEGIN
+  SELECT mode INTO v_mode FROM test_sessions WHERE id = p_session_id;
+  SELECT * INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+
+  IF v_sec.state = 'module1_active' THEN
+    v_expires := v_sec.module1_expires_at;
+  ELSIF v_sec.state = 'module2_active' THEN
+    v_expires := v_sec.module2_expires_at;
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  IF v_mode = 'lenient' THEN
+    v_paused := v_sec.active_paused_ms;
+    IF v_sec.last_active_at IS NOT NULL
+       AND p_now - v_sec.last_active_at > exam_runtime_setting('heartbeat_pause_threshold') THEN
+      v_paused := v_paused + exam_ms(p_now - v_sec.last_active_at);
+    END IF;
+  END IF;
+
+  RETURN greatest(0::bigint, exam_ms(v_expires + v_paused * interval '1 millisecond' - p_now));
+END;
+$$;
+
+
+--
+-- Name: exam_report_source(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_report_source(p_student_id uuid, p_session_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_owner uuid;
+BEGIN
+  SELECT student_id INTO v_owner FROM test_sessions WHERE id = p_session_id;
+  IF NOT FOUND OR v_owner IS DISTINCT FROM p_student_id THEN
+    RETURN jsonb_build_object('status', 403, 'error', jsonb_build_object(
+      'code', 'forbidden', 'message', 'Report not available.'));
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', (
+    SELECT jsonb_build_object(
+             'session', jsonb_build_object(
+               'session_id', s.id,
+               'test_form_id', s.test_form_id,
+               'test_form_name', f.name,
+               'state', s.state,
+               'mode', s.mode,
+               'grace_expires_at', s.grace_expires_at,
+               'completed_at', s.completed_at,
+               'abandoned_at', s.abandoned_at,
+               'attempt_number_for_form', s.attempt_number_for_form,
+               'is_first_seen_form_attempt', s.is_first_seen_form_attempt),
+             'server_now', clock_timestamp(),
+             'sections', (
+               SELECT jsonb_agg(jsonb_build_object(
+                        'section', sec.section,
+                        'state', sec.state,
+                        'module2_submitted_by', sec.module2_submitted_by)
+                      ORDER BY CASE sec.section WHEN 'RW' THEN 1 ELSE 2 END)
+                 FROM test_session_sections sec WHERE sec.test_session_id = s.id),
+             'score_run', (
+               SELECT jsonb_build_object(
+                        'score_run_id', r.id,
+                        'rw_scored', r.rw_scored,
+                        'math_scored', r.math_scored,
+                        'rw_scaled', r.rw_scaled,
+                        'math_scaled', r.math_scaled,
+                        'total_scaled', r.total_scaled,
+                        'partial_display_scaled', r.partial_display_scaled,
+                        'scoring_model_version', r.scoring_model_version,
+                        'scored_at', r.computed_at)
+                 FROM score_runs r WHERE r.test_session_id = s.id),
+             'failure', (
+               SELECT jsonb_build_object('outbox_id', o.id,
+                                         'recorded_at', COALESCE(o.last_attempt_at, o.created_at))
+                 FROM exam_runtime_outbox o
+                WHERE o.aggregate_id = s.id AND o.status = 'failed'
+                  AND NOT EXISTS (SELECT 1 FROM score_runs r2 WHERE r2.test_session_id = s.id)
+                ORDER BY o.created_at DESC LIMIT 1),
+             'disclosure', (
+               SELECT jsonb_build_object(
+                        'disclosure_version', d.disclosure_version,
+                        'summary', d.summary,
+                        'full_text_url', d.full_text_url)
+                 FROM score_runs r3
+                 JOIN score_disclosure_versions d ON d.scoring_model_version = r3.scoring_model_version
+                WHERE r3.test_session_id = s.id))
+      FROM test_sessions s JOIN test_forms f ON f.id = s.test_form_id
+     WHERE s.id = p_session_id));
+END;
+$$;
+
+
+--
+-- Name: exam_runtime_setting(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_runtime_setting(p_key text) RETURNS interval
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT CASE p_key
+           WHEN 'test_level_grace_window'   THEN interval '24 hours'
+           WHEN 'heartbeat_pause_threshold' THEN interval '15 seconds'
+         END
+$$;
+
+
+--
+-- Name: exam_save_item_workspace(uuid, uuid, text, text, integer, boolean, text[], jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_save_item_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_marked boolean, p_eliminated text[], p_highlights jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_now    timestamptz := clock_timestamp();
+  v_touch  jsonb;
+  v_sec    text;
+  v_phys   text;
+  v_item   record;
+  v_len    int;
+  v_bad    text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF NOT ((p_module = '1' AND v_sec = 'module1_active') OR (p_module = '2' AND v_sec = 'module2_active')) THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', CASE
+                WHEN p_module = '1' AND v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN 'module_submitted'
+                WHEN p_module = '2' AND v_sec = 'submitted' THEN 'module_submitted'
+                ELSE 'module_not_started' END,
+      'message', 'This module is not active.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  SELECT si.option_token_map, q.item_type, q.passage INTO v_item
+    FROM test_session_items si JOIN questions q ON q.id = si.question_id
+   WHERE si.test_session_id = p_session_id AND si.section = p_section
+     AND si.module = v_phys AND si.ordinal = p_ordinal;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', 'session_item_mapping_missing', 'message', 'This item has not been served.'),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  -- D2: eliminations are served tokens of THIS item, each at most once.
+  IF cardinality(p_eliminated) > 0 AND v_item.item_type <> 'mcq' THEN
+    v_bad := 'a grid-in item has no options to eliminate';
+  ELSIF (SELECT count(DISTINCT e) FROM unnest(p_eliminated) e) <> cardinality(p_eliminated) THEN
+    v_bad := 'an option is eliminated twice';
+  ELSIF EXISTS (SELECT 1 FROM unnest(p_eliminated) e
+                 WHERE v_item.option_token_map IS NULL OR NOT (v_item.option_token_map ? e)) THEN
+    v_bad := 'an eliminated option is not one of this item''s served options';
+  END IF;
+
+  -- D3: highlights are code-point offsets inside the passage.
+  IF v_bad IS NULL THEN
+    v_len := char_length(v_item.passage);
+    IF jsonb_typeof(p_highlights) <> 'array' THEN
+      v_bad := 'highlights must be an array';
+    ELSIF jsonb_array_length(p_highlights) > 0 AND v_len IS NULL THEN
+      v_bad := 'this item has no passage to highlight';
+    ELSIF EXISTS (
+      SELECT 1 FROM jsonb_array_elements(p_highlights) h
+       WHERE jsonb_typeof(h) <> 'object'
+          OR (SELECT count(*) FROM jsonb_object_keys(h)) <> 2
+          OR jsonb_typeof(h->'start') <> 'number' OR jsonb_typeof(h->'end') <> 'number'
+          OR (h->>'start') !~ '^\d+$' OR (h->>'end') !~ '^\d+$'
+          OR (h->>'start')::int >= (h->>'end')::int
+          OR (h->>'end')::int > v_len) THEN
+      v_bad := 'a highlight is not a {start, end} range inside the passage';
+    END IF;
+  END IF;
+
+  IF v_bad IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 400, 'error', jsonb_build_object(
+      'code', 'invalid_workspace', 'message', v_bad), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  INSERT INTO test_session_item_workspace AS w
+    (test_session_id, section, module, ordinal, marked_for_review, eliminated_option_ids, highlights, updated_at)
+  VALUES (p_session_id, p_section, v_phys, p_ordinal, p_marked, p_eliminated, p_highlights, v_now)
+  ON CONFLICT (test_session_id, section, module, ordinal) DO UPDATE
+     SET marked_for_review = EXCLUDED.marked_for_review,
+         eliminated_option_ids = EXCLUDED.eliminated_option_ids,
+         highlights = EXCLUDED.highlights,
+         updated_at = EXCLUDED.updated_at;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now),
+    'item', jsonb_build_object(
+      'ordinal', p_ordinal,
+      'marked_for_review', p_marked,
+      'eliminated_option_ids', to_jsonb(p_eliminated),
+      'highlights', p_highlights)),
+    'outbox_ids', v_touch->'outbox_ids');
+END;
+$_$;
+
+
+--
+-- Name: exam_score_outbox_event(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_score_outbox_event(p_outbox_event_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_type    text;
+  v_run     uuid;
+  v_session uuid;
+  v_follow  uuid;
+  v_res     jsonb;
+  v_state   text;
+  v_msg     text;
+BEGIN
+  SELECT event_type INTO v_type FROM exam_runtime_outbox WHERE id = p_outbox_event_id;
+
+  BEGIN
+    IF v_type = 'test_session_scored' THEN
+      v_res := exam_apply_scored_seams(p_outbox_event_id);
+    ELSE
+      v_run := score_test_session_from_outbox(p_outbox_event_id);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
+    UPDATE exam_runtime_outbox
+       SET attempts = attempts + 1,
+           last_attempt_at = clock_timestamp(),
+           failure_reason = left(v_state || ': ' || v_msg, 500),
+           status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END
+     WHERE id = p_outbox_event_id AND status = 'pending';
+    RETURN jsonb_build_object('ok', false, 'sqlstate', v_state);
+  END;
+
+  IF v_type = 'test_session_scored' THEN
+    UPDATE exam_runtime_outbox
+       SET status = 'published', published_at = clock_timestamp(), result = v_res,
+           attempts = attempts + 1, last_attempt_at = clock_timestamp(), failure_reason = NULL
+     WHERE id = p_outbox_event_id AND status = 'pending';
+    RETURN jsonb_build_object('ok', true, 'seams', v_res);
+  END IF;
+
+  -- The score is committed with this transaction; the seams run in the next.
+  SELECT test_session_id INTO v_session FROM score_runs WHERE id = v_run;
+  INSERT INTO exam_runtime_outbox (event_type, aggregate_id, payload)
+  VALUES ('test_session_scored', v_session,
+          jsonb_build_object('score_run_id', v_run, 'source_outbox_event_id', p_outbox_event_id))
+  ON CONFLICT (aggregate_id) WHERE event_type = 'test_session_scored' DO NOTHING;
+  SELECT id INTO v_follow FROM exam_runtime_outbox
+   WHERE aggregate_id = v_session AND event_type = 'test_session_scored';
+
+  UPDATE exam_runtime_outbox
+     SET status = 'published', published_at = clock_timestamp(),
+         attempts = attempts + 1, last_attempt_at = clock_timestamp(), failure_reason = NULL
+   WHERE id = p_outbox_event_id AND status = 'pending';
+  RETURN jsonb_build_object('ok', true, 'score_run_id', v_run, 'followup_outbox_id', v_follow);
+END;
+$$;
+
+
+--
+-- Name: exam_section_state_json(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'section', sec.section,
+           'state', sec.state,
+           'remaining_ms', exam_remaining_ms(p_session_id, sec.section, p_now))
+    FROM test_session_sections sec
+   WHERE sec.test_session_id = p_session_id AND sec.section = p_section
+$$;
+
+
+--
+-- Name: exam_session_body(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_session_body(p_session_id uuid, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'session_id', s.id,
+           'test_form_id', s.test_form_id,
+           'state', s.state,
+           'mode', s.mode,
+           'active_section', s.active_section,
+           'grace_expires_at', s.grace_expires_at,
+           'attempt_number_for_form', s.attempt_number_for_form,
+           'is_first_seen_form_attempt', s.is_first_seen_form_attempt,
+           'break_remaining_ms', CASE WHEN s.state = 'section_break' THEN (
+               SELECT greatest(0::bigint, exam_ms(rw.module2_submitted_at
+                        + f.break_duration_ms * interval '1 millisecond' - p_now))
+                 FROM test_session_sections rw
+                WHERE rw.test_session_id = s.id AND rw.section = 'RW') END,
+           'sections', (
+             SELECT jsonb_agg(jsonb_build_object(
+                      'section', sec.section,
+                      'state', sec.state,
+                      'remaining_ms', exam_remaining_ms(s.id, sec.section, p_now),
+                      'module2_path_locked', sec.module2_path IS NOT NULL,
+                      -- E7a: the resume position, only while it names the ACTIVE
+                      -- module (never the physical module id itself, §9.3)
+                      'current_ordinal', CASE
+                        WHEN sec.state = 'module1_active' AND sec.current_module = '1'
+                          THEN sec.current_ordinal
+                        WHEN sec.state = 'module2_active' AND sec.current_module = '2' || sec.module2_path
+                          THEN sec.current_ordinal
+                      END)
+                    ORDER BY CASE sec.section WHEN 'RW' THEN 1 ELSE 2 END)
+               FROM test_session_sections sec WHERE sec.test_session_id = s.id))
+    FROM test_sessions s JOIN test_forms f ON f.id = s.test_form_id
+   WHERE s.id = p_session_id
+$$;
+
+
+--
+-- Name: exam_session_state(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_session_state(p_student_id uuid, p_session_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_active text;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int IN (403, 404) THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  SELECT active_section INTO v_active FROM test_sessions WHERE id = p_session_id;
+  IF v_active IS NOT NULL THEN
+    PERFORM exam_fold_heartbeat(p_session_id, v_active, v_now);
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', exam_session_body(p_session_id, v_now),
+                            'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_start_module(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_start_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := clock_timestamp();
+  v_touch jsonb;
+  v_state text;
+  v_sec   text;
+  v_ok    boolean := false;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_state := v_touch->>'state';
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+
+  IF p_module = '1' THEN
+    IF v_sec = 'module1_active' THEN
+      v_ok := true;                                           -- idempotent re-start
+    ELSIF v_sec = 'not_started'
+          AND ((p_section = 'RW' AND v_state = 'created')
+            OR (p_section = 'M'  AND v_state = 'section_break')) THEN
+      PERFORM exam_start_module_internal(p_session_id, p_section, '1', v_now);
+      v_ok := true;
+    ELSIF v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN
+      RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+        'code', 'module_submitted', 'message', 'This module has already been submitted.',
+        'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+        'outbox_ids', v_touch->'outbox_ids');
+    END IF;
+  ELSE
+    IF v_sec = 'module2_active' THEN
+      v_ok := true;
+    ELSIF v_sec = 'module1_submitted' THEN
+      PERFORM exam_start_module_internal(p_session_id, p_section, '2', v_now);
+      v_ok := true;
+    ELSIF v_sec = 'submitted' THEN
+      RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+        'code', 'module_submitted', 'message', 'This module has already been submitted.',
+        'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+        'outbox_ids', v_touch->'outbox_ids');
+    END IF;
+  END IF;
+
+  IF NOT v_ok THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', 'module_not_startable', 'message', 'This module cannot be started yet.'),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+    'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_start_module_internal(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_start_module_internal(p_session_id uuid, p_section text, p_module text, p_started_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_form uuid;
+  v_dur  int;
+BEGIN
+  SELECT test_form_id INTO v_form FROM test_sessions WHERE id = p_session_id;
+  v_dur := exam_module_duration_ms(v_form, p_section, p_module);
+
+  IF p_module = '1' THEN
+    UPDATE test_session_sections
+       SET state = 'module1_active',
+           module1_started_at = p_started_at,
+           module1_expires_at = p_started_at + v_dur * interval '1 millisecond',
+           active_paused_ms = 0,
+           last_active_at = p_started_at
+     WHERE test_session_id = p_session_id AND section = p_section AND state = 'not_started';
+  ELSE
+    UPDATE test_session_sections
+       SET state = 'module2_active',
+           module2_started_at = p_started_at,
+           module2_expires_at = p_started_at + v_dur * interval '1 millisecond',
+           active_paused_ms = 0,
+           last_active_at = p_started_at
+     WHERE test_session_id = p_session_id AND section = p_section AND state = 'module1_submitted';
+  END IF;
+
+  UPDATE test_sessions
+     SET state = 'active',
+         active_section = p_section,
+         started_at = COALESCE(started_at, p_started_at)
+   WHERE id = p_session_id;
+END;
+$$;
+
+
+--
+-- Name: exam_submit_answer(uuid, uuid, text, text, integer, text, text, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_submit_answer(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_question_id text, p_answer text, p_display_answer text, p_client_latency_ms integer, p_idempotency_key text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now      timestamptz := clock_timestamp();
+  v_touch    jsonb;
+  v_prior    test_answer_submissions%ROWTYPE;
+  v_sec      text;
+  v_phys     text;
+  v_response jsonb;
+  v_sub_id   uuid;
+  v_mismatch text[] := ARRAY[]::text[];
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  -- §11.2 step 2: replay
+  SELECT * INTO v_prior FROM test_answer_submissions
+   WHERE test_session_id = p_session_id AND idempotency_key = p_idempotency_key;
+  IF FOUND THEN
+    IF v_prior.section IS DISTINCT FROM p_section THEN v_mismatch := v_mismatch || 'section'::text; END IF;
+    IF left(v_prior.module, 1) IS DISTINCT FROM p_module THEN v_mismatch := v_mismatch || 'module'::text; END IF;
+    IF v_prior.question_id IS DISTINCT FROM p_question_id THEN v_mismatch := v_mismatch || 'question_id'::text; END IF;
+    IF v_prior.ordinal IS DISTINCT FROM p_ordinal THEN v_mismatch := v_mismatch || 'ordinal'::text; END IF;
+    IF v_prior.answer IS DISTINCT FROM p_answer THEN v_mismatch := v_mismatch || 'answer'::text; END IF;
+    RETURN jsonb_build_object('status', 200,
+      'body', v_prior.response_json || jsonb_build_object('idempotent_replay', true),
+      'body_mismatch_fields', to_jsonb(v_mismatch),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  -- §11.2 step 3: the module must be the active one
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+  IF (v_touch->>'state') <> 'active'
+     OR NOT ((p_module = '1' AND v_sec = 'module1_active') OR (p_module = '2' AND v_sec = 'module2_active')) THEN
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', CASE
+                WHEN p_module = '1' AND v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN 'module_submitted'
+                WHEN p_module = '2' AND v_sec = 'submitted' THEN 'module_submitted'
+                ELSE 'module_not_started' END,
+      'message', 'This module is not accepting answers.',
+      'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_phys := exam_physical_module(p_session_id, p_section, p_module);
+
+  -- §11.2 step 4: the position must be this module's item
+  IF NOT EXISTS (
+    SELECT 1 FROM test_sessions s
+      JOIN test_form_items fi ON fi.test_form_id = s.test_form_id
+     WHERE s.id = p_session_id AND fi.section = p_section AND fi.module = v_phys
+       AND fi.ordinal = p_ordinal AND fi.question_id = p_question_id) THEN
+    RETURN jsonb_build_object('status', 400, 'error', jsonb_build_object(
+      'code', 'invalid_question_for_form',
+      'message', 'The question does not belong to this position of the active module.'),
+      'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+
+  -- §11.2 steps 6-8
+  v_response := jsonb_build_object(
+    'response_schema_version', 'tests-answer-v1',
+    'stored', jsonb_build_object('question_id', p_question_id, 'ordinal', p_ordinal,
+                                 'answer', p_display_answer, 'submitted_at', v_now),
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now),
+    'idempotent_replay', false);
+
+  INSERT INTO test_answer_submissions (test_session_id, idempotency_key, section, module, ordinal,
+                                       question_id, answer, client_latency_ms, response_json,
+                                       response_schema_version, was_canonical_update)
+  VALUES (p_session_id, p_idempotency_key, p_section, v_phys, p_ordinal,
+          p_question_id, p_answer, p_client_latency_ms, v_response, 'tests-answer-v1', true)
+  RETURNING id INTO v_sub_id;
+
+  INSERT INTO test_session_answers (test_session_id, section, module, ordinal, question_id,
+                                    answer, client_latency_ms, last_submission_id, updated_at)
+  VALUES (p_session_id, p_section, v_phys, p_ordinal, p_question_id,
+          p_answer, p_client_latency_ms, v_sub_id, v_now)
+  ON CONFLICT (test_session_id, section, module, ordinal) DO UPDATE
+     SET question_id = EXCLUDED.question_id,
+         answer = EXCLUDED.answer,
+         client_latency_ms = EXCLUDED.client_latency_ms,
+         last_submission_id = EXCLUDED.last_submission_id,
+         updated_at = EXCLUDED.updated_at;
+
+  RETURN jsonb_build_object('status', 200, 'body', v_response, 'outbox_ids', v_touch->'outbox_ids');
+END;
+$$;
+
+
+--
+-- Name: exam_submit_module(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_submit_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now    timestamptz := clock_timestamp();
+  v_touch  jsonb;
+  v_sec    text;
+  v_outbox uuid;
+  v_ids    jsonb;
+BEGIN
+  v_touch := exam_touch_session(p_student_id, p_session_id, v_now);
+  IF (v_touch->>'status')::int <> 200 THEN
+    RETURN jsonb_build_object('status', (v_touch->>'status')::int, 'error', jsonb_build_object(
+      'code', v_touch->>'code', 'message', 'Session not available.'), 'outbox_ids', v_touch->'outbox_ids');
+  END IF;
+  v_ids := v_touch->'outbox_ids';
+
+  SELECT state INTO v_sec FROM test_session_sections
+   WHERE test_session_id = p_session_id AND section = p_section;
+
+  IF p_module = '1' AND v_sec = 'module1_active' THEN
+    PERFORM exam_submit_module1_internal(p_session_id, p_section, 'student', v_now);
+  ELSIF p_module = '2' AND v_sec = 'module2_active' THEN
+    v_outbox := exam_submit_module2_internal(p_session_id, p_section, 'student', v_now);
+    IF v_outbox IS NOT NULL THEN v_ids := v_ids || to_jsonb(v_outbox); END IF;
+  ELSE
+    RETURN jsonb_build_object('status', 409, 'error', jsonb_build_object(
+      'code', CASE
+                WHEN p_module = '1' AND v_sec IN ('module1_submitted', 'module2_active', 'submitted') THEN 'module_submitted'
+                WHEN p_module = '2' AND v_sec = 'submitted' THEN 'module_submitted'
+                ELSE 'module_not_started' END,
+      'message', 'This module is not active.',
+      'section_state', exam_section_state_json(p_session_id, p_section, v_now)),
+      'outbox_ids', v_ids);
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'section_state', exam_section_state_json(p_session_id, p_section, v_now),
+    'session_state', (SELECT state FROM test_sessions WHERE id = p_session_id)),
+    'outbox_ids', v_ids);
+END;
+$$;
+
+
+--
+-- Name: exam_submit_module1_internal(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_submit_module1_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_raw       int;
+  v_threshold int;
+BEGIN
+  v_raw := exam_grade_module1(p_session_id, p_section);
+  SELECT CASE WHEN p_section = 'RW' THEN f.routing_threshold_rw ELSE f.routing_threshold_m END
+    INTO v_threshold
+    FROM test_sessions s JOIN test_forms f ON f.id = s.test_form_id
+   WHERE s.id = p_session_id;
+
+  UPDATE test_session_sections
+     SET state = 'module1_submitted',
+         module2_path = CASE WHEN v_raw >= v_threshold THEN 'B' ELSE 'A' END,
+         module1_submitted_at = p_now,
+         module1_submitted_by = p_by
+   WHERE test_session_id = p_session_id AND section = p_section AND state = 'module1_active';
+END;
+$$;
+
+
+--
+-- Name: exam_submit_module2_internal(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_submit_module2_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_outbox uuid;
+BEGIN
+  UPDATE test_session_sections
+     SET state = 'submitted',
+         module2_submitted_at = p_now,
+         module2_submitted_by = p_by
+   WHERE test_session_id = p_session_id AND section = p_section AND state = 'module2_active';
+
+  IF (SELECT count(*) FROM test_session_sections
+       WHERE test_session_id = p_session_id AND state = 'submitted') = 2 THEN
+    UPDATE test_sessions
+       SET state = 'completed', completed_at = p_now, active_section = NULL
+     WHERE id = p_session_id;
+    INSERT INTO exam_runtime_outbox (event_type, aggregate_id, payload)
+    VALUES ('test_session_completed', p_session_id,
+            exam_outbox_payload(p_session_id, 'test_session_completed'))
+    RETURNING id INTO v_outbox;
+  ELSE
+    UPDATE test_sessions
+       SET state = 'section_break', active_section = NULL
+     WHERE id = p_session_id;
+  END IF;
+  RETURN v_outbox;
+END;
+$$;
+
+
+--
+-- Name: exam_touch_session(uuid, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_touch_session(p_student_id uuid, p_session_id uuid, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_owner uuid;
+  v_adv   jsonb;
+  v_state text;
+BEGIN
+  SELECT student_id INTO v_owner FROM test_sessions WHERE id = p_session_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 404, 'code', 'session_not_found', 'outbox_ids', '[]'::jsonb);
+  END IF;
+  IF v_owner IS DISTINCT FROM p_student_id THEN
+    RETURN jsonb_build_object('status', 403, 'code', 'forbidden', 'outbox_ids', '[]'::jsonb);
+  END IF;
+
+  v_adv := exam_advance_session(p_session_id, p_now);
+  SELECT state INTO v_state FROM test_sessions WHERE id = p_session_id;
+
+  IF v_state IN ('completed', 'abandoned_final', 'partial_scored_abandoned') THEN
+    RETURN jsonb_build_object(
+      'status', 409,
+      'code', CASE WHEN (v_adv->>'finalized')::boolean THEN 'session_grace_expired' ELSE 'session_terminal' END,
+      'state', v_state,
+      'outbox_ids', v_adv->'outbox_ids');
+  END IF;
+  RETURN jsonb_build_object('status', 200, 'state', v_state, 'outbox_ids', v_adv->'outbox_ids');
+END;
+$$;
+
+
+--
 -- Name: execute_account_deletion_cascade(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4488,6 +6750,9 @@ DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
   v_actor_id  uuid;
+  v_exam_sessions uuid[];   -- E6b: the profile's test_sessions, collected before hard_delete removes them
+  v_exam_child    record;   -- E9 commit 0: one row of public.exam_child_tables
+  v_exam_pred     text;     -- E9 commit 0: that row's WHERE clause
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
@@ -4718,6 +6983,46 @@ BEGIN
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
+    -- ====================================================================
+    -- LAYER 2 (hard_delete): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- test_sessions.student_id and score_runs.student_id are ON DELETE SET NULL
+    -- (E6b), as practice and review are: the profile delete below would SEVER
+    -- these rows, not remove them. hard_delete removes them here, explicitly.
+    -- The sessions are collected first — the outbox carries only aggregate_id
+    -- (no FK, no identity) and is reachable only through them.
+    SELECT coalesce(array_agg(id), ARRAY[]::uuid[]) INTO v_exam_sessions
+      FROM public.test_sessions WHERE student_id = p_profile_id;
+
+    -- L2-08 .. L2-15, E9 commit 0: every exam table is a ROW of
+    -- public.exam_child_tables, walked in `ordinal` order (children before
+    -- parents; the E6b order, unchanged). `delete` rows are removed and counted;
+    -- `count` rows (score_run_event_ledger, score_runs — insert-once, they leave
+    -- with test_sessions through ON DELETE CASCADE, which their trigger admits)
+    -- are counted first because that removal is invisible to GET DIAGNOSTICS.
+    -- The next exam table is a list row in its own migration, not an edit here;
+    -- scripts/ci/exam-deletion-cascade-gates.sql L1 fails while one is missing.
+    FOR v_exam_child IN
+      SELECT table_name, key_column, key_target, action
+        FROM public.exam_child_tables ORDER BY ordinal
+    LOOP
+      v_exam_pred := CASE v_exam_child.key_target
+        WHEN 'session'   THEN format('%I = ANY ($1)', v_exam_child.key_column)
+        WHEN 'score_run' THEN format(
+          '%I IN (SELECT r.id FROM public.score_runs r WHERE r.test_session_id = ANY ($1))',
+          v_exam_child.key_column)
+      END;
+      IF v_exam_child.action = 'delete' THEN
+        EXECUTE format('DELETE FROM public.%I WHERE %s', v_exam_child.table_name, v_exam_pred)
+          USING v_exam_sessions;
+        GET DIAGNOSTICS v_count = ROW_COUNT;
+      ELSE
+        EXECUTE format('SELECT count(*) FROM public.%I WHERE %s', v_exam_child.table_name, v_exam_pred)
+          INTO v_count USING v_exam_sessions;
+      END IF;
+      v_result := v_result || jsonb_build_object(v_exam_child.table_name, v_count);
+    END LOOP;
+
   ELSIF p_privacy_mode = 'anonymize' THEN
     -- ====================================================================
     -- FAIL-CLOSED SENTINEL (INV-05E-07): before severing identity, verify
@@ -4727,29 +7032,68 @@ BEGIN
     -- this cannot fire under normal operation. But INV-05E-07 requires
     -- explicit verification before the identity ↔ actor_id linkage is
     -- destroyed. Runs BEFORE SET NULL so identity col is still queryable.
+    -- @spec [Doc 05E §6 INV-05E-07, strengthened; SCL-151 (PROPOSED); owner brief 2026-09-25 R2]
+    -- | @implemented [2026-09-25]
+    --
+    -- WAS: an enumerated seven-table list asking only `actor_id IS NULL`. Both halves failed.
+    -- The list could not cover a table added later, and the nullity question cannot see a
+    -- WRONG value — which is exactly what `diagnostic-routes.ts` wrote for five production
+    -- sessions and 200 items, undetected until the Doc 06D §6.3 scan ran on a real deletion.
+    --
+    -- IS: catalog-driven, and it checks the VALUE. Every retained row keyed to this profile
+    -- must carry THIS PROFILE'S actor_id — the one already read into v_actor_id above, from
+    -- `profiles`, before the identity link is destroyed. That single equality subsumes the old
+    -- check (NULL <> v_actor_id) and forbids the identity key (p_profile_id <> v_actor_id,
+    -- guaranteed because no profile may have id = actor_id, which
+    -- public.actor_id_integrity_violations() asserts schema-wide).
+    --
+    -- Still fail-closed and still HERE, before the SET NULLs: after identity is severed there
+    -- is no column left to key the check on.
     DECLARE
-      v_sentinel_tbl text;
+      v_sentinel_rec record;
       v_sentinel_col text;
       v_sentinel_cnt bigint;
+      v_sentinel_tbls integer := 0;
     BEGIN
-      FOR v_sentinel_tbl, v_sentinel_col IN VALUES
-        ('practice_sessions',                'user_id'),
-        ('practice_session_items',           'user_id'),
-        ('review_sessions',                  'student_id'),
-        ('review_session_items',             'student_id'),
-        ('review_error_attempts',            'student_id'),
-        ('mastery_event_audit_log',          'student_id'),
-        ('mastery_domain_refresh_audit_log', 'student_id')
+      FOR v_sentinel_rec IN
+        SELECT c.relname AS tbl,
+               (SELECT a2.attname
+                  FROM pg_attribute a2
+                 WHERE a2.attrelid = c.oid AND a2.attnum > 0 AND NOT a2.attisdropped
+                   AND a2.attname IN ('user_id', 'student_id')
+                 ORDER BY a2.attname LIMIT 1) AS idcol
+          FROM pg_attribute a
+          JOIN pg_class     c ON c.oid = a.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relkind = 'r'
+           AND NOT c.relispartition
+           AND a.attname = 'actor_id'
+           AND a.attnum > 0 AND NOT a.attisdropped
+           AND c.relname NOT IN ('profiles', 'anonymized_actors')
+         ORDER BY c.relname
       LOOP
+        CONTINUE WHEN v_sentinel_rec.idcol IS NULL;
+        v_sentinel_col  := v_sentinel_rec.idcol;
+        v_sentinel_tbls := v_sentinel_tbls + 1;
+
         EXECUTE format(
-          'SELECT count(*) FROM public.%I WHERE %I = $1 AND actor_id IS NULL',
-          v_sentinel_tbl, v_sentinel_col
-        ) INTO v_sentinel_cnt USING p_profile_id;
+          'SELECT count(*) FROM public.%1$I WHERE %2$I = $1 '
+          'AND (actor_id IS NULL OR actor_id <> $2)',
+          v_sentinel_rec.tbl, v_sentinel_col
+        ) INTO v_sentinel_cnt USING p_profile_id, v_actor_id;
+
         IF v_sentinel_cnt > 0 THEN
-          RAISE EXCEPTION '05E-5d SENTINEL (INV-05E-07): % row(s) in public.% have identity present but actor_id IS NULL — refusing to sever identity from ungrouped row',
-            v_sentinel_cnt, v_sentinel_tbl;
+          RAISE EXCEPTION '05E-5d SENTINEL (INV-05E-07): % row(s) in public.% carry an actor_id that is not this profile''s (expected %) — refusing to sever identity from a row whose grouping identifier is wrong or absent. See public.actor_id_integrity_violations().',
+            v_sentinel_cnt, v_sentinel_rec.tbl, v_actor_id;
         END IF;
       END LOOP;
+
+      -- A sentinel that inspected nothing would pass silently, which is how a vacuous gate
+      -- reads green. The seven tables the old list named are the floor.
+      IF v_sentinel_tbls < 7 THEN
+        RAISE EXCEPTION '05E-5d SENTINEL: discovered only % actor_id table(s); the catalog query is wrong and the check would pass vacuously', v_sentinel_tbls;
+      END IF;
     END;
 
     -- ====================================================================
@@ -4823,6 +7167,32 @@ BEGIN
     v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
 
     -- ====================================================================
+    -- LAYER 2 (anonymize): exam runtime (Doc 04A §5, Doc 04B §9; E6b, SCL-143)
+    -- ====================================================================
+    -- RETAINED under actor_id. The identity link is severed by
+    -- test_sessions.student_id and score_runs.student_id ON DELETE SET NULL when
+    -- the profile row goes below — the same mechanism as practice and review.
+    -- score_runs is insert-once; its trigger admits exactly that FK action (the
+    -- student_id -> NULL change with every other column equal, the profile gone).
+    -- Nothing else to remove: test_sessions has no client/device fingerprint
+    -- (Doc 04A omits client_instance_id); the children (E7a's workspace rows
+    -- included: flags, eliminated opaque tokens, highlight offsets — no text) and
+    -- the ledger carry no identity; the outbox carries none either and score_runs references it,
+    -- so it stays. Counted HERE, before the profile delete, because a severance
+    -- done by an FK action is invisible to GET DIAGNOSTICS.
+    -- E9 commit 0: the counts come from the list (rows with a student_column).
+    FOR v_exam_child IN
+      SELECT table_name, student_column
+        FROM public.exam_child_tables
+       WHERE student_column IS NOT NULL ORDER BY ordinal
+    LOOP
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE %I = $1',
+                     v_exam_child.table_name, v_exam_child.student_column)
+        INTO v_count USING p_profile_id;
+      v_result := v_result || jsonb_build_object(v_exam_child.table_name, v_count);
+    END LOOP;
+
+    -- ====================================================================
     -- ANONYMIZED_ACTORS LEDGER — Doc 05E §3 Rule 4 / INV-05E-01 / INV-05E-02
     -- (build-derived ledger; no spec anchor — SCL-088. The earlier citation of section 3.1 ("Industry precedent")
     -- was wrong.)
@@ -4848,6 +7218,8 @@ BEGIN
   -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_events, notification_messages, legal_acceptances.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
+  -- test_sessions.student_id and score_runs.student_id SET NULL fire here in
+  -- anonymize mode (E6b); in hard_delete no exam row is left for them to reach.
   -- Operator-FK edges (36 config/history) are ON DELETE SET NULL — Postgres severs
   -- the attribution as the profile row goes; no enumeration here.
   -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
@@ -5101,6 +7473,49 @@ BEGIN
   )
   ON CONFLICT DO NOTHING;  -- catch-all: tolerates id PK AND lower(email) arbiters; never aborts the auth insert
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: is_answer_correct(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_item_type        text;
+  v_correct_answer   text;
+  v_correct_variants text[];
+BEGIN
+  -- p_submitted = NULL means no answer / blank; always false
+  IF p_submitted IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT item_type, correct_answer, correct_variants
+    INTO v_item_type, v_correct_answer, v_correct_variants
+  FROM questions
+  WHERE id = p_question_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Question not found: %', p_question_id;
+  END IF;
+
+  -- Multiple choice: exact letter match
+  IF v_item_type = 'mcq' THEN
+    RETURN COALESCE(p_submitted = v_correct_answer, false);
+  END IF;
+
+  -- Student-produced response: variant array match
+  IF v_item_type = 'grid_in' THEN
+    RETURN COALESCE(p_submitted = ANY(v_correct_variants), false);
+  END IF;
+
+  -- Unknown question type: explicitly false rather than ambiguous
+  RETURN false;
 END;
 $$;
 
@@ -5627,6 +8042,81 @@ $$;
 
 
 --
+-- Name: prevent_active_scoring_constants_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_active_scoring_constants_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_status text;
+  v_target_version text;
+BEGIN
+  -- For INSERT we examine NEW (the row being inserted); for UPDATE and DELETE we
+  -- examine OLD (the row being changed). In all cases we check the parent version's
+  -- status: if the parent is active or superseded, the constants are sealed.
+  v_target_version := CASE TG_OP
+    WHEN 'INSERT' THEN NEW.scoring_model_version
+    ELSE OLD.scoring_model_version
+  END;
+
+  SELECT status INTO v_status
+  FROM scoring_model_versions
+  WHERE version = v_target_version;
+
+  IF v_status IN ('active', 'superseded') THEN
+    RAISE EXCEPTION
+      'scoring_constants rows for active/superseded scoring_model_version % are immutable. '
+      'Adding, modifying, or deleting constants requires a new scoring_model_version '
+      '(Doc 04B V4.3 §8.4 Tier 3 protocol).',
+      v_target_version
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+
+--
+-- Name: prevent_score_runs_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_score_runs_mutation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- D6 (E4), narrowed by E6b: a DELETE passes only as the FK cascade of a
+  -- session deletion, or of a profile deletion for a row that still names a
+  -- student. OLD.student_id IS NOT NULL closes the hole the nullable column
+  -- opened: `id = NULL` matches no profile, so without it every anonymised
+  -- score row would read as "profile gone" and be deletable.
+  IF TG_OP = 'DELETE'
+     AND (NOT EXISTS (SELECT 1 FROM test_sessions WHERE id = OLD.test_session_id)
+          OR (OLD.student_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id))) THEN
+    RETURN OLD;
+  END IF;
+  -- E6b: the ONE admitted UPDATE is score_runs.student_id ON DELETE SET NULL
+  -- firing as the student's profile is deleted: student_id goes from a value to
+  -- NULL, no other column changes, and the referenced profile no longer exists.
+  -- No caller can build that state while the profile exists, and once it is gone
+  -- the FK action has already nulled the column — so no role, setting or
+  -- statement other than the FK action itself reaches this branch.
+  IF TG_OP = 'UPDATE'
+     AND OLD.student_id IS NOT NULL
+     AND NEW.student_id IS NULL
+     AND (to_jsonb(NEW) - 'student_id') = (to_jsonb(OLD) - 'student_id')
+     AND NOT EXISTS (SELECT 1 FROM profiles WHERE id = OLD.student_id) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'score_runs is insert-once. UPDATE and DELETE are forbidden. Use score_runs_admin_recompute for post-launch calibration audit.';
+END;
+$$;
+
+
+--
 -- Name: prevent_update_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5864,10 +8354,13 @@ CREATE FUNCTION public.reconcile_deletion_log() RETURNS jsonb
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_today       date := (now() AT TIME ZONE 'utc')::date;
-  v_reverted    bigint;
-  v_completed   bigint;
-  v_cancelled   bigint;
+  v_today         date := (now() AT TIME ZONE 'utc')::date;
+  v_reverted      bigint;
+  v_completed     bigint;
+  v_cancelled     bigint;
+  v_ids           uuid[];
+  v_id            uuid;
+  v_unverifiable  jsonb;
 BEGIN
   UPDATE public.deletion_request_log l
      SET status = 'pending'
@@ -5883,12 +8376,58 @@ BEGIN
                   WHERE adr.log_id = l.log_id AND adr.status = 'cancelled');
   GET DIAGNOSTICS v_cancelled = ROW_COUNT;
 
-  UPDATE public.deletion_request_log l
-     SET status = 'completed', responded_on = coalesce(l.responded_on, v_today)
-   WHERE l.status = 'executing'
-     AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests adr
-                      WHERE adr.log_id = l.log_id);
-  GET DIAGNOSTICS v_completed = ROW_COUNT;
+  WITH done AS (
+    UPDATE public.deletion_request_log l
+       SET status = 'completed', responded_on = coalesce(l.responded_on, v_today)
+     WHERE l.status = 'executing'
+       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests adr
+                        WHERE adr.log_id = l.log_id)
+    RETURNING l.log_id
+  )
+  SELECT coalesce(array_agg(d.log_id ORDER BY d.log_id), ARRAY[]::uuid[]), count(*)
+    INTO v_ids, v_completed
+    FROM done d;
+
+  -- @spec [Doc 06D §6.2 / §6.5 INV-06-08; SCL-153 (PROPOSED); owner brief 2026-09-23]
+  --
+  -- A row the reconciler completes is one whose cascade COMMITTED but whose T3 never ran, so
+  -- the scan in `complete_deletion_log` never happened for it. It cannot be run now: PS-5 of
+  -- the cascade consumed the `account_deletion_requests` row in the cascade's own transaction,
+  -- and with it the only surviving copy of the deleted profile's uuid. The deletion is real
+  -- and the erasure is done; what is missing is the proof, permanently.
+  --
+  -- So the record says that, rather than not existing. §6.5 pages either way — (a) on a
+  -- completed log row with no record, (b) on a `fail` — but a `fail` row carries the reason,
+  -- the log id and a re-readable statement that the scan was impossible, and an absent row
+  -- carries nothing. `deleted_profile_id` is NULL because there is genuinely nothing to put
+  -- there; inventing one would be worse than admitting it.
+  IF cardinality(v_ids) > 0 THEN
+    v_unverifiable := jsonb_build_object(
+      'identity', jsonb_build_object(
+        'verified', false, 'canonical_owner', 'Doc 01 V6 §19',
+        'evidence_query', 'none — T3 did not run for this log row and the deleted profile uuid is unrecoverable (consumed with the account_deletion_requests row by PS-5 of execute_account_deletion_cascade), so public.verify_deletion_layers cannot be run for it',
+        'result', 'not verifiable', 'out_of_scope', false),
+      'mastery', jsonb_build_object(
+        'verified', false, 'canonical_owner', 'Doc 05D §10 (cited per project handoff record)',
+        'evidence_query', 'none — see the identity layer', 'result', 'not verifiable',
+        'out_of_scope', false),
+      'lisa', jsonb_build_object(
+        'verified', false, 'canonical_owner', 'Doc 03 Main §14.2 (cited per project handoff record)',
+        'evidence_query', 'none — see the identity layer', 'result', 'not verifiable',
+        'out_of_scope', false),
+      'analytics', jsonb_build_object(
+        'verified', false, 'canonical_owner', 'Doc 07 (FWD-06-01)', 'out_of_scope', true,
+        'out_of_scope_reason', 'analytics retention surface pending Doc 07 — bounded forward-ref per Parent §3')
+    );
+    FOREACH v_id IN ARRAY v_ids LOOP
+      -- never over a record that already exists: T3 leaves the row 'completed', so this branch
+      -- cannot reach one it wrote — but a guard is cheaper than a pass silently becoming a fail.
+      CONTINUE WHEN EXISTS (
+        SELECT 1 FROM public.deletion_verification_records v WHERE v.log_id = v_id
+      );
+      PERFORM public.record_deletion_verification(v_id, v_unverifiable, 'fail');
+    END LOOP;
+  END IF;
 
   RETURN jsonb_build_object('reverted_to_pending', v_reverted, 'completed', v_completed, 'cancelled', v_cancelled);
 END;
@@ -5924,16 +8463,18 @@ $$;
 
 
 --
--- Name: record_deletion_verification(uuid, jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: record_deletion_verification(uuid, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid DEFAULT NULL::uuid) RETURNS uuid
+CREATE FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_canonical text;
   v_hash      text;
+  v_layer     text;
+  v_node      jsonb;
 BEGIN
   IF p_outcome NOT IN ('pass', 'fail') THEN
     RAISE EXCEPTION 'record_deletion_verification: outcome must be pass or fail (got %)', p_outcome
@@ -5950,21 +8491,40 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  -- §6.3: all four documented layers, always.
+  FOREACH v_layer IN ARRAY ARRAY['identity', 'mastery', 'lisa', 'analytics'] LOOP
+    IF jsonb_typeof(p_layers_verified -> v_layer) IS DISTINCT FROM 'object' THEN
+      RAISE EXCEPTION 'record_deletion_verification: layers_verified has no % layer object — Doc 06D §6.3 requires all four (identity, mastery, lisa, analytics)', v_layer
+        USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+
+  -- §6.5 condition (d), enforced at the write instead of paged on later.
+  IF p_outcome = 'pass' THEN
+    FOREACH v_layer IN ARRAY ARRAY['identity', 'mastery', 'lisa'] LOOP
+      v_node := p_layers_verified -> v_layer;
+      CONTINUE WHEN (v_node ->> 'verified') = 'true';
+      CONTINUE WHEN (v_node ->> 'out_of_scope') = 'true'
+                AND coalesce(btrim(v_node ->> 'out_of_scope_reason'), '') <> '';
+      RAISE EXCEPTION 'record_deletion_verification: outcome pass requires the % layer to be verified, or out_of_scope with a reason (Doc 06D §6.3)', v_layer
+        USING ERRCODE = '22023';
+    END LOOP;
+  END IF;
+
+  -- Three lines, not four. The dropped fourth line was COALESCE(p_deleted_profile_id::text,'').
   v_canonical := p_log_id::text
               || E'\n' || p_outcome
-              || E'\n' || p_layers_verified::text
-              || E'\n' || COALESCE(p_deleted_profile_id::text, '');
+              || E'\n' || p_layers_verified::text;
   v_hash := 'sha256:' || encode(sha256(convert_to(v_canonical, 'UTF8')), 'hex');
 
   INSERT INTO public.deletion_verification_records
-    (log_id, verification_outcome, layers_verified, proof_manifest_ref, deleted_profile_id)
+    (log_id, verification_outcome, layers_verified, proof_manifest_ref)
   VALUES
-    (p_log_id, p_outcome, p_layers_verified, v_hash, p_deleted_profile_id)
+    (p_log_id, p_outcome, p_layers_verified, v_hash)
   ON CONFLICT (log_id) DO UPDATE
     SET verification_outcome = EXCLUDED.verification_outcome,
         layers_verified      = EXCLUDED.layers_verified,
-        proof_manifest_ref   = EXCLUDED.proof_manifest_ref,
-        deleted_profile_id   = EXCLUDED.deleted_profile_id;
+        proof_manifest_ref   = EXCLUDED.proof_manifest_ref;
 
   RETURN p_log_id;
 END;
@@ -5972,10 +8532,10 @@ $$;
 
 
 --
--- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: COMMENT; Schema: public; Owner: -
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail) — there is no in_progress state because verification runs inside T3. proof_manifest_ref is a SHA-256 over the canonical record per owner ruling B3; the manifest IS the record.';
+COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail); there is no in_progress state because verification runs inside T3. Validates the §6.3 four-layer shape and refuses a pass whose in-scope layers are not verified, making §6.5 (d) unreachable. proof_manifest_ref is a SHA-256 over the canonical record (log_id, outcome, layers) per owner ruling B3. The deleted_profile_id parameter was removed 2026-09-25 (SCL-152) with the column. Called by public.complete_deletion_log (T3) and public.reconcile_deletion_log.';
 
 
 --
@@ -6976,7 +9536,7 @@ BEGIN
       NEW.id, NEW.id, NEW.student_id, NEW.question_id,
       NEW.selected_answer, NEW.is_correct,
       NEW.time_spent_ms / 1000, NEW.client_attempt_id,
-      false,                      -- ruling 9: LISA is out at launch
+      public.review_item_used_tutor(NEW.student_id, NEW.id),  -- W4-7: telemetry only
       NEW.question_section, NEW.question_domain, NEW.question_skill,
       NEW.question_difficulty, NEW.occurred_at, NEW.actor_id
     );
@@ -7003,6 +9563,45 @@ BEGIN
   RETURN NULL;
 END
 $$;
+
+
+--
+-- Name: review_item_used_tutor(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_used boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.tutor_conversations c
+      JOIN public.tutor_messages m ON m.conversation_id = c.id
+     WHERE c.student_id = p_student_id
+       AND c.source_surface = 'review'
+       AND c.source_session_item_id = p_item_id
+       AND m.role = 'student'
+       AND m.content_kind = 'message'
+  ) INTO v_used;
+  RETURN v_used;
+EXCEPTION WHEN OTHERS THEN
+  -- Analytics must never break a submission. Reported, not swallowed: the
+  -- SQLSTATE is enough to find the cause, and nothing about the student is
+  -- written to the log.
+  RAISE WARNING 'review_item_used_tutor: lookup failed (SQLSTATE %), recording used_tutor = false', SQLSTATE;
+  RETURN false;
+END
+$$;
+
+
+--
+-- Name: FUNCTION review_item_used_tutor(p_student_id uuid, p_item_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) IS 'W4-7 / Doc 02B §16: true when the student sent >=1 message to LISA on this review item''s conversation. Telemetry only — never read by mastery, scoring, selection or UI. Never raises: an error returns false with a WARNING.';
 
 
 --
@@ -7213,6 +9812,330 @@ CREATE FUNCTION public.round_to_step(p_value numeric, p_step integer) RETURNS in
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT (ROUND(p_value / p_step) * p_step)::integer;
+$$;
+
+
+--
+-- Name: score_test_session_from_outbox(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_started_at      timestamptz := clock_timestamp();
+  v_event_type      text;
+  v_test_session_id uuid;
+  v_test_form_id    uuid;
+  v_student_id      uuid;
+  v_actor_id        uuid;   -- E6b: the session's grouping id, copied onto the run
+  v_score_table_ver text;
+  v_existing_run_id uuid;
+  v_score_run_id    uuid;
+
+  v_rw_present   boolean := false;
+  v_math_present boolean := false;
+  v_rw_row       record;
+  v_math_row     record;
+  v_total        int;
+  v_partial_display int;
+BEGIN
+  -- IDEMPOTENCY CHECK (§5.17 — once, at the entrypoint)
+  SELECT score_run_id INTO v_existing_run_id
+  FROM score_run_event_ledger
+  WHERE outbox_event_id = p_outbox_event_id;
+
+  IF FOUND THEN
+    RAISE LOG '%', jsonb_build_object(
+      'event', 'scoring.session.scored',
+      'score_run_id', v_existing_run_id,
+      'source_outbox_event_id', p_outbox_event_id,
+      'idempotent_return', true,
+      'computation_ms', round(extract(epoch FROM clock_timestamp() - v_started_at) * 1000));
+    RETURN v_existing_run_id;
+  END IF;
+
+  -- READ THE OUTBOX EVENT (04A wrote this; we consume it)
+  SELECT event_type, aggregate_id
+  INTO v_event_type, v_test_session_id
+  FROM exam_runtime_outbox
+  WHERE id = p_outbox_event_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Outbox event not found: %', p_outbox_event_id;
+  END IF;
+
+  IF v_event_type NOT IN ('test_session_completed', 'test_session_partial_scored_abandoned') THEN
+    RAISE EXCEPTION 'Outbox event type not handled by scoring: %', v_event_type;
+  END IF;
+
+  -- Read session metadata (D10: a missing session raises, §21.1)
+  SELECT student_id, actor_id, test_form_id
+  INTO v_student_id, v_actor_id, v_test_form_id
+  FROM test_sessions
+  WHERE id = v_test_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Test session not found for outbox event %: session_id=%',
+      p_outbox_event_id, v_test_session_id;
+  END IF;
+
+  SELECT score_table_version
+  INTO v_score_table_ver
+  FROM test_forms
+  WHERE id = v_test_form_id;
+
+  -- VERSION-VALIDATION GATE (§12.1, §19.6). Active and superseded score;
+  -- candidate, missing or partially attested versions never do.
+  PERFORM 1
+  FROM scoring_model_versions
+  WHERE version = v_score_table_ver
+    AND status IN ('active', 'superseded')
+    AND published_at IS NOT NULL
+    AND constants_sha256 IS NOT NULL
+    AND validation_packet_sha256 IS NOT NULL
+    AND validation_packet_url IS NOT NULL;   -- D10: §19.6 lists the URL too
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Scoring blocked: scoring_model_version % is missing, candidate, or '
+      'incompletely attested. score_runs MUST NOT be inserted for an '
+      'unattested version. (Doc 04B V4.3 §12.1 + §19.6.)',
+      v_score_table_ver
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM scoring_constants
+    WHERE scoring_model_version = v_score_table_ver
+  ) THEN
+    RAISE EXCEPTION
+      'Scoring blocked: no scoring_constants rows for version %',
+      v_score_table_ver
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+
+  -- DETERMINE WHICH SECTIONS ARE SCOREABLE
+  SELECT EXISTS (
+    SELECT 1 FROM test_session_sections
+    WHERE test_session_id = v_test_session_id
+      AND section = 'RW'
+      AND state = 'submitted'
+  ) INTO v_rw_present;
+
+  SELECT EXISTS (
+    SELECT 1 FROM test_session_sections
+    WHERE test_session_id = v_test_session_id
+      AND section = 'M'
+      AND state = 'submitted'
+  ) INTO v_math_present;
+
+  IF NOT v_rw_present AND NOT v_math_present THEN
+    RAISE EXCEPTION 'No scoreable sections found for session %', v_test_session_id;
+  END IF;
+
+  -- COMPUTE PRESENT SECTIONS
+  -- An absent section's record is still ASSIGNED, to a typed all-NULL row of
+  -- compute_section_scaled_score's shape. PL/pgSQL fixes the INSERT below's plan
+  -- on its first execution in a session; if that execution sees an unassigned
+  -- `record` it raises "record … is not assigned yet" even inside a CASE branch
+  -- that is not taken. Without this, the first partial (one-section) session a
+  -- fresh connection scores fails. Found by the scoring-parity gate in CI
+  -- (collation ordered a partial session first). The CASE guards stay; the NULL
+  -- row only makes the structure determinate.
+  IF v_rw_present THEN
+    SELECT * INTO v_rw_row
+    FROM compute_section_scaled_score(v_test_session_id, 'rw');
+  ELSE
+    SELECT NULL::int AS scaled, NULL::int AS module1_correct, NULL::int AS module2_correct,
+           NULL::text AS module2_path, NULL::int AS m2_easy_wrong, NULL::int AS m2_medium_wrong,
+           NULL::int AS m2_hard_wrong, NULL::numeric AS ceiling, NULL::numeric AS deduction,
+           NULL::numeric AS raw_floor, NULL::numeric AS path_floor,
+           NULL::numeric AS effective_floor, NULL::numeric AS s_raw
+      INTO v_rw_row;
+  END IF;
+
+  IF v_math_present THEN
+    SELECT * INTO v_math_row
+    FROM compute_section_scaled_score(v_test_session_id, 'math');
+  ELSE
+    SELECT NULL::int AS scaled, NULL::int AS module1_correct, NULL::int AS module2_correct,
+           NULL::text AS module2_path, NULL::int AS m2_easy_wrong, NULL::int AS m2_medium_wrong,
+           NULL::int AS m2_hard_wrong, NULL::numeric AS ceiling, NULL::numeric AS deduction,
+           NULL::numeric AS raw_floor, NULL::numeric AS path_floor,
+           NULL::numeric AS effective_floor, NULL::numeric AS s_raw
+      INTO v_math_row;
+  END IF;
+
+  -- TOTAL_SCALED / PARTIAL_DISPLAY_SCALED (§9.1, §15.2)
+  IF v_rw_present AND v_math_present THEN
+    v_total := v_rw_row.scaled + v_math_row.scaled;
+    v_partial_display := NULL;
+  ELSIF v_rw_present THEN
+    v_total := NULL;
+    v_partial_display := v_rw_row.scaled;
+  ELSE
+    v_total := NULL;
+    v_partial_display := v_math_row.scaled;
+  END IF;
+
+  -- INSERT score_runs ROW (with ALL intermediate values)
+  INSERT INTO score_runs (
+    test_session_id, student_id, actor_id, test_form_id, scoring_model_version,
+    source_outbox_event_id, source_event_type,
+    rw_scored, rw_module1_correct, rw_module2_correct, rw_module2_path,
+    rw_m2_easy_wrong, rw_m2_medium_wrong, rw_m2_hard_wrong,
+    rw_ceiling, rw_deduction, rw_raw_floor, rw_path_floor, rw_effective_floor,
+    rw_s_raw, rw_scaled,
+    math_scored, math_module1_correct, math_module2_correct, math_module2_path,
+    math_m2_easy_wrong, math_m2_medium_wrong, math_m2_hard_wrong,
+    math_ceiling, math_deduction, math_raw_floor, math_path_floor, math_effective_floor,
+    math_s_raw, math_scaled,
+    total_scaled, partial_display_scaled, constants_snapshot
+  ) VALUES (
+    v_test_session_id, v_student_id, v_actor_id, v_test_form_id, v_score_table_ver,
+    p_outbox_event_id, v_event_type,
+    v_rw_present,
+    CASE WHEN v_rw_present THEN v_rw_row.module1_correct END,
+    CASE WHEN v_rw_present THEN v_rw_row.module2_correct END,
+    CASE WHEN v_rw_present THEN v_rw_row.module2_path END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_easy_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_medium_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.m2_hard_wrong END,
+    CASE WHEN v_rw_present THEN v_rw_row.ceiling END,
+    CASE WHEN v_rw_present THEN v_rw_row.deduction END,
+    CASE WHEN v_rw_present THEN v_rw_row.raw_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.path_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.effective_floor END,
+    CASE WHEN v_rw_present THEN v_rw_row.s_raw END,
+    CASE WHEN v_rw_present THEN v_rw_row.scaled END,
+    v_math_present,
+    CASE WHEN v_math_present THEN v_math_row.module1_correct END,
+    CASE WHEN v_math_present THEN v_math_row.module2_correct END,
+    CASE WHEN v_math_present THEN v_math_row.module2_path END,
+    CASE WHEN v_math_present THEN v_math_row.m2_easy_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.m2_medium_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.m2_hard_wrong END,
+    CASE WHEN v_math_present THEN v_math_row.ceiling END,
+    CASE WHEN v_math_present THEN v_math_row.deduction END,
+    CASE WHEN v_math_present THEN v_math_row.raw_floor END,
+    CASE WHEN v_math_present THEN v_math_row.path_floor END,
+    CASE WHEN v_math_present THEN v_math_row.effective_floor END,
+    CASE WHEN v_math_present THEN v_math_row.s_raw END,
+    CASE WHEN v_math_present THEN v_math_row.scaled END,
+    v_total, v_partial_display,
+    scoring_constants_snapshot_jsonb(v_score_table_ver)
+  ) RETURNING id INTO v_score_run_id;
+
+  -- WRITE THE LEDGER ENTRY (idempotency anchor)
+  INSERT INTO score_run_event_ledger (outbox_event_id, score_run_id, test_session_id)
+  VALUES (p_outbox_event_id, v_score_run_id, v_test_session_id);
+
+  -- E9 (SCL owner ruling R1): no side effect here. The scored-seams event is
+  -- enqueued by the consumer (exam_score_outbox_event) after this returns, and
+  -- applied in its own transaction (exam_apply_scored_seams). §16.1: exactly
+  -- two artifacts.
+
+  -- §20.1 structured log — UUIDs and scaled values only (§20.4)
+  RAISE LOG '%', jsonb_build_object(
+    'event', 'scoring.session.scored',
+    'score_run_id', v_score_run_id,
+    'test_session_id', v_test_session_id,
+    'student_id', v_student_id,
+    'test_form_id', v_test_form_id,
+    'scoring_model_version', v_score_table_ver,
+    'source_outbox_event_id', p_outbox_event_id,
+    'source_event_type', v_event_type,
+    'rw_scored', v_rw_present,
+    'math_scored', v_math_present,
+    'rw_scaled', CASE WHEN v_rw_present THEN v_rw_row.scaled END,
+    'math_scaled', CASE WHEN v_math_present THEN v_math_row.scaled END,
+    'total_scaled', v_total,
+    'computation_ms', round(extract(epoch FROM clock_timestamp() - v_started_at) * 1000),
+    'idempotent_return', false);
+
+  RETURN v_score_run_id;
+END;
+$$;
+
+
+--
+-- Name: scoring_constant(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constant(p_version text, p_key text, p_section text DEFAULT NULL::text) RETURNS numeric
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_value numeric;
+BEGIN
+  -- Try section-specific first, then fall back to global
+  SELECT value INTO v_value FROM scoring_constants
+  WHERE scoring_model_version = p_version
+    AND key = p_key
+    AND (
+      (p_section IS NOT NULL AND section = p_section)
+      OR (section IS NULL)
+    )
+  ORDER BY (section IS NULL)  -- false (section-specific) sorts before true (global)
+  LIMIT 1;
+
+  IF v_value IS NULL THEN
+    RAISE EXCEPTION 'scoring_constant lookup failed: version=%, key=%, section=%',
+      p_version, p_key, COALESCE(p_section, '<global>')
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN v_value;
+END;
+$$;
+
+
+--
+-- Name: scoring_constants_sha256(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_sha256(p_version text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_payload text;
+BEGIN
+  SELECT string_agg(
+           key || '|' || COALESCE(section, '') || '|' || trim_scale(value)::text,
+           E'\n'
+           ORDER BY key COLLATE "C", section COLLATE "C" NULLS FIRST)
+    INTO v_payload
+    FROM scoring_constants
+   WHERE scoring_model_version = p_version;
+
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'scoring_constants_sha256: no constants for version=%', p_version
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  RETURN encode(sha256(convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$;
+
+
+--
+-- Name: scoring_constants_snapshot_jsonb(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_object_agg(
+    key || COALESCE(':' || section, ''),
+    value
+  )
+  FROM scoring_constants
+  WHERE scoring_model_version = p_version;
 $$;
 
 
@@ -7715,6 +10638,142 @@ $$;
 
 
 --
+-- Name: validate_form_composition(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_form_composition(p_test_form_id uuid) RETURNS void
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r record;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM test_forms WHERE id = p_test_form_id) THEN
+    RAISE EXCEPTION 'validate_form_composition: test_form % does not exist', p_test_form_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- 1. Item integrity.
+  SELECT i.section, i.module, i.ordinal, i.question_id,
+         q.status AS q_status, q.section AS q_section
+    INTO r
+    FROM test_form_items i
+    JOIN questions q ON q.id = i.question_id
+   WHERE i.test_form_id = p_test_form_id
+     AND (q.status <> 'published' OR q.section <> i.section)
+   ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END,
+            CASE i.module WHEN '1' THEN 1 WHEN '2A' THEN 2 ELSE 3 END,
+            i.ordinal
+   LIMIT 1;
+  IF FOUND THEN
+    IF r.q_status <> 'published' THEN
+      RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=question_status value=% ordinal=% expected=published actual=%',
+        p_test_form_id, r.section, r.module, r.question_id, r.ordinal, r.q_status
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=question_section value=% ordinal=% expected=% actual=%',
+      p_test_form_id, r.section, r.module, r.question_id, r.ordinal, r.section, r.q_section
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- 2. Tallies: first mismatching cell in the stated order.
+  WITH blueprint(section, module, dimension, value, expected, value_ord) AS (
+    VALUES
+      -- ---------------- Reading & Writing ----------------
+      ('RW', '1',  'total',      '*', 27, 1),
+      ('RW', '1',  'difficulty', '1',  8, 1), ('RW', '1',  'difficulty', '2', 11, 2), ('RW', '1',  'difficulty', '3',  8, 3),
+      ('RW', '1',  'item_type',  'grid_in', 0, 1),
+      ('RW', '1',  'domain', 'Information and Ideas',         7, 1),
+      ('RW', '1',  'domain', 'Craft and Structure',           8, 2),
+      ('RW', '1',  'domain', 'Expression of Ideas',           5, 3),
+      ('RW', '1',  'domain', 'Standard English Conventions',  7, 4),
+
+      ('RW', '2A', 'total',      '*', 27, 1),
+      ('RW', '2A', 'difficulty', '1', 14, 1), ('RW', '2A', 'difficulty', '2',  9, 2), ('RW', '2A', 'difficulty', '3',  4, 3),
+      ('RW', '2A', 'item_type',  'grid_in', 0, 1),
+      ('RW', '2A', 'domain', 'Information and Ideas',         7, 1),
+      ('RW', '2A', 'domain', 'Craft and Structure',           7, 2),
+      ('RW', '2A', 'domain', 'Expression of Ideas',           6, 3),
+      ('RW', '2A', 'domain', 'Standard English Conventions',  7, 4),
+
+      ('RW', '2B', 'total',      '*', 27, 1),
+      ('RW', '2B', 'difficulty', '1',  4, 1), ('RW', '2B', 'difficulty', '2',  9, 2), ('RW', '2B', 'difficulty', '3', 14, 3),
+      ('RW', '2B', 'item_type',  'grid_in', 0, 1),
+      ('RW', '2B', 'domain', 'Information and Ideas',         7, 1),
+      ('RW', '2B', 'domain', 'Craft and Structure',           7, 2),
+      ('RW', '2B', 'domain', 'Expression of Ideas',           6, 3),
+      ('RW', '2B', 'domain', 'Standard English Conventions',  7, 4),
+
+      -- ---------------- Math ----------------
+      ('M',  '1',  'total',      '*', 22, 1),
+      ('M',  '1',  'difficulty', '1',  7, 1), ('M',  '1',  'difficulty', '2',  9, 2), ('M',  '1',  'difficulty', '3',  6, 3),
+      ('M',  '1',  'item_type',  'grid_in', 3, 1),
+      ('M',  '1',  'domain', 'Algebra',                            8, 1),
+      ('M',  '1',  'domain', 'Advanced Math',                      7, 2),
+      ('M',  '1',  'domain', 'Problem Solving and Data Analysis',  4, 3),
+      ('M',  '1',  'domain', 'Geometry and Trigonometry',          3, 4),
+
+      ('M',  '2A', 'total',      '*', 22, 1),
+      ('M',  '2A', 'difficulty', '1', 11, 1), ('M',  '2A', 'difficulty', '2',  8, 2), ('M',  '2A', 'difficulty', '3',  3, 3),
+      ('M',  '2A', 'item_type',  'grid_in', 8, 1),
+      ('M',  '2A', 'domain', 'Algebra',                            7, 1),
+      ('M',  '2A', 'domain', 'Advanced Math',                      8, 2),
+      ('M',  '2A', 'domain', 'Problem Solving and Data Analysis',  3, 3),
+      ('M',  '2A', 'domain', 'Geometry and Trigonometry',          4, 4),
+
+      ('M',  '2B', 'total',      '*', 22, 1),
+      ('M',  '2B', 'difficulty', '1',  3, 1), ('M',  '2B', 'difficulty', '2',  8, 2), ('M',  '2B', 'difficulty', '3', 11, 3),
+      ('M',  '2B', 'item_type',  'grid_in', 8, 1),
+      ('M',  '2B', 'domain', 'Algebra',                            7, 1),
+      ('M',  '2B', 'domain', 'Advanced Math',                      8, 2),
+      ('M',  '2B', 'domain', 'Problem Solving and Data Analysis',  3, 3),
+      ('M',  '2B', 'domain', 'Geometry and Trigonometry',          4, 4)
+  ),
+  items AS (
+    SELECT i.section, i.module, q.difficulty, q.item_type, q.domain
+      FROM test_form_items i
+      JOIN questions q ON q.id = i.question_id
+     WHERE i.test_form_id = p_test_form_id
+  ),
+  actual(section, module, dimension, value, cnt) AS (
+    SELECT section, module, 'total', '*', count(*) FROM items GROUP BY section, module
+    UNION ALL
+    SELECT section, module, 'difficulty', difficulty::text, count(*) FROM items GROUP BY section, module, difficulty
+    UNION ALL
+    SELECT section, module, 'item_type', item_type, count(*) FROM items WHERE item_type = 'grid_in' GROUP BY section, module, item_type
+    UNION ALL
+    SELECT section, module, 'domain', domain, count(*) FROM items GROUP BY section, module, domain
+  )
+  SELECT COALESCE(b.section, a.section)     AS section,
+         COALESCE(b.module, a.module)       AS module,
+         COALESCE(b.dimension, a.dimension) AS dimension,
+         COALESCE(b.value, a.value)         AS value,
+         COALESCE(b.expected, 0)            AS expected,
+         COALESCE(a.cnt, 0)                 AS actual
+    INTO r
+    FROM blueprint b
+    FULL JOIN actual a
+      ON a.section = b.section AND a.module = b.module
+     AND a.dimension = b.dimension AND a.value = b.value
+   WHERE COALESCE(b.expected, 0) <> COALESCE(a.cnt, 0)
+   ORDER BY CASE COALESCE(b.section, a.section) WHEN 'RW' THEN 1 ELSE 2 END,
+            CASE COALESCE(b.module, a.module) WHEN '1' THEN 1 WHEN '2A' THEN 2 ELSE 3 END,
+            CASE COALESCE(b.dimension, a.dimension)
+              WHEN 'total' THEN 1 WHEN 'difficulty' THEN 2 WHEN 'item_type' THEN 3 ELSE 4 END,
+            COALESCE(b.value_ord, 1000),
+            COALESCE(b.value, a.value)
+   LIMIT 1;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'validate_form_composition: form % section=% module=% dimension=% value=% expected=% actual=%',
+      p_test_form_id, r.section, r.module, r.dimension, r.value, r.expected, r.actual
+      USING ERRCODE = 'check_violation';
+  END IF;
+END;
+$$;
+
+
+--
 -- Name: validate_memory_summary_schema(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7799,6 +10858,125 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: verify_deletion_layers(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verify_deletion_layers(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  r                record;
+  v_hit            boolean;
+  v_cols_total     integer := 0;
+  v_cols_mastery   integer := 0;
+  v_cols_lisa      integer := 0;
+  v_residual       text[]  := ARRAY[]::text[];
+  v_res_mastery    text[]  := ARRAY[]::text[];
+  v_res_lisa       text[]  := ARRAY[]::text[];
+  v_profile_rows   bigint;
+  v_auth_rows      bigint;
+  v_layer          text;
+  v_sweep_sql      constant text :=
+    'SELECT EXISTS (SELECT 1 FROM public.<table> WHERE <uuid column> = <deleted_profile_id>) '
+    'for every uuid column of every base table in schema public '
+    '(pg_attribute JOIN pg_class, relkind IN (''r'',''p''), NOT relispartition), '
+    'with NO exclusions — the deleted_profile_id carve-out was dropped 2026-09-25 (SCL-152)';
+BEGIN
+  IF p_profile_id IS NULL THEN
+    RAISE EXCEPTION 'verify_deletion_layers: p_profile_id is required' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT count(*) INTO v_profile_rows FROM public.profiles WHERE id = p_profile_id;
+  SELECT count(*) INTO v_auth_rows    FROM auth.users     WHERE id = p_profile_id;
+
+  FOR r IN
+    SELECT c.relname AS tbl, a.attname AS col
+      FROM pg_attribute a
+      JOIN pg_class     c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind IN ('r', 'p')
+       AND NOT c.relispartition
+       AND a.attnum > 0
+       AND NOT a.attisdropped
+       AND a.atttypid = 'uuid'::regtype
+     ORDER BY c.relname, a.attname
+  LOOP
+    v_layer := CASE
+      WHEN r.tbl LIKE 'tutor\_%' OR r.tbl LIKE 'lisa\_%' OR r.tbl LIKE 'crisis\_%'
+        THEN 'lisa'
+      WHEN r.tbl LIKE 'student\_%' OR r.tbl LIKE 'mastery\_%' OR r.tbl LIKE 'practice\_%'
+        OR r.tbl LIKE 'review\_%' OR r.tbl LIKE 'projection\_%'
+        THEN 'mastery'
+      ELSE 'identity'
+    END;
+
+    v_cols_total := v_cols_total + 1;
+    IF v_layer = 'mastery' THEN v_cols_mastery := v_cols_mastery + 1; END IF;
+    IF v_layer = 'lisa'    THEN v_cols_lisa    := v_cols_lisa    + 1; END IF;
+
+    EXECUTE format('SELECT EXISTS (SELECT 1 FROM public.%I WHERE %I = $1)', r.tbl, r.col)
+      INTO v_hit USING p_profile_id;
+    CONTINUE WHEN NOT v_hit;
+
+    v_residual := v_residual || (r.tbl || '.' || r.col);
+    IF v_layer = 'mastery' THEN v_res_mastery := v_res_mastery || (r.tbl || '.' || r.col); END IF;
+    IF v_layer = 'lisa'    THEN v_res_lisa    := v_res_lisa    || (r.tbl || '.' || r.col); END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'identity', jsonb_build_object(
+      'verified', (v_profile_rows = 0 AND v_auth_rows = 0 AND cardinality(v_residual) = 0),
+      'canonical_owner', 'Doc 01 V6 §19',
+      'evidence_query',
+        'SELECT count(*) FROM public.profiles WHERE id = <deleted_profile_id>; '
+        'SELECT count(*) FROM auth.users WHERE id = <deleted_profile_id>; ' || v_sweep_sql,
+      'result', format('profiles=%s; auth.users=%s; uuid_columns_scanned=%s; residual=%s',
+                       v_profile_rows, v_auth_rows, v_cols_total, cardinality(v_residual)),
+      'residual_columns', to_jsonb(v_residual),
+      'out_of_scope', false
+    ),
+    'mastery', jsonb_build_object(
+      'verified', cardinality(v_res_mastery) = 0,
+      'canonical_owner', 'Doc 05D §10 (cited per project handoff record)',
+      'evidence_query', v_sweep_sql ||
+        ', restricted to tables matching student_%, mastery_%, practice_%, review_%, projection_%',
+      'result', format('uuid_columns_scanned=%s; residual=%s',
+                       v_cols_mastery, cardinality(v_res_mastery)),
+      'residual_columns', to_jsonb(v_res_mastery),
+      'out_of_scope', false
+    ),
+    'lisa', jsonb_build_object(
+      'verified', cardinality(v_res_lisa) = 0,
+      'canonical_owner', 'Doc 03 Main §14.2 (cited per project handoff record)',
+      'evidence_query', v_sweep_sql ||
+        ', restricted to tables matching tutor_%, lisa_%, crisis_%',
+      'result', format('uuid_columns_scanned=%s; residual=%s',
+                       v_cols_lisa, cardinality(v_res_lisa)),
+      'residual_columns', to_jsonb(v_res_lisa),
+      'out_of_scope', false
+    ),
+    'analytics', jsonb_build_object(
+      'verified', false,
+      'canonical_owner', 'Doc 07 (FWD-06-01)',
+      'out_of_scope', true,
+      'out_of_scope_reason',
+        'analytics retention surface pending Doc 07 — bounded forward-ref per Parent §3'
+    )
+  );
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION verify_deletion_layers(p_profile_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D §6.3 layer-coverage scan for a deleted profile. Catalog-driven: every uuid column of every base table in schema public is tested for the uuid, so detection does not depend on a maintained table list. The mastery and lisa layers ATTRIBUTE a hit by table-name convention; the identity layer is the whole-schema sweep and is what the outcome rests on. Only deletion_verification_records.deleted_profile_id is excluded — it exists to hold this uuid so the scan can be re-derived later.';
 
 
 --
@@ -8489,7 +11667,7 @@ CREATE TABLE public.crisis_review_cases (
     category text DEFAULT 'crisis'::text NOT NULL,
     CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
-    CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text]))),
+    CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text, 'model_armor_dangerous'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
 );
 
@@ -8643,7 +11821,6 @@ CREATE TABLE public.deletion_verification_records (
     verification_outcome text NOT NULL,
     layers_verified jsonb NOT NULL,
     proof_manifest_ref text NOT NULL,
-    deleted_profile_id uuid,
     CONSTRAINT deletion_verification_records_verification_outcome_check CHECK ((verification_outcome = ANY (ARRAY['pass'::text, 'fail'::text])))
 );
 
@@ -8652,7 +11829,7 @@ CREATE TABLE public.deletion_verification_records (
 -- Name: TABLE deletion_verification_records; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4 (the account_deletion_requests row it originally keyed on is deleted by the cascade at PS-5 and cannot be the correlation surface). Evidence side: no timestamp column, no uuid but log_id and the deliberate deleted_profile_id carve-out. Written terminal inside T3 by public.record_deletion_verification; direct writes are a defect.';
+COMMENT ON TABLE public.deletion_verification_records IS 'Doc 06D §6.2 INV-06-08 deletion verification record, keyed on deletion_request_log.log_id per owner ruling A4. Evidence side: no timestamp column and NO uuid but log_id. The deleted_profile_id carve-out SCL-100 granted was dropped 2026-09-25 (SCL-152) after production showed 41 retained rows carrying the deleted profile uuid in actor_id, which made the column a live join from the evidence side to the pseudonymous side. Absence is proven by public.verify_deletion_layers sweeping the catalog inside T3, which is what found that. Written terminal by public.record_deletion_verification; direct writes are a defect.';
 
 
 --
@@ -8765,77 +11942,302 @@ COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: t
 
 
 --
--- Name: exam_runtime_config; Type: TABLE; Schema: public; Owner: -
+-- Name: exam_child_tables; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.exam_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT exam_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT exam_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: exam_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.exam_runtime_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+CREATE TABLE public.exam_child_tables (
     table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
+    ordinal integer NOT NULL,
+    key_column text NOT NULL,
+    key_target text NOT NULL,
+    action text NOT NULL,
+    student_column text,
+    note text NOT NULL,
+    CONSTRAINT exam_child_tables_action_check CHECK ((action = ANY (ARRAY['delete'::text, 'count'::text]))),
+    CONSTRAINT exam_child_tables_key_target_check CHECK ((key_target = ANY (ARRAY['session'::text, 'score_run'::text])))
 );
 
 
 --
--- Name: full_length_adaptive_config; Type: TABLE; Schema: public; Owner: -
+-- Name: TABLE exam_child_tables; Type: COMMENT; Schema: public; Owner: -
 --
 
-CREATE TABLE public.full_length_adaptive_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT full_length_adaptive_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT full_length_adaptive_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
+COMMENT ON TABLE public.exam_child_tables IS 'E9 commit 0: the exam tables execute_account_deletion_cascade walks. hard_delete: `delete` rows removed / `count` rows counted, in ordinal order (children before parents). anonymize: rows with a student_column are counted and sentinel-checked. A new exam table is a row here; exam-deletion-cascade-gates L1 fails while one with an FK path to test_sessions is missing.';
 
 
 --
--- Name: full_length_adaptive_config_history; Type: TABLE; Schema: public; Owner: -
+-- Name: exam_runtime_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.full_length_adaptive_config_history (
+CREATE TABLE public.exam_runtime_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
+    event_type text NOT NULL,
+    aggregate_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_attempt_at timestamp with time zone,
+    published_at timestamp with time zone,
+    failure_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    result jsonb,
+    CONSTRAINT exam_runtime_outbox_event_type_check CHECK ((event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text, 'test_session_scored'::text]))),
+    CONSTRAINT exam_runtime_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'published'::text, 'failed'::text])))
 );
+
+
+--
+-- Name: test_answer_submissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_answer_submissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    idempotency_key text NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    answer text,
+    client_latency_ms integer,
+    response_json jsonb NOT NULL,
+    response_schema_version text NOT NULL,
+    was_canonical_update boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_answer_submissions_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_answer_submissions_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_form_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_form_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_form_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    CONSTRAINT test_form_items_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_form_items_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_session_answers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_answers (
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    answer text,
+    client_latency_ms integer,
+    last_submission_id uuid NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_session_answers_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_session_answers_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: test_session_sections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_sections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    state text NOT NULL,
+    module2_path text,
+    module1_started_at timestamp with time zone,
+    module1_submitted_at timestamp with time zone,
+    module1_submitted_by text,
+    module2_started_at timestamp with time zone,
+    module2_submitted_at timestamp with time zone,
+    module2_submitted_by text,
+    module1_expires_at timestamp with time zone,
+    module2_expires_at timestamp with time zone,
+    active_paused_ms bigint DEFAULT 0 NOT NULL,
+    last_active_at timestamp with time zone,
+    current_module text,
+    current_ordinal integer,
+    CONSTRAINT module1_submission_metadata CHECK ((((state = ANY (ARRAY['module1_submitted'::text, 'module2_active'::text, 'submitted'::text])) AND (module1_submitted_at IS NOT NULL) AND (module1_submitted_by IS NOT NULL)) OR (state <> ALL (ARRAY['module1_submitted'::text, 'module2_active'::text, 'submitted'::text])))),
+    CONSTRAINT module2_path_after_module1_submit CHECK ((((state = ANY (ARRAY['module2_active'::text, 'submitted'::text])) AND (module2_path IS NOT NULL)) OR (state <> ALL (ARRAY['module2_active'::text, 'submitted'::text])))),
+    CONSTRAINT module2_submission_metadata CHECK ((((state = 'submitted'::text) AND (module2_submitted_at IS NOT NULL) AND (module2_submitted_by IS NOT NULL)) OR (state <> 'submitted'::text))),
+    CONSTRAINT test_session_sections_current_module_check CHECK ((current_module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_session_sections_current_ordinal_check CHECK ((current_ordinal >= 0)),
+    CONSTRAINT test_session_sections_current_position CHECK (((current_module IS NULL) = (current_ordinal IS NULL))),
+    CONSTRAINT test_session_sections_module1_submitted_by_check CHECK ((module1_submitted_by = ANY (ARRAY['student'::text, 'timeout'::text]))),
+    CONSTRAINT test_session_sections_module2_path_check CHECK ((module2_path = ANY (ARRAY['A'::text, 'B'::text]))),
+    CONSTRAINT test_session_sections_module2_submitted_by_check CHECK ((module2_submitted_by = ANY (ARRAY['student'::text, 'timeout'::text]))),
+    CONSTRAINT test_session_sections_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text]))),
+    CONSTRAINT test_session_sections_state_check CHECK ((state = ANY (ARRAY['not_started'::text, 'module1_active'::text, 'module1_submitted'::text, 'module2_active'::text, 'submitted'::text])))
+);
+
+
+--
+-- Name: test_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid,
+    test_form_id uuid NOT NULL,
+    state text NOT NULL,
+    mode text NOT NULL,
+    active_section text,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    abandoned_at timestamp with time zone,
+    grace_expires_at timestamp with time zone NOT NULL,
+    attempt_number_for_form integer NOT NULL,
+    is_first_seen_form_attempt boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
+    CONSTRAINT abandoned_has_abandon_time CHECK ((((state = ANY (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])) AND (abandoned_at IS NOT NULL)) OR (state <> ALL (ARRAY['abandoned_final'::text, 'partial_scored_abandoned'::text])))),
+    CONSTRAINT active_has_active_section CHECK ((((state = 'active'::text) AND (active_section IS NOT NULL)) OR (state <> 'active'::text))),
+    CONSTRAINT break_has_no_active_section CHECK ((((state = 'section_break'::text) AND (active_section IS NULL)) OR (state <> 'section_break'::text))),
+    CONSTRAINT completed_has_completion_time CHECK ((((state = 'completed'::text) AND (completed_at IS NOT NULL)) OR (state <> 'completed'::text))),
+    CONSTRAINT started_state_has_started_at CHECK ((((state = ANY (ARRAY['active'::text, 'section_break'::text])) AND (started_at IS NOT NULL)) OR (state <> ALL (ARRAY['active'::text, 'section_break'::text])))),
+    CONSTRAINT test_sessions_active_section_check CHECK ((active_section = ANY (ARRAY['RW'::text, 'M'::text]))),
+    CONSTRAINT test_sessions_mode_check CHECK ((mode = ANY (ARRAY['strict'::text, 'lenient'::text]))),
+    CONSTRAINT test_sessions_state_check CHECK ((state = ANY (ARRAY['created'::text, 'active'::text, 'section_break'::text, 'completed'::text, 'abandoned_final'::text, 'partial_scored_abandoned'::text])))
+);
+
+
+--
+-- Name: COLUMN test_sessions.actor_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.test_sessions.actor_id IS 'Doc 05E: the student''s synthetic grouping id (profiles.actor_id), stamped by exam_create_session. Survives anonymisation; student_id does not.';
+
+
+--
+-- Name: full_length_answer_events; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.full_length_answer_events WITH (security_invoker='true') AS
+ SELECT s.student_id,
+    a.test_session_id,
+    a.last_submission_id AS event_id,
+    'full_length_answer'::text AS event_source_kind,
+    'test'::text AS source_family,
+    a.section,
+    q.domain,
+    q.skill_codes[1] AS skill,
+    (q.difficulty)::smallint AS difficulty,
+    public.is_answer_correct(a.answer, a.question_id) AS correct,
+    sub.created_at AS occurred_at,
+    a.question_id
+   FROM (((((public.test_session_answers a
+     JOIN public.test_sessions s ON ((s.id = a.test_session_id)))
+     JOIN public.test_session_sections sec ON (((sec.test_session_id = a.test_session_id) AND (sec.section = a.section))))
+     JOIN public.test_form_items fi ON (((fi.test_form_id = s.test_form_id) AND (fi.section = a.section) AND (fi.module = a.module) AND (fi.ordinal = a.ordinal) AND (fi.question_id = a.question_id))))
+     JOIN public.questions q ON ((q.id = fi.question_id)))
+     JOIN public.test_answer_submissions sub ON ((sub.id = a.last_submission_id)))
+  WHERE ((sec.state = 'submitted'::text) AND (a.answer IS NOT NULL) AND (s.student_id IS NOT NULL));
+
+
+--
+-- Name: VIEW full_length_answer_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.full_length_answer_events IS 'E9 / SCL-156: one row per answered item of a SUBMITTED exam section — the full-length mastery event (family test, kind full_length_answer). event_id = last_submission_id (stable once the section submits). Domain/skill/difficulty from questions via test_form_items (Doc 02 owns them; no denormalised copy). Blanks and unsubmitted sections produce no row.';
+
+
+--
+-- Name: score_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_session_id uuid NOT NULL,
+    student_id uuid,
+    test_form_id uuid NOT NULL,
+    scoring_model_version text NOT NULL,
+    source_outbox_event_id uuid NOT NULL,
+    source_event_type text NOT NULL,
+    rw_scored boolean NOT NULL,
+    rw_module1_correct integer,
+    rw_module2_correct integer,
+    rw_module2_path text,
+    rw_m2_easy_wrong integer,
+    rw_m2_medium_wrong integer,
+    rw_m2_hard_wrong integer,
+    rw_ceiling numeric,
+    rw_deduction numeric,
+    rw_raw_floor numeric,
+    rw_path_floor numeric,
+    rw_effective_floor numeric,
+    rw_s_raw numeric,
+    rw_scaled integer,
+    math_scored boolean NOT NULL,
+    math_module1_correct integer,
+    math_module2_correct integer,
+    math_module2_path text,
+    math_m2_easy_wrong integer,
+    math_m2_medium_wrong integer,
+    math_m2_hard_wrong integer,
+    math_ceiling numeric,
+    math_deduction numeric,
+    math_raw_floor numeric,
+    math_path_floor numeric,
+    math_effective_floor numeric,
+    math_s_raw numeric,
+    math_scaled integer,
+    total_scaled integer,
+    partial_display_scaled integer,
+    constants_snapshot jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
+    CONSTRAINT score_runs_check CHECK ((rw_scored OR math_scored)),
+    CONSTRAINT score_runs_check1 CHECK (((rw_scored AND (rw_scaled IS NOT NULL) AND (rw_module1_correct IS NOT NULL)) OR ((NOT rw_scored) AND (rw_scaled IS NULL) AND (rw_module1_correct IS NULL)))),
+    CONSTRAINT score_runs_check2 CHECK (((math_scored AND (math_scaled IS NOT NULL) AND (math_module1_correct IS NOT NULL)) OR ((NOT math_scored) AND (math_scaled IS NULL) AND (math_module1_correct IS NULL)))),
+    CONSTRAINT score_runs_check3 CHECK (((rw_scored AND math_scored AND (total_scaled = (rw_scaled + math_scaled)) AND (partial_display_scaled IS NULL)) OR (rw_scored AND (NOT math_scored) AND (total_scaled IS NULL) AND (partial_display_scaled = rw_scaled)) OR (math_scored AND (NOT rw_scored) AND (total_scaled IS NULL) AND (partial_display_scaled = math_scaled)))),
+    CONSTRAINT score_runs_math_module2_path_check CHECK (((math_module2_path IS NULL) OR (math_module2_path = ANY (ARRAY['A'::text, 'B'::text])))),
+    CONSTRAINT score_runs_math_scaled_check CHECK (((math_scaled IS NULL) OR (((math_scaled >= 200) AND (math_scaled <= 800)) AND ((math_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_partial_display_scaled_check CHECK (((partial_display_scaled IS NULL) OR (((partial_display_scaled >= 200) AND (partial_display_scaled <= 800)) AND ((partial_display_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_rw_module2_path_check CHECK (((rw_module2_path IS NULL) OR (rw_module2_path = ANY (ARRAY['A'::text, 'B'::text])))),
+    CONSTRAINT score_runs_rw_scaled_check CHECK (((rw_scaled IS NULL) OR (((rw_scaled >= 200) AND (rw_scaled <= 800)) AND ((rw_scaled % 10) = 0)))),
+    CONSTRAINT score_runs_source_event_type_check CHECK ((source_event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text]))),
+    CONSTRAINT score_runs_total_scaled_check CHECK (((total_scaled IS NULL) OR (((total_scaled >= 400) AND (total_scaled <= 1600)) AND ((total_scaled % 10) = 0))))
+);
+
+
+--
+-- Name: COLUMN score_runs.actor_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.score_runs.actor_id IS 'Doc 05E: copied from test_sessions.actor_id by score_test_session_from_outbox. Survives anonymisation; student_id does not.';
+
+
+--
+-- Name: full_length_section_scores; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.full_length_section_scores WITH (security_invoker='true') AS
+ SELECT s.student_id,
+    x.section,
+    x.scaled AS section_scaled_score,
+    (s.state = 'completed'::text) AS is_complete,
+    s.completed_at,
+    (md5((((r.id)::text || ':'::text) || x.section)))::uuid AS id
+   FROM ((public.score_runs r
+     JOIN public.test_sessions s ON ((s.id = r.test_session_id)))
+     CROSS JOIN LATERAL ( VALUES ('RW'::text,r.rw_scored,r.rw_scaled), ('M'::text,r.math_scored,r.math_scaled)) x(section, scored, scaled))
+  WHERE (x.scored AND (s.student_id IS NOT NULL));
+
+
+--
+-- Name: VIEW full_length_section_scores; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.full_length_section_scores IS 'E9 / SCL-157: one row per SCORED section of a score run (05D §12.2 columns, 05C §5.7 order). is_complete = the session completed (a partial session''s scored section is present with false and never read by 05C). completed_at = test_sessions.completed_at. id = md5(score_run_id || '':'' || section)::uuid — score runs are insert-once, so the id never moves. Rows of a student-less (anonymised) session are excluded.';
 
 
 --
@@ -9555,8 +12957,16 @@ CREATE TABLE public.projection_refresh_outbox (
     reason text NOT NULL,
     requested_at timestamp with time zone DEFAULT now() NOT NULL,
     processed_at timestamp with time zone,
+    test_session_id uuid,
     CONSTRAINT projection_refresh_outbox_reason_check CHECK ((reason = 'full_length_completed'::text))
 );
+
+
+--
+-- Name: COLUMN projection_refresh_outbox.test_session_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projection_refresh_outbox.test_session_id IS 'E9 / SCL-155: the completed full-length session this refresh was requested for. No FK: queue state, like exam_runtime_outbox.aggregate_id; the row leaves with the student (deletion cascade, student_id).';
 
 
 --
@@ -9814,6 +13224,71 @@ CREATE TABLE public.review_sessions (
     CONSTRAINT review_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT review_sessions_target_count_check CHECK ((target_count > 0))
+);
+
+
+--
+-- Name: score_disclosure_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_disclosure_versions (
+    scoring_model_version text NOT NULL,
+    disclosure_version text NOT NULL,
+    summary text NOT NULL,
+    full_text_url text NOT NULL,
+    activated_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    superseded_at timestamp with time zone
+);
+
+
+--
+-- Name: score_run_event_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.score_run_event_ledger (
+    outbox_event_id uuid NOT NULL,
+    score_run_id uuid NOT NULL,
+    test_session_id uuid NOT NULL,
+    processed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: scoring_constants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_constants (
+    scoring_model_version text NOT NULL,
+    key text NOT NULL,
+    section text,
+    value numeric NOT NULL,
+    description text NOT NULL,
+    notes text,
+    CONSTRAINT scoring_constants_key_charset CHECK ((key ~ '^[a-z0-9_]+$'::text)),
+    CONSTRAINT scoring_constants_section_check CHECK (((section IS NULL) OR (section = ANY (ARRAY['rw'::text, 'math'::text])))),
+    CONSTRAINT scoring_constants_value_finite CHECK (((value <> 'NaN'::numeric) AND (value < 'Infinity'::numeric))),
+    CONSTRAINT scoring_constants_value_nonneg CHECK ((value >= (0)::numeric))
+);
+
+
+--
+-- Name: scoring_model_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scoring_model_versions (
+    version text NOT NULL,
+    formula_name text NOT NULL,
+    formula_doc_ref text NOT NULL,
+    constants_sha256 text,
+    validation_packet_sha256 text,
+    validation_packet_url text,
+    status text NOT NULL,
+    published_at timestamp with time zone,
+    superseded_at timestamp with time zone,
+    notes text,
+    CONSTRAINT active_or_superseded_attestation_complete CHECK ((((status = ANY (ARRAY['active'::text, 'superseded'::text])) AND (published_at IS NOT NULL) AND (constants_sha256 IS NOT NULL) AND (validation_packet_sha256 IS NOT NULL) AND (validation_packet_url IS NOT NULL)) OR ((status = 'candidate'::text) AND (published_at IS NULL)))),
+    CONSTRAINT scoring_model_versions_status_check CHECK ((status = ANY (ARRAY['candidate'::text, 'active'::text, 'superseded'::text]))),
+    CONSTRAINT superseded_has_superseded_at CHECK ((((status = 'superseded'::text) AND (superseded_at IS NOT NULL)) OR ((status <> 'superseded'::text) AND (superseded_at IS NULL))))
 );
 
 
@@ -10086,7 +13561,6 @@ CREATE TABLE public.student_study_profile (
     last_acknowledged_nonstudent_version_no integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT setup_requires_target_score CHECK (((setup_completed_at IS NULL) OR (target_score IS NOT NULL))),
     CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
     CONSTRAINT student_study_profile_full_length_weekday_check CHECK (((full_length_weekday >= 0) AND (full_length_weekday <= 6))),
     CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
@@ -10104,6 +13578,27 @@ COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask
 
 
 --
+-- Name: COLUMN student_study_profile.target_exam_date; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'Doc 05F §8.1. OPTIONAL (owner ruling 2026-09-24, SCL-130). NULL means the student has not picked a test date -- setup offers "I haven''t picked a date yet" as a first-class answer. The countdown and the exam-cadence anchor both render an absence rather than a number when it is NULL.';
+
+
+--
+-- Name: COLUMN student_study_profile.target_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.target_score IS 'Doc 05F §8.1. OPTIONAL (owner ruling 2026-09-24, SCL-130; R-08-17 reversed). 400..1600 in steps of 10 when present. NULL means the student has not set one: every surface renders that as an absence with its own copy, never as a zero and never as an error. Not read by Doc 05C, which projects without reference to a target.';
+
+
+--
+-- Name: COLUMN student_study_profile.setup_completed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.setup_completed_at IS 'Doc 05F §17.5. Stamped by the FIRST profile write that finds no completed setup -- the student reached the end of the flow. It no longer means "a target score exists": the setup_requires_target_score CHECK that tied the two together was dropped by 20261002000000, because nothing in setup is required.';
+
+
+--
 -- Name: taxonomy_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10112,6 +13607,92 @@ CREATE TABLE public.taxonomy_versions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     description text,
     is_active boolean DEFAULT true
+);
+
+
+--
+-- Name: test_forms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_forms (
+    id uuid NOT NULL,
+    name text NOT NULL,
+    test_kind text NOT NULL,
+    status text NOT NULL,
+    is_selectable boolean DEFAULT true NOT NULL,
+    retired_for_new_sessions_at timestamp with time zone,
+    score_table_version text NOT NULL,
+    routing_threshold_rw integer NOT NULL,
+    routing_threshold_m integer NOT NULL,
+    routing_override_approved_by uuid,
+    routing_override_reason text,
+    routing_override_ticket_id text,
+    break_duration_ms integer NOT NULL,
+    rw_module1_ms integer NOT NULL,
+    rw_module2_ms integer NOT NULL,
+    m_module1_ms integer NOT NULL,
+    m_module2_ms integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    archived_at timestamp with time zone,
+    CONSTRAINT archived_has_archive_time CHECK ((((status = 'archived'::text) AND (archived_at IS NOT NULL)) OR (status <> 'archived'::text))),
+    CONSTRAINT override_pair_both_or_neither CHECK ((((routing_override_approved_by IS NULL) AND (routing_override_reason IS NULL) AND (routing_override_ticket_id IS NULL)) OR ((routing_override_approved_by IS NOT NULL) AND (routing_override_reason IS NOT NULL) AND (routing_override_ticket_id IS NOT NULL)))),
+    CONSTRAINT published_has_publish_time CHECK ((((status = 'published'::text) AND (published_at IS NOT NULL)) OR (status <> 'published'::text))),
+    CONSTRAINT retired_implies_not_selectable CHECK (((retired_for_new_sessions_at IS NULL) OR (is_selectable = false))),
+    CONSTRAINT retired_only_when_published CHECK (((retired_for_new_sessions_at IS NULL) OR (status = ANY (ARRAY['published'::text, 'archived'::text])))),
+    CONSTRAINT routing_override_pending_admins_g_ex_04 CHECK ((routing_override_approved_by IS NULL)),
+    CONSTRAINT test_forms_routing_threshold_m_check CHECK (((routing_threshold_m >= 0) AND (routing_threshold_m <= 22))),
+    CONSTRAINT test_forms_routing_threshold_rw_check CHECK (((routing_threshold_rw >= 0) AND (routing_threshold_rw <= 27))),
+    CONSTRAINT test_forms_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text]))),
+    CONSTRAINT test_forms_test_kind_check CHECK ((test_kind = 'full_length'::text))
+);
+
+
+--
+-- Name: test_session_item_workspace; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_item_workspace (
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    marked_for_review boolean DEFAULT false NOT NULL,
+    eliminated_option_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    highlights jsonb DEFAULT '[]'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT test_session_item_workspace_eliminated_bounded CHECK ((cardinality(eliminated_option_ids) <= 8)),
+    CONSTRAINT test_session_item_workspace_highlights_array CHECK ((jsonb_typeof(highlights) = 'array'::text)),
+    CONSTRAINT test_session_item_workspace_highlights_bounded CHECK ((jsonb_array_length(highlights) <= 64)),
+    CONSTRAINT test_session_item_workspace_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_session_item_workspace_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
+);
+
+
+--
+-- Name: TABLE test_session_item_workspace; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.test_session_item_workspace IS 'E7a / SCL-145: the student''s per-item scratch state during a module — marked for review, eliminated options (opaque served tokens), passage highlights (code-point offsets). No free text (05E INV-05E-04). Not an answer: scoring and mastery never read it.';
+
+
+--
+-- Name: test_session_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_session_items (
+    test_session_id uuid NOT NULL,
+    section text NOT NULL,
+    module text NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    option_order text[],
+    option_token_map jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_session_items_module_check CHECK ((module = ANY (ARRAY['1'::text, '2A'::text, '2B'::text]))),
+    CONSTRAINT test_session_items_option_map_is_object CHECK (((option_token_map IS NULL) OR (jsonb_typeof(option_token_map) = 'object'::text))),
+    CONSTRAINT test_session_items_option_pair CHECK (((option_order IS NULL) = (option_token_map IS NULL))),
+    CONSTRAINT test_session_items_section_check CHECK ((section = ANY (ARRAY['RW'::text, 'M'::text])))
 );
 
 
@@ -10871,35 +14452,27 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: exam_child_tables exam_child_tables_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: exam_runtime_config exam_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_pkey PRIMARY KEY (key);
+ALTER TABLE ONLY public.exam_child_tables
+    ADD CONSTRAINT exam_child_tables_ordinal_key UNIQUE (ordinal);
 
 
 --
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: exam_child_tables exam_child_tables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.exam_child_tables
+    ADD CONSTRAINT exam_child_tables_pkey PRIMARY KEY (table_name);
 
 
 --
--- Name: full_length_adaptive_config full_length_adaptive_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: exam_runtime_outbox exam_runtime_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_pkey PRIMARY KEY (key);
+ALTER TABLE ONLY public.exam_runtime_outbox
+    ADD CONSTRAINT exam_runtime_outbox_pkey PRIMARY KEY (id);
 
 
 --
@@ -11263,6 +14836,46 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: score_disclosure_versions score_disclosure_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_disclosure_versions
+    ADD CONSTRAINT score_disclosure_versions_pkey PRIMARY KEY (scoring_model_version);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_pkey PRIMARY KEY (outbox_event_id);
+
+
+--
+-- Name: score_runs score_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: score_runs score_runs_test_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_session_id_key UNIQUE (test_session_id);
+
+
+--
+-- Name: scoring_model_versions scoring_model_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_model_versions
+    ADD CONSTRAINT scoring_model_versions_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: sections sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11396,6 +15009,102 @@ ALTER TABLE ONLY public.student_study_profile
 
 ALTER TABLE ONLY public.taxonomy_versions
     ADD CONSTRAINT taxonomy_versions_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_test_session_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_test_session_id_idempotency_key_key UNIQUE (test_session_id, idempotency_key);
+
+
+--
+-- Name: test_form_items test_form_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_question_id_key UNIQUE (test_form_id, question_id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_section_module_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_section_module_ordinal_key UNIQUE (test_form_id, section, module, ordinal);
+
+
+--
+-- Name: test_forms test_forms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_forms
+    ADD CONSTRAINT test_forms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_session_answers test_session_answers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_pkey PRIMARY KEY (test_session_id, section, module, ordinal);
+
+
+--
+-- Name: test_session_item_workspace test_session_item_workspace_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_item_workspace
+    ADD CONSTRAINT test_session_item_workspace_pkey PRIMARY KEY (test_session_id, section, module, ordinal);
+
+
+--
+-- Name: test_session_items test_session_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_items
+    ADD CONSTRAINT test_session_items_pkey PRIMARY KEY (test_session_id, section, module, ordinal);
+
+
+--
+-- Name: test_session_sections test_session_sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_session_sections test_session_sections_test_session_id_section_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_test_session_id_section_key UNIQUE (test_session_id, section);
+
+
+--
+-- Name: test_sessions test_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -11708,6 +15417,13 @@ CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING b
 
 
 --
+-- Name: idx_exam_runtime_outbox_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_exam_runtime_outbox_pending ON public.exam_runtime_outbox USING btree (created_at) WHERE (status = 'pending'::text);
+
+
+--
 -- Name: idx_guardian_links_guardian; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11946,6 +15662,48 @@ CREATE INDEX idx_review_sessions_student ON public.review_sessions USING btree (
 
 
 --
+-- Name: idx_score_disclosure_versions_by_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_disclosure_versions_by_version ON public.score_disclosure_versions USING btree (disclosure_version);
+
+
+--
+-- Name: idx_score_run_event_ledger_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_run_event_ledger_run ON public.score_run_event_ledger USING btree (score_run_id);
+
+
+--
+-- Name: idx_score_run_event_ledger_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_run_event_ledger_session ON public.score_run_event_ledger USING btree (test_session_id);
+
+
+--
+-- Name: idx_score_runs_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_event ON public.score_runs USING btree (source_outbox_event_id);
+
+
+--
+-- Name: idx_score_runs_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_form ON public.score_runs USING btree (test_form_id, computed_at DESC);
+
+
+--
+-- Name: idx_score_runs_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id, computed_at DESC);
+
+
+--
 -- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12016,6 +15774,41 @@ CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skil
 
 
 --
+-- Name: idx_test_answer_submissions_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_answer_submissions_lookup ON public.test_answer_submissions USING btree (test_session_id, section, module, ordinal, created_at);
+
+
+--
+-- Name: idx_test_form_items_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_form_items_lookup ON public.test_form_items USING btree (test_form_id, section, module, ordinal);
+
+
+--
+-- Name: idx_test_session_answers_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_answers_session ON public.test_session_answers USING btree (test_session_id, section, module);
+
+
+--
+-- Name: idx_test_session_sections_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_sections_lookup ON public.test_session_sections USING btree (test_session_id, section);
+
+
+--
+-- Name: idx_test_sessions_student_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_sessions_student_form ON public.test_sessions USING btree (student_id, test_form_id);
+
+
+--
 -- Name: idx_tutor_context_resolution_log_conversation; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12048,6 +15841,13 @@ CREATE INDEX idx_tutor_conversations_reuse_envelope ON public.tutor_conversation
 --
 
 CREATE INDEX idx_tutor_conversations_standalone_active ON public.tutor_conversations USING btree (student_id, updated_at DESC) WHERE ((surface = 'standalone'::text) AND (status = 'active'::text) AND (deleted_at IS NULL));
+
+
+--
+-- Name: idx_tutor_conversations_student_assignment_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_tutor_conversations_student_assignment_key ON public.tutor_conversations USING btree (student_id, assignment_key) WHERE (assignment_key IS NOT NULL);
 
 
 --
@@ -12247,6 +16047,20 @@ CREATE INDEX notification_messages_provider_idx ON public.notification_messages 
 
 
 --
+-- Name: one_active_scoring_model_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX one_active_scoring_model_version ON public.scoring_model_versions USING btree (status) WHERE (status = 'active'::text);
+
+
+--
+-- Name: one_active_session_per_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX one_active_session_per_student ON public.test_sessions USING btree (student_id) WHERE (state = ANY (ARRAY['created'::text, 'active'::text, 'section_break'::text]));
+
+
+--
 -- Name: practice_sessions_one_completed_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12268,6 +16082,13 @@ CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btre
 
 
 --
+-- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX scoring_constants_unique_idx ON public.scoring_constants USING btree (scoring_model_version, key, COALESCE(section, '__global__'::text));
+
+
+--
 -- Name: unique_active_guardian_link; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12275,10 +16096,24 @@ CREATE UNIQUE INDEX unique_active_guardian_link ON public.guardian_links USING b
 
 
 --
+-- Name: uq_exam_runtime_outbox_scored; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_exam_runtime_outbox_scored ON public.exam_runtime_outbox USING btree (aggregate_id) WHERE (event_type = 'test_session_scored'::text);
+
+
+--
 -- Name: uq_practice_items_idem; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_practice_items_idem ON public.practice_session_items USING btree (user_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_projection_refresh_outbox_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_projection_refresh_outbox_session ON public.projection_refresh_outbox USING btree (test_session_id) WHERE (test_session_id IS NOT NULL);
 
 
 --
@@ -12450,34 +16285,6 @@ CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF s
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.exam_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: exam_runtime_config exam_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER exam_runtime_config_notify AFTER INSERT OR UPDATE ON public.exam_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.full_length_adaptive_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER full_length_adaptive_config_notify AFTER INSERT OR UPDATE ON public.full_length_adaptive_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
 -- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12606,6 +16413,20 @@ ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_c
 
 
 --
+-- Name: test_forms trg_form_publish_gate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_form_publish_gate BEFORE INSERT OR UPDATE ON public.test_forms FOR EACH ROW EXECUTE FUNCTION public.enforce_form_publish_gate();
+
+
+--
+-- Name: test_session_sections trg_module2_path_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_module2_path_immutability BEFORE UPDATE ON public.test_session_sections FOR EACH ROW EXECUTE FUNCTION public.enforce_module2_path_immutability();
+
+
+--
 -- Name: practice_session_items trg_practice_item_enqueue_review; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12613,10 +16434,59 @@ CREATE TRIGGER trg_practice_item_enqueue_review AFTER UPDATE ON public.practice_
 
 
 --
+-- Name: scoring_constants trg_prevent_active_scoring_constants_mutation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_active_scoring_constants_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.scoring_constants FOR EACH ROW EXECUTE FUNCTION public.prevent_active_scoring_constants_mutation();
+
+
+--
+-- Name: score_runs trg_prevent_score_runs_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_score_runs_delete BEFORE DELETE ON public.score_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_score_runs_mutation();
+
+
+--
+-- Name: score_runs trg_prevent_score_runs_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prevent_score_runs_update BEFORE UPDATE ON public.score_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_score_runs_mutation();
+
+
+--
+-- Name: test_forms trg_published_form_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_published_form_immutability BEFORE DELETE OR UPDATE ON public.test_forms FOR EACH ROW EXECUTE FUNCTION public.enforce_published_form_immutability();
+
+
+--
+-- Name: test_form_items trg_published_form_items_immutability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_published_form_items_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.test_form_items FOR EACH ROW EXECUTE FUNCTION public.enforce_published_form_items_immutability();
+
+
+--
 -- Name: review_session_items trg_review_item_resolve; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_review_item_resolve AFTER UPDATE ON public.review_session_items FOR EACH ROW WHEN (((old.status <> ALL (ARRAY['answered'::text, 'skipped'::text])) AND (new.status = ANY (ARRAY['answered'::text, 'skipped'::text])))) EXECUTE FUNCTION public.review_item_resolve();
+
+
+--
+-- Name: scoring_model_versions trg_scoring_version_status_machine; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_scoring_version_status_machine BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_scoring_version_status_machine();
+
+
+--
+-- Name: scoring_model_versions trg_single_active_scoring_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_single_active_scoring_version BEFORE INSERT OR UPDATE ON public.scoring_model_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_single_active_scoring_version();
 
 
 --
@@ -13030,38 +16900,6 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
--- Name: exam_runtime_config_history exam_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config_history
-    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: exam_runtime_config exam_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exam_runtime_config
-    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config_history full_length_adaptive_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config_history
-    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: full_length_adaptive_config full_length_adaptive_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.full_length_adaptive_config
-    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
 -- Name: guardian_consent_requests guardian_consent_requests_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13414,11 +17252,179 @@ ALTER TABLE ONLY public.review_sessions
 
 
 --
+-- Name: score_disclosure_versions score_disclosure_versions_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_disclosure_versions
+    ADD CONSTRAINT score_disclosure_versions_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_outbox_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_outbox_event_id_fkey FOREIGN KEY (outbox_event_id) REFERENCES public.exam_runtime_outbox(id);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_score_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_run_event_ledger
+    ADD CONSTRAINT score_run_event_ledger_score_run_id_fkey FOREIGN KEY (score_run_id) REFERENCES public.score_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: score_runs score_runs_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: score_runs score_runs_source_outbox_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_source_outbox_event_id_fkey FOREIGN KEY (source_outbox_event_id) REFERENCES public.exam_runtime_outbox(id);
+
+
+--
+-- Name: score_runs score_runs_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: score_runs score_runs_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
+
+
+--
+-- Name: score_runs score_runs_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.score_runs
+    ADD CONSTRAINT score_runs_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scoring_constants scoring_constants_scoring_model_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scoring_constants
+    ADD CONSTRAINT scoring_constants_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
 -- Name: student_study_profile student_study_profile_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.student_study_profile
     ADD CONSTRAINT student_study_profile_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_answer_submissions test_answer_submissions_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_answer_submissions
+    ADD CONSTRAINT test_answer_submissions_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_form_items test_form_items_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: test_form_items test_form_items_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_form_items
+    ADD CONSTRAINT test_form_items_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
+
+
+--
+-- Name: test_forms test_forms_score_table_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_forms
+    ADD CONSTRAINT test_forms_score_table_version_fkey FOREIGN KEY (score_table_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: test_session_answers test_session_answers_last_submission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_last_submission_id_fkey FOREIGN KEY (last_submission_id) REFERENCES public.test_answer_submissions(id);
+
+
+--
+-- Name: test_session_answers test_session_answers_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_answers
+    ADD CONSTRAINT test_session_answers_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_session_item_workspace test_session_item_workspace_test_session_id_section_module_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_item_workspace
+    ADD CONSTRAINT test_session_item_workspace_test_session_id_section_module_fkey FOREIGN KEY (test_session_id, section, module, ordinal) REFERENCES public.test_session_items(test_session_id, section, module, ordinal) ON DELETE CASCADE;
+
+
+--
+-- Name: test_session_items test_session_items_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_items
+    ADD CONSTRAINT test_session_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: test_session_items test_session_items_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_items
+    ADD CONSTRAINT test_session_items_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_session_sections test_session_sections_test_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_session_sections
+    ADD CONSTRAINT test_session_sections_test_session_id_fkey FOREIGN KEY (test_session_id) REFERENCES public.test_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_sessions test_sessions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: test_sessions test_sessions_test_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_sessions
+    ADD CONSTRAINT test_sessions_test_form_id_fkey FOREIGN KEY (test_form_id) REFERENCES public.test_forms(id);
 
 
 --
@@ -13974,28 +17980,30 @@ ALTER TABLE public.entitlement_runtime_config_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: exam_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: exam_child_tables; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.exam_runtime_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_child_tables ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: exam_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: exam_runtime_outbox; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.exam_runtime_config_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_runtime_outbox ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: full_length_adaptive_config; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: exam_runtime_outbox exam_runtime_outbox_no_client_access; Type: POLICY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.full_length_adaptive_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY exam_runtime_outbox_no_client_access ON public.exam_runtime_outbox TO anon, authenticated USING (false) WITH CHECK (false);
+
 
 --
--- Name: full_length_adaptive_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+-- Name: exam_runtime_outbox exam_runtime_outbox_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
 --
 
-ALTER TABLE public.full_length_adaptive_config_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY exam_runtime_outbox_scoring_owner_read ON public.exam_runtime_outbox FOR SELECT TO lyceon_scoring_owner USING (true);
+
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -14233,6 +18241,13 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: questions questions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY questions_scoring_owner_read ON public.questions FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
 -- Name: rate_limit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -14312,6 +18327,106 @@ ALTER TABLE public.review_sessions ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY review_sessions_select_self ON public.review_sessions FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: score_disclosure_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.score_disclosure_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: score_run_event_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.score_run_event_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_internal; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_internal ON public.score_run_event_ledger USING (false);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_scoring_owner_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_scoring_owner_insert ON public.score_run_event_ledger FOR INSERT TO lyceon_scoring_owner WITH CHECK (true);
+
+
+--
+-- Name: score_run_event_ledger score_run_event_ledger_scoring_owner_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_run_event_ledger_scoring_owner_select ON public.score_run_event_ledger FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: score_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.score_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: score_runs score_runs_no_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_no_delete ON public.score_runs FOR DELETE USING (false);
+
+
+--
+-- Name: score_runs score_runs_no_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_no_update ON public.score_runs FOR UPDATE USING (false);
+
+
+--
+-- Name: score_runs score_runs_scoring_owner_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_scoring_owner_insert ON public.score_runs FOR INSERT TO lyceon_scoring_owner WITH CHECK (true);
+
+
+--
+-- Name: score_runs score_runs_scoring_owner_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_scoring_owner_select ON public.score_runs FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: score_runs score_runs_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY score_runs_select_self ON public.score_runs FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: scoring_constants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_constants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: scoring_constants scoring_constants_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY scoring_constants_scoring_owner_read ON public.scoring_constants FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: scoring_model_versions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.scoring_model_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: scoring_model_versions scoring_model_versions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY scoring_model_versions_scoring_owner_read ON public.scoring_model_versions FOR SELECT TO lyceon_scoring_owner USING (true);
 
 
 --
@@ -14528,6 +18643,148 @@ CREATE POLICY student_study_profile_student_read ON public.student_study_profile
 --
 
 ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_answer_submissions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_answer_submissions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_answer_submissions test_answer_submissions_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_answer_submissions_select_self ON public.test_answer_submissions FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.test_sessions s
+  WHERE ((s.id = test_answer_submissions.test_session_id) AND (s.student_id = auth.uid())))));
+
+
+--
+-- Name: test_form_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_form_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_form_items test_form_items_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_form_items_scoring_owner_read ON public.test_form_items FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: test_form_items test_form_items_select_own_form; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_form_items_select_own_form ON public.test_form_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.test_sessions s
+  WHERE ((s.test_form_id = test_form_items.test_form_id) AND (s.student_id = auth.uid())))));
+
+
+--
+-- Name: test_forms; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_forms ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_forms test_forms_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_forms_scoring_owner_read ON public.test_forms FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: test_forms test_forms_select_published; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_forms_select_published ON public.test_forms FOR SELECT TO authenticated USING ((status = 'published'::text));
+
+
+--
+-- Name: test_session_answers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_answers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_answers test_session_answers_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_answers_scoring_owner_read ON public.test_session_answers FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: test_session_answers test_session_answers_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_answers_select_self ON public.test_session_answers FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.test_sessions s
+  WHERE ((s.id = test_session_answers.test_session_id) AND (s.student_id = auth.uid())))));
+
+
+--
+-- Name: test_session_item_workspace; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_item_workspace ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_items test_session_items_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_items_select_self ON public.test_session_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.test_sessions s
+  WHERE ((s.id = test_session_items.test_session_id) AND (s.student_id = auth.uid())))));
+
+
+--
+-- Name: test_session_sections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_session_sections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_session_sections test_session_sections_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_sections_scoring_owner_read ON public.test_session_sections FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: test_session_sections test_session_sections_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_session_sections_select_self ON public.test_session_sections FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.test_sessions s
+  WHERE ((s.id = test_session_sections.test_session_id) AND (s.student_id = auth.uid())))));
+
+
+--
+-- Name: test_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.test_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: test_sessions test_sessions_scoring_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_sessions_scoring_owner_read ON public.test_sessions FOR SELECT TO lyceon_scoring_owner USING (true);
+
+
+--
+-- Name: test_sessions test_sessions_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY test_sessions_select_self ON public.test_sessions FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
 
 --
 -- Name: tutor_context_resolution_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -14908,6 +19165,7 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL ON SCHEMA public TO lyceon_scoring_owner;
 
 
 --
@@ -14924,6 +19182,14 @@ GRANT ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) 
 
 REVOKE ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION actor_id_integrity_violations(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.actor_id_integrity_violations() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.actor_id_integrity_violations() TO service_role;
 
 
 --
@@ -15083,6 +19349,14 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
+-- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION calendar_is_known_timezone(p_timezone text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15167,7 +19441,9 @@ REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb,
 -- Name: FUNCTION calendar_viewer_is_admin(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.calendar_viewer_is_admin() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
+GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO service_role;
 
 
 --
@@ -15253,6 +19529,7 @@ GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO s
 -- Name: FUNCTION capture_mastery_constant_change(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.capture_mastery_constant_change() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.capture_mastery_constant_change() TO service_role;
 
 
@@ -15294,6 +19571,14 @@ GRANT ALL ON FUNCTION public.compute_longest_streak_days(p_student_id uuid, p_t_
 
 REVOKE ALL ON FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) TO service_role;
+
+
+--
+-- Name: FUNCTION compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_scaled_score_from_counts(p_version text, p_r1 integer, p_r2 integer, p_m2_easy_wrong integer, p_m2_medium_wrong integer, p_m2_hard_wrong integer, p_n1 integer, p_n_total integer, p_routing_threshold integer) TO service_role;
 
 
 --
@@ -15368,6 +19653,14 @@ GRANT ALL ON FUNCTION public.compute_section_projection(p_student_id uuid, p_sec
 
 
 --
+-- Name: FUNCTION compute_section_scaled_score(p_test_session_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_section_scaled_score(p_test_session_id uuid, p_section text) TO service_role;
+
+
+--
 -- Name: FUNCTION compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15388,6 +19681,14 @@ GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO servic
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role;
+
+
+--
+-- Name: FUNCTION create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) TO service_role;
 
 
 --
@@ -15430,11 +19731,317 @@ GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_ty
 
 
 --
+-- Name: FUNCTION enforce_form_publish_gate(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_form_publish_gate() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_module2_path_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_module2_path_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_published_form_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_published_form_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_published_form_items_immutability(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_published_form_items_immutability() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_scoring_version_status_machine(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_scoring_version_status_machine() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION enforce_single_active_scoring_version(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_single_active_scoring_version() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION entitlement_active(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_abandonment_sweep(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_abandonment_sweep(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_abandonment_sweep(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_advance_session(p_session_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_advance_session(p_session_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_advance_session(p_session_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_answer_option_map(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_answer_option_map(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_answer_option_map(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_apply_scored_seams(p_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_apply_scored_seams(p_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_apply_scored_seams(p_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_finalize_session(p_session_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_finalize_session(p_session_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_finalize_session(p_session_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_fold_heartbeat(p_session_id uuid, p_section text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_fold_heartbeat(p_session_id uuid, p_section text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_fold_heartbeat(p_session_id uuid, p_section text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_grade_module1(p_session_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_grade_module1(p_session_id uuid, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_grade_module1(p_session_id uuid, p_section text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_heartbeat(p_student_id uuid, p_session_id uuid, p_section text, p_ordinal integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_heartbeat(p_student_id uuid, p_session_id uuid, p_section text, p_ordinal integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_heartbeat(p_student_id uuid, p_session_id uuid, p_section text, p_ordinal integer) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_list_forms(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_list_forms(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_list_forms(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_module_duration_ms(p_form_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_module_duration_ms(p_form_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_module_duration_ms(p_form_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_module_items(p_student_id uuid, p_session_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_module_items(p_student_id uuid, p_session_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_module_items(p_student_id uuid, p_session_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_module_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_module_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_module_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_ms(p interval); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_ms(p interval) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_ms(p interval) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_next_form_for_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_next_form_for_student(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_outbox_payload(p_session_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_outbox_payload(p_session_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_outbox_payload(p_session_id uuid, p_event_type text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_physical_module(p_session_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_physical_module(p_session_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_physical_module(p_session_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_record_item_options(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_rows jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_record_item_options(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_rows jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_record_item_options(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_rows jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_remaining_ms(p_session_id uuid, p_section text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_remaining_ms(p_session_id uuid, p_section text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_remaining_ms(p_session_id uuid, p_section text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_report_source(p_student_id uuid, p_session_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_report_source(p_student_id uuid, p_session_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_report_source(p_student_id uuid, p_session_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_runtime_setting(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_runtime_setting(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_runtime_setting(p_key text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_save_item_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_marked boolean, p_eliminated text[], p_highlights jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_save_item_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_marked boolean, p_eliminated text[], p_highlights jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_save_item_workspace(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_marked boolean, p_eliminated text[], p_highlights jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_score_outbox_event(p_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_score_outbox_event(p_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_score_outbox_event(p_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_session_body(p_session_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_session_body(p_session_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_session_body(p_session_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_session_state(p_student_id uuid, p_session_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_session_state(p_student_id uuid, p_session_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_session_state(p_student_id uuid, p_session_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_start_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_start_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_start_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_start_module_internal(p_session_id uuid, p_section text, p_module text, p_started_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_start_module_internal(p_session_id uuid, p_section text, p_module text, p_started_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_start_module_internal(p_session_id uuid, p_section text, p_module text, p_started_at timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_submit_answer(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_question_id text, p_answer text, p_display_answer text, p_client_latency_ms integer, p_idempotency_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_submit_answer(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_question_id text, p_answer text, p_display_answer text, p_client_latency_ms integer, p_idempotency_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_submit_answer(p_student_id uuid, p_session_id uuid, p_section text, p_module text, p_ordinal integer, p_question_id text, p_answer text, p_display_answer text, p_client_latency_ms integer, p_idempotency_key text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_submit_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_submit_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_submit_module(p_student_id uuid, p_session_id uuid, p_section text, p_module text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_submit_module1_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_submit_module1_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_submit_module1_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_submit_module2_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_submit_module2_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_submit_module2_internal(p_session_id uuid, p_section text, p_by text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_touch_session(p_student_id uuid, p_session_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_touch_session(p_student_id uuid, p_session_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_touch_session(p_student_id uuid, p_session_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -15498,7 +20105,16 @@ GRANT ALL ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_studen
 -- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
+
+
+--
+-- Name: FUNCTION is_answer_correct(p_submitted text, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) TO service_role;
 
 
 --
@@ -15652,6 +20268,20 @@ GRANT ALL ON FUNCTION public.preclear_account_deletion_links(p_profile_id uuid) 
 
 
 --
+-- Name: FUNCTION prevent_active_scoring_constants_mutation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.prevent_active_scoring_constants_mutation() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION prevent_score_runs_mutation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.prevent_score_runs_mutation() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION prevent_update_delete(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -15706,11 +20336,11 @@ GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, 
 
 
 --
--- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text, p_deleted_profile_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) TO service_role;
 
 
 --
@@ -16088,6 +20718,13 @@ REVOKE ALL ON FUNCTION public.review_item_resolve() FROM PUBLIC;
 
 
 --
+-- Name: FUNCTION review_item_used_tutor(p_student_id uuid, p_item_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -16126,6 +20763,39 @@ GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO s
 
 
 --
+-- Name: FUNCTION score_test_session_from_outbox(p_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.score_test_session_from_outbox(p_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constant(p_version text, p_key text, p_section text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO service_role;
+GRANT ALL ON FUNCTION public.scoring_constant(p_version text, p_key text, p_section text) TO lyceon_scoring_owner;
+
+
+--
+-- Name: FUNCTION scoring_constants_sha256(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_sha256(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service_role;
+
+
+--
+-- Name: FUNCTION scoring_constants_snapshot_jsonb(p_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) TO service_role;
+
+
+--
 -- Name: FUNCTION select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]); Type: ACL; Schema: public; Owner: -
 --
 
@@ -16145,6 +20815,14 @@ GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_do
 --
 
 GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
+
+
+--
+-- Name: FUNCTION sever_crisis_audit_conversation(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sever_crisis_audit_conversation() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sever_crisis_audit_conversation() TO service_role;
 
 
 --
@@ -16202,11 +20880,27 @@ GRANT ALL ON FUNCTION public.update_updated_at_column() TO service_role;
 
 
 --
+-- Name: FUNCTION validate_form_composition(p_test_form_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.validate_form_composition(p_test_form_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.validate_form_composition(p_test_form_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.validate_memory_summary_schema() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.validate_memory_summary_schema() TO service_role;
+
+
+--
+-- Name: FUNCTION verify_deletion_layers(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO service_role;
 
 
 --
@@ -16475,6 +21169,41 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.questions TO service_role;
 
 
 --
+-- Name: COLUMN questions.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.difficulty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(difficulty) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.correct_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(correct_answer) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.item_type; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(item_type) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN questions.correct_variants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(correct_variants) ON TABLE public.questions TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE canonical_skill_catalog; Type: ACL; Schema: public; Owner: -
 --
 
@@ -16575,31 +21304,405 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlements TO service_role;
 
 
 --
--- Name: TABLE exam_runtime_config; Type: ACL; Schema: public; Owner: -
+-- Name: TABLE exam_runtime_outbox; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service_role;
-
-
---
--- Name: TABLE exam_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.exam_runtime_config_history TO service_role;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.exam_runtime_outbox TO service_role;
 
 
 --
--- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
+-- Name: COLUMN exam_runtime_outbox.id; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
+GRANT SELECT(id) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
 
 
 --
--- Name: TABLE full_length_adaptive_config_history; Type: ACL; Schema: public; Owner: -
+-- Name: COLUMN exam_runtime_outbox.event_type; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.full_length_adaptive_config_history TO service_role;
+GRANT SELECT(event_type) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN exam_runtime_outbox.aggregate_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(aggregate_id) ON TABLE public.exam_runtime_outbox TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE test_answer_submissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.test_answer_submissions TO service_role;
+
+
+--
+-- Name: COLUMN test_answer_submissions.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.test_session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_session_id) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.idempotency_key; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(idempotency_key) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(answer) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.client_latency_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_latency_ms) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.response_schema_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(response_schema_version) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.was_canonical_update; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(was_canonical_update) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: COLUMN test_answer_submissions.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE public.test_answer_submissions TO authenticated;
+
+
+--
+-- Name: TABLE test_form_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_form_items TO service_role;
+
+
+--
+-- Name: COLUMN test_form_items.test_form_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_form_id) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.module; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_form_items.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.test_form_items TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE test_session_answers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_answers TO service_role;
+
+
+--
+-- Name: COLUMN test_session_answers.test_session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_session_id) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+GRANT SELECT(test_session_id) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+GRANT SELECT(section) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.module; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_answers.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+GRANT SELECT(ordinal) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+GRANT SELECT(question_id) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(answer) ON TABLE public.test_session_answers TO lyceon_scoring_owner;
+GRANT SELECT(answer) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.client_latency_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_latency_ms) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.last_submission_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(last_submission_id) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_answers.updated_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(updated_at) ON TABLE public.test_session_answers TO authenticated;
+
+
+--
+-- Name: TABLE test_session_sections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_sections TO service_role;
+
+
+--
+-- Name: COLUMN test_session_sections.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.test_session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_session_id) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+GRANT SELECT(test_session_id) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+GRANT SELECT(section) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(state) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+GRANT SELECT(state) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_path; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_path) ON TABLE public.test_session_sections TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_session_sections.module1_started_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module1_started_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module1_submitted_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module1_submitted_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module1_submitted_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module1_submitted_by) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_started_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_started_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_submitted_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_submitted_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_submitted_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_submitted_by) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module1_expires_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module1_expires_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.module2_expires_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(module2_expires_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.active_paused_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(active_paused_ms) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: COLUMN test_session_sections.last_active_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(last_active_at) ON TABLE public.test_session_sections TO authenticated;
+
+
+--
+-- Name: TABLE test_sessions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_sessions TO service_role;
+GRANT SELECT ON TABLE public.test_sessions TO authenticated;
+
+
+--
+-- Name: COLUMN test_sessions.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.test_form_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_form_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_sessions.actor_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(actor_id) ON TABLE public.test_sessions TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE full_length_answer_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.full_length_answer_events TO service_role;
+
+
+--
+-- Name: TABLE score_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.score_runs TO service_role;
+GRANT SELECT,INSERT ON TABLE public.score_runs TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE full_length_section_scores; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.full_length_section_scores TO service_role;
 
 
 --
@@ -17300,6 +22403,105 @@ GRANT SELECT ON TABLE public.review_sessions TO authenticated;
 
 
 --
+-- Name: TABLE score_disclosure_versions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.score_disclosure_versions TO service_role;
+
+
+--
+-- Name: TABLE score_run_event_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.score_run_event_ledger TO service_role;
+GRANT SELECT,INSERT ON TABLE public.score_run_event_ledger TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE scoring_constants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_constants TO service_role;
+
+
+--
+-- Name: COLUMN scoring_constants.scoring_model_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(scoring_model_version) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.key; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(key) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_constants.value; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(value) ON TABLE public.scoring_constants TO lyceon_scoring_owner;
+
+
+--
+-- Name: TABLE scoring_model_versions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.scoring_model_versions TO service_role;
+
+
+--
+-- Name: COLUMN scoring_model_versions.version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(version) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.constants_sha256; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(constants_sha256) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.validation_packet_sha256; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(validation_packet_sha256) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.validation_packet_url; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(validation_packet_url) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN scoring_model_versions.published_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(published_at) ON TABLE public.scoring_model_versions TO lyceon_scoring_owner;
+
+
+--
 -- Name: TABLE sections; Type: ACL; Schema: public; Owner: -
 --
 
@@ -17538,6 +22740,147 @@ GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.taxonomy_versions TO service_role;
+
+
+--
+-- Name: TABLE test_forms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.test_forms TO service_role;
+
+
+--
+-- Name: COLUMN test_forms.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.test_forms TO lyceon_scoring_owner;
+GRANT SELECT(id) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.name; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(name) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.test_kind; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(test_kind) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.is_selectable; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_selectable) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.retired_for_new_sessions_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(retired_for_new_sessions_at) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.score_table_version; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(score_table_version) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.routing_threshold_rw; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(routing_threshold_rw) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.routing_threshold_m; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(routing_threshold_m) ON TABLE public.test_forms TO lyceon_scoring_owner;
+
+
+--
+-- Name: COLUMN test_forms.break_duration_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(break_duration_ms) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.rw_module1_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(rw_module1_ms) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.rw_module2_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(rw_module2_ms) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.m_module1_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(m_module1_ms) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.m_module2_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(m_module2_ms) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.published_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(published_at) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: COLUMN test_forms.archived_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(archived_at) ON TABLE public.test_forms TO authenticated;
+
+
+--
+-- Name: TABLE test_session_item_workspace; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.test_session_item_workspace TO service_role;
+
+
+--
+-- Name: TABLE test_session_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.test_session_items TO service_role;
 
 
 --

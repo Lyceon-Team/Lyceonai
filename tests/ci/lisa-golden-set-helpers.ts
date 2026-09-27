@@ -98,7 +98,8 @@ export type GoldenFixture = {
   mustNotAssertions?: string[];
   goldResponse?: string;
   isCalibration?: boolean;
-  surface: "practice" | "review" | "test_review";
+  // "dashboard": standalone LISA in general mode — no item attached (CASE-36).
+  surface: "practice" | "review" | "test_review" | "dashboard";
   isPostSubmit: boolean;
   priorTurnCount: number;
   hasCrisisVector: boolean;
@@ -107,15 +108,16 @@ export type GoldenFixture = {
 // ── Factory ─────────────────────────────────────────────────────────────
 
 export type GoldenEnvelopeInput = {
-  surface: "practice" | "review" | "test_review";
+  surface: "practice" | "review" | "test_review" | "dashboard";
   isPostSubmit: boolean;
+  /** null: general mode — no bank item in scope (CASE-36). */
   question: {
     stem: string;
     options?: Array<{ key: string; text: string }>;
     passage?: string;
     itemType?: "mcq" | "grid_in";
     explanation?: string;
-  };
+  } | null;
   correctAnswer: string | null;
   messages?: Array<{ role: "student" | "tutor"; text: string }>;
   learningContext?: Partial<OrchestrateRequest["student_learning_context"]>;
@@ -149,20 +151,21 @@ export function buildGoldenEnvelope(
     ...(input.memoryFields ?? {}),
   };
 
+  const question = input.question;
   const itemType =
-    input.question.itemType ??
-    (input.question.options && input.question.options.length > 0
-      ? "mcq"
-      : "grid_in");
+    question === null
+      ? null
+      : (question.itemType ??
+        (question.options && question.options.length > 0 ? "mcq" : "grid_in"));
 
   return {
     conversation_id: seqUuid(),
     student_id: seqUuid(),
-    entry_mode: "scoped_question",
+    entry_mode: question === null ? "general" : "scoped_question",
     source_surface: input.surface === "test_review" ? "review" : input.surface,
     resolved_scope: {
-      source_session_id: seqUuid(),
-      source_session_item_id: seqUuid(),
+      source_session_id: question === null ? null : seqUuid(),
+      source_session_item_id: question === null ? null : seqUuid(),
       source_question_row_id: null,
       source_question_canonical_id: null,
     },
@@ -172,15 +175,18 @@ export function buildGoldenEnvelope(
     memory_structured_fields: memoryFields,
     policy_assignment: DEFAULT_POLICY,
     runtime_limits: DEFAULT_RUNTIME_LIMITS,
-    question_content: {
-      stem: input.question.stem,
-      passage: input.question.passage ?? null,
-      options: input.question.options ?? [],
-      item_type: itemType,
-      explanation: input.question.explanation ?? null,
-      student_answer: null,
-      attempt_number: input.isPostSubmit ? 1 : 0,
-    },
+    question_content:
+      question === null || itemType === null
+        ? null
+        : {
+            stem: question.stem,
+            passage: question.passage ?? null,
+            options: question.options ?? [],
+            item_type: itemType,
+            explanation: question.explanation ?? null,
+            student_answer: null,
+            attempt_number: input.isPostSubmit ? 1 : 0,
+          },
     is_post_submit: input.isPostSubmit,
     correct_answer: input.isPostSubmit ? input.correctAnswer : null,
     model_armor_input_template_id: null,
@@ -215,6 +221,13 @@ export const HEURISTIC_PERSONA_ADOPTION =
   /\b(notebook|my\s+work|here'?s\s+what\s+I\s+got|let\s+me\s+check\s+my\s+notes)\b/i;
 
 export const HEURISTIC_ERROR_COUNT = /\b(four|4)\s*(recent\s*)?errors?\b/i;
+/**
+ * CASE-36: LISA wrote a question. Catches the shapes a made-up item takes —
+ * lettered options, "solve for x", an equation posed as a question, "try
+ * this one" — none of which a handoff to practice contains.
+ */
+export const HEURISTIC_FABRICATED_ITEM =
+  /(?:^|\s)\(?[A-D]\)\s|\bsolve for [a-z]\b|=\s*\?|\b(?:try|here'?s) (?:this|one)\b|\bwhat is [a-z]\s*\?/im;
 
 // ── Coverage classification ─────────────────────────────────────────────
 
@@ -260,6 +273,7 @@ export const SPLIT_CASES = new Set([
   "CASE-28",
   "CASE-29",
   "CASE-35",
+  "CASE-36",
 ]);
 
 export const SHORT_NUMBER_PRECISION_CASES = new Set([

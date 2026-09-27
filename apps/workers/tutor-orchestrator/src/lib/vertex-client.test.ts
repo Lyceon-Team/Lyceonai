@@ -2,9 +2,11 @@
  * @spec [Doc-03C_V3 §5.2, §5.7; Doc-03B_V4.1 §12B.8]
  * @implemented 2026-09-16
  *
- * Vertex client contract tests: safetySettings replaces inline modelArmorConfig
- * while Model Armor is deferred (Google-side TEMPLATE_NOT_FOUND). The two must
- * not coexist (Vertex rejects the combination with INVALID_ARGUMENT).
+ * Vertex client contract tests: generateContent carries safetySettings and no
+ * inline modelArmorConfig. Model Armor runs in the BFF via the standalone
+ * Sanitize API (server/services/tutor-model-armor.ts, closure plan W3-1); the
+ * worker never sends an inline config (Vertex rejects safetySettings combined
+ * with one, INVALID_ARGUMENT).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FinishReason, HarmBlockThreshold, HarmCategory } from "@google/genai";
@@ -27,13 +29,6 @@ vi.mock("@google/genai", async () => {
   };
 });
 
-vi.mock("google-auth-library", () => {
-  class MockGoogleAuth {
-    getAccessToken = vi.fn().mockResolvedValue("mock-token");
-  }
-  return { GoogleAuth: MockGoogleAuth };
-});
-
 // ── Import the module under test AFTER mocks are in place ───────────────
 
 import { generateTutorResponse } from "./vertex-client.js";
@@ -43,8 +38,6 @@ import { generateTutorResponse } from "./vertex-client.js";
 describe("vertex-client generateContent config", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID = "lyceon-lisa-input-v1";
-    process.env.MODEL_ARMOR_OUTPUT_TEMPLATE_ID = "lyceon-lisa-output-v1";
     process.env.VERTEX_PROJECT_ID = "test-project";
     process.env.VERTEX_LOCATION = "global";
   });

@@ -110,12 +110,12 @@ Owner rulings, stated as current truth.
 | R-08-14 | The calendar is a plan, never a gate. No engine, mastery, KPI, or entitlement path depends on it (INV-08-19). Unmatched activity appears as Extra work. |
 | R-08-15 | Every engine launches from the calendar through its adapter; an engine appears in `enabled_block_types` only once its contract test passes against the real engine. |
 | R-08-16 | Partial work is shown (`12 / 20`). |
-| R-08-17 | Target score is required at setup. |
+| R-08-17 | Target score and test date are collected at setup but **never required**. Nothing in setup blocks: a student may press through without answering and still receives a plan. Using the target to tune plan aggressiveness is a V2 item (Appendix A). |
 | R-08-18 | When a block starts, only that block freezes; unstarted blocks on the day remain editable, and the day may still be blocked out around it. |
 | R-08-19 | Student edits may exceed the daily-minutes target with no warning. Auto-generation respects the target. |
 | R-08-20 | Missed blocks stay historical. "Do it now" creates a new block today. |
 | R-08-21 | `llm_v1`: no columns, no code, no config values; Appendix A only. |
-| R-08-22 | Guardians do not see target score. |
+| R-08-22 | Guardians **do** see the student's target score and test date. They are the goal the plan is aimed at, not controls, and a projection with nothing to compare against is half a fact. Everything else §16 withholds stands. |
 | R-08-24 | Progress is derived by the allocator from immutable engine activity; nothing about completion is stored, matched or reconciled. |
 | R-08-25 | **Streak = platform-wide activity**, owned by Doc 05B and read from `student_overall_kpi`. A local day counts when any engine shows activity. The calendar renders it and never computes it (§14). |
 | R-08-26 | NULL mastery on a mixed profile = neutral weight; all-NULL = balanced cold start. |
@@ -146,14 +146,15 @@ Verified against production (read-only) 2026-09-23 unless FORWARD_REF.
 | Review items / lifecycle | Doc 02B §16 | `review_session_items(id, question_section, question_domain, status, occurred_at)`; `review_sessions(status)` | Allocator units; `progress` lifecycle. |
 | Exam create / state / progress | Doc 04A | exam session tables, terminal states, Doc 04's progress presentation — **FORWARD_REF, absent in prod** | Exam adapter; G-08-02. |
 | Domain mastery | Doc 05B | `student_domain_mastery.mastery_level`, levels 0–4 or NULL (`public.mastery_levels`) | Need weights (Formula Sheet §2 Step 3). |
-| Activity streak | Doc 05B | `student_overall_kpi.current_streak_days`, `longest_streak_days` | Read and rendered; the calendar computes no streak (SCL-08-E). |
+| Activity streak | Doc 05B | `student_overall_kpi.current_streak_days`, `longest_streak_days` | Read and rendered; the calendar computes no streak (SCL-139). |
+| Score projection | Doc 05C | `student_section_projections` per-section band | Rendered in the header, student **and** guardian, read 1:1; the total band is the sum of the section bands, composed at read time and never recomputed here. |
 | Diagnostic state | Doc 02B / 05 | `student_diagnostic_states.state` | Recommendation card only (§17). |
 | Config doctrine | Doc 01A Part I | `*_runtime_config` + per-table `_history` | `calendar_runtime_config` (§21). |
 | Idempotency | Doc 01A Part IV | `IdempotencyService` (absent) | `calendar_mutation_ledger` interim (G-08-04). |
 | Observability | Doc 01A Part II | logger, correlation ids, redaction | §18. |
 | Rate limiting | Doc 01A Part V | `RateLimitLedger` bucket definitions | Regenerate routes (§21). |
 | Jobs | Doc 06C | registry, dead-letter, owners | Weekly regen job; the dead-letter does not yet exist (§12.5, G-08-05). |
-| Account deletion | Doc 05D §10 | deletion cascade | Calendar tables added by name (SCL-08-A). |
+| Account deletion | Doc 05D §10 | declarative `ON DELETE CASCADE` on every calendar table | Data is destroyed correctly; the deletion **receipt** does not count declaratively-cascaded rows (SCL-138). |
 | Analytics | Doc 07 | — FORWARD_REF | §18 events; `calendar_launch_rate` (G-08-07). |
 
 ---
@@ -441,13 +442,17 @@ No uniqueness on `(student, period)`: reruns are safe and recorded. Weekly idemp
 | Field | Type | Bounds | Stored |
 |---|---|---|---|
 | Timezone | auto-captured, editable | `calendar_is_known_timezone`; falls open to `America/Chicago` | `timezone` |
-| Target exam date | date or "not yet" | ≥ local today … +`target_exam_date_max_days` | `target_exam_date` |
-| Target score | integer step 10, required | 400–1600 | `target_score` |
+| Target exam date | date, "not yet", or skipped — **optional** | ≥ local today … +`target_exam_date_max_days` | `target_exam_date` |
+| Target score | integer step 10 — **optional** | 400–1600 | `target_score` |
 | Study days | weekday chips, ≥1 | — | `study_days_mask` |
 | Time per day | chips from `daily_minutes_presets` | `daily_minutes_min … max` | `daily_minutes` |
 | Full-length test day | weekday chip or "I'll add them myself" | independent of study days (R-08-27) | `full_length_weekday` |
 
 Every bound and preset above is a `calendar_runtime_config` row served to the client in the setup payload (§15), so the sheet's chips and the server's own validation cannot disagree; none is a client literal (INV-08-14).
+
+**No field is required (R-08-17).** Setup completes when the student **finishes the flow**, not when any particular field is supplied: the profile is written from the preselected defaults for anything they skipped, and both target fields are nullable. Three layers once carried the old requirement and all three are gone — the `setup_requires_target_score` CHECK, the Zod `.refine()` restating it, and the derivation of `setup_completed_at` from having a score. The third was not a restatement but a *consequence* of the rule that outlived it, which is the harder kind to find.
+
+The first plan generates on the student's **first entitled calendar open**, never on the setup write (R-08-04). Before the reversal that held by accident, because the write that completed setup was also the write that supplied a score; the writer now takes `setupJustCompleted` explicitly rather than re-reading the row it has just written.
 
 ### 8.2 Local dates
 `today` is in `profile.timezone`. Every planned date carries the timezone in force when it was planned (`calendar_plan_dates.timezone`); the allocator converts engine timestamps with **that date's own timezone**, never today's profile value, so a later timezone change cannot move historical activity between days. Changing the profile timezone regenerates future unlocked dates (which take the new zone); history is untouched. A day's window is computed from the next local day's start, not from "plus 24 hours", so a 23-hour spring-forward day and a 25-hour fall-back day are both counted correctly.
@@ -467,7 +472,7 @@ type CalendarEngineAdapter = {
                                           // size = THIS launch's size, not the block target; a refusal is data, never a throw
   resumeHref(session_id: string): string; // where a LIVE session of this engine is resumed — the launch service builds no path itself
   activityUnits(student_id, localDate, tz): Promise<ActivityUnit[]>;
-  nextLaunchSize(block, remaining: number): number;   // a size this engine's create accepts for the remaining work
+  nextLaunchSize(block, remaining: number): Promise<number>;  // a size this engine's create accepts for the remaining work
   progress(session_id): Promise<{ lifecycle: "active"|"completed"|"abandoned"; presentation?: { label: string; ratio?: number } } | null>;
 };
 
@@ -692,7 +697,7 @@ Properties: inputs are immutable plan rows and finalized engine outcome columns 
 | `day.extra_work[]` | `{engine, section?, domain?, count}` per §13. |
 | `day.status` | First match, in this order: `rest` (not a study day and no blocks) · `complete` (has blocks, all completed) · `partial` (has blocks, any progress) · `missed` (past, has blocks, no progress) · `today` (today, no progress yet) · `upcoming`. A **past day with partial progress is `partial`, never `missed`** — a student who did 12 of 20 did not miss the day. A rest day with activity stays `rest` and shows its extra work: studying on an off day does not turn it into a planned one. A **blocked-out** day is an overridden day with no blocks and renders as "Day off" (§17). |
 | **Facts** (R-08-28, no percentage) | per range: blocks completed / partial / missed; questions completed; full-length tests completed; extra questions. Same facts for guardian. |
-| `streak` | **Doc 05B owns it.** `GET /api/me/streak` reads `student_overall_kpi.current_streak_days` and `longest_streak_days` and serves them with **no `calendar_access` check** (INV-08-20). The calendar computes no streak and stores none: a derived streak beside a stored one would disagree the day they diverge. Doc 05B's definition is activity-based over UTC days with no rest-day skip; SCL-08-E asks 05B for a student-local day boundary and the skip, and until it lands the route returns 05B's value with `history_complete: false`. Rendered in the calendar header and on the practice page. |
+| `streak` | **Doc 05B owns it.** `GET /api/me/streak` reads `student_overall_kpi.current_streak_days` and `longest_streak_days` and serves them with **no `calendar_access` check** (INV-08-20). The calendar computes no streak and stores none: a derived streak beside a stored one would disagree the day they diverge. Doc 05B's definition is activity-based over UTC days with no rest-day skip; SCL-139 asks 05B for a student-local day boundary and the skip, and until it lands the route returns 05B's value with `history_complete: false`. Rendered in the calendar header and on the practice page. |
 | `calendar_launch_rate` (Doc 07 only) | blocks with a launch row ÷ blocks. Never on a student or guardian surface. |
 
 Rings (post-launch, R-08-28): each ring is a daily target vs the same counter — questions vs `Σ target`, minutes vs `daily_minutes` via the snapshotted seconds-per-unit, review vs due. No schema change needed.
@@ -715,22 +720,24 @@ Calendar handlers: auth → role → `canAccessFeature('calendar_access')` → Z
 | POST `/api/calendar/blocks/:id/do-it-now` | student | key | `{ version_no, block }` | key |
 | POST `/api/calendar/acknowledge` | student | `{ version_no }` | `{ ok }` | monotonic + clamped (§12.7) |
 | GET `/api/me/streak` | student (any tier) | — | `{ current, longest, history_complete }` — **no `calendar_access` check** (INV-08-20) | — |
-| GET `/api/students/:studentId/calendar` | guardian | `?from&to` | the guardian projection — see §16 | — |
+| GET `/api/students/:studentId/calendar` | guardian | `?from&to` | the **guardian view model** — see §16 | — |
 
 **`GET /api/calendar` is a 200 in both states.** A student who has not set up has an empty calendar, not a missing one; a 404 would make every fetch hook treat the most common first visit as an error and log it as one.
 
 ```ts
 { status: "setup_required", defaults: { timezone, daily_minutes_presets, daily_minutes_min, daily_minutes_max, target_exam_date_max_days } }
-{ status: "ready", profile, days[], facts, estimates, streak,
+{ status: "ready", profile, days[], facts, estimates, streak, entitled,
   latest_unacknowledged_nonstudent_change, diagnostic_state, projection?, device_timezone_mismatch? }
 ```
 `defaults.timezone` is the `device_timezone` query parameter when `calendar_is_known_timezone` accepts it, else `America/Chicago`; every other default is a config row, so the setup sheet's chips and the server's validation cannot disagree. The guardian route returns the same discriminant with **no `defaults`** — a guardian has no write path, so offering the chips would offer a control that does not exist. The one 404 that remains is the **mutation** path against a student with no profile at all, under its own code, so the two situations cannot be conflated.
+
+**Setup renders before the entitlement gate.** A free student receives `setup_required` rather than 402, so the popup opens and their test date and target score are stored either way. The 402 applies to the **plan payload**, not to setup — collecting before the gate is what lets the upgrade prompt name their own date and target, and it is the only path by which a free student states either. `entitled` on the ready payload tells the client which panel to show after the last setup step.
 
 `device_timezone` is a query parameter because the server cannot otherwise know the device's zone; `device_timezone_mismatch` is derived from it.
 
 `estimates` carries `practice_seconds_per_unit` and `review_seconds_per_unit`, read from their owning config tables, and travels on **both** the student and guardian payloads: §17.1 renders "~N min" on every practice row, the parent view is identical to the student's, and minutes are not among §16's exclusions. Withholding them was not a protection — with no estimate the card fell back to a full-sitting label for every block type, so a guardian reading a 15-question Math set was told it was a full sitting.
 
-Errors: 400 · 401 · 402 (shared CTA payload, flat platform shape so the existing upgrade component recognises it) · 403 guardian gate · 404 · 409 (launch of a past or future date, launch of a complete block, editing a past date, moving a started block) · 429 · 500 (ERROR log, correlation id). Every other calendar error uses the nested envelope of Coding Standards §8.2. **A policy denial is a decision, not a fault:** it settles at 402 or 403 with a structured log, never a 500.
+Errors: 400 · 401 · 402 (shared CTA payload, flat platform shape so the existing upgrade component recognises it; also the guardian's student being unentitled) · **404 for a guardian with no link and for a revoked link alike** — a 403 would confirm the student exists, and a revoked link distinguishable by its bytes reopens the enumeration channel the 404 closes (Doc 05B §10.3) · 404 · 409 (launch of a past or future date, launch of a complete block, editing a past date, moving a started block) · 429 · 500 (ERROR log, correlation id). Every other calendar error uses the nested envelope of Coding Standards §8.2. **A policy denial is a decision, not a fault:** it settles at 402 or 403 with a structured log, never a 500.
 
 ### 15.1 Launch — `CalendarLaunchService.launch(block_id, ctx)` (INV-08-18)
 Handler does auth, entitlement and parse, then delegates. The service:
@@ -750,7 +757,13 @@ Handler does auth, entitlement and parse, then delegates. The service:
 
 ## 16. Entitlement, Roles, Guardian Read
 
-The route is the authority (INV-08-11); RLS is defense in depth. Student premium: full surface; free: 402 CTA; lapse: 402, rows retained. **Guardian:** the server route only, `/api/students/:studentId/calendar`, through the existing `resolveSubject` + entitlement-gate pattern — `guardian_links.status = 'active' ∧ entitlement_active(student)` — reading through a **distinct guardian projection type**, never the student type with fields deleted. The projection has no profile, no target score (R-08-22), no controls, and no explanation copy at either level: a per-domain `explanation_key` inside a practice block's scope *is* the §17.6 copy §16 withholds, so stripping only the block-level key leaks it one level down. No guardian grants or policies on any calendar table (INV-08-12). Admin: explicit read; rollback through the writer with V-12 enforced.
+The route is the authority (INV-08-11); RLS is defense in depth. Student premium: full surface; free: 402 CTA; lapse: 402, rows retained. **Guardian:** the server route only, `/api/students/:studentId/calendar`, through the existing `resolveSubject` + entitlement-gate pattern — `guardian_links.status = 'active' ∧ entitlement_active(student)`, both terms of `guardian_view_decision` — reading through a **distinct guardian view model**, never the student type with fields deleted. (This document uses *view model* for that DTO and *projection* only for Doc 05C's score projection; the two senses were one word until SCL-173.)
+
+A guardian **receives**: the days and their blocks, the facts strip, `estimates`, the streak, the **target score**, the **target exam date**, and the **Doc 05C section projection**, read 1:1 and never recomputed here (§4).
+
+A guardian **does not receive**: any control; explanation copy at either level — a per-domain `explanation_key` inside a practice block's scope *is* the §17.6 copy this section withholds, so stripping only the block-level key leaks it one level down; and **no profile beyond `target_score` and `target_exam_date`** — no timezone, no study-days mask, no daily minutes, no planner mode, all of which are scheduling controls a guardian has no path to. The view model is `.strict()`, so a field added to the student payload cannot arrive here by omission.
+
+Where the student sees an action, the guardian sees a statement: "No target set", "No test date", "Not enough practice yet" — never a call to action they cannot act on. No guardian grants or policies on any calendar table (INV-08-12). Admin: explicit read; rollback through the writer with V-12 enforced.
 
 ---
 
@@ -761,8 +774,8 @@ Week-first with a month toggle; one primary action per block; engine-specific ro
 ### 17.1 Layout — `/calendar`
 Reachable from the **Calendar tab in the app's top navigation**, and from a per-student link on the guardian dashboard. A free student sees the tab and the page answers 402 with the upgrade CTA — that is the upsell path, not a hidden route.
 
-1. **Left rail** — the Lyceon wordmark (links to the dashboard), the student's identity, a mini-month that navigates the main view, a **"Your schedule"** summary card with a **Change schedule** button, and block-type filters.
-2. **Top bar** — **← Dashboard**, previous/next, **Today**, the visible range, a **Week / Month** toggle (Week default), the streak, days-to-test, **Edit schedule**, and **Refresh plan**.
+1. **Left rail** — the Lyceon wordmark (links to the dashboard), the student's identity, a mini-month that navigates the main view, a **"Your schedule"** summary line, and block-type filters. The rail carries **no edit control**: **Edit schedule** in the header is the single entry point, and the duplicate that once sat here was the kind of second door that drifts from the first.
+2. **Top bar** — three zones, two rows each. **Left:** **← Dashboard** on top; **Edit schedule** and **Refresh plan** side by side beneath. **Centre:** previous/next, **Today**, the visible range and the **Week / Month** toggle on top (Week default); `🔥 N day streak · N days to test` beneath. **Right:** the **target score** on top and the **projected range** beneath, number first with the label trailing, both centred on one axis, the target set two type steps above the range. A student with no projection gets a statement in that slot, never a blank or a zero.
 3. **Plan-updated banner** (§17.4).
 4. **Week view** — seven day columns. Blocks are **agenda cards, not an hour grid**: a block has no clock time, and drawing time slots would misrepresent the data. Four card kinds by colour — Math practice, Reading & Writing practice, Review, Full-length — each showing its scope, its target, its "~N min" from `estimates`, and its progress when any. Day headers carry a **⋯ menu**: Block out this day (or Undo day off), Regenerate day, Reset to auto. A blocked-out day renders as a hatched **"Day off"** with an Undo, visibly distinct from a rest day, which has nothing to undo.
 5. **Month view** — the same blocks as compact chips over a six-week grid, with the same day menu. It is a lens over the same 14-day plan plus history, not a second horizon.
@@ -781,7 +794,9 @@ Opened from **Edit schedule** or the rail card: study days, time per day, SAT da
 Shown when `latest_unacknowledged_nonstudent_change` is non-null: "Your plan was refreshed for the week" / "…after your exam" / "…was restored by support". Dismiss acknowledges that `version_no`. Student-initiated changes never raise it — the copy map has only the three non-student triggers, so it cannot.
 
 ### 17.5 States
-Loading (skeleton); **setup required** (the setup sheet over a greyed sample week, built from `defaults`); 402 (the shared premium CTA); error (inline retry, never a blank page); rest day; day off; all-done; past day (read-only); timezone mismatch.
+Loading (skeleton); 402 (the shared premium CTA, for the plan payload only); error (inline retry, never a blank page); rest day; day off; all-done; past day (read-only); timezone mismatch.
+
+**Setup required** is a two-step popup over a blurred plan, and it opens **before** the entitlement gate (§15). Step 1 collects the test date — with an "I haven't picked a date yet" opt-out — and the target score, showing a live days-to-go readout as the slider moves. Step 2 collects study days, time per day and practice-test day, every control preselected from `defaults` so pressing straight through writes a real profile rather than an invented one. Every step is skippable and the popup is dismissible; it reopens on the next visit until a profile exists, and never blocks the page behind it. A free student sees a third panel after step 2 — what their plan would be, and the upgrade CTA — with their answers already saved either way.
 
 ### 17.6 "Why this block" copy (student only)
 Info affordance per block; copy keyed by `explanation_key`. **Block keys:**
@@ -857,7 +872,7 @@ Every assertion below exists as a gate, and **every gate has been planted**: the
 | Transport | The launch path driven over real PostgREST on a real service-role JWT, with the first link failing, proving crash-retry heals to one session and one row at sequence 1. |
 | Allocator | Unit conservation as a property test; overlapping scopes in both display orders; midnight split; off-scope work becomes extra. |
 | Validator | One case per rule × applicable modes; rejection cases, so a validator that always accepts cannot pass. |
-| Routes | Denial per route (free 402, guardian no-link 403, guardian link-but-student-free 403) and the streak route asserted to have **no** entitlement check. The guardian payload asserted to contain the block and none of §16's withheld keys, at both levels. |
+| Routes | Denial per route (free 402, guardian no-link **404**, guardian revoked link **404**, guardian link-but-student-unentitled **402**) and the streak route asserted to have **no** entitlement check. The guardian payload asserted to contain the block and none of §16's withheld keys, at both levels. |
 | Weekly | Setup Wednesday → no weekly until Monday; a `day_edit` never suppresses it; two runs the same day write one version. |
 | UI | Guardian tree-walk with the side sheet **open** — a closed-page walk cannot see a control that renders on click; drag refusals; the prefetch asserted by the practice page's first render having `isLoading === false`. |
 | CI hygiene | PG-backed suites exit 1 on any skipped test. A job that reports green while skipping everything is the failure mode these gates exist to prevent. |
@@ -873,12 +888,12 @@ Every assertion below exists as a gate, and **every gate has been planted**: the
 | G-08-03 | Review queue writer live; the review launch contract test passes against the **real** engine; `review` present in `enabled_block_types` | **Closed** 2026-09-23 |
 | G-08-04 | Doc 01A `IdempotencyService` replaces `calendar_mutation_ledger` | Open |
 | G-08-05 | Doc 06C registry entry and dead-letter for the weekly job | Open |
-| G-08-06 | SCL-08-A applied (Doc 05D cascade list) | Open |
+| G-08-06 | SCL-138 applied (the deletion receipt counts declaratively-cascaded rows) | Open |
 | G-08-07 | Doc 07 consumes §18 events and `calendar_launch_rate` | Open |
 | G-08-08 | RLS identity helpers | **Closed** — `auth.uid()` and `profiles.role` |
 | G-08-09 | Production PostgreSQL ≥ 15 for `security_invoker` | **Closed** — production is 17 |
-| G-08-10 | Domain importance seam resolved or declared absent | Open (SCL-08-G) |
-| G-08-11 / G-08-12 | Streak tier-on-date and signup timezone | **Collapsed into SCL-08-E** — the streak is Doc 05B's, and the timezone falls open to `America/Chicago` |
+| G-08-10 | Domain importance seam resolved or declared absent | **Closed** — declared absent (SCL-141) |
+| G-08-11 / G-08-12 | Streak tier-on-date and signup timezone | **Collapsed into SCL-139** — the streak is Doc 05B's, and the timezone falls open to `America/Chicago` |
 
 **Audit rule:** any line in this document restating a number or mechanism owned by 01/01A/02B/04/05/06, or by the Formula Sheet, is a defect; every foreign constant appears only as a reference with its owner named.
 
@@ -896,7 +911,7 @@ Every assertion below exists as a gate, and **every gate has been planted**: the
 | `daily_minutes_presets` | `[15,30,45,60,90,120]` | — | §8.1 |
 | `target_exam_date_max_days` | 540 | 30–730 | §8.1 |
 | `weekly_job_interval_minutes` | 1440 | 15–1440 | §12.5 — the job is a daily cron with a weekly predicate; the week anchor is Monday and is not configurable (R-08-30) |
-| `review_estimated_seconds_per_item` | 120 | 30–600 | Calendar-owned until Doc 02B claims a review timing constant (SCL-08-F). It errs toward **smaller** review blocks, which is the safe direction: a block that finishes early costs nothing, one that overruns the day costs the rest of the plan. **Revisit once 200 answered review items exist**, measured as `occurred_at − served_at`. |
+| `review_estimated_seconds_per_item` | 120 | 30–600 | Calendar-owned until Doc 02B claims a review timing constant (SCL-140). It errs toward **smaller** review blocks, which is the safe direction: a block that finishes early costs nothing, one that overruns the day costs the rest of the plan. **Revisit once 200 answered review items exist**, measured as `occurred_at − served_at`. |
 
 Rate-limit buckets (Doc 01A Part V): `calendar_plan_regenerate` 20/day, `calendar_day_regenerate` 60/day. Two buckets rather than one shared number, because a morning of day edits must not lock the student out of the refresh button — the control they reach for when the plan is wrong.
 
@@ -931,19 +946,23 @@ Target 7 Nov, `full_length_weekday` = Saturday, horizon 26 Oct – 8 Nov. The fi
 
 ## 23. Open Items and SCLs
 
-The register is `docs/SpecAudit/SPEC_CHANGES_LOG.md`, whose ids are three-digit (`SCL-###`). The `SCL-08-*` ids below were issued in this document's own scheme and are **invisible to the register's duplicate gate**, which matches `SCL-\d{3}`; each must be filed in the canonical scheme to become actionable.
+The register is `docs/SpecAudit/SPEC_CHANGES_LOG.md`, and its ids are three-digit (`SCL-###`). This document once carried its own `SCL-08-*` scheme, which the register's duplicate gate cannot see at all — it matches `SCL-\d{3}`. Every live ask is now filed canonically; the old ids are listed only so a reader of older code comments can follow them across.
 
-| Local id | Ask | State |
-|---|---|---|
-| SCL-08-A | Doc 05D §10's deletion cascade names, by table: `student_study_profile`, `calendar_plan_versions`, `calendar_plan_dates`, `calendar_blocks`, `calendar_plan_block_memberships`, `calendar_block_launches`, `calendar_mutation_ledger`, `calendar_job_runs`. `calendar_runtime_config` and its history are not student-owned and are excluded. | Open (G-08-06) |
-| SCL-08-B | Doc 02B review create seam. | **Withdrawn** — `source_origin` never existed and the calendar records its own launches; the opaque key is already honoured (register SCL-118). |
-| SCL-08-D | Doc 02B practice create accepts an opaque idempotency key. | **Satisfied** — verified against the real engine (G-08-01). |
-| SCL-08-E | Doc 05B: a student-local day boundary for the activity streak, and the rest-day skip. Until then `/api/me/streak` returns 05B's UTC value with `history_complete: false`. | Open |
-| SCL-08-F | Doc 02B claims a review timing constant, or `review_estimated_seconds_per_item` stays calendar-owned. | Open |
-| SCL-08-G | Does any locked document own a per-domain importance weight? If Doc 05 Parent's macro-average implies equal domains, declare it absent. | Open (G-08-10) |
-| SCL-08-H | Superseded by the timezone fall-open (§7.1): a student without a captured zone gets `America/Chicago`, so no signup-timezone dependency remains. | **Closed** |
+| Filed | Was | Ask | State |
+|---|---|---|---|
+| SCL-138 | SCL-08-A | Doc 05D's deletion **receipt**, not its cascade: all eight calendar tables already carry declarative `ON DELETE CASCADE`, so the data is destroyed correctly, but `execute_account_deletion_cascade` counts only hand-walked rows and a declaratively-cascaded row is counted nowhere. The evidence bundle is built from that receipt. Adding table names to an enumerated cascade would re-commit the error the 2026-09-17 declarative-FK ruling ended. | Open (G-08-06) |
+| SCL-139 | SCL-08-E | Doc 05B: a student-local day boundary for the activity streak, and the rest-day skip. Until then `/api/me/streak` returns 05B's UTC value with `history_complete: false`. | Open |
+| SCL-140 | SCL-08-F | Doc 02B claims a review timing constant, or `review_estimated_seconds_per_item` stays calendar-owned at 120s. Revisit once 200 answered review items exist, measured `occurred_at − served_at`. | Open, calendar-owned meanwhile |
+| SCL-141 | SCL-08-G | Per-domain importance weights — **declared absent**. Doc 05 Parent's macro-average is across *sources*, not domains, and Doc 05B runs it per domain independently, so no cross-domain weight is ever formed. The generator weights by mastery level alone. | **Closed** (G-08-10 closes) |
+| SCL-167 | — | §15 and §19's guardian denial codes: **404** for no link and for a revoked link alike, **402** for link-but-unentitled. | **Applied here** |
+| SCL-168 | — | Doc 01: `required_age_minimum`, `requires_tier_1_country` and `min_abuse_score_tier` are populated on every feature row and **never selected** by `canAccessFeature`. Three dead declarative gates on a product whose stated minimum age is 13. Not a calendar decision and not closable by one. | Open, Doc 01's |
+| SCL-173 | — | §16 reversed: guardians receive the target score and test date; the withholding list becomes "no controls, no explanation copy, no profile beyond those two"; the DTO sense of *projection* renamed **view model**. | **Applied here** |
+| SCL-174 | — | Guardian calendar surfaces completed full-length section scores and totals, read 1:1 from Doc 04, no controls and no per-question detail. Approved in principle, deferred until the exam seam is exercised. | Deferred |
+| — | SCL-08-B | Doc 02B review create seam. | **Withdrawn** — `source_origin` never existed; the opaque key is already honoured (register SCL-118). |
+| — | SCL-08-D | Doc 02B practice create accepts an opaque idempotency key. | **Satisfied** — verified against the real engine (G-08-01). |
+| — | SCL-08-H | Superseded by the timezone fall-open (§7.1). | **Closed** |
 
-**Register entries filed against this document**, all amending text this version already carries: SCL-115 (§4 review seam row), SCL-116 (§9.3 review adapter), SCL-117 (G-08-03's clearing conditions), SCL-118 (SCL-08-B withdrawn). Each may move to APPLIED against this version.
+**Register entries filed against this document and already reflected in this text:** SCL-115 (§4 review seam row), SCL-116 (§9.3 review adapter), SCL-117 (G-08-03's clearing conditions), SCL-118 (SCL-08-B withdrawn), SCL-167, SCL-173. Each may move to APPLIED against this version.
 
 ---
 
@@ -952,7 +971,8 @@ The register is `docs/SpecAudit/SPEC_CHANGES_LOG.md`, whose ids are three-digit 
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-09-16 | Locked. Promoted from PDF-07 and revised to owner rulings. |
-| 1.0 | 2026-09-23 | Consolidated in place. The build's thirty-eight ruled amendments and the Formula Sheet's nineteen reconciling edits are applied inline, and the separate change-record addendum is retired. Substantive changes: §11 defers to the Formula Sheet; `fallback_v1` joins `deterministic_v1`; `calendar_blocks` carries `scope jsonb` and practice splits into one block per section; mastery levels re-keyed to the live 0–4 domain; the adapter contract is five methods with `resumeHref`, no `skills` on a unit, and `status = 'answered'` dated by `occurred_at`; the review seam restated against the rebuilt engine; system-initiated regeneration owns dates from tomorrow; blocked-out days, block moves and beyond-horizon reset added; `GET /api/calendar` returns a 200 discriminated union with `estimates` on both payloads; the streak moves to Doc 05B; §17 covers the week/month views, the settings sheet and the day menu; §21 keeps only the surface constants; G-08-03, G-08-08 and G-08-09 close and G-08-11/12 collapse into SCL-08-E. Status stays LOCKED; no version bump. |
+| 1.0 | 2026-09-26 | Second consolidation. **R-08-17 reversed** — nothing in setup is required, and `setup_completed_at` now follows finishing the flow rather than supplying a score; §8.1 marks both target fields optional. **R-08-22 reversed** (SCL-173) — guardians receive the target score, the test date and the Doc 05C projection, and §16's withholding list is restated as "no controls, no explanation copy, no profile beyond those two", with the DTO sense of *projection* renamed *view model*. Setup renders **before** the entitlement gate, so a free student can state a date and a target, and the ready payload carries `entitled` (§15). Guardian denials corrected to **404 / 404 / 402** in §15 and §19 (SCL-167). `nextLaunchSize` returns `Promise<number>` in §9.1, matching the code. §4 gains the Doc 05C projection seam. §17.1 records the settled three-zone header and the rail's single edit entry point; §17.5 documents the two-step setup popup. §23 re-pointed at the canonical register ids. Status stays LOCKED; no version bump. |
+| 1.0 | 2026-09-23 | Consolidated in place. The build's thirty-eight ruled amendments and the Formula Sheet's nineteen reconciling edits are applied inline, and the separate change-record addendum is retired. Substantive changes: §11 defers to the Formula Sheet; `fallback_v1` joins `deterministic_v1`; `calendar_blocks` carries `scope jsonb` and practice splits into one block per section; mastery levels re-keyed to the live 0–4 domain; the adapter contract is five methods with `resumeHref`, no `skills` on a unit, and `status = 'answered'` dated by `occurred_at`; the review seam restated against the rebuilt engine; system-initiated regeneration owns dates from tomorrow; blocked-out days, block moves and beyond-horizon reset added; `GET /api/calendar` returns a 200 discriminated union with `estimates` on both payloads; the streak moves to Doc 05B; §17 covers the week/month views, the settings sheet and the day menu; §21 keeps only the surface constants; G-08-03, G-08-08 and G-08-09 close and G-08-11/12 collapse into SCL-139. Status stays LOCKED; no version bump. |
 
 ---
 

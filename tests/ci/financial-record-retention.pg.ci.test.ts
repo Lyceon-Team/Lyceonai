@@ -213,13 +213,19 @@ describe.skipIf(!PG_AVAILABLE)(
       // This is the finding that kept §6.5 out of this migration, pinned so the
       // eventual ruling is made against a fact rather than a memory. Nineteen
       // tables carry the shared prevent_update_delete() guard.
+      //
+      // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+      // pending Doc 04 rebuild. 20260930020000 drops exam_runtime_config_history and
+      // full_length_adaptive_config_history, two of the guarded tables, so the floor
+      // moves 19 -> 17 (the same slack as before, minus exactly those two). A fresh
+      // apply now carries 18. The append-only proof below is unchanged.
       const guarded = await pg.query(
         `SELECT count(*)::int AS n
            FROM pg_trigger t
            JOIN pg_proc p ON p.oid = t.tgfoid
           WHERE p.proname = 'prevent_update_delete' AND NOT t.tgisinternal`,
       );
-      expect(guarded.rows[0].n).toBeGreaterThanOrEqual(19);
+      expect(guarded.rows[0].n).toBeGreaterThanOrEqual(17);
 
       // And the guard actually bites — proved against a REAL row, because a
       // row-level trigger does not fire on an empty table and an empty-table

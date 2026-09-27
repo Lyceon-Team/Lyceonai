@@ -61,3 +61,14 @@ output "retention_sweep_job_names" {
     "180d" = google_cloud_scheduler_job.retention_sweep_180d.name
   }
 }
+
+# ── Cloud Scheduler — crisis SLA sweep ───────────────────────────────
+
+output "crisis_sla_sweep_oidc_audience" {
+  description = <<-EOT
+    Audience claim the crisis SLA sweep job signs with → set this verbatim
+    as CRISIS_SLA_SWEEP_OIDC_AUDIENCE on Vercel. Unset, the route refuses
+    every run with 500 and an ERROR log (no fallback by design).
+  EOT
+  value       = google_cloud_scheduler_job.crisis_sla_sweep.http_target[0].oidc_token[0].audience
+}
