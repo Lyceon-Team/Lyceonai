@@ -289,6 +289,12 @@ export type ScenarioOptions = {
     trigger: string;
     created_at: string;
   } | null;
+  /**
+   * `input_snapshot.degraded` on the version rows, as `calendar_persist_version` merges it
+   * (Brief 14). `unknown[]` on purpose: the reader must survive marker STRINGS ("mastery"),
+   * entries of other kinds, and malformed ones, so a test has to be able to hand it those.
+   */
+  degraded?: readonly unknown[];
 };
 
 /**
@@ -319,7 +325,15 @@ export function makeScenarioClient(options: ScenarioOptions = {}): FakeClient {
           return okReply([
             {
               version_no: 3,
-              input_snapshot: { profile: { study_days_mask: 127 } },
+              input_snapshot: {
+                profile: { study_days_mask: 127 },
+                // Absent by default, which is the ordinary plan: nothing degraded, no exam
+                // suppressed. A default of [] would read the same to the code but would hide
+                // the "key missing entirely" case the reader also has to survive.
+                ...(options.degraded === undefined
+                  ? {}
+                  : { degraded: options.degraded }),
+              },
             },
           ]);
         }

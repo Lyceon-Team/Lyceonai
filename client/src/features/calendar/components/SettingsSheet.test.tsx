@@ -24,7 +24,11 @@ import type {
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
-import { SettingsSheet, scheduleSummary } from "./SettingsSheet";
+import {
+  examPairIncomplete,
+  SettingsSheet,
+  scheduleSummary,
+} from "./SettingsSheet";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -273,7 +277,6 @@ describe("custom mode asks before re-planning (§12.1)", () => {
         bounds={BOUNDS}
         estimates={ESTIMATES}
         examPlanning={EXAM_PLANNING}
-        examPlanning={EXAM_PLANNING}
         today="2026-09-22"
         onSave={vi.fn()}
         onClose={vi.fn()}
@@ -370,10 +373,12 @@ describe("practice test frequency (§8.1)", () => {
     expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBe(3);
   });
 
-  it("DISABLES Save on half a pair, rather than letting the server refuse it", () => {
-    // A student with no exams at all who picks a cadence and no day yet. The schema would
-    // return a clean 400 — but a 400 they could have been walked around is a design failure,
-    // so Save is unavailable until the day is chosen.
+  // REWRITTEN, not bent: this test asserted that Save went DISABLED when a student picked a
+  // cadence with no day, which is what this sheet did before the setup form existed. Setup has
+  // no Save to disable, so it had to complete the pair itself — and two surfaces answering the
+  // same question two ways is the divergence the working rules call a defect. The sheet now
+  // completes the pair too, and a dead Save button was never the better of the two answers.
+  it("a cadence with no day yet COMPLETES the pair rather than disabling Save", () => {
     const { onSave } = renderSheet({
       profile: {
         ...PROFILE,
@@ -382,14 +387,50 @@ describe("practice test frequency (§8.1)", () => {
       },
     });
     fireEvent.click(chip(FREQ, "Weekly"));
-    const save = screen.getByTestId("settings-save");
-    expect(save).toBeDisabled();
-    fireEvent.click(save);
-    expect(onSave).not.toHaveBeenCalled();
 
-    // Choosing the day completes the pair and Save returns.
-    fireEvent.click(chip("settings-full-length", "Sat"));
-    expect(screen.getByTestId("settings-save")).not.toBeDisabled();
+    // Saturday is pressed by the act of choosing a cadence — visible, so the student can see
+    // what they now have and move it, rather than discovering it on the calendar.
+    expect(chip("settings-full-length", "Sat")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const save = screen.getByTestId("settings-save");
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBe(1);
+    expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(6);
+  });
+
+  // The guard behind the interaction. `examPairIncomplete` is unreachable by tapping now that
+  // both chip rows move both halves — which is exactly when a guard stops being tested and
+  // starts rotting, so it is asserted directly against a draft no chip can produce.
+  it("still refuses to SAVE half a pair, if a draft ever holds one", () => {
+    expect(
+      examPairIncomplete({
+        full_length_weekday: null,
+        full_length_interval_weeks: 2,
+      }),
+    ).toBe(true);
+    expect(
+      examPairIncomplete({
+        full_length_weekday: 6,
+        full_length_interval_weeks: null,
+      }),
+    ).toBe(true);
+    // And the two legitimate states are not refused, so the assertions above are about the
+    // PAIR and not about the guard returning true for everything.
+    expect(
+      examPairIncomplete({
+        full_length_weekday: 6,
+        full_length_interval_weeks: 2,
+      }),
+    ).toBe(false);
+    expect(
+      examPairIncomplete({
+        full_length_weekday: null,
+        full_length_interval_weeks: null,
+      }),
+    ).toBe(false);
   });
 
   it("states the RATE, not a count, when there is no target date to count toward", () => {

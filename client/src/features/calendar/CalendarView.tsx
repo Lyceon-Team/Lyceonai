@@ -76,6 +76,7 @@ import {
 import {
   ALL_TONES_VISIBLE,
   FactsStrip,
+  FullLengthSuppressionNotice,
   LeftRail,
   PlanUpdatedBanner,
   TopBar,
@@ -158,6 +159,16 @@ export type CalendarViewProps = {
    */
   projection?: readonly SectionProjectionDto[];
   streak: StreakSummary | undefined;
+  /**
+   * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
+   * generator refused to place a practice test on because both the chosen weekday occurrence
+   * and the +7-day alternative were blocked out.
+   *
+   * REQUIRED, not optional, and served on BOTH payloads (owner ruling 2026-09-26: the
+   * guardian sees the suppression). An empty array is the ordinary case and renders nothing;
+   * making it optional would let a page forget it and re-create the silence this brief ends.
+   */
+  fullLengthSuppressions: readonly string[];
   /** §17.4. Null when there is nothing unacknowledged. */
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
   /** Called when the visible range changes, so the page can re-query. */
@@ -204,6 +215,7 @@ export function CalendarView({
   viewerName,
   targetExamDate,
   streak,
+  fullLengthSuppressions,
   planUpdate,
   onRangeChange,
   schedule,
@@ -518,6 +530,24 @@ export function CalendarView({
               onDismiss={() => mutations.acknowledge(planUpdate.versionNo)}
             />
           ) : null}
+
+          {/* The suppressed practice test, on both surfaces. The handler is passed for a
+              STUDENT only — the component takes `viewer` as well, so the "statement, never an
+              action" rule for a guardian holds even if a future caller passes a handler by
+              mistake. Two locks, because the copy rule and the control rule are both the
+              owner's 2026-09-26 ruling and neither is a style choice. */}
+          <FullLengthSuppressionNotice
+            viewer={viewer}
+            dates={fullLengthSuppressions}
+            {...(viewer === "student"
+              ? {
+                  onGoToWeek: (date: string) => {
+                    move("week", startOfWeek(date));
+                    setAgendaDate(date);
+                  },
+                }
+              : {})}
+          />
 
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div className="scroll">

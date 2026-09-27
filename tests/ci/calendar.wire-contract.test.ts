@@ -276,6 +276,9 @@ describe("the guardian calendar's wire body parses with the client's own schema 
       "days",
       "estimates",
       "facts",
+      // Owner ruling 2026-09-26: a fact about the plan, in the same category as
+      // `projection` below it.
+      "full_length_suppressions",
       "projection",
       "status",
       "streak",

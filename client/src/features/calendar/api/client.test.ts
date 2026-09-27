@@ -118,6 +118,11 @@ const READY_BODY = {
     final_exam_lead_days: 7,
     default_full_length_interval_weeks: 2,
   },
+  // Brief 14 Step 4. Dates the generator refused to place because both the intended
+  // occurrence and the +7-day alternative were user-overridden. Non-empty on purpose: the
+  // suppression LINE only renders off a populated array, so an empty one would let this
+  // fixture pass while proving nothing about the element type.
+  full_length_suppressions: ["2026-10-17"],
   days: [DAY],
   facts: FACTS,
   streak: STREAK,
@@ -137,6 +142,9 @@ const GUARDIAN_BODY = {
   // the schema being lenient. Same values as READY_BODY's profile: one student, one plan.
   target_score: 1400,
   target_exam_date: "2026-11-07",
+  // Owner ruling 2026-09-26: the guardian sees the suppression too — a fact about the plan,
+  // in the same category as the projection below it.
+  full_length_suppressions: ["2026-10-17"],
   projection: [
     {
       section: "M",

@@ -190,6 +190,17 @@ export function longDate(date: string): string {
   return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
 }
 
+/**
+ * "5 December" — day and month, no weekday and no year, for a date read inside a sentence
+ * ("about 5 practice tests before 5 December").
+ *
+ * Here rather than in the component that needed it first: the settings sheet had its own
+ * copy, with its own month array, which is the duplication this file exists to prevent.
+ */
+export function dayAndMonth(date: string): string {
+  return `${dayOfMonth(date)} ${monthName(date)}`;
+}
+
 /** "Mon 21 Sep" — compact, for toasts and the move picker. */
 export function shortDate(date: string): string {
   return `${shortWeekday(date)} ${dayOfMonth(date)} ${monthName(date).slice(0, 3)}`;

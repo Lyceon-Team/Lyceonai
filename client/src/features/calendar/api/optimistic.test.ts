@@ -147,6 +147,9 @@ const READY: CalendarResponse = {
     final_exam_lead_days: 7,
     default_full_length_interval_weeks: 2,
   },
+  // Brief 14 Step 4. Required on the ready payload, so the §15 round-trip below refuses a
+  // fixture without it — which is the assertion that caught its absence here.
+  full_length_suppressions: ["2026-10-17"],
   days: [
     {
       local_date: YESTERDAY,

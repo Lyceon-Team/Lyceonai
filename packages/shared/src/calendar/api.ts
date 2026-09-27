@@ -254,6 +254,17 @@ export const calendarReadyResponseSchema = z
     /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
     estimates: planningEstimatesSchema,
     exam_planning: examPlanningSchema,
+    /**
+     * Dates where the student's own day edits displaced a practice test TWICE, so none was
+     * placed (formula sheet §2 Step 2 item 4). REQUIRED, and `[]` when there are none:
+     * present-and-empty is "we checked and nothing was lost", where absent would be
+     * indistinguishable from "the server did not tell you".
+     *
+     * This is the whole reason the `degraded[]` entry exists. An entry nothing reads is the
+     * silence it replaced — on one production profile an edited day swallowed the only exam
+     * in a horizon with no trace anywhere, and no refresh would ever have revealed it.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
@@ -560,6 +571,22 @@ export const guardianCalendarReadyResponseSchema = z
      * fell back to "Full sitting" for every block type.
      */
     estimates: planningEstimatesSchema,
+    /**
+     * Dates where a practice test could not be placed because the days the student chose are
+     * blocked. SERVED TO THE GUARDIAN, by owner ruling 2026-09-27: it is a fact about the
+     * plan, not a control and not a profile field — the same category as `projection` and
+     * `target_exam_date`, both of which §16 as amended already admits.
+     *
+     * The reasoning is the one this whole change turns on. A parent looking at a week with no
+     * practice test should know the reason is "the days your child picked are blocked" rather
+     * than silently see nothing; withholding it would rebuild, on the guardian side, exactly
+     * the silence being removed on the student's.
+     *
+     * The DATA is identical to the student's; only the COPY differs. §16 gives a guardian no
+     * write path, so their line is a statement and never an instruction — same rule as
+     * "No target set" in the header.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(guardianCalendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
