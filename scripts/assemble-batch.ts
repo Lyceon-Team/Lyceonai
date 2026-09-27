@@ -465,7 +465,7 @@ function validateRecord(
   // After JSON.parse, correct LaTeX is \frac; doubled becomes \\frac.
   const doubledLatexRe =
     /\\\\(?:frac|dfrac|sqrt|text|left|right|cdot|times|pi|geq|leq|ge|le|neq|sin|cos|tan|theta|log|ln|begin|end|over|div|quad|pm|mp|infty|sum|prod|int|lim|circ|to)\b/;
-  const fieldsToCheckLatex: Array<{
+  const fieldsToCheckText: Array<{
     name: string;
     value: string | null | undefined;
   }> = [
@@ -476,21 +476,84 @@ function validateRecord(
   if (rec.item_type === "mcq" && Array.isArray(rec.options)) {
     for (const opt of rec.options) {
       if (opt && typeof opt === "object" && "text" in opt) {
-        fieldsToCheckLatex.push({
+        fieldsToCheckText.push({
           name: `option_${(opt as { key: string }).key}`,
           value: (opt as { text: string }).text,
         });
       }
     }
   }
-  for (const { name, value } of fieldsToCheckLatex) {
-    if (typeof value === "string" && doubledLatexRe.test(value)) {
+  for (const { name, value } of fieldsToCheckText) {
+    if (typeof value !== "string") continue;
+
+    // DOUBLED_LATEX_ESCAPE
+    if (doubledLatexRe.test(value)) {
       const match = value.match(doubledLatexRe);
       v(
         name,
         `DOUBLED_LATEX_ESCAPE: found "${match?.[0]}" — the JSON source has \\\\\\\\cmd instead of \\\\cmd. Fix the NDJSON part-file.`,
       );
     }
+
+    // Rule 1 — LITERAL_NEWLINE: literal backslash-n that is NOT part of a
+    // LaTeX command (\neq, \nu, \nabla, \newcommand, \newline, \nolimits, etc.)
+    if (/\\n(?![A-Za-z])/.test(value)) {
+      v(
+        name,
+        `LITERAL_NEWLINE: contains a literal "\\n" line break. Use \\begin{cases}/\\begin{aligned} for multi-line math, or real sentence structure for prose.`,
+      );
+    }
+
+    // Rule 2 — UNBALANCED_DOLLAR: odd number of unescaped $ delimiters
+    const strippedEscaped = value.replace(/\\\$/g, "");
+    const dollarCount = (strippedEscaped.match(/\$/g) || []).length;
+    if (dollarCount % 2 !== 0) {
+      v(
+        name,
+        `UNBALANCED_DOLLAR: found ${dollarCount} unescaped "$" (odd count). Every "$" must open and close a math delimiter; currency uses "\\$".`,
+      );
+    }
+
+    // Rule 3 — PROSE_IN_MATH: multi-word prose wrapped in $…$ (e.g. RW money)
+    const strippedForProse = value.replace(/\\\$/g, "");
+    const mathSpanRe = /\$([^$]+)\$/g;
+    let mathMatch: RegExpExecArray | null;
+    while ((mathMatch = mathSpanRe.exec(strippedForProse)) !== null) {
+      const inner = mathMatch[1];
+      if (
+        /[A-Za-z]{3,}\s+[A-Za-z]{3,}\s+[A-Za-z]{3,}/.test(inner) &&
+        !/\\[A-Za-z]/.test(inner)
+      ) {
+        v(
+          name,
+          `PROSE_IN_MATH: "$${inner.slice(0, 60)}$" looks like prose wrapped in math delimiters. RW currency uses "\\$", not bare "$".`,
+        );
+      }
+    }
+
+    // Rule 4 — DOUBLED_BACKSLASH_BEFORE_CMD: \\ followed by a letter or
+    // delimiter char (after JSON.parse). Allowed: \\ + whitespace (row break).
+    if (/\\\\[A-Za-z${%({\[]/.test(value)) {
+      const match4 = value.match(/\\\\[A-Za-z${%({\[]/);
+      v(
+        name,
+        `DOUBLED_BACKSLASH_BEFORE_CMD: found "${match4?.[0]}" — single backslash for LaTeX commands; "\\\\" only as a row break (followed by whitespace).`,
+      );
+    }
+  }
+
+  // Rule 7 — PHANTOM_FIGURE: stem references a visual but no asset attached
+  const figureRefRe =
+    /\b(?:graph|figure|chart|scatterplot|histogram|diagram|table)\b/i;
+  if (
+    typeof rec.stem === "string" &&
+    figureRefRe.test(rec.stem) &&
+    (rec as Record<string, unknown>).assets == null
+  ) {
+    v(
+      "stem+assets",
+      `PHANTOM_FIGURE: stem references a visual ("${rec.stem.match(figureRefRe)?.[0]}") but assets is null. Make the item self-contained or attach the asset.`,
+    );
   }
 
   // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).
@@ -690,6 +753,20 @@ function validateGridIn(
       "correct_answer",
       `grid_in correct_answer "${rec.correct_answer}" is not a parseable value`,
     );
+  }
+
+  // Rule 6 — Variant completeness warning: decimal key with no fraction variant
+  if (parsed) {
+    const expectedVariants = gridInAcceptedForms(parsed);
+    const hasFraction = expectedVariants.some((f) => f.includes("/"));
+    const hasDecimal = expectedVariants.some(
+      (f) => f.includes(".") && !f.includes("/"),
+    );
+    if (hasDecimal && !hasFraction) {
+      console.warn(
+        `[REVIEW] grid_in correct_answer "${rec.correct_answer}": decimal key with no fraction variant — verify completeness`,
+      );
+    }
   }
 }
 
@@ -1009,6 +1086,41 @@ async function main(): Promise<void> {
     allViolations.push(...checkCoverage(records, manifest, taxonomy));
   }
 
+  // -----------------------------------------------------------------------
+  // Rule 8 — RW longest-answer tell (batch-level threshold)
+  // Fail if >35% of RW MCQs have the correct option strictly longest.
+  // -----------------------------------------------------------------------
+  const rwMcqs = records.filter(
+    ({ rec }) => rec.section !== math && rec.item_type === "mcq",
+  );
+  if (rwMcqs.length > 0) {
+    let longestCorrectCount = 0;
+    for (const { rec } of rwMcqs) {
+      if (!Array.isArray(rec.options) || rec.options.length !== 4) continue;
+      if (!rec.correct_option) continue;
+      const correctOpt = rec.options.find((o) => o.key === rec.correct_option);
+      if (!correctOpt) continue;
+      const correctLen = correctOpt.text.length;
+      const isStrictlyLongest = rec.options.every(
+        (o) => o.key === rec.correct_option || o.text.length < correctLen,
+      );
+      if (isStrictlyLongest) longestCorrectCount++;
+    }
+    const longestRate = longestCorrectCount / rwMcqs.length;
+    if (longestRate > 0.35) {
+      allViolations.push({
+        file: "<batch>",
+        line: 0,
+        record_index: -1,
+        field: "RW_LONGEST_ANSWER_TELL",
+        reason: `RW_LONGEST_ANSWER_TELL: ${longestCorrectCount}/${rwMcqs.length} (${(longestRate * 100).toFixed(1)}%) RW MCQs have the correct option strictly longest (threshold: 35%, random baseline: 25%). Lengthen distractors.`,
+      });
+    }
+    console.log(
+      `RW longest-answer tell: ${longestCorrectCount}/${rwMcqs.length} (${(longestRate * 100).toFixed(1)}%)`,
+    );
+  }
+
   if (allViolations.length > 0) {
     const report = {
       status: "FAIL",
@@ -1078,9 +1190,70 @@ async function main(): Promise<void> {
     });
   }
 
+  // Rule 5 — correct_answer must be present in correct_variants (grid-in)
+  for (const q of assembled) {
+    if (
+      q.item_type === "grid_in" &&
+      Array.isArray(q.correct_variants) &&
+      !q.correct_variants.includes(q.correct_answer)
+    ) {
+      allViolations.push({
+        file: "<assembled>",
+        line: 0,
+        record_index: -1,
+        field: "correct_answer",
+        reason: `CORRECT_ANSWER_NOT_IN_VARIANTS: grid_in correct_answer "${q.correct_answer}" is not present in correct_variants [${q.correct_variants.join(", ")}].`,
+      });
+    }
+  }
+
+  if (allViolations.length > 0) {
+    const report = {
+      status: "FAIL",
+      violations: allViolations,
+      record_count: assembled.length,
+      file_count: partFiles.length,
+    };
+    writeFileSync(resolve(reportPath), JSON.stringify(report, null, 2));
+    console.error(
+      `GATE FAIL (post-assembly): ${allViolations.length} violation(s) found.`,
+    );
+    for (const v of allViolations) {
+      console.error(`  ${v.file}:${v.line} [${v.field}] ${v.reason}`);
+    }
+    process.exit(1);
+  }
+
   assembled.sort((a, b) => a.id.localeCompare(b.id));
 
   const today = new Date().toISOString().split("T")[0];
+
+  // Rule 9 — Domain mix: compute per-domain counts and percentages
+  const domainCounts: Record<string, number> = {};
+  for (const q of assembled) {
+    domainCounts[q.domain] = (domainCounts[q.domain] ?? 0) + 1;
+  }
+  const mathQuestions = assembled.filter((q) => q.section === math);
+  const rwQuestions = assembled.filter((q) => q.section !== math);
+  const domainMix: Record<string, { count: number; pct: string }> = {};
+  for (const [domain, count] of Object.entries(domainCounts)) {
+    const sectionTotal =
+      sectionForDomain(taxonomy, domain) === math
+        ? mathQuestions.length
+        : rwQuestions.length;
+    domainMix[domain] = {
+      count,
+      pct:
+        sectionTotal > 0
+          ? `${((count / sectionTotal) * 100).toFixed(1)}%`
+          : "N/A",
+    };
+  }
+  console.log("Domain mix (Rule 9):");
+  for (const [domain, { count, pct }] of Object.entries(domainMix)) {
+    console.log(`  ${domain}: ${count} (${pct} of section)`);
+  }
+
   const report = {
     status: "PASS",
     record_count: assembled.length,
@@ -1094,6 +1267,7 @@ async function main(): Promise<void> {
         assembled.filter((q) => q.section === s).length,
       ]),
     ),
+    domain_mix: domainMix,
   };
   writeFileSync(resolve(reportPath), JSON.stringify(report, null, 2));
 

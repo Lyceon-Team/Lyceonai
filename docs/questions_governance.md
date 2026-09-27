@@ -138,6 +138,12 @@ Grid-in correctness is determined by **value-equivalence**, not surface-string m
 
 **Authoring rule:** set `correct_answer` to the canonical value; `correct_variants` MUST equal `gridInAcceptedForms(correct_answer)`. Never hand-add surface forms (e.g. `0.50`) — it does not affect grading (value-equivalence already accepts them) and will fail `normalizeGridInKey` ingestion QA.
 
+**Answer-key correctness rules (gate HARD-FAIL, grid-in only):** _(Added 2026-09-27.)_
+
+**5. `correct_answer` MUST be present in `correct_variants` (`CORRECT_ANSWER_NOT_IN_VARIANTS`).** The canonical answer must appear as one of the accepted forms. Gate checks this post-assembly after `gridInAcceptedForms` generates the variant set.
+
+**6. Variant completeness.** Emit all SAT-equivalent forms: exact fraction AND its decimal; for values < 1 include both `.5` and `0.5` forms; for rounded irrationals accept the standard SAT truncation/rounding set. Gate warns (review flag, not hard-fail) if a decimal key has no fraction or alternate variant.
+
 **Grid-in input constraints** (from CB Digital SAT field budget):
 - Maximum 5 characters (6 with negative sign)
 - Integers: `"17"`, `"-3"`
@@ -315,6 +321,26 @@ The pattern is always: **exactly two backslashes** in the JSON file for each LaT
 - AsciiMath or MathML notation — use LaTeX exclusively
 - Doubled backslash escapes (`\\\\frac`) — produces literal backslash text instead of rendered math
 
+### Text-layer render defect rules (gate HARD-FAIL)
+
+These defects live in the text around the math, not in the math itself, so KaTeX-render checks pass them. The assembly gate checks stem, every option, passage, and explanation for all four. _(Added 2026-09-27 after bank-wide audit surfaced these classes.)_
+
+**1. No literal `\n` line breaks (`LITERAL_NEWLINE`).**
+Never emit a literal backslash-n in any content field. Multi-line math uses `\begin{cases}` or `\begin{aligned}` inside math delimiters; text lists and multi-part prose use real sentence structure. Gate detector (post-parse): `/\\n(?![A-Za-z])/` — flags real newlines, ignores LaTeX commands like `\neq`, `\nu`, `\nabla`.
+
+**2. Balanced `$` delimiters (`UNBALANCED_DOLLAR`).**
+Every `$` must open and close a math delimiter; currency values inside prose use `\$` (not bare `$`). The count of unescaped `$` in any field must be even. Gate detector: strip escaped `\$` first, then count remaining `$` — odd count = FAIL.
+
+**3. No prose inside math delimiters (`PROSE_IN_MATH`).**
+RW prose money uses `\$` (never bare `$`); never wrap multi-word prose in `$…$`. Gate detector: strip `\$`, then for each matched `$…$` span, if the inner content matches three or more consecutive words (`/[A-Za-z]{3,}\s+[A-Za-z]{3,}\s+[A-Za-z]{3,}/`) and contains no LaTeX command (`\` + letter), the field FAILs.
+
+**4. No doubled backslash before a command/delimiter (`DOUBLED_BACKSLASH_BEFORE_CMD`).**
+Use a single backslash for LaTeX commands; `\\` is only valid as a row break in `cases`/`aligned` environments (followed by whitespace). Gate detector (post-parse): `/\\\\[A-Za-z${%({\[]/` = FAIL. (`\\` followed by whitespace is allowed.)
+
+### Math delimiter convention (Rule 10)
+
+Standardize on `$…$` for inline math and `$$…$$` for display math across the entire bank. Do not use `\(…\)` or `\[…\]` notation. Existing content should be migrated to `$…$` during remediation. Explanations should state why each distractor is wrong, not just why the correct answer is correct.
+
 ### Assets (`assets` JSONB)
 
 For questions with figures, diagrams, graphs, or data tables:
@@ -348,6 +374,9 @@ Or for LaTeX-rendered figures (preferred when possible):
 - Figures referenced in the stem as "the figure above" or "Figure 1"
 - Data tables may be rendered as LaTeX tabular or as structured JSON within the stem
 - Geometry diagrams should include labeled points, angles, and measurements as described in the stem
+
+**No phantom figure references (`PHANTOM_FIGURE` — gate FLAG, Codex adjudicates).**
+Never reference a visual that is not attached — no "the graph shows", "in the figure", "a scatterplot shows [read a value]" when no asset exists. Make the item self-contained: give the equation, data, slope, or configuration in text. Saying "the graph of $f(x) = …$" is fine when the graph IS the equation and no value must be read from it. Gate flags any stem matching `graph|figure|chart|scatterplot|histogram|diagram|table` when `assets` is NULL. Codex adjudicates whether the item is answerable without a visual or must be reworded/rejected. _(Added 2026-09-27.)_
 
 ---
 
@@ -458,6 +487,19 @@ The correct answer is the choice stating that the hypothesis was not confirmed. 
 
 **Difficulty distribution target:** Roughly balanced across 1/2/3 per skill, with slight emphasis on Medium (difficulty 2) for maximum learning value.
 
+### Domain weight targets (Rule 9) _(Added 2026-09-27.)_
+
+The previous even-per-skill target produced an SAT-inverted Math domain mix (PSDA over-built, Advanced Math + Algebra under-built). New batches target SAT domain weights:
+
+| Domain | Section | Target % of section |
+|--------|---------|-------------------|
+| Algebra | M | ~35% |
+| Advanced Math | M | ~35% |
+| Problem Solving and Data Analysis | M | ~15% |
+| Geometry and Trigonometry | M | ~15% |
+
+RW domains are already on-target at roughly even distribution. Prioritize Advanced Math and Algebra in new batches; throttle PSDA and Geometry-Trig until the bank-wide mix approaches the targets above. The assembly gate reports the batch's domain mix in the PASS report for tracking.
+
 ---
 
 ## A.8 Quality Bar + Codex Audit Checklist
@@ -490,6 +532,9 @@ If the independent derivation produces a DIFFERENT answer, or if MORE THAN ONE o
 | 11 | **Passage quality** (RW) | Passage is well-crafted, appropriate length (25–150 words), genre-appropriate, 1 question per passage | `PASSAGE_QUALITY` |
 | 12 | **Figure accuracy** (if assets) | Figures match the stem, labels are correct, alt text is descriptive | `FIGURE_ERROR` |
 | 13 | **option_metadata consistency** | `role: "correct"` key matches `correct_answer`; all distractor labels are from the section-appropriate taxonomy; no missing entries | `OPTION_META_MISMATCH` |
+
+| 14 | **Phantom figure reference** | Stem does not reference a visual (`graph`, `figure`, `chart`, etc.) when `assets` is NULL; or the item is self-contained (equation-as-graph is fine) | `PHANTOM_FIGURE` |
+| 15 | **RW longest-answer tell** (batch-level) | ≤35% of RW MCQs in the batch have the correct option strictly longest (random baseline 25%). Fix direction: lengthen distractors, not trim key. | `RW_LONGEST_ANSWER_TELL` |
 
 ### Scoring
 
