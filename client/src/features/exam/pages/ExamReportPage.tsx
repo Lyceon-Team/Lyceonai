@@ -178,7 +178,8 @@ export function ScoreTabs({
             role="tab"
             id={`exam-tab-${t.id}`}
             aria-selected={tab === t.id}
-            aria-controls={`exam-tabpanel-${t.id}`}
+            // Only the selected panel is rendered, so only its tab names one.
+            aria-controls={tab === t.id ? `exam-tabpanel-${t.id}` : undefined}
             tabIndex={tab === t.id ? 0 : -1}
             onClick={() => setTab(t.id)}
             className={`min-h-[44px] flex-1 rounded-lg text-sm ${tab === t.id ? "bg-[var(--exam-surface)] font-semibold shadow-sm" : "font-medium text-[var(--exam-muted)]"}`}
