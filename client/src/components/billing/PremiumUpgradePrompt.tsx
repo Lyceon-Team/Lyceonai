@@ -48,6 +48,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   resolveCtaCopy,
   resolveCtaDestination,
+  type BillingCtaPitch,
   type BillingCtaState,
 } from "@/lib/billing-cta";
 
@@ -85,6 +86,12 @@ export type PremiumUpgradePromptProps = {
    * calendar and a lock on mastery are different disappointments.
    */
   readonly featureBenefit?: string;
+  /**
+   * The surface's own words for a student who has never paid (W4-11: LISA's).
+   * Copy only — the state, the destination and every other state's copy are
+   * unchanged. See `BillingCtaPitch`.
+   */
+  readonly pitch?: BillingCtaPitch;
   readonly mode?: "floating" | "inline";
   readonly onDismiss?: () => void;
 };
@@ -130,6 +137,7 @@ function stateFromBilling(
 export function PremiumUpgradePrompt({
   state,
   featureBenefit,
+  pitch,
   mode = "inline",
   onDismiss,
 }: PremiumUpgradePromptProps) {
@@ -161,7 +169,10 @@ export function PremiumUpgradePrompt({
 
   const resolved: BillingCtaState =
     state ?? stateFromBilling(billingStatus, isGuardian);
-  const copy = resolveCtaCopy(resolved, { featureBenefit });
+  const copy = resolveCtaCopy(resolved, {
+    ...(featureBenefit !== undefined ? { featureBenefit } : {}),
+    ...(pitch !== undefined ? { pitch } : {}),
+  });
 
   /**
    * The destination is a pure function of the role, checked against the role's

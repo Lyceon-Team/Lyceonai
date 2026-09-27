@@ -50,8 +50,11 @@ describe("Feedback UX hardening contract", () => {
    * inline shape — is in the list.
    */
   it("routes every premium denial through the one CTA component", () => {
+    // W4-11: chat draws `LisaUpgradeCard`, which is the one CTA component with
+    // LISA's pitch. Pinned in two steps so neither link can quietly go.
+    expect(read("client/src/pages/chat.tsx")).toContain("LisaUpgradeCard");
     const surfaces = [
-      "client/src/pages/chat.tsx",
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
@@ -76,6 +79,8 @@ describe("Feedback UX hardening contract", () => {
   it("lets no surface name a billing route for itself", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
+      "client/src/components/tutor/ScopedTutorPanel.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
