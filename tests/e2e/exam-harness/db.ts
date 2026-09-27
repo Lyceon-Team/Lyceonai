@@ -16,6 +16,8 @@ import { bootstrapPgDatabase } from "../../helpers/pg-supabase";
 
 export const HARNESS_DB = "exam_e2e_harness";
 export const STUDENT_ID = "00000000-0000-4000-8000-0000000e7b01";
+/** G2: a guardian actively linked to STUDENT_ID, so the real resolver admits them. */
+export const GUARDIAN_ID = "00000000-0000-4000-8000-0000000e7b02";
 export const FORMS = [
   { id: "e7b00000-0000-4000-8000-0000000000f1", tag: "E1", name: "Practice Test 1" },
   { id: "e7b00000-0000-4000-8000-0000000000f2", tag: "E2", name: "Practice Test 2" },
@@ -85,6 +87,21 @@ export async function buildHarnessDb(): Promise<Client> {
   await pg.query(
     `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, 'student@example.test', 'student', 'Sam Rivera')`,
     [STUDENT_ID],
+  );
+  // G2: a linked guardian, and an active student entitlement, so the REAL resolver
+  // (guardian_view_decision: link AND entitlement) admits the guardian to
+  // /api/students/:studentId/tests. Nothing about the resolver is stubbed.
+  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'guardian@example.test')`, [GUARDIAN_ID]);
+  await pg.query(
+    `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, 'guardian@example.test', 'guardian', 'Gia Rivera')`,
+    [GUARDIAN_ID],
+  );
+  await pg.query(`INSERT INTO public.entitlements (profile_id, tier, status) VALUES ($1, 'premium', 'active')`, [STUDENT_ID]);
+  await pg.query(
+    `INSERT INTO public.guardian_links
+       (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at, accepted_at, accepted_by_profile_id, created_at)
+     VALUES ($1, $2, 'active', 'guardian', now(), now(), $2, now())`,
+    [GUARDIAN_ID, STUDENT_ID],
   );
   // E9b: a finished calendar setup (UTC, every day, 60 minutes, no test weekday), so the
   // first open of /calendar generates the plan (R-08-04) and the student can add a
