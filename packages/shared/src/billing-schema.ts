@@ -172,3 +172,52 @@ export type PublicPricing = z.infer<typeof publicPricingSchema>;
 export const publicPricingResponseSchema = z.object({
   data: publicPricingSchema,
 });
+
+/**
+ * What GET /api/billing/plans returns, per plan.
+ *
+ * @spec [Doc 09 §1.4, §5.1 Stripe is canonical for pricing magnitudes at
+ *        runtime; Coding Standards §7.1, §7.2, §17]
+ * @implemented 2026-09-27
+ *
+ * plain English: one row per billing period, carrying what Stripe said about
+ * that price and nothing the application decided. Expected outcome: the client
+ * parses this and renders from it; when a field is null the client renders no
+ * number rather than a remembered one.
+ *
+ * EVERY MONETARY FIELD IS NULLABLE, DELIBERATELY. An unconfigured price id and
+ * a Stripe outage both arrive here as nulls, and that is the honest shape: the
+ * route cannot invent an amount it did not receive. The client's job is to
+ * render a card without a price, not to substitute one.
+ *
+ * WHY `interval` AND `intervalCount` AND NOT ONLY `intervalLabel`. The label is
+ * prose ("per 3 months") and prose cannot be divided. The monthly equivalent is
+ * `unit_amount ÷ months in the interval`, so the CLIENT needs the interval as
+ * data. Before this, the route sent only the label, the arithmetic was therefore
+ * impossible on the client, and `upgrade.tsx` filled the gap from a hardcoded
+ * table — which is how the page came to print "$59.99" above
+ * "$99.99 / month equivalent" (STRIPE_GROUNDING_AUDIT; owner report 2026-09-27).
+ *
+ * There is no `equivalentMonthlyCents` and no `savingsPercent` on the wire.
+ * Both are DERIVED — see `deriveBillingPlanPricing` — because both are functions
+ * of the live amounts, and a transmitted derivation is a second copy of a fact
+ * that can disagree with the first.
+ */
+export const billingPlanMetadataSchema = z.object({
+  plan: billingPeriodSchema,
+  label: z.string().min(1),
+  amountCents: z.number().int().positive().nullable(),
+  currency: z.string().min(1).nullable(),
+  intervalLabel: z.string().min(1).nullable(),
+  interval: z.enum(["day", "week", "month", "year"]).nullable(),
+  intervalCount: z.number().int().positive().nullable(),
+  stripePriceIdConfigured: z.boolean(),
+});
+
+export type BillingPlanMetadata = z.infer<typeof billingPlanMetadataSchema>;
+
+/** The plans envelope. `requestId` rides along for support correlation. */
+export const billingPlansResponseSchema = z.object({
+  plans: z.array(billingPlanMetadataSchema),
+  requestId: z.string().optional(),
+});
