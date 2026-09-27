@@ -38,6 +38,7 @@ import {
 } from "@dnd-kit/core";
 import type {
   CalendarSetupDefaults,
+  ExamPlanning,
   PlanBlock,
   PlanTrigger,
   PlanningEstimates,
@@ -170,6 +171,8 @@ export type CalendarViewProps = {
     profile: StudyProfile;
     bounds: StudyProfileBounds;
     estimates: PlanningEstimates;
+    /** §8.1's frequency readout: the lead window and the prefill cadence, both server-owned. */
+    examPlanning: ExamPlanning;
     onSave: (draft: SettingsDraft) => void;
     pending: boolean;
     error: string | null;
@@ -469,6 +472,11 @@ export function CalendarView({
                   summary: scheduleSummary(
                     schedule.profile,
                     schedule.estimates,
+                    {
+                      targetExamDate: schedule.profile.target_exam_date,
+                      today,
+                      ...schedule.examPlanning,
+                    },
                   ),
                 },
               })}
@@ -615,6 +623,7 @@ export function CalendarView({
           profile={schedule.profile}
           bounds={schedule.bounds}
           estimates={schedule.estimates}
+          examPlanning={schedule.examPlanning}
           today={today}
           onSave={schedule.onSave}
           onClose={() => setSettingsOpen(false)}

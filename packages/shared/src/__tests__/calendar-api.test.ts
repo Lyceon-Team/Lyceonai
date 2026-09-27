@@ -33,6 +33,12 @@ const ESTIMATES = {
   review_seconds_per_unit: 120,
 };
 
+/** §8.1's readout constants. STUDENT payload only — §16 gives a guardian no controls. */
+const EXAM_PLANNING = {
+  final_exam_lead_days: 7,
+  default_full_length_interval_weeks: 2,
+};
+
 /** §8.1's bounds, on the ready payload since 2026-09-22 so §17.3's settings sheet can
  *  offer the same presets the server validates against. */
 const BOUNDS = {
@@ -136,6 +142,7 @@ describe("GET /api/calendar", () => {
       profile: PROFILE,
       bounds: BOUNDS,
       estimates: ESTIMATES,
+      exam_planning: EXAM_PLANNING,
       days: [DAY],
       facts: FACTS,
       streak: STREAK,
@@ -171,6 +178,7 @@ describe("GET /api/calendar", () => {
         daily_minutes_max: 180,
         target_exam_date_max_days: 540,
         default_full_length_interval_weeks: 2,
+        final_exam_lead_days: 7,
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -207,6 +215,7 @@ describe("GET /api/calendar", () => {
         profile: PROFILE,
         bounds: BOUNDS,
         estimates: ESTIMATES,
+        exam_planning: EXAM_PLANNING,
         days: [],
         facts: FACTS,
         streak: STREAK,
@@ -502,6 +511,7 @@ describe("guardian read (§16, R-08-22)", () => {
           daily_minutes_max: 180,
           target_exam_date_max_days: 540,
           default_full_length_interval_weeks: 2,
+          final_exam_lead_days: 7,
         },
       }).success,
     ).toBe(false);

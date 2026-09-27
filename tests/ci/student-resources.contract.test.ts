@@ -129,6 +129,7 @@ function resetRows() {
     { key: "target_exam_date_max_days", value: 540 },
     { key: "weekly_job_interval_minutes", value: 1440 },
     { key: "default_full_length_interval_weeks", value: 2 },
+    { key: "final_exam_lead_days", value: 7 },
     { key: "horizon_days", value: 14 },
     { key: "generator_version", value: "20260917140000" },
     // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice

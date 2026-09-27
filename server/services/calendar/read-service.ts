@@ -584,6 +584,13 @@ export async function readCalendar(
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
     estimates: config.estimates,
+    // §8.1's frequency readout. STUDENT ONLY, and for the same reason `enabled_block_types`
+    // is: it exists to make a CONTROL truthful, and §16 gives a guardian no controls. The
+    // guardian payload below omits it.
+    exam_planning: {
+      final_exam_lead_days: config.finalExamLeadDays,
+      default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    },
     // §17.2. From the config accessor, never a literal — the picker must offer exactly what
     // V-03 accepts. The guardian payload below deliberately omits it (§16: no write path).
     enabled_block_types: [...config.enabledBlockTypes],
@@ -713,6 +720,7 @@ async function setupDefaults(
     daily_minutes_max: config.bounds.daily_minutes_max,
     target_exam_date_max_days: config.bounds.target_exam_date_max_days,
     default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    final_exam_lead_days: config.finalExamLeadDays,
   };
 }
 

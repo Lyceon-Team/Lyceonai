@@ -193,6 +193,7 @@ export const CONFIG_ROWS: { key: string; value: unknown }[] = [
   // §8.1, 20261010000000. The cadence the frequency control opens on — a surface prefill,
   // which is why the generator never reads it.
   { key: "default_full_length_interval_weeks", value: 2 },
+  { key: "final_exam_lead_days", value: 7 },
   { key: "horizon_days", value: 14 },
   { key: "generator_version", value: "20260917140000" },
   // §17.1's "~N min" readout. Calendar-owned (SCL-08-F); its practice counterpart lives in

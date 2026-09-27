@@ -60,6 +60,12 @@ export const CALENDAR_CONFIG_KEYS = [
    * the cadence it plans against is `student_study_profile.full_length_interval_weeks`.
    */
   "default_full_length_interval_weeks",
+  /**
+   * §2 Step 2 / §4. Read by the GENERATOR — nothing is placed inside this window before the
+   * target date — and now served to the client too, because §8.1's "about N practice tests"
+   * readout cannot be truthful without it and §17 forbids a literal.
+   */
+  "final_exam_lead_days",
   "horizon_days",
   "generator_version",
   /**
@@ -138,6 +144,12 @@ export type CalendarConfig = {
    * already chosen.
    */
   defaultFullLengthIntervalWeeks: number;
+  /**
+   * §2 Step 2: nothing is placed inside this window before the target date, so it decides
+   * whether the last sitting before the target exists at all. Served to the client for
+   * §8.1's frequency readout, which would otherwise have to guess it.
+   */
+  finalExamLeadDays: number;
 };
 
 function requireValue(
@@ -303,6 +315,7 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
       rows,
       "default_full_length_interval_weeks",
     ),
+    finalExamLeadDays: requireInteger(rows, "final_exam_lead_days"),
   };
 }
 

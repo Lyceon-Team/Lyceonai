@@ -143,6 +143,10 @@ const READY: CalendarResponse = {
     practice_seconds_per_unit: 90,
     review_seconds_per_unit: 120,
   },
+  exam_planning: {
+    final_exam_lead_days: 7,
+    default_full_length_interval_weeks: 2,
+  },
   days: [
     {
       local_date: YESTERDAY,
@@ -227,6 +231,7 @@ const SETUP_REQUIRED: CalendarResponse = {
     daily_minutes_max: 180,
     target_exam_date_max_days: 540,
     default_full_length_interval_weeks: 2,
+    final_exam_lead_days: 7,
   },
 };
 

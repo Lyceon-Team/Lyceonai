@@ -114,6 +114,10 @@ const READY_BODY = {
     target_exam_date_max_days: 540,
   },
   estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 120 },
+  exam_planning: {
+    final_exam_lead_days: 7,
+    default_full_length_interval_weeks: 2,
+  },
   days: [DAY],
   facts: FACTS,
   streak: STREAK,
@@ -306,7 +310,15 @@ describe("transport correlation is stripped, not tolerated", () => {
 describe("a malformed 200 is REFUSED, never defaulted", () => {
   it("rejects with a message naming the mismatch, rather than returning an empty calendar", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -316,7 +328,15 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("names the failing resource in the thrown message, so the error state is traceable to one route", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -326,7 +346,15 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("reports through console.error with the issue PATHS only — never the body, which holds the plan", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow();

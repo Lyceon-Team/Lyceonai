@@ -171,6 +171,9 @@ export const calendarSetupDefaultsSchema = z
     // Bounded by the same schema the write path uses, so the form can never be prefilled
     // with a cadence the upsert would then refuse.
     default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The frequency readout is on the SETUP form too, so the constant it needs travels with
+    // the rest of the prefill rather than being fetched separately.
+    final_exam_lead_days: z.number().int().positive(),
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
@@ -194,6 +197,35 @@ export const planningEstimatesSchema = z
   })
   .strict();
 export type PlanningEstimates = z.infer<typeof planningEstimatesSchema>;
+
+/**
+ * The one formula constant a client needs to state a TRUTHFUL number of practice tests.
+ *
+ * §8.1's frequency readout says "about 5 practice tests before 5 December". That count
+ * depends on `final_exam_lead_days` — nothing is placed inside the lead window, so the
+ * window decides whether the last sitting before the target exists at all. The client
+ * cannot know it: it is `calendar_runtime_config`, operator-tunable, and §17 forbids a
+ * literal. Same reason `estimates` exists above — a figure the student reads must come from
+ * the value the generator planned against, or it drifts the moment an operator moves it.
+ *
+ * Its own object rather than a field on `bounds`: `studyProfileBoundsSchema` is the write
+ * path's validation context (`makeStudyProfileUpsertSchema` takes it), and a formula
+ * constant is not a bound on what a student may choose.
+ */
+export const examPlanningSchema = z
+  .object({
+    final_exam_lead_days: z.number().int().positive(),
+    /**
+     * The cadence a day-pick adopts when the student has not chosen one — the same value the
+     * setup form opens on, so "pick a day" means the same thing on both surfaces. The
+     * pre-setup arm carries these two inline in `defaults` (it also carries a timezone and
+     * the minute presets, which the ready arm gets from `bounds`), so the values are shared
+     * even though the two payload arms shape them differently.
+     */
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+  })
+  .strict();
+export type ExamPlanning = z.infer<typeof examPlanningSchema>;
 
 /**
  * The READY payload — everything §15 lists, under `status: "ready"`.
@@ -221,6 +253,7 @@ export const calendarReadyResponseSchema = z
     bounds: studyProfileBoundsSchema,
     /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
     estimates: planningEstimatesSchema,
+    exam_planning: examPlanningSchema,
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,

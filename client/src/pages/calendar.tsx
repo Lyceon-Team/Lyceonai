@@ -213,6 +213,7 @@ export default function CalendarPage(): JSX.Element {
         // the save against. Never a literal preset list in the client.
         bounds: response.bounds,
         estimates: response.estimates,
+        examPlanning: response.exam_planning,
         onSave: (draft) =>
           profile.mutate(
             newIntent({
