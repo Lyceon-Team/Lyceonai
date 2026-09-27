@@ -235,7 +235,7 @@ DECLARE
     -- pace the weekly job.
     'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
     'target_exam_date_max_days','weekly_job_interval_minutes',
-    -- Doc 05F §8.1, seeded by 20261009000000. A SURFACE default only: the value
+    -- Doc 05F §8.1, seeded by 20261010000000. A SURFACE default only: the value
     -- the frequency control opens on before the student chooses. The generator
     -- reads student_study_profile.full_length_interval_weeks and never this key,
     -- which is why it sits with the route constants and not with the formula

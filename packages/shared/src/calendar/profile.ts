@@ -55,7 +55,7 @@ export const FULL_LENGTH_INTERVAL_WEEKS_MIN = 1;
 export const FULL_LENGTH_INTERVAL_WEEKS_MAX = 4;
 
 /**
- * `full_length_interval_weeks smallint CHECK (... IN (1,2,3,4))` (20261009000000) — WEEKS
+ * `full_length_interval_weeks smallint CHECK (... IN (1,2,3,4))` (20261010000000) — WEEKS
  * between full-length practice tests, as the student chose them.
  *
  * Weeks, not a label. Weekly / Every 2 weeks / Every 3 weeks / Monthly is the UI's rendering
@@ -132,7 +132,7 @@ export const studyProfileSchema = z
     // "this student has no automatic full-lengths"; absent would make it indistinguishable
     // from "the server did not send it", and a surface cannot render a distinction it
     // cannot see. The two travel together because they ARE one decision (`full_length_pair`,
-    // 20261009000000).
+    // 20261010000000).
     full_length_interval_weeks: fullLengthIntervalWeeksSchema.nullable(),
     planner_mode: plannerModeSchema,
     setup_completed_at: z.string().nullable(),
@@ -229,7 +229,7 @@ export function makeStudyProfileUpsertSchema(
 
     // ── THE EXAM SCHEDULE IS ONE DECISION, SO IT IS EDITED AS ONE ──────────
     //
-    // `full_length_pair` (20261009000000) requires the weekday and the interval to be null
+    // `full_length_pair` (20261010000000) requires the weekday and the interval to be null
     // together or set together. This body is a PARTIAL update — the settings sheet sends
     // only what changed — so a request naming just one half would merge into a row the
     // database refuses, and the refusal would arrive as a raw 23514 that the service reports

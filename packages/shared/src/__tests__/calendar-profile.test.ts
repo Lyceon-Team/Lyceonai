@@ -187,7 +187,7 @@ describe("profile upsert", () => {
 });
 
 /**
- * `full_length_pair` (20261009000000) makes the weekday and the interval one decision in the
+ * `full_length_pair` (20261010000000) makes the weekday and the interval one decision in the
  * database. These are the tests that make it one decision at the BOUNDARY too, so the refusal
  * is a 400 that names the field rather than a 23514 the service reports as a write failure.
  *

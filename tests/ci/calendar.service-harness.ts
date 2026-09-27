@@ -190,7 +190,7 @@ export const CONFIG_ROWS: { key: string; value: unknown }[] = [
   { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
   { key: "target_exam_date_max_days", value: 540 },
   { key: "weekly_job_interval_minutes", value: 1440 },
-  // §8.1, 20261009000000. The cadence the frequency control opens on — a surface prefill,
+  // §8.1, 20261010000000. The cadence the frequency control opens on — a surface prefill,
   // which is why the generator never reads it.
   { key: "default_full_length_interval_weeks", value: 2 },
   { key: "horizon_days", value: 14 },

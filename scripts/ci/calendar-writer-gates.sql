@@ -1598,7 +1598,7 @@ $notarget$;
 
 -- ----------------------------------------------------------------------------
 -- Z-53 .. Z-55 — full_length_interval_weeks and the pair
---                (Doc 05F §8.1 / R-08-27 as amended; 20261009000000)
+--                (Doc 05F §8.1 / R-08-27 as amended; 20261010000000)
 --
 -- The cadence is the student's, so the profile has to be able to state it and
 -- must not be able to state half of it. Z-53 and Z-54 are the two halves of
@@ -1726,7 +1726,7 @@ BEGIN
      full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
   VALUES (S, 'America/Chicago', 62, 60, 6, NULL, 1400, now());
 
-  -- Verbatim from 20261009000000 PART 2.
+  -- Verbatim from 20261010000000 PART 2.
   UPDATE public.student_study_profile
      SET full_length_interval_weeks = 2
    WHERE full_length_weekday IS NOT NULL

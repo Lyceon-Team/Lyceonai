@@ -165,7 +165,7 @@ export const calendarSetupDefaultsSchema = z
     daily_minutes_max: z.number().int().positive(),
     target_exam_date_max_days: z.number().int().positive(),
     // §8.1: the cadence the frequency control OPENS on, from
-    // `default_full_length_interval_weeks` (20261009000000). A prefill, exactly like
+    // `default_full_length_interval_weeks` (20261010000000). A prefill, exactly like
     // `timezone` above — nothing is stored until the student saves, and the generator never
     // reads this key, so an operator changing it cannot re-space anyone's existing exams.
     // Bounded by the same schema the write path uses, so the form can never be prefilled

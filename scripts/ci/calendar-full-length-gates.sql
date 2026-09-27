@@ -46,7 +46,7 @@ CREATE FUNCTION pg_temp.student(p_id uuid, p_weekday int DEFAULT NULL) RETURNS v
      full_length_interval_weeks, target_score, setup_completed_at)
   -- The interval MIRRORS p_weekday rather than taking a literal: this helper is
   -- called with NULL to build the no-exam student, and `full_length_pair`
-  -- (20261009000000) requires both halves to agree.
+  -- (20261010000000) requires both halves to agree.
   VALUES (p_id, 'UTC', 127, 180, p_weekday,
           CASE WHEN p_weekday IS NULL THEN NULL ELSE 2 END, 1400, now());
 $f$;

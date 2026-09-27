@@ -54,7 +54,7 @@ export const CALENDAR_CONFIG_KEYS = [
   "target_exam_date_max_days",
   "weekly_job_interval_minutes",
   /**
-   * §8.1, 20261009000000. The cadence the frequency control opens on. A SURFACE default,
+   * §8.1, 20261010000000. The cadence the frequency control opens on. A SURFACE default,
    * deliberately NOT part of `bounds`: `studyProfileBoundsSchema` describes the limits a
    * write is held to, and a prefill is not a limit. The generator never reads this key —
    * the cadence it plans against is `student_study_profile.full_length_interval_weeks`.
