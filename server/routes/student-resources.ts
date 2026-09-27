@@ -25,6 +25,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  STUDENT_EXAM_PATHS,
   STUDENT_LINK_PATHS,
   STUDENT_RESOURCE_PATHS,
   isLinkCodeLive,
@@ -73,6 +74,18 @@ import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
 import { readGuardianCalendar } from "../services/calendar/read-service";
 import { sendPaymentRequired } from "../lib/http-errors";
+import {
+  toGuardianExamList,
+  toGuardianExamReport,
+} from "../../packages/shared/src/exam-guardian-report-schema";
+import {
+  EXAM_FEATURE_KEY,
+  listExamForms,
+} from "../services/exam-runtime-service";
+import {
+  ReportIntegrityError,
+  readExamReport,
+} from "../services/exam-report-service";
 
 const router = Router({ mergeParams: true });
 
@@ -130,6 +143,11 @@ export const requiresEntitlement: Record<string, string | null> = {
   // that student's entitlement, which is the same term `guardian_view_decision` uses — so a
   // lapsed student and their guardian lose the view together, and nothing is deleted.
   [STUDENT_RESOURCE_PATHS.calendar]: "calendar_access",
+  // G1 (Doc 04C §2.6 condition 2): exam results need the SUBJECT's full-length feature,
+  // not merely any entitlement — `guardian_view_decision` answers the latter, this the
+  // former. The key is the one the student's own /api/tests surface already gates on.
+  [STUDENT_EXAM_PATHS.tests]: EXAM_FEATURE_KEY,
+  [STUDENT_EXAM_PATHS.testReport]: EXAM_FEATURE_KEY,
 };
 /** `req.subject` is set by the resolver; reaching a handler without it is a wiring bug. */
 function requireSubject(
@@ -465,6 +483,133 @@ router.get(
         "STUDENT_RESOURCES",
         "calendar_read_failed",
         "Subject-scoped calendar read failed",
+        { err, requestId: req.requestId },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId: req.requestId });
+    }
+  },
+);
+
+// --- full-length exam results (G1; Doc 04C §12 as amended by SCL-181) ---------
+
+/**
+ * @spec [Doc-04C §2.6, §12.2, §12.3; Doc 04 Parent Q9 as amended by SCL-180; SCL-181]
+ *   | @implemented [2026-09-27]
+ *
+ * plain English: a linked guardian's read of a student's exam results — the list of forms
+ * sat (latest attempt each) and one attempt's report. Same order as every route in this
+ * file: subject → entitlement → parse → read → serialize.
+ *
+ * WHAT MAKES ONE PAYLOAD SAFE FOR BOTH CALLERS. The body is `toGuardianExamReport` /
+ * `toGuardianExamList` output: each state is its own `.strict()` schema built from named
+ * fields, so no answer, explanation, skill, module, routing path, raw count, pacing or
+ * review flag can be on it. The student reading themselves here gets the same narrow
+ * view; their full report is `/api/tests/sessions/:id/report`. Nothing here reads
+ * `subject.via` — there is nothing to branch on.
+ *
+ * WHAT A GUARDIAN CANNOT DO. There is no write route on this path, and the review surface
+ * (/api/tests/sessions/:id/review…) is the student's own `/api/tests` family, which
+ * resolves the caller as the subject — a guardian there is simply not the owner (§12.3).
+ *
+ * DENIALS. No link, revoked link, and a session that is not this student's all answer the
+ * resolver's byte-identical 404 (anti-enumeration: a guardian cannot tell "not linked" from
+ * "no such exam"). Student without an active entitlement: the resolver's 402. Entitled
+ * student without the full-length feature: `entitlementGate`'s 402.
+ */
+router.get(
+  `/:studentId${STUDENT_EXAM_PATHS.tests}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    try {
+      if (
+        !(await entitlementGate(
+          STUDENT_EXAM_PATHS.tests,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
+      }
+      const forms = await listExamForms(subject.studentId);
+      if (!forms.ok) {
+        throw new Error(`exam_list_forms refused with ${forms.error.status}`);
+      }
+      return res.json({
+        ok: true,
+        ...toGuardianExamList(forms.value),
+        requestId: req.requestId,
+      });
+    } catch (err) {
+      logger.error(
+        "STUDENT_RESOURCES",
+        "exam_list_failed",
+        "Subject-scoped exam list failed",
+        { err, requestId: req.requestId },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId: req.requestId });
+    }
+  },
+);
+
+const examReportParamSchema = z.object({ sessionId: z.string().uuid() });
+
+router.get(
+  `/:studentId${STUDENT_EXAM_PATHS.testReport}`,
+  resolveSubject,
+  async (req: Request, res: Response) => {
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    try {
+      if (
+        !(await entitlementGate(
+          STUDENT_EXAM_PATHS.testReport,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
+      }
+      const params = examReportParamSchema.safeParse(req.params);
+      if (!params.success) {
+        return res.status(400).json({
+          error: { message: "Invalid session id", code: "INVALID_SESSION_ID" },
+          requestId: req.requestId,
+        });
+      }
+      const read = await readExamReport(
+        subject.studentId,
+        params.data.sessionId,
+        () =>
+          EntitlementService.canAccessFeature(
+            subject.studentId,
+            EXAM_FEATURE_KEY,
+          ),
+      );
+      if (read.kind === "forbidden") return sendNotFound(res, req.requestId);
+      return res.json({
+        ok: true,
+        report: toGuardianExamReport(read.payload),
+        requestId: req.requestId,
+      });
+    } catch (err) {
+      // A ReportIntegrityError is logged by kind only: its message names an invariant,
+      // never a score or an answer.
+      logger.error(
+        "STUDENT_RESOURCES",
+        err instanceof ReportIntegrityError
+          ? "report_data_integrity_violation"
+          : "exam_report_failed",
+        "Subject-scoped exam report failed",
         { err, requestId: req.requestId },
       );
       return res

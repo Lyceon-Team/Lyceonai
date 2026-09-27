@@ -25,6 +25,7 @@ import {
   examSectionStateSchema,
   examSessionStateSchema,
 } from "./exam-runtime-schema";
+import { canonicalDomainSchema, sectionOfDomain } from "./calendar/scope";
 
 // ── §5.1 ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,42 @@ export const examDisclosureSchema = z
     full_text_url: z.string().min(1),
   })
   .strict();
+
+// ── Score breakdown (G1; 04C §8.1/§9.1 as amended by SCL-180) ──────────────────
+
+/**
+ * @spec [Doc-04C §8.1/§9.1, §2.3; Doc 04 Parent Q9 as amended by SCL-180; E7b owner
+ *        ruling (the Score breakdown tab)] | @implemented [2026-09-27]
+ * plain English: one row per (scored section, domain): items served and items right.
+ * Domain-level only, by construction: `.strict()` refuses a skill, a module, a path or a
+ * question id, and `domain` is the canonical enum, so a skill code cannot pass as one.
+ * The domain must belong to the row's section, and correct can never exceed total.
+ */
+export const examDomainBreakdownRowSchema = z
+  .object({
+    section: examSectionSchema,
+    domain: canonicalDomainSchema,
+    correct: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+  })
+  .strict()
+  .refine((r) => sectionOfDomain(r.domain) === r.section, {
+    message: "domain does not belong to section",
+  })
+  .refine((r) => r.correct <= r.total, {
+    message: "correct exceeds total",
+  });
+export type ExamDomainBreakdownRow = z.infer<
+  typeof examDomainBreakdownRowSchema
+>;
+
+export const examDomainBreakdownSchema = z
+  .array(examDomainBreakdownRowSchema)
+  .refine(
+    (rows) =>
+      new Set(rows.map((r) => `${r.section}|${r.domain}`)).size === rows.length,
+    { message: "duplicate (section, domain) row" },
+  );
 
 const reportBase = {
   session_id: z.string().uuid(),
@@ -154,6 +191,7 @@ export const examReportScoredSchema = z
         })
         .strict(),
     ),
+    domain_breakdown: examDomainBreakdownSchema,
     disclosure: examDisclosureSchema,
     review_unlocked: z.literal(true),
   })
@@ -203,6 +241,8 @@ export const examReportPartialSchema = z
     ),
     completed_sections: z.array(examSectionSchema),
     incomplete_sections: z.array(examSectionSchema),
+    /** Scored sections only: nothing is counted beside a score that does not exist. */
+    domain_breakdown: examDomainBreakdownSchema,
     disclosure: examDisclosureSchema,
     partial_disclosure: z.object({ summary: z.string().min(1) }).strict(),
     review_unlocked: z.literal(true),
