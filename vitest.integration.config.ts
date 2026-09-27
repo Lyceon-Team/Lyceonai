@@ -20,8 +20,28 @@
  * drops it, and neither has to know about the other.
  *
  * It inherits nothing by design: the integration tests run against a real server over
- * HTTP, so they need no React plugin, no jsdom and no path aliases.
+ * HTTP, so they need no React plugin and no jsdom.
+ *
+ * THEY DO NEED ONE ALIAS, and this file used to say they needed none — which was true when
+ * it was written and became false silently. These tests import the real Express app, and
+ * that import chain now reaches `@lyceon/shared`:
+ *
+ *     Cannot find package '@lyceon/shared' imported from
+ *     server/services/calendar/read-service.ts
+ *     ❯ server/routes/student-resources.ts:75:1
+ *
+ * `@lyceon/shared` is NOT installed: it is absent from the root package.json and from
+ * node_modules, and its own `main` points at `./src/index.js` where only `.ts` exists. It
+ * resolves through a bundler alias and nothing else — `vite.config.ts` and
+ * `vitest.config.ts` both carry one. So the moment any server module the app imports began
+ * importing it, this config could no longer load the app at all, and BOTH suites failed at
+ * import time rather than on any behaviour they assert.
+ *
+ * It failed only in CI, which is what let it through: without SUPABASE_* set, both files
+ * `describe.skipIf` themselves and the import chain is never evaluated, so the suite is
+ * green locally and red in the one place the secrets exist.
  */
+import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -34,5 +54,13 @@ export default defineConfig({
     pool: "threads",
     include: ["tests/integration/**/*.test.ts"],
     exclude: ["**/node_modules/**"],
+  },
+  resolve: {
+    alias: {
+      // The same mapping vite.config.ts and vitest.config.ts use, for the same reason: the
+      // package is not installed, so this alias IS its resolution. Kept to the one alias
+      // these tests actually need — they render no React and touch no `@/` client path.
+      "@lyceon/shared": path.resolve(__dirname, "./packages/shared/src"),
+    },
   },
 });
