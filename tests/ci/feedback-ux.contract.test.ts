@@ -10,15 +10,15 @@ function read(relativePath: string): string {
 
 describe("Feedback UX hardening contract", () => {
   it("uses shared recovery/session notices on key customer surfaces", () => {
-    const fullTest = read("client/src/pages/full-test.tsx");
+    // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+    // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so its two
+    // RecoveryNotice/SessionNotice assertions go; UserProfile's are unchanged.
     const userProfile = read("client/src/pages/UserProfile.tsx");
 
     // chat.tsx: behavioral render test in
     // client/src/pages/chat.error-rendering.contract.test.tsx proves the
     // property directly (errors render through structured notice, raw
     // server text never surfaces). No static name-matching needed.
-    expect(fullTest).toContain("RecoveryNotice");
-    expect(fullTest).toContain("SessionNotice");
     expect(userProfile).toContain("RecoveryNotice");
     expect(userProfile).toContain("SessionNotice");
     /**
@@ -52,7 +52,9 @@ describe("Feedback UX hardening contract", () => {
   it("routes every premium denial through the one CTA component", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/full-test.tsx",
+      // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+      // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
+      // this list; every remaining surface keeps the same assertion.
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
@@ -74,7 +76,9 @@ describe("Feedback UX hardening contract", () => {
   it("lets no surface name a billing route for itself", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/full-test.tsx",
+      // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+      // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
+      // this list; every remaining surface keeps the same assertion.
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
@@ -109,7 +113,9 @@ describe("Feedback UX hardening contract", () => {
   it("removes destructive alert variants from audited customer surfaces", () => {
     const auditedFiles = [
       "client/src/pages/chat.tsx",
-      "client/src/pages/full-test.tsx",
+      // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+      // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
+      // this list; every remaining surface keeps the same assertion.
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",

@@ -31,68 +31,6 @@ export interface StudentQuestion {
   difficulty?: number | null;
 }
 
-// Full-length exam runtime types (service-owned supabase rows).
-export interface FullLengthExamSession {
-  id: string;
-  user_id?: string;
-  status: string;
-  current_section?: string | null;
-  current_module?: number | null;
-  break_started_at?: string | null;
-  test_form_id?: string | null;
-  client_instance_id?: string | null;
-  seed?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
-}
-
-export interface FullLengthExamModule {
-  id: string;
-  session_id?: string;
-  section?: string;
-  module_index?: number;
-  difficulty_bucket?: string | null;
-  module1_correct_count?: number | null;
-  adaptive_config_id?: string | null;
-  materialized_at?: string | null;
-  target_duration_ms?: number;
-  started_at?: string | null;
-  ends_at?: string | null;
-  submitted_at?: string | null;
-  submitted_late?: boolean;
-  status?: string;
-  created_at?: string | null;
-  startedAt?: string | null;
-  endsAt?: string | null;
-  submittedAt?: string | null;
-  [key: string]: unknown;
-}
-
-export interface FullLengthExamQuestion {
-  id: string;
-  module_id?: string;
-  question_id?: string;
-  order_index?: number;
-  presented_at?: string | null;
-  [key: string]: unknown;
-}
-
-export interface FullLengthExamResponse {
-  id: string;
-  session_id?: string;
-  module_id?: string;
-  question_id?: string;
-  selected_answer?: string | null;
-  free_response_answer?: string | null;
-  is_correct?: boolean | null;
-  answered_at?: string | null;
-  submitted_at?: string | null;
-  [key: string]: unknown;
-}
-
 export interface ProgressStats {
   mathProgress: number;
   readingProgress: number;

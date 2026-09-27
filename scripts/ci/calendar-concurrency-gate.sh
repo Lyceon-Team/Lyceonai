@@ -208,15 +208,25 @@ rm -f /tmp/_cal_c3_*.out
 echo "==> C-4: a move and a weekly run, fired concurrently"
 q -c "SELECT public.calendar_persist_version('$S','setup','student','v1');" >/dev/null
 
+# The block must be MOVABLE, and that means excluding the ones C-3 launched.
+# C-3 takes the earliest practice block with no date filter: on a weekday that is
+# TODAY's, but this fixture studies Mon-Fri, so on a Saturday or Sunday today holds
+# no practice block and C-3 reaches forward to the Monday -- the very block this
+# clause then tried to move. §12.2 refuses to move a STARTED block, correctly, so
+# calendar_move_block answered {"refused": "block_started"}, wrote no version, and
+# C-4 failed its version count having never exercised the lock it exists to test.
+# Green Mon-Fri and red every weekend, for a reason that was never about locking.
 MOVE_BLOCK="$(q -c "
   SELECT cp.block_id FROM public.calendar_current_plan cp
   JOIN public.calendar_blocks b ON b.block_id = cp.block_id
   WHERE cp.student_id = '$S'
     AND cp.scheduled_date > (now() AT TIME ZONE 'America/Chicago')::date
     AND b.block_type = 'practice'
+    AND NOT EXISTS (SELECT 1 FROM public.calendar_block_launches l
+                    WHERE l.block_id = cp.block_id)
   ORDER BY cp.scheduled_date, cp.display_ordinal LIMIT 1;")"
 if [ -z "$MOVE_BLOCK" ]; then
-  echo "FAIL C-4: no future practice block to move, so the test would prove nothing"
+  echo "FAIL C-4: no future UNSTARTED practice block to move, so the test would prove nothing"
   exit 1
 fi
 MOVE_TO="$(q -c "SELECT ((now() AT TIME ZONE 'America/Chicago')::date + 5)::text;")"

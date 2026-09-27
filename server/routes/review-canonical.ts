@@ -36,6 +36,7 @@
 import { Router, type Request, type Response } from "express";
 import * as crypto from "node:crypto";
 import { logger } from "../logger";
+import type { SupabaseUser } from "../middleware/supabase-auth";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
@@ -143,7 +144,15 @@ type ReviewSessionMetadata = {
   target_question_count?: number;
   prebuilt?: boolean;
   session_start_idempotency_key?: string | null;
-  pool_mode?: string;
+  /**
+   * NO `pool_mode` KEY. The session's mode is the `review_sessions.mode` COLUMN,
+   * written at the insert below and constrained to `queue | session | filter` by
+   * 20260921000000_review_queue_runtime.sql:199-201. It used to be written here as
+   * well, so every session carried the same value twice with only the column under a
+   * CHECK — the owner's production walk found all four live sessions carrying both
+   * (R4.1). One fact, one home. Rows created before this change keep the stale key;
+   * nothing reads it, which is the property the test below pins.
+   */
   source_engine?: string;
   source_session_id?: string;
   sections?: string[] | null;
@@ -165,16 +174,16 @@ function normalizeClientInstanceId(value: unknown): string | null {
 
 /** The pool-spec half of `filters`, in the shapes brief R3 §2.3 specifies. */
 function poolSpecToFilters(spec: ReviewPoolSpec): Record<string, unknown> {
-  if (spec.mode === "queue") return { pool_mode: "queue" };
+  // The mode itself is NOT returned here — it is the `mode` column (see the insert).
+  // What belongs in `filters` is the part of the spec the column cannot hold.
+  if (spec.mode === "queue") return {};
   if (spec.mode === "session") {
     return {
-      pool_mode: "session",
       source_engine: spec.source.source_engine,
       source_session_id: spec.source.source_session_id,
     };
   }
   return {
-    pool_mode: "filter",
     sections: spec.filter.sections ?? null,
     domains: spec.filter.domains ?? null,
     skills: spec.filter.skills ?? null,
@@ -1497,9 +1506,9 @@ router.post(
   requireConsentCompliance,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
-    const user = (
-      req as unknown as { user?: { id?: string; actor_id?: string } }
-    ).user;
+    // As in diagnostic-routes: the canonical `SupabaseUser`, not an inline shape that makes
+    // `actor_id` optional and so invites a fallback to the identity key.
+    const user = (req as unknown as { user?: SupabaseUser }).user;
     const studentId = requireStudentId(req, res);
     if (!studentId) return;
 
@@ -1525,9 +1534,32 @@ router.post(
     const clientInstanceId =
       spec.value.clientInstanceId ?? `server-${crypto.randomUUID()}`;
 
+    // @spec [Doc 05E §3 Rule 4, §6 INV-05E-06; owner brief 2026-09-25 R2]
+    // | @implemented [2026-09-25]
+    //
+    // `?? studentId` is gone. It never fired in production — zero review rows carry
+    // actor_id = student_id, measured across all three review tables 2026-09-25 — but it is
+    // the SAME DEFECT as diagnostic-routes', latent: a fallback that silences a missing
+    // grouping identifier by substituting the identity key. The strengthened sentinel would
+    // not have caught it either, because the value it writes is non-null.
+    const actorId = user?.actor_id;
+    if (!actorId) {
+      logger.error(
+        "REVIEW",
+        "actor_id_missing",
+        "Authenticated user carries no actor_id; refusing to write review rows",
+        { studentId, requestId },
+      );
+      return res.status(500).json({
+        error: "actor_id_unavailable",
+        message: "Could not resolve the grouping identifier for this session.",
+        requestId,
+      });
+    }
+
     const result = await startOrReplayReviewSession({
       studentId,
-      actorId: user?.actor_id ?? studentId,
+      actorId,
       poolSpec: spec.value.poolSpec,
       clientInstanceId,
       idempotencyKey: spec.value.idempotencyKey,

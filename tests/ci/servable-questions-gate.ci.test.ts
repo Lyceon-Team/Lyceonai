@@ -44,8 +44,10 @@ const ALLOWLIST: Record<string, string> = {
   "apps/api/src/routes/healthz.ts": "INFRA: health check",
   "apps/api/src/db/client.ts": "INFRA: connectivity probe",
   "apps/api/src/lib/supabase-server.ts": "INFRA: server setup",
-  "apps/api/src/services/fullLengthExam.ts":
-    "HISTORICAL: form canonical ID resolution, deferred materialization snapshots",
+  // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+  // pending Doc 04 rebuild. The apps/api/src/services/fullLengthExam.ts entry is
+  // gone with the file (the "every allowlisted file actually exists" case below
+  // would otherwise fail); the allowlist only narrows.
   "server/services/tutor-context.ts":
     "HISTORICAL: question metadata + correct_answer by ID for context resolution and anti-leak",
 };

@@ -12,7 +12,13 @@
  * is showing as unstarted. §17.7 says "refetch on route focus", so these three queries
  * opt back in rather than the global default changing under every other feature.
  */
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import { useEffect } from "react";
 import type {
   CalendarResponse,
   GuardianCalendarResponse,
@@ -20,6 +26,7 @@ import type {
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
 import { fetchCalendar, fetchGuardianCalendar, fetchStreak } from "./client";
+import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
 
 /**
  * The device's IANA zone, for §17.3's mismatch prompt and the pre-setup `defaults.timezone`.
@@ -58,7 +65,78 @@ export function useCalendar(
     refetchOnWindowFocus: true,
     staleTime: 30_000,
     retry: 1,
+    /**
+     * §17.7. Stepping a week is a NEW query key — a different range is a different
+     * resource, which is right — but without this the page had no data for the new key and
+     * fell to its loading state for the 800–1,100 ms the read takes. The plan vanished and
+     * came back on every arrow press.
+     *
+     * `keepPreviousData` leaves the previous week on screen until the next resolves. It is
+     * not a cache of the wrong answer: `isPlaceholderData` says the rows are the old
+     * range's, so a caller that needs to know can ask, and nothing here is written back.
+     */
+    placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * §17.7 — warm the ranges either side of the one being read, once the browser is idle.
+ *
+ * WHY IDLE AND NOT IMMEDIATELY. Two extra reads issued alongside the one the student is
+ * waiting for would compete with it; the point is to be ready for the NEXT arrow press, not
+ * to make this one slower. `requestIdleCallback` yields until the main thread is free, and
+ * falls back to a timeout on engines without it (Safari, at time of writing).
+ *
+ * `prefetchQuery` is a no-op when the key is already fresh, so stepping back and forth over
+ * the same two weeks issues no requests at all after the first pass.
+ *
+ * Disabled while the current read is in flight or has failed: prefetching around a range
+ * that is itself erroring would turn one failure into three.
+ */
+export function usePrefetchAdjacentRange(
+  view: "week" | "month",
+  cursor: string,
+  options?: { enabled?: boolean },
+): void {
+  const client = useQueryClient();
+  const timezone = deviceTimezone();
+  const enabled = options?.enabled ?? true;
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const neighbours =
+      view === "week"
+        ? [shiftDays(cursor, -7), shiftDays(cursor, 7)]
+        : [shiftMonths(cursor, -1), shiftMonths(cursor, 1)];
+
+    let cancelled = false;
+    const run = (): void => {
+      if (cancelled) return;
+      for (const neighbour of neighbours) {
+        const range = rangeForView(view, neighbour);
+        void client.prefetchQuery({
+          queryKey: calendarKeys.range(range.from, range.to, timezone),
+          queryFn: () => fetchCalendar(range.from, range.to, timezone),
+          staleTime: 30_000,
+        });
+      }
+    };
+
+    const idle = globalThis.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle(run, { timeout: 2_000 });
+      return () => {
+        cancelled = true;
+        globalThis.cancelIdleCallback?.(handle);
+      };
+    }
+    const handle = setTimeout(run, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [client, view, cursor, timezone, enabled]);
 }
 
 /**

@@ -72,6 +72,89 @@ pnpm -s run build && pnpm test
 
 A task is open until: build passes, tests pass, no invariant violated, result reproducible. Passing CI is necessary, not sufficient.
 
+## A migration that replaces a function body orphans its mutations
+
+A mutation in `scripts/ci/*.mutations.sh` bites by editing the migration that *currently
+defines* a function. The moment a newer migration `CREATE OR REPLACE`s that function, every
+mutation still aimed at the old home edits a body the pipeline immediately overwrites — so the
+mutation applies cleanly, the suite passes, and the proof is gone. **Mutations fail silently
+upward: a dead mutation is indistinguishable from a passing one.**
+
+So: **a change that replaces a function body must re-point every mutation aimed at that
+function's previous home, in the same change** — and must show each re-pointed mutation still
+reddening its target test, because an anchor that no longer matches is a dead mutation too.
+
+Before adding or moving a function-body mutation, find the LAST migration defining that
+function — not the first, not the one the mutation names:
+
+```bash
+grep -ln 'FUNCTION public\.<name>' supabase/migrations/*.sql | sort | tail -1
+```
+
+This has now fired **six times** (M2, M9, M17, M31, M90–M93, M96) — twice in the change that
+prompted this rule, where six mutations stopped biting at once because that change's own
+migration superseded their targets. Owner ruling 2026-09-25: it belongs in the working rules.
+
+## "Is it deployed?" — ask the catalog, never the ledger
+
+`schema_migrations` **stopped recording in June**. Migrations are applied out of band, so the
+ledger reports every migration since as unapplied. It is not a defect and it is not being fixed;
+it is simply not evidence. A report of "authored but not applied" sourced from it is a false
+claim about production, and it has been made.
+
+Answer the question from the catalog, against the database being asked about:
+
+| the question | the authority |
+|---|---|
+| is this function's body live? | `pg_proc.prosrc` — normalise CRs, then compare or `md5` |
+| is this constraint still there? | `pg_constraint` (and `pg_attribute` for a column) |
+| is this config value live? | the config table itself, e.g. `calendar_runtime_config` |
+| does this table/column exist? | `information_schema` / `pg_class` |
+
+Owner-run against production: never query or write production yourself. State what you would run
+and hand it over, or say the deployment state is unverified from here — which is honest, where a
+ledger reading is not.
+
+**A consequence of not reading production: your deployment picture only changes when the owner
+tells you.** It has no other input, so it goes stale silently and a stale picture reads exactly
+like a current one. Treat what you believe about production as stale unless THIS turn updated it,
+and say which turn it came from when it matters — "applied, per the owner's report of
+2026-09-25", never a bare "applied". Carrying a previous turn's deployment state forward as
+present fact is the same false claim as sourcing it from the ledger, arrived at by a slower
+route. (Owner ruling 2026-09-25.) Where a migration's effect can be pinned in CI, pin it: gates `B-01` and
+`B-02` in `scripts/ci/calendar-schema-gates.sql` are the pattern — assert the body of whatever
+function is live at the end of the migration pipeline. (Learned 2026-09-24: five calendar
+migrations reported unapplied were all live in production.)
+
+## The test layer has weaker guarantees than the code it guards
+
+**`tsconfig.json` excludes `**/*.test.ts` and `**/*.test.tsx`**, so `strict`,
+`noUnusedLocals` and `noUncheckedIndexedAccess` never see a test file. `pnpm -s run build`
+passing says nothing about them. The lint bot on a PR is standing where the compiler would
+otherwise be — treat its findings on test files as compiler errors, not style notes.
+
+The consequence that matters is not dead imports; it is **fixtures**. A hand-written fixture
+can assert a shape nothing in the system produces, and then both the fixture and the code it
+guards pass against something neither of them emits. Two instances, both found the hard way:
+
+- `violations: ["V-05", "V-10"]` — bare strings, where `calendar_validate_plan` has only ever
+  returned objects (`{rule, date, detail}`). The fixture agreed with the bug, so the suite
+  stayed green while production served `rule_ids=[]`. (SCL-137.)
+- The guardian calendar's payload and its schema were each tested against hand-written
+  objects, and neither test ever saw the route's `{ok: true, ...}` envelope. A 200 rendered an
+  error state. (SCL-171's sibling finding, `tests/ci/calendar.wire-contract.test.ts`.)
+
+So, when a test guards a boundary:
+
+- **Derive the fixture from real output**, not from what the shape ought to be. Call the real
+  function, or the real route, and assert on what comes back.
+- **One scenario, shared.** Two hand-built fixtures for one resource drift, and both files stay
+  green while they do (`tests/ci/calendar.service-harness.ts` is the calendar's).
+- **Assert presence before absence.** An anti-leak assertion over an empty collection passes
+  for the wrong reason; prove the payload is non-trivial first.
+- A round-trip test — real producer through real consumer — catches what neither side's own
+  tests can, because the mismatch lives between them.
+
 ## Tooling
 
 - **`pnpm` only.** `npm` is prohibited (blocked by hook). No dependency changes without approval.
@@ -115,6 +198,24 @@ When opening a PR, set its base to the integration branch that matches the scope
 ## Unified code across agents & sessions
 
 Multiple subagents and parallel sessions work this repo. They must produce **one coherent codebase**, not several divergent ones. Before writing a helper, type, schema, pattern, or constant: **search for an existing canonical one and consume it** — never fork a second version. Shared primitives (`packages/shared` schemas/types, DB utilities, the logger, identity helpers) are single-source-of-truth; extend the canonical definition, don't duplicate it. Foundations land before the work that depends on them. When integrating parallel work, verify it reuses existing primitives and follows established patterns rather than introducing a parallel approach. Divergence and duplication are defects, even when no two edits touch the same line.
+
+**Never re-declare inline a shape a canonical type already describes.** A hand-rolled
+`{ id: string; role?: string }` for a value that has a canonical type does not merely duplicate
+it — it *narrows* it, and the fields it drops become invisible to everyone reading that scope.
+The author then reaches for the nearest field that compiles. This is not a style preference; it
+is how a silent data defect gets written:
+
+> `server/routes/diagnostic-routes.ts` declared `user` as `{ id: string; role?: string }`.
+> `SupabaseUser` carries `actor_id: string`. With no `actor_id` in scope, the author wrote
+> `const actorId = userId` — the pseudonymous grouping key set to the identity key it exists to
+> survive. 205 production rows, weeks green, three guards blind to it. `review-canonical.ts`
+> did the same with `{ id?: string; actor_id?: string }`, making the field optional and
+> inviting `?? studentId`. (Learned 2026-09-25: SCL-151, #894.)
+
+Import the canonical type (`SupabaseUser` from `server/middleware/supabase-auth.ts` for the
+authenticated user) and, where a required field is somehow absent, **fail closed** — a 500 beats
+substituting a plausible value, because writing the wrong value *is* the defect. Watch for this
+anywhere a route, service, or handler re-states a shape the canonical type already has.
 
 ## Plan before implementing
 

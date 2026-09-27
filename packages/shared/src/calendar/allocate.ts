@@ -179,7 +179,7 @@ export function unitMatchesBlock(unit: ActivityUnit, block: PlanBlock): boolean 
     return true;
   }
 
-  // §9.4: a null `form_id` means Doc 04 rotation picked the form, so any exam counts.
+  // §9.4 / SCL-168: a null `form_id` means "the next test" picked the form, so any exam counts.
   return block.scope.form_id === null || unit.form_id === block.scope.form_id;
 }
 

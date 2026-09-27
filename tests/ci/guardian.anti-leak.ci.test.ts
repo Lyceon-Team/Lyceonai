@@ -51,7 +51,6 @@ import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
 const GUARDIAN_ID = "guardian-1";
 const STUDENT_ID = "student-1";
-const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
 // ---------------------------------------------------------------------------
 // The forbidden sets
@@ -199,33 +198,11 @@ const kpiMocks = {
   })),
 };
 
-const examMocks = {
-  listExamSessions: vi.fn(async () => [
-    {
-      sessionId: SESSION_ID,
-      status: "completed",
-      startedAt: "2026-08-01T00:00:00.000Z",
-      completedAt: "2026-08-01T03:00:00.000Z",
-      createdAt: "2026-08-01T00:00:00.000Z",
-      module2_path: "B", // Doc 04C §2.3 — never student/guardian-facing.
-      ...INTERNAL_COLUMNS,
-    },
-  ]),
-  /**
-   * `buildStudentFullLengthReportView` does `...report` — a SPREAD, which is precisely the
-   * MA-07 chokepoint (#419): a new field on a spread object bypasses per-field null-outs.
-   * So the internal columns are injected HERE, upstream of both real builders, and both the
-   * student view and the guardian projection are left REAL. Mocking the projection would
-   * have made this case pass vacuously by stripping in the double.
-   */
-  getExamReport: vi.fn(async () => ({
-    sessionId: SESSION_ID,
-    scaledScore: { total: 1200, rw: 600, math: 600 },
-    rawScore: { total: { correct: 40, total: 54 } },
-    sections: [{ section: "M", scaledScore: 600, ...INTERNAL_COLUMNS }],
-    ...INTERNAL_COLUMNS,
-  })),
-};
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. The `examMocks` double for apps/api/src/services/fullLengthExam
+// (listExamSessions / getExamReport seeded with INTERNAL_COLUMNS) is deleted with that
+// service. No guardian route imported it after #675 removed the guardian exam reads, so
+// it fed nothing this gate walks; every real assertion below is unchanged.
 
 vi.mock("../../server/lib/account", () => accountMocks);
 vi.mock("../../apps/api/src/services/mastery-read", async () => {
@@ -246,7 +223,6 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   // builder's view directly, so the route itself is what this gate walks.
   return { ...actual, ...kpiMocks };
 });
-vi.mock("../../apps/api/src/services/fullLengthExam", () => examMocks);
 vi.mock("../../server/services/kpi-access", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/kpi-access")

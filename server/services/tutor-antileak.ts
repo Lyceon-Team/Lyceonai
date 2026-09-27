@@ -12,7 +12,7 @@
  * unmodified.
  *
  * trade-offs: regex-based detection may produce false negatives on novel phrasing; this
- * is the fast deterministic layer — Model Armor (tutor-injection-defense.ts) provides
+ * is the fast deterministic layer — Model Armor (tutor-model-armor.ts) provides
  * the model-backed depth layer. False positives are preferable to leaks: a blocked
  * helpful response is recoverable; a leaked answer is not.
  *
@@ -41,14 +41,33 @@ export { TUTOR_ANTI_LEAK_SUBSTITUTION, hasAnswerLeak };
 /**
  * Determines pre-submit state server-side for a given surface.
  *
- * @spec [INV-03-06]
+ * @spec [INV-03-06; Doc-02B_V4 §20 (review rows), §21 Question Awareness,
+ *        CR-02B-29; closure plan W3-8 + W4-1 review gate, owner ruling
+ *        2026-09-25] | @implemented 2026-09-25
+ *
+ * plain English: "has the student submitted this item?" — answered from the
+ * item's own row, never from the surface name alone. `true` means pre-submit:
+ * the envelope carries `correct_answer: null` and the output scan is
+ * answer-aware.
  *
  * Surfaces:
- * - "practice" — checks if session item has been submitted (query practice_session_items)
- * - "review" — always post-submit (false)
- * - "test_review" — always post-submit (false)
- * - "dashboard" — no question context, not applicable (false)
- * - Unrecognized — fail closed (true = treat as pre-submit)
+ * - "practice" — `practice_session_items.status`
+ * - "review"   — `review_session_items.status`. Review is a graded RE-ATTEMPT:
+ *   the item is served unanswered and revealed only after POST /answer. It was
+ *   hard-coded post-submit here, which would have put `correct_answer` on the
+ *   wire before the student answered as soon as LISA was wired into review.
+ *   CR-02B-29: pre-submit the tutor receives neither answer nor explanation.
+ * - "test_review" — post-submit: the exam is complete before its review phase
+ *   exists (§21, "Exam review").
+ * - "dashboard" — pre-submit. A dashboard conversation has no item and so no
+ *   submission record; "post-submit" was an assertion nothing could back, and
+ *   it put `correct_answer` on the wire whenever a general conversation
+ *   attached a question id (W3-8).
+ * - Unrecognized — pre-submit (fail closed).
+ *
+ * For practice and review: no item id, a query error, or a missing row all
+ * fail closed to pre-submit. "answered" and "skipped" are the submitted
+ * states in both tables' CHECK constraints.
  */
 export async function isPreSubmitForSurface(
   surface: string,
@@ -56,44 +75,17 @@ export async function isPreSubmitForSurface(
   _supabase: unknown,
 ): Promise<boolean> {
   switch (surface) {
+    case "practice":
+      return itemIsPreSubmit("practice_session_items", surface, sessionItemId);
+
     case "review":
+      return itemIsPreSubmit("review_session_items", surface, sessionItemId);
+
     case "test_review":
-    case "dashboard":
       return false;
 
-    case "practice": {
-      if (!sessionItemId) {
-        // No session item context — fail closed
-        logger.warn(
-          "TUTOR_ANTILEAK",
-          "pre_submit_check",
-          "practice surface with null sessionItemId; failing closed",
-        );
-        return true;
-      }
-
-      const { data, error } = await supabaseServer
-        .from("practice_session_items")
-        .select("status")
-        .eq("id", sessionItemId)
-        .single();
-
-      if (error) {
-        logger.error(
-          "TUTOR_ANTILEAK",
-          "pre_submit_query_failed",
-          "practice_session_items query failed; failing closed",
-          error,
-          { sessionItemId },
-        );
-        // Fail closed — treat as pre-submit
-        return true;
-      }
-
-      // "answered" or "skipped" = submitted; "pending" or "served" = pre-submit
-      const submittedStatuses = new Set(["answered", "skipped"]);
-      return !submittedStatuses.has(data.status as string);
-    }
+    case "dashboard":
+      return true;
 
     default:
       // Unrecognized surface — fail closed per INV-03-04
@@ -105,6 +97,51 @@ export async function isPreSubmitForSurface(
       );
       return true;
   }
+}
+
+/** Items whose status means the student has submitted. Both tables share it. */
+const SUBMITTED_ITEM_STATUSES: ReadonlySet<string> = new Set([
+  "answered",
+  "skipped",
+]);
+
+/**
+ * Reads one session item's status. Any doubt — no id, a query error, no row —
+ * is pre-submit.
+ */
+async function itemIsPreSubmit(
+  table: "practice_session_items" | "review_session_items",
+  surface: string,
+  sessionItemId: string | null,
+): Promise<boolean> {
+  if (!sessionItemId) {
+    logger.warn(
+      "TUTOR_ANTILEAK",
+      "pre_submit_check",
+      "surface with null sessionItemId; failing closed",
+      { surface },
+    );
+    return true;
+  }
+
+  const { data, error } = await supabaseServer
+    .from(table)
+    .select("status")
+    .eq("id", sessionItemId)
+    .maybeSingle();
+
+  if (error || !data) {
+    logger.error(
+      "TUTOR_ANTILEAK",
+      "pre_submit_query_failed",
+      "session item status unreadable; failing closed",
+      error ?? undefined,
+      { surface, sessionItemId, table, rowFound: !!data },
+    );
+    return true;
+  }
+
+  return !SUBMITTED_ITEM_STATUSES.has(data.status as string);
 }
 
 /**

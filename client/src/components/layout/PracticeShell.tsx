@@ -19,6 +19,12 @@ interface PracticeShellProps {
   };
   currentIndex: number;
   totalQuestions?: number;
+  /**
+   * W4-4: review with LISA shares the width between the question, the
+   * calculator and LISA, which needs more than max-w-7xl (1280px) can give.
+   * Off by default — practice keeps its width.
+   */
+  wide?: boolean;
 }
 
 export function PracticeShell({
@@ -30,7 +36,9 @@ export function PracticeShell({
   score,
   currentIndex,
   totalQuestions,
+  wide = false,
 }: PracticeShellProps) {
+  const widthClass = wide ? "max-w-[1600px]" : "max-w-7xl";
   const progressPercent = totalQuestions
     ? ((currentIndex + 1) / totalQuestions) * 100
     : 0;
@@ -40,7 +48,7 @@ export function PracticeShell({
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-40 border-b border-border/40 bg-background/95 backdrop-blur">
-        <div className="container mx-auto px-4 py-4 max-w-7xl">
+        <div className={`container mx-auto px-4 py-4 ${widthClass}`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <Button
@@ -95,7 +103,7 @@ export function PracticeShell({
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
+      <main className={`flex-1 container mx-auto px-4 py-6 ${widthClass}`}>
         {children}
       </main>
     </div>

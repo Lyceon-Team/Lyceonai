@@ -71,7 +71,9 @@ beforeEach(() => {
           or: vi.fn().mockReturnValue({
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           }),
-          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
         }),
       };
     }

@@ -50,6 +50,7 @@ DECLARE
   v_block   uuid;
   v_txt     text;
   v_version uuid;
+  v_clear   date;
 BEGIN
   SELECT (now() AT TIME ZONE 'America/Chicago')::date INTO v_today;
 
@@ -74,16 +75,47 @@ BEGIN
   RAISE NOTICE '    OK Z-02 a replayed idempotency key returns the stored response and writes nothing';
 
   ---------------------------------------------------------------- Z-03
-  -- enabled_block_types is ["practice"] at launch, so only practice is
-  -- persisted even though the formula computed review and full-length too.
-  SELECT count(DISTINCT b.block_type), string_agg(DISTINCT b.block_type, ',')
+  -- V-03 at the writer: every persisted block type is one enabled_block_types
+  -- names. This used to pin the LAUNCH literal ["practice"]; review (2026-09-22)
+  -- and full_length (E9b, 20261004010000) have since been enabled, so the gate
+  -- now reads the live list rather than asserting a state the product has left.
+  --
+  -- S1 has a Saturday full_length_weekday, so with full_length enabled the
+  -- formula places an exam and it must reach the persisted plan.
+  SELECT count(DISTINCT b.block_type), string_agg(DISTINCT b.block_type, ',' ORDER BY b.block_type)
     INTO v_n, v_txt
   FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
   WHERE cp.student_id = S1;
-  IF v_txt IS DISTINCT FROM 'practice' THEN
-    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 persisted block types are % but enabled_block_types is ["practice"]', v_txt;
+  IF EXISTS (
+    SELECT 1
+    FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+    WHERE cp.student_id = S1
+      AND NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
+              @> jsonb_build_array(b.block_type)) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 persisted block types are % but enabled_block_types is %',
+      v_txt, (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK Z-03 only enabled block types are persisted (V-03 holds at the writer)';
+  IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types') @> '["full_length"]'::jsonb
+     AND v_txt NOT LIKE '%full_length%' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 full_length is enabled and S1 has a test weekday, but no full_length block was persisted (%)', v_txt;
+  END IF;
+  -- The filter itself, planted: narrow the list to ["practice"] inside a
+  -- sub-block, regenerate, and require practice only. The sub-block ends by
+  -- raising its own sentinel, which rolls back the narrowed config and the
+  -- extra version; any OTHER error propagates and fails the gate.
+  BEGIN
+    UPDATE public.calendar_runtime_config SET value = '["practice"]'::jsonb WHERE key = 'enabled_block_types';
+    PERFORM public.calendar_persist_version(S1, 'student_refresh', 'student', 'v1', NULL);
+    IF EXISTS (
+      SELECT 1 FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
+      WHERE cp.student_id = S1 AND cp.scheduled_date >= v_today AND b.block_type <> 'practice') THEN
+      RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-03 with enabled_block_types ["practice"] a non-practice block was persisted';
+    END IF;
+    RAISE EXCEPTION 'z03 plant rolled back' USING ERRCODE = 'LYZ03';
+  EXCEPTION WHEN SQLSTATE 'LYZ03' THEN
+    NULL;  -- the sentinel above: the plant ran to completion and is now undone
+  END;
+  RAISE NOTICE '    OK Z-03 persisted types (%) are all enabled, and a narrowed list filters the rest (V-03 at the writer)', v_txt;
 
   ---------------------------------------------------------------- Z-04
   -- Every version allocates the next version_no, and a second student's
@@ -241,13 +273,39 @@ BEGIN
 
   ---------------------------------------------------------------- Z-12
   -- §12.4: an empty member list is a cleared day, and the override is kept.
-  PERFORM public.calendar_edit_day(S1, v_today + 2, '[]'::jsonb, 'v1', NULL);
-  IF NOT EXISTS (SELECT 1 FROM public.calendar_current_plan
-                 WHERE student_id = S1 AND scheduled_date = v_today + 2
-                   AND block_id IS NULL AND is_user_override) THEN
-    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-12 a cleared day lost its row or its override flag';
+  --
+  -- THE DATE IS CHOSEN, NOT ASSUMED, and that is the whole of this fix. This used
+  -- to clear `v_today + 2`, which silently assumed that date held nothing §12.2
+  -- protects. It does -- but only on five days in seven. S1 studies Mon-Fri, so
+  -- when v_today is a SATURDAY the first future practice block is the Monday two
+  -- days out, which is exactly the date Z-06 launches and Z-08 retries. An empty
+  -- edit then CARRIES that started block, correctly and by §12.2, so the day is
+  -- not cleared, no `block_id IS NULL` row appears, and this gate failed claiming
+  -- §12.4 was broken when §12.4 had behaved exactly as specified.
+  --
+  -- The failure was therefore a property of the CALENDAR DATE the job ran on,
+  -- not of the code under test: green Mon-Fri, red every Saturday and Sunday.
+  -- Choosing a date with no launched block makes the assertion mean what its
+  -- name says on all seven days.
+  SELECT g.d::date INTO v_clear
+  FROM generate_series(v_today + 1, v_today + 13, interval '1 day') AS g(d)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.calendar_current_plan cp
+    JOIN public.calendar_block_launches l ON l.block_id = cp.block_id
+    WHERE cp.student_id = S1 AND cp.scheduled_date = g.d::date)
+  ORDER BY g.d
+  LIMIT 1;
+  IF v_clear IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-12 fixture has no future date free of a launched block';
   END IF;
-  RAISE NOTICE '    OK Z-12 an empty edit clears the day and keeps the override (§12.4)';
+  PERFORM public.calendar_edit_day(S1, v_clear, '[]'::jsonb, 'v1', NULL);
+  IF NOT EXISTS (SELECT 1 FROM public.calendar_current_plan
+                 WHERE student_id = S1 AND scheduled_date = v_clear
+                   AND block_id IS NULL AND is_user_override) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-12 a cleared day (%) lost its row or its override flag', v_clear;
+  END IF;
+  RAISE NOTICE '    OK Z-12 an empty edit clears the day (%) and keeps the override (§12.4)', v_clear;
 
   ---------------------------------------------------------------- Z-13
   -- §12.2: a past date is never owned and never edited.
@@ -698,9 +756,17 @@ $weekly$;
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('dddddddd-0000-0000-0000-000000000001', 'sysdates@example.test', '{}'::jsonb);
 
+-- NO EXAM DAY, DELIBERATELY (`full_length_weekday` NULL = no automatic exams, which is
+-- what the nullable column means). Everything below is about which VERSION owns which
+-- DATE, and about move semantics -- not about exams. Giving this fixture an exam weekday
+-- made its assertions depend on the day of the week CI happened to run: a full_length
+-- consumes the whole of its day's budget, so on the Saturdays when v_today WAS weekday 6
+-- today held the exam and no practice block, and "no practice block on today" failed
+-- claiming a §12 violation that had not happened. The exam belongs in S1's fixture, where
+-- Z-03 asserts it; here it only adds a calendar-date dependency.
 INSERT INTO public.student_study_profile
   (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('dddddddd-0000-0000-0000-000000000001', 'America/Chicago', 127, 60, 6, 1400, now());
+VALUES ('dddddddd-0000-0000-0000-000000000001', 'America/Chicago', 127, 60, NULL, 1400, now());
 
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -719,6 +785,7 @@ DECLARE
   v_gen      text;
   v_val      text;
   v_blk      uuid;
+  v_engine   text;
 BEGIN
   v_today := (now() AT TIME ZONE 'America/Chicago')::date;
 
@@ -817,15 +884,26 @@ BEGIN
   -- (there is no later version of today to carry it onto) but by the system
   -- version never owning today. Belt and braces with V-12, which protects it
   -- on any date a version DOES take.
-  SELECT cp.block_id INTO v_blk
+  --
+  -- THE BLOCK TYPE IS INCIDENTAL AND MUST NOT BE ASSUMED. This used to demand a
+  -- PRACTICE block on today. That held until full_length was enabled
+  -- (20261004010000): this fixture's student has full_length_weekday = 6, and on
+  -- the Saturdays when v_today IS that weekday the exam is today's ONLY block, so
+  -- the select found nothing and the gate failed with "no practice block on today
+  -- to start" -- a fixture assumption, not a §12.2 violation. What Z-38 actually
+  -- claims is that a STARTED block on today survives a weekly run; which engine
+  -- started it is beside the point, and `calendar_block_launches.engine` accepts
+  -- all three. So take today's first block whatever it is and launch it with its
+  -- own engine.
+  SELECT cp.block_id, b.block_type INTO v_blk, v_engine
   FROM public.calendar_current_plan cp
   JOIN public.calendar_blocks b ON b.block_id = cp.block_id
-  WHERE cp.student_id = S AND cp.scheduled_date = v_today AND b.block_type = 'practice'
+  WHERE cp.student_id = S AND cp.scheduled_date = v_today
   ORDER BY cp.display_ordinal LIMIT 1;
   IF v_blk IS NULL THEN
-    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-38 no practice block on today to start';
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-38 no block on today to start (today owns nothing)';
   END IF;
-  PERFORM public.calendar_link_launch(S, v_blk, 'practice', 'eeeeeeee-0000-4000-8000-000000000001');
+  PERFORM public.calendar_link_launch(S, v_blk, v_engine, 'eeeeeeee-0000-4000-8000-000000000001');
 
   PERFORM public.calendar_persist_version(S, 'weekly', 'system', 'v1');
 
@@ -833,7 +911,7 @@ BEGIN
                  WHERE student_id = S AND scheduled_date = v_today AND block_id = v_blk) THEN
     RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-38 a STARTED block on today did not survive a weekly run';
   END IF;
-  RAISE NOTICE '    OK Z-38 a started block on today survives a weekly run, identity unchanged';
+  RAISE NOTICE '    OK Z-38 a started % block on today survives a weekly run, identity unchanged', v_engine;
 END;
 $sysdates$;
 
@@ -854,9 +932,10 @@ $sysdates$;
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('dddddddd-0000-0000-0000-000000000002', 'writer-move@example.test', '{}'::jsonb);
 
+-- No exam day, for the reason given above the sysdates fixture.
 INSERT INTO public.student_study_profile
   (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('dddddddd-0000-0000-0000-000000000002', 'America/Chicago', 127, 60, 6, 1400, now());
+VALUES ('dddddddd-0000-0000-0000-000000000002', 'America/Chicago', 127, 60, NULL, 1400, now());
 
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -1439,6 +1518,79 @@ BEGIN
   RAISE NOTICE '    OK Z-51 once inside the horizon the weekly run plans the undone date (% block(s))', v_n;
 END;
 $blockout$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-52. NOTHING IN SETUP IS REQUIRED: a profile with BOTH target fields NULL
+--       generates an ACCEPTED plan. (Doc 05F §8.1, SCL-130, R-08-17 reversed.)
+--
+-- This is the gate for the student who presses straight through setup without
+-- answering anything. Until 20261002000000 such a row could not exist at all --
+-- `setup_requires_target_score` refused any completed setup without a score --
+-- so "can they still get a plan?" was a question the schema made unaskable.
+--
+-- It asserts the PLAN, not the row. That a NULL target is storable is the
+-- migration's claim and the CHECK's absence proves it; what matters here is the
+-- consequence: the generator runs on this profile and the validator accepts the
+-- output. A student who skips every field and gets `rejected` has been blocked
+-- by the reversal's own gap rather than by a constraint, which is the same
+-- outcome wearing a different error.
+--
+-- PLANT (the reversal, reversed): re-add the CHECK above this block --
+--   ALTER TABLE public.student_study_profile ADD CONSTRAINT
+--     setup_requires_target_score CHECK (setup_completed_at IS NULL OR target_score IS NOT NULL);
+-- -- and the INSERT below fails on it, which is this gate going red.
+-- ----------------------------------------------------------------------------
+DO $notarget$
+DECLARE
+  S CONSTANT uuid := 'dddddddd-0000-0000-0000-00000000005a';
+  v_r jsonb;
+  v_n int;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'no-target@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'no-target@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  -- The row setup writes when the student answers NOTHING: the schedule fields come
+  -- preselected from config, both target fields stay NULL, and setup is complete because
+  -- the student reached the end of the flow.
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     target_score, target_exam_date, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, NULL, now());
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
+     event_count_total, constants_snapshot_hash)
+  VALUES (S, 'M', 'Algebra', 0, 0, 0, 10, 'h'),
+         (S, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h')
+  ON CONFLICT DO NOTHING;
+
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'dddddddd-0000-0000-0000-00000000005b');
+
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 a profile with no target score and no exam date did not produce an accepted plan: %', v_r;
+  END IF;
+
+  SELECT count(*) INTO v_n FROM public.calendar_current_plan
+  WHERE student_id = S AND block_id IS NOT NULL;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 the plan was accepted but holds no blocks — an empty plan is not "still get a plan"';
+  END IF;
+
+  -- The absence survived the write. A generator that quietly defaulted the target would
+  -- satisfy everything above while making the reversal cosmetic.
+  PERFORM 1 FROM public.student_study_profile
+   WHERE student_id = S AND target_score IS NULL AND target_exam_date IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-52 the target fields did not stay NULL through generation';
+  END IF;
+
+  RAISE NOTICE '    OK Z-52 both target fields NULL -> accepted plan with % block(s), and they stayed NULL', v_n;
+END;
+$notarget$;
 
 
 ROLLBACK;

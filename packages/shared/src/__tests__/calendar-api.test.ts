@@ -148,6 +148,8 @@ describe("GET /api/calendar", () => {
         profile_timezone: "America/Los_Angeles",
         device_timezone: "America/New_York",
       },
+      // §17.2's engine picker. Production's own list on 2026-09-24.
+      enabled_block_types: ["practice", "review"],
     };
     const parsed = calendarResponseSchema.safeParse(payload);
     expect(parsed.success).toBe(true);
@@ -208,8 +210,28 @@ describe("GET /api/calendar", () => {
         streak: STREAK,
         latest_unacknowledged_nonstudent_change: null,
         diagnostic_state: "baseline_ready",
+        enabled_block_types: ["practice", "review"],
       }).success,
     ).toBe(true);
+  });
+
+  it("REFUSES a ready payload with no enabled_block_types — §17.2 has nothing to offer", () => {
+    // The picker is built from this list. Optional would mean "no engines" on a surface
+    // that should have been given the list, and an empty picker reads as a broken button
+    // rather than as a missing field.
+    expect(
+      calendarResponseSchema.safeParse({
+        status: "ready",
+        profile: PROFILE,
+        bounds: BOUNDS,
+        estimates: ESTIMATES,
+        days: [],
+        facts: FACTS,
+        streak: STREAK,
+        latest_unacknowledged_nonstudent_change: null,
+        diagnostic_state: "baseline_ready",
+      }).success,
+    ).toBe(false);
   });
 
   it("refuses an unknown trigger on the plan-updated banner", () => {
@@ -307,7 +329,7 @@ describe("mutations", () => {
             block: {
               block_type: "full_length",
               section: null,
-              scope: { form_id: null },
+              scope: { form_id: null, exam_mode: "strict" },
               target_count: 2,
               explanation_key: "exam_cadence",
             },
@@ -434,6 +456,11 @@ describe("guardian read (§16, R-08-22)", () => {
       // Owner ruling 2026-09-22: the guardian payload carries the same estimates the
       // student's does — minutes are not among §16's exclusions.
       estimates: ESTIMATES,
+      // Owner ruling 2026-09-26: R-08-22 reversed and §16's "no profile" clause narrowed to
+      // these two. REQUIRED on the wire (nullable, not optional), so a body without them is
+      // refused — which is the point of listing them in every guardian fixture.
+      target_score: 1400,
+      target_exam_date: "2026-12-05",
       days: [toGuardianCalendarDay(DAY)],
       facts: FACTS,
       streak: STREAK,
@@ -447,6 +474,8 @@ describe("guardian read (§16, R-08-22)", () => {
         // Present and valid on purpose: without it this would be rejected for the MISSING
         // field, and the test would stop proving that the student DAY shape is refused.
         estimates: ESTIMATES,
+        target_score: 1400,
+        target_exam_date: "2026-12-05",
         days: [DAY],
         facts: FACTS,
         streak: STREAK,
@@ -475,16 +504,73 @@ describe("guardian read (§16, R-08-22)", () => {
     ).toBe(false);
   });
 
-  it("has no profile field at all", () => {
+  // WAS "has no profile field at all". The owner's 2026-09-26 ruling narrowed §16's "no
+  // profile" clause to admit `target_score` and `target_exam_date` and nothing else, so the
+  // claim is no longer "no profile" but "no profile OBJECT, and no other profile column".
+  it("refuses the profile object, and every profile column beyond the two admitted", () => {
+    const base = {
+      status: "ready" as const,
+      estimates: ESTIMATES,
+      target_score: 1400,
+      target_exam_date: "2026-12-05",
+      days: [],
+      facts: FACTS,
+      streak: STREAK,
+    };
+    // The base is valid, so every rejection below is caused by the key that was added and
+    // not by something already missing.
+    expect(guardianCalendarResponseSchema.safeParse(base).success).toBe(true);
+    // The whole object, which is how the widest version of this leak would arrive.
+    expect(
+      guardianCalendarResponseSchema.safeParse({ ...base, profile: PROFILE })
+        .success,
+    ).toBe(false);
+    // And each withheld column on its own, flat — the shape a well-meaning "just one more
+    // field" edit takes. `.strict()` is what refuses them, which is why it must not be
+    // loosened to fix a render (the mistake #903 declined to make).
+    for (const [key, value] of [
+      ["timezone", "America/Chicago"],
+      ["study_days_mask", 127],
+      ["daily_minutes", 60],
+      ["full_length_weekday", 6],
+      ["planner_mode", "auto"],
+      ["setup_completed_at", "2026-09-01T00:00:00Z"],
+      ["bounds", {}],
+      ["enabled_block_types", ["practice"]],
+    ] as const) {
+      expect(
+        guardianCalendarResponseSchema.safeParse({ ...base, [key]: value })
+          .success,
+      ).toBe(false);
+    }
+    // A key nobody has thought of yet, which is the general case.
+    expect(
+      guardianCalendarResponseSchema.safeParse({ ...base, whatever: 1 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("serves the two admitted fields as NULLABLE, since most students have neither", () => {
+    // SCL-130 made setup answer-free: 103 of 104 students in production have no target, so
+    // null is the ordinary case and a schema that required a number would reject the
+    // majority payload. Optional is NOT the same as nullable here — the field must always be
+    // present so the client never has to distinguish "absent" from "unset".
+    const base = {
+      status: "ready" as const,
+      estimates: ESTIMATES,
+      days: [],
+      facts: FACTS,
+      streak: STREAK,
+    };
     expect(
       guardianCalendarResponseSchema.safeParse({
-        days: [],
-        facts: FACTS,
-        streak: STREAK,
-        profile: PROFILE,
-        estimates: ESTIMATES,
+        ...base,
+        target_score: null,
+        target_exam_date: null,
       }).success,
-    ).toBe(false);
+    ).toBe(true);
+    // Omitting them is refused: present-and-null is the contract.
+    expect(guardianCalendarResponseSchema.safeParse(base).success).toBe(false);
   });
 });
 

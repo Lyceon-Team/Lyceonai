@@ -97,7 +97,7 @@ function examBlock(blockId: string, date: string, ordinal: number): PlanBlock {
     scheduled_date: date,
     block_type: "full_length",
     section: null,
-    scope: { form_id: null },
+    scope: { form_id: null, exam_mode: "strict" },
     target_count: 1,
     source: "auto",
     derived_from_block_id: null,
@@ -213,6 +213,8 @@ const READY: CalendarResponse = {
     created_at: "2026-09-15T09:00:00Z",
   },
   diagnostic_state: "baseline_ready",
+  // §17.2. Production's own list on 2026-09-24 — full-length absent until it ships.
+  enabled_block_types: ["practice", "review"],
 };
 
 const SETUP_REQUIRED: CalendarResponse = {

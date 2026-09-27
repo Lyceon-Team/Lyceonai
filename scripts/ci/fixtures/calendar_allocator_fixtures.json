@@ -2338,7 +2338,8 @@
             "block_type": "full_length",
             "section": null,
             "scope": {
-              "form_id": "FORM-A"
+              "form_id": "FORM-A",
+              "exam_mode": "strict"
             },
             "target_count": 1,
             "source": "auto",
@@ -2353,7 +2354,8 @@
             "block_type": "full_length",
             "section": null,
             "scope": {
-              "form_id": null
+              "form_id": null,
+              "exam_mode": "strict"
             },
             "target_count": 1,
             "source": "auto",

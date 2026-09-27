@@ -198,13 +198,22 @@ describe("T3 — a consent record carries slug, version and a hash that matches 
     // Deliberately against the REAL repository files: the claim is that the
     // hash on the row identifies the bytes that actually ship.
     const resolved = resolveLegalVersion("privacy-policy");
-    const served = fs.readFileSync(
-      path.join(
-        REAL_LEGAL,
-        "privacy-policy",
-        resolved.version === "2.0" ? "v2" : "v2",
-        "en.md",
+
+    // The version DIRECTORY comes from the manifest, the same way the app
+    // resolves it. This used to be `resolved.version === "2.0" ? "v2" : "v2"`
+    // — a ternary with one answer, which pinned the test to v2 no matter what
+    // was published. It survived because v2 was current; publishing v3 made
+    // the test compare v3's hash against v2's bytes and fail. A test that can
+    // only ever be right about one version is not testing the resolution.
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(REAL_LEGAL, "privacy-policy", "manifest.json"),
+        "utf-8",
       ),
+    ) as { current: string };
+
+    const served = fs.readFileSync(
+      path.join(REAL_LEGAL, "privacy-policy", manifest.current, "en.md"),
     );
     const expected = `sha256:${createHash("sha256").update(served).digest("hex")}`;
 

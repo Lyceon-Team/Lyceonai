@@ -176,33 +176,6 @@ export async function checkAndReservePracticeQuota(args: {
   );
 }
 
-export async function checkAndReserveFullLengthQuota(args: {
-  studentUserId: string;
-  accountId?: string | null;
-  referenceId?: string | null;
-  role?: string | null;
-  supabase?: RpcClient;
-}): Promise<RateLimitDecision> {
-  if (args.role === "admin") {
-    return {
-      ...defaultBypassDecision("full_length"),
-      code: "RATE_LIMIT_BYPASS_ADMIN",
-      message: "Admin bypass",
-    };
-  }
-
-  return callDecisionRpc(
-    "check_and_reserve_full_length_quota",
-    {
-      p_student_user_id: args.studentUserId,
-      p_account_id: args.accountId ?? null,
-      p_reference_id: args.referenceId ?? null,
-    },
-    "full_length",
-    args.supabase,
-  );
-}
-
 export async function checkAndReserveTutorBudget(args: {
   studentUserId: string;
   accountId?: string | null;

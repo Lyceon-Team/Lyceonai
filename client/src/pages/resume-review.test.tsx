@@ -25,6 +25,13 @@ import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// W4-4: LISA is open on every review question. This file proves the review
+// LOOP (anti-leak, URL resume, copy); the panel's own behaviour — no
+// conversation on load, the opener, the wire — is proven end to end in
+// ScopedTutorPanel.contract.test.tsx. Stubbed here so the loop is tested alone.
+vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
+  ScopedTutorPanel: () => <div data-testid="scoped-tutor-panel-stub" />,
+}));
 vi.mock("@/components/math/DesmosCalculator", () => ({
   default: () => <div data-testid="desmos-mock" />,
 }));
@@ -54,7 +61,10 @@ const stateMock = vi.hoisted(() => ({
     error: null as unknown,
   },
 }));
-vi.mock("@tanstack/react-query", () => ({
+// Partial: the page now imports the tutor client (W4-1 LISA panel), whose
+// module builds a QueryClient at load. Only useQuery is replaced.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: () => stateMock.value,
 }));
 
@@ -335,6 +345,30 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
     expect(body).not.toContain("canonical practice endpoints");
     expect(body).not.toContain("full-length exam mode");
     expect(body.toLowerCase()).not.toContain("practice");
+  });
+
+  it("R4.1: the guidance panel states the real rule, verbatim, with no jargon", async () => {
+    installFetchMock();
+    render(<ResumeReviewPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Solve 2x + 3 = 7.")).not.toBeNull();
+    });
+
+    // Owner copy, R4.1. Asserted EXACTLY rather than by keyword: the previous
+    // wording was a plausible-sounding paraphrase that happened to state the rule
+    // wrongly, so "contains the word queue" would not have caught it.
+    expect(document.body.textContent).toContain(
+      "These are questions you missed or skipped. Get one right and it leaves your queue. Miss or skip it and it goes to the back of the line. You can leave anytime; your place is saved.",
+    );
+
+    // The two specific defects the production walk found, forbidden by name.
+    // ONE correct review answer graduates a question —
+    // 20260921000000_review_queue_runtime.sql:392, "ruling 4: one correct review
+    // answer graduates" — so any "twice" claim on this screen is false.
+    expect(document.body.textContent).not.toContain("twice");
+    expect(document.body.textContent).not.toContain("runtime session truth");
+    expect(document.body.textContent).not.toContain("unresolved state");
   });
 
   it("U7 (review half): an abandoned session is never playable", async () => {

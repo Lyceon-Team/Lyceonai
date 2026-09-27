@@ -25,3 +25,10 @@
 *.zip binary
 *.gz binary
 *.wasm binary
+
+# Doc 04B V4.3 scoring v1.0 evidence packet (E4). Its SHA-256 (29c3e0fd…) is
+# attested in scoring_model_versions.validation_packet_sha256 and covers the
+# EXACT bytes, including the CRLF line endings Python's csv module writes.
+# -text stores them verbatim; `eol=lf` normalisation would change the hash.
+# scripts/ci/scoring-evidence-packet-check.sh recomputes it on every CI run.
+scripts/ci/fixtures/scoring-v1.0/** -text

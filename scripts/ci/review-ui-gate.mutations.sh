@@ -125,6 +125,39 @@ plant "U3" "keep the id out of the URL (component-local only)" \
 assert s.count(a) == 1
 s = s.replace(a, "  const sessionId: string | undefined = undefined;", 1)'
 
+# ── R4.1a — the guidance panel states the real rule, verbatim ────────────────────────
+plant "R4.1a" "restore the wrong 'twice' rule in the guidance copy" \
+  "client/src/pages/resume-review.test.tsx" \
+  "client/src/lib/engine-config.ts" \
+  'a = "These are questions you missed or skipped. Get one right and it leaves your queue."
+assert s.count(a) == 1
+s = s.replace(a, "These are questions you missed or skipped. Answer one correctly twice and it leaves your queue.", 1)'
+
+# ── R4.2 — practice's guidance card speaks to a student, not to us ───────────────────
+plant "R4.2" "restore the 'runtime session truth' jargon in practice's guidance copy" \
+  "client/src/components/practice/CanonicalPracticePage.guidance.test.tsx" \
+  "client/src/lib/engine-config.ts" \
+  'a = "      \"Your answers are submitted as you go. You can leave anytime; your place is saved.\","
+assert s.count(a) == 1
+s = s.replace(a, "      \"Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.\",", 1)'
+
+# ── R4.1b — Review by topic sits above the past-sessions picker ──────────────────────
+plant "R4.1b" "swap the topic picker back below the past-sessions picker" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'import re
+topic_i = s.index("{/* \u2500\u2500 2. Review by topic")
+past_i = s.index("{/* \u2500\u2500 3. Review a past session")
+tail_i = s.index("{/* \u2500\u2500 Aside:")
+# The two blocks are contiguous; swapping them is the whole plant.
+topic = s[topic_i:past_i]
+rest = s[past_i:tail_i]
+# rest ends with the indentation of the Aside comment; keep it on the topic block.
+indent_len = len(rest) - len(rest.rstrip(" "))
+past = rest[: len(rest) - indent_len]
+pad = rest[len(rest) - indent_len :]
+s = s[:topic_i] + past + topic.rstrip() + "\n\n" + pad + s[tail_i:]'
+
 # ── U4 — all three entry modes render ────────────────────────────────────────────────
 plant "U4" "drop the topic section from the landing" \
   "client/src/pages/review.test.tsx" \

@@ -865,6 +865,64 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // A15 — the session's mode has exactly one home (owner ruling R4.1)
+  // -------------------------------------------------------------------------
+  it("A15: mode lives in the column, never duplicated into filters", async () => {
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+
+    // All three modes, because the duplicate was written by a per-mode branch in
+    // poolSpecToFilters and a single mode would only have proved one arm of it.
+    const queue = await createSession({ mode: "queue" });
+    expect(queue.status).toBe(200);
+
+    const filter = await createSession({
+      mode: "filter",
+      filters: { sections: ["M"] },
+      client_instance_id: "ci-2",
+    });
+    expect(filter.status).toBe(200);
+
+    // `testPg` is a raw node-pg Client, so the row read is SQL — which also means
+    // this looks at the jsonb column itself rather than anything the API returns.
+    const rows = await testPg!.query<{
+      id: string;
+      mode: string;
+      filters: Record<string, unknown> | null;
+    }>(
+      `SELECT id, mode, filters FROM public.review_sessions WHERE id = ANY($1::uuid[])`,
+      [[queue.body.sessionId, filter.body.sessionId]],
+    );
+
+    expect(rows.rows.length).toBe(2);
+    for (const row of rows.rows) {
+      const filters = row.filters ?? {};
+
+      // The column carries it, under the CHECK
+      // (20260921000000_review_queue_runtime.sql:199-201).
+      expect(["queue", "session", "filter"]).toContain(row.mode);
+
+      // And jsonb does not. Before R4.1 every session carried the same value in
+      // both, with only the column constrained; the owner's production walk found
+      // all four live sessions that way.
+      expect(
+        Object.prototype.hasOwnProperty.call(filters, "pool_mode"),
+        `filters still carries pool_mode: ${JSON.stringify(filters)}`,
+      ).toBe(false);
+    }
+
+    // Each session's mode is the one that was ASKED for — dropping the duplicate
+    // must not have cost the column its value.
+    const byId = new Map(rows.rows.map((r) => [r.id, r]));
+    expect(byId.get(queue.body.sessionId as string)?.mode).toBe("queue");
+    expect(byId.get(filter.body.sessionId as string)?.mode).toBe("filter");
+
+    // The filter-mode session still stores what the COLUMN cannot: its selector.
+    expect(
+      byId.get(filter.body.sessionId as string)?.filters?.sections,
+    ).toEqual(["M"]);
+  });
+
+  // -------------------------------------------------------------------------
   // A14 — response shape parity with practice (owner ruling 2026-09-21)
   // -------------------------------------------------------------------------
   it("A14: review's five loop responses satisfy practice's response types", async () => {

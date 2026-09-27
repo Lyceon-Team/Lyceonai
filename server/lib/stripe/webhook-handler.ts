@@ -38,6 +38,7 @@ import { getStripeClient, getExpectedLivemode } from "./client";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import {
   upsertEntitlement,
+  setProfileCountryCode,
   mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId,
   getAllGuardianStudentLinks,
@@ -595,7 +596,7 @@ async function assertCountryEligibleForGrant(
   customerRef: string | { id: string } | null | undefined,
   eventType: string,
   eventId: string,
-): Promise<void> {
+): Promise<string> {
   const customerId =
     typeof customerRef === "string" ? customerRef : customerRef?.id;
 
@@ -623,7 +624,9 @@ async function assertCountryEligibleForGrant(
     country,
     await getTier1Countries(),
   );
-  if (!deniesEntitlement(eligibility)) return;
+  // W3-3: the approved country is RETURNED so the writer can record it on the
+  // student's profile — the crisis resources are chosen from it (Doc 03 §4.6).
+  if (eligibility.verdict === "eligible") return eligibility.country;
 
   logger.error(
     "STRIPE_WEBHOOK",
@@ -679,13 +682,15 @@ async function writeEntitlementFromSubscription(
     : mapped;
 
   // INV-03-08: gate BEFORE the write, and only when this write would GRANT.
-  if (tier === "premium") {
-    await assertCountryEligibleForGrant(
-      subscription.customer,
-      eventType,
-      eventId,
-    );
-  }
+  // W3-3: the country the gate approved is what the student's profile records.
+  const grantCountry =
+    tier === "premium"
+      ? await assertCountryEligibleForGrant(
+          subscription.customer,
+          eventType,
+          eventId,
+        )
+      : null;
 
   // SCL-045: entitlement is keyed on the subscription ITEM. Price and period
   // both come from that one object, so they cannot describe different students.
@@ -720,6 +725,9 @@ async function writeEntitlementFromSubscription(
     current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
   });
+  // W3-3: record the billing country on the same grant. Revocations leave the
+  // last known country in place — a lapsed student in crisis still gets theirs.
+  if (grantCountry) await setProfileCountryCode(studentProfileId, grantCountry);
 
   // Charter §6: the student is the payer on the unaccompanied path, and Stripe
   // object ids resolve to a named person in the Dashboard. Digest both.
@@ -1312,13 +1320,15 @@ async function writeEntitlementsForAllItems(
 
   // INV-03-08: gate BEFORE any of the N writes, and only when granting. All or
   // nothing — a country refusal must not entitle a prefix of the students.
-  if (tier === "premium") {
-    await assertCountryEligibleForGrant(
-      subscription.customer,
-      eventType,
-      eventId,
-    );
-  }
+  // W3-3: the approved (payer's) country is recorded on each funded student.
+  const grantCountry =
+    tier === "premium"
+      ? await assertCountryEligibleForGrant(
+          subscription.customer,
+          eventType,
+          eventId,
+        )
+      : null;
 
   // ---- Charter §6 authorisation, server-side ----------------------------
   const payerProfileId = subscription.metadata?.payer_profile_id;
@@ -1379,6 +1389,9 @@ async function writeEntitlementsForAllItems(
       current_period_end: epochToIso(item.current_period_end ?? null),
       cancel_at_period_end: subscription.cancel_at_period_end === true,
     });
+    if (grantCountry) {
+      await setProfileCountryCode(studentProfileId, grantCountry);
+    }
     written += 1;
   }
 

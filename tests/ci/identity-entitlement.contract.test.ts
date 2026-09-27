@@ -134,6 +134,8 @@ vi.mock("../../server/services/entitlement-service", () => ({
 }));
 
 vi.mock("../../server/lib/account", () => ({
+  // W3-3: the grant path now records the billing country on the profile.
+  setProfileCountryCode: vi.fn(async () => undefined),
   getEntitlementForProfile: accountMocks.getEntitlementForProfile,
   getProfileStripeCustomerId: accountMocks.getProfileStripeCustomerId,
   setProfileStripeCustomerId: accountMocks.setProfileStripeCustomerId,

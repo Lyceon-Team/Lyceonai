@@ -67,6 +67,15 @@ jobs:
       # mechanical check closes the same-day race. The two pre-existing
       # collisions are allowlisted by exact count inside the script, with an
       # expiry note; a third heading on either still fails.
+      # §17.1's band is Doc 05C's, summed. The selftest runs FIRST and on its own line: a
+      # gate whose matcher has rotted reports zero findings and reads exactly like a clean
+      # tree.
+      - name: Calendar projection is read, never recomputed
+        run: |
+          set -euo pipefail
+          node scripts/ci/calendar-projection-gate.mjs --selftest
+          node scripts/ci/calendar-projection-gate.mjs
+
       - name: SCL register — no duplicate ids
         run: node scripts/ci/scl-duplicate-check.mjs
 
@@ -142,6 +151,15 @@ jobs:
 
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
+
+      # E7b: the exam e2e harness stubs auth to one student. It must be unreachable
+      # from production: nothing outside tests/ names it, the bundle built above
+      # carries none of its markers, and it refuses NODE_ENV=production.
+      - name: Exam e2e harness is unreachable from the production build (E7b)
+        run: bash scripts/ci/exam-harness-isolation.sh
+
+      - name: Exam e2e harness isolation self-test (proves each rule turns it red)
+        run: bash scripts/ci/exam-harness-isolation.selftest.sh
 
       - name: No hardcoded constants (Lane-A gate — DB is source of truth)
         run: node scripts/ci/no-hardcoded-constants.mjs
@@ -413,8 +431,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # THIS JOB HAD NEVER PASSED. It ran `vitest run tests/integration` against the
+      # DEFAULT config, which excludes `tests/integration/**` so the unit suite stays
+      # hermetic -- so the filter selected a directory the config had already excluded and
+      # vitest exited 1 with "No test files found" on every push to main. Both tests are
+      # real and all three secrets were already wired; nothing ran them.
+      #
+      # `test:integration` now names `vitest.integration.config.ts`, which does not carry
+      # that exclusion. The summary gate is the other half: these tests `describe.skipIf`
+      # themselves when a Supabase secret is absent, so without it a missing secret would
+      # turn the job from loudly broken into silently green -- testing nothing and saying
+      # so to nobody. If it goes red naming skipped tests, a secret is missing, and the
+      # message says which.
       - name: Run Integration Tests
-        run: pnpm test:integration
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run --config vitest.integration.config.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-integration.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-integration.json \
+            --file tests/integration
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -473,6 +508,155 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/guardian-view-decision-gate.sh
+
+      # Doc 04B V4.3 §7.2/§8.1/§8.2/§8.4 — every scoring-catalogue constraint is made
+      # to FIRE on a fresh apply: the INSERT/UPDATE/DELETE seal on an active version's
+      # constants, the attestation CHECK, the no-downgrade trigger, the (version, key,
+      # section) unique index, the raise-on-miss helper, and the partial unique index
+      # under a real two-session race (the friendly trigger cannot see the other
+      # transaction, so only the index can refuse it). Each check asserts its own
+      # SQLSTATE and constraint/message and must print its own `ok` line.
+      # @spec [Doc-04B_V4.3, §7.2, §8.1, §8.2, §8.4, Appendix A] | @implemented [2026-09-23]
+      - name: Scoring catalogue gates (04B §7.2/§8 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-catalogue-gates.sh
+
+      # Doc 04A V2.2 §5/§6/§9 + Doc 04B §13 as amended (owner ruling 2026-09-24,
+      # SCL-121) — every exam-runtime constraint is made to FIRE on a fresh apply,
+      # against synthetic fixtures: published-form and published-item immutability,
+      # the one-way status machine, module2_path lock, the publish gate (since E4
+      # v1.0 is active: publish succeeds against it and is refused for a candidate
+      # or superseded version), the ruled
+      # per-module composition tallies (difficulty / grid-in / domain, each miss
+      # naming its cell), form-item uniqueness, answer-upsert idempotency, and the
+      # account-deletion cascade. Each check asserts its SQLSTATE and constraint/message.
+      # @spec [Doc-04A_V2.2, §5, §6, §9.2, §11.2; Doc-04B_V4.3, §13] | @implemented [2026-09-24]
+      - name: Exam runtime schema gates (04A §5/§6/§9 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-runtime-schema-gates.sh
+
+      # Doc 04B V4.3 §9-§12 (E4) — every scoring-engine constraint is made to FIRE on
+      # a fresh apply that ends with v1.0 ACTIVE: the activation row and its three
+      # attestation fields, insert-once by each layer separately (privilege 42501,
+      # trigger P0001, unique 23505, RLS 0 rows), the post-activation constants seal,
+      # the NaN/Infinity/key-charset CHECKs, the version gate (candidate blocked,
+      # superseded scores — §19.6), replay idempotency, the presented-item filter,
+      # blanks-count-wrong, partial scoring, and the account-deletion cascade.
+      # @spec [Doc-04B_V4.3, §9, §10, §11, §12, §19; SCL-128, SCL-129] | @implemented [2026-09-24]
+      - name: Scoring engine gates (04B §9-§12 constraints observed firing)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-engine-gates.sh
+
+      # Doc 04B V4.3 §18.2 / Appendix B + owner ruling (repo-hosted packet): the
+      # committed packet hashes to 29c3e0fd… (= validation_packet_sha256 of v1.0),
+      # its validation_sweep.py is byte-identical to docs/Spec, and it regenerates.
+      # @spec [Doc-04B_V4.3, §18.2, Appendix B] | @implemented [2026-09-24]
+      - name: Scoring evidence packet (hash + provenance)
+        run: bash scripts/ci/scoring-evidence-packet-check.sh
+
+      # Doc 04A V2.2 §4/§7-§16 + E6 rulings — the exam runtime functions the API calls,
+      # driven on a fresh apply: RLS on every exam table AS `authenticated` (own rows
+      # only, B's rows invisible, answer/routing columns not granted), server-time
+      # expiry (409 module_submitted, section timed out), routing lock, idempotent
+      # replay (one ledger row), module '2' -> locked path, strict break bounded /
+      # lenient unbounded, lenient pause vs strict, inline finalisation of past-grace
+      # sessions with a partial score, and the sweep. Each check prints its own `ok`.
+      # @spec [Doc-04A_V2.2, §4, §7-§16; SCL-131..136] | @implemented [2026-09-24]
+      - name: Exam runtime API gates (04A runtime behaviour + RLS, E6)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-runtime-api-gates.sh
+
+      # Doc 05E §5.1/§6 + Doc 05D §10 (E6b, SCL-143) — the exam tables in the
+      # account-deletion cascade: whole exams walked through the runtime functions and
+      # scored, then both modes. anonymize retains sessions, children, scores, ledger and
+      # outbox with student_id NULL and actor_id intact; hard_delete removes and counts
+      # every table; the INV-05E-07 sentinel refuses an ungrouped exam row; a pending or
+      # in-progress exam of an anonymised student still scores (student_id NULL); a
+      # re-run is a no-op; the insert-once trigger still refuses every caller mutation.
+      # @spec [Doc-05E §1, §5.1, §6; Doc-05D §10.5; Doc-04B_V4.3 §9.4; SCL-143] | @implemented [2026-09-24]
+      - name: Exam deletion cascade gates (both modes, E6b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-deletion-cascade-gates.sh
+
+      # E7a (SCL-145..149) — the exam shell's server pieces, on a fresh apply: the item
+      # workspace (served tokens only — a canonical letter, another item's token or a
+      # repeat is refused; highlights are code-point offsets inside the passage; no notes;
+      # active module and owner only), the heartbeat's resume position (read back only in
+      # the module it names), GET /forms (drafts never listed, no thresholds), the 04C
+      # report source (one 403 for missing and foreign sessions, the dead-letter failure
+      # stand-in, the v1.0 disclosure seeded from 04B §17.1 verbatim) and grants.
+      # @spec [Doc-04A_V2.2 §8.3, §15.1, §16; Doc-04C_V1.0 §5.3, §15.2, §16.6] | @implemented [2026-09-25]
+      - name: Exam shell server gates (workspace, resume, forms, report source — E7a)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-shell-server-gates.sh
+
+      # E9: the exam seams. Whole exams walked through the E6 runtime functions,
+      # scored, and their 'test_session_scored' events consumed as the API does:
+      # every miss and blank enqueued for review and nothing else, no duplicate on
+      # replay, mastery for submitted sections only, 05C's section-score surface,
+      # one projection row per completion, the anonymised student (score computes,
+      # no student-keyed row), and a seam failure that never un-scores a test.
+      # @spec [SCL-154 .. SCL-158; Doc-04B_V4.3 §16.1; Doc-05A §6.2; Doc-05C §5.7] | @implemented [2026-09-25]
+      - name: Exam seams gates (review queue, mastery, projection — E9)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-seams-gates.sh
+
+      # E9b: the calendar's reading of a real exam. Whole exams walked through the E6
+      # runtime functions and drained as the API does; then the scope shape, the next-test
+      # rule, the plan input's exam facts (missed_count, reviewed, weak_domains from 05B at
+      # weak_level_max), the session-scoped exam review, and the anonymised student.
+      # @spec [Doc_05F §7.4, §9.4, §10.1; formula sheet §2 step 4, §6; SCL-167 .. SCL-170] | @implemented [2026-09-25]
+      - name: Calendar full-length seam gates (G-08-02 — E9b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/calendar-full-length-gates.sh
 
   # ---------------------------------------------------------------------------
   # Practice engine integration gate (Doc-02B_V4 §14/§20). Seeds real published
@@ -583,6 +767,25 @@ jobs:
             exit 1
           fi
           echo "    OK C-09b generator_version ${gv} names $(ls supabase/migrations/${gv}_*.sql)"
+          # C-09c. The stamp must name the NEWEST migration that redefines a generator
+          # function -- not merely one that exists, and NOT the newest calendar migration.
+          #
+          # The distinction is the whole point of the stamp. Doc 05F §10.2 makes
+          # generator_version the provenance on every calendar_plan_versions row, and the
+          # seed's own comment names the five functions that matter: calendar_compute_plan,
+          # calendar_compute_plan_fallback, calendar_place_full_lengths,
+          # calendar_plan_to_output, calendar_validate_plan. A calendar migration that
+          # changes RLS, a config row or calendar_build_plan_input does not change the plan
+          # a given input produces, so bumping the stamp for it would make every stored
+          # version claim a revision that never touched the formula.
+          newest="$(grep -lE 'FUNCTION public\.(calendar_compute_plan|calendar_compute_plan_fallback|calendar_place_full_lengths|calendar_plan_to_output|calendar_validate_plan)\(' supabase/migrations/*.sql \
+            | xargs -n1 basename | cut -d_ -f1 | sort | tail -1)"
+          if [ "${gv}" != "${newest}" ]; then
+            echo "CALENDAR_SCHEMA_GATE_FAILED: C-09c generator_version=${gv} but the newest migration redefining a generator function is ${newest}."
+            echo "  A migration changed the formula without updating the provenance stamp, or the stamp was bumped for a migration that did not."
+            exit 1
+          fi
+          echo "    OK C-09c generator_version ${gv} is the newest migration redefining a generator function"
 
       - name: Calendar grant + RLS gates
         env:
@@ -687,8 +890,23 @@ jobs:
       # engine must pass unchanged. Its own invocation: a shared run would let a rebuild
       # quietly satisfy another engine's contract. No PG environment because the file has
       # no database half to run -- not because one is being skipped.
-      - name: Calendar full-length launch contract (fail-open stub)
-        run: pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts
+      # E9b flipped this file from the fail-open stub to the REAL exam engine (Doc 05F §9.1:
+      # an engine may be in enabled_block_types only with a contract test passing against the
+      # real engine). It drives the calendar's own day-edit and launch routes, sits a whole exam
+      # through /api/tests, and reads the plan input and the exam review that follows. Behind
+      # the summary gate, so a skipped test is red.
+      - name: Calendar full-length launch contract (REAL engine, real PostgreSQL — E9b)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.launch-contract.full_length.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-full-length-contract.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-full-length-contract.json \
+            --file tests/ci/calendar.launch-contract.full_length.test.ts
 
       # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
       # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice
@@ -725,7 +943,10 @@ jobs:
 
   practice-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10. Observed runs on this job: 5m14s, 10m04s (killed), 10m14s (killed),
+    # 7m20s. The work fits; the margin did not, and GitHub reports a timeout kill as
+    # "cancelled", which reads like an infrastructure hiccup rather than a budget.
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -999,6 +1220,144 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phases.json \
             --file tests/ci/deletion-phases-235.pg.ci.test.ts
 
+      # @spec [Doc 03 §14.2; Doc 05E §3 Rule 4 + §5; Doc 01 V8 §40.5; owner brief 2026-09-17
+      #        "Declarative FK Actions, Not an Enumerated Cascade" steps 3-4]
+      #        | @implemented [2026-09-17]
+      # The cascade used to enumerate table names by hand and nine foreign keys into `profiles`
+      # were never added to it, so `DELETE FROM profiles` raised for anyone who had used the
+      # tutor. The migration fixes those nine. THIS is what stops the tenth: the guard reads
+      # `pg_constraint`, not a list, so a table added tomorrow is in scope the moment it has a
+      # foreign key — whether or not anybody remembered the guard file. It also checks the
+      # allowlist in both directions and refuses an edge handled both declaratively and
+      # procedurally.
+      - name: FK delete-action guard (catalog-driven, on a genesis fresh-apply)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/fk-delete-action-guard.sh
+
+      # The behaviour behind the guard, on real Postgres: the seven tutor tables go with the
+      # profile, a config row survives its attributor with a NULL, an activity row survives with
+      # the identity severed and `actor_id` intact, and a brand-new unclassified foreign key
+      # turns the guard red.
+      - name: Declarative FK delete actions → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-fk-actions.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-fk.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-fk.json \
+            --file tests/ci/deletion-fk-actions.pg.ci.test.ts
+
+      # @spec [Doc 03 §21/§14.2 via owner ruling A6; Doc 06D §6.2/§6.5 INV-06-08 as amended by
+      #        owner rulings A2/A4/B2/B3; owner brief 2026-09-17 "Deletion Vertical — Owner
+      #        Rulings + Phase 6"] | @implemented [2026-09-18]
+      # Phase 6: the last account-deletion blocker and the proof that a deletion happened.
+      # A student whose tutor conversation was flagged for crisis review could not be deleted —
+      # three crisis edges were still RESTRICT behind the tutor CASCADE. They are SET NULL now,
+      # the case survives with both links severed, and the denormalized conversation_id copy is
+      # severed by trigger so no deletion path can leave it behind. P6.6 sweeps every uuid
+      # column in the schema to prove the verification record's dead-profile uuid is the only
+      # place that uuid survives.
+      - name: Deletion phase 6 (crisis severance + verification record) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/deletion-phase-6.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-deletion-phase6.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-deletion-phase6.json \
+            --file tests/ci/deletion-phase-6.pg.ci.test.ts
+
+      # Privacy Policy v3 §6.7 published a 90-day ceiling on operational records that
+      # name you and fall outside the ten enumerated categories. SCL-101 filed that
+      # sentence as a BUILD COMMITMENT because nothing enforced it. This suite is the
+      # enforcement: a row past its window goes, a row inside it stays, and a run that
+      # deleted nothing still reports every table — the last one because Vercel's cron
+      # registration cannot be read back from tooling, so an unscheduled sweep and an
+      # empty sweep are otherwise indistinguishable.
+      - name: Operational-log retention (v3 §6.7 catch-all) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/operational-log-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-oplog-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-oplog-retention.json \
+            --file tests/ci/operational-log-retention.pg.ci.test.ts
+
+      # Doc 01 V8 §5.1 says "retention values live in observability_runtime_config".
+      # The table has held nothing since genesis and NOTHING READS IT; the owner
+      # ruling seeds it anyway so the declared period and the enforced period can be
+      # compared. This suite IS that comparison — without it the rows are decoration
+      # that drifts from behaviour the first time a period changes. F2.4 and F2.5 are
+      # negatives: cold_log_retention_days and alert_thresholds must stay unseeded,
+      # because neither the cold archive nor the alert registry exists.
+      - name: Observability retention config (Doc 01A A.5 / F2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/observability-retention-config.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-obs-retention-config.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-obs-retention-config.json \
+            --file tests/ci/observability-retention-config.pg.ci.test.ts
+
+      # v3 §6.2 publishes a seven-year period for payment records. It will delete
+      # nothing until 2033, which is exactly why its behaviour is pinned now: a
+      # sweep with an empty input for seven years is one nobody would notice was
+      # broken. B2.9 additionally pins the append-only blocker that kept §6.5's
+      # configuration sweep out of the same migration.
+      - name: Seven-year payment-record retention (v3 §6.2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/financial-record-retention.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-financial-retention.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-financial-retention.json \
+            --file tests/ci/financial-record-retention.pg.ci.test.ts
+
+      # The writer that did not exist. retention-sweep.ts:113 documented
+      # tutor_conversations.deleted_at as "set when entitlement lapses" from
+      # 2026-08-20; nothing set it, so sweep7d's input was permanently empty and
+      # Privacy Policy v3 had to publish the narrower account-deletion wording.
+      # C1.6 closes the loop by showing the sweep's own predicate matching a row.
+      # C1.7 guards the coupling between the trigger's column list and the
+      # canonical predicate's body — the way this would rot silently.
+      - name: Tutor lapse severance (Doc 03 §14.2 / C1) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-lapse-severance.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-lapse.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
+            --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
+
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
         env:
           PGHOST: localhost
@@ -1044,6 +1403,74 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-review.json \
             --file tests/ci/review.routes.pg.ci.test.ts \
             --file tests/ci/review.queue-e2e.pg.ci.test.ts
+
+      # @spec [Doc-04A_V2.2 §7-§16; E6] Exam runtime API -> real PG proof: whole exams
+      # through the real /api/tests handlers (both routing paths, both modes), answers by
+      # SERVED TOKEN stored as the canonical letter, pre-submit payloads anti-leak, inline
+      # scoring. Named BY FILE: the `ci` job sets no PGHOST, so this file skips there.
+      - name: Exam runtime API → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-runtime.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
+            --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
+      # student through the real /api/tests handlers to a score, then the executor's
+      # anonymize call and the hard_delete cascade; row counts before/after and the
+      # result JSON are printed. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam deletion cascade lifecycle → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-deletion.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-deletion.json \
+            --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts
+
+      # @spec [Doc-04A_V2.2 §16 (SCL-145 workspace, SCL-146 heartbeat, SCL-147 forms); Doc-04C_V1.0 §11.2, §16.1-§16.8; E7a]
+      # The shell's server surface through the real /api/tests routers: forms list,
+      # workspace round-trip with served tokens (a letter refused), heartbeat position,
+      # and the 04C report in every reachable state plus the bare 403. Named BY FILE.
+      - name: Exam shell server endpoints → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-shell-server.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-shell.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
+            --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
+
+      # @spec [SCL-154 .. SCL-158; E9]
+      # One exam through the real /api/tests handlers: the final submit's hand-off
+      # scores, then consumes the seams event in a second call; every seam's rows are
+      # read back. Named BY FILE.
+      - name: Exam seams end to end → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-seams.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-seams.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-seams.json \
+            --file tests/ci/exam-seams.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that
@@ -1376,6 +1803,57 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-parity.sh
+
+  # ---------------------------------------------------------------------------
+  # Scoring PARITY gate (Doc 04B V4.3 §6 / §18.3 / §21.1 / §28) — HARD GATE, run on
+  # every CI run by OWNER RULING 2026-09-24, overriding §21.2 (which makes parity a
+  # one-time lock-time check). Drives all 1,313 sweep scenarios + 60 targeted
+  # fixtures of the committed evidence packet through the pure formula function AND
+  # through real sessions scored by score_test_session_from_outbox(), plus every §28
+  # worked example; any disagreement with the Python reference fails, printing the
+  # first mismatches. COVERAGE LIMIT: this sees a repo-built database only — a
+  # production edit made outside migrations is NOT covered (owner deferred a
+  # prod-side drift check).
+  # @spec [Doc-04B_V4.3, §3.1, §6, §18.3, §21.1, §28] | @implemented [2026-09-24]
+  # ---------------------------------------------------------------------------
+  scoring-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Scoring formula parity (PL/pgSQL == validation_sweep.py, formula + session paths)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/scoring-parity.sh
 
   # ---------------------------------------------------------------------------
   # Lane-C seam gates (Doc 05A §4) — HARD GATE. Proves the live event→mastery seam:

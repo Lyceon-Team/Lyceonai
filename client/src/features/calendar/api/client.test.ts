@@ -118,12 +118,30 @@ const READY_BODY = {
   streak: STREAK,
   latest_unacknowledged_nonstudent_change: null,
   diagnostic_state: "baseline_ready",
+  // §17.2. Production's own list on 2026-09-24 — full-length absent until it ships.
+  enabled_block_types: ["practice", "review"],
 };
 
 const GUARDIAN_BODY = {
   status: "ready",
   // Owner ruling 2026-09-22: the guardian payload carries the same estimates.
   estimates: ESTIMATES,
+  // Owner ruling 2026-09-26: R-08-22 reversed and §16's "no profile" clause narrowed to
+  // admit these two. They are REQUIRED on the wire (nullable, not optional), so a body
+  // without them is refused — which is why this fixture carries them rather than relying on
+  // the schema being lenient. Same values as READY_BODY's profile: one student, one plan.
+  target_score: 1400,
+  target_exam_date: "2026-11-07",
+  projection: [
+    {
+      section: "M",
+      projectedScoreMid: 470,
+      projectedScoreLow: 380,
+      projectedScoreHigh: 560,
+      relevantQuestionCount: 42,
+      computedAt: "2026-09-25T00:00:00Z",
+    },
+  ],
   days: [],
   facts: FACTS,
   streak: STREAK,

@@ -1,0 +1,1 @@
+{"name":"lyceon-brag-composition","private":true,"scripts":{"check":"node check.mjs","poster":"node capture.mjs"}}

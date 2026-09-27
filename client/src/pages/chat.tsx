@@ -1,53 +1,46 @@
 /**
- * @spec [Doc-03B_V2 §3 (Surfaces), §11 (Client Error Handling), §21.4 (Typing Indicator)]
- * @implemented 2026-08-28
+ * @spec [CC Brief "PR B: Standalone LISA Chat UI" §2–§5]
+ * @implemented 2026-09-23
  *
- * plain English: Chat page for the LISA tutor. Renders the conversation UI,
- * handles message input, displays tutor responses, and maps every error code
- * to a specific recovery notice. Renders suggested_action and ui_hints from
- * the server. Shows a "LISA is thinking…" indicator during generation.
- *
- * expected outcome: student can type messages, see tutor responses with
- * actionable chips, and get clear feedback when errors occur — not a
- * generic "refresh session" for every failure.
- *
- * trade-offs: no optimistic updates (server must anti-leak scan first).
- * No streaming (V1 is synchronous per Doc 03B §21.1). Typing indicator
- * is the V1 mitigation per §21.4.
- *
- * edge cases: retry-in-place for 503 uses retry_after_ms from the server
- * response. Unknown error codes fall through to a generic recovery notice.
- * Crisis responses render as normal tutor messages (Karl ruling 2026-08-27:
- * crisis presentation deferred, no special styling).
+ * plain English: Standalone LISA chat page with sidebar, 8 UI states
+ * (Main, Thinking, FailedTurn, NewSession, Crisis, Safeguarding,
+ * EndSession, empty), client_turn_id idempotency (§3), and crisis/
+ * safeguarding support cards driven entirely by server response content.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Send, Loader2, ArrowLeft, MessageSquare, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { MathRenderer } from "@/components/MathRenderer";
+import { Loader2, Plus, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   useConversation,
-  useCloseConversation,
-  useSendMessage,
-  type TutorMessage,
-  type SendMessageResponse,
-  type TutorSuggestedAction,
-  type TutorUiHints,
+  useConversations,
+  useCreateConversation,
+  useEndConversation,
+  type TutorConversationSummary,
 } from "@/hooks/tutor-client";
-import { mapTutorErrorToPremiumReason } from "@/lib/api-error";
+import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
-  classifyTutorError,
-  type TutorErrorNotice,
-} from "@/lib/tutor-error-classifier";
-import {
-  PremiumUpgradePrompt,
-  type PremiumPromptReason,
-} from "@/components/billing/PremiumUpgradePrompt";
-import { AppNotice } from "@/components/feedback/AppNotice";
+  Composer,
+  CrisisSupportCard,
+  FailedTurnNotice,
+  LisaAvatar,
+  MessageBubble,
+  PausedBar,
+  SuggestedActionLink,
+  ThinkingIndicator,
+  useScrollToBottomOnChange,
+} from "@/components/tutor/TutorThreadParts";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 
 // ---------------------------------------------------------------------------
 // Search param helper
@@ -61,95 +54,155 @@ function useConversationIdFromSearch(): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Tutor markdown rendering — constrained allowlist (§2)
+// Time formatting
 // ---------------------------------------------------------------------------
 
-const TUTOR_ALLOWED_ELEMENTS = [
-  "p",
-  "strong",
-  "em",
-  "ul",
-  "ol",
-  "li",
-  "code",
-  "pre",
-  "br",
-  "h3",
-  "h4",
-  "blockquote",
-] as const;
-
-const TUTOR_MARKDOWN_COMPONENTS = {
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-2 last:mb-0">{children}</p>
-  ),
-  code: ({
-    className,
-    children,
-  }: {
-    className?: string;
-    children?: React.ReactNode;
-  }) => {
-    const isBlock = className?.startsWith("language-");
-    if (isBlock) {
-      return (
-        <pre className="my-2 overflow-x-auto rounded bg-black/10 p-2 text-xs dark:bg-white/10">
-          <code>{children}</code>
-        </pre>
-      );
-    }
-    return (
-      <code className="rounded bg-black/10 px-1 py-0.5 text-xs dark:bg-white/10">
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-} as const;
-
-function hasMathDelimiters(text: string): boolean {
-  return /\$.*\$|\\\(.*\\\)|\\\[.*\\\]/s.test(text);
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function TutorMessageContent({ text }: { text: string }) {
-  if (hasMathDelimiters(text)) {
-    return <MathRenderer content={text} />;
-  }
+function formatRelativeDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function subjectFromEntryMode(
+  surface: string | null,
+  sourceSurface: string,
+): string {
+  if (surface === "practice") return "Practice";
+  if (surface === "review") return "Review";
+  if (sourceSurface === "dashboard") return "";
+  return sourceSurface.charAt(0).toUpperCase() + sourceSurface.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+// EndSessionModal — matches mockup artboard 7
+// ---------------------------------------------------------------------------
+
+function EndSessionModal({
+  open,
+  onOpenChange,
+  onConfirm,
+  pending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      allowedElements={[...TUTOR_ALLOWED_ELEMENTS]}
-      unwrapDisallowed
-      components={TUTOR_MARKDOWN_COMPONENTS}
-    >
-      {text}
-    </ReactMarkdown>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>End this session?</DialogTitle>
+          <DialogDescription>
+            It will close and leave your sessions list. You won&apos;t be able
+            to reopen it.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+            className="min-h-[44px]"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={pending}
+            className="min-h-[44px]"
+          >
+            {pending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+            End session
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ---------------------------------------------------------------------------
-// MessageBubble — accessible, per-message authorship labels (Tier 3)
+// SessionsSidebar content
 // ---------------------------------------------------------------------------
 
-function MessageBubble({ message }: { message: TutorMessage }) {
-  const isStudent = message.role === "student";
-  const authorLabel = isStudent ? "You said:" : "LISA said:";
+function SessionsListContent({
+  conversations,
+  activeId,
+  onSelect,
+  onNewSession,
+  newSessionPending,
+}: {
+  conversations: TutorConversationSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNewSession: () => void;
+  newSessionPending: boolean;
+}) {
   return (
-    <div
-      className={`flex ${isStudent ? "justify-end" : "justify-start"}`}
-      aria-label={authorLabel}
-    >
-      <div
-        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
-          isStudent
-            ? "whitespace-pre-wrap bg-primary text-primary-foreground"
-            : "bg-secondary text-foreground"
-        }`}
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 p-4 pb-2">
+        <LisaAvatar />
+        <span className="text-lg font-semibold text-foreground">LISA</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={onNewSession}
+        disabled={newSessionPending}
+        className="mx-3 mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
+        aria-label="New session"
       >
-        {isStudent ? (
-          message.message
+        {newSessionPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <TutorMessageContent text={message.message} />
+          <Plus className="h-4 w-4" />
+        )}
+        New session
+      </button>
+
+      <div className="mt-4 px-3">
+        <p className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Sessions
+        </p>
+      </div>
+
+      <div className="mt-2 flex-1 overflow-y-auto px-3 pb-4 space-y-1">
+        {conversations.map((conv) => (
+          <button
+            key={conv.conversation_id}
+            type="button"
+            onClick={() => onSelect(conv.conversation_id)}
+            className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors min-h-[44px] ${
+              conv.conversation_id === activeId
+                ? "bg-secondary"
+                : "hover:bg-secondary/50"
+            }`}
+          >
+            <p className="text-sm font-medium text-foreground truncate">
+              {conv.title ?? "New session"}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {subjectFromEntryMode(conv.surface, conv.source_surface)}
+              {subjectFromEntryMode(conv.surface, conv.source_surface) && " · "}
+              {formatRelativeDate(conv.updated_at)}
+            </p>
+          </button>
+        ))}
+
+        {conversations.length === 0 && (
+          <p className="px-1 py-4 text-xs text-muted-foreground text-center">
+            No sessions yet
+          </p>
         )}
       </div>
     </div>
@@ -157,167 +210,42 @@ function MessageBubble({ message }: { message: TutorMessage }) {
 }
 
 // ---------------------------------------------------------------------------
-// SuggestedActionChip — renders server-provided pedagogical actions (Tier 2)
+// NewSessionView — matches mockup artboard 4
 // ---------------------------------------------------------------------------
 
-function SuggestedActionChip({
-  action,
-  onAccept,
+function NewSessionView({
+  onSendMessage,
 }: {
-  action: TutorSuggestedAction;
-  onAccept: (label: string) => void;
-}) {
-  if (action.type === "none" || !action.label) return null;
-
-  return (
-    <div className="flex justify-start">
-      <button
-        type="button"
-        className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        onClick={() => onAccept(action.label as string)}
-      >
-        {action.label}
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// UiHintChips — renders suggested_chip from ui_hints (Tier 2)
-// ---------------------------------------------------------------------------
-
-function UiHintChips({
-  hints,
-  onChipClick,
-}: {
-  hints: TutorUiHints;
-  onChipClick: (text: string) => void;
-}) {
-  if (!hints.suggested_chip) return null;
-
-  return (
-    <div className="flex justify-start">
-      <button
-        type="button"
-        className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        onClick={() => onChipClick(hints.suggested_chip as string)}
-      >
-        {hints.suggested_chip}
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ThinkingIndicator — "LISA is thinking…" per Doc 03B §21.4 (Tier 2)
-// ---------------------------------------------------------------------------
-
-function ThinkingIndicator() {
-  return (
-    <div
-      className="flex justify-start"
-      role="status"
-      aria-label="LISA is thinking"
-    >
-      <div className="flex items-center gap-1.5 rounded-lg bg-secondary px-4 py-2.5">
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
-        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
-        <span className="sr-only">LISA is thinking</span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// EmptyState — what LISA can do, replacing "No conversation selected" (Tier 2)
-// ---------------------------------------------------------------------------
-
-function EmptyState({
-  onStartConversation,
-}: {
-  onStartConversation: () => void;
+  onSendMessage: (message: string) => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-        <MessageSquare className="h-8 w-8 text-primary" />
-      </div>
-      <div className="max-w-sm text-center">
-        <h2 className="text-lg font-semibold text-foreground">Meet LISA</h2>
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+      <LisaAvatar size="lg" />
+      <div className="text-center">
+        <h2 className="text-2xl font-semibold text-foreground">
+          What are we working on?
+        </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Your SAT tutor. Ask about any question, get step-by-step explanations,
-          or work through practice problems together.
+          Pick a section to start, or just ask a question below.
         </p>
       </div>
-      <Button onClick={onStartConversation}>Start a conversation</Button>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => onSendMessage("Math")}
+          className="rounded-xl border border-border bg-card px-6 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
+        >
+          Math
+        </button>
+        <button
+          type="button"
+          onClick={() => onSendMessage("Reading & Writing")}
+          className="rounded-xl border border-border bg-card px-6 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
+        >
+          Reading & Writing
+        </button>
+      </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// TutorErrorDisplay — code-dispatched error renderer (Tier 1)
-// ---------------------------------------------------------------------------
-
-function TutorErrorDisplay({
-  notice,
-  onRetry,
-  onNavigateTutor,
-  onReload,
-}: {
-  notice: TutorErrorNotice;
-  onRetry: () => void;
-  onNavigateTutor: () => void;
-  onReload: () => void;
-}) {
-  const variant =
-    notice.action === "informational"
-      ? ("warning" as const)
-      : notice.action === "upgrade"
-        ? ("premium" as const)
-        : ("neutral" as const);
-
-  const actionLabel =
-    notice.action === "retry_send" || notice.action === "retry_delayed"
-      ? "Try again"
-      : notice.action === "navigate_tutor"
-        ? "Start new conversation"
-        : notice.action === "reload"
-          ? "Refresh page"
-          : notice.action === "upgrade"
-            ? "View plans"
-            : undefined;
-
-  const onAction =
-    notice.action === "retry_send" || notice.action === "retry_delayed"
-      ? onRetry
-      : notice.action === "navigate_tutor"
-        ? onNavigateTutor
-        : notice.action === "reload"
-          ? onReload
-          : notice.action === "upgrade"
-            ? onNavigateTutor // Will be overridden by PremiumUpgradePrompt when it applies
-            : undefined;
-
-  // For upgrade actions, render the PremiumUpgradePrompt instead
-  if (notice.action === "upgrade") {
-    return (
-      <PremiumUpgradePrompt
-        featureBenefit="the interactive tutor"
-        mode="inline"
-      />
-    );
-  }
-
-  return (
-    <AppNotice
-      variant={variant}
-      title={notice.title}
-      message={notice.message}
-      actionLabel={actionLabel}
-      onAction={onAction}
-      mode="inline"
-    />
   );
 }
 
@@ -329,316 +257,373 @@ export default function ChatPage() {
   const [, setLocation] = useLocation();
   const conversationId = useConversationIdFromSearch();
 
-  const {
-    data: conversation,
-    isLoading,
-    error,
-  } = useConversation(conversationId);
-  const sendMessage = useSendMessage();
-  const closeConversation = useCloseConversation();
+  const { data: conversationDetail, isLoading } =
+    useConversation(conversationId);
+  const { data: conversationsList } = useConversations();
+  const createConversation = useCreateConversation();
+  const endConversation = useEndConversation();
 
   const [draft, setDraft] = useState("");
+  const [endModalOpen, setEndModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dismissedPremium, setDismissedPremium] = useState(false);
+
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
-  // Track the last response for suggested_action and ui_hints (Tier 2)
-  const [lastResponse, setLastResponse] = useState<SendMessageResponse | null>(
-    null,
-  );
+  const conversations = conversationsList?.conversations ?? [];
+  const messages = conversationDetail?.messages ?? [];
+  const conversation = conversationDetail?.conversation;
 
-  const messages = conversation?.messages ?? [];
+  const {
+    turnState,
+    optimisticMessage,
+    crisisLane,
+    effectiveCrisisContent,
+    showCrisisCard,
+    premiumReason,
+    suggestedAction,
+    send,
+    retry: handleRetry,
+    resume: handleResume,
+    resumePending,
+    reset: resetTurn,
+  } = useTutorTurn(conversationId, messages, conversation);
 
-  // ── Premium entitlement check ───────────────────────────────────────
-  const conversationPremiumReason: PremiumPromptReason | null =
-    mapTutorErrorToPremiumReason(error) as PremiumPromptReason | null;
-  const sendPremiumReason: PremiumPromptReason | null =
-    mapTutorErrorToPremiumReason(
-      sendMessage.error,
-    ) as PremiumPromptReason | null;
-  const activePremiumReason = conversationPremiumReason ?? sendPremiumReason;
+  const isPaused = !!conversation?.crisis_paused_at;
+  const isEnded = conversation?.status === "ended";
+  const hasMessages = messages.length > 0 || optimisticMessage !== null;
 
-  // ── Code-dispatched error classification (Tier 1) ───────────────────
-  const conversationErrorNotice: TutorErrorNotice | null =
-    !conversationPremiumReason && error ? classifyTutorError(error) : null;
-  const sendErrorNotice: TutorErrorNotice | null =
-    !sendPremiumReason && sendMessage.error
-      ? classifyTutorError(sendMessage.error)
-      : null;
-
-  // ── Fallback for unrecognized errors ────────────────────────────────
-  const hasUnclassifiedConversationError =
-    !conversationPremiumReason && error && !conversationErrorNotice;
-  const hasUnclassifiedSendError =
-    !sendPremiumReason && sendMessage.error && !sendErrorNotice;
-
-  // ── Scroll management ──────────────────────────────────────────────
-  // Trigger scrolls when message count changes or when the thinking
-  // indicator toggles. Encoding both into a single numeric trigger avoids
-  // spreading an unknown-length deps array.
-  const scrollTrigger = messages.length * 2 + (sendMessage.isPending ? 1 : 0);
+  // Scroll management
+  const scrollTrigger =
+    (messages.length + (optimisticMessage ? 1 : 0)) * 2 +
+    (turnState.kind === "thinking" ? 1 : 0);
   useScrollToBottomOnChange(scrollAnchorRef, scrollTrigger);
 
-  // ── Retry-in-place for 503 (Tier 1, item 3) ────────────────────────
-  const lastSendInputRef = useRef<{
-    conversation_id: string;
-    message: string;
-    client_turn_id: string;
-  } | null>(null);
+  // ── Navigation ────────────────────────────────────────────────────────
 
-  const handleRetry = useCallback((): void => {
-    const notice = sendErrorNotice;
-    sendMessage.reset();
-
-    if (notice?.action === "retry_delayed" && lastSendInputRef.current) {
-      const delayMs = notice.retryAfterMs ?? 2000;
-      const input = lastSendInputRef.current;
-      setTimeout(() => {
-        sendMessage.mutate({
-          ...input,
-          client_turn_id: crypto.randomUUID(),
-        });
-      }, delayMs);
-    }
-  }, [sendErrorNotice, sendMessage]);
-
-  const canSend =
-    !!conversationId &&
-    draft.trim().length > 0 &&
-    !sendMessage.isPending &&
-    !activePremiumReason;
-
-  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (!conversationId) return;
-
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-
-    const input = {
-      conversation_id: conversationId,
-      message: trimmed,
-      client_turn_id: crypto.randomUUID(),
-    };
-    lastSendInputRef.current = input;
-
-    try {
-      const response = await sendMessage.mutateAsync(input);
-      setLastResponse(response);
+  const navigateToConversation = useCallback(
+    (id: string) => {
+      setLocation(`/chat?conversationId=${encodeURIComponent(id)}`);
+      resetTurn();
       setDraft("");
+      setMobileMenuOpen(false);
+    },
+    [setLocation, resetTurn],
+  );
+
+  // ── New session ───────────────────────────────────────────────────────
+
+  const handleNewSession = useCallback(async () => {
+    try {
+      const conv = await createConversation.mutateAsync({
+        entry_mode: "general",
+        source_surface: "dashboard",
+        idempotency_key: crypto.randomUUID(),
+      });
+      navigateToConversation(conv.conversation_id);
     } catch {
-      // Errors surface via sendMessage.error and are rendered by the
-      // code-dispatched error handler below. No toast (feedback-ux contract).
+      // Error state handled by createConversation.error
     }
-  };
+  }, [createConversation, navigateToConversation]);
 
-  const handleSuggestedAction = (label: string): void => {
-    setDraft(label);
-  };
+  // ── Send message ──────────────────────────────────────────────────────
 
-  const navigateToTutor = (): void => {
-    setLocation("/tutor");
-  };
+  const handleSendMessage = useCallback(
+    async (messageText: string) => {
+      setDraft("");
+      await send(messageText);
+    },
+    [send],
+  );
 
-  // ── Close conversation handler (Tier 4) ─────────────────────────────
-  const handleCloseConversation = (): void => {
+  // ── Submit from composer ──────────────────────────────────────────────
+
+  const handleComposerSubmit = useCallback(() => {
+    if (!draft.trim()) return;
+    void handleSendMessage(draft);
+  }, [draft, handleSendMessage]);
+
+  // ── End session ───────────────────────────────────────────────────────
+
+  const handleEndSession = useCallback(() => {
     if (!conversationId) return;
-    closeConversation.mutate(conversationId, {
-      onSuccess: () => setLocation("/tutor"),
+    endConversation.mutate(conversationId, {
+      onSuccess: () => {
+        setEndModalOpen(false);
+        navigateToConversation("");
+        setLocation("/chat");
+      },
     });
-  };
+  }, [conversationId, endConversation, navigateToConversation, setLocation]);
 
-  // ── Empty state (Tier 2) ────────────────────────────────────────────
+  // ── Composer state ────────────────────────────────────────────────────
+
+  const isThinking = turnState.kind === "thinking";
+  const composerPlaceholder = isThinking
+    ? "LISA is responding..."
+    : "Message LISA...";
+  const composerDisabled = isThinking || isPaused || isEnded || !!premiumReason;
+
+  // Determine if we should show the new session view (no messages yet)
+  const showNewSessionView =
+    !!conversationId && !isLoading && !hasMessages && !isPaused && !isEnded;
+
+  // ── Sidebar content (shared between desktop and mobile drawer) ──────
+
+  const sidebarContent = (
+    <SessionsListContent
+      conversations={conversations}
+      activeId={conversationId}
+      onSelect={navigateToConversation}
+      onNewSession={() => void handleNewSession()}
+      newSessionPending={createConversation.isPending}
+    />
+  );
+
+  // ── No conversation selected — show empty state ────────────────────
+
   if (!conversationId) {
     return (
-      <main className="flex h-screen flex-col">
-        <EmptyState onStartConversation={navigateToTutor} />
-      </main>
+      <div className="flex h-screen">
+        {/* Desktop sidebar */}
+        <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
+          {sidebarContent}
+        </aside>
+
+        {/* Mobile header */}
+        <div className="flex flex-1 flex-col md:hidden">
+          <header className="flex items-center gap-2 border-b border-border p-4">
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open sessions menu"
+                  className="min-h-[44px] min-w-[44px]"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-0">
+                {sidebarContent}
+              </SheetContent>
+            </Sheet>
+            <span className="text-lg font-semibold text-foreground">LISA</span>
+          </header>
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+            <LisaAvatar size="lg" />
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-foreground">
+                Welcome to LISA
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Start a new session or pick one from the sidebar.
+              </p>
+            </div>
+            <Button
+              onClick={() => void handleNewSession()}
+              disabled={createConversation.isPending}
+              className="min-h-[44px]"
+            >
+              {createConversation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Plus className="h-4 w-4 mr-1" />
+              )}
+              New session
+            </Button>
+          </div>
+        </div>
+
+        {/* Desktop empty */}
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center gap-6 p-8">
+          <LisaAvatar size="lg" />
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-foreground">
+              Welcome to LISA
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Start a new session or pick one from the sidebar.
+            </p>
+          </div>
+          <Button
+            onClick={() => void handleNewSession()}
+            disabled={createConversation.isPending}
+            className="min-h-[44px]"
+          >
+            {createConversation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Plus className="h-4 w-4 mr-1" />
+            )}
+            New session
+          </Button>
+        </div>
+      </div>
     );
   }
 
-  // Derive suggested action and ui hints from last response
-  const suggestedAction = lastResponse?.response?.suggested_action ?? null;
-  const uiHints = lastResponse?.response?.ui_hints ?? null;
-  // Clear suggested action after the student types something new
-  const showSuggestions =
-    !sendMessage.isPending &&
-    !draft.trim() &&
-    suggestedAction &&
-    suggestedAction.type !== "none";
-  const showChips =
-    !sendMessage.isPending && !draft.trim() && uiHints?.suggested_chip;
+  // ── Chat view ─────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen flex-col">
-      {/* ── Header (Tier 3: landmark regions) ─────────────────────────── */}
-      <header className="flex items-center gap-2 border-b border-border p-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={navigateToTutor}
-          aria-label="Back to conversations"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="flex-1 text-lg font-semibold text-foreground">LISA</h1>
-        {conversation?.conversation.status === "active" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCloseConversation}
-            disabled={closeConversation.isPending}
-            aria-label="End this conversation"
-          >
-            {closeConversation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <X className="h-4 w-4" />
-            )}
-            <span className="ml-1 text-xs">End</span>
-          </Button>
-        )}
-      </header>
+    <div className="flex h-screen">
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
+        {sidebarContent}
+      </aside>
 
-      {/* ── Message list (Tier 3: role="log", aria-live) ──────────────── */}
-      <main
-        className="flex-1 overflow-y-auto p-4 space-y-3"
-        role="log"
-        aria-live="polite"
-        aria-atomic="false"
-        aria-label="Conversation with LISA"
-      >
-        {/* Loading state (Tier 3: announced) */}
-        {isLoading && (
-          <div
-            className="flex justify-center py-8"
-            role="status"
-            aria-label="Loading conversation"
-          >
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="sr-only">Loading conversation</span>
+      {/* Chat area */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Mobile menu */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden min-h-[44px] min-w-[44px]"
+                  aria-label="Open sessions menu"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-0">
+                {sidebarContent}
+              </SheetContent>
+            </Sheet>
+
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold text-foreground truncate">
+                {conversation?.title ?? "New session"}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {hasMessages && conversation
+                  ? `${subjectFromEntryMode(conversation.surface, conversation.source_surface)}${subjectFromEntryMode(conversation.surface, conversation.source_surface) ? " · " : ""}Started ${formatTime(conversation.created_at)}`
+                  : "Not started"}
+              </p>
+            </div>
           </div>
-        )}
 
-        {/* ── Conversation-level errors ──────────────────────────────── */}
-        {!isLoading && conversationErrorNotice && (
-          <TutorErrorDisplay
-            notice={conversationErrorNotice}
-            onRetry={() => window.location.reload()}
-            onNavigateTutor={navigateToTutor}
-            onReload={() => window.location.reload()}
-          />
-        )}
-
-        {!isLoading && hasUnclassifiedConversationError && (
-          <AppNotice
-            variant="neutral"
-            title="Couldn't load this right now"
-            message="Try again. If this keeps happening, refresh the page."
-            actionLabel="Retry"
-            onAction={() => window.location.reload()}
-          />
-        )}
-
-        {/* ── Send-level errors ──────────────────────────────────────── */}
-        {sendErrorNotice && (
-          <TutorErrorDisplay
-            notice={sendErrorNotice}
-            onRetry={handleRetry}
-            onNavigateTutor={navigateToTutor}
-            onReload={() => window.location.reload()}
-          />
-        )}
-
-        {hasUnclassifiedSendError && (
-          <AppNotice
-            variant="neutral"
-            title="Couldn't send your message"
-            message="Something went wrong. Try sending again."
-            actionLabel="Dismiss"
-            onAction={() => sendMessage.reset()}
-          />
-        )}
-
-        {/* ── Premium gate ───────────────────────────────────────────── */}
-        {activePremiumReason && !dismissedPremium && (
-          <div className="py-4">
-            <PremiumUpgradePrompt
-              featureBenefit="the interactive tutor"
-              mode="inline"
-              onDismiss={() => setDismissedPremium(true)}
-            />
-          </div>
-        )}
-
-        {/* ── Messages ───────────────────────────────────────────────── */}
-        {!isLoading &&
-          !error &&
-          messages.map((message) => (
-            <MessageBubble key={message.message_id} message={message} />
-          ))}
-
-        {/* ── Thinking indicator (Tier 2) ────────────────────────────── */}
-        {sendMessage.isPending && <ThinkingIndicator />}
-
-        {/* ── Suggested actions + chips (Tier 2) ─────────────────────── */}
-        {showSuggestions && suggestedAction && (
-          <SuggestedActionChip
-            action={suggestedAction}
-            onAccept={handleSuggestedAction}
-          />
-        )}
-        {showChips && uiHints && (
-          <UiHintChips hints={uiHints} onChipClick={handleSuggestedAction} />
-        )}
-
-        <div ref={scrollAnchorRef} />
-      </main>
-
-      {/* ── Input area ───────────────────────────────────────────────── */}
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        className="flex items-center gap-2 border-t border-border p-4"
-        aria-label="Send a message to LISA"
-      >
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Ask LISA a question..."
-          disabled={sendMessage.isPending}
-          aria-label="Message"
-          aria-busy={sendMessage.isPending}
-        />
-        <Button
-          type="submit"
-          disabled={!canSend}
-          size="icon"
-          aria-label="Send message"
-        >
-          {sendMessage.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
+          {/* End session button — not shown on unstarted or ended sessions */}
+          {hasMessages && !isEnded && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEndModalOpen(true)}
+              disabled={endConversation.isPending}
+              className="shrink-0 min-h-[44px]"
+              aria-label="End session"
+            >
+              End session
+            </Button>
           )}
-        </Button>
-      </form>
+        </header>
+
+        {/* Message area */}
+        <main
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-label="Conversation with LISA"
+        >
+          {/* Loading */}
+          {isLoading && (
+            <div
+              className="flex justify-center py-8"
+              role="status"
+              aria-label="Loading conversation"
+            >
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="sr-only">Loading conversation</span>
+            </div>
+          )}
+
+          {/* Premium gate */}
+          {premiumReason && !dismissedPremium && (
+            <div className="py-4">
+              <PremiumUpgradePrompt
+                featureBenefit="the interactive tutor"
+                mode="inline"
+                onDismiss={() => setDismissedPremium(true)}
+              />
+            </div>
+          )}
+
+          {/* New session view */}
+          {showNewSessionView && (
+            <NewSessionView
+              onSendMessage={(msg) => void handleSendMessage(msg)}
+            />
+          )}
+
+          {/* Messages */}
+          {!isLoading &&
+            messages.map((message) => (
+              <MessageBubble key={message.message_id} message={message} />
+            ))}
+
+          {/* The student's just-sent message, before the thread refetches
+              (W2-10). Thinking and FailedTurn render below it. */}
+          {!isLoading && optimisticMessage && (
+            <MessageBubble
+              key={optimisticMessage.message_id}
+              message={optimisticMessage}
+              pending
+            />
+          )}
+
+          {turnState.kind === "idle" && (
+            <SuggestedActionLink action={suggestedAction} />
+          )}
+
+          {/* Thinking indicator */}
+          {turnState.kind === "thinking" && <ThinkingIndicator />}
+
+          {/* Failed turn notice */}
+          {turnState.kind === "failed" && (
+            <FailedTurnNotice onRetry={handleRetry} />
+          )}
+
+          {/* Crisis/Safeguarding support card */}
+          {showCrisisCard && crisisLane && effectiveCrisisContent && (
+            <CrisisSupportCard
+              lane={crisisLane}
+              content={effectiveCrisisContent}
+            />
+          )}
+
+          <div ref={scrollAnchorRef} />
+        </main>
+
+        {/* Composer or Paused bar */}
+        {showCrisisCard || isPaused ? (
+          <PausedBar
+            onEnd={() => setEndModalOpen(true)}
+            onContinue={handleResume}
+            endPending={endConversation.isPending}
+            resumePending={resumePending}
+          />
+        ) : isEnded ? null : (
+          <Composer
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={handleComposerSubmit}
+            disabled={composerDisabled}
+            placeholder={composerPlaceholder}
+          />
+        )}
+      </div>
+
+      {/* End session modal */}
+      <EndSessionModal
+        open={endModalOpen}
+        onOpenChange={setEndModalOpen}
+        onConfirm={handleEndSession}
+        pending={endConversation.isPending}
+      />
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Scroll-to-bottom helper
-// ---------------------------------------------------------------------------
-//
-// Scrolls when messages arrive or when the thinking indicator appears.
-// Isolated into its own hook so the intent is unambiguous: imperative DOM
-// behavior, not derived state. The `trigger` value is a counter or similar
-// primitive that changes when a scroll should happen — avoids spreading an
-// unknown-length deps array which violates the exhaustive-deps rule.
-function useScrollToBottomOnChange(
-  anchorRef: React.RefObject<HTMLDivElement | null>,
-  trigger: number,
-): void {
-  useEffect(() => {
-    anchorRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [trigger, anchorRef]);
 }
