@@ -15,6 +15,7 @@ Re-derive every answer **from scratch**. Do not read the stored answer before so
 
 - The assembled batch (`proving_batch_<NNN>.sql`).
 - `content/canonical/taxonomy.json` and `docs/questions_governance.md` §A (incl. §A.4 convention).
+- `.codex/questions_audit_context.md` — text-layer defect rules (Rules 1–10) for content-level audit checks.
 
 ## Per-question checks
 
