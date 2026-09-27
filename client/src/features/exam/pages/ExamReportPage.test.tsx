@@ -5,7 +5,7 @@
  *        disclosure"; owner rulings 4 and 6] | @implemented [2026-09-25]
  */
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -28,6 +28,19 @@ const disclosure = {
   summary: "A Lyceon-modeled estimate, not an official SAT score.",
   full_text_url: "/legal/score-disclosure",
 };
+const RW_ROWS = [
+  { section: "RW", domain: "Craft and Structure", correct: 10, total: 13 },
+  { section: "RW", domain: "Expression of Ideas", correct: 6, total: 8 },
+  { section: "RW", domain: "Information and Ideas", correct: 9, total: 12 },
+  { section: "RW", domain: "Standard English Conventions", correct: 11, total: 21 },
+];
+const BREAKDOWN = [
+  ...RW_ROWS,
+  { section: "M", domain: "Advanced Math", correct: 12, total: 15 },
+  { section: "M", domain: "Algebra", correct: 11, total: 13 },
+  { section: "M", domain: "Geometry and Trigonometry", correct: 4, total: 7 },
+  { section: "M", domain: "Problem Solving and Data Analysis", correct: 5, total: 9 },
+];
 const scored = examReportPayloadSchema.parse({
   report_state: "scored",
   ...base,
@@ -48,6 +61,7 @@ const scored = examReportPayloadSchema.parse({
     { section: "RW", section_state: "submitted", scaled: 690, scoreable: true },
     { section: "M", section_state: "submitted", scaled: 650, scoreable: true },
   ],
+  domain_breakdown: BREAKDOWN,
   disclosure,
   review_unlocked: true,
 });
@@ -77,9 +91,25 @@ describe("report screen", () => {
     expect(screen.getByText("Test-day")).toBeTruthy();
     // Ruled out: no time used, no answered count, no framing paragraph.
     expect(document.body.textContent).not.toMatch(/time used|answered|not a count of correct answers/i);
-    // Disabled, not absent: the tab strip is E8's.
-    expect((screen.getByRole("tab", { name: /Score breakdown/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Review your answers" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("G1: the Score breakdown tab shows every domain's correct-of-total, grouped by section", () => {
+    show(scored);
+    const tab = screen.getByRole("tab", { name: "Score breakdown" }) as HTMLButtonElement;
+    expect(tab.disabled).toBe(false);
+    expect(screen.queryByTestId("exam-domain-breakdown")).toBeNull();
+    fireEvent.click(tab);
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    const rows = screen.getAllByTestId("exam-domain-row").map((r) => r.textContent);
+    expect(rows).toHaveLength(8);
+    expect(rows[0]).toBe("Craft and Structure10 of 13 correct");
+    expect(rows[7]).toBe("Problem Solving and Data Analysis5 of 9 correct");
+    expect(screen.getByText("Reading and Writing")).toBeTruthy();
+    // Keyboard: Left from the second tab returns to Section scores.
+    fireEvent.keyDown(tab, { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "Section scores" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getAllByTestId("exam-section-score")).toHaveLength(2);
   });
 
   it("PLANT: refuses to render a score without its disclosure", () => {
@@ -134,6 +164,7 @@ describe("report screen", () => {
         ],
         completed_sections: ["RW"],
         incomplete_sections: ["M"],
+        domain_breakdown: RW_ROWS,
         disclosure,
         partial_disclosure: { summary: "Reading and Writing section score: 690. Math was not completed, so no total score is available." },
         review_unlocked: true,
@@ -143,6 +174,10 @@ describe("report screen", () => {
     expect(screen.getByTestId("exam-partial-summary").textContent).toContain("no total score");
     expect(screen.getAllByTestId("exam-section-score")[1]!.textContent).toContain("Not completed");
     expect(screen.getAllByTestId("exam-disclosure").length).toBeGreaterThan(0);
+    // G1: only the scored section is broken down; Math has no rows beside its missing score.
+    fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+    expect(screen.getAllByTestId("exam-domain-row")).toHaveLength(4);
+    expect(screen.queryByText("Math")).toBeNull();
   });
 
   it("failed_requires_review: the payload's message and reference, nothing internal", () => {

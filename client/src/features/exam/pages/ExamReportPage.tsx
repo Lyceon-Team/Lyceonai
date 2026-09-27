@@ -6,18 +6,19 @@
  *        is hedged, and null means "Scoring usually takes a few minutes"), §11.5b
  *        (unavailable), §15.1 (disclosure adjacent), §16.1 (/report, /report/status)]
  *       [E7 owner ruling 6 + E7b ruling 4: no "time used", no answered count, no
- *        framing paragraph; "Review your answers" and the Score breakdown tab are
- *        disabled — the tab strip exists so E8 fills it]
- * @implemented [2026-09-25]
+ *        framing paragraph; "Review your answers" is disabled]
+ *       [G1: the Score breakdown tab is live — per-domain correct-of-total from the
+ *        payload's `domain_breakdown` (04C §8.1/§9.1 as amended by SCL-180)]
+ * @implemented [2026-09-25; breakdown 2026-09-27]
  *
  * plain English: one view per report state, each drawing only its payload's fields.
  * A pending report polls the cheap status read and reloads the report when the
  * state changes; the page itself never guesses a score.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import type { ExamReportPayload } from "@lyceon/shared/exam-report-schema";
+import type { ExamDomainBreakdownRow, ExamReportPayload } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { fetchExamReport, fetchExamReportStatus } from "../api/exam-api";
@@ -26,11 +27,12 @@ import { sessionPath } from "../lib/exam-position";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
+import { DomainBreakdown } from "../components/DomainBreakdown";
 import "../exam.css";
 
 const POLL_MS = 4_000;
 
-function formatDate(iso: string | null): string {
+export function formatDate(iso: string | null): string {
   if (iso === null) return "";
   return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
@@ -109,7 +111,7 @@ function Actions({ reviewShown }: { reviewShown: boolean }) {
   );
 }
 
-function Title({ name, line }: { name: string; line: string }) {
+export function Title({ name, line }: { name: string; line: string }) {
   return (
     <div className="flex flex-col gap-1">
       <p className="m-0 text-sm text-[var(--exam-muted)]">{line}</p>
@@ -118,7 +120,7 @@ function Title({ name, line }: { name: string; line: string }) {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+export function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--exam-muted)]">{label}</dt>
@@ -127,41 +129,72 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ScoreTabs({ children }: { children: React.ReactNode }) {
-  const [tab] = useState<"sections">("sections");
+type ScoreTab = "sections" | "breakdown";
+const TABS: ReadonlyArray<{ id: ScoreTab; label: string }> = [
+  { id: "sections", label: "Section scores" },
+  { id: "breakdown", label: "Score breakdown" },
+];
+
+/**
+ * WAI-ARIA tabs: the selected tab is the only one in the tab order; Left/Right/Home/End
+ * move selection and focus. Only the selected panel is rendered.
+ */
+export function ScoreTabs({
+  children,
+  breakdown,
+}: {
+  children: React.ReactNode;
+  breakdown: ReadonlyArray<ExamDomainBreakdownRow>;
+}) {
+  const [tab, setTab] = useState<ScoreTab>("sections");
+  const refs = useRef<Record<ScoreTab, HTMLButtonElement | null>>({ sections: null, breakdown: null });
+  const select = (next: ScoreTab): void => {
+    setTab(next);
+    refs.current[next]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent): void => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const last = TABS.length - 1;
+    const to =
+      e.key === "ArrowRight" ? (i === last ? 0 : i + 1)
+      : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? last
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    select(TABS[to]!.id);
+  };
   return (
     <div className="flex flex-col gap-4">
-      <div role="tablist" aria-label="Score views" className="flex gap-1 rounded-[10px] bg-[#EAE7E0] p-1">
-        <button
-          type="button"
-          role="tab"
-          id="exam-tab-sections"
-          aria-selected={tab === "sections"}
-          aria-controls="exam-tabpanel-sections"
-          className="min-h-[44px] flex-1 rounded-lg bg-[var(--exam-surface)] text-sm font-semibold shadow-sm"
-        >
-          Section scores
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={false}
-          disabled
-          aria-disabled="true"
-          title="Coming soon"
-          className="min-h-[44px] flex-1 cursor-not-allowed rounded-lg text-sm font-medium text-[var(--exam-muted)] opacity-60"
-        >
-          Score breakdown <span className="sr-only">(coming soon)</span>
-        </button>
+      <div role="tablist" aria-label="Score views" className="flex gap-1 rounded-[10px] bg-[#EAE7E0] p-1" onKeyDown={onKeyDown}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            ref={(el) => {
+              refs.current[t.id] = el;
+            }}
+            type="button"
+            role="tab"
+            id={`exam-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`exam-tabpanel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            onClick={() => setTab(t.id)}
+            className={`min-h-[44px] flex-1 rounded-lg text-sm ${tab === t.id ? "bg-[var(--exam-surface)] font-semibold shadow-sm" : "font-medium text-[var(--exam-muted)]"}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
-      <div role="tabpanel" id="exam-tabpanel-sections" aria-labelledby="exam-tab-sections">
-        {children}
+      <div role="tabpanel" id={`exam-tabpanel-${tab}`} aria-labelledby={`exam-tab-${tab}`}>
+        {tab === "sections" ? children : <DomainBreakdown rows={breakdown} />}
       </div>
     </div>
   );
 }
 
-function SectionCard({ label, scaled }: { label: string; scaled: number | null }) {
+export function SectionCard({ label, scaled }: { label: string; scaled: number | null }) {
   return (
     <div className="flex flex-1 flex-col gap-1 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] p-5" data-testid="exam-section-score">
       <span className="text-sm font-medium text-[var(--exam-muted)]">{label}</span>
@@ -177,7 +210,7 @@ function SectionCard({ label, scaled }: { label: string; scaled: number | null }
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-[var(--exam-line)] bg-[var(--exam-surface)] p-7">
       <h2 className="m-0 font-serif text-[24px] font-semibold">{title}</h2>
@@ -208,7 +241,7 @@ export function ReportBody({ payload }: { payload: ExamReportPayload }) {
               </div>
               <DisclosureNote disclosure={payload.disclosure} />
             </div>
-            <ScoreTabs>
+            <ScoreTabs breakdown={payload.domain_breakdown}>
               <div className="flex flex-col gap-3 sm:flex-row">
                 {payload.sections.map((s) => (
                   <SectionCard key={s.section} label={EXAM_SECTION_LABEL[s.section]} scaled={s.scaled} />
@@ -230,7 +263,7 @@ export function ReportBody({ payload }: { payload: ExamReportPayload }) {
               </p>
               <DisclosureNote disclosure={payload.disclosure} />
             </Panel>
-            <ScoreTabs>
+            <ScoreTabs breakdown={payload.domain_breakdown}>
               <div className="flex flex-col gap-3 sm:flex-row">
                 {payload.sections.map((s) => (
                   <SectionCard key={s.section} label={EXAM_SECTION_LABEL[s.section]} scaled={s.scoreable ? s.scaled : null} />

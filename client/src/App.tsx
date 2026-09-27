@@ -67,6 +67,9 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 const GuardianStudentCalendar = lazy(
   () => import("@/pages/guardian-student-calendar"),
 );
+const GuardianExamResults = lazy(
+  () => import("@/features/exam/pages/GuardianExamResultsPage"),
+);
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const Review = lazy(() => import("@/pages/review"));
@@ -223,6 +226,27 @@ function Router() {
           component={() => (
             <RequireRole allow={["guardian", "admin"]}>
               <GuardianStudentCalendar />
+            </RequireRole>
+          )}
+        />
+        {/*
+          G1 — a guardian reading a linked student's full-length practice test results. The
+          paths mirror the API (/api/students/:studentId/tests[/:sessionId/report], SCL-181).
+          The server is the authority; this guard only decides what is worth rendering.
+        */}
+        <Route
+          path="/students/:studentId/tests"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianExamResults />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/students/:studentId/tests/:sessionId"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianExamResults />
             </RequireRole>
           )}
         />
