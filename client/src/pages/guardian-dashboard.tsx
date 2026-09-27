@@ -43,6 +43,7 @@ import {
   CheckCircle,
   UserMinus,
   CalendarDays,
+  ClipboardList,
   RefreshCw,
   AlertTriangle,
   CreditCard,
@@ -781,6 +782,23 @@ export default function GuardianDashboard() {
                               data-testid={`guardian-calendar-link-${student.id}`}
                             >
                               <CalendarDays className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          {/*
+                            G1 (SCL-181) — the student's practice test results.
+                            Always rendered, for the calendar link's reason above:
+                            the route answers 402/404 itself.
+                          */}
+                          <Link href={`/students/${student.id}/tests`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
+                              title={`View ${student.display_name || student.email.split("@")[0]}'s practice test results`}
+                              data-testid={`guardian-tests-link-${student.id}`}
+                            >
+                              <ClipboardList className="h-4 w-4" />
                             </Button>
                           </Link>
                           <Button

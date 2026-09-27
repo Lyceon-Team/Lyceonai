@@ -20,12 +20,16 @@
  *    `timed_out` bullet contradicts its own `null when scoreable` bullet).
  *  - A scored/partial report with no disclosure row is a 500
  *    report_data_integrity_violation (§16.7): a score must never ship without it.
+ *  - G1: scored/partial reports carry `domain_breakdown` (exam_domain_breakdown). Its
+ *    sections must be exactly the scored sections; anything else is the same 500, so a
+ *    breakdown never appears beside a missing score or goes missing beside a real one.
  */
 import { z } from "zod";
 import {
   EXAM_REPORT_FAILED_MESSAGE,
   EXAM_SECTION_LABEL,
   examDisclosureSchema,
+  examDomainBreakdownSchema,
   examReportFailedSchema,
   examReportNotCompletedSchema,
   examReportPartialSchema,
@@ -33,6 +37,7 @@ import {
   examReportScoringPendingSchema,
   examReportUnavailableSchema,
   deriveReportState,
+  type ExamDomainBreakdownRow,
   type ExamReportPayload,
   type ExamReportState,
 } from "../../packages/shared/src/exam-report-schema";
@@ -146,7 +151,26 @@ function serializeScoringPending(source: ExamReportSource): ExamReportPayload {
   });
 }
 
-function serializeScored(source: ExamReportSource): ExamReportPayload {
+type Breakdown = ReadonlyArray<ExamDomainBreakdownRow>;
+
+/** G1: the breakdown covers exactly the scored sections, each with at least one row. */
+function breakdownOrThrow(
+  breakdown: Breakdown,
+  scored: ReadonlyArray<"RW" | "M">,
+): Breakdown {
+  const got = new Set(breakdown.map((r) => r.section));
+  if (got.size !== scored.length || scored.some((s) => !got.has(s))) {
+    throw new ReportIntegrityError(
+      "domain breakdown sections do not match the scored sections",
+    );
+  }
+  return breakdown;
+}
+
+function serializeScored(
+  source: ExamReportSource,
+  breakdown: Breakdown,
+): ExamReportPayload {
   const run = source.score_run;
   if (run === null)
     throw new ReportIntegrityError("scored without a score run");
@@ -180,6 +204,7 @@ function serializeScored(source: ExamReportSource): ExamReportPayload {
         scoreable: true,
       },
     ],
+    domain_breakdown: breakdownOrThrow(breakdown, ["RW", "M"]),
     disclosure: disclosureOrThrow(source),
     review_unlocked: true,
   });
@@ -210,7 +235,10 @@ function partialSummary(
   return "This attempt ended before both sections were completed, so no total score is available.";
 }
 
-function serializePartial(source: ExamReportSource): ExamReportPayload {
+function serializePartial(
+  source: ExamReportSource,
+  breakdown: Breakdown,
+): ExamReportPayload {
   const run = source.score_run;
   if (run === null)
     throw new ReportIntegrityError("partial without a score run");
@@ -259,6 +287,7 @@ function serializePartial(source: ExamReportSource): ExamReportPayload {
     sections,
     completed_sections: completed,
     incomplete_sections: incomplete,
+    domain_breakdown: breakdownOrThrow(breakdown, completed),
     disclosure: disclosureOrThrow(source),
     partial_disclosure: {
       summary: partialSummary(completed, incomplete, scaledOf),
@@ -301,9 +330,14 @@ function serializeUnavailable(source: ExamReportSource): ExamReportPayload {
   });
 }
 
+/**
+ * `breakdown` is read only for scored and partial_scored (exam_domain_breakdown); every
+ * other state ignores it.
+ */
 export function serializeStudentReport(
   source: ExamReportSource,
   state: ExamReportState,
+  breakdown: Breakdown,
 ): ExamReportPayload {
   switch (state) {
     case "not_completed":
@@ -311,9 +345,9 @@ export function serializeStudentReport(
     case "scoring_pending":
       return serializeScoringPending(source);
     case "scored":
-      return serializeScored(source);
+      return serializeScored(source, breakdown);
     case "partial_scored":
-      return serializePartial(source);
+      return serializePartial(source, breakdown);
     case "failed_requires_review":
       return serializeFailed(source);
     case "unavailable":
@@ -350,9 +384,34 @@ export async function readExamReport(
   }
   const source = reportSourceSchema.parse(env.body);
   const state = reportStateOf(source, await entitlementActive());
+  const breakdown =
+    state === "scored" || state === "partial_scored"
+      ? await readDomainBreakdown(studentId, sessionId)
+      : [];
   return {
     kind: "report",
     state,
-    payload: serializeStudentReport(source, state),
+    payload: serializeStudentReport(source, state, breakdown),
   };
+}
+
+/**
+ * G1. The same ownership check as exam_report_source, so a 403 here after a 200 there
+ * is a race with deletion, not an access question — it is thrown, never served empty.
+ */
+async function readDomainBreakdown(
+  studentId: string,
+  sessionId: string,
+): Promise<Breakdown> {
+  const env = await callExamRpc("exam_domain_breakdown", {
+    p_student_id: studentId,
+    p_session_id: sessionId,
+  });
+  if (env.status !== 200) {
+    throw new Error(`exam_domain_breakdown returned status ${env.status}`);
+  }
+  return z
+    .object({ domains: examDomainBreakdownSchema })
+    .strict()
+    .parse(env.body).domains;
 }
