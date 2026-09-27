@@ -33,7 +33,13 @@
  * An absent key means "leave it alone"; an explicit `null` means "clear it".
  */
 import { z } from "zod";
-import { addDaysToLocalDate, localDateSchema, type LocalDate } from "./time.js";
+import {
+  addDaysToLocalDate,
+  daysBetweenLocalDates,
+  localDateSchema,
+  postgresDowOfLocalDate,
+  type LocalDate,
+} from "./time.js";
 
 // ── Weekday mask (§7.1: bit i = Postgres DOW i, Sunday = 0) ─────────────────
 
@@ -303,3 +309,86 @@ export function makeStudyProfileUpsertSchema(
   });
 }
 export type StudyProfileUpsert = z.infer<typeof studyProfileUpsertBaseSchema>;
+
+// ── The frequency readout (§8.1) ─────────────────────────────────────────────
+
+/**
+ * How many full-lengths a student's chosen cadence yields before their target date.
+ *
+ * @spec [Doc 05F formula sheet §2 Step 2; Doc 05F §8.1] | @implemented [2026-09-27]
+ *
+ * plain English: the number behind "about 5 practice tests before 5 December". Expected
+ * outcome: the figure the setup form promises is the figure the generator delivers.
+ *
+ * THIS IS THE SAME ARITHMETIC AS THE GENERATOR, and it is here rather than in a component
+ * for exactly that reason. A count computed in the UI from "weeks until the target divided
+ * by the interval" would be close, and would drift the moment the preferred weekday, the
+ * lead window or the target moved — promising a student six tests and planning five. The
+ * steps below are the ones `calendar_place_full_lengths` takes: add `interval_weeks x 7`,
+ * snap FORWARD to the preferred weekday, stop at the lead window, and count the final
+ * rehearsal that walks BACK from the target.
+ *
+ * It is deliberately NOT horizon-limited. The generator plans fourteen days at a time; this
+ * answers "over the whole run-up", which is the question the student is asking when they
+ * pick a frequency. A monthly student inside a fortnight sees no exam in their calendar and
+ * still has four ahead of them, and both statements are true.
+ *
+ * `null` means the count is unanswerable — no cadence, or no target date to count toward.
+ * The caller renders "a practice test every 2 weeks" instead, because inventing a horizon
+ * to count against would be inventing the answer.
+ */
+export function fullLengthsBeforeTarget(input: {
+  today: LocalDate;
+  /** Weeks between sittings, 1..4. `null` means no automatic full-lengths. */
+  intervalWeeks: number | null;
+  /** Postgres DOW, Sunday = 0. `null` means no automatic full-lengths. */
+  preferredWeekday: number | null;
+  targetExamDate: LocalDate | null;
+  /** `final_exam_lead_days` from config — never a literal (§17). */
+  finalExamLeadDays: number;
+}): number | null {
+  const {
+    today,
+    intervalWeeks,
+    preferredWeekday,
+    targetExamDate,
+    finalExamLeadDays,
+  } = input;
+  if (intervalWeeks === null || preferredWeekday === null) return null;
+  if (targetExamDate === null) return null;
+
+  const snapForward = (from: LocalDate): LocalDate => {
+    let d = from;
+    // At most six steps: a weekday recurs every seven days.
+    for (let i = 0; i < 7; i += 1) {
+      if (postgresDowOfLocalDate(d) === preferredWeekday) return d;
+      d = addDaysToLocalDate(d, 1);
+    }
+    return d;
+  };
+
+  // Nothing sits on or after the target, nor inside its lead window.
+  const admits = (d: LocalDate): boolean =>
+    daysBetweenLocalDates(d, targetExamDate) >= finalExamLeadDays;
+
+  const dates = new Set<LocalDate>();
+
+  // The final rehearsal, walking BACK from `target - lead` — the one fixed point.
+  let probe = addDaysToLocalDate(targetExamDate, -finalExamLeadDays);
+  for (let i = 0; i < 7; i += 1) {
+    if (postgresDowOfLocalDate(probe) === preferredWeekday) break;
+    probe = addDaysToLocalDate(probe, -1);
+  }
+  if (daysBetweenLocalDates(today, probe) >= 0) dates.add(probe);
+
+  // The series. Bounded by the target rather than by a trip count, and the loop is
+  // additionally capped so a caller who passes a target decades out cannot hang a render.
+  let cursor = today;
+  for (let i = 0; i < 520; i += 1) {
+    const next = snapForward(addDaysToLocalDate(cursor, intervalWeeks * 7));
+    if (!admits(next)) break;
+    dates.add(next);
+    cursor = next;
+  }
+  return dates.size;
+}
