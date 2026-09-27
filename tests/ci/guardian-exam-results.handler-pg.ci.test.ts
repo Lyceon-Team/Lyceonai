@@ -388,9 +388,8 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
         `/api/students/${STUDENT}/tests`,
         reportUrl(STUDENT, sid),
       ]) {
-        const res = await request(app)
-          [method](url)
-          .set("x-test-user", GUARDIAN);
+        const agent = request(app);
+        const res = await agent[method](url).set("x-test-user", GUARDIAN);
         expect(res.status).toBe(404);
       }
     }

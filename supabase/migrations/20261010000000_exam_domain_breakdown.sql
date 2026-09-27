@@ -2,10 +2,11 @@
 -- G1: the exam report's per-domain breakdown (student report first; guardians project it)
 -- ===========================================================================
 -- @spec [Doc 04C §8.1 / §9.1 (report payloads), §2.3 (no Module 2 path), §2.6 rule 7
---        (guardian payload a strict subset of the student's), §6 ("aggregations belong
---        in 04B, which already produces the canonical decomposition"); Doc 04 Parent Q9
---        as amended by SCL-180; E7b owner ruling ("The Score breakdown tab is E8 — it
---        needs per-domain counts no endpoint serves yet"); SCL-160 (premise gated)]
+--        (guardian payload a strict subset of the student's), §7.2 ("aggregations belong
+--        in 04B, which already produces the canonical decomposition") as amended by
+--        SCL-180; Doc 04 Parent Q9 as amended by SCL-180; E7b owner ruling ("The Score
+--        breakdown tab is E8 — it needs per-domain counts no endpoint serves yet");
+--        SCL-160 (premise gated)]
 -- @implemented [2026-09-27]
 --
 -- plain English: for one owned session, per SCORED section and per domain, how many
