@@ -1951,6 +1951,115 @@ COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_m
 
 
 --
+-- Name: calendar_emit_exam_notification(uuid, uuid, text, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_event_id uuid;
+  v_channels jsonb;
+BEGIN
+  IF p_kind NOT IN ('full_length_week', 'full_length_tomorrow') THEN
+    RAISE EXCEPTION 'calendar_emit_exam_notification: unknown kind %', p_kind
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- The rule, at the chokepoint. One call site for one derivation.
+  IF public.calendar_full_length_complete(p_student_id, p_local_date, p_timezone) THEN
+    RETURN 'skipped_complete';
+  END IF;
+
+  v_event_id := public.notification_event_id(p_kind, p_block_id::text);
+
+  IF EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id = v_event_id) THEN
+    RETURN 'duplicate';
+  END IF;
+
+  v_channels := CASE WHEN p_kind = 'full_length_tomorrow'
+                     THEN jsonb_build_array('in_app', 'email')
+                     ELSE jsonb_build_array('in_app')
+                END;
+
+  PERFORM public.emit_notification_event(
+    v_event_id,
+    p_kind,
+    p_student_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', p_student_id, 'channels', v_channels)
+    ),
+    jsonb_build_object('block_id', p_block_id, 'local_date', p_local_date)
+  );
+
+  RETURN 'emitted';
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) IS 'Brief 14 Step 5 / notifications contract §2.2, §5.1, §8.1: the one write path for the two practice-test notices. Returns emitted | skipped_complete | duplicate. Idempotent per (block_id, kind) because the event type is part of notification_event_id''s hash input. Recipient is the student alone.';
+
+
+--
+-- Name: calendar_exam_notification_candidates(integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_exam_notification_candidates(p_limit integer DEFAULT 500, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(student_id uuid, block_id uuid, local_date date, timezone text, kind text, period_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH exams AS (
+    SELECT cp.student_id,
+           cp.block_id,
+           cp.scheduled_date AS local_date,
+           cp.timezone,
+           -- "Today" and "tomorrow" for THIS student: the plan date's own zone, the same zone
+           -- the day was planned in and the same one the completeness window uses.
+           (p_now AT TIME ZONE cp.timezone)::date AS today_local
+    FROM public.calendar_current_plan cp
+    JOIN public.calendar_blocks b
+      ON b.block_id = cp.block_id AND b.student_id = cp.student_id
+    WHERE b.block_type = 'full_length'
+  ),
+  due AS (
+    SELECT e.student_id, e.block_id, e.local_date, e.timezone,
+           'full_length_week'::text AS kind,
+           date_trunc('week', e.today_local)::date AS period_key
+    FROM exams e
+    WHERE EXTRACT(DOW FROM e.today_local)::integer = 1
+      AND e.local_date >= e.today_local
+      AND e.local_date <  e.today_local + 7
+    UNION ALL
+    SELECT e.student_id, e.block_id, e.local_date, e.timezone,
+           'full_length_tomorrow'::text AS kind,
+           e.local_date AS period_key
+    FROM exams e
+    WHERE e.local_date = e.today_local + 1
+  )
+  SELECT d.student_id, d.block_id, d.local_date, d.timezone, d.kind, d.period_key,
+         CASE WHEN NOT public.entitlement_active(d.student_id)
+              THEN 'skipped_no_entitlement'
+              ELSE NULL
+         END AS outcome
+  FROM due d
+  ORDER BY d.student_id, d.local_date, d.kind
+  LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone) IS 'Brief 14 Step 5: one row per (full_length block, notice kind) due today in the student''s own zone — full_length_week on their local Monday for that week''s exams, full_length_tomorrow the day before. outcome NULL means notify; skipped_no_entitlement is the calendar_job_runs CHECK verbatim so every considered row gets a job row. Completeness is NOT decided here (see calendar_emit_exam_notification). p_now exists so the two date EQUALITIES are testable on any day of the week; the job never passes it.';
+
+
+--
 -- Name: calendar_exam_review_scope(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1977,6 +2086,32 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) IS 'Doc 05F §9.4 / SCL-170: exam_review -> {"mode":"session","source_engine":"full_length","source_session_id"}; exam_review_placeholder -> {"mode":"queue"}. One helper for deterministic_v1 and fallback_v1.';
+
+
+--
+-- Name: calendar_full_length_complete(uuid, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.test_sessions s
+    WHERE s.student_id = p_student_id
+      AND s.state = 'completed'
+      AND s.completed_at >= (p_local_date::timestamp AT TIME ZONE p_timezone)
+      AND s.completed_at <  ((p_local_date + 1)::timestamp AT TIME ZONE p_timezone)
+  );
+$$;
+
+
+--
+-- Name: FUNCTION calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) IS 'Doc 05F §13: the ONE derivation of "this full-length block''s sitting is done" — a test_sessions row in state=completed whose completed_at falls in the block''s own local day. Never derived from calendar_block_launches (§7.7: launches are for Resume, never for progress).';
 
 
 --
@@ -11594,8 +11729,8 @@ CREATE TABLE public.calendar_job_runs (
     outcome text NOT NULL,
     detail jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT calendar_job_runs_job_check CHECK ((job = 'weekly_regen'::text)),
-    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'failed'::text])))
+    CONSTRAINT calendar_job_runs_job_check CHECK ((job = ANY (ARRAY['weekly_regen'::text, 'exam_notify'::text]))),
+    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'failed'::text])))
 );
 
 
@@ -12971,7 +13106,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text])))
 );
 
 
@@ -19513,11 +19648,32 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) FROM PUBLIC;
 
 
 --

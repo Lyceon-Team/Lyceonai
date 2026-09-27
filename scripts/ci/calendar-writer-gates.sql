@@ -1980,4 +1980,339 @@ END;
 $placement$;
 
 
+-- The shared form fixture, included HERE rather than at the top of the file so no earlier
+-- gate's counts see its rows. Same helper as the E3, E4 and E9b gates.
+\ir lib/exam-form-fixture.sql
+
+-- ============================================================================
+-- Brief 14 Step 5 — the two practice-test notifications (Z-60 .. Z-67)
+-- ============================================================================
+-- @spec [Doc-05F_V1.0 §8.1, §12.5 (the daily-job pattern), §13 (progress is the
+--        allocator over engine events), §18 (job outcomes);
+--        contracts/notifications.contract.md §2.2, §2.3, §5.1, §5.2, §8.1;
+--        owner ruling 2026-09-26 ("two event types, not one with a kind in the
+--        payload")]
+--
+-- THE FIXTURE IS A REAL PLAN, not hand-inserted rows. `calendar_persist_version`
+-- generates it and the exam block is READ BACK out of `calendar_current_plan`,
+-- because a hand-built plan row can assert a shape the generator never emits --
+-- which is how a fixture and a bug agree with each other and the suite stays
+-- green (CLAUDE.md, SCL-137).
+--
+--   Z-60  the week notice fires on the student's local MONDAY, for that week's exam
+--   Z-61  ... and on no other day of the week
+--   Z-62  the day-before notice fires when the exam is tomorrow, and not otherwise
+--   Z-63  the defaulted clock and an explicit now() agree, so p_now cannot drift
+--   Z-64  ONE block yields TWO notifications -- the event type is in the hash
+--   Z-65  a rerun writes nothing: 'duplicate', and the counts do not move
+--   Z-66  a completed sitting suppresses the notice ('skipped_complete'), and the
+--         rule is derived in ONE function with ONE call site
+--   Z-67  an unentitled student is a recorded skip, not a silent one; and the
+--         payload carries the block id and the date and nothing else
+-- ============================================================================
+DO $examnotify$
+DECLARE
+  S     CONSTANT uuid := 'eeeeeeee-0000-0000-0000-00000000000a';
+  S_UN  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-00000000000b';
+  k_tz  CONSTANT text := 'America/Chicago';
+  v_r        jsonb;
+  v_exam     date;
+  v_block    uuid;
+  v_monday   timestamptz;
+  v_daybefore timestamptz;
+  v_kinds    text[];
+  v_out      text;
+  v_events   integer;
+  v_msgs     integer;
+  v_events2  integer;
+  v_msgs2    integer;
+  v_payload  jsonb;
+  v_n        integer;
+BEGIN
+  -- full_length has to be ON for the generator to place one. Stated here rather than
+  -- leaned on: the seeded value has changed twice already, and a gate that assumes it
+  -- goes red for the one reason a gate must never go red -- being out of date.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review","full_length"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+    (S,    'exam-notify@example.test',       '{}'::jsonb),
+    (S_UN, 'exam-notify-unent@example.test', '{}'::jsonb);
+
+  -- Saturday exams every 2 weeks, set up 14 days ago so the first sitting falls INSIDE
+  -- the horizon (placement is arithmetic from setup since 20261011000000).
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S,    k_tz, 127, 60, 6, 2, 1400, now() - interval '14 days'),
+         (S_UN, k_tz, 127, 60, 6, 2, 1400, now() - interval '14 days');
+
+  -- S is entitled; S_UN deliberately is not, which is what makes the
+  -- skipped_no_entitlement arm reachable rather than theoretical.
+  INSERT INTO public.entitlements (profile_id, tier, status) VALUES (S, 'premium', 'active');
+
+  -- A sittable form for Z-66's completed exam, from the shared fixture.
+  PERFORM pg_temp.exam_fixture_make_form('eeee0f00-0000-4000-8000-0000000000f1', 'EN');
+
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'eeeeeeee-0000-0000-0000-0000000000a1');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 setup was not accepted: %', v_r;
+  END IF;
+  PERFORM public.calendar_persist_version(S_UN, 'setup', 'student', 'v1',
+            'eeeeeeee-0000-0000-0000-0000000000b1');
+
+  -- The exam, as the GENERATOR placed it. Not a date this gate chose.
+  SELECT cp.scheduled_date, cp.block_id INTO v_exam, v_block
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id AND b.student_id = cp.student_id
+  WHERE cp.student_id = S AND b.block_type = 'full_length'
+  ORDER BY cp.scheduled_date
+  LIMIT 1;
+
+  IF v_block IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 no full_length block in the plan, so every check below would pass vacuously';
+  END IF;
+
+  -- Noon local on the two days that matter, so no assertion rides on a DST edge.
+  v_monday    := (date_trunc('week', v_exam::timestamp) + interval '12 hours') AT TIME ZONE k_tz;
+  v_daybefore := ((v_exam - 1)::timestamp + interval '12 hours') AT TIME ZONE k_tz;
+
+  ---------------------------------------------------------------- Z-60
+  SELECT array_agg(kind ORDER BY kind) INTO v_kinds
+  FROM public.calendar_exam_notification_candidates(500, v_monday)
+  WHERE student_id = S AND block_id = v_block;
+
+  IF v_kinds IS DISTINCT FROM ARRAY['full_length_week'] THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 on the local Monday of the exam week the kinds due were %, expected exactly {full_length_week}',
+      coalesce(v_kinds::text, 'none');
+  END IF;
+  RAISE NOTICE '    OK Z-60 the week notice is due on the local Monday of the week holding the % exam', v_exam;
+
+  ---------------------------------------------------------------- Z-61
+  -- Tuesday through Sunday: no week notice. Six days asserted, not one, because
+  -- "fires on Monday" and "fires every day" are indistinguishable from a single day.
+  FOR v_n IN 1..6 LOOP
+    IF EXISTS (
+      SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_monday + (v_n || ' days')::interval)
+      WHERE student_id = S AND block_id = v_block AND kind = 'full_length_week'
+    ) THEN
+      RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-61 the week notice was also due % day(s) after the Monday', v_n;
+    END IF;
+  END LOOP;
+  RAISE NOTICE '    OK Z-61 the week notice is due on the Monday and on none of the other six days';
+
+  ---------------------------------------------------------------- Z-62
+  SELECT array_agg(kind ORDER BY kind) INTO v_kinds
+  FROM public.calendar_exam_notification_candidates(500, v_daybefore)
+  WHERE student_id = S AND block_id = v_block;
+
+  IF NOT (v_kinds @> ARRAY['full_length_tomorrow']) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 the day before the % exam the kinds due were %, with no full_length_tomorrow',
+      v_exam, coalesce(v_kinds::text, 'none');
+  END IF;
+  -- And not on the day itself, nor two days before.
+  IF EXISTS (
+    SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_daybefore + interval '1 day')
+    WHERE student_id = S AND block_id = v_block AND kind = 'full_length_tomorrow'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 full_length_tomorrow was still due ON the exam day';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_daybefore - interval '1 day')
+    WHERE student_id = S AND block_id = v_block AND kind = 'full_length_tomorrow'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 full_length_tomorrow was due TWO days before the exam';
+  END IF;
+  RAISE NOTICE '    OK Z-62 the day-before notice is due on % only -- not on the exam day, not two days out', v_exam - 1;
+
+  ---------------------------------------------------------------- Z-63
+  -- The default and the thing it defaults to. A parameter the job never passes is a
+  -- parameter that can drift away from `now()`; this is what stops it.
+  SELECT count(*) INTO v_n FROM (
+    SELECT student_id, block_id, kind FROM public.calendar_exam_notification_candidates(500)
+    EXCEPT
+    SELECT student_id, block_id, kind FROM public.calendar_exam_notification_candidates(500, now())
+  ) d;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-63 the defaulted clock and an explicit now() disagree on % row(s)', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-63 calendar_exam_notification_candidates() and (..., now()) return the same rows';
+
+  ---------------------------------------------------------------- Z-64
+  -- ONE BLOCK, TWO NOTIFICATIONS. This is the owner's ruling made observable: the
+  -- event type is part of notification_event_id's hash input, so the two kinds are two
+  -- ids. Derive the id from the block alone -- one type with a kind in the payload --
+  -- and the second emit is swallowed by the ON CONFLICT that makes the first
+  -- idempotent. That is the plant recorded in the PR.
+  IF public.notification_event_id('full_length_week', v_block::text)
+     = public.notification_event_id('full_length_tomorrow', v_block::text) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the two kinds hash to ONE event id, so one block can only ever notify once';
+  END IF;
+
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'emitted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the week notice returned % rather than emitted', v_out;
+  END IF;
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  IF v_out <> 'emitted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the day-before notice returned % rather than emitted -- one block must yield two', v_out;
+  END IF;
+
+  SELECT count(*) INTO v_events FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_events <> 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 expected 2 events for one exam, got %', v_events;
+  END IF;
+
+  -- The channel rule, §2.3: the week notice in_app, the day-before in_app + email.
+  -- The STUDENT alone is the recipient -- no guardian row, at either kind.
+  SELECT count(*) INTO v_msgs FROM public.notification_messages m
+   JOIN public.notification_events e USING (event_id)
+   WHERE e.subject_profile_id = S AND e.event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_msgs <> 3 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 expected 3 message rows (week in_app; tomorrow in_app + email), got %', v_msgs;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.notification_messages m
+    JOIN public.notification_events e USING (event_id)
+    WHERE e.event_type IN ('full_length_week','full_length_tomorrow')
+      AND m.recipient_profile_id <> S
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 a practice-test notice was addressed to somebody other than the student';
+  END IF;
+  RAISE NOTICE '    OK Z-64 one exam block yields TWO events and 3 message rows, all addressed to the student';
+
+  ---------------------------------------------------------------- Z-65
+  -- The rerun. "None on a rerun" (Brief 14 Step 5's own validation), asserted on the
+  -- COUNTS and not only on the return value: a writer could report duplicate and still
+  -- have inserted.
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'duplicate' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a replayed week notice returned % rather than duplicate', v_out;
+  END IF;
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  IF v_out <> 'duplicate' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a replayed day-before notice returned % rather than duplicate', v_out;
+  END IF;
+
+  SELECT count(*) INTO v_events2 FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  SELECT count(*) INTO v_msgs2 FROM public.notification_messages m
+   JOIN public.notification_events e USING (event_id)
+   WHERE e.subject_profile_id = S AND e.event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_events2 <> v_events OR v_msgs2 <> v_msgs THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a rerun changed the counts: events %->%, messages %->%',
+      v_events, v_events2, v_msgs, v_msgs2;
+  END IF;
+  RAISE NOTICE '    OK Z-65 a rerun returns duplicate and writes nothing (% events, % messages, unchanged)', v_events2, v_msgs2;
+
+  ---------------------------------------------------------------- Z-66
+  -- "NOTHING IF THE BLOCK IS ALREADY COMPLETE", observed rather than asserted. A
+  -- completed sitting inside the exam's own local day makes the notice a skip.
+  --
+  -- The completeness rule has ONE derivation and ONE call site. Both are checked here:
+  -- the function answers correctly about the new sitting, and grep over pg_proc finds
+  -- exactly one body that calls it.
+  IF public.calendar_full_length_complete(S, v_exam, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the block reads complete before any sitting exists';
+  END IF;
+
+  -- The form comes from the SHARED exam fixture (\ir'd above), not a hand-built row: it is
+  -- the fixture three other gates already use, and a second minimal form here would be a
+  -- second answer to "what does a form look like".
+  --
+  -- The SITTING is inserted directly, and that is the right call rather than a shortcut. The
+  -- whole contract of `calendar_full_length_complete` is (student, state, completed_at), and
+  -- the sitting has to be complete on a FUTURE date -- the exam the generator just placed --
+  -- which no amount of walking a real exam through the runtime can produce without moving
+  -- the clock afterwards anyway. Every NOT NULL column is supplied, `actor_id` READ FROM THE
+  -- PROFILE rather than set to the student id (SCL-151: the pseudonymous grouping key is not
+  -- the identity key, and a fixture that conflates them teaches the next reader to).
+  INSERT INTO public.test_sessions
+    (student_id, test_form_id, state, mode, started_at, completed_at, grace_expires_at,
+     attempt_number_for_form, is_first_seen_form_attempt, actor_id)
+  SELECT S, f.id, 'completed', 'strict',
+         (v_exam::timestamp + interval '8 hours')  AT TIME ZONE k_tz,
+         (v_exam::timestamp + interval '11 hours') AT TIME ZONE k_tz,
+         (v_exam::timestamp + interval '23 hours') AT TIME ZONE k_tz,
+         1, true, pr.actor_id
+  FROM public.test_forms f
+  CROSS JOIN public.profiles pr
+  WHERE pr.id = S
+  ORDER BY f.id
+  LIMIT 1;
+
+  -- THE INSERT IS ASSERTED, because the first draft of this gate did not and the insert
+  -- silently matched zero rows: `test_forms` was empty, so `FROM test_forms LIMIT 1` wrote
+  -- nothing and the completeness check below was measuring an absent sitting. It reddened
+  -- only because the assertion happened to be the positive one. A fixture that can quietly
+  -- insert nothing is the "fails green" shape, one layer down.
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the completed sitting inserted % rows, not 1 -- there is nothing for the completeness check to find', v_n;
+  END IF;
+
+  IF NOT public.calendar_full_length_complete(S, v_exam, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed sitting inside the exam day did not read as complete';
+  END IF;
+  -- And not on the neighbouring days: the window is the block's OWN local day, half-open.
+  IF public.calendar_full_length_complete(S, v_exam - 1, k_tz)
+     OR public.calendar_full_length_complete(S, v_exam + 1, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the completeness window leaked into an adjacent local day';
+  END IF;
+
+  -- A block whose sitting is done is never notified about -- even for a kind that has
+  -- not been sent yet, which is what makes this the RULE and not the replay guard.
+  DELETE FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'skipped_complete' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed exam still returned % rather than skipped_complete', v_out;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.notification_events
+              WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow')) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed exam was notified about anyway';
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname <> 'calendar_full_length_complete'
+    AND p.prosrc LIKE '%calendar_full_length_complete%';
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 completeness is derived through % function bodies, not 1 -- a second caller is a second answer', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-66 a completed sitting suppresses the notice; the rule has one definition and one caller';
+
+  ---------------------------------------------------------------- Z-67
+  -- The unentitled student is RECORDED, not filtered: `skipped_no_entitlement` is a
+  -- calendar_job_runs outcome, and §12.5's doctrine is that a student the job passed
+  -- over silently is a student nobody can explain afterwards.
+  SELECT outcome INTO v_out
+  FROM public.calendar_exam_notification_candidates(500, v_daybefore)
+  WHERE student_id = S_UN LIMIT 1;
+  IF v_out IS DISTINCT FROM 'skipped_no_entitlement' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 the unentitled student''s outcome was % -- expected skipped_no_entitlement (absent means filtered away)',
+      coalesce(v_out, 'NULL (notify)');
+  END IF;
+
+  -- The payload rule (contract §8.1): the block id and the date the template renders,
+  -- and nothing else. No form id -- that names a specific paper.
+  PERFORM public.calendar_emit_exam_notification(S_UN, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  SELECT payload INTO v_payload FROM public.notification_events
+   WHERE subject_profile_id = S_UN AND event_type = 'full_length_tomorrow';
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 no event row to inspect, so the payload rule is untested';
+  END IF;
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v_payload) k)
+     IS DISTINCT FROM ARRAY['block_id','local_date'] THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 the payload keys are %, expected exactly {block_id, local_date}', v_payload;
+  END IF;
+  RAISE NOTICE '    OK Z-67 an unentitled student is a recorded skip, and the payload is {block_id, local_date} exactly';
+END;
+$examnotify$;
+
+
 ROLLBACK;

@@ -664,7 +664,15 @@ BEGIN
       ('calendar_drop_today_for_system', 325, 'a037c331145e3afc8c94dc17b18a4cf4'),
       ('calendar_drop_unowned_dates', 336, 'afa423c5bf6382097610133e64707412'),
       ('calendar_edit_day', 2323, 'd03883155de01a174fd761426518ec36'),
+      -- The three added by 20261012000000 (Brief 14 Step 5). NOT YET DEPLOYED at the time
+      -- this line was written: the migration is authored and the owner applies it, so the
+      -- owner-run half of this gate will read "pinned but does not exist" against production
+      -- until they do. That is the gate working, not drift -- and it is the only state in
+      -- which those two answers mean different things, so it is worth saying which one this is.
+      ('calendar_emit_exam_notification', 1138, 'afb40e5ef7a854544e9f86eefeef2cbe'),
+      ('calendar_exam_notification_candidates', 1449, '8eb5b52c82624b772b69c4f58b014d8f'),
       ('calendar_exam_review_scope', 428, 'c74a9a309ec9c84944fe53f5f12298db'),
+      ('calendar_full_length_complete', 301, '8ce47219a892b2339373463a8c626118'),
       ('calendar_is_known_timezone', 91, '946a562369e4d62e7ed74d83a529e890'),
       ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
       ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),

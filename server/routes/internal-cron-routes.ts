@@ -26,6 +26,7 @@ import {
   sweepFinancialRecordRetention,
 } from "../lib/retention/sweeps.js";
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
+import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -501,6 +502,57 @@ router.get(
         err,
       );
       res.status(500).json({ error: "calendar_weekly_regen_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/calendar-exam-notify
+ * @spec [Doc-05F_V1.0 §8.1, §12.5 (the daily-job pattern), §18 (job outcomes);
+ *        contracts/notifications.contract.md §2.2, §2.3, §6.1; Brief 14 Step 5]
+ *        | @implemented [2026-09-27]
+ *
+ * plain English: the practice-test reminders — one on the Monday of a week holding a
+ * full-length, one the day before. Scheduled DAILY for the same reason the weekly regen is: a
+ * cron fires in one timezone and the students are in all of them, so the schedule wakes the job
+ * and `calendar_exam_notification_candidates` decides who is due in their OWN week.
+ *
+ * Safe to rerun: the event id is derived from (event type, block), so a second call the same day
+ * finds the event already there and records `skipped_duplicate` rather than sending twice.
+ *
+ * SCHEDULED AFTER the weekly regeneration (`30 5`, this at `0 6`), and that order is the point:
+ * the weekly job may replan the future half of the horizon, so notifying first could announce a
+ * practice test the replan then moves. Delivery does not depend on the dispatch sweep at `30 4`
+ * having run — this job sends its own email inline (contract §6.1) and the sweep is only the
+ * backstop for a row whose send failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
+ * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ */
+router.get(
+  "/calendar-exam-notify",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runExamNotifications(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      // NESTED, not spread — the summary is keyed by `calendar_job_runs.outcome` and one of
+      // those keys IS `ok`, so spreading it would overwrite the envelope's `ok: true` with a
+      // COUNT and a pass that notified nobody would read as a failure. The weekly regen route
+      // below learned this from tsc (TS2783); stated here so the next route does not relearn it.
+      res.json({ ok: true, job: "exam_notify", summary });
+    } catch (err) {
+      logger.error(
+        "CALENDAR_JOB",
+        "exam_notify_job_error",
+        "Scheduled calendar exam notifications failed",
+        err,
+      );
+      res.status(500).json({ error: "calendar_exam_notify_failed" });
     }
   },
 );
