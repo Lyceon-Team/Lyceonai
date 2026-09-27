@@ -34,7 +34,10 @@ import {
   RULE_4_COLUMNS,
   findRule4Keys,
 } from "../../packages/shared/src/rule4-columns";
-import { STUDENT_RESOURCE_PATHS } from "../../packages/shared/src/student-resources";
+import {
+  STUDENT_EXAM_PATHS,
+  STUDENT_RESOURCE_PATHS,
+} from "../../packages/shared/src/student-resources";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
 const GUARDIAN = "22222222-2222-4222-8222-222222222222";
@@ -474,10 +477,19 @@ describe("subject-scoped resources — one route, two callers", () => {
           STUDENT_RESOURCE_PATHS.masterySkills,
           // Doc 05F §16: the calendar is premium, gated on the SUBJECT`s entitlement.
           STUDENT_RESOURCE_PATHS.calendar,
+          // G1 (04C §2.6 condition 2): exam results need the full-length feature.
+          STUDENT_EXAM_PATHS.tests,
+          STUDENT_EXAM_PATHS.testReport,
         ].sort(),
       );
       expect(gated.map(([, key]) => key).sort()).toEqual(
-        ["calendar_access", "mastery_detail", "mastery_detail"].sort(),
+        [
+          "calendar_access",
+          "mastery_detail",
+          "mastery_detail",
+          "exam_full_length",
+          "exam_full_length",
+        ].sort(),
       );
       expect(open.map(([path]) => path).sort()).toEqual(
         [

@@ -827,18 +827,18 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // `is_under_13 !== false` (fail-closed). No additional check needed here —
   // any request reaching this handler has already passed the age gate.
 
-  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4) — REMOVED.
-  // @spec [Doc-03B_V4.1 §3.4; Doc 01 §27.3 step 6] | @implemented [2026-09-23]
-  // plain English: E1 exam deletion ruling, 2026-09-23 — the pre-baseline
-  // full-length runtime was removed pending the Doc 04 rebuild. The former gate
-  // queried `full_length_exam_sessions`, a table no migration creates, so it
-  // failed open (SCL-079) on every call and blocked nothing. There is no live
-  // exam to detect until Doc 04 lands; the rebuild must restore this step
-  // against its own session table. The `tutor_unavailable_during_live_exam`
-  // error code stays in the Doc-03B §5.9 taxonomy for that reinstatement.
-  // TRACKED: G-EX-06 — restored in E9 against Doc 04A `test_sessions`
-  // (student_id, state = 'active'); the exam vertical does not close until it
-  // is. SCL-126 (originally SCL-119) records the interim and restates SCL-079's table/column.
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4) — WITHDRAWN, not pending.
+  // @spec [Doc-03B_V4.1 §3.4; Doc 01 §27.3 step 6; SCL-032, SCL-079, SCL-126 (all
+  //        WITHDRAWN)] | @implemented [2026-09-23] | corrected [2026-09-27]
+  // plain English: there is NO live-exam gate here, and none is owed. E1 (2026-09-23)
+  // removed the pre-baseline gate, which queried a table no migration creates and so
+  // blocked nothing. Its restoration (G-EX-06, planned for E9) was then WITHDRAWN by
+  // the owner's standing LISA ruling of 2026-09-25 (E9 rulings, R6: "R6 is withdrawn
+  // entirely. Drop it from E9."): the full-length exam has no tutor surface, so there
+  // is no live exam for this route to guard. SCL-032, SCL-079 and SCL-126 are withdrawn
+  // with it. Do not rebuild this step from those entries; reinstating it would need a
+  // new owner ruling. The `tutor_unavailable_during_live_exam` code stays in the
+  // Doc-03B §5.9 taxonomy and is currently unused.
 
   // Step 6: Validate request payload (§6.4). Run before ownership so a
   // malformed body never triggers a DB lookup.
