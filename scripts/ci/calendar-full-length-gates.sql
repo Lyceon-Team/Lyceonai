@@ -42,8 +42,13 @@ CREATE FUNCTION pg_temp.student(p_id uuid, p_weekday int DEFAULT NULL) RETURNS v
   -- handle_new_user creates the profile (with its actor_id) from the auth row.
   INSERT INTO auth.users (id, email) VALUES (p_id, p_id::text || '@e9b.test');
   INSERT INTO public.student_study_profile
-    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-  VALUES (p_id, 'UTC', 127, 180, p_weekday, 1400, now());
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  -- The interval MIRRORS p_weekday rather than taking a literal: this helper is
+  -- called with NULL to build the no-exam student, and `full_length_pair`
+  -- (20261009000000) requires both halves to agree.
+  VALUES (p_id, 'UTC', 127, 180, p_weekday,
+          CASE WHEN p_weekday IS NULL THEN NULL ELSE 2 END, 1400, now());
 $f$;
 
 CREATE FUNCTION pg_temp.input(p_student uuid) RETURNS jsonb LANGUAGE sql AS $f$

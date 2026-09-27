@@ -13561,7 +13561,10 @@ CREATE TABLE public.student_study_profile (
     last_acknowledged_nonstudent_version_no integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    full_length_interval_weeks smallint,
+    CONSTRAINT full_length_pair CHECK (((full_length_interval_weeks IS NULL) = (full_length_weekday IS NULL))),
     CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
+    CONSTRAINT student_study_profile_full_length_interval_weeks_check CHECK ((full_length_interval_weeks = ANY (ARRAY[1, 2, 3, 4]))),
     CONSTRAINT student_study_profile_full_length_weekday_check CHECK (((full_length_weekday >= 0) AND (full_length_weekday <= 6))),
     CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
     CONSTRAINT student_study_profile_planner_mode_check CHECK ((planner_mode = ANY (ARRAY['auto'::text, 'custom'::text]))),
@@ -13596,6 +13599,13 @@ COMMENT ON COLUMN public.student_study_profile.target_score IS 'Doc 05F §8.1. O
 --
 
 COMMENT ON COLUMN public.student_study_profile.setup_completed_at IS 'Doc 05F §17.5. Stamped by the FIRST profile write that finds no completed setup -- the student reached the end of the flow. It no longer means "a target score exists": the setup_requires_target_score CHECK that tied the two together was dropped by 20261002000000, because nothing in setup is required.';
+
+
+--
+-- Name: COLUMN student_study_profile.full_length_interval_weeks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.full_length_interval_weeks IS 'Doc 05F §8.1 (R-08-27 as amended): weeks between full-length practice tests, as the student chose it — 1, 2, 3 or 4. NULL means no automatic full-lengths, and `full_length_pair` keeps it NULL exactly when full_length_weekday is. Weeks, not a label: Weekly / Every 2 weeks / Every 3 weeks / Monthly is the UI''s rendering of 1/2/3/4, so a copy change never migrates data.';
 
 
 --

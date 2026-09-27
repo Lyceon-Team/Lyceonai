@@ -29,10 +29,11 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
 -- A student who studies Mon-Fri (mask 62 = bits 1..5), 60 minutes, exams on
 -- Saturday, with two measured domains so the weighted branch runs.
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('11111111-1111-1111-1111-111111111111', 'America/Chicago', 62, 60, 6, 1400, now()),
-       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 1400, now()),
-       ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'America/Chicago', 62, 60, 6, 1400, now());
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, setup_completed_at)
+VALUES ('11111111-1111-1111-1111-111111111111', 'America/Chicago', 62, 60, 6, 2, 1400, now()),
+       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 2, 1400, now()),
+       ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'America/Chicago', 62, 60, 6, 2, 1400, now());
 
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -627,15 +628,16 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('cccccccc-0000-0000-0000-000000000006', 'weekly-unent@example.test',   '{}'::jsonb);
 
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, planner_mode, setup_completed_at)
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, planner_mode, setup_completed_at)
 VALUES
-  ('cccccccc-0000-0000-0000-000000000001', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
-  ('cccccccc-0000-0000-0000-000000000002', 'America/Chicago', 62, 60, 6, 1400, 'custom', now()),
-  ('cccccccc-0000-0000-0000-000000000003', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
-  ('cccccccc-0000-0000-0000-000000000004', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000001', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000002', 'America/Chicago', 62, 60, 6, 2, 1400, 'custom', now()),
+  ('cccccccc-0000-0000-0000-000000000003', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000004', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
   -- Setup UNFINISHED. Not a skip: absent from the population entirely (R-08-04).
-  ('cccccccc-0000-0000-0000-000000000005', 'America/Chicago', 62, 60, 6, 1400, 'auto',   NULL),
-  ('cccccccc-0000-0000-0000-000000000006', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now());
+  ('cccccccc-0000-0000-0000-000000000005', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   NULL),
+  ('cccccccc-0000-0000-0000-000000000006', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now());
 
 -- Entitlement for everyone EXCEPT ...006, who exists to make the
 -- skipped_no_entitlement arm reachable. entitlement_active reads
@@ -1146,8 +1148,9 @@ BEGIN
   VALUES (S, 'writer-input@example.test', '{}'::jsonb);
 
   INSERT INTO public.student_study_profile
-    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-  VALUES (S, 'America/Chicago', 126, 60, 6, 1400, now());
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 126, 60, 6, 2, 1400, now());
 
   INSERT INTO public.student_domain_mastery
     (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -1557,8 +1560,8 @@ BEGIN
   -- the student reached the end of the flow.
   INSERT INTO public.student_study_profile
     (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
-     target_score, target_exam_date, setup_completed_at)
-  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, NULL, now());
+     full_length_interval_weeks, target_score, target_exam_date, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, 2, NULL, NULL, now());
 
   INSERT INTO public.student_domain_mastery
     (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
@@ -1591,6 +1594,166 @@ BEGIN
   RAISE NOTICE '    OK Z-52 both target fields NULL -> accepted plan with % block(s), and they stayed NULL', v_n;
 END;
 $notarget$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-53 .. Z-55 — full_length_interval_weeks and the pair
+--                (Doc 05F §8.1 / R-08-27 as amended; 20261009000000)
+--
+-- The cadence is the student's, so the profile has to be able to state it and
+-- must not be able to state half of it. Z-53 and Z-54 are the two halves of
+-- `full_length_pair`: a weekday with no interval and an interval with no
+-- weekday are both refused, and (NULL, NULL) — the student who wants no
+-- automatic exams — is accepted.
+--
+-- WHY THE REJECTIONS ARE ASSERTED BY SQLSTATE AND NOT BY MESSAGE TEXT: a CHECK
+-- violation is 23514 whatever the constraint is named, and the constraint name
+-- is asserted separately so a rename cannot make this gate pass vacuously
+-- against some OTHER check on the same row.
+-- ----------------------------------------------------------------------------
+DO $flpair$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000001';
+  v_state text;
+  v_name  text;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'fl-pair@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'fl-pair@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  ---------------------------------------------------------------- Z-53a
+  -- A weekday with no interval: "Saturdays, at a frequency nobody picked".
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, 6, NULL, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53a a weekday with no interval was accepted — full_length_pair is not enforcing';
+  EXCEPTION
+    WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_name = CONSTRAINT_NAME;
+      IF v_name <> 'full_length_pair' THEN
+        RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53a rejected by the wrong constraint (%), so the pair rule is untested here', v_name;
+      END IF;
+  END;
+
+  ---------------------------------------------------------------- Z-53b
+  -- An interval with no weekday: "every 2 weeks, on no day".
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, NULL, 2, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53b an interval with no weekday was accepted — full_length_pair is not enforcing';
+  EXCEPTION
+    WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_name = CONSTRAINT_NAME;
+      IF v_name <> 'full_length_pair' THEN
+        RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53b rejected by the wrong constraint (%), so the pair rule is untested here', v_name;
+      END IF;
+  END;
+
+  ---------------------------------------------------------------- Z-53c
+  -- 5 weeks is not one of the four cadences §8.1 offers. Asserted because the
+  -- pair CHECK alone would admit it.
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, 6, 5, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53c an interval of 5 weeks was accepted — the column CHECK admits a cadence no surface can produce';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  ---------------------------------------------------------------- Z-54
+  -- (NULL, NULL) is the ONE encoding of "no automatic full-lengths", and it
+  -- must be storable: it is what "I'll add them myself" writes (§8.1).
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes,
+     full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, NULL, NULL, 1400, now());
+
+  PERFORM 1 FROM public.student_study_profile
+   WHERE student_id = S
+     AND full_length_weekday IS NULL AND full_length_interval_weeks IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-54 the both-NULL profile did not survive the write';
+  END IF;
+
+  RAISE NOTICE '    OK Z-53 each half alone is refused (and 5 weeks with it); Z-54 both-NULL is accepted';
+END;
+$flpair$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-55. The BACKFILL, run against a row shaped like the ones it was written for.
+--
+-- The migration's UPDATE cannot be observed after the fact — by the time any
+-- gate runs, it has already happened and `full_length_pair` makes its input
+-- shape unrepresentable. So this gate RECONSTRUCTS that shape: it drops the
+-- pair constraint, writes the pre-migration row (weekday set, interval NULL),
+-- re-runs the migration's statement verbatim, and asserts the result.
+--
+-- Dropping a constraint inside a gate is safe here and only here: this whole
+-- file runs in one transaction that ends in ROLLBACK, so the drop never
+-- outlives the run.
+--
+-- RE-ADDING IT IS A SECOND ASSERTION, and the more valuable one. ADD CONSTRAINT
+-- validates every existing row, so it re-validates every fixture this file has
+-- inserted. If any of them sets a weekday without an interval, this is where it
+-- surfaces — which is the failure mode that adding the pair to a live schema
+-- actually has.
+-- ----------------------------------------------------------------------------
+DO $flbackfill$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000002';
+  v_iw  smallint;
+  v_n   int;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'fl-backfill@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'fl-backfill@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  ALTER TABLE public.student_study_profile DROP CONSTRAINT full_length_pair;
+
+  -- The pre-migration row: a student who chose Saturdays under the old model,
+  -- where the cadence lived in config and not on the profile.
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes,
+     full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, 1400, now());
+
+  -- Verbatim from 20261009000000 PART 2.
+  UPDATE public.student_study_profile
+     SET full_length_interval_weeks = 2
+   WHERE full_length_weekday IS NOT NULL
+     AND full_length_interval_weeks IS NULL;
+
+  SELECT full_length_interval_weeks INTO v_iw
+  FROM public.student_study_profile WHERE student_id = S;
+
+  IF v_iw IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-55 the backfill left interval_weeks = % on a weekday row, not 2 — existing students would lose the every-2-weeks spacing they already had', coalesce(v_iw::text, 'NULL');
+  END IF;
+
+  -- A no-exam student must NOT be given a cadence by the backfill. dddddddd-...001
+  -- is this file's NULL-weekday fixture.
+  SELECT count(*) INTO v_n FROM public.student_study_profile
+   WHERE full_length_weekday IS NULL AND full_length_interval_weeks IS NOT NULL;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-55 the backfill invented a cadence for % student(s) who declined automatic exams', v_n;
+  END IF;
+
+  ALTER TABLE public.student_study_profile
+    ADD CONSTRAINT full_length_pair
+    CHECK ((full_length_interval_weeks IS NULL) = (full_length_weekday IS NULL));
+
+  RAISE NOTICE '    OK Z-55 the backfill sets 2 on weekday rows, leaves no-exam rows alone, and every fixture in this file re-validates against the pair';
+END;
+$flbackfill$;
 
 
 ROLLBACK;

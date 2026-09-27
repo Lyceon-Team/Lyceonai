@@ -283,8 +283,9 @@ async function seed(pg: Client, today: string): Promise<void> {
 
   await pg.query(
     `INSERT INTO public.student_study_profile
-       (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-     VALUES ($1, 'America/Chicago', 127, 60, 6, 1400, now())`,
+       (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+        full_length_interval_weeks, target_score, setup_completed_at)
+     VALUES ($1, 'America/Chicago', 127, 60, 6, 2, 1400, now())`,
     [STUDENT_ID],
   );
   await pg.query(

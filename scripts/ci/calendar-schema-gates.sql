@@ -235,6 +235,12 @@ DECLARE
     -- pace the weekly job.
     'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
     'target_exam_date_max_days','weekly_job_interval_minutes',
+    -- Doc 05F §8.1, seeded by 20261009000000. A SURFACE default only: the value
+    -- the frequency control opens on before the student chooses. The generator
+    -- reads student_study_profile.full_length_interval_weeks and never this key,
+    -- which is why it sits with the route constants and not with the formula
+    -- constants the parity gate cross-checks against the oracle.
+    'default_full_length_interval_weeks',
     -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
     -- beside the formula so a stored plan version traces to the exact SQL that
     -- made it. C-09 below asserts it names a migration timestamp.
@@ -257,7 +263,7 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 6 route/job/provenance keys of Doc 05F §8.1/§12.5/§10.2';
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 7 route/job/provenance/surface keys of Doc 05F §8.1/§12.5/§10.2';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
