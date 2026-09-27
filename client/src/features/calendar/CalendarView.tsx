@@ -487,7 +487,11 @@ export function CalendarView({
                     {
                       targetExamDate: schedule.profile.target_exam_date,
                       today,
-                      ...schedule.examPlanning,
+                      // The one field the readout reads, named rather than spread: the
+                      // prefill beside it on `examPlanning` is for the frequency control,
+                      // not for this sentence.
+                      finalExamLeadDays:
+                        schedule.examPlanning.final_exam_lead_days,
                     },
                   ),
                 },

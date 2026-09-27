@@ -844,7 +844,7 @@ export async function readGuardianCalendar(
     // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
     // parent view is identical to the student's, and minutes are not among §16's exclusions.
     estimates: config.estimates,
-    // The SAME dates, by owner ruling 2026-09-27: a suppression is a fact about the plan,
+    // The SAME dates, by owner ruling 2026-09-26: a suppression is a fact about the plan,
     // the category §16 as amended already admits. Only the COPY differs — the guardian's
     // line states it and never instructs, because they have no day menu to be sent to.
     full_length_suppressions: range.fullLengthSuppressions,

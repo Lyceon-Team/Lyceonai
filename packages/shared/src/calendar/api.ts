@@ -573,7 +573,7 @@ export const guardianCalendarReadyResponseSchema = z
     estimates: planningEstimatesSchema,
     /**
      * Dates where a practice test could not be placed because the days the student chose are
-     * blocked. SERVED TO THE GUARDIAN, by owner ruling 2026-09-27: it is a fact about the
+     * blocked. SERVED TO THE GUARDIAN, by owner ruling 2026-09-26: it is a fact about the
      * plan, not a control and not a profile field — the same category as `projection` and
      * `target_exam_date`, both of which §16 as amended already admits.
      *

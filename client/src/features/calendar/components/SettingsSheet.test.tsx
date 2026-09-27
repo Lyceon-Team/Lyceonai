@@ -181,7 +181,11 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
         ESTIMATES,
         // No target date here: this test is about the QUESTION count, and the exam half is
         // deliberately the rate rather than a count so it cannot drift into the assertion.
-        { targetExamDate: null, today: "2026-09-22", ...EXAM_PLANNING },
+        {
+          targetExamDate: null,
+          today: "2026-09-22",
+          finalExamLeadDays: EXAM_PLANNING.final_exam_lead_days,
+        },
       ),
     ).toContain("about 35 questions a day");
   });

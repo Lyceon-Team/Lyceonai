@@ -139,8 +139,21 @@ export function scheduleSummary(
     | "full_length_interval_weeks"
   >,
   estimates: PlanningEstimates,
-  /** The count needs the target date and the lead window; both are server-owned. */
-  cadence: { targetExamDate: string | null; today: string } & ExamPlanning,
+  /**
+   * The count needs the target date and the lead window, and NOTHING else.
+   *
+   * It used to take the whole `ExamPlanning` object, which made the prefill
+   * (`default_full_length_interval_weeks`) a dependency of a readout that never reads it — so
+   * one call site spread the object and the other passed the one field it knew was used, and
+   * only `tsc -p tsconfig.ci.json` could tell them apart. `pnpm -s run build` cannot: vite
+   * strips types without checking them, so the client is typechecked by that config alone.
+   * Naming the field is what makes the two call sites agree.
+   */
+  cadence: {
+    targetExamDate: string | null;
+    today: string;
+    finalExamLeadDays: number;
+  },
 ): string {
   const days = DAYS.filter(
     (day) => ((draft.study_days_mask >> day.dow) & 1) === 1,
@@ -158,7 +171,7 @@ export function scheduleSummary(
     intervalWeeks: draft.full_length_interval_weeks,
     targetExamDate: cadence.targetExamDate,
     today: cadence.today,
-    finalExamLeadDays: cadence.final_exam_lead_days,
+    finalExamLeadDays: cadence.finalExamLeadDays,
   })}`;
 }
 
@@ -440,7 +453,7 @@ export function SettingsSheet({
             {scheduleSummary(draft, estimates, {
               targetExamDate: draft.target_exam_date,
               today,
-              final_exam_lead_days: examPlanning.final_exam_lead_days,
+              finalExamLeadDays: examPlanning.final_exam_lead_days,
             })}
           </p>
 
