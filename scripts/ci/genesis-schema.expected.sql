@@ -5522,6 +5522,61 @@ $$;
 
 
 --
+-- Name: exam_domain_breakdown(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_domain_breakdown(p_student_id uuid, p_session_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_owner uuid;
+BEGIN
+  SELECT student_id INTO v_owner FROM test_sessions WHERE id = p_session_id;
+  IF NOT FOUND OR v_owner IS DISTINCT FROM p_student_id THEN
+    RETURN jsonb_build_object('status', 403, 'error', jsonb_build_object(
+      'code', 'forbidden', 'message', 'Report not available.'));
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object('domains', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'section', d.section, 'domain', d.domain,
+             'correct', d.correct, 'total', d.total)
+           ORDER BY d.section, d.domain)
+      FROM (
+        SELECT fi.section, q.domain,
+               count(*)::int AS total,
+               count(*) FILTER (
+                 WHERE a.answer IS NOT NULL
+                   AND public.is_answer_correct(a.answer, fi.question_id))::int AS correct
+          FROM test_sessions s
+          JOIN score_runs r              ON r.test_session_id = s.id
+          JOIN test_session_sections sec ON sec.test_session_id = s.id
+          JOIN test_form_items fi        ON fi.test_form_id = s.test_form_id
+                                        AND fi.section = sec.section
+                                        AND fi.module IN ('1', '2' || sec.module2_path)
+          JOIN questions q               ON q.id = fi.question_id
+          LEFT JOIN test_session_answers a
+                 ON a.test_session_id = s.id
+                AND a.section = fi.section AND a.module = fi.module
+                AND a.ordinal = fi.ordinal AND a.question_id = fi.question_id
+         WHERE s.id = p_session_id
+           AND ((sec.section = 'RW' AND r.rw_scored) OR (sec.section = 'M' AND r.math_scored))
+         GROUP BY fi.section, q.domain
+      ) d
+  ), '[]'::jsonb)));
+END;
+$$;
+
+
+--
+-- Name: FUNCTION exam_domain_breakdown(p_student_id uuid, p_session_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_domain_breakdown(p_student_id uuid, p_session_id uuid) IS 'G1: per scored section, per domain, correct-of-total over the served items (Module 1 + the routed Module 2). Emits section/domain/correct/total only: never a module, path, skill, difficulty or question id. 403 for a missing or foreign session, as exam_report_source.';
+
+
+--
 -- Name: exam_finalize_session(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -19818,6 +19873,14 @@ GRANT ALL ON FUNCTION public.exam_apply_scored_seams(p_outbox_event_id uuid) TO 
 
 REVOKE ALL ON FUNCTION public.exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.exam_create_session(p_student_id uuid, p_test_form_id uuid, p_mode text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_domain_breakdown(p_student_id uuid, p_session_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_domain_breakdown(p_student_id uuid, p_session_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_domain_breakdown(p_student_id uuid, p_session_id uuid) TO service_role;
 
 
 --
