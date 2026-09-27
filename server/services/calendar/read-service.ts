@@ -783,10 +783,11 @@ export async function readGuardianCalendar(
     launches: range.launches,
   });
 
-  const streak = await getStudentActivityStreak(
-    request.student_id,
-    request.request_id,
-  );
+  // Independent reads, so they go together — the same shape as the student path above.
+  const [streak, projection] = await Promise.all([
+    getStudentActivityStreak(request.student_id, request.request_id),
+    readProjection(request.student_id, request.request_id),
+  ]);
 
   // Parsed on the way out, not just typed. The guardian boundary is the one place a leak
   // is a privacy incident rather than a bug, and `.strict()` rejects an extra key that a
@@ -796,6 +797,21 @@ export async function readGuardianCalendar(
     // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
     // parent view is identical to the student's, and minutes are not among §16's exclusions.
     estimates: config.estimates,
+    // §16 as amended 2026-09-26: R-08-22 reversed, and "no profile" narrowed to admit these
+    // two. Read off the profile this function ALREADY loaded to resolve the timezone — no
+    // second query, and no chance of the header disagreeing with the plan it sits above.
+    //
+    // Exactly two fields, named one at a time. Spreading the profile would serve the
+    // timezone, the day mask, the daily minutes, the exam weekday and the planner mode with
+    // it, all of which §16 still withholds — and a spread is how a withheld field arrives
+    // silently when someone adds a column later. The anti-leak chokepoint rule in CLAUDE.md
+    // is about exactly this shape of mistake.
+    target_score: profile.target_score,
+    target_exam_date: profile.target_exam_date,
+    // Doc 05C's rows, 1:1 with the student's. Omitted rather than nulled when the read
+    // fails, matching the student payload's optionality — `readProjection` already logs and
+    // degrades, so a projection outage costs the band and not the calendar.
+    ...(projection === null ? {} : { projection }),
     days: built.days.map(toGuardianCalendarDay),
     facts: built.facts,
     streak,

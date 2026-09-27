@@ -172,6 +172,7 @@ export default function CalendarPage(): JSX.Element {
               }
         }
         today={today}
+        viewer="student"
         viewerName={user?.display_name ?? "Your plan"}
         targetExamDate={null}
         // Pre-setup: there is no profile yet, so there is no target. The header says
@@ -192,6 +193,7 @@ export default function CalendarPage(): JSX.Element {
       backHref="/dashboard"
       model={model}
       today={today}
+      viewer="student"
       viewerName={user?.display_name ?? "Your plan"}
       targetExamDate={response.profile.target_exam_date}
       targetScore={response.profile.target_score}

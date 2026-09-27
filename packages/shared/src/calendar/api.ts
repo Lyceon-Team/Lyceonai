@@ -26,7 +26,11 @@ import { diagnosticStateSchema } from "../diagnostic-state.js";
 import { sectionProjectionSchema } from "../student-resources.js";
 import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
-import { studyProfileBoundsSchema, studyProfileSchema } from "./profile.js";
+import {
+  studyProfileBoundsSchema,
+  studyProfileSchema,
+  targetScoreSchema,
+} from "./profile.js";
 import {
   calendarDaySchema,
   calendarFactsSchema,
@@ -451,14 +455,60 @@ export const guardianCalendarQuerySchema = z
 export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
 
 /**
- * §16 and R-08-22: no profile, no target score, no controls, no explanation copy. The
- * guardian gets the same FACTS and nothing that would let a client infer a write path. The
- * shape is narrower than the student's by construction rather than by sanitising a wider one
- * on the way out — a `.strict()` object that never had the keys cannot leak them.
+ * §16, as amended by the owner ruling of 2026-09-26: **no controls, no explanation copy,
+ * and no profile beyond `target_score` and `target_exam_date`.** The guardian gets the same
+ * FACTS and nothing that would let a client infer a write path. The shape is narrower than
+ * the student's by construction rather than by sanitising a wider one on the way out — a
+ * `.strict()` object that never had the keys cannot leak them.
+ *
+ * R-08-22 ("Guardians do not see target score") IS REVERSED, and one clause more than that.
+ * §16 carried FOUR withholdings, not three, and the extra one mattered: "the projection has
+ * **no profile**" catches `target_exam_date` independently of R-08-22, because the exam date
+ * is a `student_study_profile` column (§7.1) and §518 names it inside the plan input's
+ * `profile` object. So serving the date needed its own ruling and got one — the owner's
+ * reason for the target covers it exactly: a stated test date is a fact about the goal, not
+ * a control, and "N days to test" is the same category as the target itself.
+ *
+ * WHAT STAYS WITHHELD, and why each one is not arbitrary:
+ *   - `timezone`, `study_days_mask`, `daily_minutes`, `full_length_weekday`, `planner_mode`
+ *     — scheduling inputs. A guardian has no path to change them and no use for reading
+ *     them; they exist to constrain a write.
+ *   - `bounds` — exists to constrain a write.
+ *   - `enabled_block_types` — exists to tell "+ Add block" what the server will accept.
+ *   - explanation copy at BOTH levels, including a per-domain `explanation_key` inside a
+ *     practice block's scope (§17.6). Stripping only the block-level key leaks it one level
+ *     down, which is why `guardianPracticeDomainScopeSchema` keeps `{domain, count}` alone.
+ *
+ * Adding a field here is a §16 decision, not a convenience. The wire-contract gate
+ * (`tests/ci/calendar.wire-contract.test.ts`) drives the REAL serializer through this
+ * schema, so the two cannot drift apart the way they did before #903.
  */
 export const guardianCalendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
+    /**
+     * §8.1's target, R-08-22 reversed (owner ruling 2026-09-26): "It is the student's
+     * stated goal, and a projection with nothing to compare against is half a fact."
+     * Nullable, and null is the ORDINARY case — SCL-130 made setup answer-free, so most
+     * students have no target. The guardian header says "No target set", never a CTA.
+     */
+    target_score: targetScoreSchema.nullable(),
+    /**
+     * For the days-to-test line only. Not a scheduling control: the guardian cannot set it,
+     * and nothing else on this payload is derived from it.
+     */
+    target_exam_date: localDateSchema.nullable(),
+    /**
+     * Doc 05C's per-section band, THE SAME ROWS the student payload carries, read 1:1 and
+     * never recomputed here — `sectionProjectionSchema` is the band only, never the blend
+     * anchors (Doc 05C §10.5). Optional for the same reason as the student's: a projection
+     * read that fails omits the field rather than failing the whole response.
+     *
+     * This is NOT the "guardian projection" §16 speaks of. That phrase means this DTO's
+     * SHAPE; this field is a score band. The amendment renames the shape sense to "guardian
+     * view model" so one section stops using one word for two things.
+     */
+    projection: z.array(sectionProjectionSchema).optional(),
     /**
      * §17.1's "~N min", the SAME object the student gets (owner ruling 2026-09-22).
      *
