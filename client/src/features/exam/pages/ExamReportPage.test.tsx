@@ -11,6 +11,16 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { ExamReportPayload } from "@lyceon/shared/exam-report-schema";
 import { examReportPayloadSchema } from "@lyceon/shared/exam-report-schema";
+import {
+  FIXTURE_DISCLOSURE,
+  FIXTURE_FORM_ID,
+  FIXTURE_SESSION_ID,
+  failedReport,
+  inProgressReport,
+  partialReport,
+  pendingReport,
+  scoredReport,
+} from "../test-fixtures/report-fixtures";
 
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
   useSupabaseAuth: () => ({ user: { display_name: "Test Student" } }),
@@ -19,52 +29,12 @@ vi.mock("@/contexts/SupabaseAuthContext", () => ({
 import { ReportBody } from "./ExamReportPage";
 
 const base = {
-  session_id: "5e551011-0000-4000-8000-000000000001",
-  test_form_id: "f0f00000-0000-4000-8000-000000000001",
+  session_id: FIXTURE_SESSION_ID,
+  test_form_id: FIXTURE_FORM_ID,
   test_form_name: "Practice Test 2",
 };
-const disclosure = {
-  disclosure_version: "disclosure-v1.0",
-  summary: "A Lyceon-modeled estimate, not an official SAT score.",
-  full_text_url: "/legal/score-disclosure",
-};
-const RW_ROWS = [
-  { section: "RW", domain: "Craft and Structure", correct: 10, total: 13 },
-  { section: "RW", domain: "Expression of Ideas", correct: 6, total: 8 },
-  { section: "RW", domain: "Information and Ideas", correct: 9, total: 12 },
-  { section: "RW", domain: "Standard English Conventions", correct: 11, total: 21 },
-];
-const BREAKDOWN = [
-  ...RW_ROWS,
-  { section: "M", domain: "Advanced Math", correct: 12, total: 15 },
-  { section: "M", domain: "Algebra", correct: 11, total: 13 },
-  { section: "M", domain: "Geometry and Trigonometry", correct: 4, total: 7 },
-  { section: "M", domain: "Problem Solving and Data Analysis", correct: 5, total: 9 },
-];
-const scored = examReportPayloadSchema.parse({
-  report_state: "scored",
-  ...base,
-  mode: "strict",
-  completed_at: "2026-09-24T15:00:00Z",
-  attempt_number_for_form: 1,
-  is_first_seen_form_attempt: true,
-  score: {
-    total_scaled: 1340,
-    rw_scaled: 690,
-    math_scaled: 650,
-    partial_display_scaled: null,
-    scoring_model_version: "v1.0",
-    score_run_id: "a0a00000-0000-4000-8000-000000000001",
-    scored_at: "2026-09-24T15:00:05Z",
-  },
-  sections: [
-    { section: "RW", section_state: "submitted", scaled: 690, scoreable: true },
-    { section: "M", section_state: "submitted", scaled: 650, scoreable: true },
-  ],
-  domain_breakdown: BREAKDOWN,
-  disclosure,
-  review_unlocked: true,
-});
+const disclosure = FIXTURE_DISCLOSURE;
+const scored = scoredReport;
 
 function show(payload: ExamReportPayload) {
   const { hook } = memoryLocation({ path: "/tests/x/report" });
@@ -81,98 +51,96 @@ describe("report screen", () => {
   it("scored: total, both sections, the facts, and the disclosure from the payload", () => {
     show(scored);
     expect(screen.getByTestId("exam-total-score").textContent).toBe("1340");
-    expect(screen.getAllByTestId("exam-section-score").map((e) => e.textContent)).toEqual([
-      expect.stringContaining("690"),
-      expect.stringContaining("650"),
-    ]);
+    expect(
+      screen.getAllByTestId("exam-section-score").map((e) => e.textContent),
+    ).toEqual([expect.stringContaining("690"), expect.stringContaining("650")]);
     const note = screen.getAllByTestId("exam-disclosure")[0]!;
     expect(note.textContent).toContain(disclosure.summary);
-    expect(screen.getAllByRole("link", { name: "Learn more" })[0]!.getAttribute("href")).toBe(disclosure.full_text_url);
+    expect(
+      screen
+        .getAllByRole("link", { name: "Learn more" })[0]!
+        .getAttribute("href"),
+    ).toBe(disclosure.full_text_url);
     expect(screen.getByText("Test-day")).toBeTruthy();
     // Ruled out: no time used, no answered count, no framing paragraph.
-    expect(document.body.textContent).not.toMatch(/time used|answered|not a count of correct answers/i);
-    expect((screen.getByRole("button", { name: "Review your answers" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(document.body.textContent).not.toMatch(
+      /time used|answered|not a count of correct answers/i,
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Review your answers",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("G1: the Score breakdown tab shows every domain's correct-of-total, grouped by section", () => {
     show(scored);
-    const tab = screen.getByRole("tab", { name: "Score breakdown" }) as HTMLButtonElement;
+    const tab = screen.getByRole("tab", {
+      name: "Score breakdown",
+    }) as HTMLButtonElement;
     expect(tab.disabled).toBe(false);
     expect(screen.queryByTestId("exam-domain-breakdown")).toBeNull();
     fireEvent.click(tab);
     expect(tab.getAttribute("aria-selected")).toBe("true");
-    const rows = screen.getAllByTestId("exam-domain-row").map((r) => r.textContent);
+    const rows = screen
+      .getAllByTestId("exam-domain-row")
+      .map((r) => r.textContent);
     expect(rows).toHaveLength(8);
     expect(rows[0]).toBe("Craft and Structure10 of 13 correct");
     expect(rows[7]).toBe("Problem Solving and Data Analysis5 of 9 correct");
     expect(screen.getByText("Reading and Writing")).toBeTruthy();
     // Keyboard: Left from the second tab returns to Section scores.
     fireEvent.keyDown(tab, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "Section scores" }).getAttribute("aria-selected")).toBe("true");
+    expect(
+      screen
+        .getByRole("tab", { name: "Section scores" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     expect(screen.getAllByTestId("exam-section-score")).toHaveLength(2);
   });
 
   it("PLANT: refuses to render a score without its disclosure", () => {
-    const stripped = { ...scored, disclosure: undefined } as unknown as ExamReportPayload;
+    const stripped = {
+      ...scored,
+      disclosure: undefined,
+    } as unknown as ExamReportPayload;
     show(stripped);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
     expect(screen.queryAllByTestId("exam-section-score")).toHaveLength(0);
     expect(document.body.textContent).not.toMatch(/1340|690|650/);
-    expect(screen.getAllByTestId("exam-score-withheld").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("exam-score-withheld").length).toBeGreaterThan(
+      0,
+    );
 
     cleanup();
-    show({ ...scored, disclosure: { ...disclosure, summary: "" } } as ExamReportPayload);
+    show({
+      ...scored,
+      disclosure: { ...disclosure, summary: "" },
+    } as ExamReportPayload);
     expect(document.body.textContent).not.toMatch(/1340/);
   });
 
   it("scoring_pending: generic copy when estimated_ready_at is null (§11.5)", () => {
-    show(
-      examReportPayloadSchema.parse({
-        report_state: "scoring_pending",
-        ...base,
-        completed_at: "2026-09-24T15:00:00Z",
-        abandoned_at: null,
-        estimated_ready_at: null,
-        review_unlocked: false,
-      }),
+    show(pendingReport);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Scoring usually takes a few minutes",
     );
-    expect(screen.getByRole("status").textContent).toContain("Scoring usually takes a few minutes");
-    expect(screen.queryByRole("button", { name: "Review your answers" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Review your answers" }),
+    ).toBeNull();
   });
 
   it("partial_scored: no total, the partial summary, the incomplete section named", () => {
-    show(
-      examReportPayloadSchema.parse({
-        report_state: "partial_scored",
-        ...base,
-        mode: "lenient",
-        abandoned_at: "2026-09-24T15:00:00Z",
-        attempt_number_for_form: 1,
-        is_first_seen_form_attempt: true,
-        score: {
-          total_scaled: null,
-          rw_scaled: 690,
-          math_scaled: null,
-          partial_display_scaled: 690,
-          scoring_model_version: "v1.0",
-          score_run_id: "a0a00000-0000-4000-8000-000000000001",
-          scored_at: "2026-09-24T15:00:05Z",
-        },
-        sections: [
-          { section: "RW", section_state: "submitted", scaled: 690, scoreable: true, incompleteness_reason: null },
-          { section: "M", section_state: "module1_submitted", scaled: null, scoreable: false, incompleteness_reason: "module1_only" },
-        ],
-        completed_sections: ["RW"],
-        incomplete_sections: ["M"],
-        domain_breakdown: RW_ROWS,
-        disclosure,
-        partial_disclosure: { summary: "Reading and Writing section score: 690. Math was not completed, so no total score is available." },
-        review_unlocked: true,
-      }),
-    );
+    show(partialReport);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
-    expect(screen.getByTestId("exam-partial-summary").textContent).toContain("no total score");
-    expect(screen.getAllByTestId("exam-section-score")[1]!.textContent).toContain("Not completed");
+    expect(screen.getByTestId("exam-partial-summary").textContent).toContain(
+      "no total score",
+    );
+    expect(
+      screen.getAllByTestId("exam-section-score")[1]!.textContent,
+    ).toContain("Not completed");
     expect(screen.getAllByTestId("exam-disclosure").length).toBeGreaterThan(0);
     // G1: only the scored section is broken down; Math has no rows beside its missing score.
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
@@ -181,34 +149,17 @@ describe("report screen", () => {
   });
 
   it("failed_requires_review: the payload's message and reference, nothing internal", () => {
-    show(
-      examReportPayloadSchema.parse({
-        report_state: "failed_requires_review",
-        ...base,
-        completed_at: "2026-09-24T15:00:00Z",
-        abandoned_at: null,
-        failure_summary: {
-          student_facing_message: "Your test score isn't available yet because of a technical issue on our end. (Reference: INC-1a2b3c4d)",
-          incident_reference: "INC-1a2b3c4d",
-          recorded_at: "2026-09-24T15:00:05Z",
-        },
-        review_unlocked: false,
-      }),
+    show(failedReport);
+    expect(screen.getByTestId("exam-failure-message").textContent).toContain(
+      "INC-1a2b3c4d",
     );
-    expect(screen.getByTestId("exam-failure-message").textContent).toContain("INC-1a2b3c4d");
   });
 
   it("not_completed and unavailable render without a score", () => {
-    show(
-      examReportPayloadSchema.parse({
-        report_state: "not_completed",
-        ...base,
-        session_state: "active",
-        resumable: true,
-        review_unlocked: false,
-      }),
-    );
-    expect(screen.getByRole("link", { name: "Resume test" }).getAttribute("href")).toBe(`/tests/${base.session_id}`);
+    show(inProgressReport);
+    expect(
+      screen.getByRole("link", { name: "Resume test" }).getAttribute("href"),
+    ).toBe(`/tests/${base.session_id}`);
     cleanup();
     show(
       examReportPayloadSchema.parse({
@@ -220,7 +171,9 @@ describe("report screen", () => {
         review_unlocked: false,
       }),
     );
-    expect(screen.getByText("This report isn't available right now")).toBeTruthy();
+    expect(
+      screen.getByText("This report isn't available right now"),
+    ).toBeTruthy();
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
   });
 });
