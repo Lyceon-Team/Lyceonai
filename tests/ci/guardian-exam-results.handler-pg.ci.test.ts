@@ -163,10 +163,15 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
       `UPDATE public.test_forms SET status = 'published', published_at = now(), name = 'Practice Test 1' WHERE id = $1`,
       [FORM],
     );
-    // Genesis seeds the feature disabled; production enables it by row (read 2026-09-27).
-    await pg.query(
-      `UPDATE public.entitlement_features SET enabled = true WHERE feature_key = 'exam_full_length'`,
+    // The migrations alone leave the feature ENABLED: genesis seeds the row without an
+    // `enabled` value and the column defaults to TRUE (the positional FALSE in that seed
+    // is `blocked_during_live_exam`). Production reads the same (read-only, 2026-09-27).
+    // Asserted, not set, so a fresh environment that would bring the exam up dark fails
+    // here instead of being papered over (G2 decision log, correcting G1's reading).
+    const feature = await pg.query(
+      `SELECT enabled FROM public.entitlement_features WHERE feature_key = 'exam_full_length'`,
     );
+    expect(feature.rows).toEqual([{ enabled: true }]);
     const people: Array<[string, string]> = [
       [GUARDIAN, "guardian"],
       [OTHER_GUARDIAN, "guardian"],
