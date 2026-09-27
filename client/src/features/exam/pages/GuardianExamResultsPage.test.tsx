@@ -121,8 +121,13 @@ describe("guardian exam result", () => {
     ).toEqual([expect.stringContaining("690"), expect.stringContaining("650")]);
     expect(screen.getByText("Test-day")).toBeTruthy();
     expect(screen.getByText("Seen before")).toBeTruthy();
-    expect(screen.getByTestId("exam-disclosure").textContent).toContain(
-      FIXTURE_DISCLOSURE.summary,
+    // G2 (SCL-182): the summary alone, no "Learn more" and no link target.
+    const note = screen.getByTestId("exam-disclosure");
+    expect(note.textContent).toBe(FIXTURE_DISCLOSURE.summary);
+    expect(note.querySelector("a")).toBeNull();
+    expect(screen.queryByRole("link", { name: /learn more/i })).toBeNull();
+    expect(document.body.innerHTML).not.toContain(
+      FIXTURE_DISCLOSURE.full_text_url,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
     const rows = screen

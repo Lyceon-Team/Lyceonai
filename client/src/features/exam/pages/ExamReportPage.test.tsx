@@ -54,13 +54,13 @@ describe("report screen", () => {
     expect(
       screen.getAllByTestId("exam-section-score").map((e) => e.textContent),
     ).toEqual([expect.stringContaining("690"), expect.stringContaining("650")]);
+    // G2 (SCL-182): the summary stands alone — exactly the payload's text, no link,
+    // and the payload's full_text_url is not rendered anywhere.
     const note = screen.getAllByTestId("exam-disclosure")[0]!;
-    expect(note.textContent).toContain(disclosure.summary);
-    expect(
-      screen
-        .getAllByRole("link", { name: "Learn more" })[0]!
-        .getAttribute("href"),
-    ).toBe(disclosure.full_text_url);
+    expect(note.textContent).toBe(disclosure.summary);
+    expect(note.querySelector("a")).toBeNull();
+    expect(screen.queryByRole("link", { name: /learn more/i })).toBeNull();
+    expect(document.body.innerHTML).not.toContain(disclosure.full_text_url);
     expect(screen.getByText("Test-day")).toBeTruthy();
     // Ruled out: no time used, no answered count, no framing paragraph.
     expect(document.body.textContent).not.toMatch(
