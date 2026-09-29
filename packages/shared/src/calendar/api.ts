@@ -28,6 +28,7 @@ import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
 import {
   fullLengthIntervalWeeksSchema,
+  postgresDowSchema,
   studyProfileBoundsSchema,
   studyProfileSchema,
   targetScoreSchema,
@@ -171,6 +172,14 @@ export const calendarSetupDefaultsSchema = z
     // Bounded by the same schema the write path uses, so the form can never be prefilled
     // with a cadence the upsert would then refuse.
     default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The weekday half of the same prefill (20261013000000). Bounded by
+    // `postgresDowSchema` — the SAME schema the write path holds
+    // `full_length_weekday` to — so the form can never be prefilled with a day the
+    // upsert would then refuse. NOT nullable: a default is a value the control
+    // opens on, and "no default" is what the day row had when it opened on None
+    // while the cadence row opened on 2, which is half of a pair the database
+    // refuses to store.
+    default_full_length_weekday: postgresDowSchema,
     // The frequency readout is on the SETUP form too, so the constant it needs travels with
     // the rest of the prefill rather than being fetched separately.
     final_exam_lead_days: z.number().int().positive(),
@@ -223,6 +232,14 @@ export const examPlanningSchema = z
      * even though the two payload arms shape them differently.
      */
     default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The weekday half of the same prefill (20261013000000). Bounded by
+    // `postgresDowSchema` — the SAME schema the write path holds
+    // `full_length_weekday` to — so the form can never be prefilled with a day the
+    // upsert would then refuse. NOT nullable: a default is a value the control
+    // opens on, and "no default" is what the day row had when it opened on None
+    // while the cadence row opened on 2, which is half of a pair the database
+    // refuses to store.
+    default_full_length_weekday: postgresDowSchema,
   })
   .strict();
 export type ExamPlanning = z.infer<typeof examPlanningSchema>;

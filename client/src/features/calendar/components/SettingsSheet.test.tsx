@@ -39,6 +39,7 @@ const ESTIMATES: PlanningEstimates = {
 const EXAM_PLANNING = {
   final_exam_lead_days: 7,
   default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
 };
 
 /** Presets chosen to be unmistakable: no default list contains 25 or 55. */

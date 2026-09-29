@@ -39,7 +39,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
 import { addDays, daysBetween } from "../lib/dates";
 import {
-  DEFAULT_EXAM_WEEKDAY,
   EXAM_FREQUENCIES,
   examCadenceNote,
   WEEKDAYS,
@@ -78,7 +77,6 @@ const DAY_CHIPS = WEEKDAYS;
  * point, when the student chooses it.
  */
 const OPENING_DAYS = [1, 2, 3, 4, 5];
-const OPENING_FULL_LENGTH_WEEKDAY: number | null = null;
 
 /** §8.1: 400..1600 in steps of 10. The slider cannot express anything else. */
 const SCORE_MIN = 400;
@@ -200,9 +198,49 @@ export function SetupPopup({
   const [minutes, setMinutes] = useState<number>(
     () => defaults.daily_minutes_presets[3] ?? defaults.daily_minutes_min,
   );
-  const [flWeekday, setFlWeekday] = useState<number | null>(
-    OPENING_FULL_LENGTH_WEEKDAY,
-  );
+  /**
+   * §8.1's practice-test DAY, in the same shape as the cadence below and for the same
+   * reason. It opened on None while the cadence row opened on the served default, so one
+   * decision showed the student two different answers to "is there a default here?" — and
+   * `full_length_pair` refuses a profile carrying one half without the other, so None-plus-2
+   * was half of something the database will not store.
+   *
+   * `default_full_length_weekday` (6, seeded by 20261013000000) is the served prefill, and
+   * Saturday because the real SAT is sat on a Saturday.
+   *
+   * R-08-27 IS NOT REPEALED BY SHOWING IT. A full-length spends a whole day's budget, so it
+   * must be a choice the student made, not one they were credited with for staying silent:
+   * `pressedWeekday()` paints the chip, `submittedWeekday()` is what goes on the wire, and
+   * a student who answers neither row still sends both halves null.
+   */
+  type ExamDay =
+    | { answered: false }
+    | { answered: true; weekday: number | null };
+  const [examDay, setExamDay] = useState<ExamDay>({ answered: false });
+
+  /** What the day chips paint: the student's answer, or the served default while silent. */
+  function pressedWeekday(): number | null {
+    return examDay.answered
+      ? examDay.weekday
+      : defaults.default_full_length_weekday;
+  }
+
+  /** What is SENT. Silence is null, whatever the row is showing. */
+  function submittedWeekday(): number | null {
+    return examDay.answered ? examDay.weekday : null;
+  }
+
+  /**
+   * Picking a CADENCE answers the day too, and can never answer it with null — the mirror of
+   * `adoptShownCadence` below, including its null-coalesce. Without it, None-on-the-day then
+   * a cadence pick emits `{weekday: null, interval: 2}`: half a pair, refused.
+   */
+  function adoptShownDay(): void {
+    setExamDay({
+      answered: true,
+      weekday: pressedWeekday() ?? defaults.default_full_length_weekday,
+    });
+  }
 
   /**
    * §8.1's cadence. THE CHIP THAT LOOKS PRESSED AND THE VALUE THAT IS SENT ARE TWO THINGS,
@@ -273,7 +311,9 @@ export function SetupPopup({
    */
   function setupExamNote(): string {
     return examCadenceNote({
-      weekday: flWeekday,
+      // The SUBMITTED value, like the cadence beside it: the sentence describes what will
+      // actually be scheduled, and while the pair is unanswered that is nothing.
+      weekday: submittedWeekday(),
       // The SUBMITTED value, not the painted one: the sentence describes what will
       // actually be scheduled, and while the pair is unanswered that is nothing.
       intervalWeeks: submittedWeeks(),
@@ -310,7 +350,7 @@ export function SetupPopup({
       target_score: score,
       study_days_mask: maskOf(days),
       daily_minutes: minutes,
-      full_length_weekday: flWeekday,
+      full_length_weekday: submittedWeekday(),
       full_length_interval_weeks: submittedWeeks(),
       timezone,
     };
@@ -479,12 +519,13 @@ export function SetupPopup({
                 <label>Practice test day</label>
                 <div className="chips" data-testid="calendar-setup-fl">
                   <Chip
-                    active={flWeekday === null}
+                    active={pressedWeekday() === null}
                     onClick={() => {
-                      setFlWeekday(null);
-                      // An explicit None on the day is an explicit None on the pair. The
-                      // cadence becomes ANSWERED-as-null rather than returning to unanswered,
-                      // so the frequency row stops showing a default the student just refused.
+                      // An explicit None on the day is an explicit None on the pair. BOTH
+                      // become ANSWERED-as-null rather than returning to unanswered, so
+                      // neither row springs back to showing a default the student just
+                      // refused.
+                      setExamDay({ answered: true, weekday: null });
                       setCadence({ answered: true, weeks: null });
                     }}
                   >
@@ -493,9 +534,9 @@ export function SetupPopup({
                   {DAY_CHIPS.map((d) => (
                     <Chip
                       key={d.dow}
-                      active={flWeekday === d.dow}
+                      active={pressedWeekday() === d.dow}
                       onClick={() => {
-                        setFlWeekday(d.dow);
+                        setExamDay({ answered: true, weekday: d.dow });
                         adoptShownCadence();
                       }}
                     >
@@ -514,7 +555,7 @@ export function SetupPopup({
                     active={pressedWeeks() === null}
                     onClick={() => {
                       setCadence({ answered: true, weeks: null });
-                      setFlWeekday(null);
+                      setExamDay({ answered: true, weekday: null });
                     }}
                   >
                     None
@@ -525,10 +566,10 @@ export function SetupPopup({
                       active={pressedWeeks() === f.value}
                       onClick={() => {
                         setCadence({ answered: true, weeks: f.value });
-                        // Completes the pair. Setup has no Save to disable, so a cadence with
-                        // no day would submit half a pair and meet a 400 — see
-                        // DEFAULT_EXAM_WEEKDAY for why the day is Saturday.
-                        setFlWeekday(flWeekday ?? DEFAULT_EXAM_WEEKDAY);
+                        // Completes the pair. Setup has no Save to disable, so a cadence
+                        // with no day would submit half a pair and meet a 400. The day it
+                        // adopts is the SERVED default, never a literal (§17).
+                        adoptShownDay();
                       }}
                     >
                       {f.label}

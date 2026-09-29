@@ -54,15 +54,17 @@ export const WEEKDAYS: readonly {
 ];
 
 /**
- * The day a cadence adopts when a student names a frequency without naming a day.
+ * THE SATURDAY DEFAULT IS NO LONGER A LITERAL HERE. It was `DEFAULT_EXAM_WEEKDAY = 6` in
+ * this file, duplicated by the setup form and the settings sheet; it is now
+ * `default_full_length_weekday` in `calendar_runtime_config` (6, bounds 0..6, seeded by
+ * 20261013000000), served on both payload arms and read from there.
  *
- * Saturday because the real SAT is sat on a Saturday morning and #928's worked example is a
- * Saturday exam. It is NOT a pre-selection: the weekday row still opens unanswered (R-08-27),
- * so this is only ever reached by a student who has said they want practice tests. The
- * alternative — leaving the weekday null — builds half a pair, and `full_length_pair` refuses
- * it, which would put a 400 in front of someone who answered the question correctly.
+ * Doc 05F §17 forbids a literal where a config value exists, and the reason is the one this
+ * constant would have met next: an operator moving the default would have moved it on one
+ * surface and not the other, because a constant in the client is not the value the server
+ * plans against. Saturday is still the answer — the real SAT is sat on a Saturday — but it
+ * is now the answer in one place.
  */
-export const DEFAULT_EXAM_WEEKDAY = 6;
 
 /**
  * The exam half of the readout. THREE shapes, and which one appears is the point:

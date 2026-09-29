@@ -94,6 +94,7 @@ const DEFAULTS: CalendarSetupDefaults = {
   daily_minutes_max: 180,
   target_exam_date_max_days: 365,
   default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
   final_exam_lead_days: 7,
 };
 
