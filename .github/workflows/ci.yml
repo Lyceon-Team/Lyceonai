@@ -1169,6 +1169,23 @@ jobs:
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G1-10; audit G-AUD-15b] | @implemented [2026-09-29]
+      # Replaces a unit test that mocked the entitlement verdict it asserted: a paid GUARDIAN
+      # entitlement grants nothing while the linked student has none, on real rows, with a
+      # control that flips only the student's entitlement.
+      - name: Guardian payment ≠ access → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-payment-access.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-payment-access.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-payment-access.json \
+            --file tests/ci/guardian-payment-access.pg.ci.test.ts
+
       # @spec [Doc-01_V8 §40.5; SCL-083 PROPOSED; contracts/notifications.contract.md C0.6] | @implemented [2026-09-15]
       # Deletion-completed notice: the address is read BEFORE the RPCs (call order), a failed or
       # rolled-back deletion sends nothing, a rejected send leaves the deletion committed and the

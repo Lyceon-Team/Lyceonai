@@ -142,9 +142,8 @@ function assertNoForbiddenKeys(
 // ---------------------------------------------------------------------------
 
 const accountMocks = {
-  isGuardianLinkedToStudent: vi.fn(async () => true),
   getAllGuardianStudentLinks: vi.fn(async () => [
-    { student_user_id: STUDENT_ID },
+    { student_profile_id: STUDENT_ID },
   ]),
   revokeGuardianLink: vi.fn(),
   ensureAccountForUser: vi.fn(async () => ({ id: "acc-1" })),
@@ -249,13 +248,6 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
     },
   };
 });
-vi.mock("../../server/middleware/guardian-entitlement", () => ({
-  requireGuardianEntitlement: (
-    _req: unknown,
-    _res: unknown,
-    next: () => void,
-  ) => next(),
-}));
 vi.mock("../../server/middleware/guardian-role", () => ({
   requireGuardianRole: () => (_req: unknown, _res: unknown, next: () => void) =>
     next(),
@@ -265,12 +257,6 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
     next(),
   generateToken: () => "test-csrf-token",
 }));
-vi.mock("../../server/lib/durable-rate-limiter", () => ({
-  createDurableRateLimiter:
-    () => (_req: unknown, _res: unknown, next: () => void) =>
-      next(),
-}));
-
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => {
@@ -290,34 +276,50 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       // The fake HONOURS `.select(...)`, projecting to the named columns. Without that,
       // a route that regressed to `.select("*")` would look identical to one naming a safe
       // column list — the check would pass on both, which is no check at all.
-      let projected = rows;
-      const builder = {
-        select: (columns?: string) => {
-          if (typeof columns === "string" && columns !== "*") {
-            const names = columns.split(",").map((c) => c.trim());
-            projected = rows.map((row) =>
+      //
+      // G1-10: it now honours `.eq()` and `.in()` too. It ignored both, which is how a
+      // links fixture naming a column guardian_links has never had (`student_user_id`)
+      // still produced a one-student roster: the route asked for `id IN (undefined)` and
+      // the fake answered with every row anyway.
+      type Row = Record<string, unknown>;
+      let filtered: Row[] = rows as Row[];
+      let columns: string[] | null = null;
+      const resolve = (): Row[] =>
+        columns === null
+          ? filtered
+          : filtered.map((row) =>
               Object.fromEntries(
-                names
-                  .filter((n) => n in (row as Record<string, unknown>))
-                  .map((n) => [n, (row as Record<string, unknown>)[n]]),
+                (columns as string[])
+                  .filter((n) => n in row)
+                  .map((n) => [n, row[n]]),
               ),
-            ) as typeof rows;
+            );
+      const builder = {
+        select: (cols?: string) => {
+          if (typeof cols === "string" && cols !== "*") {
+            columns = cols.split(",").map((c) => c.trim());
           }
           return builder;
         },
-        eq: () => builder,
-        in: () => builder,
+        eq: (col: string, val: unknown) => {
+          filtered = filtered.filter((row) => row[col] === val);
+          return builder;
+        },
+        in: (col: string, vals: unknown[]) => {
+          filtered = filtered.filter((row) => vals.includes(row[col]));
+          return builder;
+        },
         gte: () => builder,
         lte: () => builder,
         order: () => builder,
         limit: () => builder,
         insert: async () => ({ error: null }),
-        single: async () => ({ data: projected[0] ?? null, error: null }),
-        maybeSingle: async () => ({ data: projected[0] ?? null, error: null }),
+        single: async () => ({ data: resolve()[0] ?? null, error: null }),
+        maybeSingle: async () => ({ data: resolve()[0] ?? null, error: null }),
         then: (
           onfulfilled?: (v: { data: unknown[]; error: null }) => unknown,
         ) =>
-          Promise.resolve({ data: projected, error: null }).then(onfulfilled),
+          Promise.resolve({ data: resolve(), error: null }).then(onfulfilled),
       };
       return builder;
     },
@@ -348,9 +350,8 @@ async function buildGuardianApp() {
 describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
-      { student_user_id: STUDENT_ID },
+      { student_profile_id: STUDENT_ID },
     ]);
   });
 
@@ -365,6 +366,12 @@ describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
       "/api/guardian/students",
     );
     expect(res.status).toBe(200);
+    // G1-10 (audit G-AUD-15d): PRESENCE BEFORE ABSENCE. An empty roster contains no
+    // forbidden key either, so without this the walk below passes for the wrong reason.
+    // The fixture used `student_user_id`, a column guardian_links has never had, so the route
+    // looked up `[undefined]` and only a fake that ignored `.in()` kept the list non-empty.
+    expect(res.body.students).toHaveLength(1);
+    expect(res.body.students[0].id).toBe(STUDENT_ID);
     assertNoForbiddenKeys("students", res.body, RULE_4_KEYS);
   }, 15000);
 
