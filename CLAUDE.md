@@ -167,23 +167,32 @@ Before implementing scheduling, queueing, retries, alerting, tracing, or any oth
 
 This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
 
-## Branch targeting — four integration branches, never `main`
+## Branch targeting — seven integration branches, never `main`
 
-Four long-lived integration branches exist. Route every PR to the correct one by scope:
+Seven long-lived integration branches exist. Route every PR to the correct one by scope:
 
 | Branch | Scope | Examples |
 |---|---|---|
 | `questions` | Question bank creation **only** | Batch authoring, taxonomy edits, seed SQL, ingestion pipeline |
 | `lisa` | AI tutor / LISA work | Tutor runtime, context/memory, RAG, LISA API, tutor-adjacent tests |
-| `stripe` | Billing / entitlement vertical **and WS-GL** | Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer |
-| `cleanup` | Everything else | Spec alignment, auth, mastery, practice engine, frontend, CI, docs |
+| `calendar` | Study-calendar vertical | Plan generation, `calendar_validate_plan`, calendar schema gates, calendar surfaces |
+| `exam` | Full-length exams | Exam runtime and session state, scoring, score reports, review unlock |
+| `guardian` | Guardian-facing surfaces | Guardian dashboard, guardian projections, guardian exam results |
+| `review` | Review vertical | Review pool and session runtime, `review-canonical`, review surfaces |
+| `cleanup` | Everything else — **including billing / entitlement and WS-GL** | Spec alignment, auth, mastery, practice engine, Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer, frontend, CI, docs |
 
-**Why WS-GL routes to `stripe`, not `cleanup`.** The governing charter
+**`stripe` no longer exists; billing routes to `cleanup`.** The 2026-08-24 ruling sent the
+billing / entitlement vertical and WS-GL to a `stripe` branch on the grounds that the governing charter
 (`docs/plans/Stripe_Vertical_Session_Charter.md`), the SCL register entries it depends on, and its own
-defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) all live on `stripe` and nowhere else —
-`git ls-tree origin/cleanup -- docs/plans/` returns none of them. WS-GL also unblocks the guardian-paid
-billing path. Splitting a workstream from its dependencies to satisfy a scope table is the wrong trade;
-the table is corrected to match reality instead. Owner ruling, 2026-08-24.
+defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) lived on `stripe` and nowhere else.
+That branch has since merged and been deleted from the remote (`git ls-remote --heads origin stripe`
+returns nothing), and its premise went with it: those files are now on `cleanup`, on `main`, and on
+every other integration branch — `git ls-tree origin/cleanup -- docs/plans/` returns both. The
+dependencies and the workstream are no longer separated by routing billing to `cleanup`, so billing,
+entitlement and WS-GL route there. Owner brief, 2026-09-29.
+
+**A routing rule pointing at a deleted branch sends the next agent nowhere.** Verify a target branch
+still exists before trusting this table: `git ls-remote --heads origin <branch>`.
 
 **Never open a PR against `main`.** Karl owns all merges to `main`.
 

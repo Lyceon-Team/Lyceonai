@@ -61,12 +61,14 @@ jobs:
           node scripts/ci/nested-anchor-gate.mjs --selftest
           node scripts/ci/nested-anchor-gate.mjs
 
-      # No SCL id may head two entries in the register. Three collisions
-      # (SCL-021, SCL-024, SCL-042) reached it despite every author having read
-      # the register first — reading does not reserve a number, so only a
-      # mechanical check closes the same-day race. The two pre-existing
-      # collisions are allowlisted by exact count inside the script, with an
-      # expiry note; a third heading on either still fails.
+      # No SCL id may head two entries in the register. Collisions keep reaching
+      # it — SCL-021, SCL-024, SCL-042, SCL-043, and SCL-171/SCL-172 twice over
+      # on 2026-09-26 — despite every author having read the register first.
+      # Reading does not reserve a number, so only a mechanical check closes the
+      # same-day race. The allowlist inside the script is now EMPTY: every
+      # pre-existing collision was renumbered on 2026-09-26, so the register has
+      # no duplicate heading at all and ANY duplicate fails here on its first
+      # appearance.
       # §17.1's band is Doc 05C's, summed. The selftest runs FIRST and on its own line: a
       # gate whose matcher has rotted reports zero findings and reads exactly like a clean
       # tree.

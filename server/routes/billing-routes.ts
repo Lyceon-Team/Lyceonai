@@ -988,6 +988,25 @@ function intervalLabel(
 }
 
 /**
+ * Stripe's `recurring.interval` narrowed to the four values the contract names.
+ *
+ * Stripe types it as a string union today, but this route receives it across a
+ * network boundary from a vendor that may add a value; anything unrecognised
+ * becomes null, which costs the card its per-month equivalent and never a wrong
+ * one. Coding Standards §7.1 — narrow at the boundary rather than assert.
+ */
+function recurringInterval(
+  interval: string | null,
+): "day" | "week" | "month" | "year" | null {
+  return interval === "day" ||
+    interval === "week" ||
+    interval === "month" ||
+    interval === "year"
+    ? interval
+    : null;
+}
+
+/**
  * GET /api/billing/plans — price metadata read live from Stripe.
  *
  * No hardcoded amounts. Doc 09 §1.4 and §5.1 make Stripe canonical for pricing
@@ -1014,6 +1033,8 @@ router.get(
               amountCents: null,
               currency: null,
               intervalLabel: null,
+              interval: null,
+              intervalCount: null,
               stripePriceIdConfigured: false,
             };
           }
@@ -1027,6 +1048,14 @@ router.get(
               price.recurring?.interval ?? null,
               price.recurring?.interval_count ?? null,
             ),
+            // THE INTERVAL AS DATA, NOT ONLY AS PROSE. `intervalLabel` is a
+            // sentence and a sentence cannot be divided; the per-month
+            // equivalent is `unit_amount / months`, so the client needs the
+            // interval itself. Sending only the label is what left `upgrade.tsx`
+            // unable to compute the equivalent and reaching for a hardcoded
+            // table instead.
+            interval: recurringInterval(price.recurring?.interval ?? null),
+            intervalCount: price.recurring?.interval_count ?? null,
             stripePriceIdConfigured: true,
           };
         }),
