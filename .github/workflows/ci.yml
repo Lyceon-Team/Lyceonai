@@ -1153,6 +1153,22 @@ jobs:
       # both §36.2 buckets on the real ledger, redeem still requires auth, byte-identical
       # response for known/unknown addresses). Real migrations on the throwaway Postgres;
       # verdict from vitest's JSON report so a skipped PG suite cannot read as a pass.
+      # @spec [Guardian_Closure_Plan G1-04; audit G-AUD-07] | @implemented [2026-09-29]
+      # A guardian dashboard view writes one audit_logs row in the link events' shape, with
+      # IDs and counts only. Real migrations on the throwaway Postgres; skip-proof verdict.
+      - name: Guardian access events → audit_logs real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-access-audit.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-access-audit.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-access-audit.json \
+            --file tests/ci/guardian-access-audit.pg.ci.test.ts
+
       - name: Guardian unlink event + invite → real PG proof
         env:
           PGHOST: localhost
