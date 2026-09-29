@@ -42,6 +42,11 @@ export const GUARDIAN_SUBSCRIPTION_PAGE_SIZE = 100;
 /**
  * How many pages to walk before refusing to answer.
  *
+ * Five pages, and a hard refusal on `has_more` at the cap — owner ruling
+ * 2026-09-29, on the reason stated below: returning a prefix would make a
+ * subscription that fell off the end indistinguishable from one that does not
+ * exist.
+ *
  * Five, so 500 subscriptions. The real ceiling is the number of students one
  * guardian funds, and 500 is two orders of magnitude above any plausible
  * guardian while still bounding the walk — a Customer with a pathological
@@ -54,11 +59,13 @@ export const GUARDIAN_SUBSCRIPTION_MAX_PAGES = 5;
  * Statuses in which a subscription is paying for, or is about to pay for, its
  * student.
  *
- * THE RULING SAID "ACTIVE"; THIS IS WIDER, DELIBERATELY. The check exists to
- * cover the window between a subscription existing in Stripe and its webhook
- * writing our entitlement row. An `incomplete` subscription is precisely that
- * window — a completed session whose payment has not settled yet — so scanning
- * only `active` would leave open the case the check is for. `trialing`,
+ * WIDER THAN "ACTIVE", AND RULED SO (owner ruling 2026-09-29). The brief said
+ * `active`; this set is wider, and the owner ratified the widening on the
+ * reasoning below rather than the wording. The check exists to cover the window
+ * between a subscription existing in Stripe and its webhook writing our
+ * entitlement row. An `incomplete` subscription is precisely that window — a
+ * completed session whose payment has not settled yet — so scanning only
+ * `active` would leave open the exact case the check is for. `trialing`,
  * `past_due`, `unpaid` and `paused` are all states in which the student is
  * already funded and a second subscription would bill twice; SCL-029 already
  * rules a `past_due` student entitled.
