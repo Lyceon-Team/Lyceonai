@@ -6,7 +6,7 @@
  *        INV-08-06 as amended by sheet §8 item 7]
  *
  * docs/Spec/calendar_formula_reference.py is the oracle, as validation_sweep.py
- * is for Doc 04B. This gate runs the nine committed fixtures and the seeded
+ * is for Doc 04B. This gate runs every committed fixture and the seeded
  * suite — suite(N, seed) and suite_fallback(N, seed), regenerated from
  * rand_snapshot and never stored — through BOTH the reference and the PL/pgSQL
  * RPCs, and fails on any byte difference or any suite violation.
@@ -191,6 +191,9 @@ async function checkConstants(client: PgClient): Promise<void> {
   );
 }
 
+/** Set from the fixture file when the fixture pass runs; the self-check below reads it. */
+let fixtureCount = 0;
+
 async function runCases(client: PgClient, label: string, cases: ParityCase[]): Promise<void> {
   const before = failures.length;
   for (let off = 0; off < cases.length; off += BATCH) {
@@ -203,9 +206,11 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
          LATERAL (SELECT public.calendar_compute_plan(t.s) AS det,
                          public.calendar_compute_plan_fallback(t.s) AS fb) p,
          LATERAL (SELECT public.calendar_validate_plan('generated', t.s,
-                           public.calendar_plan_to_output(p.det, 'parity', t.enabled)) AS vdet,
+                           pg_temp.parity_narrow(
+                             public.calendar_plan_to_output(p.det, 'parity', t.enabled), t.s)) AS vdet,
                          public.calendar_validate_plan('generated', t.s,
-                           public.calendar_plan_to_output(p.fb, 'parity', t.enabled)) AS vfb) v
+                           pg_temp.parity_narrow(
+                             public.calendar_plan_to_output(p.fb, 'parity', t.enabled), t.s)) AS vfb) v
         ORDER BY t.idx`,
       [part.map((c) => JSON.stringify(c.snapshot))],
     );
@@ -305,6 +310,40 @@ async function main(): Promise<void> {
     database: process.env.PGDATABASE ?? 'postgres',
   });
   await client.connect();
+
+  // WHY THE VALIDATED OUTPUT IS NARROWED, AND ONLY THE VALIDATED ONE.
+  //
+  // calendar_persist_version does not validate what calendar_compute_plan produced. It
+  // validates that output after THREE filters -- calendar_carry_started,
+  // calendar_drop_today_for_system and calendar_drop_unowned_dates -- and the last of
+  // those removes any date `generated_for.dates` does not name, "chiefly one the student
+  // has overridden" (its own COMMENT). The generator deliberately walks the whole horizon
+  // and never reads generated_for.dates, so overridden dates leave it and are dropped
+  // downstream, before any validator sees them.
+  //
+  // This gate used not to send `current_overrides` at all, so V-14 ("generated may not
+  // take over a date the student has overridden") could never fire here. Now that
+  // placement needs overrides, the snapshot carries them -- and validating the RAW output
+  // made the gate assert something production never does: 372 of 424 comparisons failed
+  // on V-14 while the plans themselves matched the oracle exactly.
+  //
+  // So the narrowing is applied to the output fed to the validator, and NOT to the plan
+  // compared against the oracle: the oracle plans those dates too, and hiding them from
+  // the comparison would weaken the very thing this gate exists to check. pg_temp keeps
+  // the helper session-local, so nothing is added to the database under test.
+  await client.query(`
+    CREATE FUNCTION pg_temp.parity_narrow(p_output jsonb, p_input jsonb) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE AS $fn$
+      SELECT jsonb_set(p_output, '{dates}', COALESCE((
+        SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+        FROM jsonb_array_elements(COALESCE(p_output -> 'dates', '[]'::jsonb)) d
+        WHERE NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(
+                     COALESCE(p_input -> 'current_overrides', '[]'::jsonb)) o
+           WHERE (o ->> 'is_user_override')::boolean
+             AND (o ->> 'scheduled_date') = (d ->> 'scheduled_date'))
+      ), '[]'::jsonb))
+    $fn$;`);
   try {
     const { rows } = await client.query<{ v: string; major: string }>(
       "SELECT version() AS v, split_part(current_setting('server_version'), '.', 1) AS major",
@@ -329,8 +368,13 @@ async function main(): Promise<void> {
     console.log('==> calendar_runtime_config vs the oracle constants');
     await checkConstants(client);
 
-    console.log('==> nine committed fixtures');
-    await runCases(client, 'fixtures', emitCases(['fixtures']));
+    const fixtureCases = emitCases(['fixtures']);
+    // The COUNT COMES FROM THE FILE, never a literal. It read `9` in two places and the
+    // owner's twelfth fixture made both wrong at once -- one of them the self-check that
+    // exists to catch a gate which silently compared nothing.
+    fixtureCount = fixtureCases.length;
+    console.log(`==> ${fixtureCount} committed fixtures`);
+    await runCases(client, 'fixtures', fixtureCases);
 
     console.log(`==> seeded suite (N=${suiteN}, seed=${suiteSeed}), regenerated, never stored`);
     await runCases(client, 'suite', emitCases(['suite', String(suiteN), String(suiteSeed)]));
@@ -346,7 +390,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   // A gate that compared nothing exits 0 and proves nothing. Refuse that.
-  const expected = (9 + suiteN) * 2;
+  const expected = (fixtureCount + suiteN) * 2;
   if (comparisons !== expected) {
     console.error(`\nFAIL: compared ${comparisons} plans, expected ${expected} — the gate did not run what it claims to run`);
     process.exit(1);

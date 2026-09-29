@@ -47,8 +47,8 @@ Three email lanes exist. This contract governs exactly one.
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` and `guardian_unlinked` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; adding a type is a CHECK change plus a row in §2.3).
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked` and `guardian_unlinked`; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked`, `guardian_unlinked`, `full_length_week` and `full_length_tomorrow` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; the two practice-test notices added 2026-09-27 by `20261012000000_calendar_exam_notifications.sql`; adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than those four; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -78,10 +78,21 @@ Three email lanes exist. This contract governs exactly one.
 |---|---|---|---|
 | `guardian_linked` | the student | student: `in_app`; guardian: `in_app`, `email` | `create_active_guardian_link_audited` |
 | `guardian_unlinked` | the student | the party who did NOT revoke (`v_target`, derived once inside the function): `in_app`, `email`; the revoker: nothing | `revoke_guardian_link_audited` |
+| `full_length_week` | the student | the student: `in_app` | `calendar_emit_exam_notification` |
+| `full_length_tomorrow` | the student | the student: `in_app`, `email` | `calendar_emit_exam_notification` |
 
 Not event types (see §0.4): the guardian consent request, the deletion-scheduled email and the guardian link INVITE (the student's current code, sent to an address with no profile row; `sendGuardianLinkInviteEmail`, keyed on student id + code issue time + a hash of the address) are direct sends.
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; or an event row exists whose type is not in this table.
+The two practice-test rows are Brief 14 Step 5 (Doc 05F §8.1), added 2026-09-27. The student is
+both subject and sole recipient: a practice test is the work, and Doc 01 §38.1 gives a guardian
+aggregates rather than the student's nudges — there is no guardian message row at either kind.
+The CHANNEL SPLIT is a judgement the brief did not rule on and the owner may reverse in one line:
+the day-before notice carries `email` because it is time-critical and a bell nobody opens is not a
+notification, and the week-ahead notice does not, because §12.2 says minimise contact on a minor's
+surface and the student sees the week when they open the calendar. It is one `jsonb_build_array`
+in `calendar_emit_exam_notification` plus this row.
+
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; a `full_length_week` or `full_length_tomorrow` event has a message for any profile other than its subject student, or a `full_length_week` event has an `email` row, or a `full_length_tomorrow` event lacks one; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.
@@ -139,7 +150,17 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 ## 5. Idempotency
 
 **C5.1** `event_id` is deterministic: `public.notification_event_id(event_type, source_id)` = the first 16 bytes of `sha256(event_type || ':' || source_id)` with the RFC 4122 version nibble set to 5 and the variant bits set to `10`. The TypeScript derivation in `server/lib/notifications/event-id.ts` produces the identical uuid.
-*Violated if:* for any `(event_type, source_id)` the SQL and TypeScript results differ, or two calls with the same inputs differ.
+
+THE EVENT TYPE BEING IN THE HASH IS LOAD-BEARING, not incidental. It is what lets ONE source row
+carry several independently-idempotent notifications: the `guardian_linked` and `guardian_unlinked`
+ids for one link row, and the `full_length_week` and `full_length_tomorrow` ids for one exam block.
+A design that put the distinction in the payload instead (`{"kind": ...}`) would derive one id per
+source row, and every notification after the first would be swallowed by the ON CONFLICT of C5.2 —
+silently, because a swallowed replay and a swallowed second message are the same no-op. That is why
+the owner's 2026-09-26 ruling on Brief 14 Step 5 was "two event types, not one with a kind in the
+payload", and it is the plant behind gate `Z-64` in `scripts/ci/calendar-writer-gates.sql`.
+
+*Violated if:* for any `(event_type, source_id)` the SQL and TypeScript results differ, or two calls with the same inputs differ; or two event types derive one id for one source id.
 
 **C5.2** Emit is a no-op on replay: calling `emit_notification_event` twice with the same `p_event_id` leaves event and message counts unchanged (`ON CONFLICT DO NOTHING` on both inserts).
 *Violated if:* the second call raises, or any count changes.
@@ -192,8 +213,8 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 
 ## 8. Payload rule (non-negotiable)
 
-**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written.
-*Violated if:* a `guardian_linked` or `guardian_unlinked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
+**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written. For `full_length_week` and `full_length_tomorrow`: `{ "block_id": uuid, "local_date": "YYYY-MM-DD" }` and nothing else — never `form_id`, which names a specific exam paper and would be content about the assessment sitting in a persisted, recipient-readable row, and which the notice does not need in order to say a practice test is coming.
+*Violated if:* a `guardian_linked`, `guardian_unlinked`, `full_length_week` or `full_length_tomorrow` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, a form id, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
 
 **C8.2** Nothing addressed to a guardian carries more than aggregate/identity data.
 *Violated if:* an email or in-app body rendered for a guardian recipient contains any of the §38.1 "no" categories.

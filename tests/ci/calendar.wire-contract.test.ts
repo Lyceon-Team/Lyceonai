@@ -276,6 +276,9 @@ describe("the guardian calendar's wire body parses with the client's own schema 
       "days",
       "estimates",
       "facts",
+      // Owner ruling 2026-09-26: a fact about the plan, in the same category as
+      // `projection` below it.
+      "full_length_suppressions",
       "projection",
       "status",
       "streak",
@@ -287,6 +290,12 @@ describe("the guardian calendar's wire body parses with the client's own schema 
       "study_days_mask",
       "daily_minutes",
       "full_length_weekday",
+      // §16 as amended (SCL-173) admits `target_score` and `target_exam_date` and no other
+      // profile column. The cadence is a scheduling input with no guardian path — and it
+      // arrived AFTER that amendment, so it is named here rather than left to the key-set
+      // assertion above: a new profile column is exactly the kind of field that reaches a
+      // guardian payload by accident.
+      "full_length_interval_weeks",
       "planner_mode",
       "setup_completed_at",
       "bounds",
