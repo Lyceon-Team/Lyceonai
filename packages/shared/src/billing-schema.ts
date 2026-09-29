@@ -49,7 +49,6 @@ export const billingCheckoutRequestSchema = z
   })
   .strict();
 
-
 /**
  * What the route returns, discriminated on what actually happened.
  *
@@ -66,40 +65,43 @@ export const billingCheckoutRequestSchema = z
  * was already contradicted by its own consumer — see the note on
  * `billingCheckoutOutcomeSchema` below.
  *
- * The two outcomes are genuinely different events and must not be flattened
- * into one optional-url shape: a FIRST purchase needs the payer to complete
- * Stripe Checkout, whereas ADDING a student to an existing subscription takes
- * the payment method already on file and completes server-side with no
- * redirect. A client that received `{url: null}` and redirected anyway would
- * send the guardian to a blank page after a successful purchase.
+ * ONE OUTCOME, BECAUSE THERE IS ONE PURCHASE PATH (@revised 2026-09-29 — owner
+ * ruling: one subscription per student). This was a two-member union. The second
+ * member, `{kind:"item_added", subscriptionItemId}`, described a guardian's
+ * second purchase adding a SubscriptionItem to their existing subscription:
+ * settled server-side, no redirect, and — the reason it is gone — no charge at
+ * the moment of purchase, since Stripe's `create_prorations` default put the
+ * amount on the next invoice up to three months later. Every guardian purchase
+ * now creates its own subscription through Checkout, so `checkout_session` is
+ * the only outcome the route can produce.
  *
- * WHAT THE MISSING SCHEMA COST. `client/src/lib/billing-client.ts` read
- * `payload.url` unconditionally and threw "Billing response did not include a
- * redirect URL" whenever it was absent. On the `item_added` branch it is always
- * absent — so a guardian who successfully added their second child was told the
- * purchase had FAILED, after the card was charged, and a retry then hit
- * `STUDENT_ALREADY_FUNDED`. Parsing the response against this schema is what
- * makes that branch unignorable at the call site.
+ * KEPT AS A `kind`-TAGGED OBJECT RATHER THAN FLATTENED. The discriminator costs
+ * one field and means a future second outcome is an added member rather than a
+ * reinterpretation of this one. Flattening to `{url, sessionId}` would also make
+ * a response from an older deploy parse as valid when it is not.
+ *
+ * WHAT THE MISSING SCHEMA COST, KEPT AS THE REASON THIS IS PARSED AT ALL.
+ * `client/src/lib/billing-client.ts` used to read `payload.url`
+ * unconditionally and throw "Billing response did not include a redirect URL"
+ * whenever it was absent — which on the deleted branch it always was, so a
+ * guardian whose card had been charged was told the purchase had FAILED, and
+ * their retry then hit `STUDENT_ALREADY_FUNDED`. Parsing the response against a
+ * schema is what makes a shape the client does not expect unignorable at the
+ * call site, and that remains true with one member.
  *
  * Unknown keys are stripped rather than rejected: the route also sends
  * `requestId`, which is diagnostic and deliberately not part of the outcome.
  */
-export const billingCheckoutOutcomeSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("checkout_session"),
-    /**
-     * Kept at the TOP LEVEL, not nested, because `client/src/lib/billing-client.ts`
-     * reads `payload.url` and the billing PORTAL route shares that same helper.
-     * Nesting it would break the portal for no gain.
-     */
-    url: z.string().url(),
-    sessionId: z.string().min(1),
-  }),
-  z.object({
-    kind: z.literal("item_added"),
-    subscriptionItemId: z.string().min(1),
-  }),
-]);
+export const billingCheckoutOutcomeSchema = z.object({
+  kind: z.literal("checkout_session"),
+  /**
+   * Kept at the TOP LEVEL, not nested, because `client/src/lib/billing-client.ts`
+   * reads `payload.url` and the billing PORTAL route shares that same helper.
+   * Nesting it would break the portal for no gain.
+   */
+  url: z.string().url(),
+  sessionId: z.string().min(1),
+});
 
 export type BillingCheckoutOutcome = z.infer<
   typeof billingCheckoutOutcomeSchema

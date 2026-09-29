@@ -58,7 +58,7 @@ import {
 } from "../helpers/pg-supabase";
 import {
   resolveGuardianPurchaseSubject,
-  subscriptionAlreadyFundsStudent,
+  aSubscriptionAlreadyFundsStudent,
 } from "../../server/lib/stripe/guardian-checkout";
 
 const WEBHOOK_SECRET = "whsec_test_secret_for_guardian_checkout";
@@ -197,27 +197,44 @@ describe.skipIf(!PG_AVAILABLE)(
   },
 );
 
-// Pure predicate over Stripe item metadata — no database in the path, so this
-// half keeps running in the general suite whether or not Postgres is present.
-describe("subscriptionAlreadyFundsStudent", () => {
-  it("detects a student already funded by an item, so nobody is billed twice", () => {
-    const items = [
+// Pure predicate over Stripe SUBSCRIPTION metadata — no database in the path, so
+// this half keeps running in the general suite whether or not Postgres is
+// present. It read ITEM metadata until 2026-09-29; one subscription per student
+// moved the same question up one level.
+describe("aSubscriptionAlreadyFundsStudent", () => {
+  it("detects a student already funded by a subscription, so nobody is billed twice", () => {
+    const subscriptions = [
       { metadata: { student_profile_id: STUDENT_A } },
       { metadata: { student_profile_id: STUDENT_B } },
     ];
-    expect(subscriptionAlreadyFundsStudent(items, STUDENT_A)).toBe(true);
+    expect(aSubscriptionAlreadyFundsStudent(subscriptions, STUDENT_A)).toBe(
+      true,
+    );
+    expect(aSubscriptionAlreadyFundsStudent(subscriptions, STUDENT_B)).toBe(
+      true,
+    );
     expect(
-      subscriptionAlreadyFundsStudent(
-        items,
+      aSubscriptionAlreadyFundsStudent(
+        subscriptions,
         "ffffffff-ffff-4fff-8fff-ffffffffffff",
       ),
     ).toBe(false);
   });
 
-  it("treats an item with no metadata as funding nobody", () => {
+  it("treats a subscription with no metadata as funding nobody", () => {
     expect(
-      subscriptionAlreadyFundsStudent([{ metadata: null }], STUDENT_A),
+      aSubscriptionAlreadyFundsStudent([{ metadata: null }], STUDENT_A),
     ).toBe(false);
+  });
+
+  /**
+   * An EMPTY list must answer false, not throw and not be skipped. A guardian's
+   * very first purchase arrives here with nothing to compare against, and if
+   * this were ever written as "some subscription disagrees" it would refuse
+   * every first purchase.
+   */
+  it("answers false for a guardian who holds no subscriptions at all", () => {
+    expect(aSubscriptionAlreadyFundsStudent([], STUDENT_A)).toBe(false);
   });
 });
 
