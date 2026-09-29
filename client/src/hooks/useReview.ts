@@ -42,7 +42,12 @@
  */
 
 import { useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
@@ -81,33 +86,95 @@ export function reviewPoolPath(tz: string | null): string {
     : `${REVIEW_POOL_QUERY_KEY}?tz=${encodeURIComponent(tz)}`;
 }
 
-/** `GET /api/review/pool?tz=…` — every count the landing page shows. */
+/** `?sessions_cursor=` appended to the pool path, which may already carry `?tz=`. */
+function reviewPoolPagePath(path: string, cursor: string | null): string {
+  if (!cursor) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}sessions_cursor=${encodeURIComponent(cursor)}`;
+}
+
+/**
+ * `GET /api/review/pool?tz=…` — every count the landing page shows.
+ *
+ * @spec [brief R3 §2.4; register UI-16] | @implemented [2026-09-29]
+ *
+ * plain English: page 1 carries the totals, the facets and the first page of the
+ * past-session picker; `loadMoreSessions()` asks for the next picker page with the
+ * server's opaque `sessions_next_cursor` and appends it. `pool.sessions` is every
+ * picker row loaded so far; the totals and facets always come from page 1 (the
+ * server computes them from the whole pool on every page, identically).
+ *
+ * trade-offs: fetched with csrfFetch like this file's mutations, since an infinite
+ * query needs the cursor in its URL and the default query function builds the URL
+ * from the key alone. A non-2xx is an error, as before.
+ */
 export function useReviewPool(): {
   pool: ReviewPoolSummaryResponse | null;
   isLoading: boolean;
   isError: boolean;
   error: unknown;
   refetch: () => void;
+  hasMoreSessions: boolean;
+  loadMoreSessions: () => void;
+  isLoadingMoreSessions: boolean;
 } {
   const { user, authLoading } = useSupabaseAuth();
   const tz = useMemo(() => browserTimeZone(), []);
   const path = useMemo(() => reviewPoolPath(tz), [tz]);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: [path],
     enabled: !!user && !authLoading,
-    select: (raw: unknown): ReviewPoolSummaryResponse =>
-      reviewPoolSummaryResponseSchema.parse(raw),
+    initialPageParam: null as string | null,
+    queryFn: async ({
+      pageParam,
+    }: {
+      pageParam: string | null;
+    }): Promise<ReviewPoolSummaryResponse> => {
+      const res = await csrfFetch(reviewPoolPagePath(path, pageParam), {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load review pool");
+      return reviewPoolSummaryResponseSchema.parse(await res.json());
+    },
+    getNextPageParam: (last: ReviewPoolSummaryResponse): string | null =>
+      last.sessions_next_cursor,
   });
 
+  const pool = useMemo((): ReviewPoolSummaryResponse | null => {
+    const pages = data?.pages ?? [];
+    const first = pages[0];
+    const last = pages[pages.length - 1];
+    if (!first || !last) return null;
+    return {
+      ...first,
+      sessions: pages.flatMap((page) => page.sessions),
+      sessions_next_cursor: last.sessions_next_cursor,
+    };
+  }, [data]);
+
   return {
-    pool: data ?? null,
+    pool,
     isLoading,
     isError,
     error,
     refetch: () => {
       void refetch();
     },
+    hasMoreSessions: !!hasNextPage,
+    loadMoreSessions: () => {
+      void fetchNextPage();
+    },
+    isLoadingMoreSessions: isFetchingNextPage,
   };
 }
 
