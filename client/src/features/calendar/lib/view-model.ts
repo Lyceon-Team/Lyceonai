@@ -29,6 +29,7 @@ import type {
   CalendarDay,
   PlanBlock,
   CalendarReadyResponse,
+  CalendarBlockType,
   CanonicalDomain,
   GuardianCalendarDay,
   GuardianCalendarReadyResponse,
@@ -44,8 +45,18 @@ import {
   type BlockTone,
 } from "./blocks";
 
-/** What a viewer may do with this calendar. A guardian's value carries no capability at all. */
-export type ViewControls = { kind: "editable" } | { kind: "read_only" };
+/**
+ * What a viewer may do with this calendar. A guardian's value carries no capability at all.
+ *
+ * `enabledBlockTypes` rides on the EDITABLE arm rather than on the model, because §17.2's
+ * picker is a write control and §16 gives a guardian no write path. The guardian payload
+ * does not carry the list, so a flat field would have to be optional — and an optional
+ * capability list is one someone reads as "no engines enabled" on the surface that should
+ * never have asked. Here the compiler refuses the question instead.
+ */
+export type ViewControls =
+  | { kind: "editable"; enabledBlockTypes: readonly CalendarBlockType[] }
+  | { kind: "read_only" };
 
 export type ViewMixEntry = { domain: CanonicalDomain; count: number };
 
@@ -189,7 +200,10 @@ export function studentViewModel(
   response: CalendarReadyResponse,
 ): CalendarViewModel {
   return {
-    controls: { kind: "editable" },
+    controls: {
+      kind: "editable",
+      enabledBlockTypes: response.enabled_block_types,
+    },
     days: response.days.map((day) => ({
       date: day.local_date,
       status: day.status,

@@ -24,9 +24,14 @@
 import { z } from "zod";
 import { diagnosticStateSchema } from "../diagnostic-state.js";
 import { sectionProjectionSchema } from "../student-resources.js";
-import { calendarEngineSchema } from "./scope.js";
+import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
-import { studyProfileBoundsSchema, studyProfileSchema } from "./profile.js";
+import {
+  fullLengthIntervalWeeksSchema,
+  studyProfileBoundsSchema,
+  studyProfileSchema,
+  targetScoreSchema,
+} from "./profile.js";
 import {
   calendarDaySchema,
   calendarFactsSchema,
@@ -159,6 +164,16 @@ export const calendarSetupDefaultsSchema = z
     daily_minutes_min: z.number().int().positive(),
     daily_minutes_max: z.number().int().positive(),
     target_exam_date_max_days: z.number().int().positive(),
+    // §8.1: the cadence the frequency control OPENS on, from
+    // `default_full_length_interval_weeks` (20261010000000). A prefill, exactly like
+    // `timezone` above — nothing is stored until the student saves, and the generator never
+    // reads this key, so an operator changing it cannot re-space anyone's existing exams.
+    // Bounded by the same schema the write path uses, so the form can never be prefilled
+    // with a cadence the upsert would then refuse.
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The frequency readout is on the SETUP form too, so the constant it needs travels with
+    // the rest of the prefill rather than being fetched separately.
+    final_exam_lead_days: z.number().int().positive(),
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
@@ -182,6 +197,35 @@ export const planningEstimatesSchema = z
   })
   .strict();
 export type PlanningEstimates = z.infer<typeof planningEstimatesSchema>;
+
+/**
+ * The one formula constant a client needs to state a TRUTHFUL number of practice tests.
+ *
+ * §8.1's frequency readout says "about 5 practice tests before 5 December". That count
+ * depends on `final_exam_lead_days` — nothing is placed inside the lead window, so the
+ * window decides whether the last sitting before the target exists at all. The client
+ * cannot know it: it is `calendar_runtime_config`, operator-tunable, and §17 forbids a
+ * literal. Same reason `estimates` exists above — a figure the student reads must come from
+ * the value the generator planned against, or it drifts the moment an operator moves it.
+ *
+ * Its own object rather than a field on `bounds`: `studyProfileBoundsSchema` is the write
+ * path's validation context (`makeStudyProfileUpsertSchema` takes it), and a formula
+ * constant is not a bound on what a student may choose.
+ */
+export const examPlanningSchema = z
+  .object({
+    final_exam_lead_days: z.number().int().positive(),
+    /**
+     * The cadence a day-pick adopts when the student has not chosen one — the same value the
+     * setup form opens on, so "pick a day" means the same thing on both surfaces. The
+     * pre-setup arm carries these two inline in `defaults` (it also carries a timezone and
+     * the minute presets, which the ready arm gets from `bounds`), so the values are shared
+     * even though the two payload arms shape them differently.
+     */
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+  })
+  .strict();
+export type ExamPlanning = z.infer<typeof examPlanningSchema>;
 
 /**
  * The READY payload — everything §15 lists, under `status: "ready"`.
@@ -209,6 +253,18 @@ export const calendarReadyResponseSchema = z
     bounds: studyProfileBoundsSchema,
     /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
     estimates: planningEstimatesSchema,
+    exam_planning: examPlanningSchema,
+    /**
+     * Dates where the student's own day edits displaced a practice test TWICE, so none was
+     * placed (formula sheet §2 Step 2 item 4). REQUIRED, and `[]` when there are none:
+     * present-and-empty is "we checked and nothing was lost", where absent would be
+     * indistinguishable from "the server did not tell you".
+     *
+     * This is the whole reason the `degraded[]` entry exists. An entry nothing reads is the
+     * silence it replaced — on one production profile an edited day swallowed the only exam
+     * in a horizon with no trace anywhere, and no refresh would ever have revealed it.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
@@ -218,6 +274,21 @@ export const calendarReadyResponseSchema = z
     /** Doc 05C's band, when one exists. Consumed, never computed here. */
     projection: z.array(sectionProjectionSchema).optional(),
     device_timezone_mismatch: deviceTimezoneMismatchSchema.optional(),
+    /**
+     * §17.2's engine picker. The block types the planner may PLAN, from
+     * `calendar_runtime_config.enabled_block_types` — the same list `calendar_validate_plan`
+     * checks a created block against (V-03).
+     *
+     * On the wire because "+ Add block" has to offer exactly what the server will accept.
+     * A literal in the client would be a second copy of the flag, and the copy would still
+     * say full-length was unavailable on the day it shipped — or, worse, offer it the day
+     * before. It is NOT the same question as `isLaunchableBlockType`, which asks whether an
+     * engine exists for a block the student already holds.
+     *
+     * Not on the guardian payload: §16 gives a guardian no write path, and this list exists
+     * to constrain a write.
+     */
+    enabled_block_types: z.array(calendarBlockTypeSchema).min(1),
   })
   .strict();
 export type CalendarReadyResponse = z.infer<typeof calendarReadyResponseSchema>;
@@ -236,6 +307,18 @@ export const calendarSetupRequiredResponseSchema = z
   .object({
     status: z.literal("setup_required"),
     defaults: calendarSetupDefaultsSchema,
+    /**
+     * Whether this student can see a PLAN (SCL-130, 2026-09-24). Setup is served before the
+     * entitlement gate so a free student can answer, which means `setup_required` on its
+     * own no longer implies anything about entitlement — this field is what the popup
+     * branches on for its last press: "Build my plan" for an entitled student, "See what
+     * I'd get" and the upgrade panel for a free one.
+     *
+     * Optional so an older client parses a newer server. Absent reads as "assume entitled",
+     * which is the pre-2026-09-24 behaviour and the safe direction: the worst case is an
+     * entitled-looking button that meets the 402 it always would have.
+     */
+    entitled: z.boolean().optional(),
   })
   .strict();
 export type CalendarSetupRequiredResponse = z.infer<
@@ -424,14 +507,60 @@ export const guardianCalendarQuerySchema = z
 export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
 
 /**
- * §16 and R-08-22: no profile, no target score, no controls, no explanation copy. The
- * guardian gets the same FACTS and nothing that would let a client infer a write path. The
- * shape is narrower than the student's by construction rather than by sanitising a wider one
- * on the way out — a `.strict()` object that never had the keys cannot leak them.
+ * §16, as amended by the owner ruling of 2026-09-26: **no controls, no explanation copy,
+ * and no profile beyond `target_score` and `target_exam_date`.** The guardian gets the same
+ * FACTS and nothing that would let a client infer a write path. The shape is narrower than
+ * the student's by construction rather than by sanitising a wider one on the way out — a
+ * `.strict()` object that never had the keys cannot leak them.
+ *
+ * R-08-22 ("Guardians do not see target score") IS REVERSED, and one clause more than that.
+ * §16 carried FOUR withholdings, not three, and the extra one mattered: "the projection has
+ * **no profile**" catches `target_exam_date` independently of R-08-22, because the exam date
+ * is a `student_study_profile` column (§7.1) and §518 names it inside the plan input's
+ * `profile` object. So serving the date needed its own ruling and got one — the owner's
+ * reason for the target covers it exactly: a stated test date is a fact about the goal, not
+ * a control, and "N days to test" is the same category as the target itself.
+ *
+ * WHAT STAYS WITHHELD, and why each one is not arbitrary:
+ *   - `timezone`, `study_days_mask`, `daily_minutes`, `full_length_weekday`, `planner_mode`
+ *     — scheduling inputs. A guardian has no path to change them and no use for reading
+ *     them; they exist to constrain a write.
+ *   - `bounds` — exists to constrain a write.
+ *   - `enabled_block_types` — exists to tell "+ Add block" what the server will accept.
+ *   - explanation copy at BOTH levels, including a per-domain `explanation_key` inside a
+ *     practice block's scope (§17.6). Stripping only the block-level key leaks it one level
+ *     down, which is why `guardianPracticeDomainScopeSchema` keeps `{domain, count}` alone.
+ *
+ * Adding a field here is a §16 decision, not a convenience. The wire-contract gate
+ * (`tests/ci/calendar.wire-contract.test.ts`) drives the REAL serializer through this
+ * schema, so the two cannot drift apart the way they did before #903.
  */
 export const guardianCalendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
+    /**
+     * §8.1's target, R-08-22 reversed (owner ruling 2026-09-26): "It is the student's
+     * stated goal, and a projection with nothing to compare against is half a fact."
+     * Nullable, and null is the ORDINARY case — SCL-130 made setup answer-free, so most
+     * students have no target. The guardian header says "No target set", never a CTA.
+     */
+    target_score: targetScoreSchema.nullable(),
+    /**
+     * For the days-to-test line only. Not a scheduling control: the guardian cannot set it,
+     * and nothing else on this payload is derived from it.
+     */
+    target_exam_date: localDateSchema.nullable(),
+    /**
+     * Doc 05C's per-section band, THE SAME ROWS the student payload carries, read 1:1 and
+     * never recomputed here — `sectionProjectionSchema` is the band only, never the blend
+     * anchors (Doc 05C §10.5). Optional for the same reason as the student's: a projection
+     * read that fails omits the field rather than failing the whole response.
+     *
+     * This is NOT the "guardian projection" §16 speaks of. That phrase means this DTO's
+     * SHAPE; this field is a score band. The amendment renames the shape sense to "guardian
+     * view model" so one section stops using one word for two things.
+     */
+    projection: z.array(sectionProjectionSchema).optional(),
     /**
      * §17.1's "~N min", the SAME object the student gets (owner ruling 2026-09-22).
      *
@@ -442,6 +571,22 @@ export const guardianCalendarReadyResponseSchema = z
      * fell back to "Full sitting" for every block type.
      */
     estimates: planningEstimatesSchema,
+    /**
+     * Dates where a practice test could not be placed because the days the student chose are
+     * blocked. SERVED TO THE GUARDIAN, by owner ruling 2026-09-26: it is a fact about the
+     * plan, not a control and not a profile field — the same category as `projection` and
+     * `target_exam_date`, both of which §16 as amended already admits.
+     *
+     * The reasoning is the one this whole change turns on. A parent looking at a week with no
+     * practice test should know the reason is "the days your child picked are blocked" rather
+     * than silently see nothing; withholding it would rebuild, on the guardian side, exactly
+     * the silence being removed on the student's.
+     *
+     * The DATA is identical to the student's; only the COPY differs. §16 gives a guardian no
+     * write path, so their line is a statement and never an instruction — same rule as
+     * "No target set" in the header.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(guardianCalendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,

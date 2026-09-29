@@ -99,6 +99,27 @@ export function monthGridDates(date: string): readonly string[] {
  * months, so the read has to span the whole grid or the first and last rows render empty and
  * look like rest days.
  */
+/**
+ * Step a cursor by whole days / whole months.
+ *
+ * These were private to `CalendarView`, which was fine while it was the only caller. The
+ * §17.7 adjacent-range prefetch needs the SAME arithmetic to name the week either side, and
+ * a second copy of a date helper is how two surfaces end up disagreeing about which week is
+ * next. `shiftMonths` normalises to the first of the month first, so stepping from the 31st
+ * cannot skip a short month.
+ */
+export function shiftDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+export function shiftMonths(date: string, months: number): string {
+  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return value.toISOString().slice(0, 10);
+}
+
 export function rangeForView(
   view: "week" | "month",
   cursor: string,
@@ -167,6 +188,17 @@ export function monthName(date: string): string {
 /** "Monday 21 September" — the side sheet's date line. */
 export function longDate(date: string): string {
   return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
+}
+
+/**
+ * "5 December" — day and month, no weekday and no year, for a date read inside a sentence
+ * ("about 5 practice tests before 5 December").
+ *
+ * Here rather than in the component that needed it first: the settings sheet had its own
+ * copy, with its own month array, which is the duplication this file exists to prevent.
+ */
+export function dayAndMonth(date: string): string {
+  return `${dayOfMonth(date)} ${monthName(date)}`;
 }
 
 /** "Mon 21 Sep" — compact, for toasts and the move picker. */

@@ -36,4 +36,28 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   (globalThis as any).ResizeObserver = ResizeObserverMock;
 }
 
+/**
+ * jsdom implements no CSS Object Model, so `window.matchMedia` is simply absent — the same
+ * gap the ResizeObserver shim above fills. Any component using a media query (the calendar's
+ * §17.7 phone layout, the sidebar, the practice page's calculator) throws
+ * "window.matchMedia is not a function" on render without it.
+ *
+ * Defined only when missing, so a test that installs its own mock to simulate a viewport
+ * still wins. The default answers "no match", which with jsdom's 1024px `innerWidth` is the
+ * desktop layout — the one a test that never mentions viewports means to be rendering.
+ */
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string): MediaQueryList =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+}
+
 console.log('[VITEST-SETUP] Test environment configured with placeholder Supabase credentials');

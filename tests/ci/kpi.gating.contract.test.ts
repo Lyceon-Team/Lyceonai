@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import express from "express";
-import request from "supertest";
 
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
@@ -13,8 +11,6 @@ const readDiagnosticBaseline = vi.fn();
 // tests/ci/diagnostic-baseline-pending.contract.test.ts.
 const readDiagnosticState = vi.fn();
 const readAnsweredQuestionCount = vi.fn();
-const buildStudentFullLengthReportView = vi.fn((x: any) => x);
-const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
 const canAccessFeature = vi.fn();
 
@@ -31,7 +27,6 @@ vi.mock("../../server/services/kpi-access", async () => {
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  buildStudentFullLengthReportView,
   readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
@@ -75,17 +70,12 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
   generateToken: () => "test-csrf-token",
 }));
 
-vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
-  createExamSession: vi.fn(),
-  getCurrentSession: vi.fn(),
-  startExam: vi.fn(),
-  submitAnswer: vi.fn(),
-  submitModule: vi.fn(),
-  continueFromBreak: vi.fn(),
-  completeExam: vi.fn(),
-  getExamReport,
-  getExamReviewAfterCompletion: vi.fn(),
-}));
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. The fullLengthExam service mock, the
+// buildStudentFullLengthReportView mock and the two full-length 402 cases
+// ("denies free-tier full-test analytics report route", "denies free-tier
+// full-length session creation surface") are deleted with the router they drove.
+// Premium gating for the rebuilt exam must be re-asserted against Doc 04's routes.
 
 vi.mock("../../apps/api/src/lib/supabase-admin", () => ({
   getSupabaseAdmin: vi.fn(() => ({ from: vi.fn() })),
@@ -415,40 +405,7 @@ describe("KPI Gating Contract", () => {
     expect(payload.modelVersion).toBe("kpi_truth_v1");
   }, 15_000);
 
-  it("denies free-tier full-test analytics report route", async () => {
-    const router = (await import("../../server/routes/full-length-exam-routes"))
-      .default;
-
-    const app = express();
-    app.use(express.json());
-    app.use("/api/full-length", router);
-
-    const res = await request(app).get(
-      "/api/full-length/sessions/session-free-1/report",
-    );
-
-    expect(res.status).toBe(402);
-    expect(res.body.code).toBe("PREMIUM_REQUIRED");
-    expect(res.body.feature).toBe("full_test_analytics");
-    expect(getExamReport).not.toHaveBeenCalled();
-  });
-
   // The free-tier denial for the mastery drill-down moved with the routes. It is asserted
   // against the new topology in tests/ci/student-resources.contract.test.ts, where the gate
   // is the SUBJECT's entitlement rather than the caller's role — see PR 2.
-
-  it("denies free-tier full-length session creation surface", async () => {
-    const router = (await import("../../server/routes/full-length-exam-routes"))
-      .default;
-
-    const app = express();
-    app.use(express.json());
-    app.use("/api/full-length", router);
-
-    const res = await request(app).post("/api/full-length/sessions").send({});
-
-    expect(res.status).toBe(402);
-    expect(res.body.code).toBe("PREMIUM_REQUIRED");
-    expect(res.body.feature).toBe("full_length");
-  });
 });

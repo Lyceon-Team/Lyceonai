@@ -22,6 +22,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseYamlScalar } from "./lib/minimal-yaml";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -94,26 +95,15 @@ const KNOWN_NON_CONFIG = new Set([
 ]);
 
 // ── YAML parsing (minimal, tailored to this manifest's structure) ────
-
-function parseYamlScalar(raw: string): string | boolean | number | null {
-  const v = raw.trim();
-  if (v === "" || v === "null" || v === "~") return null;
-  if (v === "true") return true;
-  if (v === "false") return false;
-  if (v.startsWith('"')) {
-    const end = v.indexOf('"', 1);
-    return end > 0 ? v.slice(1, end) : v.slice(1);
-  }
-  if (v.startsWith("'")) {
-    const end = v.lastIndexOf("'");
-    return end > 0 ? v.slice(1, end) : v.slice(1);
-  }
-  const commentIdx = v.indexOf(" #");
-  const clean = commentIdx >= 0 ? v.slice(0, commentIdx).trim() : v;
-  if (/^-?\d+$/.test(clean)) return parseInt(clean, 10);
-  if (/^-?\d+\.\d+$/.test(clean)) return parseFloat(clean);
-  return clean;
-}
+//
+// The scalar half moved to scripts/ci/lib/minimal-yaml.ts on 2026-09-22 so the
+// retention-policy-registry gate could consume it instead of forking a third
+// copy. The move also fixed a defect it had here: `null`/`true`/`false` were
+// tested BEFORE the inline comment was stripped, so `required: true # note`
+// parsed as the string "true" and `entry.required === true` was false — an
+// entry that silently opted out of the required-have-consumers check. No line
+// in this manifest is written that way today, so the fix is behaviour-
+// preserving here; it is a live correctness fix for any registry that does.
 
 function parseManifestYaml(content: string): ManifestData {
   const lines = content.split("\n");

@@ -38,6 +38,7 @@ import {
 } from "@dnd-kit/core";
 import type {
   CalendarSetupDefaults,
+  ExamPlanning,
   PlanBlock,
   PlanTrigger,
   PlanningEstimates,
@@ -45,21 +46,24 @@ import type {
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
+import type { SectionProjectionDto } from "@lyceon/shared";
 import {
+  daysBetween,
   monthGridDates,
   rangeLabel,
+  shiftDays,
+  shiftMonths,
   shortDate,
   startOfMonth,
   startOfWeek,
   weekDates,
 } from "./lib/dates";
-import { daysBetween } from "./lib/dates";
 import { domainsForSection, isDraggable } from "./lib/blocks";
 import {
   MIX_GRANULARITY,
   isValidMix,
   membersWithEdit,
-  membersWithNewPracticeBlock,
+  membersWithNewBlock,
   membersWithout,
 } from "./lib/members";
 import {
@@ -72,6 +76,7 @@ import {
 import {
   ALL_TONES_VISIBLE,
   FactsStrip,
+  FullLengthSuppressionNotice,
   LeftRail,
   PlanUpdatedBanner,
   TopBar,
@@ -80,8 +85,11 @@ import {
 import { WeekGrid } from "./components/WeekGrid";
 import { MonthGrid } from "./components/MonthGrid";
 import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
+import { CreateBlockSheet } from "./components/CreateBlockSheet";
+import { DayStrip } from "./components/DayStrip";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { DayActions } from "./components/DayMenu";
-import { SetupSheet } from "./components/SetupSheet";
+import { SetupPopup } from "./components/SetupPopup";
 import {
   SettingsSheet,
   scheduleSummary,
@@ -122,14 +130,45 @@ export type CalendarViewProps = {
   setup?: {
     defaults: CalendarSetupDefaults;
     onSubmit: (profile: Record<string, unknown>) => void;
+    /** False for a free student — the last press shows the third panel, not a plan. */
+    entitled: boolean;
+    /** Dismiss saves nothing. It reopens next visit, because no profile exists yet. */
+    onDismiss: () => void;
+    onUpgrade: () => void;
     pending: boolean;
     error: string | null;
   };
   today: string;
+  /**
+   * Passed straight to `TopBar`, where it selects the ABSENCE copy and nothing else. Required
+   * for the reason given there: a defaulted viewer is forgettable, and forgetting it shows a
+   * guardian actions they cannot take.
+   */
+  viewer: "student" | "guardian";
   viewerName: string;
   /** The student's exam date, for the countdown. Null when they have not set one. */
   targetExamDate: string | null;
+  /**
+   * §17.1's R1 slot. Null when the student has not set one — optional since SCL-130, so
+   * null is the ordinary case rather than an edge one, and the header says "Set a target".
+   */
+  targetScore: number | null;
+  /**
+   * Doc 05C's section rows, PASSED THROUGH UNTOUCHED from `GET /api/calendar`. The header
+   * sums them (`lib/projection`); nothing on this path re-derives a projection.
+   */
+  projection?: readonly SectionProjectionDto[];
   streak: StreakSummary | undefined;
+  /**
+   * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
+   * generator refused to place a practice test on because both the chosen weekday occurrence
+   * and the +7-day alternative were blocked out.
+   *
+   * REQUIRED, not optional, and served on BOTH payloads (owner ruling 2026-09-26: the
+   * guardian sees the suppression). An empty array is the ordinary case and renders nothing;
+   * making it optional would let a page forget it and re-create the silence this brief ends.
+   */
+  fullLengthSuppressions: readonly string[];
   /** §17.4. Null when there is nothing unacknowledged. */
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
   /** Called when the visible range changes, so the page can re-query. */
@@ -143,6 +182,8 @@ export type CalendarViewProps = {
     profile: StudyProfile;
     bounds: StudyProfileBounds;
     estimates: PlanningEstimates;
+    /** §8.1's frequency readout: the lead window and the prefill cadence, both server-owned. */
+    examPlanning: ExamPlanning;
     onSave: (draft: SettingsDraft) => void;
     pending: boolean;
     error: string | null;
@@ -168,9 +209,13 @@ export function CalendarView({
   model,
   setup,
   today,
+  targetScore,
+  projection,
+  viewer,
   viewerName,
   targetExamDate,
   streak,
+  fullLengthSuppressions,
   planUpdate,
   onRangeChange,
   schedule,
@@ -183,6 +228,17 @@ export function CalendarView({
   const [filters, setFilters] = useState<ToneFilter>(ALL_TONES_VISIBLE);
   const [openBlockId, setOpenBlockId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The date whose "+ Add block" is open, or null. §17.2: opening writes nothing. */
+  const [addOnDate, setAddOnDate] = useState<string | null>(null);
+
+  /**
+   * §17.7 phone layout. Below `useIsMobile`'s breakpoint the week is ONE day plus a strip,
+   * not seven columns behind a sideways swipe — see `DayStrip`'s note for the measurement.
+   * Month stays a grid at every width: a month IS a grid, and collapsing it would leave
+   * nothing to navigate with.
+   */
+  const isMobile = useIsMobile();
+  const [agendaDate, setAgendaDate] = useState<string | null>(null);
 
   const readOnly = mutations === undefined;
 
@@ -192,6 +248,18 @@ export function CalendarView({
     () => (view === "week" ? weekDates(cursor) : monthGridDates(cursor)),
     [view, cursor],
   );
+
+  /**
+   * The open day: whatever the student last tapped, as long as the week still holds it.
+   * Stepping the week resets to today when today is in view and to the first day
+   * otherwise, so the agenda never shows a date the strip above it cannot reach.
+   */
+  const agendaDay =
+    agendaDate !== null && dates.includes(agendaDate)
+      ? agendaDate
+      : dates.includes(today)
+        ? today
+        : (dates[0] ?? today);
 
   const move = useCallback(
     (nextView: "week" | "month", nextCursor: string) => {
@@ -337,6 +405,18 @@ export function CalendarView({
           { blockId: block.blockId, edited },
         );
       },
+      onEditFullLength: (scope) => {
+        // Same narrowing as the review arm: a full_length block's `target_count` is the
+        // literal 1, so only this arm of the union may be spread.
+        if (block.plan === null || block.plan.block_type !== "full_length")
+          return;
+        const edited = { ...block.plan, scope };
+        mutations.editDay(
+          day.date,
+          membersWithEdit(day, block.blockId, { scope }),
+          { blockId: block.blockId, edited },
+        );
+      },
       onRemove: () => {
         mutations.editDay(day.date, membersWithout(day, block.blockId), {
           removeBlockId: block.blockId,
@@ -367,7 +447,7 @@ export function CalendarView({
 
   return (
     <div className="lyceon-calendar">
-      <div className="app">
+      <div className={`app${setup === undefined ? "" : " blur"}`}>
         <LeftRail
           name={viewerName}
           subtitle={
@@ -404,8 +484,16 @@ export function CalendarView({
                   summary: scheduleSummary(
                     schedule.profile,
                     schedule.estimates,
+                    {
+                      targetExamDate: schedule.profile.target_exam_date,
+                      today,
+                      // The one field the readout reads, named rather than spread: the
+                      // prefill beside it on `examPlanning` is for the frequency control,
+                      // not for this sentence.
+                      finalExamLeadDays:
+                        schedule.examPlanning.final_exam_lead_days,
+                    },
                   ),
-                  onEdit: () => setSettingsOpen(true),
                 },
               })}
         />
@@ -413,6 +501,9 @@ export function CalendarView({
         <div className="main">
           <TopBar
             backHref={backHref}
+            viewer={viewer}
+            targetScore={targetScore}
+            projection={projection}
             rangeLabelText={rangeLabel(view, cursor)}
             view={view}
             onView={(next) => move(next, cursor)}
@@ -444,9 +535,52 @@ export function CalendarView({
             />
           ) : null}
 
+          {/* The suppressed practice test, on both surfaces. The handler is passed for a
+              STUDENT only — the component takes `viewer` as well, so the "statement, never an
+              action" rule for a guardian holds even if a future caller passes a handler by
+              mistake. Two locks, because the copy rule and the control rule are both the
+              owner's 2026-09-26 ruling and neither is a style choice. */}
+          <FullLengthSuppressionNotice
+            viewer={viewer}
+            dates={fullLengthSuppressions}
+            {...(viewer === "student"
+              ? {
+                  onGoToWeek: (date: string) => {
+                    move("week", startOfWeek(date));
+                    setAgendaDate(date);
+                  },
+                }
+              : {})}
+          />
+
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div className="scroll">
-              {view === "week" ? (
+              {view === "week" && isMobile ? (
+                <>
+                  <DayStrip
+                    dates={dates}
+                    selected={agendaDay}
+                    today={today}
+                    hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+                    onSelect={setAgendaDate}
+                  />
+                  {/* The SAME WeekGrid, given one date. Every affordance a column carries —
+                      the droppable, the day menu, the block cards, "+ Add block" — comes
+                      with it, so the phone layout cannot drift from the desktop one. */}
+                  <WeekGrid
+                    dates={[agendaDay]}
+                    dayFor={dayFor}
+                    today={today}
+                    visible={visible}
+                    canDrag={canDrag}
+                    onOpen={setOpenBlockId}
+                    {...(dayActions === undefined ? {} : { dayActions })}
+                    {...(mutations === undefined
+                      ? {}
+                      : { onAddBlock: (date: string) => setAddOnDate(date) })}
+                  />
+                </>
+              ) : view === "week" ? (
                 <WeekGrid
                   dates={dates}
                   dayFor={dayFor}
@@ -458,28 +592,9 @@ export function CalendarView({
                   {...(mutations === undefined
                     ? {}
                     : {
-                        onAddBlock: (date: string) => {
-                          const day = dayFor(date);
-                          if (day === null) return;
-                          mutations.editDay(
-                            date,
-                            // The opening mix comes from the shared section map, so even
-                            // the default is not a domain name typed into this file.
-                            membersWithNewPracticeBlock(
-                              day,
-                              "M",
-                              domainsForSection("M")
-                                .slice(0, 2)
-                                .map((domain) => ({
-                                  domain,
-                                  count: MIX_GRANULARITY,
-                                })),
-                            ),
-                            // No optimistic hint: a created block has no id to predict, and
-                            // the settle-invalidate brings back the server's version.
-                            { removeBlockId: "" },
-                          );
-                        },
+                        // §17.2: Add OPENS the create sheet. It writes nothing — the
+                        // write happens on confirm, in `onCreate` below.
+                        onAddBlock: (date: string) => setAddOnDate(date),
                       })}
                 />
               ) : (
@@ -512,11 +627,37 @@ export function CalendarView({
         />
       )}
 
+      {addOnDate === null ||
+      mutations === undefined ||
+      model === null ||
+      model.controls.kind !== "editable" ? null : (
+        <CreateBlockSheet
+          open
+          date={addOnDate}
+          enabledBlockTypes={model.controls.enabledBlockTypes}
+          pending={false}
+          onClose={() => setAddOnDate(null)}
+          onCreate={(draft) => {
+            const day = dayFor(addOnDate);
+            if (day === null) return;
+            mutations.editDay(
+              addOnDate,
+              membersWithNewBlock(day, draft),
+              // No optimistic hint: a created block has no id to predict, and the
+              // settle-invalidate brings back the server's version.
+              { removeBlockId: "" },
+            );
+            setAddOnDate(null);
+          }}
+        />
+      )}
+
       {schedule === undefined || !settingsOpen ? null : (
         <SettingsSheet
           profile={schedule.profile}
           bounds={schedule.bounds}
           estimates={schedule.estimates}
+          examPlanning={schedule.examPlanning}
           today={today}
           onSave={schedule.onSave}
           onClose={() => setSettingsOpen(false)}
@@ -533,27 +674,21 @@ export function CalendarView({
         />
       )}
 
+      {/* §17.5 — the popup renders OVER the plan (blurred above), never instead of it: a
+          student deciding whether to set up should be able to see what they are setting
+          up. It is dismissible and nothing behind it is disabled. */}
       {setup === undefined ? null : (
-        <SetupSheet
+        <SetupPopup
           defaults={setup.defaults}
           today={today}
+          entitled={setup.entitled}
           onSubmit={setup.onSubmit}
+          onDismiss={setup.onDismiss}
+          onUpgrade={setup.onUpgrade}
           pending={setup.pending}
           error={setup.error}
         />
       )}
     </div>
   );
-}
-
-function shiftDays(date: string, days: number): string {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-
-function shiftMonths(date: string, months: number): string {
-  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
-  value.setUTCMonth(value.getUTCMonth() + months);
-  return value.toISOString().slice(0, 10);
 }

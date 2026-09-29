@@ -10,6 +10,8 @@ import {
 import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
 import { Analytics } from "@vercel/analytics/react";
+
+import { analyticsBeforeSend } from "./lib/analytics-surface";
 import "@/styles/tokens.css";
 import "@/styles/accessibility.css";
 
@@ -24,13 +26,49 @@ const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const Chat = lazy(() => import("@/pages/chat"));
-const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
+// Full-length exam shell (E7b). Wrappers are module-scope components, not inline
+// arrows, so a re-render of the Switch never remounts a running module.
+const TestsHomePage = lazy(() => import("@/features/exam/pages/TestsHomePage"));
+const ExamSessionPage = lazy(() => import("@/features/exam/pages/ExamSessionPage"));
+const ExamModulePage = lazy(() => import("@/features/exam/pages/ExamModulePage"));
+const ExamReportPage = lazy(() => import("@/features/exam/pages/ExamReportPage"));
+function TestsHomeRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <TestsHomePage />
+    </RequireRole>
+  );
+}
+function ExamSessionRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamSessionPage />
+    </RequireRole>
+  );
+}
+function ExamModuleRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamModulePage />
+    </RequireRole>
+  );
+}
+function ExamReportRoute() {
+  return (
+    <RequireRole allow={["student", "admin"]}>
+      <ExamReportPage />
+    </RequireRole>
+  );
+}
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
 const Calendar = lazy(() => import("@/pages/calendar"));
 const GuardianStudentCalendar = lazy(
   () => import("@/pages/guardian-student-calendar"),
+);
+const GuardianExamResults = lazy(
+  () => import("@/features/exam/pages/GuardianExamResultsPage"),
 );
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
@@ -131,14 +169,6 @@ function Router() {
           )}
         />
         <Route
-          path="/full-test"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <FullTest />
-            </RequireRole>
-          )}
-        />
-        <Route
           path="/practice"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
@@ -171,6 +201,11 @@ function Router() {
             </RequireRole>
           )}
         />
+        {/* Full-length exams (Doc 04A §16, Doc 04C §16.1) — E7b. */}
+        <Route path="/tests" component={TestsHomeRoute} />
+        <Route path="/tests/:sessionId/report" component={ExamReportRoute} />
+        <Route path="/tests/:sessionId/:section/:module" component={ExamModuleRoute} />
+        <Route path="/tests/:sessionId" component={ExamSessionRoute} />
         {/* Doc 05F §17.1 — the student's own calendar. */}
         <Route
           path="/calendar"
@@ -191,6 +226,27 @@ function Router() {
           component={() => (
             <RequireRole allow={["guardian", "admin"]}>
               <GuardianStudentCalendar />
+            </RequireRole>
+          )}
+        />
+        {/*
+          G1 — a guardian reading a linked student's full-length practice test results. The
+          paths mirror the API (/api/students/:studentId/tests[/:sessionId/report], SCL-181).
+          The server is the authority; this guard only decides what is worth rendering.
+        */}
+        <Route
+          path="/students/:studentId/tests"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianExamResults />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/students/:studentId/tests/:sessionId"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianExamResults />
             </RequireRole>
           )}
         />
@@ -377,7 +433,15 @@ function App() {
           </SupabaseAuthProvider>
         </QueryClientProvider>
       </HelmetProvider>
-      <Analytics />
+      {/*
+        Doc 06A §5.3 / Coding Standards §12.2: page views are reported from the
+        public marketing and legal surface ONLY. `analyticsBeforeSend` denies
+        by default, so every signed-in student page — and every route added
+        later — is silent unless someone deliberately makes it public. See
+        `client/src/lib/analytics-surface.ts` for why this is a predicate and
+        not a conditional mount.
+      */}
+      <Analytics beforeSend={analyticsBeforeSend} />
     </ErrorBoundary>
   );
 }

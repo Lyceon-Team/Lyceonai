@@ -1,5 +1,5 @@
 # Doc 05F — Plan Generation Formula Sheet
-**Generators:** `deterministic_v1` (primary), `fallback_v1` (fail-open backup)  **Date:** 2026-09-17  **Companions (committed with this sheet):** `scripts/ci/reference/calendar_formula_reference.py` (parity oracle, both generators), `scripts/ci/fixtures/calendar_formula_fixtures.json` (9 fixtures, input → byte-exact output for both generators), `Doc_05F_formula_fixtures.md` (the same fixtures as readable plans)
+**Generators:** `deterministic_v1` (primary), `fallback_v1` (fail-open backup)  **Date:** 2026-09-17  **Companions (committed with this sheet):** `docs/Spec/calendar_formula_reference.py` (parity oracle, both generators), `docs/Spec/calendar_formula_fixtures.json` (9 fixtures, input → byte-exact output for both generators), `Doc_05F_formula_fixtures.md` (the same fixtures as readable plans)
 
 Doc 05F §11 references this sheet; the spec does not restate its numbers. Design goals, in order: auditable, boring, deterministic, explainable.
 
@@ -26,7 +26,17 @@ Every quantity is an integer (seconds, questions, weights, basis points). No flo
 
 **Step 1 — Budget.** `B = daily_minutes × 60`. With a target date: `D ≥ target → B = 0` (nothing is planned on or after the test until the student sets a new date); `0 < target − D ≤ taper_days → B = B × taper_ratio_bp / 10000`.
 
-**Step 2 — Exam placement** (needs a full-length weekday). In this precedence: (1) final rehearsal on the last weekday occurrence ≥ `final_exam_lead_days` before the target; (2) nothing else inside the lead window or on/after the target; (3) `full_length_min_gap_days` from the last completed exam and from each other; (4) cadence = every `full_length_every_n_occurrences`-th occurrence of the weekday counted from the first occurrence on/after `setup_completed_at`; (5) `max_full_length_per_horizon`. An exam day holds nothing else.
+**Step 2 — Exam placement.** Arithmetic on what the student chose — a **frequency** (`full_length_interval_weeks` ∈ 1, 2, 3, 4) and a **preferred weekday**. Both or neither: a profile with one and not the other is refused by `full_length_pair`, and neither means no automatic exams.
+
+1. **Final rehearsal**, when a target date is set: walk **back** from `target − final_exam_lead_days` to the preferred weekday. It is never shifted — it is the one fixed point in the schedule, and a student who blocks that day has made their own call.
+2. **The series**: start from the **last completed full-length's local date**, or the **setup date** when there is none. Add `interval_weeks × 7` days, then take the **next preferred weekday on or after** that. Repeat through the horizon. The cursor advances on the intended date, so one shifted exam never drags the whole series.
+3. **An overridden date shifts by exactly one week**, to the next occurrence of the same weekday — never to a different weekday. Two reasons, and either alone decides it: a 1–6 day shift can never satisfy validator V-02, which requires an exam to fall on the student's weekday; and the student picked that day, so moving their test to a Wednesday quietly overrides a choice they made.
+4. **If that occurrence is also overridden**, place nothing and record the date in `degraded[]` as a suppression. Silence is the failure this replaces: an edited day used to swallow the only exam in a horizon with no trace anywhere.
+5. Nothing is placed inside the lead window or on/after the target, and `max_full_length_per_horizon` still caps the horizon. An exam day holds nothing else.
+
+A shifted date that falls beyond the horizon is **not** a suppression — that exam simply belongs to a later horizon and arrives as the window rolls forward. Note the consequence of a 14-day horizon: a monthly-cadence student sees their next test only once it is within two weeks, which is correct and not a miss.
+
+**What this replaced, and why.** Placement used to be a precedence ladder with a cadence anchor, every-Nth-weekday-occurrence counting, and a minimum gap. It produced two production defects on one profile: the anchor was the first preferred weekday **on or after** the setup date, so the first exam landed on the day the student set up; and that date carried a day edit, so the narrowing step dropped it while the next occurrence sat one day outside the horizon — **no exam could ever be placed**, and no refresh or profile change would fix it. The interval is now at least one full period after setup, so an exam can no longer land on setup day, and an edited day shifts instead of vanishing. `full_length_every_n_occurrences` and `full_length_min_gap_days` are retired: the gap is implied by the frequency, and two rules saying one thing is how they drift apart.
 
 **Step 3 — Need weights.** `w_d = weight_by_level[L_d]` over the **live mastery domain, levels 0–4** (`public.mastery_levels`: L0 Foundations, L1 Building, L2 Developing, L3 Proficient, L4 Strong; NULL = unmeasured). Launch mapping `{0:5, 1:4, 2:3, 3:2, 4:1}` — L0 is weakest and leads; L4 keeps the floor of 1 so strengths stay in rotation. `null_level_weight` = 3 sits between Developing and Proficient, `× post_exam_multiplier` for domains the last exam marked weak while `days_since_exam ≤ post_exam_emphasis_days`. All eight unknown → cold start (Step 5 splits Math/RW evenly, no weights).
 
@@ -72,8 +82,8 @@ That is the entire algorithm. There is no round-robin, no proportional rounding,
 | `null_level_weight` | 3 | 1–5 |
 | `post_exam_emphasis_days` / `post_exam_multiplier` | 7 / 2 | 0–30 / 1–5 |
 | `min_domain_questions` / `max_domains_per_block` / `granularity` | 5 / 4 / 5 | 5–20 / 1–8 / 5 |
-| `full_length_every_n_occurrences` | 2 | 1–6 |
-| `full_length_min_gap_days` / `final_exam_lead_days` / `max_full_length_per_horizon` | 7 / 7 / 2 | 1–21 / 3–21 / 0–4 |
+| `default_full_length_interval_weeks` | 2 | 1–4 |
+| `final_exam_lead_days` / `max_full_length_per_horizon` | 7 / 2 | 3–21 / 0–4 |
 | `taper_days` / `taper_ratio_bp` | 3 / 5000 | 0–7 / 0–10000 |
 | `recent_planned_window_days` | 28 | 14–56 |
 | `canonical_domain_order` | the eight full College Board domain names | tie-break only |
@@ -119,6 +129,9 @@ Mirrors Doc 05A/B: a pure inner function, a snapshot builder, a validator, and I
 `suite(N=3000, seed=1)` and `suite_fallback(N=3000, seed=1)`, both generators, zero violations: determinism; no study on/after target; budget; no empty study day with ≥15 min; ≤2 practice blocks per day, each within one section; ≤4 domains per block, all counts multiples of 5 and ≥5; exam-day isolation; lead window; minimum gap; exam review on the next study day after every exam; **monotonicity: 0 violations of 623** (lowering a domain's mastery never reduces its questions). Weight fidelity: **TVD 0.019 with no prior history** (the deficit rule is near-exact); 0.106 when the suite injects adversarial random 28-day history that must be repaired inside one horizon. Re-run after re-keying to levels 0–4: identical results. One-study-day-a-week students rotate through all eight domains over four weekly generations. Budget utilization 0.955.
 
 ## 8. Doc 05F change record (owner applies to the locked doc)
+
+**2026-09-27 — exam placement replaced (Brief 14).** Step 2 above is rewritten: the student picks a frequency and a preferred weekday, and placement is arithmetic from the last completed exam or the setup date. `full_length_every_n_occurrences` and `full_length_min_gap_days` are retired; `default_full_length_interval_weeks` (2, bounds 1–4) is added; `student_study_profile` gains `full_length_interval_weeks` with a both-or-neither CHECK against `full_length_weekday`. An overridden date shifts +7 and never to another weekday (V-02); two overridden occurrences record a suppression in `degraded[]`. The final rehearsal is unchanged and unshifted. Doc 05F consequences: R-08-27 restated, §8.1 gains the field, §21 swaps the keys, §22.7's worked example rewritten, §9.4 and §12 re-pointed here.
+
 
 The locked Doc 05F predates this sheet. These are the edits that reconcile it; nothing else in the doc changes.
 

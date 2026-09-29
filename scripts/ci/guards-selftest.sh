@@ -97,6 +97,36 @@ rm -f "$ROOT/$PLANT_SQL"
 [ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" = "0" ] || { echo "  FAIL: guard still red after removing the plant"; fails=1; }
 echo "    OK fail-closed on novel delimiter; green once removed"
 
+# --- E1c: PROVEN COVERAGE of the Doc 04B scoring bodies (E4). Every v1.0 constant of Doc 04B
+#          Appendix A (and the literal 5 of §6.3's +5 rounding term) planted in a 04B formula
+#          body must turn the guard RED; the structural half-of-R_round form must stay GREEN.
+#          @spec [Doc-04B_V4.3, §5.15, §6, §8.2] | @implemented [2026-09-24] ---
+echo "==> E1c: no-hardcoded-constants must turn RED on each Doc 04B v1.0 constant in a 04B scoring body"
+plant_04b_body() {  # $1 = expression to plant inside compute_scaled_score_from_counts
+  cat > "$ROOT/$PLANT_SQL" <<SQL
+-- TRANSIENT guard self-test artifact (never committed; trap-removed). LYCEON-MIGRATION-REVIEWED
+CREATE OR REPLACE FUNCTION public.compute_scaled_score_from_counts(
+  p_version text, p_r1 int
+) RETURNS numeric LANGUAGE plpgsql AS \$\$
+DECLARE c_round int;
+BEGIN
+  RETURN $1;   -- planted: Doc 04B constants must be read via scoring_constant()
+END;
+\$\$;
+SQL
+}
+for c in 0.5 430 800 15 9 6 200 400 450 580 10 5; do
+  plant_04b_body "$c"
+  if [ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" != "0" ]; then echo "    OK $c → RED"
+  else echo "  FAIL: Doc 04B constant $c stayed GREEN in a 04B scoring body"; fails=1; fi
+  rm -f "$ROOT/$PLANT_SQL"
+done
+plant_04b_body "c_round::numeric / 2"
+[ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" = "0" ] || { echo "  FAIL: structural c_round::numeric / 2 wrongly turned the guard red (over-block)"; fails=1; }
+rm -f "$ROOT/$PLANT_SQL"
+[ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" = "0" ] || { echo "  FAIL: guard still red after removing the plant"; fails=1; }
+echo "    OK structural half-of-R_round stays green; signal is the plant"
+
 # --- E2: plant a tutor/LISA path that writes mastery ---
 echo "==> E2: tutor-never-writes-mastery must turn RED on a planted tutor mastery write"
 cat > "$ROOT/$PLANT_TUTOR" <<'TS'

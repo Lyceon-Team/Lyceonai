@@ -25,7 +25,6 @@ import {
   BookOpen,
   Calculator,
   Clock,
-  Target,
   TrendingUp,
   Award,
   Flame,
@@ -301,12 +300,6 @@ function Practice() {
       title: "Review Queue",
       icon: RotateCcw,
       caption: "Redo what you missed",
-    },
-    {
-      href: "/full-test",
-      title: "Full-Length Exam",
-      icon: Target,
-      caption: "Run a timed full SAT",
     },
     {
       href: "/mastery",

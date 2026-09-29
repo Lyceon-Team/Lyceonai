@@ -655,6 +655,39 @@ export async function setProfileStripeCustomerId(
 }
 
 /**
+ * @spec [Doc-03_V3 §4.6 (regional crisis resource "based on billing address
+ *        country"), §12.3, INV-03-08; closure plan W3-3] @implemented 2026-09-25
+ *
+ * plain English: record the student's billing country on their profile, so the
+ * crisis and safeguarding responses name that country's resources rather than
+ * falling back to the US ones.
+ *
+ * expected outcome: `profiles.country_code` holds the ISO 3166-1 alpha-2 code
+ * the INV-03-08 grant gate just approved for this student.
+ *
+ * trade-offs / edge cases:
+ *  - The ONE writer of this column, called only from the entitlement writers in
+ *    `webhook-handler.ts`, and only on a grant — so the value is always one the
+ *    Tier-1 gate accepted, never a raw or unvalidated string.
+ *  - Guardian-paid: the country is the PAYER's billing country, written to each
+ *    funded student. Doc 03 §12.3 names the billing address as authoritative.
+ *  - Idempotent: the same event replayed writes the same value.
+ */
+export async function setProfileCountryCode(
+  profileId: string,
+  countryCode: string,
+): Promise<void> {
+  const { error } = await supabaseServer
+    .from("profiles")
+    .update({ country_code: countryCode })
+    .eq("id", profileId);
+
+  if (error) {
+    throw new Error(`Failed to set country_code on profile: ${error.message}`);
+  }
+}
+
+/**
  * Get daily usage by account_id + day (UTC date)
  */
 export async function getDailyUsage(accountId: string): Promise<UsageDaily> {

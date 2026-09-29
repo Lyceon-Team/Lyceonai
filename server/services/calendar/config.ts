@@ -33,7 +33,9 @@
  */
 import { z } from "zod";
 import {
+  calendarBlockTypeSchema,
   studyProfileBoundsSchema,
+  type CalendarBlockType,
   type StudyProfileBounds,
 } from "@lyceon/shared";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
@@ -51,6 +53,19 @@ export const CALENDAR_CONFIG_KEYS = [
   "daily_minutes_presets",
   "target_exam_date_max_days",
   "weekly_job_interval_minutes",
+  /**
+   * §8.1, 20261010000000. The cadence the frequency control opens on. A SURFACE default,
+   * deliberately NOT part of `bounds`: `studyProfileBoundsSchema` describes the limits a
+   * write is held to, and a prefill is not a limit. The generator never reads this key —
+   * the cadence it plans against is `student_study_profile.full_length_interval_weeks`.
+   */
+  "default_full_length_interval_weeks",
+  /**
+   * §2 Step 2 / §4. Read by the GENERATOR — nothing is placed inside this window before the
+   * target date — and now served to the client too, because §8.1's "about N practice tests"
+   * readout cannot be truthful without it and §17 forbids a literal.
+   */
+  "final_exam_lead_days",
   "horizon_days",
   "generator_version",
   /**
@@ -60,6 +75,13 @@ export const CALENDAR_CONFIG_KEYS = [
    * `engine_planning.review_seconds_per_unit`, rather than from a literal in the client.
    */
   "review_estimated_seconds_per_item",
+  /**
+   * §17.2's engine picker. Which block types the planner may PLAN — not which engines are
+   * built (`isLaunchableBlockType` answers that, and the two are deliberately separate).
+   * Read here so "+ Add block" offers exactly what the validator's V-03 will accept:
+   * offering full-length before it ships would be a choice the server refuses.
+   */
+  "enabled_block_types",
 ] as const;
 export type CalendarConfigKey = (typeof CALENDAR_CONFIG_KEYS)[number];
 
@@ -113,6 +135,21 @@ export type CalendarConfig = {
    * reads and the budget the generator planned against are the SAME numbers.
    */
   estimates: PlanningEstimates;
+  /** §17.2 / V-03. The block types the planner may plan, straight from the table. */
+  enabledBlockTypes: readonly CalendarBlockType[];
+  /**
+   * §8.1. Weeks between full-lengths that the setup form and the settings sheet OPEN on,
+   * before the student chooses. Not a bound and not a cadence anyone is planned against:
+   * changing it changes what a NEW student sees first and nothing about a student who has
+   * already chosen.
+   */
+  defaultFullLengthIntervalWeeks: number;
+  /**
+   * §2 Step 2: nothing is placed inside this window before the target date, so it decides
+   * whether the last sitting before the target exists at all. Served to the client for
+   * §8.1's frequency readout, which would otherwise have to guess it.
+   */
+  finalExamLeadDays: number;
 };
 
 function requireValue(
@@ -231,6 +268,27 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
     );
   }
 
+  // §17.2 / V-03. Parsed with the CANONICAL block-type enum rather than a local array, so
+  // a type the picker offers is a type `calendar_validate_plan` recognises. Malformed is a
+  // throw like every other key here: an empty picker and a picker full of refusals are both
+  // worse than a loud failure at the accessor (§18).
+  const enabledBlockTypes = z
+    .array(calendarBlockTypeSchema)
+    .min(1)
+    .safeParse(requireValue(rows, "enabled_block_types"));
+  if (!enabledBlockTypes.success) {
+    logger.error(
+      "CALENDAR_CONFIG",
+      "key_malformed",
+      "enabled_block_types is not a non-empty array of calendar block types",
+      { key: "enabled_block_types" },
+    );
+    throw new CalendarConfigError(
+      "enabled_block_types",
+      "is not a non-empty array of calendar block types",
+    );
+  }
+
   // Doc 02B §41 owns practice timing, so the practice half of the estimate is read from
   // ITS table — the same row `calendar_build_plan_input` reads. Copying the value into
   // `calendar_runtime_config` would be a second copy of someone else's constant, and the
@@ -252,6 +310,12 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
         "review_estimated_seconds_per_item",
       ),
     },
+    enabledBlockTypes: enabledBlockTypes.data,
+    defaultFullLengthIntervalWeeks: requireInteger(
+      rows,
+      "default_full_length_interval_weeks",
+    ),
+    finalExamLeadDays: requireInteger(rows, "final_exam_lead_days"),
   };
 }
 

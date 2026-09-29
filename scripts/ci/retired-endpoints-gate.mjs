@@ -110,12 +110,13 @@ const RETIRED = [
     path: "/api/guardian/students/:studentId/exams/full-length/sessions",
     retiredIn: "delete-and-ship (outside the four-item guardian scope)",
     replacement:
-      "nothing — guardian exam history is not one of link / gate / resolver / view, and Doc 04C §12.4 explicitly disclaims guardian multi-session aggregation",
+      "GET /api/students/:studentId/tests — G1 (SCL-181, owner ruling 2026-09-27) brought guardian exam results back inside scope on the subject resolver. It lists one student's forms, latest attempt each; Doc 04C §12.4's multi-STUDENT aggregation is still not served",
   },
   {
     path: "/api/guardian/students/:studentId/tests/:sessionId/report",
     retiredIn: "delete-and-ship (outside the four-item guardian scope)",
-    replacement: "nothing — see above",
+    replacement:
+      "GET /api/students/:studentId/tests/:sessionId/report — G1 (SCL-181): the same resource on the subject resolver, 404/402 instead of 04C §12.1's 403/200",
   },
   {
     path: "/api/guardian/students/:studentId/calendar/month",

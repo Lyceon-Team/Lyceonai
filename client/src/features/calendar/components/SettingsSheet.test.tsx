@@ -24,11 +24,21 @@ import type {
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
-import { SettingsSheet, scheduleSummary } from "./SettingsSheet";
+import {
+  examPairIncomplete,
+  SettingsSheet,
+  scheduleSummary,
+} from "./SettingsSheet";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
   review_seconds_per_unit: 120,
+};
+
+/** §8.1's readout constants, as the ready payload serves them. */
+const EXAM_PLANNING = {
+  final_exam_lead_days: 7,
+  default_full_length_interval_weeks: 2,
 };
 
 /** Presets chosen to be unmistakable: no default list contains 25 or 55. */
@@ -47,6 +57,7 @@ const PROFILE: StudyProfile = {
   study_days_mask: 126,
   daily_minutes: 55,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T18:00:00Z",
 };
@@ -61,6 +72,7 @@ function renderSheet(
       profile={PROFILE}
       bounds={BOUNDS}
       estimates={ESTIMATES}
+      examPlanning={EXAM_PLANNING}
       today="2026-09-22"
       onSave={onSave}
       onClose={onClose}
@@ -122,15 +134,28 @@ describe("the sheet opens on the student's CURRENT schedule", () => {
 });
 
 describe("the live readout describes the DRAFT, not the saved profile", () => {
+  /**
+   * THE COUNT IS DERIVED BY HAND, and it is the whole reason the readout changed: the exam
+   * half used to say only WHICH DAY, which a student cannot plan against. With today
+   * 2026-09-22, a target of 2026-11-07, Saturdays, a fortnightly cadence and a 7-day lead:
+   *
+   *   rehearsal  11-07 − 7 = 10-31, already a Saturday   -> counts
+   *   cadence    09-22 + 14 = 10-06 (Tue) -> snap 10-10  -> counts
+   *              10-24 (Sat)                            -> counts
+   *              11-07                — inside the lead -> stop
+   *
+   * Three. `fullLengthsBeforeTarget` is shared with the generator's own steps, so this is
+   * the number the plan will actually hold rather than a second estimate of it.
+   */
   it("is derived, and moves when a chip moves", () => {
     renderSheet();
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 35 questions a day · practice tests on Saturdays",
+      "6 study days a week · about 35 questions a day · about 3 practice tests before 7 November, on Saturdays",
     );
 
     fireEvent.click(chip("settings-minutes", "2 hr"));
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 80 questions a day · practice tests on Saturdays",
+      "6 study days a week · about 80 questions a day · about 3 practice tests before 7 November, on Saturdays",
     );
   });
 
@@ -151,8 +176,16 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
           study_days_mask: 126,
           daily_minutes: 55,
           full_length_weekday: 6,
+          full_length_interval_weeks: 2,
         },
         ESTIMATES,
+        // No target date here: this test is about the QUESTION count, and the exam half is
+        // deliberately the rate rather than a count so it cannot drift into the assertion.
+        {
+          targetExamDate: null,
+          today: "2026-09-22",
+          finalExamLeadDays: EXAM_PLANNING.final_exam_lead_days,
+        },
       ),
     ).toContain("about 35 questions a day");
   });
@@ -214,6 +247,7 @@ describe("guard rails", () => {
     fireEvent.click(screen.getByTestId("settings-save"));
     expect(Object.keys(onSave.mock.calls[0]?.[0]).sort()).toEqual([
       "daily_minutes",
+      "full_length_interval_weeks",
       "full_length_weekday",
       "planner_mode",
       "study_days_mask",
@@ -246,6 +280,7 @@ describe("custom mode asks before re-planning (§12.1)", () => {
         profile={PROFILE}
         bounds={BOUNDS}
         estimates={ESTIMATES}
+        examPlanning={EXAM_PLANNING}
         today="2026-09-22"
         onSave={vi.fn()}
         onClose={vi.fn()}
@@ -266,5 +301,146 @@ describe("custom mode asks before re-planning (§12.1)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Leave it" }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * §8.1's frequency control. The cadence is the STUDENT'S — that is the whole change — so
+ * these tests are about the four choices being expressible and the pair being unbreakable
+ * through the interaction, not merely refused by the schema afterwards.
+ */
+describe("practice test frequency (§8.1)", () => {
+  const FREQ = "settings-full-length-frequency";
+
+  it("offers exactly the four cadences and None, and pre-selects the stored one", () => {
+    renderSheet();
+    for (const label of [
+      "Weekly",
+      "Every 2 weeks",
+      "Every 3 weeks",
+      "Monthly",
+      "None",
+    ]) {
+      expect(chip(FREQ, label)).toBeTruthy();
+    }
+    // The fixture stores 2.
+    expect(chip(FREQ, "Every 2 weeks")).toHaveAttribute("aria-pressed", "true");
+    expect(chip(FREQ, "Weekly")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it.each([
+    ["Weekly", 1],
+    ["Every 2 weeks", 2],
+    ["Every 3 weeks", 3],
+    ["Monthly", 4],
+  ])(
+    "saves %s as %i weeks — the label is copy, the value is weeks",
+    (label, weeks) => {
+      const { onSave } = renderSheet();
+      fireEvent.click(chip(FREQ, label as string));
+      fireEvent.click(screen.getByTestId("settings-save"));
+      expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBe(weeks);
+      // The day is untouched by a frequency pick.
+      expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(6);
+    },
+  );
+
+  it("None on the frequency clears BOTH halves", () => {
+    const { onSave } = renderSheet();
+    fireEvent.click(chip(FREQ, "None"));
+    fireEvent.click(screen.getByTestId("settings-save"));
+    expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBeNull();
+    expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBeNull();
+  });
+
+  it("None on the DAY clears both too — either control is the whole decision", () => {
+    const { onSave } = renderSheet();
+    fireEvent.click(chip("settings-full-length", "None"));
+    fireEvent.click(screen.getByTestId("settings-save"));
+    expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBeNull();
+    expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBeNull();
+  });
+
+  it("picking a day with no cadence adopts the SERVED default, not a literal", () => {
+    const { onSave } = renderSheet({
+      profile: {
+        ...PROFILE,
+        full_length_weekday: null,
+        full_length_interval_weeks: null,
+      },
+      examPlanning: { ...EXAM_PLANNING, default_full_length_interval_weeks: 3 },
+    });
+    fireEvent.click(chip("settings-full-length", "Sun"));
+    fireEvent.click(screen.getByTestId("settings-save"));
+    expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(0);
+    // 3, from the payload — not the 2 a literal would have hardcoded.
+    expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBe(3);
+  });
+
+  // REWRITTEN, not bent: this test asserted that Save went DISABLED when a student picked a
+  // cadence with no day, which is what this sheet did before the setup form existed. Setup has
+  // no Save to disable, so it had to complete the pair itself — and two surfaces answering the
+  // same question two ways is the divergence the working rules call a defect. The sheet now
+  // completes the pair too, and a dead Save button was never the better of the two answers.
+  it("a cadence with no day yet COMPLETES the pair rather than disabling Save", () => {
+    const { onSave } = renderSheet({
+      profile: {
+        ...PROFILE,
+        full_length_weekday: null,
+        full_length_interval_weeks: null,
+      },
+    });
+    fireEvent.click(chip(FREQ, "Weekly"));
+
+    // Saturday is pressed by the act of choosing a cadence — visible, so the student can see
+    // what they now have and move it, rather than discovering it on the calendar.
+    expect(chip("settings-full-length", "Sat")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const save = screen.getByTestId("settings-save");
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    expect(onSave.mock.calls[0]?.[0].full_length_interval_weeks).toBe(1);
+    expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(6);
+  });
+
+  // The guard behind the interaction. `examPairIncomplete` is unreachable by tapping now that
+  // both chip rows move both halves — which is exactly when a guard stops being tested and
+  // starts rotting, so it is asserted directly against a draft no chip can produce.
+  it("still refuses to SAVE half a pair, if a draft ever holds one", () => {
+    expect(
+      examPairIncomplete({
+        full_length_weekday: null,
+        full_length_interval_weeks: 2,
+      }),
+    ).toBe(true);
+    expect(
+      examPairIncomplete({
+        full_length_weekday: 6,
+        full_length_interval_weeks: null,
+      }),
+    ).toBe(true);
+    // And the two legitimate states are not refused, so the assertions above are about the
+    // PAIR and not about the guard returning true for everything.
+    expect(
+      examPairIncomplete({
+        full_length_weekday: 6,
+        full_length_interval_weeks: 2,
+      }),
+    ).toBe(false);
+    expect(
+      examPairIncomplete({
+        full_length_weekday: null,
+        full_length_interval_weeks: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("states the RATE, not a count, when there is no target date to count toward", () => {
+    renderSheet({ profile: { ...PROFILE, target_exam_date: null } });
+    expect(screen.getByTestId("settings-summary").textContent).toContain(
+      "a practice test every 2 weeks, on Saturdays",
+    );
   });
 });

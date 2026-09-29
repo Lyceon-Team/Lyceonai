@@ -172,12 +172,27 @@ export async function launchBlock(
   //    session is handed back rather than joined by a second one.
   const latest = await deps.latestLaunch(block.block_id);
   if (latest !== null) {
-    const lifecycle = await adapter.progress(latest.engine_session_id);
+    // THE LAUNCH ROW'S OWN ADAPTER, not the block's. `engine` above is derived from the
+    // block's CURRENT type; `latest.engine` is the engine that actually owns this session
+    // id. They differ when a day was edited after a launch — a practice block changed to
+    // review still has a practice session on its last launch row — and asking the wrong
+    // engine about a session id it has never heard of is how a live session gets reported
+    // as dead. Same object then answers `resumeHref`, so the route always belongs to the
+    // engine whose session it names.
+    const sessionAdapter = deps.adapterFor(latest.engine);
+    const lifecycle = await sessionAdapter.progress(latest.engine_session_id);
     if (lifecycle !== null && LIVE.includes(lifecycle)) {
       return ok({
         engine: latest.engine,
         session_id: latest.engine_session_id,
-        next: `/practice/session/${latest.engine_session_id}`,
+        // THE ROUTE COMES FROM THE ADAPTER, on this branch exactly as on the create
+        // branch below. This line used to read `/practice/session/${...}` for every
+        // engine, so resuming a live REVIEW block sent the student to practice's page
+        // with a review session id — a 404 on `/api/practice/sessions/:id/state`, in
+        // production on 2026-09-22. Only resume was affected: `create` already asked the
+        // adapter, which is why the FIRST launch of a block worked and every one after
+        // it did not.
+        next: sessionAdapter.resumeHref(latest.engine_session_id),
         resumed: true,
       });
     }

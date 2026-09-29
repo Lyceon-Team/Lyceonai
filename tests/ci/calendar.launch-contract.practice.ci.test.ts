@@ -28,6 +28,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import type { PlanBlock } from "@lyceon/shared";
+import {
+  assertSessionIdResolves,
+  launchResumingExistingSession,
+} from "../helpers/launch-landing";
 
 const recorded: { args: Record<string, unknown> | null } = { args: null };
 
@@ -141,6 +145,27 @@ describe("the adapter hands the engine the right spec", () => {
     expect(result.value.resumed).toBe(false);
   });
 
+  it("create's `next` IS `resumeHref` — the two can never disagree", async () => {
+    const result = await practiceAdapter.create(DOMAIN_BLOCK, 5, CTX);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The SAME function produced both, so an edit to one cannot silently diverge from the
+    // other. `resumeHref` is the single owner of practice's route.
+    expect(result.value.next).toBe(
+      practiceAdapter.resumeHref(result.value.session_id),
+    );
+  });
+
+  it("resumeHref is practice's own route, never review's", () => {
+    const href = practiceAdapter.resumeHref(
+      "5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b",
+    );
+    expect(href).toBe("/practice/session/5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b");
+    // Symmetric with review's assertion. Practice was the engine whose path got copied
+    // everywhere; this pins it so the copy cannot come back in the other direction.
+    expect(href.startsWith("/review/")).toBe(false);
+  });
+
   it("declines a block that is not practice, as data rather than a throw", async () => {
     const review = { ...DOMAIN_BLOCK, block_type: "review", section: null } as unknown as PlanBlock;
     const result = await practiceAdapter.create(review, 5, CTX);
@@ -236,6 +261,69 @@ describe.skipIf(!CAN_RUN)("the database accepts and honours that filter", () => 
     );
     return rows as { id: string; section: string; domain: string }[];
   }
+
+  // ── Where the student lands (§15.1 step 3) ────────────────────────────────
+  //
+  // Symmetric with the review contract file. Practice was never the broken engine — its
+  // route is the one the resume branch hardcoded — but the assertion has to exist for
+  // EVERY engine or the next one to ship gets the same hole review had.
+
+  const RESUME_SESSION = "3f1b5c20-9a84-4e6d-9c11-2b7e5d0a6f31";
+
+  it("the RESUME branch lands in PRACTICE's route, and the id is a real row", async () => {
+    await client.query(
+      `INSERT INTO auth.users (id, email) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+      [CTX.student_id, "practice-landing@example.test"],
+    );
+    await client.query(
+      `INSERT INTO public.profiles (id, email, role)
+       VALUES ($1,$2,'student') ON CONFLICT DO NOTHING`,
+      [CTX.student_id, "practice-landing@example.test"],
+    );
+    await client.query(
+      // `actor_id` is NOT NULL since 20260625040000 (the 05E actor-id seal); `user_id`
+      // became nullable in the same pair. Both are written, because a fixture that
+      // spells the schema as it was two quarters ago is not testing production's.
+      `INSERT INTO public.practice_sessions
+         (id, user_id, actor_id, mode, target_count, platform, client_instance_id, status)
+       VALUES ($1,$2,$3,'structured',5,'web',$4,'active')
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        RESUME_SESSION,
+        CTX.student_id,
+        CTX.actor_id,
+        CTX.client_instance_id,
+      ],
+    );
+
+    const result = await launchResumingExistingSession({
+      adapter: practiceAdapter,
+      engine: "practice",
+      sessionId: RESUME_SESSION,
+      block: DOMAIN_BLOCK,
+      studentId: CTX.student_id,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // `resumed: true` proves the resume branch ran rather than the create path.
+    expect(result.value.resumed).toBe(true);
+    expect(result.value.engine).toBe("practice");
+    expect(result.value.next).toBe(`/practice/session/${RESUME_SESSION}`);
+
+    // The id in the URL names a row in practice's OWN table and in no other engine's.
+    const idInNext = result.value.next.split("/").pop() ?? "";
+    expect(idInNext).toBe(RESUME_SESSION);
+    const counts = await assertSessionIdResolves(
+      client,
+      idInNext,
+      "practice_sessions",
+      "review_sessions",
+    );
+    expect(counts.own).toBe(1);
+    expect(counts.foreign).toBe(0);
+  });
 
   it("the domain filter selects — an Algebra block never serves Geometry", async () => {
     const rows = await pool(["M"], ["Algebra"], 10);

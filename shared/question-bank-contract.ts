@@ -726,6 +726,61 @@ export function parseStudentSafeOptionTokenMap(
   return parseStoredOptionTokenMap(raw);
 }
 
+/**
+ * @spec [Doc-02B_V4 §16; Doc-04A_V2.2 §11.1 (stored mcq answer is the canonical
+ *        letter); E6 ruling "shuffle same as practice and review"]
+ * | @implemented [2026-09-24]
+ *
+ * plain English: the one rule for turning what a student selected on a shuffled
+ * screen into the canonical option key. A served token resolves through the map the
+ * server persisted when it shuffled; anything that is not a token is read as a
+ * canonical letter A-D. Extracted verbatim from practice's gradeAnswer so practice,
+ * review and the full-length exam resolve selections with the SAME code.
+ * expected outcome: a canonical key, or null when the selection is neither a served
+ * token nor a letter. trade-offs: the letter fallback is practice's behaviour, kept
+ * so the three engines stay one; a client that sends a letter gets that canonical
+ * letter, which reveals nothing (it does not know which letter is correct).
+ * edge cases: an empty selection resolves to null.
+ */
+export function resolveSelectedCanonicalKey(
+  selected: string,
+  optionTokenMap: Readonly<Record<string, string>>,
+): string | null {
+  const mappedKeyFromToken = selected ? optionTokenMap[selected] : null;
+  return mappedKeyFromToken ?? normalizeAnswerKey(selected ?? null);
+}
+
+const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
+const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
+
+// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
+// Moved verbatim from server/routes/practice-canonical.ts on 2026-09-24 (E6): practice,
+// review and the full-length exam serialize pre-submit assets through this one filter.
+// Fail-closed: only v:1 structured payloads with a valid items array are
+// understood. Unknown versions, missing structure, legacy flat formats, or
+// any unrecognized shape → null (exclude). Items with missing/unknown role
+// or kind are dropped individually; if nothing survives, return null.
+export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
+  if (assets == null) return null;
+  if (typeof assets !== "object") return null;
+
+  const obj = assets as Record<string, unknown>;
+  if (obj.v !== 1 || !Array.isArray(obj.items)) {
+    return null;
+  }
+
+  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
+    (item) =>
+      typeof item.role === "string" &&
+      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
+      typeof item.kind === "string" &&
+      KNOWN_ASSET_KINDS.has(item.kind),
+  );
+
+  if (filtered.length === 0) return null;
+  return { v: 1, items: filtered };
+}
+
 export function buildStudentSafeOptionTokens(
   options: ReadonlyArray<CanonicalMcOption>,
   order?: ReadonlyArray<CanonicalOptionKey>,

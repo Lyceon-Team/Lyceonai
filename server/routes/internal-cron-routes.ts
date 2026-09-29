@@ -8,6 +8,11 @@ import {
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
 import { getBreachedCases } from "../services/crisis-review-queue";
+import { notifySlaBreaches } from "../services/crisis-notification";
+import {
+  oidcAuthMiddlewareWithConfigGuard,
+  type OidcConfigReader,
+} from "../../packages/shared/internal-auth/verify-oidc-middleware";
 import {
   sweepStalePracticeSessions,
   STALE_PRACTICE_SESSION_TTL_DAYS,
@@ -16,7 +21,12 @@ import { sweepStaleReviewSessions } from "../lib/review-stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
+import {
+  sweepOperationalLogRetention,
+  sweepFinancialRecordRetention,
+} from "../lib/retention/sweeps.js";
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
+import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -119,31 +129,45 @@ router.get(
 );
 
 /**
- * GET /api/internal/crisis-sla-sweep
- * @spec [Doc-03_V3 §21.3] Cloud Scheduler SLA breach sweep. Finds open crisis
- * review cases past their 48h SLA deadline and logs a HIGH alert for each.
- * Does not auto-resolve or auto-escalate — the sweep is an alerting mechanism
- * so ops can prioritize breached cases.
+ * POST /api/internal/crisis-sla-sweep
+ * @spec [Doc-03_V3 §21.3; Doc-03C_V3 §9.3; CC Brief "Close the LISA Vertical" PR 2.2]
+ * @implemented 2026-08-13 | rescheduled 2026-09-23
  *
- * @implemented 2026-08-13
+ * plain English: finds open crisis review cases past their 48h SLA deadline
+ * and logs an ERROR alert for each run that finds any. Does not auto-resolve
+ * or auto-escalate — the sweep is an alerting mechanism so ops can
+ * prioritize breached cases.
  *
- * trade-offs: Alerting only, no auto-action. At V1 scale (founder-staffed),
- * the sweep surfaces overdue cases via structured logging. Cloud Monitoring
- * alert policies pick up the log entries and route to the on-call channel.
- * At V2 scale, this should emit to PagerDuty/Slack directly.
+ * WHY POST + OIDC (was GET + CRON_SECRET). Nothing ever called the GET: it
+ * was in neither vercel.json nor infra/terraform. An hourly cadence (this
+ * handler's documented schedule) cannot live in vercel.json — the Hobby plan
+ * rejects any cron more frequent than daily (see baseline-pending-sweep
+ * below) — so the caller is Cloud Scheduler
+ * (`google_cloud_scheduler_job.crisis_sla_sweep`, infra/terraform/
+ * cloud-scheduler-crisis.tf), which signs an OIDC token rather than sending
+ * CRON_SECRET. The guard is the same one the retention sweep uses: `aud`
+ * must equal CRISIS_SLA_SWEEP_OIDC_AUDIENCE and `email` must equal
+ * CLOUD_TASKS_SERVICE_ACCOUNT. Deliberately NO fallback to
+ * CLOUD_TASKS_OIDC_AUDIENCE: that is a different URL, so a fallback could only
+ * convert a visible "config missing" 500 (ERROR) into an hourly 401.
  *
- * IAM requirements (report only — Karl provisions):
- *   - Cloud Scheduler job: `crisis-sla-sweep` targeting this endpoint.
- *   - Runs every hour (0 * * * *).
- *   - Uses CRON_SECRET for auth (same as other cron endpoints).
+ * ALERTING (closure plan W2-2a, 2026-09-24). A sweep that finds breaches
+ * logs ERROR `sla_breach_detected` AND posts one Slack message naming every
+ * breached case to LYCEON_CRISIS_ALERTS, through the same Cloud Tasks path a
+ * new case uses (notifySlaBreaches). Before this the sweep stopped at the log
+ * line. Breached means unresolved — open OR claimed (in_review) — past the
+ * deadline, and the alert repeats on every sweep while the breach stands;
+ * the turn-path two-minute throttle does not apply to a scheduled sweep.
  */
-router.get(
+const readSlaSweepOidcConfig: OidcConfigReader = () => ({
+  expectedAudience: process.env.CRISIS_SLA_SWEEP_OIDC_AUDIENCE,
+  expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+});
+
+router.post(
   "/crisis-sla-sweep",
-  async (req: Request, res: Response): Promise<void> => {
-    if (!cronAuthorized(req)) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  oidcAuthMiddlewareWithConfigGuard(readSlaSweepOidcConfig),
+  async (_req: Request, res: Response): Promise<void> => {
     try {
       const breachedCases = await getBreachedCases();
 
@@ -158,6 +182,13 @@ router.get(
             caseIds: breachedCases.map((c) => c.id as string),
             oldestDeadline: breachedCases[0]?.sla_deadline,
           },
+        );
+        await notifySlaBreaches(
+          breachedCases.map((c) => ({
+            caseId: String(c.id),
+            status: c.status === "in_review" ? "in_review" : "open",
+            slaDeadline: String(c.sla_deadline),
+          })),
         );
       } else {
         logger.info(
@@ -373,13 +404,36 @@ router.get(
  *        on every run); Doc-06D_V1.0 §9 (retention drift); owner brief 2026-09-15 Part A]
  *        | @implemented [2026-09-15]
  *
- * plain English: the retention mechanism for the notification tables. Deletes events older
- * than `notification_retention_days()` (one definition, in SQL), bounded per call; messages
- * and delivery events go by FK cascade. The lib logs the outcome on EVERY run, zero rows
- * included, with the cutoff — a run that deleted nothing and a run that never happened must
- * be distinguishable from the logs alone, because cron registration cannot be verified from
- * tooling. Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every
- * other endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
+ * plain English: the daily retention pass. Two sweeps run here, each owning its own window
+ * in SQL and each logging on EVERY run, zero rows included — a run that deleted nothing and
+ * a run that never happened must be distinguishable from the logs alone, because cron
+ * registration cannot be verified from tooling.
+ *
+ *   1. NOTIFICATIONS — deletes events older than `notification_retention_days()`; messages
+ *      and delivery events go by FK cascade.
+ *   2. OPERATIONAL LOGS — deletes rows older than `operational_log_retention_days()` from
+ *      the four identity-bearing operational tables. This is the mechanism behind Privacy
+ *      Policy v3 §6.7, which SCL-101 recorded as a commitment with nothing behind it.
+ *   3. FINANCIAL RECORDS — deletes payment records older than
+ *      `financial_record_retention_days()` (seven years). The mechanism behind v3 §6.2.
+ *      It will delete nothing until 2033; that is expected, and shipping it now is the
+ *      point — a published period needs a mechanism on the day it is published.
+ *
+ * WHY THE SECOND SWEEP LIVES BEHIND THIS PATH. The owner brief asked for new sweeps to run
+ * inside an existing cron pass rather than behind a new route, and this is the only existing
+ * pass whose job already IS retention. The consequence is that the path name is now narrower
+ * than what it does. Renaming it to `/retention-sweep` means editing vercel.json and
+ * re-registering the cron, which is a deployment concern rather than a code one — proposed,
+ * not done here.
+ *
+ * ORDERING IS DELIBERATE BUT NOT LOAD-BEARING: the three sweeps touch disjoint tables. They
+ * run in ascending order of retention window so that a failure in a longer-window sweep
+ * cannot mask a shorter-window one — the short windows are the ones where a missed day
+ * actually retains something it should not. All three are idempotent, so the 500-and-retry
+ * path re-runs them harmlessly.
+ *
+ * Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every other
+ * endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
  */
 router.get(
   "/notification-retention-sweep",
@@ -389,16 +443,18 @@ router.get(
       return;
     }
     try {
-      const summary = await sweepNotificationRetention();
-      res.json({ ok: true, ...summary });
+      const notifications = await sweepNotificationRetention();
+      const operationalLogs = await sweepOperationalLogRetention();
+      const financialRecords = await sweepFinancialRecordRetention();
+      res.json({ ok: true, notifications, operationalLogs, financialRecords });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",
         "retention_sweep_job_error",
-        "Scheduled notification retention sweep failed",
+        "Scheduled retention pass failed",
         err,
       );
-      res.status(500).json({ error: "notification_retention_sweep_failed" });
+      res.status(500).json({ error: "retention_sweep_failed" });
     }
   },
 );
@@ -446,6 +502,57 @@ router.get(
         err,
       );
       res.status(500).json({ error: "calendar_weekly_regen_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/calendar-exam-notify
+ * @spec [Doc-05F_V1.0 §8.1, §12.5 (the daily-job pattern), §18 (job outcomes);
+ *        contracts/notifications.contract.md §2.2, §2.3, §6.1; Brief 14 Step 5]
+ *        | @implemented [2026-09-27]
+ *
+ * plain English: the practice-test reminders — one on the Monday of a week holding a
+ * full-length, one the day before. Scheduled DAILY for the same reason the weekly regen is: a
+ * cron fires in one timezone and the students are in all of them, so the schedule wakes the job
+ * and `calendar_exam_notification_candidates` decides who is due in their OWN week.
+ *
+ * Safe to rerun: the event id is derived from (event type, block), so a second call the same day
+ * finds the event already there and records `skipped_duplicate` rather than sending twice.
+ *
+ * SCHEDULED AFTER the weekly regeneration (`30 5`, this at `0 6`), and that order is the point:
+ * the weekly job may replan the future half of the horizon, so notifying first could announce a
+ * practice test the replan then moves. Delivery does not depend on the dispatch sweep at `30 4`
+ * having run — this job sends its own email inline (contract §6.1) and the sweep is only the
+ * backstop for a row whose send failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
+ * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ */
+router.get(
+  "/calendar-exam-notify",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runExamNotifications(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      // NESTED, not spread — the summary is keyed by `calendar_job_runs.outcome` and one of
+      // those keys IS `ok`, so spreading it would overwrite the envelope's `ok: true` with a
+      // COUNT and a pass that notified nobody would read as a failure. The weekly regen route
+      // below learned this from tsc (TS2783); stated here so the next route does not relearn it.
+      res.json({ ok: true, job: "exam_notify", summary });
+    } catch (err) {
+      logger.error(
+        "CALENDAR_JOB",
+        "exam_notify_job_error",
+        "Scheduled calendar exam notifications failed",
+        err,
+      );
+      res.status(500).json({ error: "calendar_exam_notify_failed" });
     }
   },
 );

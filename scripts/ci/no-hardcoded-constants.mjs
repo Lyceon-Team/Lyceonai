@@ -85,6 +85,38 @@ const PROJECTION_DENY = [
   ["500","TARGET_QUESTION_COUNT"],["40","REFRESH_EVENT_THRESHOLD"],["24","REFRESH_TIME_HOURS"],
 ];
 
+// ── (1c) Doc 04B full-length SCORING functions (E4). The §6 formula reads every constant through
+// scoring_constant() (Doc 04B §5.15/§8.2), so these bodies get the STRICT treatment of (1): no
+// numeric literal survives except the structural forms below. Every function on the 04B scoring
+// path is listed, not only the formula body, so a constant cannot be smuggled in one call up.
+// @spec [Doc-04B_V4.3, §5.15, §6, §8.2, §11.2, §12.1] | @implemented [2026-09-24]
+const SCORING_04B_FUNCTIONS = new Set([
+  "compute_scaled_score_from_counts",
+  "compute_section_scaled_score",
+  "score_test_session_from_outbox",
+  "is_answer_correct",
+  "scoring_constants_snapshot_jsonb",
+  "emit_score_run_side_effects",
+]);
+const SCORING_04B_STRUCTURAL_ALLOW = [
+  [/c_round::numeric\s*\/\s*2\b/g,                    "round half up: half of R_round (Doc 04B §6.3)"],
+  [/difficulty\s*=\s*[123]\b/gi,                       "difficulty enum code 1/2/3 = easy/medium/hard (Doc 02A INV-02A-05)"],
+  [/difficulty\s+IS\s+DISTINCT\s+FROM\s+[123]\b/gi,    "difficulty enum code (unbucketed guard, Doc 04B §19.4)"],
+  [/[<>]=?\s*0\b/g,                                    "comparison against zero (count guards)"],
+  [/\*\s*1000\s*\)/g,                                  "epoch seconds -> milliseconds for §20.1 computation_ms"],
+  [/\b(?:SELECT|PERFORM)\s+1\b/gi,                     "existence probe (SELECT 1 / PERFORM 1)"],
+];
+// v1.0 values the self-test plants into a 04B body; each must turn the guard RED.
+const SCORING_04B_LOCKED = ["0.5", "430", "800", "15", "9", "6", "200", "400", "450", "580", "10", "5"];
+
+function scoring04bResidual(body) {
+  let s = stripNonCode(body);
+  for (const [re] of SCORING_04B_STRUCTURAL_ALLOW) s = s.replace(re, " ");
+  // Identifier-internal digits (constants_sha256) are not literals: the look-behind also
+  // excludes a preceding digit or '.', so "sha256" never yields a stray "56".
+  return s.match(/(?<![A-Za-z_0-9.])\d+(?:\.\d+)?/g) || [];
+}
+
 // ── (2) Non-formula SQL bodies: value denylist (operational + formula) ──
 //
 // STRUCTURAL UNIT, masked before the denylist scan. Basis points are a UNIT, not a
@@ -178,7 +210,7 @@ for (const rel of walk("supabase/migrations")) {
   if (/_ws2_config_constants\.sql$|mastery_constants|kpi_constants/.test(rel)) continue; // seeds
   const src = readFileSync(path.join(ROOT, rel), "utf8");
   for (const { name, body } of namedFunctionBodies(src)) {
-    const guarded = FORMULA_FUNCTIONS.has(name) || SCORING_FUNCTIONS.has(name);
+    const guarded = FORMULA_FUNCTIONS.has(name) || SCORING_FUNCTIONS.has(name) || SCORING_04B_FUNCTIONS.has(name);
     if (body === null) {
       // FAIL CLOSED: a guarded (formula/scoring) function whose body we could not parse (novel
       // dollar-quote delimiter, etc.) turns the guard RED — "found something I must scan but couldn't",
@@ -191,6 +223,11 @@ for (const rel of walk("supabase/migrations")) {
       const residual = formulaResidual(body);
       if (residual.length)
         violations.push(`${rel} [formula ${name}]: non-structural literal(s) ${[...new Set(residual)].join(", ")} — read from mastery_constants (allowlist: structural form only)`);
+    } else if (SCORING_04B_FUNCTIONS.has(name)) {
+      // (1c) Doc 04B scoring bodies — strict: fail closed on any non-structural literal.
+      const residual = scoring04bResidual(body);
+      if (residual.length)
+        violations.push(`${rel} [04B scoring ${name}]: non-structural literal(s) ${[...new Set(residual)].join(", ")} — read via scoring_constant() (Doc 04B §8.2)`);
     } else if (SCORING_FUNCTIONS.has(name)) {
       // (1b) projection scoring body — none of the projection-constant VALUES may be a literal.
       const code = stripNonCode(body);
@@ -223,4 +260,4 @@ if (violations.length) {
   for (const v of [...new Set(violations)]) console.error("  " + v);
   process.exit(1);
 }
-console.log(`NO-HARDCODED-CONSTANTS: PASS (delimiter-agnostic, fail-closed; strict allowlist over ${FORMULA_FUNCTIONS.size} formula + ${SCORING_FUNCTIONS.size} scoring functions; ${LOCKED_FORMULA_CONSTANTS.length} formula + ${PROJECTION_DENY.length} projection constants self-tested)`);
+console.log(`NO-HARDCODED-CONSTANTS: PASS (delimiter-agnostic, fail-closed; strict allowlist over ${FORMULA_FUNCTIONS.size} formula + ${SCORING_FUNCTIONS.size} scoring + ${SCORING_04B_FUNCTIONS.size} Doc 04B scoring functions; ${LOCKED_FORMULA_CONSTANTS.length} formula + ${PROJECTION_DENY.length} projection constants self-tested)`);

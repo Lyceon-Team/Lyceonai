@@ -37,8 +37,10 @@ import {
   err,
   moveRefusalReasonSchema,
   ok,
+  planViolationSchema,
   type MoveRefusalReason,
   type PlanTrigger,
+  type PlanViolation,
   type Result,
 } from "@lyceon/shared";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
@@ -48,12 +50,43 @@ import { classifyError } from "../../lib/redact";
 export type PlanInitiator = "student" | "system" | "admin";
 
 /**
+ * Who described the plan the validator refused — the axis §15 and §18 actually differ on.
+ *
+ * `student`: the student supplied the CONTENT (`calendar_edit_day` and
+ * `calendar_move_block` validate in `student_edit` mode, `calendar_do_it_now` in
+ * `do_it_now`). A refusal is a decision about what they asked for: 409, WARN, and the
+ * violations travel so they can act on them.
+ *
+ * `system`: WE produced the plan (`calendar_persist_version` validates in `generated` or
+ * `rollback`, `calendar_regenerate_day` in `day_regenerate`). A refusal means our own
+ * generator emitted an invalid plan, which is a fault: 500, ERROR, and §18's
+ * "`generated`-mode rejections (alert > 0)" fires as it always has.
+ *
+ * The mode lives in SQL and is not in the RPC envelope, so it is mapped here from the
+ * writer each function calls — one line per call site, each verified against the
+ * `calendar_validate_plan(p_mode, ...)` argument in the migration that defines it.
+ */
+export type PlanAuthorship = "student" | "system";
+
+/**
  * Every way a plan write can legitimately not happen. As with `LaunchFailure`, a
  * discriminated union rather than a status code: this service does not own HTTP.
  */
 export type PlanFailure =
-  /** The validator refused the plan the generator produced. §18: page, prior plan stands. */
-  | { kind: "rejected"; violations: readonly string[] }
+  /**
+   * The validator refused the plan. The PRIOR PLAN STANDS either way; what differs is
+   * whose mistake it was (`authored`) and therefore whether it is a decision or a fault.
+   *
+   * `unreadable` is not decoration. It counts violations the validator returned that this
+   * build could not parse, so a future shape change in SQL announces itself instead of
+   * arriving as an empty list — which is exactly how this defect reached production.
+   */
+  | {
+      kind: "rejected";
+      authored: PlanAuthorship;
+      violations: readonly PlanViolation[];
+      unreadable: number;
+    }
   /** §12.2: a past date is never owned and never edited. */
   | { kind: "past_date"; date: string }
   /** Beyond the planning horizon — there is no plan there to regenerate yet. */
@@ -82,30 +115,47 @@ type RpcEnvelope = {
 };
 
 /**
- * `{ version_no, validator_result }` out of whatever the RPC returned.
+ * `{ version_no, validator_result, violations }` out of whatever the RPC returned.
  *
- * Narrowed with explicit guards rather than a Zod schema on purpose: this is the SAME
- * envelope from four call sites, the two fields are primitives, and a schema here would
- * become a fifth place the RPC's contract is written down. The violations list is read
- * only to log which rules fired — the route never renders it, because a rule id is
- * internal and a student cannot act on one.
+ * The two scalars stay explicit guards — they are primitives, and this is the same
+ * envelope from five call sites. The VIOLATIONS are parsed with `planViolationSchema`,
+ * because they are not primitives and the previous code assumed they were:
+ *
+ *     .filter((rule): rule is string => typeof rule === "string")
+ *
+ * `calendar_validate_plan` builds each violation with `jsonb_build_object('rule', ...,
+ * 'date', ..., 'detail', ...)`, so every element is an OBJECT. The predicate was false for
+ * all of them, the array emptied, and `rule_ids=[]` reached production — a rejection
+ * nobody could diagnose, fifteen times on 2026-09-24. A type guard that discards what it
+ * cannot recognise fails silently by construction; a parse that counts its losses does
+ * not.
+ *
+ * So anything that does not parse is COUNTED rather than dropped. `unreadable > 0` means
+ * the SQL contract moved and this build is behind it — logged at ERROR by the caller,
+ * separately from whatever the rejection itself is.
  */
-function readEnvelope(
-  data: unknown,
-): { versionNo: number; accepted: boolean; violations: string[] } | null {
+function readEnvelope(data: unknown): {
+  versionNo: number;
+  accepted: boolean;
+  violations: PlanViolation[];
+  unreadable: number;
+} | null {
   if (typeof data !== "object" || data === null) return null;
   const envelope = data as RpcEnvelope;
   if (typeof envelope.version_no !== "number") return null;
   if (typeof envelope.validator_result !== "string") return null;
-  const violations = Array.isArray(envelope.violations)
-    ? envelope.violations.filter(
-        (rule): rule is string => typeof rule === "string",
-      )
-    : [];
+
+  const raw = Array.isArray(envelope.violations) ? envelope.violations : [];
+  const violations: PlanViolation[] = [];
+  for (const element of raw) {
+    const parsed = planViolationSchema.safeParse(element);
+    if (parsed.success) violations.push(parsed.data);
+  }
   return {
     versionNo: envelope.version_no,
     accepted: envelope.validator_result === "accepted",
     violations,
+    unreadable: raw.length - violations.length,
   };
 }
 
@@ -151,6 +201,8 @@ async function callWriter(
   args: Record<string, string | number | null>,
   context: {
     studentId: string;
+    /** Who described the plan — decides 409-and-WARN vs 500-and-ERROR on a rejection. */
+    authored: PlanAuthorship;
     date?: string;
     requestId?: string;
     refusable?: boolean;
@@ -204,21 +256,53 @@ async function callWriter(
     return err({ kind: "write_failed", detail: "envelope_unexpected" });
   }
 
-  if (!envelope.accepted) {
-    // §18: a `generated` rejection PAGES and the prior plan stands. The rule ids are the
-    // whole point of the alert (§18 `calendar.plan_rejected {rule_ids}`), so they are
-    // logged here even though nothing renders them.
+  // A violation this build cannot read is its own incident, whoever authored the plan:
+  // the SQL contract has moved. Logged before the rejection so the two are never confused
+  // — one says "the plan was refused", this one says "and we cannot fully say why".
+  if (envelope.unreadable > 0) {
     logger.error(
       "CALENDAR_PLAN",
-      "plan_rejected",
-      "the validator rejected the generated plan; the prior plan stands",
+      "plan_violation_unreadable",
+      "calendar_validate_plan returned violations this build could not parse",
       {
         operation,
-        rule_ids: envelope.violations,
+        unreadable: envelope.unreadable,
+        readable: envelope.violations.length,
         requestId: context.requestId,
       },
     );
-    return err({ kind: "rejected", violations: envelope.violations });
+  }
+
+  if (!envelope.accepted) {
+    // The PRIOR PLAN STANDS either way. What differs is whose plan it was.
+    //
+    // §18 alerts on `generated`-mode rejections, and only those: our generator emitting an
+    // invalid plan is a fault worth paging for. A student describing a day the rules do
+    // not allow is not — it is the validator doing its job on input we asked for. Logging
+    // both at ERROR with the words "the generated plan" made every refused day edit look
+    // like an outage, which is how fifteen of them read on 2026-09-24.
+    const studentAuthored = context.authored === "student";
+    logger[studentAuthored ? "warn" : "error"](
+      "CALENDAR_PLAN",
+      "plan_rejected",
+      studentAuthored
+        ? "the validator refused the edit the student described; the prior plan stands"
+        : "the validator rejected the generated plan; the prior plan stands",
+      {
+        operation,
+        authored: context.authored,
+        // §18 `calendar.plan_rejected {rule_ids}`. Ids only: `detail` can name a date and
+        // a minute budget, and §18's "never logged" list covers plan scope.
+        rule_ids: envelope.violations.map((violation) => violation.rule),
+        requestId: context.requestId,
+      },
+    );
+    return err({
+      kind: "rejected",
+      authored: context.authored,
+      violations: envelope.violations,
+      unreadable: envelope.unreadable,
+    });
   }
 
   logger.info(
@@ -273,6 +357,8 @@ export async function regeneratePlan(
     },
     {
       studentId: request.student_id,
+      // calendar_persist_version -> 'generated' (or 'rollback'). Our plan, our fault.
+      authored: "system",
       ...(requestId === undefined ? {} : { requestId }),
     },
   );
@@ -305,6 +391,9 @@ export async function regenerateDay(
     },
     {
       studentId: request.student_id,
+      // calendar_regenerate_day -> 'day_regenerate'. The student asked for a fresh day,
+      // but WE composed it, so a refusal is still ours.
+      authored: "system",
       date: request.date,
       ...(requestId === undefined ? {} : { requestId }),
     },
@@ -339,6 +428,8 @@ export async function editDay(
     },
     {
       studentId: request.student_id,
+      // calendar_edit_day -> 'student_edit'. The student supplied the member list.
+      authored: "student",
       date: request.date,
       ...(requestId === undefined ? {} : { requestId }),
     },
@@ -367,6 +458,8 @@ export async function doItNow(
     },
     {
       studentId: request.student_id,
+      // calendar_do_it_now -> 'do_it_now'. The student chose the block and the day.
+      authored: "student",
       ...(requestId === undefined ? {} : { requestId }),
     },
   );
@@ -408,6 +501,8 @@ export async function moveBlock(
     },
     {
       studentId: request.student_id,
+      // calendar_move_block -> 'student_edit'. The student chose both ends of the move.
+      authored: "student",
       date: request.to_date,
       refusable: true,
       ...(requestId === undefined ? {} : { requestId }),

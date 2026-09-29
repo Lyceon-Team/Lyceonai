@@ -31,6 +31,8 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
+  resolveSelectedCanonicalKey,
+  filterAssetsPreSubmit,
   resolveCanonicalDomain,
   resolveClientInstanceBinding,
   normalizeSectionCode,
@@ -755,34 +757,10 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
   return null;
 }
 
-const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
-const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
-
-// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
-// Fail-closed: only v:1 structured payloads with a valid items array are
-// understood. Unknown versions, missing structure, legacy flat formats, or
-// any unrecognized shape → null (exclude). Items with missing/unknown role
-// or kind are dropped individually; if nothing survives, return null.
-export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
-  if (assets == null) return null;
-  if (typeof assets !== "object") return null;
-
-  const obj = assets as Record<string, unknown>;
-  if (obj.v !== 1 || !Array.isArray(obj.items)) {
-    return null;
-  }
-
-  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
-    (item) =>
-      typeof item.role === "string" &&
-      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
-      typeof item.kind === "string" &&
-      KNOWN_ASSET_KINDS.has(item.kind),
-  );
-
-  if (filtered.length === 0) return null;
-  return { v: 1, items: filtered };
-}
+// filterAssetsPreSubmit moved to shared/question-bank-contract.ts on 2026-09-24 (E6) so
+// the exam serializer consumes the same sanitizer without a domain -> routes import.
+// Re-exported here so existing importers are unchanged.
+export { filterAssetsPreSubmit };
 
 // @spec [Doc 02B §14/§20 Serving Questions; Doc 02 Preamble §12 INV-02-08] | @implemented 2026-06-14
 // Single canonical serializer — no second inline question shape. We pass item_type through
@@ -2819,11 +2797,11 @@ export function gradeAnswer(
     };
   }
 
-  const mappedKeyFromToken = selectedAnswer
-    ? optionTokenMap[selectedAnswer]
-    : null;
-  const selectedCanonicalKey =
-    mappedKeyFromToken ?? normalizeAnswerKey(selectedAnswer ?? null);
+  // One resolution rule for practice, review and the full-length exam (E6).
+  const selectedCanonicalKey = resolveSelectedCanonicalKey(
+    selectedAnswer,
+    optionTokenMap,
+  );
 
   if (!selectedCanonicalKey) {
     return {

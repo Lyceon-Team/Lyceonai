@@ -1,0 +1,6 @@
+# Lyceon Scoring v1.0 Validation Evidence Packet (Doc 04B V4.3)
+# Hash covers: validation_sweep.py, validation_results.csv,
+#              test_ninjas_bands_reference.csv, validation_summary.md,
+#              validation_targeted_fixtures.csv,
+#              source_snapshot/extraction_notes.md
+29c3e0fd362b6f5c3c90c50a49b49fa55ebc03e1518f8ab1922408329b88651b

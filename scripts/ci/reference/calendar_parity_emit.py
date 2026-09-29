@@ -53,6 +53,15 @@ def constants_for_db():
     c = dict(ref.C)
     c["weight_by_level"] = {str(k): v for k, v in ref.C["weight_by_level"].items()}
     c["canonical_domain_order"] = list(ref.DOMAINS)
+    # E9b / SCL-169. The oracle has no weak_level_max KEY: its weak rule is the
+    # literal `L <= 1` (the why() line in the reference). The database reads the
+    # same threshold from calendar_runtime_config so that the plan-input builder's
+    # weak_domains and the generator's explanation step share one definition. This
+    # line states the oracle's literal as that constant -- it does not invent a
+    # value -- and the constants check below then pins the database row to it,
+    # while every case's per-domain explanation keys prove the SQL reads it the
+    # way the oracle applies it.
+    c["weak_level_max"] = 1
     return c
 
 
@@ -66,6 +75,7 @@ def snapshot(P):
             "daily_minutes": P["daily_minutes"],
             "target_exam_date": _iso(P["target_exam_date"]),
             "full_length_weekday": P["full_length_weekday"],
+            "full_length_interval_weeks": P["full_length_interval_weeks"],
         },
         "mastery": [
             {"section": ref.SEC[d], "domain": d, "mastery_level": P["levels"][d]}
@@ -81,9 +91,30 @@ def snapshot(P):
             "missed_count": P["last_exam_missed_count"],
             "reviewed": P["last_exam_reviewed"],
             "weak_domains": list(P["exam_weak_domains"]),
+            # E9b / SCL-170. The generator names the exam in the exam-review block's
+            # session scope, and the builder always emits the id alongside the date.
+            # The oracle does not model session ids (the projection compared below
+            # carries no review scope), so a completed exam gets a fixed synthetic
+            # id -- deterministic, so the same case always emits the same snapshot.
+            "source_session_id": (
+                "00000000-0000-4000-8000-000000000e9b" if P["last_exam_date"] else None
+            ),
         },
         "recent_planned_by_domain": [
             {"domain": d, "count": c} for d, c in P["recent_planned_by_domain"].items()
+        ],
+        # THE FIXTURES CARRY BARE DATES; THE SNAPSHOT CARRIES THE LIVE SHAPE.
+        # calendar_build_plan_input emits {scheduled_date, is_user_override} for EVERY
+        # horizon date that has a plan row, not just the overridden ones, and
+        # calendar_place_full_lengths filters on the flag (the same predicate V-14 uses).
+        # So the bridge has to build that shape, with the flag true: a fixture's
+        # `current_overrides` entry means precisely "the student overrode this date".
+        # Handing the RPC a bare list here would have tested a snapshot the builder
+        # never produces — and the SQL would then have had to read bare strings, which
+        # in production would treat every planned date as an override.
+        "current_overrides": [
+            {"scheduled_date": _iso(x), "is_user_override": True}
+            for x in P["current_overrides"]
         ],
         "enabled_block_types": ["practice"],
         "engine_planning": dict(ref.ENG),
@@ -125,7 +156,9 @@ def build_P(inp):
         last_exam_missed_count=inp["last_exam_missed_count"],
         last_exam_reviewed=inp["last_exam_reviewed"],
         review_due_by_date={d(k): v for k, v in inp["review_due_by_date"].items()},
-        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]))
+        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]),
+        full_length_interval_weeks=inp["full_length_interval_weeks"],
+        current_overrides=[d(x) for x in inp["current_overrides"]])
 
 
 def emit(name, P, stored=None):

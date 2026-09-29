@@ -103,6 +103,7 @@ const READY_BODY = {
     study_days_mask: 62,
     daily_minutes: 45,
     full_length_weekday: 6,
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   },
@@ -113,17 +114,47 @@ const READY_BODY = {
     target_exam_date_max_days: 540,
   },
   estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 120 },
+  exam_planning: {
+    final_exam_lead_days: 7,
+    default_full_length_interval_weeks: 2,
+  },
+  // Brief 14 Step 4. Dates the generator refused to place because both the intended
+  // occurrence and the +7-day alternative were user-overridden. Non-empty on purpose: the
+  // suppression LINE only renders off a populated array, so an empty one would let this
+  // fixture pass while proving nothing about the element type.
+  full_length_suppressions: ["2026-10-17"],
   days: [DAY],
   facts: FACTS,
   streak: STREAK,
   latest_unacknowledged_nonstudent_change: null,
   diagnostic_state: "baseline_ready",
+  // §17.2. Production's own list on 2026-09-24 — full-length absent until it ships.
+  enabled_block_types: ["practice", "review"],
 };
 
 const GUARDIAN_BODY = {
   status: "ready",
   // Owner ruling 2026-09-22: the guardian payload carries the same estimates.
   estimates: ESTIMATES,
+  // Owner ruling 2026-09-26: R-08-22 reversed and §16's "no profile" clause narrowed to
+  // admit these two. They are REQUIRED on the wire (nullable, not optional), so a body
+  // without them is refused — which is why this fixture carries them rather than relying on
+  // the schema being lenient. Same values as READY_BODY's profile: one student, one plan.
+  target_score: 1400,
+  target_exam_date: "2026-11-07",
+  // Owner ruling 2026-09-26: the guardian sees the suppression too — a fact about the plan,
+  // in the same category as the projection below it.
+  full_length_suppressions: ["2026-10-17"],
+  projection: [
+    {
+      section: "M",
+      projectedScoreMid: 470,
+      projectedScoreLow: 380,
+      projectedScoreHigh: 560,
+      relevantQuestionCount: 42,
+      computedAt: "2026-09-25T00:00:00Z",
+    },
+  ],
   days: [],
   facts: FACTS,
   streak: STREAK,
@@ -287,7 +318,15 @@ describe("transport correlation is stripped, not tolerated", () => {
 describe("a malformed 200 is REFUSED, never defaulted", () => {
   it("rejects with a message naming the mismatch, rather than returning an empty calendar", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -297,7 +336,15 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("names the failing resource in the thrown message, so the error state is traceable to one route", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
@@ -307,7 +354,15 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
 
   it("reports through console.error with the issue PATHS only — never the body, which holds the plan", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ status: "ready", estimates: ESTIMATES, days: [] }),
+      jsonResponse({
+        status: "ready",
+        estimates: ESTIMATES,
+        exam_planning: {
+          final_exam_lead_days: 7,
+          default_full_length_interval_weeks: 2,
+        },
+        days: [],
+      }),
     );
 
     await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow();

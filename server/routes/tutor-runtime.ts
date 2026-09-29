@@ -42,7 +42,10 @@ import { EntitlementService } from "../services/entitlement-service";
 // hasAnswerLeak was previously imported here but is now internal to the
 // output serializer — the static gate test (LISA-FULL-007) enforces that
 // this file never bypasses the serializer by using raw scan functions.
-import { resolveFullEnvelope } from "../services/tutor-context";
+import {
+  resolveFullEnvelope,
+  sessionTablesFor,
+} from "../services/tutor-context";
 // isPreSubmitForSurface: still needed to resolve pre-submit state before
 // calling the serializer. TUTOR_ANTI_LEAK_SUBSTITUTION no longer imported
 // here — it lives inside the serializer.
@@ -54,6 +57,10 @@ import {
   type OutputScanContext,
 } from "../services/tutor-output-serializer";
 import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
+import {
+  MODEL_ARMOR_SUBSTITUTION,
+  scanWithModelArmor,
+} from "../services/tutor-model-armor";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
 import { enqueueCloudTask } from "../services/cloud-tasks-enqueue";
@@ -65,6 +72,9 @@ import {
   evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
 import type { FlagForReviewResult } from "../services/tutor-crisis";
+// W3-3: the pure resolver, imported from its own module so the route always
+// runs the real one.
+import { resolveCrisisCountry } from "../services/crisis-resources";
 import {
   sanitizeInput,
   scanForInjectionPatterns,
@@ -77,6 +87,10 @@ import {
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import {
+  listConversationsQuerySchema,
+  type ConversationDetail,
+} from "../../packages/shared/src/tutor-lifecycle-schema";
 
 const router = Router();
 
@@ -133,16 +147,6 @@ const endConversationSchema = z.object({
 
 const resumeConversationSchema = z.object({
   idempotency_key: z.string().uuid().optional(),
-});
-
-const surfaceSchema = z.enum(["standalone", "practice", "review"]);
-
-const listConversationsQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(100).optional(),
-  cursor: z.string().min(1).optional(),
-  source_surface: sourceSurfaceSchema.optional(),
-  surface: surfaceSchema.optional(),
-  status: z.enum(["active", "ended"]).optional(),
 });
 
 const fetchConversationQuerySchema = z.object({
@@ -248,6 +252,7 @@ type ReplayMessageRow = {
   message: string;
   source_session_item_id: string | null;
   created_at: string;
+  client_turn_id: string | null;
 };
 
 /**
@@ -266,7 +271,7 @@ async function loadMessagesForReplay(
   let query = supabaseServer
     .from("tutor_messages")
     .select(
-      "id, role, content_kind, message, source_session_item_id, created_at",
+      "id, role, content_kind, message, source_session_item_id, created_at, client_turn_id",
     )
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
@@ -345,7 +350,11 @@ async function resolveTrustedScopeForCreate(
   sourceSessionItemId: string | null,
   sourceQuestionRowId: string | null,
   sourceQuestionCanonicalId: string | null,
+  sourceSurface: string,
 ): Promise<ResolvedScopeRow> {
+  // Review items live in review tables (W4-1); every other surface keeps the
+  // practice tables it always used.
+  const tables = sessionTablesFor(sourceSurface);
   let sessionId = sourceSessionId;
   let sessionItemId = sourceSessionItemId;
   let questionRowId = sourceQuestionRowId;
@@ -353,10 +362,10 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionId) {
     const { data, error } = await supabaseServer
-      .from("practice_sessions")
+      .from(tables.sessions)
       .select("id")
       .eq("id", sessionId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionId = null;
@@ -365,18 +374,21 @@ async function resolveTrustedScopeForCreate(
 
   if (sessionItemId) {
     const { data, error } = await supabaseServer
-      .from("practice_session_items")
+      .from(tables.items)
       .select("id, question_id, session_id")
       .eq("id", sessionItemId)
-      .eq("user_id", studentId)
+      .eq(tables.owner, studentId)
       .maybeSingle();
     if (error || !data) {
       sessionItemId = null;
     } else {
-      // The session item's question is authoritative if the client did not
-      // separately supply one.
-      if (!questionRowId) {
-        questionRowId = (data.question_id as string) ?? null;
+      // An owned item's question is authoritative — it overrides a
+      // client-supplied question id rather than yielding to it, so a scoped
+      // conversation cannot pair one item with another question (W4-1).
+      questionRowId = (data.question_id as string) ?? null;
+      // Anchor the session to the item's own session.
+      if (!sessionId || sessionId !== (data.session_id as string)) {
+        sessionId = (data.session_id as string) ?? null;
       }
     }
   }
@@ -444,6 +456,107 @@ async function getCorrectAnswerForScope(
   };
 }
 
+// ── Turn-level idempotency (Doc-03B_V4.1 §14.3, §14.4) ─────────────────
+
+type ExistingStudentTurnRow = {
+  id: string;
+  message: string;
+  status: "pending" | "completed" | "failed";
+  created_at: string;
+};
+
+/**
+ * 01A `in_progress_timeout_seconds` default (300s): a turn still 'pending'
+ * after this is treated as crashed and may be re-owned by a retry.
+ * @spec [Doc-03B_V4.1 §14.3 "Worker crash mid-flow"; Doc-01A in_progress_timeout_seconds]
+ */
+const TURN_IN_PROGRESS_TIMEOUT_MS = 300_000;
+
+/**
+ * @spec [Doc-03B_V4.1 §13.7, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
+ * @implemented 2026-09-23
+ *
+ * plain English: a retry found this turn's student row but no tutor reply.
+ * Decide whether the retry may take the turn over. A row that is 'pending'
+ * and younger than the in-progress timeout belongs to an attempt that is
+ * still running → "in_progress". Otherwise ('failed', a 'pending' row past
+ * the timeout, or a legacy 'completed' row with no reply — the status column
+ * defaulted existing rows to 'completed') the retry claims it with a
+ * compare-and-set back to 'pending'. Zero rows updated means another retry
+ * claimed it first → "in_progress" (§13.7's `rowCount === 0` guard).
+ *
+ * trade-offs: this is §13.7's guard applied to `tutor_messages.status`; the
+ * spec's `idempotency_records` table and advisory lock do not exist in this
+ * codebase. The unique index remains the hard backstop (§14.4). Edge case:
+ * a re-claimed row keeps its original created_at, so a retry that itself
+ * runs past the timeout can be re-owned by a third attempt; the index then
+ * rejects the loser's reply with 409 idempotency_conflict.
+ */
+async function claimStudentTurnForRetry(
+  row: ExistingStudentTurnRow,
+): Promise<"claimed" | "in_progress" | "error"> {
+  const ageMs = Date.now() - Date.parse(row.created_at);
+  if (row.status === "pending" && ageMs < TURN_IN_PROGRESS_TIMEOUT_MS) {
+    return "in_progress";
+  }
+
+  let claim = supabaseServer
+    .from("tutor_messages")
+    .update({ status: "pending" })
+    .eq("id", row.id)
+    .eq("status", row.status);
+  if (row.status === "pending") {
+    claim = claim.lt(
+      "created_at",
+      new Date(Date.now() - TURN_IN_PROGRESS_TIMEOUT_MS).toISOString(),
+    );
+  }
+  const { data, error } = await claim.select("id").maybeSingle();
+  if (error) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "turn_claim_failed",
+      "could not re-claim student turn for retry; failing closed",
+      { code: error.code },
+    );
+    return "error";
+  }
+  return data ? "claimed" : "in_progress";
+}
+
+/** The idempotency index named in supabase/migrations/20260812010000. */
+const CLIENT_TURN_UNIQUE_INDEX = "idx_tutor_messages_client_turn_idempotency";
+
+function isClientTurnUniqueViolation(
+  err: { code?: string; message?: string } | null,
+): boolean {
+  return (
+    err?.code === "23505" &&
+    (err.message ?? "").includes(CLIENT_TURN_UNIQUE_INDEX)
+  );
+}
+
+/**
+ * @spec [Doc-03B_V4.1 §14.4 "Constraint violation handling"]
+ * The unique index caught a duplicate client_turn_id that the step-8 check
+ * did not (a concurrent request). The spec treats this as a bug signal:
+ * high-severity log, 409 idempotency_conflict. Never a silent replay.
+ */
+function sendClientTurnUniqueViolation(
+  res: Response,
+  conversationId: string,
+  role: "student" | "tutor",
+): void {
+  logger.error(
+    "TUTOR_RUNTIME",
+    "idempotency_unique_constraint_violation",
+    "duplicate client_turn_id rejected by the unique index; step-8 idempotency did not catch it",
+    undefined,
+    { conversationId, role },
+  );
+  sendTutorError(res, "idempotency_conflict");
+}
+
 // ============================================================================
 // POST /conversations — §5 Start / reuse a conversation
 // ============================================================================
@@ -477,6 +590,7 @@ router.post(
         input.source_session_item_id ?? null,
         input.source_question_row_id ?? null,
         input.source_question_canonical_id ?? null,
+        input.source_surface,
       );
 
       // ── domain: derive surface from source_surface ──
@@ -713,17 +827,18 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // `is_under_13 !== false` (fail-closed). No additional check needed here —
   // any request reaching this handler has already passed the age gate.
 
-  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4, SCL-079).
-  // LISA must be unavailable while the student has an active full-length exam
-  // session. Blocks when a live exam IS found. Fails OPEN when the query
-  // itself fails (SCL-079, Karl ruling 2026-09-01) — see entitlement-service
-  // docblock for the threat-model justification.
-  const liveExamInProgress =
-    await EntitlementService.isLiveExamInProgress(studentId);
-  if (liveExamInProgress) {
-    sendTutorError(res, "tutor_unavailable_during_live_exam");
-    return;
-  }
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4) — WITHDRAWN, not pending.
+  // @spec [Doc-03B_V4.1 §3.4; Doc 01 §27.3 step 6; SCL-032, SCL-079, SCL-126 (all
+  //        WITHDRAWN)] | @implemented [2026-09-23] | corrected [2026-09-27]
+  // plain English: there is NO live-exam gate here, and none is owed. E1 (2026-09-23)
+  // removed the pre-baseline gate, which queried a table no migration creates and so
+  // blocked nothing. Its restoration (G-EX-06, planned for E9) was then WITHDRAWN by
+  // the owner's standing LISA ruling of 2026-09-25 (E9 rulings, R6: "R6 is withdrawn
+  // entirely. Drop it from E9."): the full-length exam has no tutor surface, so there
+  // is no live exam for this route to guard. SCL-032, SCL-079 and SCL-126 are withdrawn
+  // with it. Do not rebuild this step from those entries; reinstating it would need a
+  // new owner ruling. The `tutor_unavailable_during_live_exam` code stays in the
+  // Doc-03B §5.9 taxonomy and is currently unused.
 
   // Step 6: Validate request payload (§6.4). Run before ownership so a
   // malformed body never triggers a DB lookup.
@@ -734,6 +849,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   }
   const input = parsed.data;
   const contentKind = input.content_kind ?? "message";
+  // Set once step 11 has persisted (or re-claimed) the student row, so the
+  // catch-all can release the turn for retry instead of leaving it 'pending'.
+  let persistedStudentMessageId: string | null = null;
 
   try {
     // Step 5: Verify conversation ownership (§3.3).
@@ -766,7 +884,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const { data: existingTurn, error: existingTurnError } =
       await supabaseServer
         .from("tutor_messages")
-        .select("id, role, message, created_at")
+        .select("id, role, message, status, created_at")
         .eq("conversation_id", conversation.id)
         .eq("client_turn_id", input.client_turn_id)
         .order("created_at", { ascending: true });
@@ -798,15 +916,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    let resumableStudentRow: { id: string } | null = null;
     if (existingTurn && existingTurn.length > 0) {
       const existingStudentMsg = existingTurn.find(
         (m) => (m as { role: string }).role === "student",
-      ) as { id: string; message: string } | undefined;
+      ) as ExistingStudentTurnRow | undefined;
       const existingTutorMsg = existingTurn.find(
         (m) => (m as { role: string }).role === "tutor",
       ) as { id: string; message: string } | undefined;
 
-      if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+      // The stored student text is the SANITIZED form (step 11 persists
+      // `sanitized`, HTML-escaped), so a retry must be compared in that same
+      // form — comparing raw input made every retry of "x < 5" a false 409.
+      // @spec [Doc-03B_V4.1 §6.5 step 8, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
+      if (
+        existingStudentMsg &&
+        existingStudentMsg.message !== sanitizeInput(input.message).sanitized
+      ) {
         // LISA-GCP-007: log metrics for idempotency conflict.
         // Pre-pipeline error — message mismatch on same client_turn_id.
         await logTurnMetrics({
@@ -896,8 +1022,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         });
         return;
       }
-      // Student message persisted but tutor response was not (prior
-      // request failed mid-flow) — fall through and complete the flow.
+      // Student message persisted but no tutor reply: the first attempt
+      // failed after step 11, crashed, or is still running. Per §14.3:
+      //   - still running        → 409 idempotency_in_progress (retry, same id)
+      //   - failed / stuck       → this attempt RE-OWNS the turn and resumes it
+      // Resuming reuses the persisted student row (step 11 does not insert
+      // again): the unique index on (student_id, conversation_id,
+      // client_turn_id, role) rejects a second student row, which is what
+      // made every "Try again" a 500 canonical_write_failed.
+      // @spec [Doc-03B_V4.1 §6.5 step 8, §14.3; CC Brief "Close the LISA Vertical" PR 1.2]
+      if (existingStudentMsg && !existingTutorMsg) {
+        const claim = await claimStudentTurnForRetry(existingStudentMsg);
+        if (claim === "error") {
+          sendTutorError(res, "idempotency_lookup_failed");
+          return;
+        }
+        if (claim === "in_progress") {
+          sendTutorError(res, "idempotency_in_progress", {
+            retry_after_ms: 2000,
+          });
+          return;
+        }
+        resumableStudentRow = { id: existingStudentMsg.id };
+      }
     }
 
     // Step 9: Re-resolve scope — stored conversation scope is authoritative;
@@ -930,7 +1077,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const patternScan = scanForInjectionPatterns(sanitized);
     const signatureScan = await checkSignatureTable(sanitized);
     const injectionDetected = patternScan.detected || signatureScan.matched;
-    if (injectionDetected) {
+    // A resumed turn was already scanned and logged on its first attempt;
+    // logging again would double-count a severity-5 abuse incident.
+    if (injectionDetected && !resumableStudentRow) {
       // INV-03-13: logged, never acknowledged to the student.
       await logInjectionAttempt(
         studentId,
@@ -980,29 +1129,36 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
-    // Step 11: Persist student message.
+    // Step 11: Persist student message — or, on a resumed turn, reuse the row
+    // step 8 already re-claimed (set back to 'pending').
     const { data: studentMessageRow, error: studentMessageError } =
-      await supabaseServer
-        .from("tutor_messages")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: studentId,
-          role: "student",
-          content_kind: contentKind,
-          message: sanitized,
-          source_session_id: effectiveScope.source_session_id,
-          source_session_item_id: effectiveScope.source_session_item_id,
-          source_question_row_id: effectiveScope.source_question_row_id,
-          source_question_canonical_id:
-            effectiveScope.source_question_canonical_id,
-          client_turn_id: input.client_turn_id,
-          injection_flag: injectionDetected,
-          injection_signature_matched: signatureScan.signatureId,
-          status: "pending",
-        })
-        .select("id, created_at")
-        .single();
+      resumableStudentRow
+        ? { data: resumableStudentRow, error: null }
+        : await supabaseServer
+            .from("tutor_messages")
+            .insert({
+              conversation_id: conversation.id,
+              student_id: studentId,
+              role: "student",
+              content_kind: contentKind,
+              message: sanitized,
+              source_session_id: effectiveScope.source_session_id,
+              source_session_item_id: effectiveScope.source_session_item_id,
+              source_question_row_id: effectiveScope.source_question_row_id,
+              source_question_canonical_id:
+                effectiveScope.source_question_canonical_id,
+              client_turn_id: input.client_turn_id,
+              injection_flag: injectionDetected,
+              injection_signature_matched: signatureScan.signatureId,
+              status: "pending",
+            })
+            .select("id, created_at")
+            .single();
 
+    if (isClientTurnUniqueViolation(studentMessageError)) {
+      sendClientTurnUniqueViolation(res, conversation.id, "student");
+      return;
+    }
     if (studentMessageError || !studentMessageRow) {
       logger.error(
         "TUTOR_RUNTIME",
@@ -1034,6 +1190,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    persistedStudentMessageId = studentMessageRow.id as string;
+
     // Set title on first student message (§4.2: first student message becomes
     // the title, truncated to 60 chars, immutable after initial set).
     if (conversation.title === "New session" || conversation.title === null) {
@@ -1058,11 +1216,45 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
 
       // Set crisis_paused_at — conversation is now paused for tutoring.
       // The student must explicitly resume before sending more messages.
-      const crisisPausedAt = new Date().toISOString();
-      await supabaseServer
+      //
+      // @spec [CC Brief "LISA Session Lifecycle" §5.4; owner ruling 2026-09-24]
+      // | @implemented [2026-09-24] | plain English: the response reports
+      // the pause the database actually holds. This write's result was never
+      // checked, so a failed write still answered `crisis_paused: true` and
+      // the client rendered a pause the server did not have — /resume then
+      // 409s `conversation_not_paused`. The row is read back, because
+      // PostgREST reports no error when a filtered UPDATE matches zero rows.
+      // A failed pause does NOT fail the turn: the review case is already
+      // persisted and the student still receives the crisis resources below;
+      // what they lose is the pause, and they are told the truth about it.
+      // Logged at ERROR — a silent miss on a safety-path write is how this
+      // class of defect hides.
+      const { data: pausedRow, error: pauseError } = await supabaseServer
         .from("tutor_conversations")
-        .update({ crisis_paused_at: crisisPausedAt })
-        .eq("id", conversation.id);
+        .update({ crisis_paused_at: new Date().toISOString() })
+        .eq("id", conversation.id)
+        .select("crisis_paused_at")
+        .maybeSingle();
+      const crisisPausedAt: string | null =
+        !pauseError &&
+        pausedRow &&
+        typeof pausedRow.crisis_paused_at === "string"
+          ? pausedRow.crisis_paused_at
+          : null;
+      if (crisisPausedAt === null) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "crisis_pause_write_failed",
+          "crisis turn could not pause the conversation; responding unpaused",
+          {
+            conversationId: conversation.id,
+            caseId: flagResult.caseId,
+            message: pauseError?.message,
+            code: pauseError?.code,
+            rowReturned: pausedRow !== null,
+          },
+        );
+      }
 
       // ── PagerDuty-style notification policy ──
       // @spec [CC Brief "LISA Session Lifecycle" §1]
@@ -1103,8 +1295,20 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         suppression_reason: suppressionReason,
       });
 
-      // Dispatch notification only when the policy says to.
+      // Every notification decision must leave a trace — a safety
+      // notification that produces no log cannot be verified.
       if (shouldNotify) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_notification_dispatching",
+          "notification policy: dispatching ops alert",
+          {
+            caseId: flagResult.caseId,
+            conversationId: conversation.id,
+            source: crisisResult.source,
+            isNewCase: flagResult.isNewCase,
+          },
+        );
         await notifyCrisisEvent({
           caseId: flagResult.caseId,
           conversationId: conversation.id,
@@ -1112,6 +1316,17 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           slaDeadline: flagResult.slaDeadline,
           timestamp: new Date().toISOString(),
         });
+      } else {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_notification_suppressed",
+          "notification policy: alert suppressed",
+          {
+            caseId: flagResult.caseId,
+            conversationId: conversation.id,
+            suppressionReason,
+          },
+        );
       }
 
       // Mark student message as completed — crisis detection is a valid response.
@@ -1125,8 +1340,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         .select("country_code")
         .eq("id", studentId)
         .maybeSingle();
+      // W3-3: resources follow the student's billing country (Doc 03 §4.6).
+      // Unknown gets the named no-number response (owner ruling 2026-09-25)
+      // — and that is the one case worth an alert: a student in crisis was
+      // given no local number. The student id is logged (digested by the
+      // logger) so ops can find their country; the crisis content never is.
+      const crisisCountry = resolveCrisisCountry(
+        profileRow?.country_code as string | null | undefined,
+      );
+      if (crisisCountry.defaulted) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "crisis_country_defaulted",
+          "Crisis resources fell back to the no-number response: this student's country is unknown or unsupported",
+          {
+            studentId,
+            conversationId: conversation.id,
+            category: crisisResult.category,
+            reason: crisisCountry.reason,
+          },
+        );
+      }
       const crisisContent = getCrisisResponse(
-        (profileRow?.country_code as string | null) ?? "US",
+        crisisCountry.country,
         crisisResult.category,
       );
 
@@ -1232,7 +1468,7 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
               suggested_chip: null,
             },
           },
-          crisis_paused: true,
+          crisis_paused: crisisPausedAt !== null,
           crisis_paused_at: crisisPausedAt,
           conversation_updated_at: new Date().toISOString(),
         },
@@ -1373,16 +1609,109 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           : "general",
     });
 
+    // The clock starts before the Model Armor input scan so that
+    // turn_metrics.orchestration_duration_ms includes both scans — that is
+    // the before/after latency measurement for W3-1.
+    const turnStartedAt = Date.now();
+
+    // Step 13b: Model Armor input scan (closure plan W3-1 — an additional
+    // layer, not in docs/Spec; see the tutor-model-armor.ts header). Runs on
+    // the student's message as typed, immediately before the worker call. The crisis path returned above and never reaches this
+    // line — Model Armor cannot suppress a crisis response. Fail open: a
+    // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
+    // model entirely and answers with the neutral substitution.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorInput = await scanWithModelArmor(
+      "input",
+      input.message,
+      conversation.id,
+    );
+
+    // Step 13c (closure plan W3-5, owner ruling 2026-09-24): an input block on
+    // Model Armor's `dangerous` filter may be a crisis the Layer 1/Layer 2
+    // classifier missed. Open a review case and alert so a human sees it
+    // within SLA — but the student still gets the neutral block copy, not the
+    // crisis template: the filter is broad and not clinical, and firing crisis
+    // resources on it would undercut the deterministic classifier design.
+    // Alerts only on a NEW case; an open case was already alerted. A failed
+    // flag is logged at ERROR and the block copy is still delivered — a 500
+    // here would leave the student with an error AND no review case.
+    // @spec [closure plan W3-5; SCL-142 (PROPOSED)] | @implemented 2026-09-24
+    if (
+      armorInput.kind === "blocked" &&
+      armorInput.matchedFilters.includes("rai:dangerous")
+    ) {
+      try {
+        const armorFlag = await flagConversationForReview(
+          conversation.id,
+          studentId,
+          "model_armor_dangerous",
+          null,
+          null,
+        );
+        if (armorFlag.isNewCase) {
+          await notifyCrisisEvent({
+            caseId: armorFlag.caseId,
+            conversationId: conversation.id,
+            source: "model_armor_dangerous",
+            slaDeadline: armorFlag.slaDeadline,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          logger.warn(
+            "TUTOR_RUNTIME",
+            "model_armor_crisis_case_exists",
+            "dangerous input block on a conversation with an active review case; no new alert",
+            {
+              caseId: armorFlag.caseId,
+              caseStatus: armorFlag.caseStatus,
+              conversationId: conversation.id,
+            },
+          );
+        }
+      } catch (err: unknown) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "model_armor_crisis_flag_failed",
+          "dangerous input block could not open a review case; the block copy is still delivered",
+          err instanceof Error ? err : undefined,
+          { conversationId: conversation.id },
+        );
+      }
+    }
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
-    // and returns a TutorResult — never throws.
-    const turnStartedAt = Date.now();
-    const orchestrationResult = await orchestrateTurn(
-      envelope,
-      preSubmit,
-      correctAnswerResult.value,
-    );
+    // and returns a TutorResult — never throws. Not called when the input
+    // scan blocked: the reply is the server-authored substitution instead.
+    const orchestrationResult =
+      armorInput.kind === "blocked"
+        ? ({
+            ok: true,
+            value: {
+              response: {
+                content: MODEL_ARMOR_SUBSTITUTION,
+                content_kind: "message",
+                suggested_action: { type: "none", label: null },
+                ui_hints: {
+                  show_accept_decline: false,
+                  allow_freeform_reply: true,
+                  suggested_chip: null,
+                },
+              },
+              question_links: [],
+              instruction_exposures: [],
+              orchestration_meta: {
+                model_name: "model_armor_input_blocked",
+                prompt_version: "none",
+                cache_used: false,
+                compaction_recommended: false,
+              },
+              learner_observation: null,
+            },
+          } as const)
+        : await orchestrateTurn(envelope, preSubmit, correctAnswerResult.value);
 
     if (!orchestrationResult.ok) {
       logger.error(
@@ -1427,6 +1756,19 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
+    // Step 14b: Model Armor output scan (closure plan W3-1) on LISA's reply,
+    // before the serializer. Additional to the INV-03-12 scans in
+    // serializeTutorOutput, which still run on every reply and fail closed. The verdict is carried
+    // into serializeTutorOutput as `armorOutputBlocked`, which substitutes.
+    // Not run when the input scan blocked — the reply is then server copy,
+    // not model output. Fail open, as for the input scan.
+    // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
+    const armorOutput =
+      armorInput.kind === "blocked"
+        ? null
+        : await scanWithModelArmor("output", tutorResponse, conversation.id);
+    const armorOutputBlocked = armorOutput?.kind === "blocked";
+
     // Step 15: LISA-FULL-007 — mandatory output serializer (belt-and-suspenders).
     // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
     // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
@@ -1444,13 +1786,24 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       studentMessages: envelope.recent_messages
         .filter((m) => m.role === "student")
         .map((m) => m.message),
+      armorOutputBlocked,
+      // An input-blocked reply is the server-authored substitution.
+      isServerAuthored: armorInput.kind === "blocked",
     };
     const serialized = await serializeTutorOutput(
       tutorResponse,
       appendScanContext,
     );
     const safeContent = serialized.content;
-    const antiLeakTriggered = serialized.blocked;
+    // Anti-leak scan classes only: a Model Armor block is logged by the
+    // scanner (model_armor_scan_blocked), not counted as an anti-leak hit.
+    const scans = serialized.scanResults;
+    const antiLeakTriggered =
+      scans.answerLeakDetected ||
+      scans.canonicalIdLeakDetected ||
+      scans.systemPromptLeakDetected ||
+      scans.personaViolationDetected ||
+      scans.correctAnswerGateBlocked;
 
     // Step 16: Persist tutor message.
     const { data: tutorMessageRow, error: tutorMessageError } =
@@ -1471,6 +1824,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         })
         .select("id")
         .single();
+
+    if (isClientTurnUniqueViolation(tutorMessageError)) {
+      sendClientTurnUniqueViolation(res, conversation.id, "tutor");
+      return;
+    }
 
     if (tutorMessageError || !tutorMessageRow) {
       logger.error(
@@ -1660,6 +2018,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         },
       );
     }
+    // Release the turn: a student row left 'pending' would make every retry
+    // wait out the in-progress timeout (§14.3) before it could resume.
+    // @spec [Doc-03B_V4.1 §14.3 "Retry after failed handler"]
+    if (persistedStudentMessageId) {
+      const { error: releaseError } = await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "failed" })
+        .eq("id", persistedStudentMessageId);
+      if (releaseError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "turn_release_failed",
+          "could not mark student message failed after an unexpected error; retry waits for the in-progress timeout",
+          { code: releaseError.code },
+        );
+      }
+    }
     sendTutorError(res, "orchestration_failed");
   }
 });
@@ -1726,6 +2101,7 @@ router.get(
             content_kind: row.content_kind,
             message: row.message,
             created_at: row.created_at,
+            client_turn_id: row.client_turn_id,
           });
           continue;
         }
@@ -1760,36 +2136,46 @@ router.get(
           content_kind: row.content_kind,
           message: rowSerialized.content,
           created_at: row.created_at,
+          client_turn_id: row.client_turn_id,
         });
       }
 
-      res.status(200).json({
-        data: {
-          conversation: {
-            conversation_id: conversation.id,
-            entry_mode: conversation.entry_mode,
-            source_surface: conversation.source_surface,
-            status: conversation.status,
-            resolved_scope: {
-              source_session_id: conversation.source_session_id,
-              source_session_item_id: conversation.source_session_item_id,
-              source_question_row_id: conversation.source_question_row_id,
-              source_question_canonical_id:
-                conversation.source_question_canonical_id,
-            },
-            created_at: conversation.created_at,
-            updated_at: conversation.updated_at,
-            closed_at: conversation.closed_at,
+      // @spec [Doc-03B_V4.1 §7.5 + fields beyond it: title, crisis_paused_at, surface come from CC Brief "LISA Session Lifecycle" and CC Brief "Close the LISA Vertical" PR 1.1 — not in §7.5; spec gap reported to owner]
+      // Typed against the shared `conversationDetailSchema`: the chat page
+      // derives its paused state from `crisis_paused_at` and its header from
+      // `title`, so omitting either rendered a paused conversation as live
+      // after every reload. Legacy `closed`/`abandoned` rows (DB CHECK admits
+      // them; no code writes them) are reported as `ended` — both refuse new
+      // turns (409), and the client's contract has no third terminal state.
+      const detail: ConversationDetail = {
+        conversation: {
+          conversation_id: conversation.id,
+          entry_mode: conversation.entry_mode,
+          source_surface: conversation.source_surface,
+          surface: conversation.surface,
+          status: conversation.status === "active" ? "active" : "ended",
+          title: conversation.title,
+          crisis_paused_at: conversation.crisis_paused_at,
+          resolved_scope: {
+            source_session_id: conversation.source_session_id,
+            source_session_item_id: conversation.source_session_item_id,
+            source_question_row_id: conversation.source_question_row_id,
+            source_question_canonical_id:
+              conversation.source_question_canonical_id,
           },
-          messages: safeMessages,
-          pagination: {
-            has_more: ordered.length === messageLimit,
-            // `ordered` is oldest-first; the pagination cursor for "older
-            // messages" is the earliest (first) row in this page.
-            next_cursor: ordered.length > 0 ? ordered[0].id : null,
-          },
+          created_at: conversation.created_at,
+          updated_at: conversation.updated_at,
+          closed_at: conversation.closed_at,
         },
-      });
+        messages: safeMessages,
+        pagination: {
+          has_more: ordered.length === messageLimit,
+          // `ordered` is oldest-first; the pagination cursor for "older
+          // messages" is the earliest (first) row in this page.
+          next_cursor: ordered.length > 0 ? ordered[0].id : null,
+        },
+      };
+      res.status(200).json({ data: detail });
     } catch (err) {
       logger.error(
         "TUTOR_RUNTIME",
@@ -1840,6 +2226,12 @@ router.get(
       }
       if (parsedQuery.data.source_surface) {
         query = query.eq("source_surface", parsedQuery.data.source_surface);
+      }
+      if (parsedQuery.data.source_session_item_id) {
+        query = query.eq(
+          "source_session_item_id",
+          parsedQuery.data.source_session_item_id,
+        );
       }
       query = parsedQuery.data.status
         ? query.eq("status", parsedQuery.data.status)
@@ -2007,13 +2399,22 @@ router.post(
       }
 
       // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
+      // @spec [Doc-03C_V3 §8.3 task payload; CC Brief "Close the LISA Vertical" PR 3.2]
+      // - trigger_reason is "close": §8.3 fixes the enum as close | threshold |
+      //   stale, and this endpoint IS the spec's conversation-close trigger.
+      //   It used to send "end", which the writeback handler (correctly, per
+      //   the spec) rejects with 400 — so no summary was ever written.
+      // - AWAITED: on Vercel the function may be frozen once the response is
+      //   sent, so a `void` enqueue could be dropped before the Cloud Tasks
+      //   call left the process. enqueueCloudTask never throws and times out
+      //   at 5s, so awaiting adds at most that to /end.
       const compactionRequestId = crypto.randomUUID();
       const compactionTargetUrl = `${(process.env.PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "")}/api/internal/memory/compact-writeback`;
 
-      void enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
+      await enqueueCloudTask("lisa-compaction", compactionTargetUrl, {
         job_type: "compaction",
         conversation_id: conversation.id,
-        trigger_reason: "end",
+        trigger_reason: "close",
         request_id: compactionRequestId,
       });
 

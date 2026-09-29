@@ -29,6 +29,7 @@ type ProfileRow = {
   study_days_mask: number;
   daily_minutes: number;
   full_length_weekday: number | null;
+  full_length_interval_weeks: number | null;
   planner_mode: "auto" | "custom";
   setup_completed_at: string | null;
 };
@@ -40,6 +41,7 @@ const COMPLETE: ProfileRow = {
   study_days_mask: 62,
   daily_minutes: 60,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T00:00:00.000Z",
 };
@@ -47,7 +49,7 @@ const COMPLETE: ProfileRow = {
 /**
  * What the upsert reads back: the stored row merged over the prior one, minus the key
  * the service sends to identify the row. `studyProfileSchema` is `.strict()`, so the
- * fake has to hand back exactly the eight columns the SELECT names.
+ * fake has to hand back exactly the nine columns the SELECT names.
  */
 function mergedRow(
   existing: ProfileRow | null,
@@ -264,12 +266,17 @@ describe("setup_completed_at is derived, never sent", () => {
     expect(storedRow().setup_completed_at).toBeUndefined();
   });
 
-  it("stays unset while the row still has no target score", async () => {
+  // INVERTED 2026-09-24 (SCL-130, R-08-17 reversed). This asserted that setup stayed
+  // incomplete until a target score arrived. Nothing in setup is required now, so the
+  // opposite is the rule: reaching the end of the flow completes it, whatever was
+  // answered. Leaving the old assertion would strand every student who skips the field —
+  // no stamp, so the read keeps answering `setup_required` and the popup reopens forever.
+  it("IS stamped by the first write, with no target score anywhere in it", async () => {
     scenario({ existing: { ...COMPLETE, target_score: null, setup_completed_at: null } });
 
     await upsertStudyProfile(STUDENT, { daily_minutes: 45, idempotency_key: KEY });
 
-    expect(storedRow().setup_completed_at).toBeUndefined();
+    expect(storedRow().setup_completed_at).toEqual(expect.any(String));
   });
 });
 

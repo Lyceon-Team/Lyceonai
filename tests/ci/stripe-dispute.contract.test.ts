@@ -99,6 +99,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../../server/lib/account", () => ({
+  // W3-3: the grant path now records the billing country on the profile.
+  setProfileCountryCode: vi.fn(async () => undefined),
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,

@@ -221,7 +221,10 @@ DECLARE
     'horizon_days','review_share_max_bp','review_block_max','exam_review_default_count',
     'weight_by_level','null_level_weight','post_exam_emphasis_days','post_exam_multiplier',
     'min_domain_questions','max_domains_per_block','granularity',
-    'full_length_every_n_occurrences','full_length_min_gap_days','final_exam_lead_days',
+    -- `full_length_every_n_occurrences` and `full_length_min_gap_days` were retired by
+    -- 20261011000000: the cadence is the student's (`full_length_interval_weeks`) and
+    -- the gap is implied by it, so two rules said one thing.
+    'final_exam_lead_days',
     'max_full_length_per_horizon','taper_days','taper_ratio_bp','recent_planned_window_days',
     'canonical_domain_order','enabled_block_types',
     -- Doc 05F §21 / SCL-08-F: calendar-owned until Doc 02B claims a review
@@ -235,10 +238,21 @@ DECLARE
     -- pace the weekly job.
     'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
     'target_exam_date_max_days','weekly_job_interval_minutes',
+    -- Doc 05F §8.1, seeded by 20261010000000. A SURFACE default only: the value
+    -- the frequency control opens on before the student chooses. The generator
+    -- reads student_study_profile.full_length_interval_weeks and never this key,
+    -- which is why it sits with the route constants and not with the formula
+    -- constants the parity gate cross-checks against the oracle.
+    'default_full_length_interval_weeks',
     -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
     -- beside the formula so a stored plan version traces to the exact SQL that
     -- made it. C-09 below asserts it names a migration timestamp.
-    'generator_version'];
+    'generator_version',
+    -- E9b / SCL-169, formula sheet §6: the planning definition of a weak domain,
+    -- read by calendar_build_plan_input (exams.weak_domains) AND by
+    -- calendar_compute_plan's explanation step. The parity gate pins its value
+    -- to the oracle's own `L <= 1`.
+    'weak_level_max'];
 BEGIN
   SELECT string_agg(k, ', ') INTO v_missing
   FROM unnest(v_expected) k
@@ -252,7 +266,10 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 6 route/job/provenance keys of Doc 05F §8.1/§12.5/§10.2';
+  -- The counts that used to be in this message drifted every time a key was added or
+  -- retired (20261011000000 retired two), and a number nobody re-derives is worse than
+  -- no number. The ARRAY above IS the assertion; this line names the rule it enforces.
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the keys CALENDAR_CONFIG_KEYS reads — the formula sheet §4 set, review_estimated_seconds_per_item (SCL-08-F), and the route/job/provenance/surface keys of Doc 05F §8.1/§12.5/§10.2 — with no key missing and none extra';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
@@ -311,28 +328,31 @@ BEGIN
   END IF;
   RAISE NOTICE '    OK C-06 canonical_domain_order is the canonical eight, Math then Reading & Writing';
 
-  -- Sheet §8 item 12 / V-03. This used to pin the LAUNCH value, `["practice"]`. Review
-  -- shipped on 2026-09-22 and was enabled, so pinning that literal would now assert a
-  -- state the product has deliberately left -- the test pushing against the truth rather
-  -- than protecting it.
+  -- Sheet §8 item 12 / V-03 / Doc 05F §9.1, FLIPPED BY E9b (2026-09-25).
   --
-  -- What is still worth asserting, and is the part that can actually go wrong, is that
-  -- nothing is enabled whose ADAPTER is a fail-open stub. Enabling an engine before its
-  -- engine exists puts live Start controls on blocks with nothing behind them, which is
-  -- the one failure this gate was really there to prevent. full_length is that engine
-  -- today; it joins the list when its contract test passes against a real engine, and
-  -- this line moves with it.
-  IF (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-       @> '["full_length"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its adapter is still the fail-open stub (enabled_block_types = %)',
-      (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
-  END IF;
+  -- History: this pinned the LAUNCH value ["practice"], then (after review
+  -- shipped) raised whenever full_length was enabled, because its adapter was a
+  -- fail-open stub and an enabled stub puts live Start controls on blocks with
+  -- nothing behind them. The exam engine has now shipped (E6-E9), its adapter is
+  -- real (server/services/calendar/adapters/full-length.ts), and §9.1's condition
+  -- for enabling it -- a contract test passing against the REAL engine -- is
+  -- tests/ci/calendar.launch-contract.full_length.test.ts.
+  --
+  -- So the assertion inverts: every engine the calendar_blocks.block_type CHECK
+  -- names must be enabled, and the database half of the full-length seam must
+  -- exist. Reverting 20261004010000 turns this red, which is the point: a
+  -- full-length block the generator is told not to plan would silently vanish
+  -- from every student's calendar again.
   IF NOT (SELECT value FROM public.calendar_runtime_config WHERE key = 'enabled_block_types')
-         @> '["practice"]'::jsonb THEN
-    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 practice is not enabled, which no release has ever intended (enabled_block_types = %)',
+         @> '["practice","review","full_length"]'::jsonb THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 not every engine is enabled; practice, review and full_length all have real adapters (enabled_block_types = %)',
       (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
   END IF;
-  RAISE NOTICE '    OK C-07 enabled_block_types = % — practice on, no stub engine enabled',
+  IF to_regprocedure('public.exam_next_form_for_student(uuid)') IS NULL
+     OR to_regprocedure('public.calendar_exam_review_scope(text,text)') IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-07 full_length is enabled but its database seam (exam_next_form_for_student, calendar_exam_review_scope) is missing';
+  END IF;
+  RAISE NOTICE '    OK C-07 enabled_block_types = % — all three engines on, full-length seam present',
     (SELECT value::text FROM public.calendar_runtime_config WHERE key = 'enabled_block_types');
 
   -- The config history trigger pair is wired exactly as the other thirteen
@@ -578,3 +598,127 @@ BEGIN
   RAISE NOTICE '    OK B-01 the live calendar_build_plan_input reads review_schedule.queued_at and not next_review_at';
 END;
 $builder$;
+
+-- ----------------------------------------------------------------------------
+-- B-02 — every calendar function body is PINNED to a recorded checksum
+--
+-- THE GAP THIS FILLS. calendar-parity proves the SOURCE matches the Python
+-- oracle. genesis-fresh-apply proves the pipeline reproduces a schema dump.
+-- Neither can prove that what is DEPLOYED matches source, because migrations
+-- reach production out of band -- supabase_migrations.schema_migrations stops
+-- at 20260624020000 while the calendar is live, so the ledger cannot answer it
+-- either. Comparing function BODIES is the only method that works, and this is
+-- the half of it CI can own.
+--
+-- WHAT IT ACTUALLY CATCHES, since the pipeline builds these bodies from the
+-- very files it compares against: EDITING A MIGRATION THAT HAS ALREADY BEEN
+-- APPLIED. That edit is the act that creates drift. The file changes, the
+-- deployed body does not, and nothing downstream notices -- the dump still
+-- matches, the oracle still matches, and the two databases quietly differ.
+-- Pinning turns that edit into a red gate, so it becomes a decision someone
+-- makes on purpose and re-records, rather than one nobody sees.
+--
+-- Proven on calendar_compute_plan, 2026-09-24. Deployed body vs source:
+--   4 lines differed out of 416, all of them inside  comments
+--   line 161  source "here, and canonical..."  deployed "here; canonical..."
+--   line 281  "...needs it,"                   "...needs it;"
+--   line 355  "...its share. Once..."          "...its share; once..."
+--   line 357  Math<U+2019>s                            Math's
+-- Applying exactly those four substitutions to the source body reproduces the
+-- deployed md5 (2087563ccd150d51421e633399d7bbb2, 19389 chars) exactly, so the
+-- divergence is comment-only and accounted for in full. Its cause: commit
+-- 6f7f78b6 "make the migration safe for statement-splitting SQL runners"
+-- rewrote those comments AFTER the body had been deployed. Production is
+-- therefore OLDER than source, by that commit, in comments alone.
+--
+-- NORMALISATION: carriage returns are stripped before hashing. The deployed
+-- copies store CRLF (415 CRs in calendar_compute_plan) purely because of how
+-- they were applied; that is not drift and must not read as drift.
+--
+-- TO RE-RECORD after deliberately changing a calendar function, run this
+-- against the pipeline database and paste the result over the list below:
+--
+--   SELECT format('      (%L, %s, %L),', p.proname,
+--                 length(replace(p.prosrc, chr(13), '')),
+--                 md5(replace(p.prosrc, chr(13), '')))
+--   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--   WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%'
+--   ORDER BY p.proname;
+--
+-- THE OTHER HALF IS OWNER-RUN, because CI holds no production credentials by
+-- design (genesis-fresh-apply: "No prod creds -- throwaway PG"). The same
+-- query against production, diffed against this list, answers "is deployed
+-- still source?" in one read-only round trip.
+-- ----------------------------------------------------------------------------
+DO $bodies$
+DECLARE
+  v_bad text;
+BEGIN
+  WITH expected(name, len, md5) AS (VALUES
+      ('calendar_acknowledge_version', 709, 'efea435c708ffec687802c7df28c0ee2'),
+      ('calendar_build_plan_input', 15301, 'b0e121f5feebe3743f5aa14820149a10'),
+      ('calendar_carry_started', 882, '1a34b4dec6664e8c13028098d7563ea0'),
+      ('calendar_compute_plan', 20505, '24942262871697678ba5e04850ec0adf'),
+      ('calendar_compute_plan_fallback', 8648, 'a50c6df81c9a70df6c18cd708026ede1'),
+      ('calendar_do_it_now', 3921, 'cb08df2b79ae17e0b17e11af2cebcd33'),
+      ('calendar_drop_today_for_system', 325, 'a037c331145e3afc8c94dc17b18a4cf4'),
+      ('calendar_drop_unowned_dates', 336, 'afa423c5bf6382097610133e64707412'),
+      ('calendar_edit_day', 2323, 'd03883155de01a174fd761426518ec36'),
+      -- The three added by 20261012000000 (Brief 14 Step 5). NOT YET DEPLOYED at the time
+      -- this line was written: the migration is authored and the owner applies it, so the
+      -- owner-run half of this gate will read "pinned but does not exist" against production
+      -- until they do. That is the gate working, not drift -- and it is the only state in
+      -- which those two answers mean different things, so it is worth saying which one this is.
+      ('calendar_emit_exam_notification', 1138, 'afb40e5ef7a854544e9f86eefeef2cbe'),
+      ('calendar_exam_notification_candidates', 1449, '8eb5b52c82624b772b69c4f58b014d8f'),
+      ('calendar_exam_review_scope', 428, 'c74a9a309ec9c84944fe53f5f12298db'),
+      ('calendar_full_length_complete', 301, '8ce47219a892b2339373463a8c626118'),
+      ('calendar_is_known_timezone', 91, '946a562369e4d62e7ed74d83a529e890'),
+      ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
+      ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),
+      ('calendar_persist_version', 7859, '2f82a6df74c322536f09fd47d99ffbc6'),
+      ('calendar_place_full_lengths', 5853, '1471ad5917a072b332b481dcd531d5ed'),
+      ('calendar_plan_to_output', 729, 'aa6f7e9f331a5f9dfac05f855ac7f84d'),
+      ('calendar_regenerate_day', 7306, '6875bfde324a4b153899cd2d61696ae1'),
+      ('calendar_regenerate_day_only', 199, '5d0b0a15caca7ea867cda145a35f2fec'),
+      ('calendar_require_int', 238, '907d3f984f1b8c8f1b12384c574f0bd6'),
+      ('calendar_scope_is_valid', 3552, '09fe6927d8b8e8b8bd597009853cc0dd'),
+      ('calendar_validate_plan', 17209, '628372c06c754574ecf5b5f262f14518'),
+      ('calendar_viewer_is_admin', 130, 'd0707346dc5e5486d8dd014ee386b79d'),
+      ('calendar_weekly_candidates', 884, '562c5433b509895852bcb2462c87e955'),
+      ('calendar_write_version', 3806, '6da5b170ec14ee5c9c7eab0f311ed7ef')
+  ),
+  live AS (
+    SELECT p.proname::text AS name,
+           length(replace(p.prosrc, chr(13), '')) AS len,
+           md5(replace(p.prosrc, chr(13), '')) AS md5
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%'
+  )
+  SELECT string_agg(msg, '; ' ORDER BY msg) INTO v_bad
+  FROM (
+    -- Pinned but absent: a function the manifest names no longer exists.
+    SELECT format('%s is pinned but does not exist', e.name) AS msg
+    FROM expected e LEFT JOIN live l USING (name) WHERE l.name IS NULL
+    UNION ALL
+    -- Present but unpinned: a NEW calendar function. Recording it is the point;
+    -- an unpinned body is one this gate cannot speak for.
+    SELECT format('%s exists but is not pinned', l.name)
+    FROM live l LEFT JOIN expected e USING (name) WHERE e.name IS NULL
+    UNION ALL
+    -- Pinned and present, but the body moved.
+    SELECT format('%s body changed (pinned %s chars/%s, live %s chars/%s)',
+                  e.name, e.len, left(e.md5, 8), l.len, left(l.md5, 8))
+    FROM expected e JOIN live l USING (name)
+    WHERE e.len IS DISTINCT FROM l.len OR e.md5 IS DISTINCT FROM l.md5
+  ) d;
+
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: B-02 calendar function bodies diverge from the pinned manifest: %. If the change was deliberate, re-record the list in this gate (query in the header) AND make sure the deployed copy is updated too -- the pin is what tells you production is behind.', v_bad;
+  END IF;
+
+  RAISE NOTICE '    OK B-02 all % calendar function bodies match the pinned manifest',
+    (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname LIKE 'calendar\_%');
+END;
+$bodies$;

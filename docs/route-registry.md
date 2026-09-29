@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
+**Last Updated:** 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
 **Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
@@ -38,8 +38,13 @@ This document is the single authoritative registry of:
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
 | `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
+| `/students/:studentId/tests` | guardian, admin | entitled (the STUDENT's exam_full_length, enforced by the backing route) | GuardianExamResultsPage (the forms the student has sat, latest attempt each) | `/api/students/:studentId/tests` | ACTIVE |
+| `/students/:studentId/tests/:sessionId` | guardian, admin | entitled (the STUDENT's exam_full_length) | GuardianExamResultsPage (one attempt: headline + per-domain breakdown, SCL-180/181) | `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
+| `/tests` | student, admin | entitled (exam_full_length, enforced by every backing route) | TestsHomePage | `/api/tests/forms`, `/api/tests/sessions`, `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | ACTIVE |
+| `/tests/:sessionId` | student, admin | entitled (exam_full_length) | ExamSessionPage (begin, Module 2 hand-off, break) | `/api/tests/sessions/:session_id/state`, `…/modules/:module/start`, `/api/tests/forms` | ACTIVE |
+| `/tests/:sessionId/:section/:module` | student, admin | entitled (exam_full_length) | ExamModulePage (the URL only shows the server's position; any other module redirects) | `…/state`, `…/modules/:module/items`, `…/modules/:module/workspace` (GET, PUT), `/api/tests/answer`, `…/sections/:section/heartbeat`, `…/modules/:module/submit`, `…/modules/:module/start` | ACTIVE |
+| `/tests/:sessionId/report` | student, admin | entitled (lapsed = 200 `unavailable`, Doc 04C §11.5b) | ExamReportPage | `/api/tests/sessions/:session_id/report`, `/api/tests/sessions/:session_id/report/status` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
-| `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
 | `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -85,7 +90,7 @@ This document is the single authoritative registry of:
 - `/signup`
 - `/privacy` (301 to `/legal/privacy-policy`)
 - `/terms` (301 to `/legal/student-terms`)
-- authenticated app surfaces (dashboard, practice, full-test, mastery, guardian)
+- authenticated app surfaces (dashboard, practice, mastery, guardian)
 
 ### Dead/Stale Public Routes
 - none (legacy ingestion/admin-deprecated routes remain removed)
@@ -165,16 +170,22 @@ Removed auth endpoints (must return 404):
 | `/api/students/{{studentId}}/mastery/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
 
-### Full-Length Exam Endpoints (Bluebook SAT)
+### Full-Length Exam Endpoints
+Doc 04A V2.2 §16 student runtime (E6, 2026-09-24), mounted at `/api/tests`. Every handler:
+auth -> `exam_full_length` entitlement -> Zod -> one `exam_*` SQL function -> serialize.
+`:module` is `1` or `2` (the server resolves Module 2 to the locked path; SCL-132). No
+admin, publish, report or outbox route exists. The pre-baseline `/api/full-length/*`
+runtime and the `/full-test` page were removed by E1 (2026-09-23); no client page yet.
+
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
 |----------|--------|--------------|------|-------------|---------|
-| `/api/full-length/sessions` | POST | Yes | student/admin | free | Create new exam session |
-| `/api/full-length/sessions/current` | GET | Yes | student/admin | free | Get current session state |
-| `/api/full-length/sessions/:id/start` | POST | Yes | student/admin | free | Start exam (begin RW Module 1) |
-| `/api/full-length/sessions/:id/answer` | POST | Yes | student/admin | free | Submit answer to question (idempotent) |
-| `/api/full-length/sessions/:id/module/submit` | POST | Yes | student/admin | free | End module, compute score, set adaptive difficulty |
-| `/api/full-length/sessions/:id/break/continue` | POST | Yes | student/admin | free | Continue from break to Math Module 1 |
-| `/api/full-length/sessions/:id/complete` | POST | Yes | student/admin | free | Complete exam, get final results |
+| `/api/tests/sessions` | POST | Yes | student/admin | premium (`exam_full_length`) | Create a session, or return the in-progress one for the same form |
+| `/api/tests/sessions/:session_id/state` | GET | Yes | student/admin | premium (`exam_full_length`) | Session state + remaining time; finalises a past-grace session |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | POST | Yes | student/admin | premium (`exam_full_length`) | Start a module; returns its first item |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/items` | GET | Yes | student/admin | premium (`exam_full_length`) | Items of the active module (no answer, no explanation) |
+| `/api/tests/answer` | POST | Yes | student/admin | premium (`exam_full_length`) | Submit one answer (idempotent via `idempotency_key`) |
+| `/api/tests/sessions/:session_id/sections/:section/modules/:module/submit` | POST | Yes | student/admin | premium (`exam_full_length`) | Submit a module (Module 1 routes; the last Module 2 completes and scores) |
+| `/api/tests/sessions/:session_id/sections/:section/heartbeat` | POST | Yes | student/admin | premium (`exam_full_length`) | Activity heartbeat (lenient pause accounting) |
 
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |

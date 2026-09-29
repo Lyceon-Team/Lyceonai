@@ -15,7 +15,7 @@
  * the subject, so a free student's read fails by design; rendering the generic error card
  * with a Try-again button for an entitlement denial gives them a button that can never work.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -28,6 +28,7 @@ import {
   useEditDay,
   useLaunchBlock,
   useMoveBlock,
+  usePrefetchAdjacentRange,
   useRegenerateDay,
   useRegeneratePlan,
   useResetDay,
@@ -65,11 +66,24 @@ export default function CalendarPage(): JSX.Element {
   const queryClient = useQueryClient();
   const { user } = useSupabaseAuth();
 
-  const [range, setRange] = useState(() =>
-    rangeForView("week", startOfWeek(today)),
-  );
+  /**
+   * The VIEW and CURSOR are the state; the range is derived. It used to be the other way
+   * round — `setRange(rangeForView(...))` threw the view and cursor away the moment they
+   * arrived — which left nothing to name the week either side with, and so nothing to
+   * prefetch. Deriving costs one `useMemo` and keeps the two in step by construction.
+   */
+  const [view, setView] = useState<"week" | "month">("week");
+  const [cursor, setCursor] = useState(() => startOfWeek(today));
+  const range = useMemo(() => rangeForView(view, cursor), [view, cursor]);
 
   const calendar = useCalendar(range.from, range.to);
+
+  // §17.7. Warm the neighbouring ranges once the browser is idle, so the NEXT arrow press
+  // has its rows already. Held back while this range is still resolving or has failed —
+  // see the hook's note.
+  usePrefetchAdjacentRange(view, cursor, {
+    enabled: calendar.isSuccess,
+  });
   const streak = useStreak();
 
   const editDay = useEditDay();
@@ -83,8 +97,9 @@ export default function CalendarPage(): JSX.Element {
   const { launch, isPending: launchPending } = useLaunchBlock(navigate);
 
   const onRangeChange = useCallback(
-    (view: "week" | "month", cursor: string) => {
-      setRange(rangeForView(view, cursor));
+    (nextView: "week" | "month", nextCursor: string) => {
+      setView(nextView);
+      setCursor(nextCursor);
     },
     [],
   );
@@ -101,6 +116,9 @@ export default function CalendarPage(): JSX.Element {
    * server's rule, and would be wrong the moment the rule changed.
    */
   const [replanOffered, setReplanOffered] = useState(false);
+  // §17.5: dismissing closes it for THIS visit only. It reopens next visit because no
+  // profile exists — the reopen condition is the profile, never a stored "seen" flag.
+  const [setupDismissed, setSetupDismissed] = useState(false);
 
   if (calendar.isLoading) return <CalendarSkeleton />;
   if (isEntitlementDenial(calendar.error)) return <CalendarPremiumGate />;
@@ -127,20 +145,43 @@ export default function CalendarPage(): JSX.Element {
       <CalendarView
         backHref="/dashboard"
         model={null}
-        setup={{
-          defaults: response.defaults,
-          onSubmit: (body) => profile.mutate(body),
-          pending: profile.isPending,
-          // `toUserFacingMessage` returns { title, message }; the sheet shows the sentence.
-          error:
-            profile.error === null
-              ? null
-              : toUserFacingMessage(profile.error).message,
-        }}
+        // Dismissed for this visit: the plan behind it un-blurs and nothing is saved. The
+        // next mount asks the server again, gets `setup_required` again (no profile), and
+        // opens again — which is the reopen rule, held by the data rather than by a flag.
+        setup={
+          setupDismissed
+            ? undefined
+            : {
+                defaults: response.defaults,
+                onSubmit: (body) => profile.mutate(body),
+                // A free student reaches setup since SCL-130, and the last press shows them the
+                // third panel instead of a plan. `setup_required` is served before the
+                // entitlement gate, so reaching here says nothing about entitlement — the
+                // premium denial the query already knows about does.
+                entitled: response.entitled !== false,
+                // Dismiss writes nothing. No profile exists, so the next visit opens it again —
+                // which is §17.5's "reopens until a profile exists", not a nag.
+                onDismiss: () => setSetupDismissed(true),
+                onUpgrade: () => navigate("/upgrade"),
+                pending: profile.isPending,
+                // `toUserFacingMessage` returns { title, message }; the sheet shows the sentence.
+                error:
+                  profile.error === null
+                    ? null
+                    : toUserFacingMessage(profile.error).message,
+              }
+        }
         today={today}
+        viewer="student"
         viewerName={user?.display_name ?? "Your plan"}
         targetExamDate={null}
+        // Pre-setup: there is no profile yet, so there is no target. The header says
+        // "Set a target" rather than showing a slot the student cannot explain.
+        targetScore={null}
         streak={streak.data}
+        // Pre-setup there is no plan, so nothing can have been suppressed. Empty rather than
+        // omitted: the prop is required, which is what stops a page forgetting it.
+        fullLengthSuppressions={[]}
         planUpdate={null}
         onRangeChange={onRangeChange}
       />
@@ -155,9 +196,17 @@ export default function CalendarPage(): JSX.Element {
       backHref="/dashboard"
       model={model}
       today={today}
+      viewer="student"
       viewerName={user?.display_name ?? "Your plan"}
       targetExamDate={response.profile.target_exam_date}
+      targetScore={response.profile.target_score}
+      // Doc 05C's rows, straight off the response. The header sums them; nothing here
+      // touches them.
+      projection={response.projection}
       streak={streak.data ?? response.streak}
+      // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
+      // the payload. The notice names them; nothing here re-derives which days are blocked.
+      fullLengthSuppressions={response.full_length_suppressions}
       planUpdate={
         change === null
           ? null
@@ -170,6 +219,7 @@ export default function CalendarPage(): JSX.Element {
         // the save against. Never a literal preset list in the client.
         bounds: response.bounds,
         estimates: response.estimates,
+        examPlanning: response.exam_planning,
         onSave: (draft) =>
           profile.mutate(
             newIntent({
@@ -179,6 +229,12 @@ export default function CalendarPage(): JSX.Element {
               target_exam_date: draft.target_exam_date,
               target_score: draft.target_score,
               full_length_weekday: draft.full_length_weekday,
+              // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
+              // names one and not the other (Brief 14 Step 2), so omitting this — as this
+              // call site did until the pair landed — makes every schedule save that touches
+              // the exam a 400 rather than a silent half-write. The sheet's own chips move
+              // both halves together for the same reason.
+              full_length_interval_weeks: draft.full_length_interval_weeks,
               planner_mode: draft.planner_mode,
             }),
             {

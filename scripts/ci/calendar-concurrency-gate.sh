@@ -63,9 +63,19 @@ cleanup
 q >/dev/null <<SQL
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES ('$S', 'concurrency@example.test', '{}'::jsonb);
+-- BOTH HALVES OF THE PAIR. The full_length_pair CHECK (20261010000000) refuses a row
+-- naming one and not the other, and this fixture named only the weekday -- so it inserted
+-- cleanly before that migration and is a 23514 after it. The interval is 2 for the same
+-- reason every other calendar fixture uses 2: it is the seeded default.
+--
+-- NO BACKTICKS IN THIS HEREDOC. It is unquoted (<<SQL, not <<'SQL') because the fixture
+-- interpolates $S, so backticks around an identifier are command substitution: the first
+-- draft of this comment printed "full_length_pair: command not found" twice and silently
+-- dropped the words from the SQL it was documenting.
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('$S', 'America/Chicago', 62, 60, 6, 1400, now());
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, setup_completed_at)
+VALUES ('$S', 'America/Chicago', 62, 60, 6, 2, 1400, now());
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
 VALUES ('$S', 'M', 'Algebra', 0, 0, 0, 10, 'h'),
@@ -208,15 +218,25 @@ rm -f /tmp/_cal_c3_*.out
 echo "==> C-4: a move and a weekly run, fired concurrently"
 q -c "SELECT public.calendar_persist_version('$S','setup','student','v1');" >/dev/null
 
+# The block must be MOVABLE, and that means excluding the ones C-3 launched.
+# C-3 takes the earliest practice block with no date filter: on a weekday that is
+# TODAY's, but this fixture studies Mon-Fri, so on a Saturday or Sunday today holds
+# no practice block and C-3 reaches forward to the Monday -- the very block this
+# clause then tried to move. §12.2 refuses to move a STARTED block, correctly, so
+# calendar_move_block answered {"refused": "block_started"}, wrote no version, and
+# C-4 failed its version count having never exercised the lock it exists to test.
+# Green Mon-Fri and red every weekend, for a reason that was never about locking.
 MOVE_BLOCK="$(q -c "
   SELECT cp.block_id FROM public.calendar_current_plan cp
   JOIN public.calendar_blocks b ON b.block_id = cp.block_id
   WHERE cp.student_id = '$S'
     AND cp.scheduled_date > (now() AT TIME ZONE 'America/Chicago')::date
     AND b.block_type = 'practice'
+    AND NOT EXISTS (SELECT 1 FROM public.calendar_block_launches l
+                    WHERE l.block_id = cp.block_id)
   ORDER BY cp.scheduled_date, cp.display_ordinal LIMIT 1;")"
 if [ -z "$MOVE_BLOCK" ]; then
-  echo "FAIL C-4: no future practice block to move, so the test would prove nothing"
+  echo "FAIL C-4: no future UNSTARTED practice block to move, so the test would prove nothing"
   exit 1
 fi
 MOVE_TO="$(q -c "SELECT ((now() AT TIME ZONE 'America/Chicago')::date + 5)::text;")"
