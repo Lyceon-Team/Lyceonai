@@ -167,9 +167,11 @@ describe.skipIf(!PG_AVAILABLE)("G1-05 redeem always answers — real Postgres", 
       `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4)`,
       [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
     );
+    // G1-02: redeem refuses a guardian with no date of birth or under 18, so the guardian
+    // under test is an adult. Fixture only; no case below depends on the age rule.
     await pg.query(
-      `INSERT INTO public.profiles (id, email, role) VALUES
-         ($1,$2,'guardian'),($3,$4,'student')`,
+      `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
+         ($1,$2,'guardian',DATE '1980-01-01'),($3,$4,'student',NULL)`,
       [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
     );
   });

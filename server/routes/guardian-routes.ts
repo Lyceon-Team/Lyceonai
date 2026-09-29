@@ -10,6 +10,7 @@ import { EntitlementService } from "../services/entitlement-service";
 import { getEntitlementForProfile } from "../lib/account";
 import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
+import { guardianAgeRefusal, toIsoDate } from "../lib/role-choice";
 
 /**
  * ONE code for every refusal a redemption can give: malformed, expired, already used, never
@@ -334,6 +335,51 @@ router.post(
             "That code is not valid. Ask your student for a current one.",
           code: GUARDIAN_LINK_CODE_REFUSED,
         },
+        requestId,
+      });
+    }
+
+    // G1-02 (R10): a guardian must be an adult with a date of birth on file BEFORE the code
+    // is spent, so a refusal here leaves the student's code redeemable and writes no link.
+    // An existing guardian with no date of birth is told to add it; nothing about their
+    // existing links changes.
+    const { data: guardianProfile, error: guardianProfileError } =
+      await supabaseServer
+        .from("profiles")
+        .select("date_of_birth")
+        .eq("id", guardianId)
+        .maybeSingle();
+    if (guardianProfileError) {
+      logger.error("GUARDIAN", "link_redeem", "Guardian profile read failed", {
+        error: guardianProfileError.message,
+        requestId,
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+    const dateOfBirth = toIsoDate(guardianProfile?.date_of_birth);
+    const ageRefusal =
+      dateOfBirth !== null
+        ? guardianAgeRefusal(dateOfBirth, new Date())
+        : ({
+            status: 403,
+            code: "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
+            message:
+              "Add your date of birth to your account before linking a student.",
+          } as const);
+    if (ageRefusal) {
+      logger.warn(
+        "GUARDIAN",
+        "link_redeem",
+        "Guardian age rule refused redeem",
+        {
+          code: ageRefusal.code,
+          requestId,
+        },
+      );
+      return res.status(403).json({
+        error: { code: ageRefusal.code, message: ageRefusal.message },
         requestId,
       });
     }
