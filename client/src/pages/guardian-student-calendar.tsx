@@ -115,6 +115,12 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
       // reads is the band the student reads.
       projection={calendar.data.projection}
       streak={calendar.data.streak}
+      // Owner ruling 2026-09-26: "Guardians see the suppression. It's a fact about the plan,
+      // not a control and not a profile field — the same category as the projection and the
+      // test date... withholding it would rebuild the defect on the guardian side." The COPY
+      // differs (a statement, no CTA) and `CalendarView` selects it off `viewer`; this page
+      // passes the dates and nothing else.
+      fullLengthSuppressions={calendar.data.full_length_suppressions}
       planUpdate={null}
       onRangeChange={onRangeChange}
     />

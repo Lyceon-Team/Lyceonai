@@ -75,6 +75,7 @@ def snapshot(P):
             "daily_minutes": P["daily_minutes"],
             "target_exam_date": _iso(P["target_exam_date"]),
             "full_length_weekday": P["full_length_weekday"],
+            "full_length_interval_weeks": P["full_length_interval_weeks"],
         },
         "mastery": [
             {"section": ref.SEC[d], "domain": d, "mastery_level": P["levels"][d]}
@@ -101,6 +102,19 @@ def snapshot(P):
         },
         "recent_planned_by_domain": [
             {"domain": d, "count": c} for d, c in P["recent_planned_by_domain"].items()
+        ],
+        # THE FIXTURES CARRY BARE DATES; THE SNAPSHOT CARRIES THE LIVE SHAPE.
+        # calendar_build_plan_input emits {scheduled_date, is_user_override} for EVERY
+        # horizon date that has a plan row, not just the overridden ones, and
+        # calendar_place_full_lengths filters on the flag (the same predicate V-14 uses).
+        # So the bridge has to build that shape, with the flag true: a fixture's
+        # `current_overrides` entry means precisely "the student overrode this date".
+        # Handing the RPC a bare list here would have tested a snapshot the builder
+        # never produces — and the SQL would then have had to read bare strings, which
+        # in production would treat every planned date as an override.
+        "current_overrides": [
+            {"scheduled_date": _iso(x), "is_user_override": True}
+            for x in P["current_overrides"]
         ],
         "enabled_block_types": ["practice"],
         "engine_planning": dict(ref.ENG),
@@ -142,7 +156,9 @@ def build_P(inp):
         last_exam_missed_count=inp["last_exam_missed_count"],
         last_exam_reviewed=inp["last_exam_reviewed"],
         review_due_by_date={d(k): v for k, v in inp["review_due_by_date"].items()},
-        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]))
+        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]),
+        full_length_interval_weeks=inp["full_length_interval_weeks"],
+        current_overrides=[d(x) for x in inp["current_overrides"]])
 
 
 def emit(name, P, stored=None):

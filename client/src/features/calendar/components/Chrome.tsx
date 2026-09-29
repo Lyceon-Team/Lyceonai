@@ -22,6 +22,7 @@ import type { SectionProjectionDto } from "@lyceon/shared";
 import { projectedRange } from "../lib/projection";
 import { bannerCopy } from "../copy/banner";
 import {
+  dayAndMonth,
   dayOfMonth,
   isSameMonth,
   monthGridDates,
@@ -493,6 +494,88 @@ export function PlanUpdatedBanner({
       <button type="button" onClick={onDismiss}>
         Dismiss
       </button>
+    </div>
+  );
+}
+
+// ── Suppressed practice test (Brief 14 Step 4) ──────────────────────────────
+
+/**
+ * The sentence a plan says when the generator could NOT place a practice test.
+ *
+ * @spec [Doc_05F_Study_Calendar, §8.1 full-length placement; owner ruling 2026-09-26
+ *        (Brief 14 Step 4)] | @implemented [2026-09-27]
+ *
+ * plain English: `calendar_place_full_lengths` refuses a date when BOTH the student's chosen
+ * weekday occurrence and the +7-day alternative are days the student has blocked out. Those
+ * dates come back in `degraded[]` as `full_length_suppressed` and reach both payloads as
+ * `full_length_suppressions`. This component is the only place either surface says so.
+ *
+ * Expected outcome: a student whose test silently vanished from the plan is told it did, and
+ * given the week it would have fallen in. Before this, the plan simply had no test in it and
+ * nothing anywhere said why — which is the defect the whole brief exists to end.
+ *
+ * WHY THE TWO VIEWERS GET DIFFERENT COPY AND DIFFERENT CONTROLS. Owner ruling 2026-09-26:
+ * "Guardians see the suppression. It's a fact about the plan, not a control and not a profile
+ * field... With the guardian's own copy, though: a statement, never an action." So the
+ * guardian's sentence is third-person and the component renders NO buttons for them — the
+ * same rule `ABSENT_COPY` above follows for "No target set". A guardian has no write path
+ * (§16), so an affordance would point nowhere.
+ *
+ * trade-offs: the student's dates are buttons that move the grid to that week and select the
+ * day, rather than opening the day menu directly. The menu lives on the day cell, so putting
+ * the date in view IS how you reach it — and the alternative, a second day-menu mount owned
+ * by a banner, would be a second copy of §17.2's four controls.
+ *
+ * edge cases: an EMPTY array renders nothing at all, never an empty bar. That is the ordinary
+ * case — a plan with no suppression is the plan working.
+ */
+const SUPPRESSION_COPY = {
+  student:
+    "We couldn't fit your practice test — the days you picked are blocked.",
+  guardian:
+    "A practice test couldn't be scheduled — the days chosen are blocked.",
+} as const satisfies Record<"student" | "guardian", string>;
+
+/** Exported for the test that pins the two sentences against the owner's ruling. */
+export const SUPPRESSION_COPY_TABLE = SUPPRESSION_COPY;
+
+export function FullLengthSuppressionNotice({
+  viewer,
+  dates,
+  onGoToWeek,
+}: {
+  viewer: "student" | "guardian";
+  /** `full_length_suppressions` off the payload, unchanged and in server order. */
+  dates: readonly string[];
+  /**
+   * Student only, and OPTIONAL even then: given, each date becomes a button that moves the
+   * grid to its week. A guardian caller passes nothing, which is what makes "a statement,
+   * never an action" a property of the call site rather than a branch in here.
+   */
+  onGoToWeek?: (date: string) => void;
+}): JSX.Element | null {
+  if (dates.length === 0) return null;
+  const goTo = viewer === "student" ? onGoToWeek : undefined;
+  return (
+    <div
+      className="banner"
+      role="status"
+      data-testid="calendar-full-length-suppressed"
+    >
+      <span>{SUPPRESSION_COPY[viewer]}</span>
+      {goTo === undefined
+        ? null
+        : dates.map((date) => (
+            <button
+              key={date}
+              type="button"
+              onClick={() => goTo(date)}
+              data-testid={`calendar-full-length-suppressed-goto-${date}`}
+            >
+              {dayAndMonth(date)}
+            </button>
+          ))}
     </div>
   );
 }

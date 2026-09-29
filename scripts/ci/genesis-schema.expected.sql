@@ -927,6 +927,13 @@ BEGIN
       -- full_length is enabled the stored value flows through untouched.
       'full_length_weekday', CASE WHEN v_full_length_on
                                   THEN v_profile.full_length_weekday ELSE NULL END,
+      -- The cadence, gated on the SAME flag as the weekday above and for the same reason.
+      -- They are one decision in the table (`full_length_pair`, 20261010000000) and they
+      -- must stay one decision in the snapshot: placement needs BOTH non-null to place
+      -- anything, so nulling only one would leave a snapshot that says "Saturdays, at no
+      -- frequency" -- a state no student can have chosen and the DB would refuse.
+      'full_length_interval_weeks', CASE WHEN v_full_length_on
+                                         THEN v_profile.full_length_interval_weeks ELSE NULL END,
       'planner_mode', v_profile.planner_mode,
       'setup_date', COALESCE(
         (v_profile.setup_completed_at AT TIME ZONE v_profile.timezone)::date,
@@ -1326,7 +1333,7 @@ BEGIN
 
     -- An exam day holds nothing else, and sets up the review that follows it.
     SELECT f ->> 'explanation_key' INTO v_key
-    FROM jsonb_array_elements(v_fl) f WHERE (f ->> 'date')::date = v_d;
+    FROM jsonb_array_elements(v_fl -> 'placed') f WHERE (f ->> 'date')::date = v_d;
 
     IF v_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
@@ -1496,7 +1503,12 @@ BEGIN
     v_study_index := v_study_index + 1;
   END LOOP;
 
-  RETURN jsonb_build_object('generator', 'deterministic_v1', 'days', v_days);
+  -- Brief 14: suppressions ride OUT on the plan. They are computed here, downstream of
+  -- the builder that owns `degraded[]`, so the generator cannot write them into the
+  -- snapshot itself. calendar_persist_version merges them in before it stores the
+  -- snapshot, which keeps placement's rules in ONE implementation and this function pure.
+  RETURN jsonb_build_object('generator', 'deterministic_v1', 'days', v_days,
+                            'exam_suppressions', COALESCE(v_fl -> 'suppressed', '[]'::jsonb));
 END;
 $$;
 
@@ -1612,7 +1624,7 @@ BEGIN
     v_d := p_today + v_i;
 
     SELECT f ->> 'explanation_key' INTO v_fl_key
-    FROM jsonb_array_elements(fl) f WHERE (f ->> 'date')::date = v_d;
+    FROM jsonb_array_elements(fl -> 'placed') f WHERE (f ->> 'date')::date = v_d;
 
     IF v_fl_key IS NOT NULL THEN
       v_days := v_days || jsonb_build_object('date', v_d::text, 'blocks', jsonb_build_array(
@@ -1691,7 +1703,10 @@ BEGIN
     v_study_index := v_study_index + 1;
   END LOOP;
 
-  RETURN jsonb_build_object('generator', 'fallback_v1', 'days', v_days);
+  -- Sheet §5A: placement is IDENTICAL in both generators, so the suppressions travel the
+  -- same way. A fallback run that suppressed an exam says so exactly as the primary does.
+  RETURN jsonb_build_object('generator', 'fallback_v1', 'days', v_days,
+                            'exam_suppressions', COALESCE(fl -> 'suppressed', '[]'::jsonb));
 END;
 $$;
 
@@ -1936,6 +1951,115 @@ COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_m
 
 
 --
+-- Name: calendar_emit_exam_notification(uuid, uuid, text, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_event_id uuid;
+  v_channels jsonb;
+BEGIN
+  IF p_kind NOT IN ('full_length_week', 'full_length_tomorrow') THEN
+    RAISE EXCEPTION 'calendar_emit_exam_notification: unknown kind %', p_kind
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- The rule, at the chokepoint. One call site for one derivation.
+  IF public.calendar_full_length_complete(p_student_id, p_local_date, p_timezone) THEN
+    RETURN 'skipped_complete';
+  END IF;
+
+  v_event_id := public.notification_event_id(p_kind, p_block_id::text);
+
+  IF EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id = v_event_id) THEN
+    RETURN 'duplicate';
+  END IF;
+
+  v_channels := CASE WHEN p_kind = 'full_length_tomorrow'
+                     THEN jsonb_build_array('in_app', 'email')
+                     ELSE jsonb_build_array('in_app')
+                END;
+
+  PERFORM public.emit_notification_event(
+    v_event_id,
+    p_kind,
+    p_student_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', p_student_id, 'channels', v_channels)
+    ),
+    jsonb_build_object('block_id', p_block_id, 'local_date', p_local_date)
+  );
+
+  RETURN 'emitted';
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) IS 'Brief 14 Step 5 / notifications contract §2.2, §5.1, §8.1: the one write path for the two practice-test notices. Returns emitted | skipped_complete | duplicate. Idempotent per (block_id, kind) because the event type is part of notification_event_id''s hash input. Recipient is the student alone.';
+
+
+--
+-- Name: calendar_exam_notification_candidates(integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_exam_notification_candidates(p_limit integer DEFAULT 500, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(student_id uuid, block_id uuid, local_date date, timezone text, kind text, period_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH exams AS (
+    SELECT cp.student_id,
+           cp.block_id,
+           cp.scheduled_date AS local_date,
+           cp.timezone,
+           -- "Today" and "tomorrow" for THIS student: the plan date's own zone, the same zone
+           -- the day was planned in and the same one the completeness window uses.
+           (p_now AT TIME ZONE cp.timezone)::date AS today_local
+    FROM public.calendar_current_plan cp
+    JOIN public.calendar_blocks b
+      ON b.block_id = cp.block_id AND b.student_id = cp.student_id
+    WHERE b.block_type = 'full_length'
+  ),
+  due AS (
+    SELECT e.student_id, e.block_id, e.local_date, e.timezone,
+           'full_length_week'::text AS kind,
+           date_trunc('week', e.today_local)::date AS period_key
+    FROM exams e
+    WHERE EXTRACT(DOW FROM e.today_local)::integer = 1
+      AND e.local_date >= e.today_local
+      AND e.local_date <  e.today_local + 7
+    UNION ALL
+    SELECT e.student_id, e.block_id, e.local_date, e.timezone,
+           'full_length_tomorrow'::text AS kind,
+           e.local_date AS period_key
+    FROM exams e
+    WHERE e.local_date = e.today_local + 1
+  )
+  SELECT d.student_id, d.block_id, d.local_date, d.timezone, d.kind, d.period_key,
+         CASE WHEN NOT public.entitlement_active(d.student_id)
+              THEN 'skipped_no_entitlement'
+              ELSE NULL
+         END AS outcome
+  FROM due d
+  ORDER BY d.student_id, d.local_date, d.kind
+  LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone) IS 'Brief 14 Step 5: one row per (full_length block, notice kind) due today in the student''s own zone — full_length_week on their local Monday for that week''s exams, full_length_tomorrow the day before. outcome NULL means notify; skipped_no_entitlement is the calendar_job_runs CHECK verbatim so every considered row gets a job row. Completeness is NOT decided here (see calendar_emit_exam_notification). p_now exists so the two date EQUALITIES are testable on any day of the week; the job never passes it.';
+
+
+--
 -- Name: calendar_exam_review_scope(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1962,6 +2086,32 @@ $$;
 --
 
 COMMENT ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) IS 'Doc 05F §9.4 / SCL-170: exam_review -> {"mode":"session","source_engine":"full_length","source_session_id"}; exam_review_placeholder -> {"mode":"queue"}. One helper for deterministic_v1 and fallback_v1.';
+
+
+--
+-- Name: calendar_full_length_complete(uuid, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.test_sessions s
+    WHERE s.student_id = p_student_id
+      AND s.state = 'completed'
+      AND s.completed_at >= (p_local_date::timestamp AT TIME ZONE p_timezone)
+      AND s.completed_at <  ((p_local_date + 1)::timestamp AT TIME ZONE p_timezone)
+  );
+$$;
+
+
+--
+-- Name: FUNCTION calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) IS 'Doc 05F §13: the ONE derivation of "this full-length block''s sitting is done" — a test_sessions row in state=completed whose completed_at falls in the block''s own local day. Never derived from calendar_block_launches (§7.7: launches are for Resume, never for progress).';
 
 
 --
@@ -2247,11 +2397,25 @@ BEGIN
 
   SELECT COALESCE(array_agg(t), '{}') INTO v_enabled
   FROM jsonb_array_elements_text(v_input -> 'enabled_block_types') t;
-  SELECT COALESCE(array_agg(t), '{}') INTO v_degraded
-  FROM jsonb_array_elements_text(COALESCE(v_input -> 'degraded', '[]'::jsonb)) t;
+  -- THE READER IS WIDENED (Brief 14). `degraded[]` used to hold only marker STRINGS, and
+  -- this read was `jsonb_array_elements_text` over all of them. It now also carries
+  -- STRUCTURED suppression entries ({kind, date}), because a suppression's whole point is
+  -- the date and a marker string with the dates parked elsewhere is two places to keep in
+  -- step. Objects are skipped rather than stringified: this array feeds the fallback
+  -- decision below, which compares against marker names, and an object rendered as JSON
+  -- text would be a value that matches nothing while looking like it might.
+  SELECT COALESCE(array_agg(e #>> '{}'), '{}') INTO v_degraded
+  FROM jsonb_array_elements(COALESCE(v_input -> 'degraded', '[]'::jsonb)) e
+  WHERE jsonb_typeof(e) = 'string';
 
   -- §5A: a degraded mastery read or review queue means the primary generator
   -- would be working from something it cannot trust.
+  -- THE FALLBACK TRIGGER IS EXACTLY THESE TWO, AND A SUPPRESSION IS NEVER ONE (owner
+  -- ruling, Brief 14). Two things hold it: this list is closed, and the suppression merge
+  -- happens BELOW, after this branch has already been decided -- so a suppressed exam
+  -- cannot reach this test even in principle. A student whose blocked day cost them one
+  -- practice test still gets the mastery-weighted plan they would otherwise have had;
+  -- degrading the whole generation over it would be a second, larger failure.
   IF 'mastery' = ANY (v_degraded) OR 'review_queue' = ANY (v_degraded) THEN
     v_generator := 'fallback_v1';
     v_reason := jsonb_build_object('reason','degraded_input','degraded', v_input -> 'degraded');
@@ -2291,6 +2455,29 @@ BEGIN
                   v_input);
   END IF;
 
+  ----------------------------------------------------------------------------
+  -- Brief 14 -- the suppression reaches the STORED snapshot here, and only here.
+  --
+  -- Placement runs inside the generator, downstream of calendar_build_plan_input which
+  -- owns `degraded[]`, so the fact has to travel out on the plan and be merged back in.
+  -- The alternative -- having the builder place exams too, so it could record its own
+  -- suppressions -- would give the precedence rules a SECOND implementation, which is the
+  -- one thing calendar_place_full_lengths' own header says it exists to prevent.
+  --
+  -- Structured, not a marker string: the date is the entire content of the entry, and it is
+  -- what lets a surface say "we couldn't fit your practice test on the 26th" rather than
+  -- "something was degraded". Both generators emit it (sheet §5A), so this runs for a
+  -- fallback version too.
+  ----------------------------------------------------------------------------
+  IF jsonb_array_length(COALESCE(v_plan -> 'exam_suppressions', '[]'::jsonb)) > 0 THEN
+    v_input := jsonb_set(v_input, '{degraded}',
+      COALESCE(v_input -> 'degraded', '[]'::jsonb) || COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('kind', 'full_length_suppressed',
+                                            'date', s #>> '{}')
+                         ORDER BY s #>> '{}')
+        FROM jsonb_array_elements(v_plan -> 'exam_suppressions') s), '[]'::jsonb));
+  END IF;
+
   v_result := public.calendar_write_version(p_student_id, p_trigger, p_initiated_by,
                 v_generator, p_generator_version, v_input, v_output, 'generated', v_reason);
 
@@ -2322,87 +2509,134 @@ CREATE FUNCTION public.calendar_place_full_lengths(p_input jsonb) RETURNS jsonb
     AS $$
 DECLARE
   k_horizon_days integer;
-  k_fl_every_n   integer;
-  k_fl_min_gap   integer;
   k_final_lead   integer;
   k_fl_max       integer;
   p_today        date;
   p_setup        date;
   p_target       date;
   p_wd           integer;
+  p_iv           integer;
   x_last         date;
+  h_start        date;
+  h_end          date;
+  v_over         date[];
   fl_date        date[] := '{}';
   fl_key         text[] := '{}';
-  v_i            integer;
+  v_supp         date[] := '{}';
+  v_cursor       date;
   v_d            date;
+  v_nxt          date;
   v_probe        date;
-  v_anchor       date;
-  v_ok           boolean;
-  v_out          jsonb := '[]'::jsonb;
+  v_i            integer;
+  v_placed       jsonb := '[]'::jsonb;
+  v_suppressed   jsonb := '[]'::jsonb;
 BEGIN
   k_horizon_days := public.calendar_require_int(p_input -> 'constants', 'horizon_days');
-  k_fl_every_n   := public.calendar_require_int(p_input -> 'constants', 'full_length_every_n_occurrences');
-  k_fl_min_gap   := public.calendar_require_int(p_input -> 'constants', 'full_length_min_gap_days');
   k_final_lead   := public.calendar_require_int(p_input -> 'constants', 'final_exam_lead_days');
   k_fl_max       := public.calendar_require_int(p_input -> 'constants', 'max_full_length_per_horizon');
 
   p_today  := (p_input ->> 'today')::date;
   p_setup  := (p_input #>> '{profile,setup_date}')::date;
   p_target := (p_input #>> '{profile,target_exam_date}')::date;
-  p_wd     := CASE WHEN (p_input #>> '{profile,full_length_weekday}') IS NULL THEN NULL
-                   ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_weekday') END;
-  x_last   := (p_input #>> '{exams,last_completed_local_date}')::date;
+  p_wd := CASE WHEN (p_input #>> '{profile,full_length_weekday}') IS NULL THEN NULL
+               ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_weekday') END;
+  p_iv := CASE WHEN (p_input #>> '{profile,full_length_interval_weeks}') IS NULL THEN NULL
+               ELSE public.calendar_require_int(p_input -> 'profile', 'full_length_interval_weeks') END;
+  x_last := (p_input #>> '{exams,last_completed_local_date}')::date;
 
-  -- No full-length weekday means no automatic exams at all (§7.1).
-  IF p_wd IS NULL THEN
-    RETURN v_out;
+  -- Both or neither (`full_length_pair`, 20261010000000). Either half missing means
+  -- no automatic exams, which is also what a snapshot with full_length disabled says.
+  IF p_wd IS NULL OR p_iv IS NULL THEN
+    RETURN jsonb_build_object('placed', v_placed, 'suppressed', v_suppressed);
   END IF;
   IF p_setup IS NULL THEN
     RAISE EXCEPTION 'calendar_place_full_lengths: profile.setup_date is essential and was not supplied'
       USING ERRCODE = '22023';
   END IF;
 
+  h_start := p_today;
+  h_end   := p_today + (k_horizon_days - 1);
+
+  -- Only dates the student actually overrode. See the header: the array carries every
+  -- horizon date that has a plan row, most of them with is_user_override false.
+  SELECT COALESCE(array_agg((o ->> 'scheduled_date')::date), '{}') INTO v_over
+  FROM jsonb_array_elements(COALESCE(p_input -> 'current_overrides', '[]'::jsonb)) o
+  WHERE (o ->> 'is_user_override')::boolean;
+
+  ----------------------------------------------------------------------------
+  -- (1) The final rehearsal — backwards from the target, and NEVER shifted.
+  --
+  -- It is the one fixed point in the schedule: it is anchored to the real test, not
+  -- to a cadence, and a student who blocks that day has made their own call. Walking
+  -- BACK is what keeps it inside the lead window rather than on top of it.
+  ----------------------------------------------------------------------------
   IF p_target IS NOT NULL THEN
     v_probe := p_target - k_final_lead;
     WHILE EXTRACT(DOW FROM v_probe)::integer <> p_wd LOOP
       v_probe := v_probe - 1;
     END LOOP;
-    IF v_probe >= p_today AND v_probe <= p_today + (k_horizon_days - 1) THEN
+    IF v_probe >= h_start AND v_probe <= h_end THEN
       fl_date := fl_date || v_probe;
       fl_key  := fl_key  || 'final_rehearsal'::text;
     END IF;
   END IF;
 
-  v_anchor := p_setup;
-  WHILE EXTRACT(DOW FROM v_anchor)::integer <> p_wd LOOP
-    v_anchor := v_anchor + 1;
-  END LOOP;
-
-  FOR v_i IN 0 .. k_horizon_days - 1 LOOP
-    -- COALESCE, not a bare array_length: an empty array measures NULL, and
-    -- NULL >= 0 is NULL, which would let a cap of zero place exams anyway.
-    EXIT WHEN COALESCE(array_length(fl_date, 1), 0) >= k_fl_max;
-    v_d := p_today + v_i;
-    CONTINUE WHEN EXTRACT(DOW FROM v_d)::integer <> p_wd;
-    CONTINUE WHEN v_d = ANY (fl_date);
-    CONTINUE WHEN v_d < v_anchor;                      -- guards the division below
-    CONTINUE WHEN ((v_d - v_anchor) / 7) % k_fl_every_n <> 0;
-    CONTINUE WHEN p_target IS NOT NULL AND (v_d >= p_target OR (p_target - v_d) < k_final_lead);
-    v_ok := true;
-    FOREACH v_probe IN ARRAY fl_date LOOP
-      IF abs(v_d - v_probe) < k_fl_min_gap THEN v_ok := false; END IF;
+  ----------------------------------------------------------------------------
+  -- (2) The series — one interval after the last exam, or after setup.
+  --
+  -- THE CURSOR ADVANCES ON THE INTENDED DATE, NOT THE SHIFTED ONE. That is what
+  -- stops one blocked Saturday from dragging every later exam a week late: the
+  -- rhythm belongs to the student's choice, not to the accident that moved one
+  -- sitting. (Oracle line 78.)
+  ----------------------------------------------------------------------------
+  v_cursor := COALESCE(x_last, p_setup);
+  LOOP
+    v_d := v_cursor + (p_iv * 7);
+    WHILE EXTRACT(DOW FROM v_d)::integer <> p_wd LOOP
+      v_d := v_d + 1;
     END LOOP;
-    IF x_last IS NOT NULL AND abs(v_d - x_last) < k_fl_min_gap THEN v_ok := false; END IF;
-    IF v_ok THEN
-      fl_date := fl_date || v_d;
-      fl_key  := fl_key  || 'exam_cadence'::text;
+    EXIT WHEN v_d > h_end;
+    v_cursor := v_d;
+    CONTINUE WHEN v_d < h_start OR v_d = ANY (fl_date);
+    -- The cap counts the rehearsal, because a rehearsal IS a full-length and the cap
+    -- is "how many full-lengths in fourteen days" (owner ruling). Where a rehearsal
+    -- and a cadence exam compete for the last slot, the rehearsal has already taken
+    -- it, which is right: it is the one anchored to the real test.
+    EXIT WHEN COALESCE(array_length(fl_date, 1), 0) >= k_fl_max;
+
+    IF v_d = ANY (v_over) THEN
+      v_nxt := v_d + 7;
+      IF v_nxt > h_end THEN
+        -- NOT a suppression. That exam simply belongs to a later horizon and arrives
+        -- as the window rolls forward; calling it a loss would cry wolf every fortnight.
+        CONTINUE;
+      END IF;
+      IF v_nxt = ANY (v_over) OR v_nxt = ANY (fl_date)
+         OR NOT (p_target IS NULL
+                 OR (v_nxt < p_target AND (p_target - v_nxt) >= k_final_lead)) THEN
+        -- Both occurrences are the student's own. Say so: silence is the defect this
+        -- replaces, where an edited day swallowed the only exam in a horizon.
+        v_supp := v_supp || v_d;
+        CONTINUE;
+      END IF;
+      v_d := v_nxt;
     END IF;
+
+    CONTINUE WHEN NOT (p_target IS NULL
+                       OR (v_d < p_target AND (p_target - v_d) >= k_final_lead))
+                  OR v_d = ANY (fl_date);
+    fl_date := fl_date || v_d;
+    fl_key  := fl_key  || 'exam_cadence'::text;
   END LOOP;
 
   FOR v_i IN 1 .. COALESCE(array_length(fl_date, 1), 0) LOOP
-    v_out := v_out || jsonb_build_object('date', fl_date[v_i]::text, 'explanation_key', fl_key[v_i]);
+    v_placed := v_placed || jsonb_build_object('date', fl_date[v_i]::text,
+                                               'explanation_key', fl_key[v_i]);
   END LOOP;
-  RETURN v_out;
+  FOR v_i IN 1 .. COALESCE(array_length(v_supp, 1), 0) LOOP
+    v_suppressed := v_suppressed || to_jsonb(v_supp[v_i]::text);
+  END LOOP;
+  RETURN jsonb_build_object('placed', v_placed, 'suppressed', v_suppressed);
 END;
 $$;
 
@@ -2411,7 +2645,7 @@ $$;
 -- Name: FUNCTION calendar_place_full_lengths(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) IS 'Doc 05F formula sheet §2 step 2. Shared by both generators (sheet §5A: exam placement is identical), so the precedence rules have exactly one implementation.';
+COMMENT ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) IS 'Doc 05F formula sheet §2 step 2 (rewritten 2026-09-27). Arithmetic on the student''s chosen frequency and weekday: from the last completed exam or the setup date, + interval_weeks x 7, then the next preferred weekday on or after. An overridden date shifts +7 and never to another weekday (V-02); both occurrences overridden records a suppression. The final rehearsal walks back from the target and is never shifted. Returns {placed, suppressed}. Shared by both generators (sheet §5A), so the rules have exactly one implementation.';
 
 
 --
@@ -11495,8 +11729,8 @@ CREATE TABLE public.calendar_job_runs (
     outcome text NOT NULL,
     detail jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT calendar_job_runs_job_check CHECK ((job = 'weekly_regen'::text)),
-    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'failed'::text])))
+    CONSTRAINT calendar_job_runs_job_check CHECK ((job = ANY (ARRAY['weekly_regen'::text, 'exam_notify'::text]))),
+    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'failed'::text])))
 );
 
 
@@ -12872,7 +13106,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text])))
 );
 
 
@@ -13616,7 +13850,10 @@ CREATE TABLE public.student_study_profile (
     last_acknowledged_nonstudent_version_no integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    full_length_interval_weeks smallint,
+    CONSTRAINT full_length_pair CHECK (((full_length_interval_weeks IS NULL) = (full_length_weekday IS NULL))),
     CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
+    CONSTRAINT student_study_profile_full_length_interval_weeks_check CHECK ((full_length_interval_weeks = ANY (ARRAY[1, 2, 3, 4]))),
     CONSTRAINT student_study_profile_full_length_weekday_check CHECK (((full_length_weekday >= 0) AND (full_length_weekday <= 6))),
     CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
     CONSTRAINT student_study_profile_planner_mode_check CHECK ((planner_mode = ANY (ARRAY['auto'::text, 'custom'::text]))),
@@ -13651,6 +13888,13 @@ COMMENT ON COLUMN public.student_study_profile.target_score IS 'Doc 05F §8.1. O
 --
 
 COMMENT ON COLUMN public.student_study_profile.setup_completed_at IS 'Doc 05F §17.5. Stamped by the FIRST profile write that finds no completed setup -- the student reached the end of the flow. It no longer means "a target score exists": the setup_requires_target_score CHECK that tied the two together was dropped by 20261002000000, because nothing in setup is required.';
+
+
+--
+-- Name: COLUMN student_study_profile.full_length_interval_weeks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.full_length_interval_weeks IS 'Doc 05F §8.1 (R-08-27 as amended): weeks between full-length practice tests, as the student chose it — 1, 2, 3 or 4. NULL means no automatic full-lengths, and `full_length_pair` keeps it NULL exactly when full_length_weekday is. Weeks, not a label: Weekly / Every 2 weeks / Every 3 weeks / Monthly is the UI''s rendering of 1/2/3/4, so a copy change never migrates data.';
 
 
 --
@@ -19404,11 +19648,32 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_exam_notification_candidates(p_limit integer, p_now timestamp with time zone) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION calendar_exam_review_scope(p_key text, p_session_id text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_exam_review_scope(p_key text, p_session_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_full_length_complete(p_student_id uuid, p_local_date date, p_timezone text) FROM PUBLIC;
 
 
 --
