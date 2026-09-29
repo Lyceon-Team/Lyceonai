@@ -37,6 +37,7 @@ const ESTIMATES = {
 const EXAM_PLANNING = {
   final_exam_lead_days: 7,
   default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
 };
 
 /** Brief 14 Step 4. The dates `calendar_place_full_lengths` REFUSED to place because both
@@ -186,6 +187,7 @@ describe("GET /api/calendar", () => {
         daily_minutes_max: 180,
         target_exam_date_max_days: 540,
         default_full_length_interval_weeks: 2,
+        default_full_length_weekday: 6,
         final_exam_lead_days: 7,
       },
     };
@@ -524,6 +526,7 @@ describe("guardian read (§16, R-08-22)", () => {
           daily_minutes_max: 180,
           target_exam_date_max_days: 540,
           default_full_length_interval_weeks: 2,
+          default_full_length_weekday: 6,
           final_exam_lead_days: 7,
         },
       }).success,

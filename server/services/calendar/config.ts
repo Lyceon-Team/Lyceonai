@@ -61,6 +61,17 @@ export const CALENDAR_CONFIG_KEYS = [
    */
   "default_full_length_interval_weeks",
   /**
+   * §8.1 / formula sheet §4, 20261013000000. The other half of the same prefill: the weekday
+   * the practice-test-day row opens on. Here for the same reasons as its neighbour above, and
+   * NOT in `bounds` for the same reason — a prefill is not a limit. The generator reads
+   * `student_study_profile.full_length_weekday` and never this key.
+   *
+   * The two are served together because they are one decision: `full_length_pair` refuses a
+   * profile that names one and not the other, so a form that had a default for the cadence
+   * and none for the day was offering half of something the database will not store.
+   */
+  "default_full_length_weekday",
+  /**
    * §2 Step 2 / §4. Read by the GENERATOR — nothing is placed inside this window before the
    * target date — and now served to the client too, because §8.1's "about N practice tests"
    * readout cannot be truthful without it and §17 forbids a literal.
@@ -144,6 +155,7 @@ export type CalendarConfig = {
    * already chosen.
    */
   defaultFullLengthIntervalWeeks: number;
+  defaultFullLengthWeekday: number;
   /**
    * §2 Step 2: nothing is placed inside this window before the target date, so it decides
    * whether the last sitting before the target exists at all. Served to the client for
@@ -314,6 +326,10 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
     defaultFullLengthIntervalWeeks: requireInteger(
       rows,
       "default_full_length_interval_weeks",
+    ),
+    defaultFullLengthWeekday: requireInteger(
+      rows,
+      "default_full_length_weekday",
     ),
     finalExamLeadDays: requireInteger(rows, "final_exam_lead_days"),
   };
