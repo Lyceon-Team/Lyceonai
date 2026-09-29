@@ -28,6 +28,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { csrfFetch } from '@/lib/csrf';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import {
   guardianStudentsResponseSchema,
   type GuardianStudentsResponse,
@@ -36,8 +37,16 @@ import {
 
 export type { LinkedStudent };
 
-/** Shared cache key, so the two consumers hit one request rather than two. */
+/**
+ * Shared cache key PREFIX, so the two consumers hit one request rather than two. Invalidate
+ * with this prefix; the live key also carries the signed-in guardian's id (G1-03), so one
+ * guardian's roster can never be served from another's cache entry.
+ */
 export const GUARDIAN_STUDENTS_QUERY_KEY = ['guardian-students'] as const;
+
+export function guardianStudentsQueryKey(guardianId: string | null) {
+  return [...GUARDIAN_STUDENTS_QUERY_KEY, guardianId] as const;
+}
 
 /** The name to show for a student, falling back to email when unnamed. */
 export function studentLabel(student: LinkedStudent): string {
@@ -46,8 +55,10 @@ export function studentLabel(student: LinkedStudent): string {
 }
 
 export function useGuardianStudents(options?: { enabled?: boolean }) {
+  const { user } = useSupabaseAuth();
+  const guardianId = user?.id ?? null;
   return useQuery({
-    queryKey: GUARDIAN_STUDENTS_QUERY_KEY,
+    queryKey: guardianStudentsQueryKey(guardianId),
     queryFn: async (): Promise<GuardianStudentsResponse> => {
       const res = await csrfFetch('/api/guardian/students', {
         credentials: 'include',
@@ -63,6 +74,6 @@ export function useGuardianStudents(options?: { enabled?: boolean }) {
       }
       return parsed.data;
     },
-    enabled: options?.enabled ?? true,
+    enabled: (options?.enabled ?? true) && guardianId !== null,
   });
 }

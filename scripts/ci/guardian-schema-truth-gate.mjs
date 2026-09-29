@@ -68,9 +68,9 @@ const ACCEPTED = new Map([
    { owner: "guardian", expires: "2026-11-01", why: "~900 lines; conversion is its own change" }],
   ["tests/ci/guardian.anti-leak.ci.test.ts",
    { owner: "guardian", expires: "2026-11-01", why: "RULE-4 walker asserts on projections, not rows" }],
-  ["server/__tests__/guardian-payment-access.test.ts",
-   { owner: "guardian", expires: "2026-11-01", why: "predates the PG harness" }],
-  // NOT the same kind of entry as the three above, and the difference is the open question.
+  // server/__tests__/guardian-payment-access.test.ts: CONVERTED and removed (G1-10) — now
+  // tests/ci/guardian-payment-access.pg.ci.test.ts, on real rows.
+  // NOT the same kind of entry as the two above, and the difference is the open question.
   // This file deliberately INJECTS decisions a real database cannot produce — an RPC error, a
   // CASE arm no build recognises, a failed audit write — to prove the resolver fails closed on
   // each. Those cases cannot be driven from Postgres by construction. But its four REAL

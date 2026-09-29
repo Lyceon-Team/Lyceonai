@@ -511,6 +511,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/guardian-view-decision-gate.sh
 
+      # @spec [Guardian_Closure_Plan G1-08; audit G-AUD-11] | @implemented [2026-09-29]
+      # GATE 0 pins the gate's body. The harness proves it bites: dropping status='active'
+      # and a one-id backdoor (which no behavioural gate's fixtures can see) must each red
+      # the gate ON GATE 0. The target migration is resolved as the LAST definer, so a
+      # newer CREATE OR REPLACE can never leave this mutation aimed at a dead body.
+      - name: guardian_view_decision gate — body-pin mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-view-decision-gate.mutations.sh
+
       # Doc 04B V4.3 §7.2/§8.1/§8.2/§8.4 — every scoring-catalogue constraint is made
       # to FIRE on a fresh apply: the INSERT/UPDATE/DELETE seal on an active version's
       # constants, the attestation CHECK, the no-downgrade trigger, the (version, key,
@@ -1055,6 +1070,23 @@ jobs:
       # supabase/migrations/ (20260901000000_scl_080_guardian_link_code.sql), applied in the
       # same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema under test is
       # the schema the pipeline produces rather than one the test arranged for itself.
+      # @spec [Guardian_Closure_Plan G1-02; owner rulings R1, R10] | @implemented [2026-09-29]
+      # The one-time role choice at profile completion and the guardian age rule, driven
+      # through the real PATCH /api/profile and redeem routes on the throwaway Postgres.
+      # Same verdict gate as the step below, so a skipped PG suite cannot read as a pass.
+      - name: Guardian sign-up (role choice + age rule) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-signup.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-signup.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-signup.json \
+            --file tests/ci/guardian-signup.pg.ci.test.ts
+
       - name: Guardian link code → real PG proof
         env:
           PGHOST: localhost
@@ -1070,6 +1102,57 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-link-code.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
             --file tests/ci/guardian-link-code.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G1-05; audit G-AUD-08] | @implemented [2026-09-29]
+      # Redeem answers on every error branch. Runs the real route against this Postgres, with
+      # one failure injected per case (a thrown connection error, a foreign-instance LY004)
+      # and a 2s response deadline so a hang is red. Behind the summary gate: a skipped file
+      # exits 0.
+      - name: Guardian redeem error branches → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-redeem-errors.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-redeem-errors.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-redeem-errors.json \
+            --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G1-07; audit G-AUD-10] | @implemented [2026-09-29]
+      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the six
+      # guardian functions read f/f/f/t (guardian_can_view_student f/f/t/t) even after a
+      # simulated platform default grant to anon/authenticated. Skip-proof verdict.
+      - name: Guardian revoke party check + explicit grants → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-revoke-party.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-revoke-party.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-revoke-party.json \
+            --file tests/ci/guardian-revoke-party.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G1-06; audit G-AUD-13] | @implemented [2026-09-29]
+      # A redeem that writes no link leaves the student's code redeemable: a pre-existing
+      # link is refused before the spend, and an infrastructure failure after it is undone.
+      - name: Guardian link code not burned → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-code-not-burned.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-code-not-burned.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-code-not-burned.json \
+            --file tests/ci/guardian-code-not-burned.pg.ci.test.ts
 
       # @spec [Doc_05F_Study_Calendar §16] | @implemented [2026-09-22]
       # The guardian's way in to a student's calendar. Its student rows are INSERTED into
@@ -1088,6 +1171,24 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-calendar-link.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-calendar-link.json \
             --file client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx
+
+      # @spec [Guardian_Closure_Plan G1-11; audit G-AUD-16] | @implemented [2026-09-29]
+      # The guardian denial sweep: every student-only route and every /api/tutor route, read
+      # from the real app's router, refuses a guardian with the role gate's 403. The guardian
+      # is a real `profiles` row read back from this Postgres (schema-truth gate Rule B), so it
+      # needs the database. Behind the summary gate because a skipped file exits 0.
+      - name: Guardian denial sweep → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-denial-sweep.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-denial-sweep.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-denial-sweep.json \
+            --file tests/ci/guardian-denial-sweep.pg.ci.test.ts
 
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
@@ -1155,6 +1256,22 @@ jobs:
       # both §36.2 buckets on the real ledger, redeem still requires auth, byte-identical
       # response for known/unknown addresses). Real migrations on the throwaway Postgres;
       # verdict from vitest's JSON report so a skipped PG suite cannot read as a pass.
+      # @spec [Guardian_Closure_Plan G1-04; audit G-AUD-07] | @implemented [2026-09-29]
+      # A guardian dashboard view writes one audit_logs row in the link events' shape, with
+      # IDs and counts only. Real migrations on the throwaway Postgres; skip-proof verdict.
+      - name: Guardian access events → audit_logs real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-access-audit.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-access-audit.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-access-audit.json \
+            --file tests/ci/guardian-access-audit.pg.ci.test.ts
+
       - name: Guardian unlink event + invite → real PG proof
         env:
           PGHOST: localhost
@@ -1170,6 +1287,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-unlink-invite.json \
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G1-10; audit G-AUD-15b] | @implemented [2026-09-29]
+      # Replaces a unit test that mocked the entitlement verdict it asserted: a paid GUARDIAN
+      # entitlement grants nothing while the linked student has none, on real rows, with a
+      # control that flips only the student's entitlement.
+      - name: Guardian payment ≠ access → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-payment-access.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-payment-access.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-payment-access.json \
+            --file tests/ci/guardian-payment-access.pg.ci.test.ts
 
       # @spec [Doc-01_V8 §40.5; SCL-083 PROPOSED; contracts/notifications.contract.md C0.6] | @implemented [2026-09-15]
       # Deletion-completed notice: the address is read BEFORE the RPCs (call order), a failed or
@@ -2061,6 +2195,21 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/tutor-schema-proof-negative-control.sh
+
+      # @spec [Guardian_Closure_Plan G1-09; audit G-AUD-12] | @implemented [2026-09-29]
+      # The three tutor self-write policies name `authenticated`, never PUBLIC.
+      - name: Tutor self-write policies scoped to authenticated → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-policy-roles.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-policy-roles.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-policy-roles.json \
+            --file tests/ci/tutor-policy-roles.pg.ci.test.ts
 
   # ---------------------------------------------------------------------------
   # GCP Workload Identity Federation auth gate. Authenticates via WIF and runs
