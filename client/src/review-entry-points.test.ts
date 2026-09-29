@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   RETURN_PATH_ALLOWLIST,
+  RETURN_PATH_ROUTE_ROLES,
   sanitizeReturnPath,
 } from "@lyceon/shared/return-path";
 
@@ -156,6 +157,38 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
     for (const entry of RETURN_PATH_ALLOWLIST) {
       expect(app, `${entry} is allowlisted but not mounted`).toContain(
         `path="${entry}"`,
+      );
+    }
+  });
+
+  /**
+   * @spec [AS-5; register UI-03] | @implemented [2026-09-29] — the return path is role-aware
+   * (`RETURN_PATH_ROUTE_ROLES`), so its role lists must be the ones App.tsx's RequireRole
+   * actually enforces on each route. Read from source for the same reason as above: the route
+   * table is a fact about the file. Plant: change any role list in return-path.ts, or any
+   * allowlisted route's `allow={[…]}` in App.tsx, and this goes red.
+   */
+  it("every allowlist entry's role list is the RequireRole gate App.tsx mounts it behind", () => {
+    const app = read("client/src/App.tsx");
+    const allowOf = (from: number): string[] => {
+      const match = /allow=\{\[([^\]]*)\]\}/.exec(app.slice(from));
+      expect(match, `no allow={[…]} after offset ${from}`).not.toBeNull();
+      return [...(match?.[1] ?? "").matchAll(/"([a-z]+)"/g)]
+        .map((m) => m[1] ?? "")
+        .sort();
+    };
+    for (const entry of RETURN_PATH_ALLOWLIST) {
+      const at = app.indexOf(`path="${entry}"`);
+      expect(at, `${entry} is not mounted`).toBeGreaterThan(-1);
+      // Either an inline `component={() => (<RequireRole allow=…>` or a named module-scope
+      // wrapper (`component={TestsHomeRoute}`, whose body holds the RequireRole).
+      const named = /^path="[^"]*"\s+component=\{([A-Z]\w*)\}/.exec(
+        app.slice(at),
+      );
+      const gateAt = named ? app.indexOf(`function ${named[1] ?? ""}()`) : at;
+      expect(gateAt, `${entry}: wrapper not found`).toBeGreaterThan(-1);
+      expect(allowOf(gateAt), entry).toEqual(
+        [...(RETURN_PATH_ROUTE_ROLES[entry] ?? [])].sort(),
       );
     }
   });

@@ -185,7 +185,9 @@ describe("Login landing matrix (imperative navigate)", () => {
       expect(navigateMock).toHaveBeenCalledWith("/dashboard");
     });
 
-    it("onboarding still wins over a return path", () => {
+    // WAS: expected plain "/profile/complete" — onboarding won AND dropped the return path.
+    // Register UI-03 (2026-09-29): onboarding still wins, but carries `next` through it.
+    it("onboarding still wins over a return path, and carries it along", () => {
       window.history.replaceState(
         {},
         "",
@@ -193,6 +195,73 @@ describe("Login landing matrix (imperative navigate)", () => {
       );
       authState = {
         user: { ...completeGuardian, guardianConsentRequired: true },
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/profile/complete?next=%2Fguardian%3Fcode%3DABC234",
+      );
+    });
+
+    it("UI-03 incomplete student + next=/calendar → /profile/complete?next=%2Fcalendar", () => {
+      window.history.replaceState({}, "", "/login?next=%2Fcalendar");
+      authState = {
+        user: {
+          role: "student",
+          profile_completed_at: null,
+          requiredProfileComplete: false,
+          guardianConsentRequired: false,
+        },
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/profile/complete?next=%2Fcalendar",
+      );
+    });
+
+    it("UI-03 completed student + next=/tests/<id> → the exam deep link", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=%2Ftests%2Fs-1%2Freport",
+      );
+      authState = {
+        user: completeStudent,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/tests/s-1/report");
+    });
+
+    it("UI-03 completed guardian + next=/calendar → /guardian (never a student page)", () => {
+      window.history.replaceState({}, "", "/login?next=%2Fcalendar");
+      authState = {
+        user: completeGuardian,
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/guardian");
+    });
+
+    it("UI-03 a disallowed next is dropped even through onboarding → plain /profile/complete", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/login?next=" +
+          encodeURIComponent("https://evil.example.com/calendar"),
+      );
+      authState = {
+        user: {
+          role: "student",
+          profile_completed_at: null,
+          requiredProfileComplete: false,
+          guardianConsentRequired: false,
+        },
         isAuthenticated: true,
         authLoading: false,
       };
