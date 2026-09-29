@@ -44,6 +44,31 @@ const DISCLOSURE = {
   full_text_url: "/legal/score-disclosure",
 };
 
+/** G1: what exam_domain_breakdown returns for a fully scored attempt. */
+const RW_ROWS = [
+  { section: "RW", domain: "Craft and Structure", correct: 10, total: 13 },
+  { section: "RW", domain: "Expression of Ideas", correct: 6, total: 8 },
+  { section: "RW", domain: "Information and Ideas", correct: 9, total: 12 },
+  {
+    section: "RW",
+    domain: "Standard English Conventions",
+    correct: 11,
+    total: 21,
+  },
+] as const;
+const BREAKDOWN = [
+  ...RW_ROWS,
+  { section: "M", domain: "Advanced Math", correct: 12, total: 15 },
+  { section: "M", domain: "Algebra", correct: 11, total: 13 },
+  { section: "M", domain: "Geometry and Trigonometry", correct: 4, total: 7 },
+  {
+    section: "M",
+    domain: "Problem Solving and Data Analysis",
+    correct: 5,
+    total: 9,
+  },
+] as const;
+
 function source(over: Partial<ExamReportSource> = {}): ExamReportSource {
   return {
     session: {
@@ -120,7 +145,7 @@ describe("§5.3 derivation — every branch", () => {
 describe("per-state serializers (§11.3)", () => {
   it("scored carries the disclosure row verbatim and both sections", () => {
     const s = source();
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), BREAKDOWN);
     expect(p.report_state).toBe("scored");
     if (p.report_state !== "scored") return;
     expect(p.score.total_scaled).toBe(1340);
@@ -130,14 +155,50 @@ describe("per-state serializers (§11.3)", () => {
 
   it("a scaled score never ships without its disclosure row (§15.1, §16.7)", () => {
     const s = source({ disclosure: null });
-    expect(() => serializeStudentReport(s, "scored")).toThrow(
+    expect(() => serializeStudentReport(s, "scored", BREAKDOWN)).toThrow(
       ReportIntegrityError,
     );
   });
 
+  it("G1: the breakdown ships with the score, one row per domain, correct-of-total", () => {
+    const p = serializeStudentReport(source(), "scored", BREAKDOWN);
+    if (p.report_state !== "scored") throw new Error("not scored");
+    expect(p.domain_breakdown).toEqual(BREAKDOWN);
+    expect(Object.keys(p.domain_breakdown[0]!).sort()).toEqual([
+      "correct",
+      "domain",
+      "section",
+      "total",
+    ]);
+  });
+
+  it("G1: a breakdown that does not cover exactly the scored sections is an integrity violation", () => {
+    expect(() => serializeStudentReport(source(), "scored", RW_ROWS)).toThrow(
+      ReportIntegrityError,
+    );
+    expect(() => serializeStudentReport(source(), "scored", [])).toThrow(
+      ReportIntegrityError,
+    );
+  });
+
+  it("G1: a breakdown row with a skill, a module or a mismatched domain fails the strict parse", () => {
+    const p = serializeStudentReport(source(), "scored", BREAKDOWN);
+    const row = BREAKDOWN[0];
+    for (const bad of [
+      { ...row, skill_code: "CAS.WIC" },
+      { ...row, module: "2A" },
+      { ...row, domain: "Algebra" }, // a Math domain on an RW row
+      { ...row, correct: 14, total: 13 },
+    ]) {
+      expect(() =>
+        examReportScoredSchema.parse({ ...p, domain_breakdown: [bad] }),
+      ).toThrow();
+    }
+  });
+
   it("a scored payload with a decomposition field fails the strict parse (§11.7)", () => {
     const s = source();
-    const p = serializeStudentReport(s, "scored");
+    const p = serializeStudentReport(s, "scored", BREAKDOWN);
     expect(() =>
       examReportScoredSchema.parse({
         ...p,
@@ -170,7 +231,7 @@ describe("per-state serializers (§11.3)", () => {
         partial_display_scaled: 690,
       },
     });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), RW_ROWS);
     expect(p.report_state).toBe("partial_scored");
     if (p.report_state !== "partial_scored") return;
     expect(p.score.total_scaled).toBeNull();
@@ -187,11 +248,15 @@ describe("per-state serializers (§11.3)", () => {
     expect(p.partial_disclosure.summary).not.toMatch(
       /total score is \d|estimated|projected/i,
     );
+    // G1: only the scored section is broken down.
+    expect(new Set(p.domain_breakdown.map((r) => r.section))).toEqual(
+      new Set(["RW"]),
+    );
   });
 
   it("pending: no score, no disclosure block (§15.4)", () => {
     const s = source({ score_run: null, disclosure: null });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), []);
     expect(p.report_state).toBe("scoring_pending");
     expect(p).not.toHaveProperty("score");
     expect(p).not.toHaveProperty("disclosure");
@@ -206,7 +271,7 @@ describe("per-state serializers (§11.3)", () => {
         recorded_at: "2026-09-25T12:05:00Z",
       },
     });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), []);
     expect(p.report_state).toBe("failed_requires_review");
     if (p.report_state !== "failed_requires_review") return;
     expect(p.failure_summary.incident_reference).toBe("INC-a1b2c3d4");
@@ -221,7 +286,7 @@ describe("per-state serializers (§11.3)", () => {
 
   it("revoked access: 200 unavailable with no score (§11.5b)", () => {
     const s = source();
-    const p = serializeStudentReport(s, reportStateOf(s, false));
+    const p = serializeStudentReport(s, reportStateOf(s, false), []);
     expect(p.report_state).toBe("unavailable");
     expect(JSON.stringify(p)).not.toMatch(/scaled|1340|disclosure/);
   });
@@ -238,10 +303,10 @@ describe("per-state serializers (§11.3)", () => {
         grace_expires_at: "2026-09-25T00:00:00Z",
       },
     });
-    expect(serializeStudentReport(live, "not_completed")).toMatchObject({
+    expect(serializeStudentReport(live, "not_completed", [])).toMatchObject({
       resumable: true,
     });
-    expect(serializeStudentReport(late, "not_completed")).toMatchObject({
+    expect(serializeStudentReport(late, "not_completed", [])).toMatchObject({
       resumable: false,
     });
   });

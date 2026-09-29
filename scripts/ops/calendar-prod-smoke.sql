@@ -83,9 +83,10 @@ $preflight$;
 -- ----------------------------------------------------------------------------
 INSERT INTO public.student_study_profile
   (student_id, timezone, target_exam_date, target_score,
-   study_days_mask, daily_minutes, full_length_weekday, planner_mode, setup_completed_at)
+   study_days_mask, daily_minutes, full_length_weekday, full_length_interval_weeks,
+   planner_mode, setup_completed_at)
 VALUES (:'student', 'America/Chicago', DATE '2026-11-07', 1400,
-        126, 60, 6, 'auto', now());
+        126, 60, 6, 2, 'auto', now());
 
 -- ----------------------------------------------------------------------------
 -- 2. Generate. `setup`, student-initiated (§12.1), owning the whole horizon.

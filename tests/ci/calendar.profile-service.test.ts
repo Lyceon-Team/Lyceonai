@@ -29,6 +29,7 @@ type ProfileRow = {
   study_days_mask: number;
   daily_minutes: number;
   full_length_weekday: number | null;
+  full_length_interval_weeks: number | null;
   planner_mode: "auto" | "custom";
   setup_completed_at: string | null;
 };
@@ -40,6 +41,7 @@ const COMPLETE: ProfileRow = {
   study_days_mask: 62,
   daily_minutes: 60,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T00:00:00.000Z",
 };
@@ -47,7 +49,7 @@ const COMPLETE: ProfileRow = {
 /**
  * What the upsert reads back: the stored row merged over the prior one, minus the key
  * the service sends to identify the row. `studyProfileSchema` is `.strict()`, so the
- * fake has to hand back exactly the eight columns the SELECT names.
+ * fake has to hand back exactly the nine columns the SELECT names.
  */
 function mergedRow(
   existing: ProfileRow | null,
