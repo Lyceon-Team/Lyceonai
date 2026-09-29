@@ -343,11 +343,11 @@ function Router() {
           )}
         />
 
-        {/* Guardian routes - require guardian or admin role */}
+        {/* Guardian routes - guardian role only (G2-01; the server refuses admins too) */}
         <Route
           path="/guardian"
           component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
+            <RequireRole allow={["guardian"]}>
               <GuardianDashboard />
             </RequireRole>
           )}

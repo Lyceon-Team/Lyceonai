@@ -5035,6 +5035,18 @@ BEGIN
     RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
   END IF;
 
+  -- G2-01: both parties' roles, read here rather than trusted from the caller. The grantee
+  -- must be a guardian and the subject a student; anything else (an admin, a second student,
+  -- a guardian as subject, an id with no profile) is refused BEFORE anything is written.
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_guardian_id AND role = 'guardian') THEN
+    RAISE EXCEPTION 'grantee is not a guardian' USING ERRCODE = 'LY006';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_student_id AND role = 'student') THEN
+    RAISE EXCEPTION 'subject is not a student' USING ERRCODE = 'LY006';
+  END IF;
+
   -- Edge case 2: already linked is a 409, not a duplicate row. Only 'active' is
   -- checked because SCL-080 leaves no reachable pending status.
   IF EXISTS (
