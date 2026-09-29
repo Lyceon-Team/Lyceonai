@@ -19,8 +19,14 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
-import UpdatePassword from "@/pages/update-password";
-import NotificationsPage from "@/pages/notifications";
+
+// @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
+// plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
+// eager, because they are the landing surfaces whose first paint should not wait on a second
+// chunk request. Every other page, including these two, is lazy and loads under the Router's
+// Suspense fallback.
+const UpdatePassword = lazy(() => import("@/pages/update-password"));
+const NotificationsPage = lazy(() => import("@/pages/notifications"));
 
 const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
