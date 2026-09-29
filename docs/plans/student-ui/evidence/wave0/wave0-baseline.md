@@ -139,11 +139,27 @@ Server-side `duration_ms` is the app's own `request` log event (`component: API`
 
 ### 3.3 Cold
 
-COLD_SECTION
+Production was idle for 21 minutes: the runtime logs show no request between 21:22:10 and 21:43:19Z. At 21:43:19Z, five concurrent signed-in requests went out: the three endpoints plus two more `/api/profile`. Raw data: [`ui00b-cold.txt`](ui00b-cold.txt).
+
+| Endpoint | Client total (through proxy) | Server handler `duration_ms` | Warm server median (§3.2) |
+|---|---|---|---|
+| `/api/profile` (×3) | 3.52 s, 3.60 s, 3.61 s | 2042, 2050, 2037 | 438 |
+| `/api/progress/kpis` | 3.79 s | 2185 | 548 |
+| `/api/practice/sessions/open` | 3.39 s | 1891 | 193 |
+
+Every one of the five requests carries its own boot block (`[API] Starting Lyceon API server…`, environment validation, `[SUPABASE-HTTP] Client initialized`), so five instances started. Timeline for the `/api/profile` request `e21d83de`: sent 21:43:19.27Z; the boot's environment check logged at 20.744Z; the handler ran about 20.78 to 22.83Z (2,042 ms, which includes loading `tutor_context_runtime_config` at 22.31Z); the client had the response at 3.52 s.
+
+**Cold start, end to end: 3.4 to 3.8 s client-side against 0.37 to 0.74 s warm, about 3 s extra.** That splits into roughly 1.4 to 1.5 s from request to the end of the boot, plus a first-request handler of 1.9 to 2.2 s against 0.19 to 0.55 s warm. The two instances that booted during the burst in §3.4 ran their first handler in 338 and 375 ms after a boot of about 0.9 s, and came back in 1.85 s client-side. So the 2-second handler after the long idle is not intrinsic to a new instance; it looks like upstream warm-up after idle (Supabase auth and data calls), which is unverified from here. **Cold start is material:** after an idle period, the first dashboard load pays about 3 extra seconds on every API call it makes in parallel. UI-18 acts on this number.
 
 ### 3.4 Fluid compute
 
-FLUID_SECTION
+**Enabled, as observed from behavior.** The flag itself is not readable here: the Vercel tools' `get_project` and `get_deployment` return no `fluid` or `resourceConfig` field, the deployment has no file tree, and `vercel.json` has no `fluid` key, so any setting is at project level. The behavior test decides it:
+
+- 30 s after the cold probe, with its 5 instances warm, 15 concurrent signed-in `GET /api/practice/sessions/open` were sent (21:43:50.65Z). The logs for 21:22:10 to 21:44:10Z contain exactly those 20 requests and nothing else.
+- All 15 were handled at the same time: authenticated between 21:43:51.359 and 52.386Z, the 13 on warm instances between .359 and .542, with handlers of 399 to 600 ms against 174 to 217 ms sequential.
+- Only **2** of the 15 carry a boot block. So 15 overlapping requests ran on at most **7** instances (5 warm + 2 new). Several instances served more than one request at a time, which only Fluid compute's in-function concurrency does; classic functions run one request per instance and would have booted at least 10.
+
+Raw data: [`ui00b-fluid-burst.txt`](ui00b-fluid-burst.txt). Karl can confirm the setting in one look: Vercel → `lyceonai` → Settings → Functions → Fluid Compute.
 
 ---
 
