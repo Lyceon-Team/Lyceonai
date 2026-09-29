@@ -1,4 +1,6 @@
 import { ReactNode, useState } from "react";
+import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
+import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +32,8 @@ interface AuthUserResponse {
 }
 
 export function RequireRole({ allow, children }: RequireRoleProps) {
-  const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
+  const { user, authLoading, isAdmin, isGuardian, accountUnavailable } =
+    useSupabaseAuth();
   const [location] = useLocation();
 
   // Was the guardian re-consent prompt waved away? Two sources, deliberately.
@@ -75,6 +78,12 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     );
   }
 
+  // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —
+  // the next sign-in would be refused the same way and loop back.
+  if (!user && accountUnavailable) {
+    return <AccountUnavailable />;
+  }
+
   if (!user) {
     // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
     // Carry the intended destination — path AND query — into the login redirect so the guardian
@@ -88,11 +97,13 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     return <Redirect to={loginPathWithReturn(intended)} replace />;
   }
 
-  const userRole: UserRole = isAdmin
-    ? "admin"
-    : isGuardian
-      ? "guardian"
-      : "student";
+  // G2-02: the role is PARSED, never defaulted. This used to fall through to "student" for
+  // anything that was not admin or guardian, so an unknown role saw student pages.
+  const parsedRole = runtimeRoleSchema.safeParse(user.role);
+  if (!parsedRole.success) {
+    return <AccountUnavailable />;
+  }
+  const userRole: UserRole = parsedRole.data;
 
   const isAllowed =
     allow.includes(userRole) || (isAdmin && allow.includes("admin"));

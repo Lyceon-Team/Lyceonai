@@ -1207,6 +1207,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-admin-denied.json \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
+      # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
+      # the real session middleware, the row is never rewritten, public routes still answer. Real
+      # PG; behind the summary gate because a skipped file exits 0.
+      - name: Unknown role fails closed → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/role-fail-closed.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-role-fail-closed.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-role-fail-closed.json \
+            --file tests/ci/role-fail-closed.pg.ci.test.ts
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the

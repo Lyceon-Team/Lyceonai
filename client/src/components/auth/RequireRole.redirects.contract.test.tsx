@@ -14,7 +14,7 @@ import { RequireRole } from "./RequireRole";
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 
 let authState: {
-  user: { id: string } | null;
+  user: { id: string; role: "student" | "guardian" | "admin" } | null;
   authLoading: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
@@ -108,7 +108,7 @@ describe("RequireRole declarative onboarding gate", () => {
 
   it("redirects an incomplete student to /profile/complete before the feature page", () => {
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -130,7 +130,7 @@ describe("RequireRole declarative onboarding gate", () => {
 
   it("renders children once onboarding is complete", () => {
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -150,7 +150,7 @@ describe("RequireRole declarative onboarding gate", () => {
 
   it("never gates an admin on onboarding (renders children even when incomplete)", () => {
     authState = {
-      user: { id: "a1" },
+      user: { id: "a1", role: "admin" },
       authLoading: false,
       isAdmin: true,
       isGuardian: false,
@@ -166,7 +166,7 @@ describe("RequireRole declarative onboarding gate", () => {
   it("does not re-redirect when already on /profile/complete (no loop)", () => {
     location = "/profile/complete";
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,

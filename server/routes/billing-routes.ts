@@ -47,7 +47,8 @@ import { Request, Response, Router } from "express";
 import type Stripe from "stripe";
 import {
   requireSupabaseAuth,
-  sendUnauthenticated,
+  sendNoUser,
+  sendRoleUnrecognized,
 } from "../middleware/supabase-auth";
 import {
   getStripeClient,
@@ -88,7 +89,7 @@ import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { normalizeRuntimeRole } from "../lib/auth-role";
+import { parseRuntimeRole } from "../lib/auth-role";
 
 /**
  * How many of a guardian's subscriptions to scan when deciding whether to add
@@ -127,9 +128,11 @@ router.post(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
 
     if (role === "admin") {
       return res
@@ -709,9 +712,11 @@ router.get(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)
@@ -901,9 +906,11 @@ router.post(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)

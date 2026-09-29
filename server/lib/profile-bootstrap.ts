@@ -1,6 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
-import { normalizeRuntimeRole, type RuntimeRole } from "./auth-role.js";
+import { parseRuntimeRole, type RuntimeRole } from "./auth-role.js";
 
 /**
  * @spec [Doc-01_V8 Part I — Identity Model (one profiles row per authenticated user) | contracts/auth-login-e2e.contract.md AL-7]
@@ -14,6 +14,22 @@ import { normalizeRuntimeRole, type RuntimeRole } from "./auth-role.js";
  * a second verified-email identity maps to the SAME auth id (this case becomes unreachable) and this
  * guard is retired — closing G10. The genesis idx_profiles_email_active unique index stays the DB backstop.
  */
+/**
+ * @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
+ *
+ * plain English: the profile's stored role is not one the application understands (the
+ * `profile_role` enum also holds 'tutor' and 'teacher'). The session must be refused, and the
+ * row must be left as it is: an operator decides what the account is, never a default.
+ */
+export class UnrecognizedRoleError extends Error {
+  readonly userId: string;
+  constructor(userId: string) {
+    super("Profile role is not one this application recognises");
+    this.name = "UnrecognizedRoleError";
+    this.userId = userId;
+  }
+}
+
 export class AccountEmailConflictError extends Error {
   readonly code = "ACCOUNT_EMAIL_CONFLICT" as const;
   constructor(message: string) {
@@ -53,7 +69,7 @@ type EnsureProfileContext = {
  * creator is the handle_new_user trigger (migration 20260619000000), which inserts exactly one row in
  * the SAME transaction as the auth.users insert — so by the time any authenticated request or the OAuth
  * callback runs, the row exists. This function therefore NEVER creates a profile. It reads the row the
- * trigger made, normalizes a legacy/missing role if needed, and reconciles the only two ways the row can
+ * trigger made, refuses (UnrecognizedRoleError, G2-02) a role the app does not know without writing it, and reconciles the only two ways the row can
  * legitimately be absent: (1) a same-email second identity under linking-OFF (owned by another auth id)
  * → AL-7 conflict; (2) genuinely absent + unowned → trigger anomaly, hard error (never silently create).
  * Expected outcome: existing users read fast; the duplicate-identity edge is refused cleanly; a missing
@@ -79,47 +95,15 @@ export async function ensureProfileForAuthUser(
   }
 
   if (existingProfile) {
-    const normalizedRole = normalizeRuntimeRole(existingProfile.role);
-
-    if (existingProfile.role !== normalizedRole) {
-      const { data: updatedProfile, error: updateError } = await supabaseAdmin
-        .from("profiles")
-        .update({
-          role: normalizedRole,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-        .select(PROFILE_SELECT)
-        .single();
-
-      if (updateError || !updatedProfile) {
-        throw new Error(
-          `Failed to normalize profile role: ${updateError?.message || "profile update returned null"}`,
-        );
-      }
-
-      logger.info(
-        "AUTH",
-        "profile_role_normalized",
-        "Normalized legacy or missing profile role",
-        {
-          userId: user.id,
-          fromRole: existingProfile.role,
-          toRole: normalizedRole,
-          source: context.source,
-          requestId: context.requestId,
-        },
-      );
-
-      return {
-        ...(updatedProfile as Omit<ProfileRow, "role">),
-        role: normalizedRole,
-      };
+    // G2-02: parse, never default, and never write. The previous code mapped an unknown role
+    // to 'student' and UPDATEd the row, so a 'tutor'/'teacher' account became a student.
+    const role = parseRuntimeRole(existingProfile.role);
+    if (role === null) {
+      throw new UnrecognizedRoleError(user.id);
     }
-
     return {
       ...(existingProfile as Omit<ProfileRow, "role">),
-      role: normalizedRole,
+      role,
     };
   }
 

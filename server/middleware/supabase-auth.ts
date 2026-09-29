@@ -4,7 +4,9 @@ import { logger } from "../logger.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
+  UnrecognizedRoleError,
 } from "../lib/profile-bootstrap.js";
+import { ROLE_UNRECOGNIZED } from "../../packages/shared/src/runtime-role-schema";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
 /**
@@ -195,6 +197,13 @@ declare global {
     interface Request {
       supabase?: SupabaseClient;
       user?: SupabaseUser;
+      /**
+       * G2-02: set by `supabaseAuthMiddleware` when the signed-in account's stored role is not
+       * one the application recognises. No `user` is attached, and every "signed-in user
+       * required" refusal answers 403 `ROLE_UNRECOGNIZED` instead of 401 — a 401 would read as
+       * "signed out" to the client and loop it back to the login page.
+       */
+      roleUnrecognized?: boolean;
     }
   }
 }
@@ -225,6 +234,34 @@ export function sendUnauthenticated(res: Response, requestId?: string) {
   });
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
+ *
+ * plain English: the refusal for a signed-in account whose role the application does not know.
+ * 403, with `code: ROLE_UNRECOGNIZED`, so the client can show a neutral "account unavailable"
+ * screen rather than treat it as a sign-out. The body names no role and nothing about the account.
+ */
+export function sendRoleUnrecognized(res: Response, requestId?: string) {
+  return sendDenial(res, 403, {
+    error: "Account unavailable",
+    message:
+      "This account can't be opened. Please contact support.",
+    requestId,
+    extra: { code: ROLE_UNRECOGNIZED },
+  });
+}
+
+/**
+ * The one "no signed-in user" refusal: 403 `ROLE_UNRECOGNIZED` when the middleware refused an
+ * unrecognised role, otherwise the ordinary 401.
+ */
+export function sendNoUser(req: Request, res: Response) {
+  if (req.roleUnrecognized) {
+    return sendRoleUnrecognized(res, req.requestId);
+  }
+  return sendUnauthenticated(res, req.requestId);
+}
+
 export function sendForbidden(
   res: Response,
   options: Omit<DenialResponseOptions, "requestId"> & { requestId?: string },
@@ -237,7 +274,7 @@ export function requireRequestUser(
   res: Response,
 ): SupabaseUser | null {
   if (!req.user?.id) {
-    sendUnauthenticated(res, req.requestId);
+    sendNoUser(req, res);
     return null;
   }
 
@@ -254,7 +291,7 @@ export function requireRequestAuthContext(
   }
 
   if (!req.supabase) {
-    sendUnauthenticated(res, req.requestId);
+    sendNoUser(req, res);
     return null;
   }
 
@@ -500,10 +537,24 @@ export async function supabaseAuthMiddleware(
     }
 
     let emailConflict = false;
+    let roleUnrecognized = false;
     const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
       source: "supabase_auth_middleware",
       requestId: req.requestId,
     }).catch((profileError) => {
+      // G2-02: a stored role the application does not know. Refuse the SESSION, not the request:
+      // no user is attached, public routes still answer (sign-out works), and every route that
+      // needs a signed-in user answers 403 ROLE_UNRECOGNIZED. The row is not touched.
+      if (profileError instanceof UnrecognizedRoleError) {
+        roleUnrecognized = true;
+        logger.warn(
+          "AUTH",
+          "role_unrecognized",
+          "Refused a session whose profile role is not recognised",
+          { userId: user.id, requestId: req.requestId },
+        );
+        return null;
+      }
       // AL-7 (profile-per-human): this email is already owned by another identity. Fail closed with a
       // deliberate 409, never a 500 and never a forked profile.
       if (profileError instanceof AccountEmailConflictError) {
@@ -531,6 +582,11 @@ export async function supabaseAuthMiddleware(
       );
       return null;
     });
+
+    if (roleUnrecognized) {
+      req.roleUnrecognized = true;
+      return next();
+    }
 
     if (emailConflict) {
       return res.status(409).json({
@@ -622,7 +678,7 @@ export async function requireSupabaseAuth(
   // requireRequestUser routes can't bypass it and a new route is locked by default. (Was: this also
   // did the deletion 403; subsumed by enforceDeletionLock so the two can never diverge.)
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
   return next();
 }
@@ -722,7 +778,7 @@ export function requireSupabaseAdmin(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (!req.user?.isAdmin) {
@@ -756,7 +812,7 @@ export function requireConsentCompliance(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (req.user?.is_under_13 && !req.user?.guardian_consent) {
@@ -783,7 +839,7 @@ export function requireProfileComplete(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (!req.user.profile_completed_at) {
@@ -831,7 +887,7 @@ export function requireStudentOnly(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (req.user.role !== "student") {
@@ -892,7 +948,7 @@ export function requireStudentOrAdmin(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (req.user.isGuardian && !req.user.isAdmin) {
@@ -912,6 +968,12 @@ export function requireStudentOrAdmin(
       message: "Guardians cannot access student practice features",
       requestId: req.requestId,
     });
+  }
+
+  // G2-02: an allow-list, not a deny-list. Only 'student' (and admin, above) reaches a student
+  // route; anything else a user object might carry is refused rather than treated as a student.
+  if (!req.user.isAdmin && req.user.role !== "student") {
+    return sendRoleUnrecognized(res, req.requestId);
   }
 
   if (!req.user.isAdmin && req.user.is_under_13 && !req.user.guardian_consent) {
