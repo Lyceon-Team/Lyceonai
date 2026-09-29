@@ -13,6 +13,8 @@
 
 **Wave order.** Work one wave at a time. A wave starts only after every row in the previous wave is CLOSED.
 
+**One PR per wave, one commit per row.** Each wave ships as a single PR against `guardian`, on one `claude/guardian-wave-<n>` branch. Inside it, each row is exactly one commit, and the commit message starts with the row ID (`G1-06: …`). A reviewer can read, revert or bisect one row without touching the others. Overlaps between rows are resolved as the commits land and are described in the PR. (Owner ruling, 2026-09-29. It replaces one PR per row, which Wave 1 used for #945–#955: those PRs overlapped in the same handlers and had to be merged into each other after every merge.)
+
 **Rows that change what the guardian sees.** The PR must also carry an SCL entry. Number it from the highest SCL across all branches and open PRs, plus one.
 
 ## Karl's rulings (2026-09-27)
