@@ -422,7 +422,9 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     try {
       const res = await get(GUARDIAN, reportUrl(STUDENT, sid));
       expect(res.status).toBe(402);
-      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+      // SCL-185 (UI-01): the feature gate's flat 402 names the refused key.
+      expect(res.body.code).toBe("entitlement_required");
+      expect(res.body.details).toEqual({ feature: "exam_full_length" });
       expect(JSON.stringify(res.body)).not.toMatch(/scaled|domain/);
     } finally {
       await testPg!.query(

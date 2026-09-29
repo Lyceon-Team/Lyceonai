@@ -12,7 +12,8 @@
  * (GET /forms — SCL-147; GET and PUT the module workspace — SCL-145), and nothing
  * else — no form publish, no report (04C's own router), no outbox re-drive. Every handler runs, in this order:
  *   1. auth       — req.user from supabaseAuthMiddleware (mount also requires it);
- *   2. entitlement — canAccessFeature(user.id, 'exam_full_length'), 403 forbidden;
+ *   2. entitlement — canAccessFeature(user.id, 'exam_full_length'), 403 entitlement_required
+ *                    with details.feature (SCL-185, UI-01);
  *   3. Zod        — params and body through the shared schemas, 400 invalid_request;
  *   4. domain     — one exam-runtime-service call (session ownership, grace, state
  *                   and timing are decided in SQL, by server time);
@@ -55,6 +56,7 @@ import {
   examSessionParamsSchema,
   examWorkspaceSaveRequestSchema,
 } from "../../packages/shared/src/exam-runtime-schema";
+import { ENTITLEMENT_REQUIRED_CODE } from "../../packages/shared/src/entitlement-denial";
 
 // Defined beside the service so a non-route caller (the calendar adapter) reads the same
 // key without importing this router; re-exported so existing importers are unchanged.
@@ -136,12 +138,17 @@ async function authorizeExamCaller(
         requestId: req.requestId,
       },
     );
+    // @spec [Doc-04A_V2.2 §16.1 step 2, §16.2; SCL-185 (UI-01)] | @implemented [2026-09-29]
+    // plain English: the status stays 403 (§16.2); the code is the platform's paid-feature
+    // denial and names the refused `canAccessFeature` key, so the client tells "not paid"
+    // apart from the session-ownership 403 (`forbidden`) without reading the status.
     sendFailure(
       res,
       {
         status: 403,
-        code: "forbidden",
+        code: ENTITLEMENT_REQUIRED_CODE,
         message: "Full-length exams need an active subscription.",
+        details: { feature: EXAM_FEATURE_KEY },
       },
       req.requestId,
     );

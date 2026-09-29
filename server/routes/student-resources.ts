@@ -74,6 +74,7 @@ import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
 import { readGuardianCalendar } from "../services/calendar/read-service";
 import { sendPaymentRequired } from "../lib/http-errors";
+import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import {
   toGuardianExamList,
   toGuardianExamReport,
@@ -131,7 +132,9 @@ const router = Router({ mergeParams: true });
  * `/kpi/overall` away from free students, which is a product decision. Changing it is one
  * edit to this table.
  */
-export const requiresEntitlement: Record<string, string | null> = {
+// Keys typed against the shared Doc 01 §26.1 enum (SCL-185): the key is also the denial's
+// `details.feature`, so a table entry naming a non-existent feature fails to compile.
+export const requiresEntitlement: Record<string, EntitlementFeatureKey | null> = {
   [STUDENT_RESOURCE_PATHS.masteryDomains]: "mastery_detail",
   [STUDENT_RESOURCE_PATHS.masterySkills]: "mastery_detail",
   [STUDENT_RESOURCE_PATHS.kpiSections]: null,
@@ -208,7 +211,8 @@ async function entitlementGate(
   if (await EntitlementService.canAccessFeature(studentId, featureKey)) {
     return true;
   }
-  sendPaymentRequired(res, requestId);
+  // SCL-185 (UI-01): the 402 names the refused key as `details.feature`.
+  sendPaymentRequired(res, featureKey, requestId);
   return false;
 }
 

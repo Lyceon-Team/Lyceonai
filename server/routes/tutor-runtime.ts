@@ -91,8 +91,15 @@ import {
   listConversationsQuerySchema,
   type ConversationDetail,
 } from "../../packages/shared/src/tutor-lifecycle-schema";
+import type {
+  EntitlementDenialDetails,
+  EntitlementFeatureKey,
+} from "../../packages/shared/src/entitlement-denial";
 
 const router = Router();
+
+/** Doc 01 §26.1: the tutor's feature key, named in its denial body (SCL-185, UI-01). */
+const TUTOR_FEATURE_KEY = "tutor_access" satisfies EntitlementFeatureKey;
 
 // LISA-FULL-007: TUTOR_ANTI_LEAK_SUBSTITUTION, hasAnswerLeak, and
 // removeInternalMetadataMentions are now internal to the output serializer
@@ -201,6 +208,13 @@ type TutorConversationRow = {
  * plain English: server-authoritative entitlement gate — every tutor route
  * re-checks entitlement per request (INV-03-18); never trusts client state.
  * Returns true and sends the 403 response if entitlement is NOT active.
+ *
+ * @spec [Doc-03B_V2 §5.9 + CR-03B-21; Doc-01_V8 §26.1; SCL-185 (UI-01)] | @implemented [2026-09-29]
+ * plain English: the denial keeps its 403 and `entitlement_required`, and now names the
+ * Doc 01 feature key `tutor_access` in `details.feature` — the same field every paid-feature
+ * denial carries, so the client reads one contract. The predicate is deliberately unchanged
+ * (owner ruling 2026-09-29: the tutor keeps `isEntitlementActiveForProfile` and its own
+ * live-exam block); only the body gains the key.
  */
 async function denyIfNotEntitled(
   studentId: string,
@@ -209,7 +223,8 @@ async function denyIfNotEntitled(
   const active =
     await EntitlementService.isEntitlementActiveForProfile(studentId);
   if (!active) {
-    sendTutorError(res, "entitlement_required");
+    const details: EntitlementDenialDetails = { feature: TUTOR_FEATURE_KEY };
+    sendTutorError(res, "entitlement_required", details);
     return true;
   }
   return false;
@@ -1546,7 +1561,6 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sendTutorError(res, "canonical_write_failed");
       return;
     }
-    const assignmentId = instructionAssignmentResult.assignmentId;
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope. Two consumers, two scopes:
@@ -2273,7 +2287,7 @@ router.get(
           // Only tutor-role messages need scanning. Student messages
           // and null previews pass through. The preview is truncated
           // AFTER scanning so a leak at position 90 is still caught.
-          let safePreview: string | null = null;
+          let safePreview: string | null;
           if (rawPreview !== null && lastRole === "tutor") {
             const listScanContext: OutputScanContext = {
               conversationId: conv.id,
