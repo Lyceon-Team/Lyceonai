@@ -44,6 +44,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { logger } from "../../server/logger";
 import {
   makePgSupabase,
   bootstrapPgDatabase,
@@ -301,6 +302,81 @@ describe.skipIf(!PG_AVAILABLE)(
       // `full_length_pair` would then reject in the other direction.
       expect(rows[0]!.full_length_weekday).toBeNull();
       expect(rows[0]!.full_length_interval_weeks).toBeNull();
+    });
+
+    // ── (6) Step 4: the 400 says WHICH field, without saying what was in it ──
+    /**
+     * Two bodies, because Zod reports them through two different mechanisms and only one of
+     * them was ever in evidence. A missing required key fails the BASE object parse, and a
+     * base failure short-circuits `superRefine` entirely — which is why the production 400
+     * named `idempotency_key` alone and nothing else about that body. The second case is a
+     * body that gets past the base parse and is refused by the refinements, so the log has
+     * to carry SEVERAL field names rather than the first one it meets.
+     */
+    function rejectionsFrom(
+      warn: ReturnType<typeof vi.spyOn>,
+    ): { code: string; fields: string[]; method?: string; path?: string }[] {
+      return warn.mock.calls
+        .filter((call) => call[1] === "request_rejected")
+        .map(
+          (call) =>
+            call[3] as {
+              code: string;
+              fields: string[];
+              method?: string;
+              path?: string;
+            },
+        );
+    }
+
+    it("LOGS the rejected field names at WARN, and no values", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        // (a) the production body: the base parse refuses it for the missing key.
+        const missingKey = await request(app)
+          .put("/api/calendar/profile")
+          .send(setupBody());
+        expect(missingKey.status).toBe(400);
+
+        let logged = rejectionsFrom(warn);
+        // Presence before absence: there IS a log line, before anything asserts what is in
+        // it or missing from it.
+        expect(logged).toHaveLength(1);
+        expect(logged[0]!.code).toBe("INVALID_BODY");
+        expect(logged[0]!.fields).toEqual(["idempotency_key"]);
+        // It names the route, so a log reader knows which form drifted.
+        expect(logged[0]!.method).toBe("PUT");
+        expect(logged[0]!.path).toContain("/profile");
+
+        // (b) past the base parse, refused by the refinements — TWO fields, both named.
+        warn.mockClear();
+        const refused = await request(app)
+          .put("/api/calendar/profile")
+          .send({
+            ...setupBody({
+              daily_minutes: 37, // not one of the served presets
+              full_length_weekday: 6, // half a pair: no interval beside it
+              full_length_interval_weeks: undefined,
+            }),
+            idempotency_key: key(),
+          });
+        expect(refused.status).toBe(400);
+
+        logged = rejectionsFrom(warn);
+        expect(logged).toHaveLength(1);
+        expect([...logged[0]!.fields].sort()).toEqual([
+          "daily_minutes",
+          "full_length_interval_weeks",
+        ]);
+
+        // §12.1: paths only, on every line. The rejected VALUES are part of the request
+        // body — `37` is the student's input, and a log line is not a place for it.
+        const serialised = JSON.stringify(warn.mock.calls);
+        expect(serialised).not.toContain("37");
+        expect(serialised).not.toContain("America/Chicago");
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     /**

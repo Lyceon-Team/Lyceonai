@@ -12,6 +12,7 @@ import React from "react";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
+import { EXAM_FREQUENCIES } from "../copy/exam-cadence";
 import { SetupPopup, type SetupAnswers } from "./SetupPopup";
 
 afterEach(cleanup);
@@ -315,7 +316,20 @@ describe("the practice-test frequency (Brief 14)", () => {
     ) as HTMLButtonElement[];
   }
 
-  it("offers the four cadences and None, and opens UNANSWERED", () => {
+  /**
+   * THE CHIP THAT LOOKS PRESSED AND THE VALUE THAT IS SENT ARE TWO DIFFERENT QUESTIONS, and
+   * from Brief 16 Step 3 this row answers them differently.
+   *
+   * This case used to assert None was pressed, because a cadence seeded into the SUBMITTED
+   * value left the pair half set at rest and the answer-nothing path met a 400. The owner's
+   * Step 3 ruling keeps that outcome and changes the display: the control opens on
+   * `default_full_length_interval_weeks`, the day row stays unanswered per R-08-27, pressing
+   * through with neither answered still sends both null, and picking a day adopts what is
+   * shown. The two cases below are the two halves, and BOTH are needed — an implementation
+   * that seeds the submitted value passes the first and fails the second, which is exactly
+   * the defect this display used to be a workaround for.
+   */
+  it("opens on the SERVED default, not on None", () => {
     open();
     scheduleStep();
 
@@ -327,15 +341,63 @@ describe("the practice-test frequency (Brief 14)", () => {
       "Every 3 weeks",
       "Monthly",
     ]);
-    // None is pressed, like the weekday row above it. `default_full_length_interval_weeks`
-    // is 2 in DEFAULTS and is deliberately NOT pre-pressed: the weekday opens unanswered
-    // (R-08-27), so a pre-pressed cadence would leave the pair half set at rest, and the
-    // answer-nothing path would submit something `full_length_pair` refuses.
     const pressed = chips.filter(
       (c) => c.getAttribute("aria-pressed") === "true",
     );
     expect(pressed).toHaveLength(1);
+    // `default_full_length_interval_weeks` is 2 in DEFAULTS. Read off the served value
+    // rather than the literal "Every 2 weeks", so a form that hardcoded the cadence would
+    // still fail this — see the next case, which serves 4.
+    expect(pressed[0]!.textContent).toBe(
+      EXAM_FREQUENCIES.find(
+        (f) => f.value === DEFAULTS.default_full_length_interval_weeks,
+      )!.label,
+    );
+  });
+
+  it("serves 4 and presses 'Monthly' — the DISPLAY follows the server too", () => {
+    open({ defaults: { ...DEFAULTS, default_full_length_interval_weeks: 4 } });
+    scheduleStep();
+
+    const pressed = chipsOf("calendar-setup-fl-frequency").filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]!.textContent).toBe("Monthly");
+  });
+
+  it("but pressing through with NEITHER answered still sends both null", () => {
+    const { submitted } = open();
+    scheduleStep();
+    // Nothing touched on the exam rows — the row is showing "Every 2 weeks" the whole time.
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted).toHaveLength(1);
+    // R-08-27 and `full_length_pair`, both still intact. The prefill was never credited to
+    // a student who said nothing; it was only ever shown to them.
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+  });
+
+  it("pressing None on the frequency row keeps None pressed", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "None",
+      )!,
+    );
+    const pressed = chipsOf("calendar-setup-fl-frequency").filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    // An ANSWER of None has to stick. If the row went back to showing the default, the
+    // student's only way to say "no tests" would be a chip that undoes itself.
     expect(pressed[0]!.textContent).toBe("None");
+
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+    expect(submitted[0]!.full_length_weekday).toBeNull();
   });
 
   it("adopts whatever the SERVER prefills when a day is named, never a literal", () => {

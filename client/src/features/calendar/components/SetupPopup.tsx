@@ -186,20 +186,52 @@ export function SetupPopup({
   );
 
   /**
-   * §8.1's cadence, opening UNANSWERED — like the weekday above it, and for the same reason.
+   * §8.1's cadence. THE CHIP THAT LOOKS PRESSED AND THE VALUE THAT IS SENT ARE TWO THINGS,
+   * and this is the state that keeps them apart.
    *
-   * IT WAS SEEDED FROM `default_full_length_interval_weeks`, AND THAT WAS A DEFECT. The
-   * weekday row opens unanswered (R-08-27), so a seeded cadence made the pair HALF SET at
-   * rest: a student who pressed straight through — the path this whole form exists to protect,
-   * and the one 103 of 104 production students take — submitted `{weekday: null, interval: 2}`,
-   * which `full_length_pair` and the Step 2 refinement both refuse. The answer-nothing path
-   * would have 400'd. Caught by its own test before it shipped.
+   * Both requirements are real and they pull in opposite directions:
    *
-   * The served default is not lost: it is the cadence a DAY pick adopts (see the day chips),
-   * which is the same rule the settings sheet follows. A prefill is a value you adopt by
-   * answering, never a value you are credited with for staying silent.
+   *   - The control OPENS ON THE SERVED DEFAULT. `default_full_length_interval_weeks` is a
+   *     prefill exactly like `timezone`, and a frequency row resting on "None" while the
+   *     server says 2 shows the student a setting nobody chose.
+   *   - PRESSING STRAIGHT THROUGH STILL SENDS BOTH HALVES NULL. The weekday row opens
+   *     unanswered (R-08-27), and `full_length_pair` refuses a cadence without a day. A
+   *     cadence seeded into the SUBMITTED value made the pair half set at rest, so the
+   *     answer-nothing path — the path this form exists to protect, and the one 103 of 104
+   *     production students take — submitted `{weekday: null, interval: 2}` and met a 400.
+   *
+   * A `number | null` cannot hold both, because it cannot tell "the student chose None" from
+   * "the student has not chosen". So it does not try: this is a discriminated union (§3.5),
+   * and the two questions are asked of it separately. `submittedWeeks()` is what goes on the
+   * wire; `pressedWeeks()` is what the chips render. A prefill is a value you adopt by
+   * answering, never a value you are credited with for staying silent — and now it can be
+   * shown without being credited.
    */
-  const [flWeeks, setFlWeeks] = useState<number | null>(null);
+  type ExamCadence =
+    | { answered: false }
+    | { answered: true; weeks: number | null };
+  const [cadence, setCadence] = useState<ExamCadence>({ answered: false });
+
+  /** What the chips paint: the student's answer, or the served default while unanswered. */
+  function pressedWeeks(): number | null {
+    return cadence.answered
+      ? cadence.weeks
+      : defaults.default_full_length_interval_weeks;
+  }
+
+  /** What is SENT. Silence is null, whatever the row is showing. */
+  function submittedWeeks(): number | null {
+    return cadence.answered ? cadence.weeks : null;
+  }
+
+  /**
+   * Picking a DAY adopts the cadence on screen — which is the served default until the
+   * student says otherwise. "Picking a day adopts the default" is the whole reason the
+   * default is shown: the student sees what they are about to agree to before they agree.
+   */
+  function adoptShownCadence(): void {
+    setCadence({ answered: true, weeks: pressedWeeks() });
+  }
 
   /**
    * The exam half of step 2's note, from the SHARED readout — the settings sheet prints the
@@ -210,7 +242,9 @@ export function SetupPopup({
   function setupExamNote(): string {
     return examCadenceNote({
       weekday: flWeekday,
-      intervalWeeks: flWeeks,
+      // The SUBMITTED value, not the painted one: the sentence describes what will
+      // actually be scheduled, and while the pair is unanswered that is nothing.
+      intervalWeeks: submittedWeeks(),
       targetExamDate: noDate ? null : examDate,
       today,
       finalExamLeadDays: defaults.final_exam_lead_days,
@@ -245,7 +279,7 @@ export function SetupPopup({
       study_days_mask: maskOf(days),
       daily_minutes: minutes,
       full_length_weekday: flWeekday,
-      full_length_interval_weeks: flWeeks,
+      full_length_interval_weeks: submittedWeeks(),
       timezone,
     };
   }
@@ -416,7 +450,10 @@ export function SetupPopup({
                     active={flWeekday === null}
                     onClick={() => {
                       setFlWeekday(null);
-                      setFlWeeks(null);
+                      // An explicit None on the day is an explicit None on the pair. The
+                      // cadence becomes ANSWERED-as-null rather than returning to unanswered,
+                      // so the frequency row stops showing a default the student just refused.
+                      setCadence({ answered: true, weeks: null });
                     }}
                   >
                     None
@@ -427,10 +464,7 @@ export function SetupPopup({
                       active={flWeekday === d.dow}
                       onClick={() => {
                         setFlWeekday(d.dow);
-                        setFlWeeks(
-                          flWeeks ??
-                            defaults.default_full_length_interval_weeks,
-                        );
+                        adoptShownCadence();
                       }}
                     >
                       {d.label}
@@ -445,9 +479,9 @@ export function SetupPopup({
                   data-testid="calendar-setup-fl-frequency"
                 >
                   <Chip
-                    active={flWeeks === null}
+                    active={pressedWeeks() === null}
                     onClick={() => {
-                      setFlWeeks(null);
+                      setCadence({ answered: true, weeks: null });
                       setFlWeekday(null);
                     }}
                   >
@@ -456,9 +490,9 @@ export function SetupPopup({
                   {SETUP_FREQUENCIES.map((f) => (
                     <Chip
                       key={f.value}
-                      active={flWeeks === f.value}
+                      active={pressedWeeks() === f.value}
                       onClick={() => {
-                        setFlWeeks(f.value);
+                        setCadence({ answered: true, weeks: f.value });
                         // Completes the pair. Setup has no Save to disable, so a cadence with
                         // no day would submit half a pair and meet a 400 — see
                         // DEFAULT_EXAM_WEEKDAY for why the day is Saturday.
