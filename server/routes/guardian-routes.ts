@@ -32,7 +32,11 @@ import {
   GuardianLinkError,
 } from "../../packages/shared/src/guardian-link-schema";
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
-import { redeemStudentLinkCode } from "../lib/student-link-code";
+import {
+  peekLiveCodeOwner,
+  redeemStudentLinkCode,
+  restoreStudentLinkCode,
+} from "../lib/student-link-code";
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
@@ -316,6 +320,45 @@ router.post(
       });
     }
 
+    // G1-06: a redeem that cannot produce a link must not cost the student their code. Find
+    // who holds it WITHOUT spending, and refuse "already linked" before the rotation. The
+    // peek answers exactly the three ways the spend does, so it is not a new oracle.
+    const owner = await peekLiveCodeOwner(parsed.data.code, ttlSeconds);
+    if (owner.ok && owner.studentProfileId !== guardianId) {
+      const { data: existingLink, error: existingLinkError } =
+        await supabaseServer
+          .from("guardian_links")
+          .select("id")
+          .eq("guardian_profile_id", guardianId)
+          .eq("student_profile_id", owner.studentProfileId)
+          .eq("status", "active")
+          .limit(1);
+      if (existingLinkError) {
+        logger.error(
+          "GUARDIAN",
+          "link_redeem",
+          "Active-link pre-check failed",
+          {
+            error: existingLinkError.message,
+            requestId,
+          },
+        );
+        return res.status(503).json({
+          error: { message: "Could not redeem that code. Please try again." },
+          requestId,
+        });
+      }
+      if ((existingLink ?? []).length > 0) {
+        return res.status(409).json({
+          error: {
+            message: "You are already linked to that student.",
+            code: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+          },
+          requestId,
+        });
+      }
+    }
+
     const outcome = await redeemStudentLinkCode(parsed.data.code, ttlSeconds);
 
     if (!outcome.ok && outcome.reason === "unavailable") {
@@ -417,6 +460,27 @@ router.post(
         requestId,
       });
     } catch (err: unknown) {
+      // G1-06: no link was written, so the spend is undone — the code goes back exactly as it
+      // was, unless the student has regenerated since (their newer code wins).
+      if (owner.ok && owner.studentProfileId === studentProfileId) {
+        const restored = await restoreStudentLinkCode({
+          studentProfileId,
+          enteredCode: parsed.data.code,
+          issuedAt: owner.issuedAt,
+          replacement: outcome.replacement,
+        });
+        logger.warn(
+          "GUARDIAN",
+          "link_redeem",
+          "Link write failed after the spend",
+          {
+            code: errorCode(err),
+            codeRestored: restored,
+            requestId,
+          },
+        );
+      }
+
       // LY004 — the pair is already linked. The guardian is a party to that link, so telling
       // them it exists discloses nothing they do not already know (edge case 2).
       if (
@@ -431,7 +495,15 @@ router.post(
           requestId,
         });
       }
-      throw err;
+      // Answered here rather than rethrown: under Express 4 a rethrow from an async handler
+      // is a request with no response (G1-05 fixes the handler as a whole).
+      logger.error("GUARDIAN", "link_redeem", "Link write failed", {
+        reason: err instanceof Error ? err.message : "unknown",
+        requestId,
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
     }
   },
 );
