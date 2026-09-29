@@ -1170,6 +1170,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-calendar-link.json \
             --file client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx
 
+      # @spec [Guardian_Closure_Plan G1-11; audit G-AUD-16] | @implemented [2026-09-29]
+      # The guardian denial sweep: every student-only route and every /api/tutor route, read
+      # from the real app's router, refuses a guardian with the role gate's 403. The guardian
+      # is a real `profiles` row read back from this Postgres (schema-truth gate Rule B), so it
+      # needs the database. Behind the summary gate because a skipped file exits 0.
+      - name: Guardian denial sweep → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-denial-sweep.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-denial-sweep.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-denial-sweep.json \
+            --file tests/ci/guardian-denial-sweep.pg.ci.test.ts
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the
