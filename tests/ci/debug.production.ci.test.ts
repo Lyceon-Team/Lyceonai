@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import { setupSecurityMocks } from "../utils/securityTestUtils";
 
 setupSecurityMocks();
 
 vi.doMock("../../server/middleware/guardian-role", () => ({
-  requireGuardianRole: () => (_req: any, _res: any, next: any) => next(),
+  requireGuardianRole:
+    () => (_req: Request, _res: Response, next: NextFunction) =>
+      next(),
 }));
 
 const { default: app } = await import("../../server/index");
@@ -30,12 +33,18 @@ describe.sequential("Production Debug Surface Hardening", () => {
   it("production_hides_public_debug_surfaces", async () => {
     // NOTE: /api/auth/google/debug was removed with the custom Google OAuth flow (AUTH-001 /
     // OAUTH-001 native conversion). Native Supabase OAuth has no app-side debug surface.
+    //
+    // UI-06 (2026-09-29): these three were DELETED, not hidden. Each used to answer
+    // `{ error: "Not found" }` from its own NODE_ENV branch; now no handler is registered,
+    // so the request lands on the app's `/api/*` fallback. The fallback body is what proves
+    // absence rather than a branch (tests/ci/removed-dead-routes.ci.test.ts proves the same
+    // outside production, where the old branches would have answered 200).
     const paths = ["/api/_whoami", "/api/auth/debug", "/api/health/practice"];
 
     for (const path of paths) {
       const res = await request(app).get(path);
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ error: "Not found" });
+      expect(res.body).toEqual({ error: "API endpoint not found" });
     }
   });
 
@@ -64,7 +73,14 @@ describe.sequential("Production Debug Surface Hardening", () => {
     // Absence proof: re-adding a debug route to the billing surface fails here,
     // in production or otherwise.
     const billingSource = readFileSync(
-      path.resolve(__dirname, "..", "..", "server", "routes", "billing-routes.ts"),
+      path.resolve(
+        __dirname,
+        "..",
+        "..",
+        "server",
+        "routes",
+        "billing-routes.ts",
+      ),
       "utf8",
     );
     expect(billingSource).not.toContain("/debug/");

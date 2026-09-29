@@ -35,13 +35,14 @@ const SERVER_DIRS = [
 ];
 
 const ALLOWLIST: Record<string, string> = {
-  "server/routes/questions-runtime.ts":
-    "HISTORICAL: getQuestionById, submitQuestionFeedback",
+  // UI-05 (2026-09-29): server/routes/questions-runtime.ts left the allowlist with
+  // getQuestionById and submitQuestionFeedback, its only raw `questions` reads; what
+  // survives there (GET /api/questions/stats) reads servable_questions only.
   "server/routes/tutor-runtime.ts":
     "HISTORICAL: existence checks, ID resolution",
   "server/services/question-publish.ts": "ADMIN: authoring/publish pipeline",
   "server/scripts/cleanup-question-stems.ts": "ADMIN: maintenance script",
-  "apps/api/src/routes/healthz.ts": "INFRA: health check",
+  // UI-06 (2026-09-29): apps/api/src/routes/healthz.ts (unmounted) was deleted.
   "apps/api/src/db/client.ts": "INFRA: connectivity probe",
   "apps/api/src/lib/supabase-server.ts": "INFRA: server setup",
   // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed

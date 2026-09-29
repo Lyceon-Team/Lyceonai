@@ -22,7 +22,6 @@ variables:
   testPassword: TestPassword123!
   adminEmail: admin@example.com
   adminPassword: AdminPassword123!
-  adminPasscode: ""
   guardianEmail: guardian@example.com
   guardianPassword: GuardianPass123!
   questionId: REPLACE_ME

@@ -120,31 +120,6 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
   return result;
 }
 
-/**
- * SHARED AUTH HELPER: Resolve user ID from token
- * Returns userId or null if token is invalid/missing
- */
-export async function resolveUserIdFromToken(
-  token: string | null,
-): Promise<string | null> {
-  if (!token) return null;
-
-  try {
-    const supabaseAnon = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!,
-    );
-    const {
-      data: { user },
-      error,
-    } = await supabaseAnon.auth.getUser(token);
-    if (error || !user) return null;
-    return user.id;
-  } catch {
-    return null;
-  }
-}
-
 export interface SupabaseUser {
   id: string;
   email: string;
