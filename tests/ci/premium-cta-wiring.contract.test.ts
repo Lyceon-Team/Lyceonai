@@ -23,16 +23,23 @@ function readCode(filePath: string): string {
 }
 
 describe("Premium CTA wiring contract", () => {
+  /**
+   * @spec [owner ruling 2026-09-03 §3; register UI-06] | @implemented [2026-09-29]
+   * plain English: the third surface here used to be `ScoreProjectionCard.tsx`,
+   * an orphan UI-06 deleted. The live premium lock component is
+   * `PremiumUpgradePrompt` (mastery renders it, asserted below), so it takes
+   * that slot: a dead `href="/"` upgrade link there goes red.
+   */
   it('removes dead "/" upgrade links from known premium lock surfaces', () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-    const projection = read(
-      "client/src/components/progress/ScoreProjectionCard.tsx",
+    const upgradePrompt = read(
+      "client/src/components/billing/PremiumUpgradePrompt.tsx",
     );
 
     expect(dashboard).not.toContain('Link href="/"');
     expect(mastery).not.toContain('href="/"');
-    expect(projection).not.toContain('href="/"');
+    expect(upgradePrompt).not.toContain('href="/"');
   });
 
   /**

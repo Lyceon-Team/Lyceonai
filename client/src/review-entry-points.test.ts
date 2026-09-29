@@ -20,7 +20,7 @@
  * Behavioural coverage of the allowlist lives in `sanitizeReturnPath` below.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -68,17 +68,51 @@ describe("U8 — review is reachable from normal navigation", () => {
     expect(actionsBlock).toContain('href: "/review"');
   });
 
-  it("every other nav component that lists Practice also lists Review", () => {
-    // These three have no importers today, but a revived nav must not ship without
-    // review — the brief's §2.4 rule is about every nav component, not just the live one.
-    for (const file of [
-      "client/src/components/NavBar.tsx",
-      "client/src/components/navigation.tsx",
-      "client/src/components/progress-sidebar.tsx",
-    ]) {
-      const source = read(file);
-      expect(source, `${file} mentions /practice`).toContain("/practice");
-      expect(source, `${file} is missing /review`).toContain("/review");
+  /**
+   * @spec [brief R4 §2.4; register UI-06] | @implemented [2026-09-29] | plain English:
+   * the brief's rule is about EVERY nav component, not just the live one. This used to
+   * name three orphan navs (`NavBar`, `navigation`, `progress-sidebar`); UI-06 deleted
+   * them, so the rule is now enforced by discovery: any component whose file name says
+   * it is navigation (nav / navigation / sidebar / shell / menu, outside the `ui/`
+   * primitives) and that carries a Practice nav entry must carry a Review entry too.
+   * A nav added or revived later is caught without editing this list. Trade-off: a nav
+   * named outside that vocabulary escapes, which is why the live nav is also pinned by
+   * name above.
+   */
+  it("every nav component that links to Practice also links to Review", () => {
+    const componentsDir = join(REPO_ROOT, "client/src/components");
+    const navFiles = (
+      readdirSync(componentsDir, {
+        recursive: true,
+        encoding: "utf8",
+      }) as string[]
+    )
+      .map((relative) => relative.split("\\").join("/"))
+      .filter((relative) => relative.endsWith(".tsx"))
+      .filter((relative) => !relative.startsWith("ui/"))
+      .filter((relative) => !/\.test\.tsx$/.test(relative))
+      .filter((relative) =>
+        /(nav|navigation|sidebar|shell|menu)[^/]*\.tsx$/i.test(relative),
+      )
+      .map((relative) => `client/src/components/${relative}`);
+
+    // Presence before absence: the discovery must find the live nav, or an empty
+    // list would pass this test for the wrong reason.
+    expect(navFiles).toContain("client/src/components/layout/app-shell.tsx");
+
+    const practiceEntry = /href(?:=|:\s*)["']\/practice["']/;
+    const reviewEntry = /href(?:=|:\s*)["']\/review["']/;
+    const linkingPractice = navFiles.filter((file) =>
+      practiceEntry.test(read(file)),
+    );
+    expect(linkingPractice).toContain(
+      "client/src/components/layout/app-shell.tsx",
+    );
+
+    for (const file of linkingPractice) {
+      expect(read(file), `${file} links /practice but not /review`).toMatch(
+        reviewEntry,
+      );
     }
   });
 });
