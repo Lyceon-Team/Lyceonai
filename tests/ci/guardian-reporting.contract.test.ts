@@ -461,16 +461,19 @@ describe("Guardian reporting runtime contract", () => {
       display_name: "Student One",
     });
 
-    const dashboardViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_dashboard_viewed",
+    // G1-04: the event goes to audit_logs (system_event_logs does not exist in any schema),
+    // in the link events' shape. The real-PG proof is tests/ci/guardian-access-audit.pg.ci.test.ts.
+    const dashboardViewed = guardianAuditInserts.find(
+      (row) => row.action === "guardian_dashboard_viewed",
     );
     expect(dashboardViewed).toBeDefined();
     expect(dashboardViewed).toMatchObject({
-      user_id: "guardian-1",
-      details: expect.objectContaining({
+      actor_profile_id: "guardian-1",
+      context: expect.objectContaining({
         linked_student_count: 1,
       }),
     });
+    expect(systemEventInserts).toHaveLength(0);
   });
 
   /**
@@ -540,8 +543,8 @@ describe("Guardian reporting runtime contract", () => {
 
     expect(response.status).toBe(500);
     expect(response.body.error).toBe("Internal server error");
-    const dashboardViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_dashboard_viewed",
+    const dashboardViewed = guardianAuditInserts.find(
+      (row) => row.action === "guardian_dashboard_viewed",
     );
     expect(dashboardViewed).toBeUndefined();
   });

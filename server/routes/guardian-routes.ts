@@ -48,34 +48,49 @@ const requireGuardianAccess = requireGuardianRole({
   message: "You do not have permission to access guardian resources",
 });
 
-type GuardianAccessEventType =
-  | "guardian_dashboard_viewed"
-  | "guardian_report_viewed"
-  | "guardian_access_denied";
-
-async function emitGuardianAccessEvent(args: {
-  eventType: GuardianAccessEventType;
+/**
+ * @spec [Guardian_Closure_Plan G1-04; audit G-AUD-07; Doc 01 V8 §14 Layer 3, §12.1]
+ * | @implemented [2026-09-29]
+ *
+ * plain English: records that a guardian opened their dashboard. It writes to `audit_logs`,
+ * in the same shape the link and revoke events already use (`guardian_link_audit`):
+ * actor = the guardian, no single target, `changes` NULL (nothing changed), and a `context`
+ * of IDs and counts only — never an email, a name, or anything about a student's work.
+ *
+ * WHY IT CHANGED. It wrote to `system_event_logs`, which no migration creates and production
+ * does not have (owner check 2026-09-28), inside `catch { // Best effort only. }` — and the
+ * supabase-js `{ error }` was never read, so the failure did not even reach the catch. Every
+ * dashboard-view record since this route existed was lost without a trace.
+ *
+ * Trade-off: a failed write is logged at ERROR and the roster is still served. The roster is
+ * the guardian's OWN list; each read of a child's data goes through `resolveSubject`, which
+ * records the access and fails closed on an unrecorded one. Failing the roster too would
+ * trade the guardian's ability to see their own links for a record the per-student reads
+ * already keep. The other two event names this type once declared were never emitted by any
+ * code path and are removed.
+ */
+async function recordDashboardView(args: {
   guardianId: string;
-  studentId?: string;
+  linkedStudentCount: number;
   requestId?: string;
-  details?: Record<string, unknown>;
 }): Promise<void> {
-  try {
-    await supabaseServer.from("system_event_logs").insert({
-      event_type: args.eventType,
-      level: "info",
-      source: "guardian_routes",
-      message: args.eventType,
-      user_id: args.guardianId,
-      session_id: args.studentId ?? null,
-      details: {
-        request_id: args.requestId ?? null,
-        student_id: args.studentId ?? null,
-        ...(args.details ?? {}),
-      },
-    });
-  } catch {
-    // Best effort only.
+  const { error } = await supabaseServer.from("audit_logs").insert({
+    actor_profile_id: args.guardianId,
+    target_profile_id: null,
+    action: "guardian_dashboard_viewed",
+    changes: null,
+    context: {
+      request_id: args.requestId ?? null,
+      linked_student_count: args.linkedStudentCount,
+    },
+  });
+  if (error) {
+    logger.error(
+      "GUARDIAN",
+      "dashboard_view_audit_failed",
+      "audit_logs insert for guardian_dashboard_viewed failed",
+      { error: error.message, code: error.code, requestId: args.requestId },
+    );
   }
 }
 
@@ -141,11 +156,10 @@ router.get(
       // CANONICAL: Read from guardian_links, join profiles for display info
       const links = await getAllGuardianStudentLinks(guardianId);
       if (links.length === 0) {
-        await emitGuardianAccessEvent({
-          eventType: "guardian_dashboard_viewed",
+        await recordDashboardView({
           guardianId,
+          linkedStudentCount: 0,
           requestId,
-          details: { linked_student_count: 0 },
         });
         return res.json({ students: [], requestId });
       }
@@ -266,11 +280,10 @@ router.get(
         }),
       );
 
-      await emitGuardianAccessEvent({
-        eventType: "guardian_dashboard_viewed",
+      await recordDashboardView({
         guardianId,
+        linkedStudentCount: roster.length,
         requestId,
-        details: { linked_student_count: roster.length },
       });
       res.json({
         students: roster.map((student, i) => ({
