@@ -23,7 +23,7 @@
 import { Router, type Request, type Response } from "express";
 import {
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
@@ -130,7 +130,7 @@ async function reportFor(
   }
 }
 
-const studentGuards = [requireProfileComplete, requireConsentCompliance];
+const studentGuards = [requireProfileComplete, requireGuardianLinkForUnder13];
 
 router.get(
   "/sessions/:session_id/report",

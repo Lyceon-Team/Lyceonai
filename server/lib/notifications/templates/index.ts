@@ -5,9 +5,10 @@
  * (they were read back from jsonb) and are parsed against the event's strict schema before a
  * template sees them — an event whose payload carries an unexpected key does not render,
  * which is the payload rule enforced at read time as well as at write time. A payload that
- * does not parse is an expected failure, returned as a Result, never thrown. The consent
- * request and deletion-scheduled emails are direct sends (rulings R7/R8) and live in
- * ./guardian-consent-request.ts and ./deletion-scheduled.ts, outside this switch.
+ * does not parse is an expected failure, returned as a Result, never thrown. The
+ * deletion-scheduled email is a direct send (ruling R8) and lives in ./deletion-scheduled.ts,
+ * outside this switch. (The guardian consent-request email was removed with the email-consent
+ * flow, G2-05.)
  */
 import {
   fullLengthNoticePayloadSchema,

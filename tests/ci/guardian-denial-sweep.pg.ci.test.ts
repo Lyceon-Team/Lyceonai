@@ -36,6 +36,7 @@ import {
   bootstrapPgDatabase,
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
+import { collectEndpoints } from "../helpers/router-endpoints";
 
 const DB_NAME = "guardian_denial_sweep_ci";
 const GUARDIAN_ID = "0a111111-1111-4111-8111-111111111111";
@@ -65,7 +66,7 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
       try {
         const r = await pg.query(
           `SELECT id, email, display_name, role::text AS role, is_under_13,
-                  guardian_consent, student_link_code, actor_id
+                  student_link_code, actor_id
              FROM public.profiles WHERE id = $1`,
           [GUARDIAN_ID],
         );
@@ -80,7 +81,6 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
             isAdmin: p.role === "admin",
             isGuardian: p.role === "guardian",
             is_under_13: p.is_under_13,
-            guardian_consent: p.guardian_consent,
             profile_completed_at: null,
             student_link_code: p.student_link_code,
             actor_id: p.actor_id,
@@ -116,78 +116,11 @@ const app = (await import("../../server/index")).default as Express;
 const auth = await import("../../server/middleware/supabase-auth");
 
 type Gate = "student_or_admin" | "student_only";
-type Endpoint = { method: string; path: string; gates: Gate[] };
-
-type RouteLike = {
-  path: string;
-  methods: Record<string, boolean>;
-  stack: Array<{ handle: unknown }>;
-};
-type LayerLike = {
-  name: string;
-  handle: unknown;
-  route?: RouteLike;
-  regexp?: RegExp & { fast_slash?: boolean };
-};
 
 function gateOf(handle: unknown): Gate | null {
   if (handle === auth.requireStudentOrAdmin) return "student_or_admin";
   if (handle === auth.requireStudentOnly) return "student_only";
   return null;
-}
-
-/** Express 4 keeps a mount's path only as a regexp; recover the literal prefix. */
-function mountPath(layer: LayerLike): string {
-  if (!layer.regexp || layer.regexp.fast_slash) return "";
-  return layer.regexp.source
-    .replace(/^\^/, "")
-    .replace(/\\\/\?\(\?=\\\/\|\$\)$/, "")
-    .replace(/\\\//g, "/");
-}
-
-function collectEndpoints(): Endpoint[] {
-  const stack = (app as unknown as { _router: { stack: LayerLike[] } })._router
-    .stack;
-  const endpoints: Endpoint[] = [];
-  for (const layer of stack) {
-    if (layer.route) {
-      const gates = layer.route.stack
-        .map((s) => gateOf(s.handle))
-        .filter((g): g is Gate => g !== null);
-      for (const method of Object.keys(layer.route.methods)) {
-        endpoints.push({ method, path: layer.route.path, gates });
-      }
-    } else if (layer.name === "router") {
-      const mount = mountPath(layer);
-      // `app.use(path, a, b, router)` registers a, b and router as sibling layers that share
-      // the mount's regexp; the gates among the siblings apply to every route in the router.
-      const mountGates = stack
-        .filter(
-          (l) =>
-            !l.route &&
-            l.name !== "router" &&
-            mountPath(l) === mount &&
-            l.regexp?.source === layer.regexp?.source,
-        )
-        .map((l) => gateOf(l.handle))
-        .filter((g): g is Gate => g !== null);
-      const sub = (layer.handle as { stack: LayerLike[] }).stack;
-      for (const r of sub) {
-        if (!r.route) continue;
-        const routeGates = r.route.stack
-          .map((s) => gateOf(s.handle))
-          .filter((g): g is Gate => g !== null);
-        for (const method of Object.keys(r.route.methods)) {
-          endpoints.push({
-            method,
-            path: `${mount}${r.route.path}`,
-            gates: [...mountGates, ...routeGates],
-          });
-        }
-      }
-    }
-  }
-  return endpoints.filter((e) => e.path.startsWith("/api/"));
 }
 
 /**
@@ -213,7 +146,7 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/webhooks/", // signature-verified
 ];
 
-const endpoints = collectEndpoints();
+const endpoints = collectEndpoints(app, gateOf);
 const gated = endpoints.filter((e) => e.gates.length > 0);
 const tutor = endpoints.filter((e) => e.path.startsWith("/api/tutor"));
 

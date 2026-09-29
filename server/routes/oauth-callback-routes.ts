@@ -18,6 +18,7 @@ import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
+import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
@@ -339,12 +340,20 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         }
       }
 
-      const profileNeedsCompletion =
-        !profile.profile_completed_at ||
-        (profile.is_under_13 && !profile.guardian_consent);
+      const profileNeedsCompletion = !profile.profile_completed_at;
+      // G2-04: an under-13 student with no ACTIVE guardian link lands on the linking page, read
+      // live from `guardian_links` (no stored flag). The server gate refuses every learning
+      // request anyway; this only saves the student a detour through a refused page.
+      const needsGuardianLink =
+        !profileNeedsCompletion &&
+        profile.role === "student" &&
+        profile.is_under_13 === true &&
+        !(await hasActiveGuardianLink(admin, profile.id));
 
       if (profileNeedsCompletion) {
         redirectPath = "/profile/complete";
+      } else if (needsGuardianLink) {
+        redirectPath = "/guardian-required";
       } else if (safeNext) {
         // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
         // onboarding gate — e.g. recovery → /update-password to set a new password.

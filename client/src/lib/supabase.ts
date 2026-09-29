@@ -33,7 +33,6 @@ export interface SupabaseProfile {
   display_name: string | null;
   role: "student" | "admin" | "guardian";
   is_under_13: boolean;
-  guardian_consent: boolean;
   guardian_email: string | null;
   student_link_code: string | null;
   created_at: string;

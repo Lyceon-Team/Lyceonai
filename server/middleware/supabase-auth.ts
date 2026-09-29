@@ -4,7 +4,15 @@ import { logger } from "../logger.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
+  UnrecognizedRoleError,
 } from "../lib/profile-bootstrap.js";
+import { ROLE_UNRECOGNIZED } from "../../packages/shared/src/runtime-role-schema";
+import {
+  GUARDIAN_LINK_REQUIRED,
+  PROFILE_INCOMPLETE,
+} from "../../packages/shared/src/guardian-link-gate";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
 /**
@@ -153,7 +161,6 @@ export interface SupabaseUser {
   isAdmin: boolean;
   isGuardian: boolean;
   is_under_13?: boolean;
-  guardian_consent?: boolean;
   profile_completed_at?: string | null;
   jwt?: string;
   username?: string;
@@ -195,6 +202,13 @@ declare global {
     interface Request {
       supabase?: SupabaseClient;
       user?: SupabaseUser;
+      /**
+       * G2-02: set by `supabaseAuthMiddleware` when the signed-in account's stored role is not
+       * one the application recognises. No `user` is attached, and every "signed-in user
+       * required" refusal answers 403 `ROLE_UNRECOGNIZED` instead of 401 — a 401 would read as
+       * "signed out" to the client and loop it back to the login page.
+       */
+      roleUnrecognized?: boolean;
     }
   }
 }
@@ -225,6 +239,34 @@ export function sendUnauthenticated(res: Response, requestId?: string) {
   });
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
+ *
+ * plain English: the refusal for a signed-in account whose role the application does not know.
+ * 403, with `code: ROLE_UNRECOGNIZED`, so the client can show a neutral "account unavailable"
+ * screen rather than treat it as a sign-out. The body names no role and nothing about the account.
+ */
+export function sendRoleUnrecognized(res: Response, requestId?: string) {
+  return sendDenial(res, 403, {
+    error: "Account unavailable",
+    message:
+      "This account can't be opened. Please contact support.",
+    requestId,
+    extra: { code: ROLE_UNRECOGNIZED },
+  });
+}
+
+/**
+ * The one "no signed-in user" refusal: 403 `ROLE_UNRECOGNIZED` when the middleware refused an
+ * unrecognised role, otherwise the ordinary 401.
+ */
+export function sendNoUser(req: Request, res: Response) {
+  if (req.roleUnrecognized) {
+    return sendRoleUnrecognized(res, req.requestId);
+  }
+  return sendUnauthenticated(res, req.requestId);
+}
+
 export function sendForbidden(
   res: Response,
   options: Omit<DenialResponseOptions, "requestId"> & { requestId?: string },
@@ -237,7 +279,7 @@ export function requireRequestUser(
   res: Response,
 ): SupabaseUser | null {
   if (!req.user?.id) {
-    sendUnauthenticated(res, req.requestId);
+    sendNoUser(req, res);
     return null;
   }
 
@@ -254,7 +296,7 @@ export function requireRequestAuthContext(
   }
 
   if (!req.supabase) {
-    sendUnauthenticated(res, req.requestId);
+    sendNoUser(req, res);
     return null;
   }
 
@@ -500,10 +542,24 @@ export async function supabaseAuthMiddleware(
     }
 
     let emailConflict = false;
+    let roleUnrecognized = false;
     const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
       source: "supabase_auth_middleware",
       requestId: req.requestId,
     }).catch((profileError) => {
+      // G2-02: a stored role the application does not know. Refuse the SESSION, not the request:
+      // no user is attached, public routes still answer (sign-out works), and every route that
+      // needs a signed-in user answers 403 ROLE_UNRECOGNIZED. The row is not touched.
+      if (profileError instanceof UnrecognizedRoleError) {
+        roleUnrecognized = true;
+        logger.warn(
+          "AUTH",
+          "role_unrecognized",
+          "Refused a session whose profile role is not recognised",
+          { userId: user.id, requestId: req.requestId },
+        );
+        return null;
+      }
       // AL-7 (profile-per-human): this email is already owned by another identity. Fail closed with a
       // deliberate 409, never a 500 and never a forked profile.
       if (profileError instanceof AccountEmailConflictError) {
@@ -531,6 +587,11 @@ export async function supabaseAuthMiddleware(
       );
       return null;
     });
+
+    if (roleUnrecognized) {
+      req.roleUnrecognized = true;
+      return next();
+    }
 
     if (emailConflict) {
       return res.status(409).json({
@@ -561,7 +622,6 @@ export async function supabaseAuthMiddleware(
       isAdmin: profile.role === "admin",
       isGuardian: profile.role === "guardian",
       is_under_13: profile.is_under_13,
-      guardian_consent: profile.guardian_consent,
       profile_completed_at: profile.profile_completed_at ?? null,
       student_link_code: profile.student_link_code,
       actor_id: profile.actor_id,
@@ -622,7 +682,7 @@ export async function requireSupabaseAuth(
   // requireRequestUser routes can't bypass it and a new route is locked by default. (Was: this also
   // did the deletion 403; subsumed by enforceDeletionLock so the two can never diverge.)
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
   return next();
 }
@@ -722,7 +782,7 @@ export function requireSupabaseAdmin(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (!req.user?.isAdmin) {
@@ -747,28 +807,115 @@ export function requireSupabaseAdmin(
 }
 
 /**
- * Middleware to check under-13 consent (FERPA compliance)
- * Returns 403 if user is under 13 without guardian consent
+ * @spec [Guardian_Closure_Plan G2-04; owner ruling R6 (2026-09-27); SCL-187 rule 1 (accepted
+ *       2026-09-29); Coding Standards §4.3, §6.1] | @implemented [2026-09-29]
+ *
+ * plain English: the under-13 link gate. A STUDENT whose profile says they are under 13 passes
+ * only while at least one guardian link to them is ACTIVE, and that is READ FROM `guardian_links`
+ * ON THIS REQUEST — there is no stored flag and nothing cached on the session. A guardian who
+ * unlinks partway through a session closes the student's very next learning request, with no
+ * sign-in in between. Refused: 403 `GUARDIAN_LINK_REQUIRED`.
+ *
+ * Who it applies to: only `role === 'student'`. Admins and guardians pass untouched (so a guardian
+ * reading a linked student under /api/students/:id is never refused here). The link read happens
+ * only for `is_under_13 === true`; students of 13 or over pass without a query.
+ *
+ * Fails closed: a read error is a 500, never a pass (`hasActiveGuardianLink` throws).
+ *
+ * Mounted two ways: `requireStudentOrAdmin` ends in it, so every mount behind that gate (practice,
+ * tests, review, calendar, questions, progress, streak) carries it; and it is placed directly on
+ * the routes that are not behind that gate but are learning surfaces for the student — the
+ * student's own reads under /api/students/:id (after the subject resolver) and billing
+ * checkout/portal. Replaces `requireConsentCompliance`, which read a stored consent flag, and
+ * keeps its per-route places on the practice, review and exam routers — so on those an under-13
+ * student's request reads the link twice (mount, then route). Kept deliberately: a router mounted
+ * anywhere else is still gated. The cost falls only on under-13 students.
+ *
+ * G2-06 (G-NEW-09): learning requires a KNOWN AGE, and that is checked FIRST. A student whose age
+ * is unknown gets 403 `PROFILE_INCOMPLETE` before the under-13 check is reached. "Unknown" is
+ * `is_under_13` not being a boolean: the genesis trigger `profiles_set_age` sets it to NULL
+ * exactly when `date_of_birth` is NULL, and G2-03's `profiles_lock_date_of_birth` forbids writing
+ * it on its own — so it cannot disagree with the date of birth, and the session need not carry the
+ * date itself. Anything else (a field missing from the session) also counts as unknown: fail
+ * closed. Production (owner, 2026-09-29): no completed student has a NULL date of birth, so this
+ * locks out no completed student.
  */
-export function requireConsentCompliance(
+export async function requireGuardianLinkForUnder13(
   req: Request,
   res: Response,
   next: NextFunction,
-) {
+): Promise<void> {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    sendNoUser(req, res);
+    return;
+  }
+  const user = req.user;
+  if (user.isAdmin || user.role !== "student") {
+    next();
+    return;
   }
 
-  if (req.user?.is_under_13 && !req.user?.guardian_consent) {
-    return sendForbidden(res, {
-      error: "Guardian consent required",
-      message: "Users under 13 require guardian consent to use this service",
+  // G2-06: age unknown → refused before anything else is asked.
+  if (typeof user.is_under_13 !== "boolean") {
+    logger.warn(
+      "AUTH",
+      "age_unknown",
+      "Student with no date of birth refused a learning endpoint",
+      { userId: user.id, path: req.path, requestId: req.requestId },
+    );
+    sendForbidden(res, {
+      error: "Profile incomplete",
+      message: "Please complete your profile before accessing this feature.",
       requestId: req.requestId,
-      extra: { consentRequired: true },
+      extra: { code: PROFILE_INCOMPLETE },
     });
+    return;
   }
 
-  return next();
+  if (!user.is_under_13) {
+    next();
+    return;
+  }
+
+  let linked: boolean;
+  try {
+    linked = await hasActiveGuardianLink(supabaseServer, user.id);
+  } catch (err) {
+    logger.error(
+      "AUTH",
+      "guardian_link_read_failed",
+      "Could not read guardian link state; refusing",
+      {
+        userId: user.id,
+        path: req.path,
+        requestId: req.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    res
+      .status(500)
+      .json({ error: "Internal server error", requestId: req.requestId });
+    return;
+  }
+
+  if (linked) {
+    next();
+    return;
+  }
+
+  logger.warn(
+    "AUTH",
+    "guardian_link_required",
+    "Under-13 student without an active guardian link refused",
+    { userId: user.id, path: req.path, requestId: req.requestId },
+  );
+  sendForbidden(res, {
+    error: "Guardian link required",
+    message:
+      "A guardian needs to connect to your account before you can use this.",
+    requestId: req.requestId,
+    extra: { code: GUARDIAN_LINK_REQUIRED },
+  });
 }
 
 /**
@@ -783,7 +930,7 @@ export function requireProfileComplete(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (!req.user.profile_completed_at) {
@@ -801,7 +948,7 @@ export function requireProfileComplete(
       error: "Profile incomplete",
       message: "Please complete your profile before accessing this feature.",
       requestId: req.requestId,
-      extra: { code: "PROFILE_INCOMPLETE" },
+      extra: { code: PROFILE_INCOMPLETE },
     });
   }
 
@@ -831,7 +978,7 @@ export function requireStudentOnly(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (req.user.role !== "student") {
@@ -884,7 +1031,9 @@ export function requireStudentOnly(
 
 /**
  * Middleware to require student or admin role (blocks guardians)
- * Returns 403 if user is a guardian
+ * Returns 403 if user is a guardian, if the role is not one the application knows (G2-02), and —
+ * through `requireGuardianLinkForUnder13`, which it ends in — if the caller is an under-13
+ * student with no active guardian link (G2-04).
  */
 export function requireStudentOrAdmin(
   req: Request,
@@ -892,7 +1041,7 @@ export function requireStudentOrAdmin(
   next: NextFunction,
 ) {
   if (!req.user) {
-    return sendUnauthenticated(res, req.requestId);
+    return sendNoUser(req, res);
   }
 
   if (req.user.isGuardian && !req.user.isAdmin) {
@@ -914,27 +1063,15 @@ export function requireStudentOrAdmin(
     });
   }
 
-  if (!req.user.isAdmin && req.user.is_under_13 && !req.user.guardian_consent) {
-    logger.warn(
-      "AUTH",
-      "consent_required",
-      "Under-13 user blocked from student-only route without guardian consent",
-      {
-        userId: req.user.id,
-        path: req.path,
-        requestId: req.requestId,
-      },
-    );
-
-    return sendForbidden(res, {
-      error: "Guardian consent required",
-      message: "Users under 13 require guardian consent to use this service",
-      requestId: req.requestId,
-      extra: { consentRequired: true },
-    });
+  // G2-02: an allow-list, not a deny-list. Only 'student' (and admin, above) reaches a student
+  // route; anything else a user object might carry is refused rather than treated as a student.
+  if (!req.user.isAdmin && req.user.role !== "student") {
+    return sendRoleUnrecognized(res, req.requestId);
   }
 
-  return next();
+  // G2-04: the under-13 link gate, read live on this request. Every mount behind this gate
+  // inherits it; it replaces the stored-consent check that stood here.
+  return requireGuardianLinkForUnder13(req, res, next);
 }
 
 /**
