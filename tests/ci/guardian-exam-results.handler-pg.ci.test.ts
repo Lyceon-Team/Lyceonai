@@ -39,7 +39,8 @@ import {
   guardianExamListEnvelopeSchema,
   guardianExamReportEnvelopeSchema,
 } from "../../packages/shared/src/exam-guardian-report-schema";
-import { examReportPayloadSchema } from "../../packages/shared/src/exam-report-schema";
+import { examStudentReportPayloadSchema } from "../../packages/shared/src/exam-student-report-schema";
+import { segmentsFilled } from "../../packages/shared/src/exam-domain-segments";
 
 const DB_NAME = "guardian_exam_results_handler_ci";
 const FORM = "61f00000-0000-4000-8000-0000000000a1";
@@ -282,16 +283,45 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
-    // "The same eight domains and correct-of-total counts the student sees."
+    // Owner ruling 7 (SCL-180 amended 2026-09-29): the guardian keeps correct-of-total
+    // (unchanged, every row carries both counts); the student sees the same eight domains
+    // as seven segments, derived from exactly these counts, and never the counts.
+    for (const row of report.domain_breakdown) {
+      expect(Object.keys(row).sort()).toEqual([
+        "correct",
+        "domain",
+        "section",
+        "total",
+      ]);
+    }
     const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
     expect(own.status).toBe(200);
-    const student = examReportPayloadSchema.parse(own.body.data);
+    const student = examStudentReportPayloadSchema.parse(own.body.data);
+    evidence("student own report (ruling 7)", {
+      domain_segments: own.body.data.domain_segments,
+      omitted_domains: own.body.data.omitted_domains,
+    });
     if (student.report_state !== "scored")
       throw new Error(student.report_state);
-    expect(report.domain_breakdown).toEqual(student.domain_breakdown);
+    const byDomain = (a: { domain: string }, b: { domain: string }) =>
+      a.domain.localeCompare(b.domain);
+    expect(student.domain_segments).toHaveLength(8);
+    expect([...student.domain_segments].sort(byDomain)).toEqual(
+      report.domain_breakdown
+        .map((r) => ({
+          section: r.section,
+          domain: r.domain,
+          segments_filled: segmentsFilled(r.correct, r.total),
+        }))
+        .sort(byDomain),
+    );
     expect(report.score.total_scaled).toBe(student.score.total_scaled);
-    // Strict subset (04C §2.6): every guardian top-level key is a student key.
-    for (const k of Object.keys(report)) expect(student).toHaveProperty(k);
+    // Strict subset (04C §2.6), less the one field ruling 7 re-shapes for the student:
+    // every other guardian top-level key is a student key.
+    for (const k of Object.keys(report)) {
+      if (k === "domain_breakdown") continue;
+      expect(student).toHaveProperty(k);
+    }
 
     // Tied to scoring: per section, the rows sum to score_runs' module counts.
     const run = (
@@ -306,6 +336,68 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
         .filter((r) => r.section === s)
         .reduce((a, r) => a + r.correct, 0);
     expect([sum("RW"), sum("M")]).toEqual([run.rw, run.m]);
+  });
+
+  /**
+   * @spec [SCL-180 (amended 2026-09-29), owner ruling 7; Doc 04C §8.1/§9.1]
+   *   | @implemented [2026-09-29]
+   * plain English: a student reading their OWN id on this path (resolveSubject
+   * `via: "self"`) gets the student projection — seven segments per domain, no
+   * correct/total — while a guardian on the same session still gets correct/total.
+   */
+  it("ruling 7, self: the student reading their own id gets segments, never correct/total", async () => {
+    const res = await get(STUDENT, reportUrl(STUDENT, sid));
+    expect(res.status).toBe(200);
+    evidence("self report (ruling 7)", res.body);
+    // Presence first: the eight domains, as segments.
+    expect(res.body.ok).toBe(true);
+    expect(res.body.report.report_state).toBe("scored");
+    const segments = res.body.report.domain_segments as Array<
+      Record<string, unknown>
+    >;
+    expect(segments).toHaveLength(8);
+    for (const row of segments) {
+      expect(Object.keys(row).sort()).toEqual([
+        "domain",
+        "section",
+        "segments_filled",
+      ]);
+    }
+    // Then absence, at any depth of the whole body.
+    const keys = new Set<string>();
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v !== null && typeof v === "object") {
+        for (const [k, x] of Object.entries(v)) {
+          keys.add(k);
+          walk(x);
+        }
+      }
+    };
+    walk(res.body);
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+    // The same segments the student's own /api/tests report serves.
+    const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
+    expect(res.body.report.domain_segments).toEqual(
+      own.body.data.domain_segments,
+    );
+  });
+
+  it("ruling 7, guardian unchanged: the guardian on the same path still gets correct/total and no segments", async () => {
+    const res = await get(GUARDIAN, reportUrl(STUDENT, sid));
+    expect(res.status).toBe(200);
+    const report = guardianExamReportEnvelopeSchema.parse(res.body).report;
+    if (report.report_state !== "scored") throw new Error(report.report_state);
+    expect(report.domain_breakdown).toHaveLength(8);
+    for (const row of report.domain_breakdown) {
+      expect(row.total).toBeGreaterThan(0);
+      expect(row.correct).toBeGreaterThanOrEqual(0);
+    }
+    expect(res.body.report).not.toHaveProperty("domain_segments");
+    expect(res.body.report).not.toHaveProperty("omitted_domains");
   });
 
   it("forbidden-field scan: no answer, explanation, skill, routing, raw score, pacing or review field at any depth", async () => {

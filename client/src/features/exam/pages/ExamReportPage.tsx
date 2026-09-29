@@ -7,9 +7,10 @@
  *        (unavailable), §15.1 (disclosure adjacent), §16.1 (/report, /report/status)]
  *       [E7 owner ruling 6 + E7b ruling 4: no "time used", no answered count, no
  *        framing paragraph; "Review your answers" is disabled]
- *       [G1: the Score breakdown tab is live — per-domain correct-of-total from the
- *        payload's `domain_breakdown` (04C §8.1/§9.1 as amended by SCL-180)]
- * @implemented [2026-09-25; breakdown 2026-09-27]
+ *       [G1: the Score breakdown tab is live (04C §8.1/§9.1 as amended by SCL-180)]
+ *       [SCL-180 (amended 2026-09-29), owner ruling 7: the student's breakdown is seven
+ *        segments per domain from `domain_segments`; no correct-of-total anywhere]
+ * @implemented [2026-09-25; breakdown 2026-09-27; segments 2026-09-29]
  *
  * plain English: one view per report state, each drawing only its payload's fields.
  * A pending report polls the cheap status read and reloads the report when the
@@ -18,8 +19,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import type { ExamDomainBreakdownRow, ExamReportPayload } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
+import type { ExamStudentReportPayload } from "@lyceon/shared/exam-student-report-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { fetchExamReport, fetchExamReportStatus } from "../api/exam-api";
 import { examKeys } from "../api/keys";
@@ -27,7 +28,7 @@ import { sessionPath } from "../lib/exam-position";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
-import { DomainBreakdown } from "../components/DomainBreakdown";
+import { DomainSegments } from "../components/DomainSegments";
 import "../exam.css";
 
 const POLL_MS = 4_000;
@@ -71,7 +72,7 @@ export default function ExamReportPage() {
   return <ReportLayout payload={report.data} />;
 }
 
-function ReportLayout({ payload }: { payload: ExamReportPayload }) {
+function ReportLayout({ payload }: { payload: ExamStudentReportPayload }) {
   const { user } = useSupabaseAuth();
   return (
     <div className="exam-root min-h-screen">
@@ -137,14 +138,16 @@ const TABS: ReadonlyArray<{ id: ScoreTab; label: string }> = [
 
 /**
  * WAI-ARIA tabs: the selected tab is the only one in the tab order; Left/Right/Home/End
- * move selection and focus. Only the selected panel is rendered.
+ * move selection and focus. Only the selected panel is rendered. `breakdown` is the
+ * already-rendered breakdown panel: the student passes `DomainSegments` (seven segments,
+ * owner ruling 7), the guardian passes `DomainBreakdown` (correct-of-total, SCL-180).
  */
 export function ScoreTabs({
   children,
   breakdown,
 }: {
   children: React.ReactNode;
-  breakdown: ReadonlyArray<ExamDomainBreakdownRow>;
+  breakdown: React.ReactNode;
 }) {
   const [tab, setTab] = useState<ScoreTab>("sections");
   const refs = useRef<Record<ScoreTab, HTMLButtonElement | null>>({ sections: null, breakdown: null });
@@ -189,7 +192,7 @@ export function ScoreTabs({
         ))}
       </div>
       <div role="tabpanel" id={`exam-tabpanel-${tab}`} aria-labelledby={`exam-tab-${tab}`}>
-        {tab === "sections" ? children : <DomainBreakdown rows={breakdown} />}
+        {tab === "sections" ? children : breakdown}
       </div>
     </div>
   );
@@ -220,7 +223,7 @@ export function Panel({ title, children }: { title: string; children: React.Reac
   );
 }
 
-export function ReportBody({ payload }: { payload: ExamReportPayload }) {
+export function ReportBody({ payload }: { payload: ExamStudentReportPayload }) {
   switch (payload.report_state) {
     case "scored":
       return (
@@ -242,7 +245,7 @@ export function ReportBody({ payload }: { payload: ExamReportPayload }) {
               </div>
               <DisclosureNote disclosure={payload.disclosure} />
             </div>
-            <ScoreTabs breakdown={payload.domain_breakdown}>
+            <ScoreTabs breakdown={<DomainSegments segments={payload.domain_segments} omitted={payload.omitted_domains} />}>
               <div className="flex flex-col gap-3 sm:flex-row">
                 {payload.sections.map((s) => (
                   <SectionCard key={s.section} label={EXAM_SECTION_LABEL[s.section]} scaled={s.scaled} />
@@ -264,7 +267,7 @@ export function ReportBody({ payload }: { payload: ExamReportPayload }) {
               </p>
               <DisclosureNote disclosure={payload.disclosure} />
             </Panel>
-            <ScoreTabs breakdown={payload.domain_breakdown}>
+            <ScoreTabs breakdown={<DomainSegments segments={payload.domain_segments} omitted={payload.omitted_domains} />}>
               <div className="flex flex-col gap-3 sm:flex-row">
                 {payload.sections.map((s) => (
                   <SectionCard key={s.section} label={EXAM_SECTION_LABEL[s.section]} scaled={s.scoreable ? s.scaled : null} />
