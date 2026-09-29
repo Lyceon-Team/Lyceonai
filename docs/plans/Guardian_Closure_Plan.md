@@ -48,7 +48,7 @@ None found. The audit and the production check on 2026-09-27 found no cross-stud
 | G1-06 | G-AUD-13 | A failed link insert must not burn the student's link code. | A PG test with a pre-existing active link: redeem returns 409 and the code is still redeemable. | OPEN |
 | G1-07 | G-AUD-10 | The revoke function must check that the revoker is a party to the link. Add explicit `REVOKE … FROM anon, authenticated`. | A PG test: a non-party revoke is refused. `has_function_privilege` in production returns f/f/f/t. | OPEN |
 | G1-08 | G-AUD-11 | Pin the gate function's body with an md5 CI check. | A mutation that removes `status='active'` turns CI red. | OPEN |
-| G1-09 | G-AUD-12 | Add `TO` clauses to the tutor INSERT and UPDATE policies. | Production `pg_policies.roles` for those policies no longer includes `public`. | OPEN |
+| G1-09 | G-AUD-12 | Add `TO` clauses to the tutor INSERT and UPDATE policies. | Production `pg_policies.roles` for those policies no longer includes `public`. | IN PROGRESS — branch `claude/guardian-g1-09-tutor-policy-roles`, migration `20261013010000_tutor_own_write_policies_to_authenticated.sql` (owner applies by hand). `tests/ci/tutor-policy-roles.pg.ci.test.ts` red before (`roles = {public}`), green after, wired into CI. Production `pg_policies.roles`: pending, owner-run. |
 | G1-10 | G-AUD-15 | Rewrite the six tests that cannot fail. Remove mocks of modules that do not exist. | Each rewritten test goes red under a mutation of its target. | OPEN |
 | G1-11 | G-AUD-16 | Add denial tests. | A parametrised sweep: a guardian gets 403 on every student-only mount and on `/api/tutor/*`. | OPEN |
 
