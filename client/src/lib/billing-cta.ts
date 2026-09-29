@@ -78,6 +78,23 @@ export type BillingCtaCopy = {
 };
 
 /**
+ * A surface's own pitch for a student who has never paid.
+ *
+ * @spec [closure plan W4-11] | @implemented [2026-09-27]
+ *
+ * plain English: the words only. It replaces the title, body and button label
+ * of `student_unentitled` and nothing else — never the destination, which
+ * stays the resolver's, and never any other state. A lapsed student keeps the
+ * reactivation copy because their remedy is the portal, not a new plan, and a
+ * guardian never sees a student pitch.
+ */
+export type BillingCtaPitch = {
+  readonly title: string;
+  readonly body: string;
+  readonly actionLabel: string;
+};
+
+/**
  * NAME THE STUDENT. A guardian with two linked students, one funded and one
  * not, hits a boundary on ONE of them; copy that says "upgrade to premium"
  * leaves them guessing which child they are being asked to pay for. The name
@@ -85,7 +102,10 @@ export type BillingCtaCopy = {
  */
 export function resolveCtaCopy(
   state: BillingCtaState,
-  options: { readonly featureBenefit?: string } = {},
+  options: {
+    readonly featureBenefit?: string;
+    readonly pitch?: BillingCtaPitch;
+  } = {},
 ): BillingCtaCopy {
   /**
    * The feature's OWN benefit, not a generic pitch. A lock on the calendar and
@@ -98,9 +118,9 @@ export function resolveCtaCopy(
   switch (state.kind) {
     case "student_unentitled":
       return {
-        title: "Subscription required",
-        body: `Choose a plan to unlock ${benefit}.`,
-        actionLabel: "View plans",
+        title: options.pitch?.title ?? "Subscription required",
+        body: options.pitch?.body ?? `Choose a plan to unlock ${benefit}.`,
+        actionLabel: options.pitch?.actionLabel ?? "View plans",
         action: { kind: "navigate", to: "/upgrade" },
       };
     case "student_lapsed":

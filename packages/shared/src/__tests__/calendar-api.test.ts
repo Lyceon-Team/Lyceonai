@@ -33,6 +33,19 @@ const ESTIMATES = {
   review_seconds_per_unit: 120,
 };
 
+/** §8.1's readout constants. STUDENT payload only — §16 gives a guardian no controls. */
+const EXAM_PLANNING = {
+  final_exam_lead_days: 7,
+  default_full_length_interval_weeks: 2,
+};
+
+/** Brief 14 Step 4. The dates `calendar_place_full_lengths` REFUSED to place because both
+ *  the intended weekday occurrence and the +7-day alternative were user-overridden. Owner
+ *  ruling 2026-09-26: both surfaces carry it — "that is precisely the silence this whole
+ *  change exists to end". Non-empty on purpose: an empty array would round-trip past a
+ *  wrong element type. */
+const FULL_LENGTH_SUPPRESSIONS = ["2026-10-17", "2026-10-31"];
+
 /** §8.1's bounds, on the ready payload since 2026-09-22 so §17.3's settings sheet can
  *  offer the same presets the server validates against. */
 const BOUNDS = {
@@ -49,6 +62,7 @@ const PROFILE = {
   study_days_mask: 62,
   daily_minutes: 45,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T18:00:00Z",
 } as const;
@@ -135,6 +149,8 @@ describe("GET /api/calendar", () => {
       profile: PROFILE,
       bounds: BOUNDS,
       estimates: ESTIMATES,
+      exam_planning: EXAM_PLANNING,
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
       days: [DAY],
       facts: FACTS,
       streak: STREAK,
@@ -169,6 +185,8 @@ describe("GET /api/calendar", () => {
         daily_minutes_min: 15,
         daily_minutes_max: 180,
         target_exam_date_max_days: 540,
+        default_full_length_interval_weeks: 2,
+        final_exam_lead_days: 7,
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -205,6 +223,8 @@ describe("GET /api/calendar", () => {
         profile: PROFILE,
         bounds: BOUNDS,
         estimates: ESTIMATES,
+        exam_planning: EXAM_PLANNING,
+        full_length_suppressions: [],
         days: [],
         facts: FACTS,
         streak: STREAK,
@@ -456,6 +476,14 @@ describe("guardian read (§16, R-08-22)", () => {
       // Owner ruling 2026-09-22: the guardian payload carries the same estimates the
       // student's does — minutes are not among §16's exclusions.
       estimates: ESTIMATES,
+      // Owner ruling 2026-09-26: R-08-22 reversed and §16's "no profile" clause narrowed to
+      // these two. REQUIRED on the wire (nullable, not optional), so a body without them is
+      // refused — which is the point of listing them in every guardian fixture.
+      target_score: 1400,
+      target_exam_date: "2026-12-05",
+      // Owner ruling 2026-09-26: the guardian sees the suppression too — "a fact about the
+      // plan, not a control and not a profile field", the same category as the projection.
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
       days: [toGuardianCalendarDay(DAY)],
       facts: FACTS,
       streak: STREAK,
@@ -469,6 +497,9 @@ describe("guardian read (§16, R-08-22)", () => {
         // Present and valid on purpose: without it this would be rejected for the MISSING
         // field, and the test would stop proving that the student DAY shape is refused.
         estimates: ESTIMATES,
+        target_score: 1400,
+        target_exam_date: "2026-12-05",
+        full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
         days: [DAY],
         facts: FACTS,
         streak: STREAK,
@@ -492,21 +523,85 @@ describe("guardian read (§16, R-08-22)", () => {
           daily_minutes_min: 15,
           daily_minutes_max: 180,
           target_exam_date_max_days: 540,
+          default_full_length_interval_weeks: 2,
+          final_exam_lead_days: 7,
         },
       }).success,
     ).toBe(false);
   });
 
-  it("has no profile field at all", () => {
+  // WAS "has no profile field at all". The owner's 2026-09-26 ruling narrowed §16's "no
+  // profile" clause to admit `target_score` and `target_exam_date` and nothing else, so the
+  // claim is no longer "no profile" but "no profile OBJECT, and no other profile column".
+  it("refuses the profile object, and every profile column beyond the two admitted", () => {
+    const base = {
+      status: "ready" as const,
+      estimates: ESTIMATES,
+      target_score: 1400,
+      target_exam_date: "2026-12-05",
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
+      days: [],
+      facts: FACTS,
+      streak: STREAK,
+    };
+    // The base is valid, so every rejection below is caused by the key that was added and
+    // not by something already missing.
+    expect(guardianCalendarResponseSchema.safeParse(base).success).toBe(true);
+    // The whole object, which is how the widest version of this leak would arrive.
+    expect(
+      guardianCalendarResponseSchema.safeParse({ ...base, profile: PROFILE })
+        .success,
+    ).toBe(false);
+    // And each withheld column on its own, flat — the shape a well-meaning "just one more
+    // field" edit takes. `.strict()` is what refuses them, which is why it must not be
+    // loosened to fix a render (the mistake #903 declined to make).
+    for (const [key, value] of [
+      ["timezone", "America/Chicago"],
+      ["study_days_mask", 127],
+      ["daily_minutes", 60],
+      ["full_length_weekday", 6],
+      // Brief 14's new column. The suppression DATES reach the guardian; the cadence that
+      // produced them does not — it is a control, and §16 admits no controls.
+      ["full_length_interval_weeks", 2],
+      ["planner_mode", "auto"],
+      ["setup_completed_at", "2026-09-01T00:00:00Z"],
+      ["bounds", {}],
+      ["enabled_block_types", ["practice"]],
+    ] as const) {
+      expect(
+        guardianCalendarResponseSchema.safeParse({ ...base, [key]: value })
+          .success,
+      ).toBe(false);
+    }
+    // A key nobody has thought of yet, which is the general case.
+    expect(
+      guardianCalendarResponseSchema.safeParse({ ...base, whatever: 1 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("serves the two admitted fields as NULLABLE, since most students have neither", () => {
+    // SCL-130 made setup answer-free: 103 of 104 students in production have no target, so
+    // null is the ordinary case and a schema that required a number would reject the
+    // majority payload. Optional is NOT the same as nullable here — the field must always be
+    // present so the client never has to distinguish "absent" from "unset".
+    const base = {
+      status: "ready" as const,
+      estimates: ESTIMATES,
+      full_length_suppressions: [],
+      days: [],
+      facts: FACTS,
+      streak: STREAK,
+    };
     expect(
       guardianCalendarResponseSchema.safeParse({
-        days: [],
-        facts: FACTS,
-        streak: STREAK,
-        profile: PROFILE,
-        estimates: ESTIMATES,
+        ...base,
+        target_score: null,
+        target_exam_date: null,
       }).success,
-    ).toBe(false);
+    ).toBe(true);
+    // Omitting them is refused: present-and-null is the contract.
+    expect(guardianCalendarResponseSchema.safeParse(base).success).toBe(false);
   });
 });
 

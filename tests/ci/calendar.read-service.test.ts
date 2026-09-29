@@ -417,7 +417,7 @@ describe("§16 — the guardian read", () => {
     });
   });
 
-  it("carries no profile, no version_no and no override flag", async () => {
+  it("carries the two admitted profile fields and the band — and no other profile key, no version_no, no override flag", async () => {
     scenario({ acceptedVersions: 1 });
 
     const result = await readGuardianCalendar({
@@ -436,13 +436,43 @@ describe("§16 — the guardian read", () => {
       // this test exists to catch.
       "estimates",
       "facts",
+      // Owner ruling 2026-09-26: the guardian sees the suppression. Named here for the same
+      // reason `estimates` is — this list is the guardian chokepoint, so an addition to the
+      // payload has to be spelled out by someone rather than waved through.
+      "full_length_suppressions",
+      // NO "projection" HERE, and that is correct rather than an omission. This file mocks
+      // Doc 05C's read as empty (see the top), and the field is optional on the wire — an
+      // empty band omits the key instead of serving an empty array, exactly as the student
+      // payload does. Its PRESENCE is proved where the rows are real:
+      // `tests/ci/calendar.wire-contract.test.ts`, which drives this same serializer with
+      // two section rows and asserts the band arrives 1:1.
       "status",
       "streak",
+      // The TWO profile fields §16 now admits, and the reason this test's name changed.
+      // R-08-22 is reversed and the "no profile" clause is narrowed to exactly these — so
+      // the assertion is no longer "no profile" but "no profile BEYOND these two", and the
+      // list below is where that boundary is enforced. `timezone`, `study_days_mask`,
+      // `daily_minutes`, `full_length_weekday`, `planner_mode` and `setup_completed_at` are
+      // still withheld, and their absence from this array is what says so.
+      "target_exam_date",
+      "target_score",
     ]);
+    // Said outright, so a future reader does not take the gap above for a leak: with no
+    // Doc 05C rows the key is ABSENT, not null and not [].
+    expect(result.value).not.toHaveProperty("projection");
     const serialized = JSON.stringify(result.value);
     expect(serialized).not.toContain("version_no");
     expect(serialized).not.toContain("is_user_override");
-    expect(serialized).not.toContain("target_score");
+    // The remaining profile columns, by name. NOT a sweep for "timezone": that string is a
+    // legitimate per-DAY field of the guardian read model, naming the zone `local_date`
+    // belongs to, so sweeping for it fails against a correct payload.
+    expect(serialized).not.toContain("study_days_mask");
+    expect(serialized).not.toContain("daily_minutes");
+    expect(serialized).not.toContain("planner_mode");
+    expect(serialized).not.toContain("setup_completed_at");
+    // And the two that ARE served now carry the profile's own values, not defaults.
+    expect(result.value.target_score).toBe(PROFILE_ROW.target_score);
+    expect(result.value.target_exam_date).toBe(PROFILE_ROW.target_exam_date);
   });
 
   it("carries no explanation_key ANYWHERE — not on the block, not inside the mix", async () => {
@@ -476,5 +506,112 @@ describe("§16 — the guardian read", () => {
     expect(
       client.rpcs.some((call) => call.fn === "calendar_persist_version"),
     ).toBe(false);
+  });
+});
+
+/**
+ * Brief 14 Step 4 — `full_length_suppressions`, read off the stored snapshot.
+ *
+ * @spec [Doc 05F §8.1; owner ruling 2026-09-26] | @implemented [2026-09-27]
+ *
+ * `calendar_persist_version` merges `{kind:"full_length_suppressed", date}` entries into
+ * `input_snapshot.degraded` for whichever generator ran. These tests are the READ half: the
+ * same array also holds marker STRINGS ("mastery", "review_queue") that force the fallback,
+ * and mistaking one for the other in either direction is a defect — a missed suppression is
+ * the silence this brief ends, and a string read as a suppression would put "undefined" on a
+ * student's calendar.
+ */
+describe("the suppressed practice test reaches both payloads (Brief 14)", () => {
+  const SUPPRESSED = [
+    { kind: "full_length_suppressed", date: "2026-10-17" },
+    { kind: "full_length_suppressed", date: "2026-10-31" },
+  ];
+
+  it("serves the dates to the STUDENT, sorted", async () => {
+    // Deliberately out of order in the snapshot: the payload is sorted so two reads of one
+    // plan are byte-identical and a diff of two responses means something.
+    scenario({ acceptedVersions: 1, degraded: [...SUPPRESSED].reverse() });
+
+    const result = await read();
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "ready") {
+      throw new Error("expected a ready student payload");
+    }
+    expect(result.value.full_length_suppressions).toEqual([
+      "2026-10-17",
+      "2026-10-31",
+    ]);
+  });
+
+  it("serves the SAME dates to the guardian — the plan is one plan", async () => {
+    scenario({ acceptedVersions: 1, degraded: SUPPRESSED });
+
+    const result = await readGuardianCalendar({
+      student_id: STUDENT,
+      query: {},
+      now: NOW,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.status !== "ready") {
+      throw new Error("expected a ready guardian payload");
+    }
+    expect(result.value.full_length_suppressions).toEqual([
+      "2026-10-17",
+      "2026-10-31",
+    ]);
+  });
+
+  it("is EMPTY on an ordinary plan — the key is always present", async () => {
+    // No `degraded` key at all, which is what a healthy snapshot holds. Present-and-empty is
+    // the contract: the client never has to tell "absent" from "none".
+    scenario({ acceptedVersions: 1 });
+
+    const result = await read();
+    if (!result.ok || result.value.status !== "ready") {
+      throw new Error("expected a ready student payload");
+    }
+    expect(result.value.full_length_suppressions).toEqual([]);
+  });
+
+  it("ignores the marker STRINGS that share the array", async () => {
+    // §5A's two fallback markers, an entry of another kind, and two malformed ones. Only the
+    // dates come through, and nothing throws — `degraded[]` is stored JSON and a reader that
+    // assumed a shape would fail on the plan it was meant to describe.
+    scenario({
+      acceptedVersions: 1,
+      degraded: [
+        "mastery",
+        "review_queue",
+        { kind: "something_else", date: "2026-11-07" },
+        { kind: "full_length_suppressed" },
+        { kind: "full_length_suppressed", date: 20261017 },
+        null,
+        SUPPRESSED[0],
+      ],
+    });
+
+    const result = await read();
+    if (!result.ok || result.value.status !== "ready") {
+      throw new Error("expected a ready student payload");
+    }
+    expect(result.value.full_length_suppressions).toEqual(["2026-10-17"]);
+  });
+
+  it("de-duplicates a date carried by more than one version", async () => {
+    // Every version in the window is read, and a weekly refresh re-records a suppression that
+    // is still true. The student should be told once.
+    scenario({
+      acceptedVersions: 1,
+      degraded: [SUPPRESSED[0], SUPPRESSED[0], SUPPRESSED[1]],
+    });
+
+    const result = await read();
+    if (!result.ok || result.value.status !== "ready") {
+      throw new Error("expected a ready student payload");
+    }
+    expect(result.value.full_length_suppressions).toEqual([
+      "2026-10-17",
+      "2026-10-31",
+    ]);
   });
 });

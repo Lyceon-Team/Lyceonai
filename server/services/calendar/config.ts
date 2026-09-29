@@ -53,6 +53,19 @@ export const CALENDAR_CONFIG_KEYS = [
   "daily_minutes_presets",
   "target_exam_date_max_days",
   "weekly_job_interval_minutes",
+  /**
+   * §8.1, 20261010000000. The cadence the frequency control opens on. A SURFACE default,
+   * deliberately NOT part of `bounds`: `studyProfileBoundsSchema` describes the limits a
+   * write is held to, and a prefill is not a limit. The generator never reads this key —
+   * the cadence it plans against is `student_study_profile.full_length_interval_weeks`.
+   */
+  "default_full_length_interval_weeks",
+  /**
+   * §2 Step 2 / §4. Read by the GENERATOR — nothing is placed inside this window before the
+   * target date — and now served to the client too, because §8.1's "about N practice tests"
+   * readout cannot be truthful without it and §17 forbids a literal.
+   */
+  "final_exam_lead_days",
   "horizon_days",
   "generator_version",
   /**
@@ -124,6 +137,19 @@ export type CalendarConfig = {
   estimates: PlanningEstimates;
   /** §17.2 / V-03. The block types the planner may plan, straight from the table. */
   enabledBlockTypes: readonly CalendarBlockType[];
+  /**
+   * §8.1. Weeks between full-lengths that the setup form and the settings sheet OPEN on,
+   * before the student chooses. Not a bound and not a cadence anyone is planned against:
+   * changing it changes what a NEW student sees first and nothing about a student who has
+   * already chosen.
+   */
+  defaultFullLengthIntervalWeeks: number;
+  /**
+   * §2 Step 2: nothing is placed inside this window before the target date, so it decides
+   * whether the last sitting before the target exists at all. Served to the client for
+   * §8.1's frequency readout, which would otherwise have to guess it.
+   */
+  finalExamLeadDays: number;
 };
 
 function requireValue(
@@ -285,6 +311,11 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
       ),
     },
     enabledBlockTypes: enabledBlockTypes.data,
+    defaultFullLengthIntervalWeeks: requireInteger(
+      rows,
+      "default_full_length_interval_weeks",
+    ),
+    finalExamLeadDays: requireInteger(rows, "final_exam_lead_days"),
   };
 }
 

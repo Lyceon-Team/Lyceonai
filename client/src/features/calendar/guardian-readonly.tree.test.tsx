@@ -21,6 +21,7 @@ import type {
   GuardianCalendarReadyResponse,
 } from "@lyceon/shared/calendar";
 import { CalendarView } from "./CalendarView";
+import { SUPPRESSION_COPY_TABLE } from "./components/Chrome";
 import { guardianViewModel, studentViewModel } from "./lib/view-model";
 
 const TODAY = "2026-09-21";
@@ -89,6 +90,36 @@ const STUDENT_DAY = {
   extra_count: 0,
 };
 
+/**
+ * Doc 05C's two section rows, production's own values for the student in the brief:
+ * M 470 (380-560), RW 400 (300-500). ONE constant, shared by both payloads on purpose —
+ * the whole claim of the parity test below is that a guardian reads the same band, and two
+ * separately-written fixtures could drift while both files stayed green (CLAUDE.md).
+ *
+ * Summed by `projectedRange`, these are the header's `680 - 1060`.
+ */
+const PROJECTION = [
+  {
+    section: "M" as const,
+    projectedScoreMid: 470,
+    projectedScoreLow: 380,
+    projectedScoreHigh: 560,
+    relevantQuestionCount: 42,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+  {
+    section: "RW" as const,
+    projectedScoreMid: 400,
+    projectedScoreLow: 300,
+    projectedScoreHigh: 500,
+    relevantQuestionCount: 37,
+    computedAt: "2026-09-25T00:00:00Z",
+  },
+];
+
+/** One list, both payloads — the same plan, so the same suppressed dates. */
+const FULL_LENGTH_SUPPRESSIONS = ["2026-10-17"];
+
 const STUDENT_RESPONSE: CalendarReadyResponse = {
   status: "ready",
   profile: {
@@ -98,6 +129,10 @@ const STUDENT_RESPONSE: CalendarReadyResponse = {
     study_days_mask: 127,
     daily_minutes: 60,
     full_length_weekday: 6,
+    // Brief 14: the weekday and the interval are ONE setting. `studyProfileSchema` requires
+    // both (nullable, not optional), so a fixture with only the weekday describes a profile
+    // the server cannot serve.
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T00:00:00Z",
   },
@@ -111,6 +146,11 @@ const STUDENT_RESPONSE: CalendarReadyResponse = {
     created_at: "2026-09-21T09:00:00Z",
   },
   diagnostic_state: "baseline_ready",
+  projection: PROJECTION,
+  // Brief 14 Step 4. Non-empty on purpose: the suppression notice only renders off a
+  // populated array, so an empty fixture would let the guardian/student copy split below
+  // pass against a component that rendered nothing for either viewer.
+  full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
   // §17.2. The payload is `.strict()` and requires this, so a real response always carries
   // it; a fixture that omitted it would hand `studentViewModel` an undefined engine list
   // and only fail the day a test opened the create sheet.
@@ -123,6 +163,16 @@ const GUARDIAN_RESPONSE: GuardianCalendarReadyResponse = {
   // Owner ruling 2026-09-22: minutes are NOT among §16's exclusions, so the guardian
   // payload carries the same estimates the student's does.
   estimates: ESTIMATES,
+  // Owner ruling 2026-09-26: R-08-22 reversed, and §16's "no profile" clause narrowed to
+  // admit exactly these two. Same values as STUDENT_RESPONSE above, because it is the same
+  // student's plan — that identity is what the parity test asserts.
+  target_score: 1400,
+  target_exam_date: "2026-11-07",
+  projection: PROJECTION,
+  // Owner ruling 2026-09-26: the guardian sees the suppression too. THE SAME dates as
+  // STUDENT_RESPONSE, because it is the same student's plan — what differs is the copy, and
+  // that difference is what the tests below assert.
+  full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
   days: [
     {
       local_date: TODAY,
@@ -167,8 +217,12 @@ function renderGuardian(): HTMLElement {
       model={guardianViewModel(GUARDIAN_RESPONSE)}
       today={TODAY}
       viewerName="Study plan"
-      targetExamDate={null}
+      viewer="guardian"
+      targetExamDate={GUARDIAN_RESPONSE.target_exam_date}
+      targetScore={GUARDIAN_RESPONSE.target_score}
+      projection={GUARDIAN_RESPONSE.projection}
       streak={STREAK}
+      fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
       planUpdate={null}
       onRangeChange={() => {}}
     />,
@@ -182,8 +236,12 @@ function renderStudent(): HTMLElement {
       model={studentViewModel(STUDENT_RESPONSE)}
       today={TODAY}
       viewerName="Karl"
+      viewer="student"
       targetExamDate="2026-11-07"
+      targetScore={STUDENT_RESPONSE.profile.target_score}
+      projection={STUDENT_RESPONSE.projection}
       streak={STREAK}
+      fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
       planUpdate={{ versionNo: 2, trigger: "weekly" }}
       onRangeChange={() => {}}
       mutations={{
@@ -307,11 +365,90 @@ describe("guardian calendar is read-only (§16, R-08-22)", () => {
     expect(text).not.toContain("Keeping this one moving");
   });
 
-  it("renders no target score and no exam countdown (R-08-22)", () => {
+  // THIS TEST ASSERTED THE OPPOSITE UNTIL 2026-09-26, and the reversal is the point of the
+  // change rather than a side effect of it. R-08-22 ("Guardians do not see target score") is
+  // reversed by owner ruling, and §16's separate "no profile" clause is narrowed to admit the
+  // exam date: "It is the student's stated goal, and a projection with nothing to compare
+  // against is half a fact." So the absence this file used to guard is now a presence, and
+  // the guard moves to the shape of the EMPTY states instead (the three tests below).
+  it("renders the target, the countdown and the band — the same readouts the student sees", () => {
     const container = renderGuardian();
     const text = container.textContent ?? "";
-    expect(text).not.toContain("1400");
-    expect(text).not.toContain("days to test");
+    expect(text).toContain("1400");
+    expect(text).toContain("Target");
+    expect(text).toContain("days to test");
+    expect(text).toContain("680 – 1060");
+    expect(text).toContain("Projected");
+    // By testid too, so a future layout change cannot satisfy this on some other element.
+    expect(
+      container.querySelector('[data-testid="calendar-target"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-countdown"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-projection"]'),
+    ).not.toBeNull();
+    // And none of the ABSENT variants rendered, which is what a null-passing bug looks like.
+    expect(
+      container.querySelector('[data-testid="calendar-target-absent"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-projection-absent"]'),
+    ).toBeNull();
+  });
+
+  // The band a parent reads must be the band the student reads, not a re-derivation of it.
+  // `PROJECTION` is one constant shared by both fixtures, so this compares the values the
+  // two surfaces actually render rather than two hand-written copies that could drift.
+  it("renders the SAME projected band as the student surface, number for number", () => {
+    const guardian = renderGuardian().textContent ?? "";
+    cleanup();
+    const student = renderStudent().textContent ?? "";
+    for (const fragment of ["1400", "Target", "680 – 1060", "Projected"]) {
+      expect(guardian).toContain(fragment);
+      expect(student).toContain(fragment);
+    }
+  });
+
+  // §16 gives a guardian NO write path, so an empty slot must state a fact, never ask for
+  // one. This is the guard that replaces the old "no target score" assertion: the guardian
+  // still never sees an action, it just no longer has to be blind to the number.
+  it("states absence rather than instructing it — no CTA in any empty header slot", () => {
+    const { container } = render(
+      <CalendarView
+        model={guardianViewModel(GUARDIAN_RESPONSE)}
+        today={TODAY}
+        viewerName="Study plan"
+        viewer="guardian"
+        targetExamDate={null}
+        targetScore={null}
+        projection={undefined}
+        streak={STREAK}
+        fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />,
+    );
+    const text = container.textContent ?? "";
+    // The statements.
+    expect(text).toContain("No target set");
+    expect(text).toContain("No test date");
+    expect(text).toContain("Not enough practice yet");
+    // None of the student's instructions, which are the CTAs a guardian cannot act on.
+    expect(text).not.toContain("Set a target");
+    expect(text).not.toContain("Add your test date");
+    expect(text).not.toContain("Answer a few questions");
+    // Prove the slots rendered at all, so the absences above are not passing on a blank page.
+    expect(
+      container.querySelector('[data-testid="calendar-target-absent"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-countdown-absent"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-projection-absent"]'),
+    ).not.toBeNull();
   });
 
   it("renders no day ⋯ menu and no day-off Undo on any date (§17.2)", () => {
@@ -430,8 +567,10 @@ describe("a started block is not draggable (§12.2)", () => {
         model={studentViewModel(withStartedBlock())}
         today={TODAY}
         viewerName="Karl"
+        viewer="student"
         targetExamDate="2026-11-07"
         streak={STREAK}
+        fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
         planUpdate={null}
         onRangeChange={() => {}}
         mutations={{
@@ -491,8 +630,10 @@ describe("the guardian sees the minute estimate (§17.1, owner ruling)", () => {
         model={guardianViewModel(GUARDIAN_RESPONSE)}
         today={TODAY}
         viewerName="Study plan"
+        viewer="guardian"
         targetExamDate={null}
         streak={STREAK}
+        fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
         planUpdate={null}
         onRangeChange={() => {}}
       />,
@@ -510,8 +651,10 @@ describe("the guardian sees the minute estimate (§17.1, owner ruling)", () => {
         model={guardianViewModel(GUARDIAN_RESPONSE)}
         today={TODAY}
         viewerName="Study plan"
+        viewer="guardian"
         targetExamDate={null}
         streak={STREAK}
+        fullLengthSuppressions={FULL_LENGTH_SUPPRESSIONS}
         planUpdate={null}
         onRangeChange={() => {}}
       />,
@@ -529,5 +672,89 @@ describe("the guardian sees the minute estimate (§17.1, owner ruling)", () => {
 
     expect(guardianMinutes.length).toBeGreaterThan(0);
     expect(guardianMinutes).toEqual(studentMinutes);
+  });
+});
+
+/**
+ * Brief 14 Step 4 — the suppressed practice test, on BOTH surfaces.
+ *
+ * @spec [Doc 05F §8.1; owner ruling 2026-09-26] | @implemented [2026-09-27]
+ *
+ * Owner ruling: "Guardians see the suppression. It's a fact about the plan, not a control and
+ * not a profile field — the same category as the projection and the test date... That's
+ * precisely the silence this whole change exists to end; withholding it would rebuild the
+ * defect on the guardian side. With the guardian's own copy, though: a statement, never an
+ * action." Both halves of that ruling are asserted here — the guardian is TOLD, and is given
+ * nothing to press.
+ */
+describe("the suppressed practice test (Brief 14, owner ruling 2026-09-26)", () => {
+  it("tells the STUDENT, and points them at the day", () => {
+    const container = renderStudent();
+    const notice = container.querySelector(
+      '[data-testid="calendar-full-length-suppressed"]',
+    );
+    expect(notice).not.toBeNull();
+    expect(notice!.textContent).toContain(
+      "We couldn't fit your practice test — the days you picked are blocked.",
+    );
+    // The date is a control, because a student CAN do something about it: it moves the grid
+    // to that week, where §17.2's day menu undoes the day off.
+    const goto = notice!.querySelector(
+      `[data-testid="calendar-full-length-suppressed-goto-${FULL_LENGTH_SUPPRESSIONS[0]}"]`,
+    );
+    expect(goto).not.toBeNull();
+    expect(goto!.textContent).toBe("17 October");
+  });
+
+  it("tells the GUARDIAN, in their own copy, with nothing to press", () => {
+    const container = renderGuardian();
+    const notice = container.querySelector(
+      '[data-testid="calendar-full-length-suppressed"]',
+    );
+    // PRESENCE FIRST. The absence assertion below is worthless against a surface that
+    // rendered no notice at all, which is how withholding it would look.
+    expect(notice).not.toBeNull();
+    expect(notice!.textContent).toBe(
+      "A practice test couldn't be scheduled — the days chosen are blocked.",
+    );
+    // A statement, never an action: no button of any kind inside it. Not "no date button" —
+    // no button, because the rule is about the category and not about this one affordance.
+    expect(notice!.querySelectorAll("button")).toHaveLength(0);
+    // And never the student's sentence, which is addressed to the person who chose the days.
+    expect(notice!.textContent).not.toContain("the days you picked");
+  });
+
+  it("renders NOTHING when the plan has no suppression — never an empty bar", () => {
+    const { container } = render(
+      <CalendarView
+        model={guardianViewModel(GUARDIAN_RESPONSE)}
+        today={TODAY}
+        viewerName="Study plan"
+        viewer="guardian"
+        targetExamDate={null}
+        targetScore={null}
+        streak={STREAK}
+        fullLengthSuppressions={[]}
+        planUpdate={null}
+        onRangeChange={() => {}}
+      />,
+    );
+    expect(
+      container.querySelector(
+        '[data-testid="calendar-full-length-suppressed"]',
+      ),
+    ).toBeNull();
+    // The plan itself still rendered, so this is "no notice" and not "no page".
+    expect(container.textContent).toContain("~23 min");
+  });
+
+  it("the two sentences differ, and neither is the other's", () => {
+    // The copy table, read directly. A rendering test can pass with both viewers reading the
+    // same string if the component ever stops keying on `viewer`; this cannot.
+    expect(SUPPRESSION_COPY_TABLE.student).not.toBe(
+      SUPPRESSION_COPY_TABLE.guardian,
+    );
+    // The guardian's is third person throughout — no "you", no "your".
+    expect(SUPPRESSION_COPY_TABLE.guardian).not.toMatch(/\byou(r)?\b/i);
   });
 });

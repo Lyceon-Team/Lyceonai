@@ -50,6 +50,22 @@ export const STUDENT_RESOURCE_PATHS = {
 export type StudentResourceKey = keyof typeof STUDENT_RESOURCE_PATHS;
 
 /**
+ * @spec [Doc-04C §12 as amended by SCL-181; Doc 04 Parent Q9 as amended by SCL-180]
+ *   | @implemented [2026-09-27]
+ *
+ * G1 — a linked guardian reads a student's full-length exam results on this mount, behind
+ * the same resolver, rather than at 04C §12.1's `/api/guardian/students/…` (SCL-181). A
+ * sibling of `STUDENT_RESOURCE_PATHS`, not a member: `testReport` carries a second path
+ * parameter, and every loop over the resource table calls each path verbatim. The shapes
+ * live in `exam-guardian-report-schema.ts`; like the calendar, one narrow payload is served
+ * to whoever the resolver admits — the student's full report stays at `/api/tests/…`.
+ */
+export const STUDENT_EXAM_PATHS = {
+  tests: "/tests",
+  testReport: "/tests/:sessionId/report",
+} as const;
+
+/**
  * @spec [Doc 01 V8 §36.1 Initiation; owner ruling 2026-08-27 Q3 — link actions mount on the
  *   subject-scoped topology behind the PR 1 resolver, requiring `via === 'self'`]
  *

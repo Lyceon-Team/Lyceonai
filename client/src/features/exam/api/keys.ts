@@ -14,4 +14,7 @@ export const examKeys = {
     ["exam", "session", sessionId, section, module, "workspace"] as const,
   report: (sessionId: string) => ["exam", "report", sessionId] as const,
   reportStatus: (sessionId: string) => ["exam", "report", sessionId, "status"] as const,
+  guardianTests: (studentId: string) => ["exam", "guardian", studentId, "tests"] as const,
+  guardianReport: (studentId: string, sessionId: string) =>
+    ["exam", "guardian", studentId, "report", sessionId] as const,
 };

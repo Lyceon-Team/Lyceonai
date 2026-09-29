@@ -22,6 +22,7 @@ import type { SectionProjectionDto } from "@lyceon/shared";
 import { projectedRange } from "../lib/projection";
 import { bannerCopy } from "../copy/banner";
 import {
+  dayAndMonth,
   dayOfMonth,
   isSameMonth,
   monthGridDates,
@@ -197,6 +198,33 @@ function addSevenDays(date: string): string {
 // ── Top bar ─────────────────────────────────────────────────────────────────
 
 /**
+ * The absence copy, one row per viewer — the ONLY text that differs between the two headers.
+ *
+ * Kept as a table rather than inline ternaries so that "a guardian is never shown an action"
+ * is a property you can read off one object instead of checking three call sites. Every
+ * guardian string is a statement of fact in the third person and none is addressed to the
+ * reader; a guardian has no write path (§16), so an instruction would point nowhere.
+ *
+ * The student strings are unchanged, and that matters: this brief must not quietly reword
+ * the student's header while adding the guardian's.
+ */
+const ABSENT_COPY = {
+  student: {
+    target: "Set a target",
+    testDate: "Add your test date",
+    projection: "Answer a few questions to see your projection",
+  },
+  guardian: {
+    target: "No target set",
+    testDate: "No test date",
+    projection: "Not enough practice yet",
+  },
+} as const satisfies Record<
+  "student" | "guardian",
+  { target: string; testDate: string; projection: string }
+>;
+
+/**
  * §17.1 — the header, in three zones of two rows each.
  *
  * @spec [Doc 05F §17.1; owner ruling 2026-09-24 (Brief 10 Step 4)]
@@ -223,6 +251,7 @@ function addSevenDays(date: string): string {
  */
 export function TopBar({
   backHref,
+  viewer,
   rangeLabelText,
   view,
   onView,
@@ -245,7 +274,24 @@ export function TopBar({
   onToday: () => void;
   streak: StreakSummary | undefined;
   daysToTest: number | null;
-  /** §8.1, optional since SCL-130. `null` renders "Set a target", never a zero. */
+  /**
+   * WHOSE PLAN THIS IS, and it changes only the ABSENCE copy. Every populated readout is
+   * byte-identical between the two — a guardian sees `1400 Target` and `680 – 1060
+   * Projected` in the same slots at the same sizes, because it is the same plan.
+   *
+   * What differs is what an empty slot may say. The student's copy is an instruction —
+   * "Set a target", "Add your test date" — and a guardian cannot do any of those things, so
+   * for them the same slot states a fact instead. Offering a parent an action they have no
+   * path to is worse than saying nothing: §16 gives them no write path at all.
+   *
+   * A REQUIRED PROP, deliberately, and not a branch on `readOnly`. Required because a
+   * defaulted one is forgettable and forgetting it renders CTAs at a guardian — the failure
+   * this exists to prevent, silently. Not derived from `readOnly` because `CalendarView`'s
+   * own rule is that the guardian difference lives in the props; a flag that means
+   * "read-only" today would quietly also mean "third person" tomorrow.
+   */
+  viewer: "student" | "guardian";
+  /** §8.1, optional since SCL-130. `null` renders the absence copy, never a zero. */
   targetScore: number | null;
   /** Doc 05C's section rows, passed through untouched. `undefined` when none were served. */
   projection: readonly SectionProjectionDto[] | undefined;
@@ -332,7 +378,7 @@ export function TopBar({
               className="ptarget absent"
               data-testid="calendar-target-absent"
             >
-              Set a target
+              {ABSENT_COPY[viewer].target}
             </div>
           ) : (
             <div className="ptarget" data-testid="calendar-target">
@@ -391,7 +437,7 @@ export function TopBar({
               className="countline absent"
               data-testid="calendar-countdown-absent"
             >
-              Add your test date
+              {ABSENT_COPY[viewer].testDate}
             </div>
           ) : (
             <div className="countline" data-testid="calendar-countdown">
@@ -413,7 +459,7 @@ export function TopBar({
               className="prange absent"
               data-testid="calendar-projection-absent"
             >
-              Answer a few questions to see your projection
+              {ABSENT_COPY[viewer].projection}
             </div>
           ) : (
             <div className="prange" data-testid="calendar-projection">
@@ -448,6 +494,88 @@ export function PlanUpdatedBanner({
       <button type="button" onClick={onDismiss}>
         Dismiss
       </button>
+    </div>
+  );
+}
+
+// ── Suppressed practice test (Brief 14 Step 4) ──────────────────────────────
+
+/**
+ * The sentence a plan says when the generator could NOT place a practice test.
+ *
+ * @spec [Doc_05F_Study_Calendar, §8.1 full-length placement; owner ruling 2026-09-26
+ *        (Brief 14 Step 4)] | @implemented [2026-09-27]
+ *
+ * plain English: `calendar_place_full_lengths` refuses a date when BOTH the student's chosen
+ * weekday occurrence and the +7-day alternative are days the student has blocked out. Those
+ * dates come back in `degraded[]` as `full_length_suppressed` and reach both payloads as
+ * `full_length_suppressions`. This component is the only place either surface says so.
+ *
+ * Expected outcome: a student whose test silently vanished from the plan is told it did, and
+ * given the week it would have fallen in. Before this, the plan simply had no test in it and
+ * nothing anywhere said why — which is the defect the whole brief exists to end.
+ *
+ * WHY THE TWO VIEWERS GET DIFFERENT COPY AND DIFFERENT CONTROLS. Owner ruling 2026-09-26:
+ * "Guardians see the suppression. It's a fact about the plan, not a control and not a profile
+ * field... With the guardian's own copy, though: a statement, never an action." So the
+ * guardian's sentence is third-person and the component renders NO buttons for them — the
+ * same rule `ABSENT_COPY` above follows for "No target set". A guardian has no write path
+ * (§16), so an affordance would point nowhere.
+ *
+ * trade-offs: the student's dates are buttons that move the grid to that week and select the
+ * day, rather than opening the day menu directly. The menu lives on the day cell, so putting
+ * the date in view IS how you reach it — and the alternative, a second day-menu mount owned
+ * by a banner, would be a second copy of §17.2's four controls.
+ *
+ * edge cases: an EMPTY array renders nothing at all, never an empty bar. That is the ordinary
+ * case — a plan with no suppression is the plan working.
+ */
+const SUPPRESSION_COPY = {
+  student:
+    "We couldn't fit your practice test — the days you picked are blocked.",
+  guardian:
+    "A practice test couldn't be scheduled — the days chosen are blocked.",
+} as const satisfies Record<"student" | "guardian", string>;
+
+/** Exported for the test that pins the two sentences against the owner's ruling. */
+export const SUPPRESSION_COPY_TABLE = SUPPRESSION_COPY;
+
+export function FullLengthSuppressionNotice({
+  viewer,
+  dates,
+  onGoToWeek,
+}: {
+  viewer: "student" | "guardian";
+  /** `full_length_suppressions` off the payload, unchanged and in server order. */
+  dates: readonly string[];
+  /**
+   * Student only, and OPTIONAL even then: given, each date becomes a button that moves the
+   * grid to its week. A guardian caller passes nothing, which is what makes "a statement,
+   * never an action" a property of the call site rather than a branch in here.
+   */
+  onGoToWeek?: (date: string) => void;
+}): JSX.Element | null {
+  if (dates.length === 0) return null;
+  const goTo = viewer === "student" ? onGoToWeek : undefined;
+  return (
+    <div
+      className="banner"
+      role="status"
+      data-testid="calendar-full-length-suppressed"
+    >
+      <span>{SUPPRESSION_COPY[viewer]}</span>
+      {goTo === undefined
+        ? null
+        : dates.map((date) => (
+            <button
+              key={date}
+              type="button"
+              onClick={() => goTo(date)}
+              data-testid={`calendar-full-length-suppressed-goto-${date}`}
+            >
+              {dayAndMonth(date)}
+            </button>
+          ))}
     </div>
   );
 }

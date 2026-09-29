@@ -118,11 +118,15 @@ const RESPONSE = {
 function renderCalendar(): void {
   render(
     <CalendarView
+      viewer="student"
       model={studentViewModel(RESPONSE)}
       today={TODAY}
       viewerName="A Student"
       targetExamDate={null}
       streak={{ current: 3, longest: 5, history_complete: true }}
+      // This file measures the 390px layout, and the notice is not part of it: empty, so the
+      // column count it asserts is not counting a banner.
+      fullLengthSuppressions={[]}
       planUpdate={null}
       onRangeChange={() => {}}
     />,

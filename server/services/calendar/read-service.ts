@@ -256,13 +256,16 @@ async function readLaunchStates(
  * The study-days mask each version had in force, keyed by `version_no`. Read from
  * `input_snapshot`, which is the frozen profile the generator planned against (§10.1).
  */
-async function readMasksByVersion(
+async function readSnapshotFactsByVersion(
   studentId: string,
   versionNos: readonly number[],
   requestId?: string,
-): Promise<Map<number, number>> {
+): Promise<{ masks: Map<number, number>; suppressions: string[] }> {
   const masks = new Map<number, number>();
-  if (versionNos.length === 0) return masks;
+  // A Set, because two versions in one window can both carry the same suppressed date and a
+  // student should be told about it once.
+  const suppressed = new Set<string>();
+  if (versionNos.length === 0) return { masks, suppressions: [] };
 
   const { data, error } = await supabaseServer
     .from("calendar_plan_versions")
@@ -279,7 +282,7 @@ async function readMasksByVersion(
       "plan input snapshots could not be read; study days fall back to the current profile",
       { ...classifyError(error), requestId },
     );
-    return masks;
+    return { masks, suppressions: [] };
   }
 
   for (const row of data ?? []) {
@@ -287,12 +290,30 @@ async function readMasksByVersion(
     const snapshot: unknown = row.input_snapshot;
     if (typeof snapshot !== "object" || snapshot === null) continue;
     const profile: unknown = (snapshot as { profile?: unknown }).profile;
-    if (typeof profile !== "object" || profile === null) continue;
-    const mask: unknown = (profile as { study_days_mask?: unknown })
-      .study_days_mask;
-    if (typeof mask === "number") masks.set(row.version_no, mask);
+    if (typeof profile === "object" && profile !== null) {
+      const mask: unknown = (profile as { study_days_mask?: unknown })
+        .study_days_mask;
+      if (typeof mask === "number") masks.set(row.version_no, mask);
+    }
+
+    // The suppressions, off the SAME row this function already fetched — no second round
+    // trip. Narrowed field by field and never spread: `input_snapshot` is the whole
+    // PlanInput, mastery included, and a spread here would put all of it one layer from a
+    // response (CLAUDE.md's anti-leak chokepoint rule).
+    const degraded: unknown = (snapshot as { degraded?: unknown }).degraded;
+    if (!Array.isArray(degraded)) continue;
+    for (const entry of degraded) {
+      // Marker STRINGS ("mastery", "review_queue") sit in the same array and are not ours.
+      if (typeof entry !== "object" || entry === null) continue;
+      const kind: unknown = (entry as { kind?: unknown }).kind;
+      const date: unknown = (entry as { date?: unknown }).date;
+      if (kind === "full_length_suppressed" && typeof date === "string") {
+        suppressed.add(date);
+      }
+    }
   }
-  return masks;
+  // Sorted, so the payload is stable across reads and a diff of two responses means something.
+  return { masks, suppressions: [...suppressed].sort() };
 }
 
 /** §12.7, verbatim: highest ACCEPTED, non-student version above the watermark. */
@@ -352,6 +373,13 @@ type AssembledRange = {
   days: CalendarDayInput[];
   units: ActivityUnit[];
   launches: BlockLaunchState[];
+  /**
+   * Dates the generator gave up on because the student's own day edits blocked both
+   * occurrences (formula sheet §2 Step 2 item 4). Read out of the stored snapshots' own
+   * `degraded[]`, so this is what the plan the student is LOOKING AT actually recorded —
+   * not a recomputation that could disagree with it.
+   */
+  fullLengthSuppressions: string[];
 };
 
 async function assembleRange(
@@ -370,11 +398,12 @@ async function assembleRange(
     .filter((id): id is string => typeof id === "string");
   const versionNos = [...new Set(planRows.map((row) => row.version_no))];
 
-  const [blocks, launches, masks] = await Promise.all([
+  const [blocks, launches, snapshotFacts] = await Promise.all([
     readBlocks(studentId, blockIds, requestId),
     readLaunchStates(studentId, blockIds, requestId),
-    readMasksByVersion(studentId, versionNos, requestId),
+    readSnapshotFactsByVersion(studentId, versionNos, requestId),
   ]);
+  const masks = snapshotFacts.masks;
 
   // One entry per date in the window, then the plan rows fill the ones a version owns.
   const byDate = new Map<string, CalendarDayInput>();
@@ -449,7 +478,14 @@ async function assembleRange(
     day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
 
   const units = await readActivityUnits(studentId, days, requestId);
-  return { profile, today, days, units, launches };
+  return {
+    profile,
+    today,
+    days,
+    units,
+    launches,
+    fullLengthSuppressions: snapshotFacts.suppressions,
+  };
 }
 
 /**
@@ -584,6 +620,15 @@ export async function readCalendar(
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
     estimates: config.estimates,
+    // §8.1's frequency readout. STUDENT ONLY, and for the same reason `enabled_block_types`
+    // is: it exists to make a CONTROL truthful, and §16 gives a guardian no controls. The
+    // guardian payload below omits it.
+    exam_planning: {
+      final_exam_lead_days: config.finalExamLeadDays,
+      default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    },
+    // Formula sheet §2 Step 2 item 4. Always present, `[]` when nothing was lost.
+    full_length_suppressions: range.fullLengthSuppressions,
     // §17.2. From the config accessor, never a literal — the picker must offer exactly what
     // V-03 accepts. The guardian payload below deliberately omits it (§16: no write path).
     enabled_block_types: [...config.enabledBlockTypes],
@@ -712,6 +757,8 @@ async function setupDefaults(
     daily_minutes_min: config.bounds.daily_minutes_min,
     daily_minutes_max: config.bounds.daily_minutes_max,
     target_exam_date_max_days: config.bounds.target_exam_date_max_days,
+    default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    final_exam_lead_days: config.finalExamLeadDays,
   };
 }
 
@@ -783,10 +830,11 @@ export async function readGuardianCalendar(
     launches: range.launches,
   });
 
-  const streak = await getStudentActivityStreak(
-    request.student_id,
-    request.request_id,
-  );
+  // Independent reads, so they go together — the same shape as the student path above.
+  const [streak, projection] = await Promise.all([
+    getStudentActivityStreak(request.student_id, request.request_id),
+    readProjection(request.student_id, request.request_id),
+  ]);
 
   // Parsed on the way out, not just typed. The guardian boundary is the one place a leak
   // is a privacy incident rather than a bug, and `.strict()` rejects an extra key that a
@@ -796,6 +844,25 @@ export async function readGuardianCalendar(
     // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
     // parent view is identical to the student's, and minutes are not among §16's exclusions.
     estimates: config.estimates,
+    // The SAME dates, by owner ruling 2026-09-26: a suppression is a fact about the plan,
+    // the category §16 as amended already admits. Only the COPY differs — the guardian's
+    // line states it and never instructs, because they have no day menu to be sent to.
+    full_length_suppressions: range.fullLengthSuppressions,
+    // §16 as amended 2026-09-26: R-08-22 reversed, and "no profile" narrowed to admit these
+    // two. Read off the profile this function ALREADY loaded to resolve the timezone — no
+    // second query, and no chance of the header disagreeing with the plan it sits above.
+    //
+    // Exactly two fields, named one at a time. Spreading the profile would serve the
+    // timezone, the day mask, the daily minutes, the exam weekday and the planner mode with
+    // it, all of which §16 still withholds — and a spread is how a withheld field arrives
+    // silently when someone adds a column later. The anti-leak chokepoint rule in CLAUDE.md
+    // is about exactly this shape of mistake.
+    target_score: profile.target_score,
+    target_exam_date: profile.target_exam_date,
+    // Doc 05C's rows, 1:1 with the student's. Omitted rather than nulled when the read
+    // fails, matching the student payload's optionality — `readProjection` already logs and
+    // degrades, so a projection outage costs the band and not the calendar.
+    ...(projection === null ? {} : { projection }),
     days: built.days.map(toGuardianCalendarDay),
     facts: built.facts,
     streak,

@@ -20,10 +20,19 @@ import { z } from "zod";
  * joined on 2026-09-15 (Doc 01 §36.3 — the party who did not revoke is told). The consent
  * request, the deletion-scheduled email and the guardian INVITE are direct sends, not events —
  * see server/lib/notifications/direct-sends.ts.
+ *
+ * `full_length_week` and `full_length_tomorrow` joined on 2026-09-27 (Brief 14 Step 5; Doc 05F
+ * §8.1). TWO TYPES, NOT ONE WITH A KIND IN THE PAYLOAD — the owner's ruling of 2026-09-26, and
+ * not a stylistic one: `notification_event_id(event_type, source_id)` hashes the TYPE, so two
+ * types are what let one exam block carry two independently-idempotent notifications. A single
+ * type with `{"kind": ...}` in its payload would derive one id per block and the second notice
+ * would be swallowed by the ON CONFLICT that makes the first a safe replay.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
   "guardian_unlinked",
+  "full_length_week",
+  "full_length_tomorrow",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -74,6 +83,29 @@ export const guardianUnlinkedPayloadSchema = z
   .strict();
 export type GuardianUnlinkedPayload = z.infer<
   typeof guardianUnlinkedPayloadSchema
+>;
+
+/**
+ * @spec [Doc-05F_V1.0 §8.1; contracts/notifications.contract.md §8.1; Brief 14 Step 5]
+ * @implemented [2026-09-27]
+ *
+ * The two practice-test notices share one payload shape: the block the notice is about and
+ * the local date the template renders ("Saturday the 17th"). Identifiers and rendering
+ * parameters only.
+ *
+ * NO `form_id`, deliberately. It names a specific exam paper, which is content about the
+ * assessment sitting in a persisted, recipient-readable row — and the notice does not need it
+ * to say a practice test is coming. `.strict()` refuses it, and every other addition, at
+ * render time as well as at write time.
+ */
+export const fullLengthNoticePayloadSchema = z
+  .object({
+    block_id: z.string().uuid(),
+    local_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+export type FullLengthNoticePayload = z.infer<
+  typeof fullLengthNoticePayloadSchema
 >;
 
 // ── DB rows read through the service client ─────────────────────────────────

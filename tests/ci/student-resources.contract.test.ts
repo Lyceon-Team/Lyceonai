@@ -34,7 +34,10 @@ import {
   RULE_4_COLUMNS,
   findRule4Keys,
 } from "../../packages/shared/src/rule4-columns";
-import { STUDENT_RESOURCE_PATHS } from "../../packages/shared/src/student-resources";
+import {
+  STUDENT_EXAM_PATHS,
+  STUDENT_RESOURCE_PATHS,
+} from "../../packages/shared/src/student-resources";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
 const GUARDIAN = "22222222-2222-4222-8222-222222222222";
@@ -128,6 +131,8 @@ function resetRows() {
     { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
     { key: "target_exam_date_max_days", value: 540 },
     { key: "weekly_job_interval_minutes", value: 1440 },
+    { key: "default_full_length_interval_weeks", value: 2 },
+    { key: "final_exam_lead_days", value: 7 },
     { key: "horizon_days", value: 14 },
     { key: "generator_version", value: "20260917140000" },
     // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
@@ -145,6 +150,7 @@ function resetRows() {
       study_days_mask: 127,
       daily_minutes: 60,
       full_length_weekday: 6,
+      full_length_interval_weeks: 2,
       planner_mode: "auto",
       setup_completed_at: "2026-08-01T00:00:00.000Z",
       last_acknowledged_nonstudent_version_no: 0,
@@ -311,8 +317,16 @@ describe("subject-scoped resources — one route, two callers", () => {
     expect(body).not.toContain("weighted");
     expect(body).not.toContain("version_no");
     expect(body).not.toContain("is_user_override");
-    expect(body).not.toContain("target_score");
     expect(body).not.toContain("membership_type");
+    // `target_score` WAS on this list until 2026-09-26. R-08-22 is reversed and §16's
+    // separate "no profile" clause is narrowed to admit the exam date too, so the two are
+    // asserted PRESENT here and the remaining profile columns carry the withholding.
+    expect(res.body.target_score).toBe(1400);
+    expect(res.body).toHaveProperty("target_exam_date");
+    expect(body).not.toContain("study_days_mask");
+    expect(body).not.toContain("daily_minutes");
+    expect(body).not.toContain("planner_mode");
+    expect(body).not.toContain("setup_completed_at");
     // §16 gives a guardian the same FACTS, so those are present rather than withheld.
     expect(res.body.facts.blocks_total).toBe(1);
     expect(Object.keys(res.body.streak).sort()).toEqual([
@@ -463,10 +477,19 @@ describe("subject-scoped resources — one route, two callers", () => {
           STUDENT_RESOURCE_PATHS.masterySkills,
           // Doc 05F §16: the calendar is premium, gated on the SUBJECT`s entitlement.
           STUDENT_RESOURCE_PATHS.calendar,
+          // G1 (04C §2.6 condition 2): exam results need the full-length feature.
+          STUDENT_EXAM_PATHS.tests,
+          STUDENT_EXAM_PATHS.testReport,
         ].sort(),
       );
       expect(gated.map(([, key]) => key).sort()).toEqual(
-        ["calendar_access", "mastery_detail", "mastery_detail"].sort(),
+        [
+          "calendar_access",
+          "mastery_detail",
+          "mastery_detail",
+          "exam_full_length",
+          "exam_full_length",
+        ].sort(),
       );
       expect(open.map(([path]) => path).sort()).toEqual(
         [

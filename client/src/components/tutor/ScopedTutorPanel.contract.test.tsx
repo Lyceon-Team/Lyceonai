@@ -20,7 +20,14 @@ import React from "react";
 import express from "express";
 import request from "supertest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeTutorDb } from "../../../../tests/helpers/fake-tutor-db";
 
@@ -74,6 +81,9 @@ vi.mock("../../../../server/services/cloud-tasks-enqueue", () => ({
 const STUDENT_ID = "77777777-7777-4777-8777-777777777777";
 
 import tutorRuntimeRouter from "../../../../server/routes/tutor-runtime";
+import { EntitlementService } from "../../../../server/services/entitlement-service";
+import { runCrisisClassifier } from "../../../../server/services/tutor-crisis";
+import { LISA_UPGRADE_PITCH } from "./LisaUpgradeCard";
 
 function makeApp(): express.Express {
   const app = express();
@@ -91,7 +101,7 @@ function makeApp(): express.Express {
 
 // ── Client transport: apiRequest → supertest → the real router ─────────────
 
-type Call = { method: string; path: string };
+type Call = { method: string; path: string; status: number };
 const calls: Call[] = [];
 
 function conversationCreates(): Call[] {
@@ -116,7 +126,7 @@ vi.mock("@/lib/queryClient", async () => {
               .set("Content-Type", "application/json")
               .send(options?.body ?? "{}")
           : await agent.get(url);
-      calls.push({ method, path: url });
+      calls.push({ method, path: url, status: res.status });
       const response = new Response(JSON.stringify(res.body), {
         status: res.status,
         headers: { "Content-Type": "application/json" },
@@ -128,8 +138,15 @@ vi.mock("@/lib/queryClient", async () => {
     },
   };
 });
+// A visible stand-in for the one billing card: it shows which pitch and which
+// mode it was drawn with. Its own copy and destination are tested with the
+// resolver (billing-cta), not here.
 vi.mock("@/components/billing/PremiumUpgradePrompt", () => ({
-  PremiumUpgradePrompt: () => null,
+  PremiumUpgradePrompt: (p: { mode?: string; pitch?: { title: string } }) => (
+    <div data-testid="premium-upgrade-prompt" data-mode={p.mode}>
+      {p.pitch?.title}
+    </div>
+  ),
 }));
 
 import {
@@ -434,5 +451,199 @@ describe("W4-4 — open on load, and nothing created by being open", () => {
     renderPanel(p);
     fireEvent.click(screen.getByRole("button", { name: "Hide LISA" }));
     expect(p.onHide).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── W4-11 — an unpaid student never holds a composer ─────────────────────
+//
+// The server checks entitlement before anything else on every tutor route,
+// crisis detection included (Doc 03B §6.5, kept by owner ruling 2026-09-27).
+// So the panel must not offer a composer the server will refuse unread: the
+// server's refusal — on load, not on send — replaces opener and composer with
+// the LISA upgrade card. The refusals below are the REAL router's.
+
+function setEntitled(active: boolean): void {
+  vi.mocked(EntitlementService.isEntitlementActiveForProfile).mockResolvedValue(
+    active,
+  );
+}
+
+function refusals(): Call[] {
+  return calls.filter((c) => c.status === 403);
+}
+
+describe("W4-11 — upgrade card instead of a composer for an unpaid student", () => {
+  beforeEach(() => {
+    // Earlier tests' panels are still mounted; flipping entitlement would make
+    // them refetch into this test's call log. Unmount them first.
+    cleanup();
+    calls.length = 0;
+    setEntitled(true);
+  });
+  afterEach(() => setEntitled(true));
+
+  it("unpaid, on load: the card replaces opener AND composer before anything is typed", async () => {
+    setEntitled(false);
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+
+    const card = await screen.findByTestId("lisa-upgrade");
+    expect(card.textContent).toContain(LISA_UPGRADE_PITCH.title);
+    expect(screen.queryByLabelText("Message")).toBeNull();
+    expect(screen.queryByTestId("tutor-opener")).toBeNull();
+    // It was the server's refusal of THIS item's on-load lookup that drew the
+    // card, and nothing was created. (Nothing can be sent: there is no
+    // composer. A `/messages` count here would be polluted by requests still
+    // in flight from earlier tests, which carry no item to filter on.)
+    expect(
+      refusals().some(
+        (c) =>
+          c.method === "GET" &&
+          c.path.includes(`source_session_item_id=${itemId}`),
+      ),
+    ).toBe(true);
+    expect(conversationCreates()).toHaveLength(0);
+  });
+
+  it("unpaid: the card stays inside the panel — the question and Desmos beside it stay usable", async () => {
+    setEntitled(false);
+    const itemId = seedReviewItem(1);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <div>
+          <label>
+            Answer
+            <input aria-label="Answer" />
+          </label>
+          <div data-testid="desmos-host">
+            <input aria-label="Desmos expression" />
+          </div>
+          <ScopedTutorPanel {...props(itemId)} />
+        </div>
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("lisa-upgrade");
+
+    // Inline, inside the panel — never the floating, page-covering mode.
+    const panel = screen.getByTestId("scoped-tutor-panel");
+    const prompt = within(panel).getByTestId("premium-upgrade-prompt");
+    expect(prompt.getAttribute("data-mode")).toBe("inline");
+
+    for (const label of ["Answer", "Desmos expression"]) {
+      const input = screen.getByLabelText(label) as HTMLInputElement;
+      expect(input.disabled).toBe(false);
+      fireEvent.change(input, { target: { value: "3x - 4 = 11" } });
+      expect(input.value).toBe("3x - 4 = 11");
+    }
+  });
+
+  it("entitlement lapses after load: the first send is refused and the card replaces the composer", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+
+    setEntitled(false);
+    send("How do I start?");
+
+    await screen.findByTestId("lisa-upgrade");
+    expect(screen.queryByLabelText("Message")).toBeNull();
+    // One message, not two: the generic "isn't available" line is not drawn
+    // over an entitlement refusal.
+    expect(screen.queryByText(/isn.t available right now/i)).toBeNull();
+    expect(db.current.rows("tutor_conversations")).toHaveLength(0);
+  });
+
+  it("entitlement lapsed on a returning student's thread: the card, not a composer", async () => {
+    const itemId = seedReviewItem(1);
+    seedConversation(itemId, [
+      { role: "student", message: "How do I start?" },
+      { role: "tutor", message: TUTOR_TEXT },
+    ]);
+    setEntitled(false);
+    renderPanel(props(itemId));
+
+    await screen.findByTestId("lisa-upgrade");
+    expect(screen.queryByLabelText("Message")).toBeNull();
+  });
+
+  it("a paying student never sees the card — on load, on first send, or in the thread", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+    expect(screen.queryByTestId("lisa-upgrade")).toBeNull();
+
+    send("How do I start?");
+    await screen.findByText(TUTOR_TEXT);
+    expect(screen.queryByTestId("lisa-upgrade")).toBeNull();
+    expect(screen.queryByTestId("premium-upgrade-prompt")).toBeNull();
+    expect(screen.getByLabelText("Message")).toBeTruthy();
+    expect(refusals()).toHaveLength(0);
+  });
+
+  it("a transport failure is not a paywall: no card, the composer stays", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+
+    // A 5xx from the create call — not an entitlement refusal.
+    const insert = vi
+      .spyOn(db.current, "client")
+      .mockImplementation(() => {
+        throw new Error("db down");
+      });
+    send("How do I start?");
+    await screen.findByText(/isn.t available right now/i);
+    insert.mockRestore();
+
+    expect(screen.queryByTestId("lisa-upgrade")).toBeNull();
+    expect(screen.getByLabelText("Message")).toBeTruthy();
+  });
+});
+
+describe("W4-11 — accepted gap: the server refuses an unpaid student before crisis detection", () => {
+  beforeEach(() => {
+    cleanup();
+    vi.mocked(runCrisisClassifier).mockClear();
+  });
+  afterEach(() => setEntitled(true));
+
+  /**
+   * Pinned, not endorsed by accident. Doc 03B §6.5 orders entitlement before
+   * orchestration, where the crisis classifier runs; the owner kept that order
+   * (2026-09-27) and closed the scenario on the client instead — an unpaid
+   * student is never given a composer (tests above). If this test starts
+   * failing because the classifier now runs for an unpaid student, the order
+   * changed: update the closure plan's accepted-gap row with it.
+   */
+  it("every tutor route refuses an unpaid student, and a message is never classified", async () => {
+    setEntitled(false);
+    const conversationId = seedConversation(seedReviewItem(1), []);
+    const app = makeApp();
+
+    const list = await request(app).get("/api/tutor/conversations");
+    const create = await request(app)
+      .post("/api/tutor/conversations")
+      .send({
+        entry_mode: "general",
+        source_surface: "dashboard",
+        idempotency_key: crypto.randomUUID(),
+      });
+    const message = await request(app)
+      .post("/api/tutor/messages")
+      .send({
+        conversation_id: conversationId,
+        message: "a message the server must refuse unread",
+        client_turn_id: crypto.randomUUID(),
+      });
+
+    for (const res of [list, create, message]) {
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("entitlement_required");
+    }
+    expect(vi.mocked(runCrisisClassifier)).not.toHaveBeenCalled();
+    expect(orchestrateTurn).not.toHaveBeenCalled();
   });
 });

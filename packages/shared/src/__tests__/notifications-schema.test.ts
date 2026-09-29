@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NOTIFICATION_EVENT_TYPES,
+  fullLengthNoticePayloadSchema,
   guardianLinkedPayloadSchema,
   isResendStatusEvent,
   notificationFeedQuerySchema,
@@ -13,11 +14,41 @@ import {
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
-  it("names exactly the two event types (R7/R8 launch scope + guardian_unlinked, 2026-09-15)", () => {
+  // WAS "names exactly the two event types". Rewritten, not loosened: this list is the mirror of
+  // `notification_events_type_check`, and the value of the assertion is that a type cannot appear
+  // in one without somebody naming it in the other. The two practice-test notices joined on
+  // 2026-09-27 (Brief 14 Step 5, 20261012000000).
+  it("names exactly the four event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
+      "full_length_week",
+      "full_length_tomorrow",
     ]);
+  });
+
+  it("the practice-test payload is block_id + local_date and nothing else (C8.1)", () => {
+    const ok = {
+      block_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      local_date: "2026-10-17",
+    };
+    expect(fullLengthNoticePayloadSchema.safeParse(ok).success).toBe(true);
+    // `form_id` names a specific exam paper. It is the key a well-meaning "the email could say
+    // which test" edit would add, and `.strict()` is what refuses it.
+    expect(
+      fullLengthNoticePayloadSchema.safeParse({
+        ...ok,
+        form_id: "7c9e6679-7425-40de-944b-e07fc1f90ae8",
+      }).success,
+    ).toBe(false);
+    // The date is a LOCAL date, not a timestamp: a template that re-parsed an instant against
+    // the server's zone would render the day before for half the world.
+    expect(
+      fullLengthNoticePayloadSchema.safeParse({
+        ...ok,
+        local_date: "2026-10-17T00:00:00Z",
+      }).success,
+    ).toBe(false);
   });
 
   it("guardian_linked payload is link_id + student_display_name and nothing else (C8.1)", () => {

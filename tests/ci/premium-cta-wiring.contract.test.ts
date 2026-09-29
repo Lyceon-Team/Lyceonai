@@ -97,11 +97,16 @@ describe("Premium CTA wiring contract", () => {
       "client/src/components/tutor/ScopedTutorPanel.tsx",
     );
 
-    expect(chat).toContain("PremiumUpgradePrompt");
+    // W4-11: both LISA surfaces draw the LISA upgrade card, which is the one
+    // billing card with LISA's pitch — not a second card.
+    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
+    expect(chat).toContain("LisaUpgradeCard");
     expect(chat).toContain("useTutorTurn");
     expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
-    expect(reviewPanel).toContain("PremiumUpgradePrompt");
+    expect(reviewPanel).toContain("LisaUpgradeCard");
     expect(reviewPanel).toContain("useTutorTurn");
+    expect(lisaCard).toContain("PremiumUpgradePrompt");
+    expect(lisaCard).toContain("mapTutorErrorToPremiumReason");
     // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
     // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,
     // getPremiumDenialReason) went with the deleted page; the chat surface is unchanged.

@@ -172,12 +172,16 @@ export default function CalendarPage(): JSX.Element {
               }
         }
         today={today}
+        viewer="student"
         viewerName={user?.display_name ?? "Your plan"}
         targetExamDate={null}
         // Pre-setup: there is no profile yet, so there is no target. The header says
         // "Set a target" rather than showing a slot the student cannot explain.
         targetScore={null}
         streak={streak.data}
+        // Pre-setup there is no plan, so nothing can have been suppressed. Empty rather than
+        // omitted: the prop is required, which is what stops a page forgetting it.
+        fullLengthSuppressions={[]}
         planUpdate={null}
         onRangeChange={onRangeChange}
       />
@@ -192,6 +196,7 @@ export default function CalendarPage(): JSX.Element {
       backHref="/dashboard"
       model={model}
       today={today}
+      viewer="student"
       viewerName={user?.display_name ?? "Your plan"}
       targetExamDate={response.profile.target_exam_date}
       targetScore={response.profile.target_score}
@@ -199,6 +204,9 @@ export default function CalendarPage(): JSX.Element {
       // touches them.
       projection={response.projection}
       streak={streak.data ?? response.streak}
+      // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
+      // the payload. The notice names them; nothing here re-derives which days are blocked.
+      fullLengthSuppressions={response.full_length_suppressions}
       planUpdate={
         change === null
           ? null
@@ -211,6 +219,7 @@ export default function CalendarPage(): JSX.Element {
         // the save against. Never a literal preset list in the client.
         bounds: response.bounds,
         estimates: response.estimates,
+        examPlanning: response.exam_planning,
         onSave: (draft) =>
           profile.mutate(
             newIntent({
@@ -220,6 +229,12 @@ export default function CalendarPage(): JSX.Element {
               target_exam_date: draft.target_exam_date,
               target_score: draft.target_score,
               full_length_weekday: draft.full_length_weekday,
+              // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
+              // names one and not the other (Brief 14 Step 2), so omitting this — as this
+              // call site did until the pair landed — makes every schedule save that touches
+              // the exam a 400 rather than a silent half-write. The sheet's own chips move
+              // both halves together for the same reason.
+              full_length_interval_weeks: draft.full_length_interval_weeks,
               planner_mode: draft.planner_mode,
             }),
             {

@@ -645,6 +645,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-seams-gates.sh
 
+      # G1: the exam report's per-domain breakdown. Ownership (one bare 403), agreement
+      # with score_runs' module counts and the served items, the ROUTING PREMISE on the
+      # live forms (2A and 2B identical per domain, SCL-160), the row key allowlist,
+      # scored sections only, and service_role-only execution.
+      # @spec [Doc 04C §8.1/§9.1, §2.3; Doc 04 Parent Q9 as amended by SCL-180; SCL-160] | @implemented [2026-09-27]
+      - name: Exam domain breakdown gates (G1)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/exam-domain-breakdown-gates.sh
+
       # E9b: the calendar's reading of a real exam. Whole exams walked through the E6
       # runtime functions and drained as the API does; then the scope shape, the next-test
       # rule, the plan input's exam facts (missed_count, reviewed, weak_domains from 05B at
@@ -933,7 +948,7 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/calendar-postgrest-gate.sh
 
-      - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
+      - name: Parity vs calendar_formula_reference.py (12 fixtures + seeded 3000 suite)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -1473,6 +1488,25 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-seams.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-seams.json \
             --file tests/ci/exam-seams.handler-pg.ci.test.ts
+
+      # G1: a linked guardian reads a student's exam results through the real resolver,
+      # real guardian_view_decision and real entitlement predicates: allowed, partial,
+      # pending, the forbidden-field scan, 404 for another guardian's student / foreign /
+      # revoked / anonymised, 402 for a lapsed entitlement or a disabled feature, and no
+      # write route. Named BY FILE.
+      # @spec [Doc 04C §2.6, §12.2, §12.3; SCL-180; SCL-181] | @implemented [2026-09-27]
+      - name: Guardian exam results → real PG proof (G1)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-exam-results.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-guardian-exam.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam.json \
+            --file tests/ci/guardian-exam-results.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that

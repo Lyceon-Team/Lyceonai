@@ -63,9 +63,19 @@ cleanup
 q >/dev/null <<SQL
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES ('$S', 'concurrency@example.test', '{}'::jsonb);
+-- BOTH HALVES OF THE PAIR. The full_length_pair CHECK (20261010000000) refuses a row
+-- naming one and not the other, and this fixture named only the weekday -- so it inserted
+-- cleanly before that migration and is a 23514 after it. The interval is 2 for the same
+-- reason every other calendar fixture uses 2: it is the seeded default.
+--
+-- NO BACKTICKS IN THIS HEREDOC. It is unquoted (<<SQL, not <<'SQL') because the fixture
+-- interpolates $S, so backticks around an identifier are command substitution: the first
+-- draft of this comment printed "full_length_pair: command not found" twice and silently
+-- dropped the words from the SQL it was documenting.
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('$S', 'America/Chicago', 62, 60, 6, 1400, now());
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, setup_completed_at)
+VALUES ('$S', 'America/Chicago', 62, 60, 6, 2, 1400, now());
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
 VALUES ('$S', 'M', 'Algebra', 0, 0, 0, 10, 'h'),

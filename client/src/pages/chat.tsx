@@ -6,6 +6,14 @@
  * (Main, Thinking, FailedTurn, NewSession, Crisis, Safeguarding,
  * EndSession, empty), client_turn_id idempotency (§3), and crisis/
  * safeguarding support cards driven entirely by server response content.
+ *
+ * @updated 2026-09-27 — W4-11 (closure plan): an unpaid student never reaches
+ * a composer. Every tutor route refuses them first (`entitlement_required`,
+ * checked before crisis detection per Doc 03B §6.5, kept by owner ruling
+ * 2026-09-27), and the session list is one of those routes — so the refusal
+ * arrives on load, before anything is typed, and the LISA upgrade card takes
+ * the place of "New session" and of the composer. The card is drawn only on
+ * the server's refusal; a paying student is never refused and never sees it.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -40,7 +48,10 @@ import {
   ThinkingIndicator,
   useScrollToBottomOnChange,
 } from "@/components/tutor/TutorThreadParts";
-import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
+import {
+  LisaUpgradeCard,
+  isLisaEntitlementDenial,
+} from "@/components/tutor/LisaUpgradeCard";
 
 // ---------------------------------------------------------------------------
 // Search param helper
@@ -141,12 +152,15 @@ function SessionsListContent({
   onSelect,
   onNewSession,
   newSessionPending,
+  locked,
 }: {
   conversations: TutorConversationSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
   onNewSession: () => void;
   newSessionPending: boolean;
+  /** The server refused this student LISA: nothing here may start a session. */
+  locked: boolean;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -158,7 +172,7 @@ function SessionsListContent({
       <button
         type="button"
         onClick={onNewSession}
-        disabled={newSessionPending}
+        disabled={newSessionPending || locked}
         className="mx-3 mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
         aria-label="New session"
       >
@@ -257,16 +271,19 @@ export default function ChatPage() {
   const [, setLocation] = useLocation();
   const conversationId = useConversationIdFromSearch();
 
-  const { data: conversationDetail, isLoading } =
-    useConversation(conversationId);
-  const { data: conversationsList } = useConversations();
+  const {
+    data: conversationDetail,
+    isLoading,
+    error: conversationError,
+  } = useConversation(conversationId);
+  const { data: conversationsList, error: conversationsError } =
+    useConversations();
   const createConversation = useCreateConversation();
   const endConversation = useEndConversation();
 
   const [draft, setDraft] = useState("");
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [dismissedPremium, setDismissedPremium] = useState(false);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -293,6 +310,17 @@ export default function ChatPage() {
   const isEnded = conversation?.status === "ended";
   const hasMessages = messages.length > 0 || optimisticMessage !== null;
 
+  // W4-11: the server refused this student LISA — on the session list, the
+  // conversation, "New session" or a send. Only a server refusal counts.
+  const denied =
+    isLisaEntitlementDenial(conversationsError) ||
+    isLisaEntitlementDenial(conversationError) ||
+    isLisaEntitlementDenial(createConversation.error) ||
+    premiumReason !== null;
+  const createFailed =
+    createConversation.error !== null &&
+    !isLisaEntitlementDenial(createConversation.error);
+
   // Scroll management
   const scrollTrigger =
     (messages.length + (optimisticMessage ? 1 : 0)) * 2 +
@@ -313,17 +341,22 @@ export default function ChatPage() {
 
   // ── New session ───────────────────────────────────────────────────────
 
-  const handleNewSession = useCallback(async () => {
-    try {
-      const conv = await createConversation.mutateAsync({
+  // `mutate`, not `mutateAsync` in a try with an empty catch: the failure
+  // stays on `createConversation.error`, which the page reads — an
+  // entitlement refusal draws the upgrade card, anything else the alert
+  // below "New session". The old catch swallowed the 403 while claiming it
+  // was handled there, and nothing read it (W4-11).
+  const handleNewSession = useCallback(() => {
+    createConversation.mutate(
+      {
         entry_mode: "general",
         source_surface: "dashboard",
         idempotency_key: crypto.randomUUID(),
-      });
-      navigateToConversation(conv.conversation_id);
-    } catch {
-      // Error state handled by createConversation.error
-    }
+      },
+      {
+        onSuccess: (conv) => navigateToConversation(conv.conversation_id),
+      },
+    );
   }, [createConversation, navigateToConversation]);
 
   // ── Send message ──────────────────────────────────────────────────────
@@ -362,11 +395,16 @@ export default function ChatPage() {
   const composerPlaceholder = isThinking
     ? "LISA is responding..."
     : "Message LISA...";
-  const composerDisabled = isThinking || isPaused || isEnded || !!premiumReason;
+  const composerDisabled = isThinking || isPaused || isEnded;
 
   // Determine if we should show the new session view (no messages yet)
   const showNewSessionView =
-    !!conversationId && !isLoading && !hasMessages && !isPaused && !isEnded;
+    !!conversationId &&
+    !isLoading &&
+    !denied &&
+    !hasMessages &&
+    !isPaused &&
+    !isEnded;
 
   // ── Sidebar content (shared between desktop and mobile drawer) ──────
 
@@ -375,9 +413,45 @@ export default function ChatPage() {
       conversations={conversations}
       activeId={conversationId}
       onSelect={navigateToConversation}
-      onNewSession={() => void handleNewSession()}
+      onNewSession={handleNewSession}
       newSessionPending={createConversation.isPending}
+      locked={denied}
     />
+  );
+
+  // ── No conversation: welcome and "New session", or the upgrade card ──
+
+  const emptyState = denied ? (
+    <LisaUpgradeCard />
+  ) : (
+    <>
+      <LisaAvatar size="lg" />
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-foreground">
+          Welcome to LISA
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Start a new session or pick one from the sidebar.
+        </p>
+      </div>
+      <Button
+        onClick={handleNewSession}
+        disabled={createConversation.isPending}
+        className="min-h-[44px]"
+      >
+        {createConversation.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+        ) : (
+          <Plus className="h-4 w-4 mr-1" />
+        )}
+        New session
+      </Button>
+      {createFailed && (
+        <p className="text-sm text-muted-foreground" role="alert">
+          Couldn&apos;t start a session. Try again.
+        </p>
+      )}
+    </>
   );
 
   // ── No conversation selected — show empty state ────────────────────
@@ -411,53 +485,13 @@ export default function ChatPage() {
             <span className="text-lg font-semibold text-foreground">LISA</span>
           </header>
           <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
-            <LisaAvatar size="lg" />
-            <div className="text-center">
-              <h2 className="text-xl font-semibold text-foreground">
-                Welcome to LISA
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Start a new session or pick one from the sidebar.
-              </p>
-            </div>
-            <Button
-              onClick={() => void handleNewSession()}
-              disabled={createConversation.isPending}
-              className="min-h-[44px]"
-            >
-              {createConversation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
-              ) : (
-                <Plus className="h-4 w-4 mr-1" />
-              )}
-              New session
-            </Button>
+            {emptyState}
           </div>
         </div>
 
         {/* Desktop empty */}
         <div className="hidden md:flex flex-1 flex-col items-center justify-center gap-6 p-8">
-          <LisaAvatar size="lg" />
-          <div className="text-center">
-            <h2 className="text-xl font-semibold text-foreground">
-              Welcome to LISA
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Start a new session or pick one from the sidebar.
-            </p>
-          </div>
-          <Button
-            onClick={() => void handleNewSession()}
-            disabled={createConversation.isPending}
-            className="min-h-[44px]"
-          >
-            {createConversation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-1" />
-            ) : (
-              <Plus className="h-4 w-4 mr-1" />
-            )}
-            New session
-          </Button>
+          {emptyState}
         </div>
       </div>
     );
@@ -541,17 +575,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Premium gate */}
-          {premiumReason && !dismissedPremium && (
-            <div className="py-4">
-              <PremiumUpgradePrompt
-                featureBenefit="the interactive tutor"
-                mode="inline"
-                onDismiss={() => setDismissedPremium(true)}
-              />
-            </div>
-          )}
-
           {/* New session view */}
           {showNewSessionView && (
             <NewSessionView
@@ -606,7 +629,9 @@ export default function ChatPage() {
             endPending={endConversation.isPending}
             resumePending={resumePending}
           />
-        ) : isEnded ? null : (
+        ) : isEnded ? null : denied ? (
+          <LisaUpgradeCard />
+        ) : (
           <Composer
             draft={draft}
             onDraftChange={setDraft}

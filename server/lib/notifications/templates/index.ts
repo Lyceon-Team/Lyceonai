@@ -10,6 +10,7 @@
  * ./guardian-consent-request.ts and ./deletion-scheduled.ts, outside this switch.
  */
 import {
+  fullLengthNoticePayloadSchema,
   guardianLinkedPayloadSchema,
   guardianUnlinkedPayloadSchema,
   type NotificationEventType,
@@ -20,6 +21,12 @@ import {
   guardianUnlinkedEmail,
   guardianUnlinkedInApp,
 } from "./guardian-unlinked";
+import {
+  fullLengthTomorrowEmail,
+  fullLengthTomorrowInApp,
+  fullLengthWeekEmail,
+  fullLengthWeekInApp,
+} from "./full-length";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -42,6 +49,20 @@ export function renderInApp(
         return err("guardian_unlinked payload does not match its schema");
       return ok(guardianUnlinkedInApp(parsed.data, ctx));
     }
+    // Brief 14 Step 5. Two cases, not one with a kind in the payload — see the event-type
+    // list's own note for why the id derivation makes that the only workable shape.
+    case "full_length_week": {
+      const parsed = fullLengthNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("full_length_week payload does not match its schema");
+      return ok(fullLengthWeekInApp(parsed.data, ctx));
+    }
+    case "full_length_tomorrow": {
+      const parsed = fullLengthNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("full_length_tomorrow payload does not match its schema");
+      return ok(fullLengthTomorrowInApp(parsed.data, ctx));
+    }
   }
 }
 
@@ -62,6 +83,18 @@ export function renderEmail(
       if (!parsed.success)
         return err("guardian_unlinked payload does not match its schema");
       return ok(guardianUnlinkedEmail(parsed.data, ctx));
+    }
+    case "full_length_week": {
+      const parsed = fullLengthNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("full_length_week payload does not match its schema");
+      return ok(fullLengthWeekEmail(parsed.data, ctx));
+    }
+    case "full_length_tomorrow": {
+      const parsed = fullLengthNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("full_length_tomorrow payload does not match its schema");
+      return ok(fullLengthTomorrowEmail(parsed.data, ctx));
     }
   }
 }

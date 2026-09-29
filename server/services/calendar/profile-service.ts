@@ -68,7 +68,7 @@ export const FALLBACK_TIMEZONE = "America/Chicago";
 /** The columns this service reads. Never `*`: `last_acknowledged_nonstudent_version_no`
  *  is the read service's business and the timestamps are nobody's. */
 const PROFILE_COLUMNS =
-  "timezone, target_exam_date, target_score, study_days_mask, daily_minutes, full_length_weekday, planner_mode, setup_completed_at";
+  "timezone, target_exam_date, target_score, study_days_mask, daily_minutes, full_length_weekday, full_length_interval_weeks, planner_mode, setup_completed_at";
 
 export type ProfileFailure =
   | { kind: "invalid"; details: unknown }
@@ -136,6 +136,7 @@ function parseProfileRow(
     study_days_mask: source.study_days_mask,
     daily_minutes: source.daily_minutes,
     full_length_weekday: source.full_length_weekday,
+    full_length_interval_weeks: source.full_length_interval_weeks,
     planner_mode: source.planner_mode,
     setup_completed_at: source.setup_completed_at,
   };
