@@ -47,6 +47,7 @@ import {
   launchBodySchema,
 } from "@lyceon/shared";
 import { logger } from "../logger";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import { sendPaymentRequired } from "../lib/http-errors";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
@@ -99,46 +100,11 @@ const dayRegenerateRateLimit = singleBucketRateLimit(
 // ── The response shapes (§8.2) ──────────────────────────────────────────────
 
 /**
- * The FIELD NAMES inside a Zod `flatten()`, and nothing else.
- *
- * `details` arrives as `unknown` because a caller may hand this anything; it is narrowed
- * here rather than cast. What comes back is paths only — `["idempotency_key"]`, never
- * `["idempotency_key: undefined"]` — because §12.1 forbids logging request bodies on a
- * student surface and a validation VALUE is part of the body. A form-level issue (the
- * schema's own cross-field refusals, which carry no path) is reported as the sentinel
- * `"<root>"` rather than silently contributing nothing: a 400 with no field named at all is
- * the case this whole step exists to end.
- */
-function validationFieldPaths(details: unknown): string[] {
-  if (typeof details !== "object" || details === null) return [];
-  const flat = details as {
-    fieldErrors?: unknown;
-    formErrors?: unknown;
-    missing?: unknown;
-  };
-  const paths: string[] = [];
-  if (typeof flat.fieldErrors === "object" && flat.fieldErrors !== null) {
-    paths.push(...Object.keys(flat.fieldErrors));
-  }
-  if (Array.isArray(flat.formErrors) && flat.formErrors.length > 0) {
-    paths.push("<root>");
-  }
-  // `CALENDAR_SETUP_INCOMPLETE` names its fields in `missing` rather than in a Zod flatten.
-  // Those are field NAMES, already, and the reason for the refusal.
-  if (Array.isArray(flat.missing)) {
-    paths.push(
-      ...flat.missing.filter((m): m is string => typeof m === "string"),
-    );
-  }
-  return paths;
-}
-
-/**
  * EVERY 400 FROM THIS SURFACE NAMES ITS FAILING FIELD IN THE LOG.
  *
  * This is the one place the calendar writes an error response, so it is the one place the
- * rule has to hold — a per-handler log would be eleven chances to forget it, and the
- * handler that forgot would be the one being diagnosed. Brief 16 Step 4.
+ * rule has to hold — a per-handler log would be eleven chances to forget it, and the handler
+ * that forgot would be the one being diagnosed. Brief 16 Step 4.
  *
  * The cost of not having it was measured: eight consecutive 400s on a new student's setup
  * save, and the only way to learn WHICH field was rejected was to reproduce the request.
@@ -146,9 +112,9 @@ function validationFieldPaths(details: unknown): string[] {
  * simply never written down on the server side, so the operator diagnosing it had the
  * refusal and not the reason.
  *
- * WARN, not ERROR: a rejected body is the validator doing its job, not a fault. It is not
- * INFO either — a 400 on a surface whose forms are supposed to make invalid input
- * unreachable means a form and a schema have drifted, which is worth noticing.
+ * `logRejectedRequest` lives in `server/lib/validation-log.ts` and is shared with every
+ * other router that has a single error-writing chokepoint. It reads field PATHS only, never
+ * Zod's message strings — those quote the rejected value on an enum failure (§12.1).
  */
 function sendError(
   res: Response,
@@ -159,21 +125,11 @@ function sendError(
   details?: unknown,
 ): Response {
   if (status === 400) {
-    logger.warn(
-      "CALENDAR_ROUTES",
-      "request_rejected",
-      "a calendar request failed validation",
-      {
-        code,
-        // Paths only. `validationFieldPaths` never reads a value, and `method`/`path` are
-        // the route PATTERN Express matched, not the filled URL — a `:date` or a block id
-        // in a log line is an identifier this surface has no reason to keep.
-        fields: validationFieldPaths(details),
-        method: res.req?.method,
-        path: `${res.req?.baseUrl ?? ""}${res.req?.route?.path ?? ""}`,
-      },
-      { requestId },
-    );
+    logRejectedRequest("CALENDAR_ROUTES", details, {
+      code,
+      requestId,
+      ...routeOf(res),
+    });
   }
   return res.status(status).json({
     error:

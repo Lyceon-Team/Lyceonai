@@ -17,6 +17,7 @@
  */
 
 import { Response } from "express";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 
 // ── Error code definition ───────────────────────────────────────────
 
@@ -291,6 +292,18 @@ export function sendTutorError(
   details?: unknown,
 ): Response {
   const entry = TUTOR_ERROR_CODES[errorCode];
+  // Every tutor 400 (`invalid_input`, `pii_in_envelope`) names its failing field in the log.
+  // All six call sites already hand this `parsed.error.flatten()` and it only ever reached
+  // the client. PATHS only — never Zod's message strings, which on this surface could carry
+  // a fragment of a student's own message into a log line (§12.1). Shared helper:
+  // `server/lib/validation-log.ts`.
+  if (entry.httpStatus === 400) {
+    logRejectedRequest("TUTOR_ROUTES", details, {
+      code: entry.code,
+      requestId: res.req?.requestId,
+      ...routeOf(res),
+    });
+  }
   const body: TutorErrorResponse = {
     error: {
       message: entry.message,

@@ -318,11 +318,38 @@ export async function upsertStudyProfile(
   const completesSetup = existing?.setup_completed_at == null;
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
-  const { data, error } = await supabaseServer
-    .from("student_study_profile")
-    .upsert(row, { onConflict: "student_id" })
-    .select(PROFILE_COLUMNS)
-    .single();
+  /**
+   * AN EXISTING ROW IS UPDATED; ONLY A CREATE UPSERTS. The two are not interchangeable.
+   *
+   * `makeStudyProfileUpsertSchema` accepts a PARTIAL body on purpose — §8.1's settings sheet
+   * sends what changed — and `row` above is built to match, carrying only the keys the body
+   * named. `.upsert()` renders that as `INSERT … ON CONFLICT DO UPDATE`, and PostgreSQL
+   * evaluates the INSERT's NOT NULL constraints BEFORE it resolves the conflict. So a body
+   * that omitted `timezone`, `study_days_mask` or `daily_minutes` raised 23502 against a row
+   * that already had all three — the update could never be reached to prove them present.
+   * Reported as `write_failed`, served as a 500, for a request the schema had just accepted.
+   *
+   * No shipped surface sends such a body today (both writers send the full field set), which
+   * is why this outlived the surfaces that would have shown it. Accepting a shape the writer
+   * cannot store is the defect either way.
+   *
+   * THE CREATE PATH KEEPS ITS UPSERT, and that is what keeps this race-safe.
+   * `REQUIRED_ON_CREATE` has already proved a create carries the NOT NULL columns, so its
+   * INSERT arm is complete; and `ON CONFLICT DO UPDATE` is what settles two first saves
+   * racing each other — the second becomes an update instead of a 23505. The update path
+   * cannot race that way: it runs only where a row was already read.
+   */
+  const write =
+    existing === null
+      ? supabaseServer
+          .from("student_study_profile")
+          .upsert(row, { onConflict: "student_id" })
+      : supabaseServer
+          .from("student_study_profile")
+          .update(row)
+          .eq("student_id", studentId);
+
+  const { data, error } = await write.select(PROFILE_COLUMNS).single();
 
   if (error) {
     logger.error(

@@ -390,23 +390,52 @@ describe.skipIf(!PG_AVAILABLE)(
       }
     });
 
+    // ── (7) the PARTIAL body the schema has always accepted ──────────────
     /**
-     * A LIMITATION FOUND HERE AND DELIBERATELY NOT FIXED IN THIS CHANGE, recorded so it is
-     * not re-discovered as a mystery.
+     * `makeStudyProfileUpsertSchema` documents a partial body — "the settings sheet sends
+     * what changed" — and accepts one. The writer could not store it: `.upsert()` renders
+     * as `INSERT … ON CONFLICT DO UPDATE`, PostgreSQL checks NOT NULL on the INSERT arm
+     * before resolving the conflict, and a body omitting `timezone`, `study_days_mask` or
+     * `daily_minutes` raised 23502 against a row that already had all three. A 500 for a
+     * request the schema had just accepted.
      *
-     * `makeStudyProfileUpsertSchema` documents a PARTIAL body — "the settings sheet sends
-     * what changed" — and accepts one. `upsertStudyProfile` then writes it with
-     * `.upsert(row, { onConflict: "student_id" })`, whose INSERT arm names only the keys the
-     * body carried. PostgreSQL checks NOT NULL on that INSERT before it resolves the
-     * conflict, so a body omitting `timezone`, `study_days_mask` or `daily_minutes` raises
-     * 23502 even when the row already exists and already has them. Confirmed here:
-     * `{full_length_weekday: null, full_length_interval_weeks: null, idempotency_key}`
-     * against an existing profile answers 500, not 200.
-     *
-     * It is not reachable from any shipped surface — both writers (the §17.5 popup and the
-     * §8.1 sheet) send the full field set — which is why it is reported rather than fixed
-     * alongside a production stoppage. The fix is an UPDATE when a row exists rather than an
-     * upsert of a partial row, and it belongs to its own change with its own denial tests.
+     * Only real SQL can show this. A fake client has no NOT NULL constraints and no INSERT
+     * arm to evaluate them on, so the service's own suite passes either way.
      */
+    it("ACCEPTS a genuinely partial body against an existing row", async () => {
+      await request(app)
+        .put("/api/calendar/profile")
+        .send({ ...setupBody(), idempotency_key: key() });
+
+      // Presence before absence: prove the row is there and full before asking whether a
+      // two-field update preserves it.
+      const before = await profileRows();
+      expect(before).toHaveLength(1);
+      expect(before[0]!.daily_minutes).toBe(60);
+
+      const res = await request(app).put("/api/calendar/profile").send({
+        // No timezone, no study_days_mask, no daily_minutes — every NOT NULL column
+        // absent, which is exactly what raised 23502.
+        full_length_weekday: 6,
+        full_length_interval_weeks: 2,
+        idempotency_key: key(),
+      });
+
+      expect(res.status).toBe(200);
+      const after = await profileRows();
+      expect(after).toHaveLength(1);
+      expect(after[0]!.full_length_weekday).toBe(6);
+      expect(after[0]!.full_length_interval_weeks).toBe(2);
+      // §8.1: an absent key means "leave it alone". The columns the body did not name are
+      // untouched, which is the half a blind re-upsert would have got wrong.
+      expect(after[0]!.daily_minutes).toBe(60);
+      expect(after[0]!.study_days_mask).toBe(62);
+      // `toEqual`, not `toBe`: this row came from a DIRECT `pg.query`, which is node-pg and
+      // therefore still hands back a `Date` object — the shim's wire-shaped parsers are
+      // scoped to the shim's own queries, deliberately. Two equal Dates are not identical.
+      expect(after[0]!.setup_completed_at).toEqual(
+        before[0]!.setup_completed_at,
+      );
+    });
   },
 );
