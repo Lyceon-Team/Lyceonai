@@ -44,11 +44,14 @@ function readSessionId(body: unknown): string | null {
 export function usePractice(): {
   startSession: (filters?: PracticeSessionFilters) => Promise<string | null>;
   quotaExhausted: boolean;
+  poolEmpty: boolean;
   error: string | null;
 } {
   const [clientInstanceId] = useState(() => getClientInstanceId());
   const [error, setError] = useState<string | null>(null);
   const [quotaExhausted, setQuotaExhausted] = useState(false);
+  // UI-07: the chosen filters select no questions (server 422 PRACTICE_POOL_EMPTY).
+  const [poolEmpty, setPoolEmpty] = useState(false);
 
   // -------------------------------------------------------------------
   // startSession — creates a new practice session on the server
@@ -56,7 +59,7 @@ export function usePractice(): {
   const startSession = useCallback(
     async (f?: PracticeSessionFilters): Promise<string | null> => {
       const lockKey = `start-${JSON.stringify(f)}`;
-
+      setPoolEmpty(false);
       const inflight = inflightEnsureSession.get(lockKey);
       if (inflight) {
         return inflight;
@@ -103,7 +106,19 @@ export function usePractice(): {
         if ("status" in apiErr && apiErr.status === 402) {
           setQuotaExhausted(true);
         }
+        // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+        // plain English: practice-canonical.ts answers 422 `PRACTICE_POOL_EMPTY` when the
+        // filters select no questions. Surface it as its own state so the page can say
+        // "No questions match these filters" (no count) instead of a generic failure.
         if (
+          "status" in apiErr &&
+          apiErr.status === 422 &&
+          "code" in apiErr &&
+          apiErr.code === "PRACTICE_POOL_EMPTY"
+        ) {
+          setPoolEmpty(true);
+          setError("No questions match these filters");
+        } else if (
           "status" in apiErr &&
           apiErr.status === 403 &&
           "code" in apiErr &&
@@ -126,6 +141,7 @@ export function usePractice(): {
   );
 
   return {
+    poolEmpty,
     startSession,
     quotaExhausted,
     error,

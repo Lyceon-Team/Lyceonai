@@ -508,7 +508,7 @@ app.use(
 app.get(
   "/api/questions/stats",
   requireSupabaseAuth,
-  requireStudentOrAdmin,
+  requireSupabaseAdmin,
   getQuestionStats,
 );
 
