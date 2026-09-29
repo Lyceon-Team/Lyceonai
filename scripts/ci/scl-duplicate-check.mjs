@@ -18,9 +18,9 @@
  * The 2026-09-26 round is the sharpest evidence for that. One pair renumbered
  * out of a collision with E9b and landed on SCL-171/SCL-172; a second session
  * allocated the same two ids the same morning from a scan that was correct when
- * it ran; and a third claimed SCL-173/SCL-174 within three minutes of a fourth
- * session naming them as the next free pair. Four sessions, no mistakes, three
- * collisions.
+ * it ran (that second pair is now SCL-176/SCL-177); and a third claimed
+ * SCL-173/SCL-174 within three minutes of a fourth session naming them as the
+ * next free pair. Four sessions, no mistakes, three collisions.
  *
  * Scope, deliberately: this checks ONE file for duplicate headings. It does not
  * try to detect cross-branch races itself — that needs the pre-write query in
