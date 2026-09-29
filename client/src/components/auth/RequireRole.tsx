@@ -1,8 +1,7 @@
 import { ReactNode, useState } from "react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { csrfFetch } from "@/lib/csrf";
+import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { loginPathWithReturn } from "@lyceon/shared/return-path";
 import { ReconsentModal } from "@/components/legal/ReconsentModal";
 import { outstandingLegalSchema } from "@shared/legal-consent";
@@ -18,17 +17,6 @@ interface RequireRoleProps {
   children: ReactNode;
 }
 
-interface AuthUserResponse {
-  authenticated?: boolean;
-  user?: {
-    profileCompletedAt?: string | null;
-    requiredProfileComplete?: boolean;
-    guardianConsentRequired?: boolean;
-    outstandingLegal?: unknown;
-    [key: string]: any;
-  } | null;
-}
-
 export function RequireRole({ allow, children }: RequireRoleProps) {
   const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
   const [location] = useLocation();
@@ -41,28 +29,13 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // `useEffect` would be the derived-state anti-pattern (Coding Standards §11.4).
   const [dismissedThisMount, setDismissedThisMount] = useState(false);
 
-  // Fetch profile completion status from canonical /api/profile endpoint
-  const { data: authData, isLoading: profileLoading } =
-    useQuery<AuthUserResponse>({
-      queryKey: ["/api/profile"],
-      retry: false,
-      enabled: !!user, // only fetch when user is authenticated
-      queryFn: async () => {
-        const response = await csrfFetch("/api/profile", {
-          credentials: "include",
-        });
-
-        if (response.status === 401 || response.status === 403) {
-          return { authenticated: false, user: null };
-        }
-
-        if (!response.ok) {
-          throw new Error(`Profile hydration failed: ${response.status}`);
-        }
-
-        return response.json();
-      },
-    });
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the ONE
+  // profile query (key, fetch function, 401/403 → `{ authenticated: false }`) shared with the
+  // auth provider, which has already filled it by the time `user` is set — so this reads the
+  // cache instead of issuing a second request.
+  const { data: authData, isLoading: profileLoading } = useProfileQuery({
+    enabled: !!user, // only fetch when user is authenticated
+  });
 
   if (authLoading || (user && profileLoading)) {
     return (

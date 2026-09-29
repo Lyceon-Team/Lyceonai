@@ -58,6 +58,10 @@ import { GuardianTemplatePreview } from "@/components/guardian/GuardianTemplateP
 import { GuardianMetricTile } from "@/components/guardian/GuardianMetricTile";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { studentLabel } from "@/hooks/useGuardianStudents";
+import {
+  BILLING_STATUS_QUERY_KEY,
+  useBillingStatusQuery,
+} from "@/hooks/useBillingStatusQuery";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
@@ -82,25 +86,6 @@ interface StudentSummary {
       whatThisMeans?: string;
     };
   }>;
-}
-
-interface GuardianBillingStatus {
-  isPaid: boolean;
-  effectiveAccess: boolean;
-  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
-  hasActiveLink?: boolean;
-  /**
-   * A payment on the conferring student's subscription needs attention.
-   *
-   * IT IS A BANNER, NOT A GATE — owner ruling 2026-09-03. This field used to
-   * make `SubscriptionPaywall` (now `CheckoutReturnPoller`) replace the whole dashboard, which locked out a
-   * guardian whose student was `past_due` and therefore, per SCL-029, still
-   * fully entitled. Reading it here and rendering a dismissible notice ABOVE
-   * the dashboard is the whole of its job now.
-   */
-  needsPaymentUpdate?: boolean;
-  /** A subscription exists on the conferring student and grants nothing. */
-  lapsed?: boolean;
 }
 
 export default function GuardianDashboard() {
@@ -211,17 +196,13 @@ export default function GuardianDashboard() {
     ? weaknessData.domains
     : null;
 
-  const { data: billingStatus } = useQuery({
-    queryKey: ["guardian-billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch billing status");
-      return res.json() as Promise<GuardianBillingStatus>;
-    },
+  // @spec [student-ui register UI-14; Doc 01 V8 §31.3] | @implemented [2026-09-29] | plain
+  // English: the shared billing-status query. `["guardian-billing-status"]` was the same GET
+  // answered by the same route for the same session (the route branches on the session's role),
+  // so it folded into the one key the checkout poller below already reads — one request, not two.
+  // `needsPaymentUpdate` is a banner, never a gate (owner ruling 2026-09-03).
+  const { data: billingStatus } = useBillingStatusQuery({
     enabled: isGuardian && isAuthenticated,
-    retry: 1,
   });
   /**
    * SCL-080: the guardian REDEEMS a code the student shared. This replaced an email
@@ -256,6 +237,8 @@ export default function GuardianDashboard() {
       setIsRateLimited(false);
       setLastUpdated(new Date());
       queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+      // A link changes `hasActiveLink` and the derived access (§31.3).
+      queryClient.invalidateQueries({ queryKey: BILLING_STATUS_QUERY_KEY });
     },
     onError: (err: Error) => {
       if (isApiError(err) && err.code === "GUARDIAN_DATE_OF_BIRTH_REQUIRED") {
@@ -324,6 +307,8 @@ export default function GuardianDashboard() {
         setSelectedStudentId(null);
       }
       queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+      // A link changes `hasActiveLink` and the derived access (§31.3).
+      queryClient.invalidateQueries({ queryKey: BILLING_STATUS_QUERY_KEY });
     },
     onError: (err: Error) => {
       setLinkError(err.message);

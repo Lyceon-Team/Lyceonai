@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import {
@@ -164,6 +165,8 @@ function Practice() {
   } = useQuery<PracticeTopics>({
     queryKey: ["/api/practice/topics"],
     enabled: !!user && !authLoading,
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   const {
@@ -193,10 +196,10 @@ function Practice() {
   const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
   const mathDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "M")?.domains,
+    topicsData?.sections?.find((s) => s.section === "M")?.domains,
   );
   const readingDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "RW")?.domains,
+    topicsData?.sections?.find((s) => s.section === "RW")?.domains,
   );
 
   const visibleDomains = useMemo(() => {
@@ -746,7 +749,7 @@ function Practice() {
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {mathDomains.map((domain: any) => (
+                        {mathDomains.map((domain) => (
                           <Badge
                             key={`math-${domain.domain}`}
                             variant="outline"
@@ -772,7 +775,7 @@ function Practice() {
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {readingDomains.map((domain: any) => (
+                        {readingDomains.map((domain) => (
                           <Badge
                             key={`rw-${domain.domain}`}
                             variant="outline"

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, BookOpen, AlertCircle, Search } from "lucide-react";
+import { ArrowLeft, BookOpen, Search } from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { apiRequest } from "@/lib/queryClient";
@@ -56,6 +57,8 @@ function BrowseTopics() {
   // Fetch topics taxonomy
   const { data: topicsData, isLoading: topicsLoading, error: topicsError } = useQuery<PracticeTopics>({
     queryKey: ['/api/practice/topics'],
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   // Build query parameters for questions

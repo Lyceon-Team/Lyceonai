@@ -37,6 +37,7 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import {
   AlertCircle,
   BookOpen,
@@ -133,6 +134,8 @@ export default function ReviewPage() {
 
   const { data: topicsData } = useQuery<TopicsResponse>({
     queryKey: ["/api/practice/topics"],
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   // "Today" in the SAME zone R3 used to compute each row's local_date.

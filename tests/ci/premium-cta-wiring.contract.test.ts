@@ -59,11 +59,11 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // Quote-agnostic: prettier owns quote style, and pinning it would make a
-    // formatter run read as a behaviour change.
-    expect(userProfile).toMatch(
-      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
-    );
+    // UI-14 (2026-09-29): the page reads billing status through the ONE shared
+    // hook — one key and one fetch function for every surface — rather than
+    // spelling the key itself. The hook's key is pinned in
+    // tests/ci/query-freshness.contract.test.ts.
+    expect(userProfile).toContain("useBillingStatusQuery");
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
     /**

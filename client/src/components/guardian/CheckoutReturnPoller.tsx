@@ -48,7 +48,6 @@
  * front of the dashboard that holds the only way to pay.
  */
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -59,29 +58,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle } from "lucide-react";
-import { csrfFetch } from "@/lib/csrf";
-import { parseApiErrorFromResponse } from "@/lib/api-error";
-
-/**
- * ONLY the fields this component reads — and `needsPaymentUpdate`,
- * `stripeStatus` and `isPaid` left with the gate on 2026-09-03, because the
- * only thing that read them was the interstitial. Seven more were declared here
- * and never read at all: accountId, plan, currentPeriodEnd,
- * stripeSubscriptionId, isPaid, premiumSource and billingOwnerRole. The last two were the same defect as the
- * four named below: no server route ever wrote them, so they could only ever be
- * `undefined`. Declaring a field the server does not send is how the escape
- * hatch came to be dead in the first place; the type states what arrives.
- */
-interface BillingStatus {
-  effectiveAccess: boolean;
-  /**
-   * Written by the guardian branch of `/api/billing/status` from §31.3's fold.
-   * Replaces `linkRequiredForPremium`, `hasLinkedStudent`,
-   * `requiresStudentSubscription` and `lockedReason`, none of which any server
-   * route ever wrote — so every branch keyed on them was dead.
-   */
-  hasActiveLink?: boolean;
-}
+import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
 interface CheckoutReturnPollerProps {
   children: React.ReactNode;
@@ -98,27 +75,14 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
   const POLLING_TIMEOUT_MS = 60000;
   const [shouldPoll, setShouldPoll] = useState(checkoutSuccess);
 
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the shared
+  // billing-status query (one key with the guardian dashboard and the premium prompt); only the
+  // poll interval is this component's own, and only while it waits for the webhook.
   const {
     data: billingStatus,
     isLoading: billingLoading,
     refetch,
-  } = useQuery({
-    queryKey: ["billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw await parseApiErrorFromResponse(
-          res,
-          "Failed to get billing status",
-        );
-      }
-      return res.json() as Promise<BillingStatus>;
-    },
-    retry: 1,
-    refetchInterval: shouldPoll ? 2000 : false,
-  });
+  } = useBillingStatusQuery({ refetchInterval: shouldPoll ? 2000 : false });
 
   useEffect(() => {
     if (billingStatus?.effectiveAccess && shouldPoll) {
