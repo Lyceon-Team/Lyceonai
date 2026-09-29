@@ -58,6 +58,7 @@ vi.mock("../../server/lib/legal-acceptance.js", () => ({
 }));
 
 import oauthRouter from "../../server/routes/oauth-callback-routes";
+import { logger } from "../../server/logger.js";
 import { AccountEmailConflictError } from "../../server/lib/profile-bootstrap.js";
 
 const SESSION = { access_token: "a".repeat(20), refresh_token: "r".repeat(20) };
@@ -264,7 +265,9 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/guardian?code=ABC234");
   });
 
-  it("the onboarding gate still wins over an allowlisted next", async () => {
+  // WAS: expected plain /profile/complete — the gate won AND dropped `next`. Register UI-03
+  // (2026-09-29): the gate still wins, and carries the allowlisted `next` through onboarding.
+  it("the onboarding gate still wins over an allowlisted next, and carries it along", async () => {
     okExchange();
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
@@ -277,7 +280,110 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       "/auth/callback?code=valid-code&next=%2Fguardian%3Fcode%3DABC234",
     );
 
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/profile/complete?next=%2Fguardian%3Fcode%3DABC234",
+    );
+  });
+
+  it("UI-03 a first-time student from /calendar → /profile/complete?next=%2Fcalendar", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fcalendar",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/profile/complete?next=%2Fcalendar",
+    );
+  });
+
+  it("UI-03 an under-13 student awaiting consent keeps next=/tests/<id> through the gate", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: true,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Ftests%2Fs-1",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/profile/complete?next=%2Ftests%2Fs-1",
+    );
+  });
+
+  it("UI-03 a disallowed next is still dropped at the onboarding gate", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2F%2Fevil.example.com%2Fcalendar",
+    );
+
     expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+  });
+
+  it("UI-03 a completed student lands on next=/calendar; a completed guardian does not", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+    const student = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fcalendar",
+    );
+    expect(student.headers.location).toBe("https://lyceon.ai/calendar");
+
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "guardian",
+    } satisfies ProfileShape);
+    const guardian = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fcalendar",
+    );
+    expect(guardian.headers.location).toBe("https://lyceon.ai/guardian");
+  });
+
+  it("logs the landing pathname only — never a return path's query (Coding Standards §12.1)", async () => {
+    const infoSpy = vi.spyOn(logger, "info");
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      guardian_consent: false,
+      role: "guardian",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Fguardian%3Fcode%3DABC234",
+    );
+    // Presence first: the redirect really did carry the code in its query.
+    expect(res.headers.location).toContain("ABC234");
+
+    const success = infoSpy.mock.calls.find((call) => call[1] === "success");
+    expect(success).toBeDefined();
+    expect(JSON.stringify(success)).toContain("/profile/complete");
+    expect(JSON.stringify(success)).not.toContain("ABC234");
+    infoSpy.mockRestore();
   });
 
   it.each([

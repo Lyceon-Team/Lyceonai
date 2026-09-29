@@ -65,6 +65,7 @@ import {
 import {
   buildReviewPool,
   buildReviewPoolSummary,
+  decodeSourceSessionsCursor,
   type ReviewPoolRow,
 } from "../services/review-pool";
 import {
@@ -76,6 +77,7 @@ import {
   reviewPoolQuerySchema,
   reviewResumeBodySchema,
   reviewSkipBodySchema,
+  type ReviewPoolSessionsCursor,
   type ReviewPoolSpec,
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
@@ -1427,10 +1429,28 @@ router.get(
       });
     }
 
+    // UI-16: the past-session picker is paged by an opaque cursor; a malformed one is
+    // a 400, never a silent first page.
+    let sessionsCursor: ReviewPoolSessionsCursor | null = null;
+    if (parsed.data.sessions_cursor !== undefined) {
+      sessionsCursor = decodeSourceSessionsCursor(
+        parsed.data.sessions_cursor,
+        requestId,
+      );
+      if (!sessionsCursor) {
+        return res.status(400).json({
+          error: "invalid_payload",
+          issues: [{ path: ["sessions_cursor"], message: "malformed cursor" }],
+          requestId,
+        });
+      }
+    }
+
     const summary = await buildReviewPoolSummary({
       studentId,
       tz: parsed.data.tz ?? null,
       requestId,
+      sessionsCursor,
     });
     if (!summary.ok) {
       return res.status(500).json({

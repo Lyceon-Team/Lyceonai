@@ -7,8 +7,11 @@
  *
  * plain English: one list per section, each row "Domain — N of M correct" with a bar of the
  * same fraction. It draws exactly the rows it is given; the server sends rows only for
- * scored sections, so a section with no score has no breakdown here either. Shared by the
- * student report and the guardian's view so the two render the same counts identically.
+ * scored sections, so a section with no score has no breakdown here either.
+ *
+ * GUARDIAN ONLY since SCL-180 (amended 2026-09-29), owner ruling 7 (@implemented
+ * [2026-09-29]): the student's tab draws seven segments per domain (`DomainSegments`) and
+ * never a correct-of-total count; this component is unchanged for the guardian's view.
  */
 import type { ExamDomainBreakdownRow } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";

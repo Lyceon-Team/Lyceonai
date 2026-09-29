@@ -30,6 +30,7 @@ import request from "supertest";
 // up must fail these cases rather than ship open.
 import { requiresEntitlement } from "../../server/routes/student-resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readEntitlementDenial } from "../../packages/shared/src/entitlement-denial";
 import {
   RULE_4_COLUMNS,
   findRule4Keys,
@@ -502,12 +503,35 @@ describe("subject-scoped resources — one route, two callers", () => {
       );
     });
 
-    it.each(gated)("402s %s when its feature is denied", async (path) => {
+    // SCL-185 (UI-01): same 402, same flat shape; the code is the platform's paid-feature
+    // denial and `details.feature` is the table's key for THIS path — read back through the
+    // one reader the client uses.
+    it.each(gated)("402s %s when its feature (%s) is denied", async (path, key) => {
       decision.mockReturnValue("allow");
       rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
       const res = await call(STUDENT, STUDENT, path);
       expect(res.status).toBe(402);
-      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+      expect(res.body).toEqual({
+        error: "Subscription required",
+        code: "entitlement_required",
+        message: "An active subscription is required to see this.",
+        details: { feature: key },
+        requestId: "req-sr",
+      });
+      expect(readEntitlementDenial(res.body)).toEqual({
+        feature: key,
+        message: "An active subscription is required to see this.",
+      });
+    });
+
+    it.each([
+      STUDENT_RESOURCE_PATHS.masteryDomains,
+      STUDENT_RESOURCE_PATHS.masterySkills,
+    ])("UI-01 allow: a paid student is served %s (mastery_detail granted)", async (path) => {
+      decision.mockReturnValue("allow");
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(200);
+      expect(readEntitlementDenial(res.body)).toBeNull();
     });
 
     it.each(open)("still serves %s under the same denial", async (path) => {

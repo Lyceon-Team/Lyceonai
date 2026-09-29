@@ -1,0 +1,310 @@
+# Student UI Vertical: Closure Register and Build Brief
+
+| | |
+|---|---|
+| Status | Open |
+| Scope | Student-facing surfaces only. Guardian and admin surfaces are out of scope (separate verticals). |
+| Branch | `cleanup` integration branch. Codex audits there; QA-passed code merges to `main`. |
+| Audit baseline | `origin/main` @ `d2902eec185eeff9d3a821f69cb0317e141e6069` |
+| Design source | Prototype canvas "Lyceon Student UI": https://claude.ai/artifact/ATJjfZK3wmGY3KDTajZoe4 |
+| Owner | Karl |
+| Merge gate | Nothing from this vertical merges from `cleanup` to `main` until the Wave 0 baseline (UI-00a, UI-00b) is recorded here. Merging to `cleanup` is fine. |
+| Free test account | `lyceon-qa-student-ui-free@example.com`: a free student account in production, created through the normal signup flow. The password is never recorded anywhere. It is deleted at close (UI-63). |
+
+This file is the running record for the vertical. It lives in the repo and is updated every time an item closes. The register rows below are the work; the proof column is filled only with output observed in production.
+
+---
+
+## 1. Instructions to CC
+
+1. **Start read-only.** Read this whole document, the audit evidence ([`student-ui-surface-audit.md`](audit/student-ui-surface-audit.md), [`pass1-A`](audit/pass1-A.md)/[`B`](audit/pass1-B.md)/[`C.md`](audit/pass1-C.md), [`pass2-A`](audit/pass2-A.md)/[`B.md`](audit/pass2-B.md)), and the locked spec sections named in §5. Confirm the plan end to end in one reply before changing anything.
+2. **Push back before building.** If any item is wrong about the repo, conflicts with a locked spec, or has a cheaper platform-native path, say so with file:line evidence. Do not resolve ambiguity from the repo; raise it as a numbered owner question in §9.
+3. **Scope for this pass: Track A (§4).** Wave 0, then Wave 1 and Wave 2. Wave 3 is design work between Karl and Claude and needs nothing from you except item UI-00e.
+4. **One item, one proof.** Each row names its proof. An item is closed only when that proof is observed in production and pasted into the row's proof cell. A merged PR, green CI or a passing test is not proof on its own.
+5. **Status values are Open, In progress, Closed.** There is no partial.
+6. **New findings are not fixed on discovery.** Add a row to §8 with its own proof. The only exception is active harm (a live leak or security hole), which pre-empts everything; report it immediately.
+7. **Standards.** `pnpm` only. No dependency changes without Karl's approval (UI-15 presents the list). Zod schemas live in `packages/shared` and types are inferred from them. Every new guard or test must be observed failing at least once before it counts. Tests follow rulings: when behavior changes, tests written for the old behavior are updated, not preserved.
+8. **Referencing work.** Do not cite PR numbers when directing audits; audits fetch the latest head of `cleanup`.
+9. **Evidence.** Lighthouse reports and other proof artifacts are saved under [`evidence/`](evidence/).
+
+---
+
+## 2. Locked rulings (Karl)
+
+These are decided. Do not relitigate them; raise a conflict in §9 if a spec disagrees.
+
+**Shell and navigation**
+- Three shells only: **App shell** (left rail + content + right margin panel), **Focus shell** (no rail; back arrow), **Bare card** (auth and account pages).
+- Left rail, permanent, Canvas-style: Lyceon logo with the wordmark under it at the top, then Home, Practice, Review, Full-Length, Calendar, LISA. Help and account at the bottom. Icon above label. No top nav bar, no breadcrumb.
+- Right margin panel holds page context: KPIs, mastery, what's next, filters for Calendar. Its content changes per page; its presence does not change between free and paid.
+- The calendar's current left column (mini month, schedule summary, show filters) moves into the right panel. The calendar keeps its week and month grid.
+- Mobile: the rail becomes a bottom tab bar.
+- Full-length exam module (timed) drops both panels and has **no** back arrow, as in Bluebook. Exam session and report pages, and the practice and review runners, use the Focus shell with a back arrow.
+- Back arrow target is defined, never guessed: the previous in-app page if the student came from inside Lyceon, otherwise the section's home (runner → Practice or Review). No full-page reloads.
+- Marketing footer is removed from app pages; legal links move under Help.
+
+**Free versus paid**
+- Free: the diagnostic, the ongoing overall and section-level score projection (Doc 02B §12 matrix; Doc 05C, which lets a student read their own projection with no entitlement check), 40 practice questions a day, and unlimited review (SCL-110, applied 2026-09-29). *Amended 2026-09-29 (Step 2 ruling 4); this replaces "the diagnostic and its projection".*
+- Paid: Calendar, LISA, Full-Length, and mastery and KPIs (`mastery_detail`). *Amended 2026-09-29 (Step 2 ruling 4): "every projection after the diagnostic" is removed.*
+- LISA and Full-Length rail items show a small lock. Clicking one opens a feature-specific upgrade modal in place, with no navigation and no call to the gated endpoint.
+- Calendar is the exception (Step 2 ruling 3, 2026-09-29). Its rail item keeps the lock icon as a hint but **navigates to the calendar page**, which does the upsell itself per Doc 05F §15 and §17.5. Setup renders before the entitlement gate (SCL-130), so a free student can still state a test date and target score.
+- The server still enforces every gate.
+- **Entitlement denial contract (Step 2 ruling 1, SCL-185).** No status code changes: tutor stays 403 (Doc 03B §5.9, CR-03B-21), exam stays 403 (Doc 04A §16), calendar stays 402 in the flat shape (Doc 05F §15; owner ruling 2026-09-17). Every paid-feature denial carries `code: "entitlement_required"` and `details.feature` (the `canAccessFeature` key; the tutor's is `tutor_access`). One client helper reads a denial from both the flat and nested shapes. The upgrade modal keys off the code, never the status. LISA keeps its own predicate and the live-exam block.
+- A lapsed student opening a past exam report gets Doc 04C's HTTP 200 `unavailable` payload (`resume_action: renew_entitlement`), and the upgrade modal opens from that payload (OQ-5, closed).
+- The free user's mastery slot is a locked card: "Track mastery by domain and skills". It shows empty bar outlines only, never fake data.
+- "Suggested for you" on Practice is paid-only because it is derived from mastery.
+- No progress indicator ever points at payment. Progress indicators are server-derived and true.
+
+**Content and data rules**
+- **Students never see question bank counts.** No "questions in bank", no per-domain or per-skill counts, no "N questions match". Counts of the student's own data (review queue, sessions, answered questions, daily quota) are allowed. `/api/questions/stats` is admin-only.
+- Student read surfaces show `mastery_level` only (Doc 05). **No student-visible raw accuracy figure anywhere** (Step 2 ruling 6; SCL-186 strikes Doc 05 Parent §12.2's "your recency-weighted accuracy is Y%"). No confidence metrics (coding standards §10, §17).
+- Mastery is shown as a five-segment bar filled to the level, plus the level label, on the production ladder (`mastery_levels`): Foundations, Building, Developing, Proficient, Strong, or "Not enough answers yet". The same row component is used on Home, Practice, Review, Full-Length home and the Mastery page.
+- **Exam report domain breakdown (Step 2 ruling 7; SCL-180 amended):** seven segmented bars per domain, like the official SAT score report. The server computes `segments_filled = round_half_up(correct × 7 / total)`, clamped to 0–7, at read time in a pure domain function; nothing is stored and there is no migration. A domain with `total = 0` (partial or abandoned test) is omitted, and the report says why. The student payload never carries `correct` or `total`, and no "N of M correct" appears anywhere in the student UI.
+- There is no Mastery tab. Home, Practice, Review and Full-Length home carry the mastery breakdown and link to `/mastery`.
+- No developer copy in the student UI (for example "The Stitch mock shows placeholder cards", "not exposed by this runtime contract").
+- Slogan "Study Smarter, Score Higher." may be reused where it fits.
+
+**Filters**
+- Practice and Review share one filter bar modeled on the College Board Question Bank: a criteria row of removable chips with "Clear all", a Section selector, and Domain, Skill and Difficulty dropdowns. No state standards.
+- Cascade: Domain options depend on Section; Skill options depend on the chosen domains. Changing Section clears choices that no longer apply.
+- The filter bar shows no bank counts (see above).
+- Review's past sessions are a collapsed dropdown ("Past sessions (N)"), grouped by date, with "Load more".
+
+**Visual system**
+- Textbook direction: cream paper, navy ink, hairline rules instead of shadows and glows, no gradients, serif headings.
+- Brand tokens already exist: `brand-navy #0F2E48`, `brand-cream #FFFAEF` (`tailwind.config.ts:17-19`). Raw hex in components is replaced by tokens.
+- Typography: serif headings (prototype uses Source Serif 4), sans body (prototype uses Source Sans 3). Body text 16px minimum; nothing below 14px anywhere.
+- One primary action per screen, filled navy. Everything else is outline or text. Only real inline links are underlined.
+
+**Keyboard** (one shared hook, not wired per route)
+| Surface | Keys |
+|---|---|
+| Practice and review | ↑/↓ move between options; Enter submits the selected option; for grid-in, Enter submits the typed answer; after feedback, Enter or → goes to the next question |
+| Exam module | ← / → move between questions; Enter selects but never submits the module (submit stays behind its confirmation dialog) |
+| LISA | Enter sends; Shift+Enter adds a new line |
+| Everywhere | Esc closes the open modal or sheet |
+
+The hook ignores keys typed into text fields except where listed, and removes its listener on unmount.
+
+**Performance**
+- Only work that leaves the core structure intact. No new infrastructure: Vercel already provides the CDN, edge compression and scaling; Supabase's API layer already pools connections; mastery, KPIs and projections are already precomputed tables; caching doctrine is owned by Doc 01A Part III.
+
+---
+
+## 3. Evidence already gathered
+
+- **Surface audit** of `main` @ `d2902eec`: 9 shell treatments (7 on student surfaces), 141 endpoint rows, about 30 unreferenced endpoints, duplicated buttons, cards, headers, empty states, alerts and spinners. Files: [`audit/student-ui-surface-audit.md`](audit/student-ui-surface-audit.md) and the five pass files in [`audit/`](audit/).
+- **Production database (2026-09-29):**
+  - `pg_stat_statements`: nearly all query time is Supabase dashboard introspection. The heaviest recurring app query is `exam_abandonment_sweep` at about 56 ms mean. The database is not the current bottleneck.
+  - Performance advisor: 98 unindexed foreign keys (about 14 on hot paths, listed in UI-08), 42 RLS policies re-evaluating `auth.uid()` per row (UI-09), 65 "unused" indexes (meaningless before launch; not acted on).
+  - Mastery ladder: `mastery_levels` rows 0 Foundations, 1 Building, 2 Developing, 3 Proficient, 4 Strong; `unmeasured` = "Not enough answers yet".
+  - Taxonomy: `canonical_skill_catalog` holds 29 skills across 8 domains; roughly 210 published questions per skill.
+- **Likely cause of felt slowness:** front-end bundle and render blocking, plus cold starts of the single API function (`api/index.ts` → `dist/vercel-api.cjs`). Wave 0 measures this before anything changes.
+
+---
+
+## 4. How the work runs (concurrency)
+
+Karl's ruling: run things concurrently wherever there is no dependency.
+
+| Track | Who | Contents | Can start |
+|---|---|---|---|
+| A | CC | Wave 0, then Waves 1 and 2 in parallel | Now. Wave 2 PRs merge only after the UI-00a baseline is recorded. UI-15 runs after UI-06. |
+| B | Claude + Karl | Wave 3 design on the canvas | Now |
+| C | CC | Wave 4 shell and shared components | Shell, tokens and cross-page components: once Home and Practice are signed off (UI-30, UI-31). Page-specific components: once their screen is signed off. |
+| D | CC | Wave 5 page migrations | Per page: once its screen is signed off and the Wave 4 shell is closed |
+| E | CC | Wave 6 close-out | When every other row is closed |
+
+---
+
+## 5. Spec references to read before building
+
+- [Doc 01](<../../Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md>) (current version) and [Doc 01A](<../../Spec/Lyceon — Document 01A_ Platform Primitives.md>): entitlement checks, denial semantics, error shape, caching (Part III), observability (Part II). Used by UI-00d and UI-01.
+- [Doc 05](<../../Spec/Doc 05 — Mastery, KPI Rollups, Projections & Audit (Parent).md>) and [05C](<../../Spec/Doc 05C — Score Projections & Snapshots.md>): student read surfaces limited to `mastery_level`; projection rules.
+- [Doc 04C](<../../Spec/Doc 04C — Score Reports, Review Unlock & Student_Guardian Exam Surfaces.md>): exam report disclosure; the lapsed-entitlement report (HTTP 200 `unavailable`).
+- [Doc 03B](<../../Spec/Doc 03B — LISA API and Runtime Flow.md>) §5.9 and [Doc 04A](<../../Spec/Doc 04A — Exam Runtime & Session State.md>) §16: tutor and exam denial statuses (UI-01, SCL-185).
+- [Doc 02B](<../../Spec/Lyceon — Document 02B_ Runtime Engines (V4).md>) §12: the free and paid matrix and the 40-question quota.
+- [Doc 05F](../../Spec/Lyceon_Doc_05F.md): calendar engine launch and completion contract. *Corrected 2026-09-29 (Step 2 ruling 10): this read Doc 08, which is "Strategic vision artifact. Not a contract." 05F was drafted under the name "Doc 08".*
+- [`lyceon-coding-standards.md`](../../Spec/lyceon-coding-standards.md) (Lyceon Coding Standards & AI Instructions): §8.2 error shape, §8.3 status codes, §11 frontend rules, §12 logging, §14 tests.
+
+If a spec is silent or conflicts with a ruling in §2, stop and add an owner question to §9.
+
+---
+
+## 6. Register
+
+Columns: **Proof** is written before work starts. **Proof output** is filled only with production-observed evidence at close.
+
+### Wave 0: Baseline (measurement only, no code changes)
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-00a | Lighthouse baseline, mobile profile, on `/`, `/login`, `/dashboard`, `/practice` against production | The four reports' Performance, LCP, TBT and CLS values pasted here, with the run date. *Amended 2026-09-29 (Step 2 ruling 11):* signed out, `/dashboard` and `/practice` redirect to `/login` (`RequireRole.tsx:67-88`), so their signed-in runs use the free test account's session cookie via Lighthouse `--extra-headers`. Karl runs the paid `/dashboard` once in Chrome DevTools and reports the numbers. JSON reports are saved to [`evidence/`](evidence/). | Open (separate network session) | — |
+| UI-00b | API timing: cold-start and warm response times for `/api/profile`, `/api/progress/kpis`, `/api/practice/sessions/open`; size of `dist/vercel-api.cjs`; whether Vercel Fluid compute is enabled<br>*Step 2:* `esbuild.config.js` is empty; the real bundle command is `package.json:19` (unminified, no metafile). `vercel.json` has no `functions`/Fluid setting. Timing and the Fluid flag come from Vercel runtime data. | Numbers from Vercel runtime data and the build output pasted here | Open (separate network session) | — |
+| UI-00c | Compression and pooling: confirm `/api/*` responses are compressed at the edge; confirm the server opens no direct Postgres connections (supabase-js only)<br>*Step 2, pooling half:* the server has no direct Postgres use. `pg` is a devDependency used by tests and scripts only (`package.json:173`), and `DATABASE_URL` is optional and unused at runtime (`apps/api/src/env.ts:33`). The compression half needs production response headers. | Response headers showing `content-encoding`; grep for `pg`, `postgres`, `DATABASE_URL` connection use with output | Open (separate network session) | — |
+| UI-00d | Entitlement denial contract checked against Doc 01 / 01A | Section references quoted here, or owner question(s) added to §9 | Closed | 2026-09-29, Step 2 spec check ([`evidence/step2-spec.md`](evidence/step2-spec.md)). Doc 01 and 01A name no HTTP status for a feature denial; only 503 `entitlement_check_unavailable` is defined. The statuses are per document: Doc 03B §5.9 "Not Paid tier or inactive entitlement \| 403 \| `entitlement_required`" and CR-03B-21 (moved off 402 on purpose); Doc 04A §16.1 "Fail → `403 forbidden`"; Doc 05F §15 "402 (shared CTA payload, flat platform shape …)". Resolved by Step 2 ruling 1 and SCL-185 (UI-01 amended). |
+| UI-00e | Current mastery level pill colors (the component `LevelPill` and wherever its colors are defined) | File:line and the exact color values per level pasted here; they become the level-ramp tokens in UI-40 | Closed | 2026-09-29, code fact (no production needed). `client/src/components/mastery/LevelPill.tsx:16-34` (`levelTone`): unmeasured `bg-muted text-muted-foreground border-border` (:22); L0 Foundations `bg-amber-100 text-amber-900 border-amber-200` = #FEF3C7 / #78350F / #FDE68A (:24); L1 Building `bg-orange-100 text-orange-900 border-orange-200` = #FFEDD5 / #7C2D12 / #FED7AA (:26); L2 Developing `bg-sky-100 text-sky-900 border-sky-200` = #E0F2FE / #0C4A6E / #BAE6FD (:28); L3 Proficient `bg-blue-100 text-blue-900 border-blue-200` = #DBEAFE / #1E3A8A / #BFDBFE (:30); L4 Strong `bg-emerald-100 text-emerald-900 border-emerald-200` = #D1FAE5 / #064E3B / #A7F3D0 (:32). There are no level tokens in `tailwind.config.ts`, `styles/tokens.css` or `index.css`, and no `dark:` variants. Step 2 ruling 14: these become the UI-40 level-ramp tokens. |
+
+### Wave 1: Server and contract fixes (no visual redesign)
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-01 | **One entitlement denial contract** (amended by Step 2 ruling 1, 2026-09-29; SCL-185). **No status code changes:** tutor stays 403 (Doc 03B §5.9, CR-03B-21), exam stays 403 (Doc 04A §16), calendar and `entitlementGate` stay 402 in the flat shape (Doc 05F §15; owner ruling 2026-09-17, `server/lib/http-errors.ts:13-17`). Every paid-feature denial carries `code: "entitlement_required"` and `details.feature` (the `canAccessFeature` key: `exam_full_length`, `calendar_access`, `mastery_detail`, `tutor_access`) in the body shape its surface already uses. The exam's session-ownership 403 keeps `forbidden`. One client helper reads a denial from both shapes, keyed on the code. The Zod schema for the denial body and the feature enum live in `packages/shared`. LISA keeps `isEntitlementActiveForProfile` and the live-exam block (the move to `canAccessFeature` is dropped). Out of scope: the practice quota (§8 F-07) and the guardian `student_unentitled` 402.<br>Client: pages that branch on the old bodies keep working until Wave 4 replaces them with the upgrade modal. | For each surface (exam runtime, calendar, `entitlementGate` / `mastery_detail`, tutor): a denial test (unpaid student → today's status, body with `entitlement_required` and the right `feature`) and an allow test (paid student → 200), each observed failing once. The helper is unit-tested against each surface's real response body. In production, with the free test account: one request per surface, status and body pasted here. Paid side, Karl's manual script (below): the same surfaces return 200.<br>**Paid-side script (Karl):** 1. Signed in on your paid account, open `/tests`: the form list loads, with no "couldn't load" message. 2. Open `/calendar`: your plan renders, with no premium gate. 3. Open `/mastery`: the domain cards render. 4. Open `/chat` and start a session: LISA replies. Report the date and what you saw. | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on the production 402/403 bodies after deploy | — |
+| UI-02 | Gate `PUT /api/calendar/profile` (`calendar-routes.ts:555-572`) with the calendar entitlement | Denial test observed failing once; production request with the free test account returns the UI-01 402 body | Closed | 2026-09-29, no change, Step 2 ruling 2. `PUT /api/calendar/profile` stays ungated under **SCL-130 (APPLIED)**: "`server/routes/calendar-routes.ts` (`setup_required` before the gate; `PUT /profile` ungated)". Doc 05F §15: "Setup renders before the entitlement gate … the only path by which a free student states either." The code cites it at `calendar-routes.ts:545` ("SETUP IS NOT GATED (owner ruling 2026-09-24, SCL-130)"), and it is locked by `tests/ci/calendar.routes.contract.test.ts:735-760`. |
+| UI-03 | Return paths: add `/calendar` and `/tests` (and the exact paths used by the full-length notification emails, `server/lib/notifications/templates/full-length.ts:83,145,174`) to `RETURN_PATH_ALLOWLIST` (`packages/shared/src/return-path.ts:24-47`). `/profile/complete` preserves `?next=` (`profile-complete.tsx:177`). `/chat` is on the list (needed by UI-04).<br>*Step 2:* `/chat` is already allowlisted. `?next=` is lost at four sites, not one: `login.tsx:56`, `RequireRole.tsx:132`, `server/routes/oauth-callback-routes.ts:347`, `profile-complete.tsx:79/177/224`. The full-length emails link to `/calendar` only (`full-length.ts:83`). The `RequireRole.tsx` `any` (UI-10) rides along. | Unit tests for each path. In production: signed out, open `/calendar`, sign in, land on `/calendar` | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on the signed-out → sign-in → `/calendar` production run | — |
+| UI-04 | Retire `/tutor`: the route redirects to `/chat` (`App.tsx:135-142`); delete `pages/tutor.tsx`; repoint the trust-page links (`trust.tsx:159`, `trust-evidence.tsx:170`); remove `/tutor` from the server's public page list (`server/seo-content.ts:796`)<br>*Step 2 ruling 8:* retire as planned. Removing it also touches `sitemap.xml`, `shared/seo/public-meta.ts` and the analytics surface test. The missing public AI-disclosure page is §8 F-09. | Grep for `pages/tutor` shows no importers; in production `/tutor` lands on `/chat` (after sign-in if signed out) | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on production `/tutor` → `/chat` | — |
+| UI-05 | Delete the unused `/api/questions*` routes (`server/index.ts:518-601`: list, `recent`, `random`, `count`, `feed`, `:id`, `feedback`). Before deleting, confirm `/api/questions/recent` (anonymous) never returned answer or explanation columns: paste the `QUESTION_SAFE_SELECT` column list<br>*Step 2:* `QUESTION_SAFE_SELECT` (`server/routes/questions-runtime.ts:20-30`) is `id, section, item_type, stem, options, difficulty, domain, skill_codes, created_at`, with no answer or explanation columns. The same change updates `tests/ci/servable-questions-gate.ci.test.ts:38-39` and the tests that exercise only the deleted routes. `/api/questions/stats` survives (UI-07). | Column list pasted; each route returns 404 in production | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on production 404s for the deleted routes | — |
+| UI-06 | Delete dead code.<br>Endpoints: `/api/auth/admin-provision` (Karl: not used), `/api/auth/debug`, `/api/legal/accept`, `/api/legal/acceptances`, `/api/billing/publishable-key`, `/api/account/status`, `/api/account/select`, `/api/health/practice`, `/api/_whoami`, and the unmounted `apps/api/src/routes/healthz.ts`.<br>Client: `components/NavBar.tsx`, `components/navigation.tsx`, `components/progress-sidebar.tsx`, `components/test-options.tsx`, `components/progress/ScoreProjectionCard.tsx`, `lib/legal.ts` acceptance helpers, the orphan modules listed in [pass1-C §6.2](audit/pass1-C.md#62-componentsmodules-with-no-non-test-importer), the 21 unused `components/ui` primitives, the `RuntimeContractDisabledCard` branch (`CanonicalPracticePage.tsx:451-455`), and the unreached methods in `hooks/usePractice.ts` (`:334-337`, `:412`, `:494`, `:557`, `:616`).<br>Held, not deleted: `/api/students/:id/kpi/*` and `/projections/*` (guardian vertical decides), `/api/practice/diagnostic/sessions/:id/weakest-skills` (funnel audit), `/api/internal/async/*` (LISA backlog), `/api/health` and `/healthz` (may be used by monitors).<br>*Step 2:* the orphan list re-runs identically at `cleanup` head. The deletions also update `servable-questions-gate` (healthz allowlist), `legal-phase2/3` (`lib/legal.ts`), `review-entry-points.test.ts` (nav files) and two `ScoreProjectionCard` tests. `report-fixtures.ts` is kept. Split into two PRs: server half and client half. | For each deletion: grep command and empty output pasted; `pnpm -s run build` and `pnpm test` pass; deleted routes return 404 in production | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) (server and client halves); closes on production 404s | — |
+| UI-07 | **Hide question bank counts from students.** `/api/questions/stats` becomes admin-only (`requireSupabaseAdmin`). Remove every student-visible bank count: the Practice section cards ("327 questions in bank", `practice.tsx:144`), the Domain Library counts, the topic explorer, and any count or total fields in student responses from `/api/practice/topics` and `/api/practice/reference/questions`. Counts of the student's own data stay. If a filter combination yields no questions at session start, the server returns a defined error and the UI shows "No questions match these filters".<br>*Step 2:* `/api/practice/topics` carries no count fields; `/reference/questions` returns `count` (the page size). The strings are at `practice.tsx:280,288,756,782,892-903` and `browse-topics.tsx:295`. An empty pool already returns 422 `PRACTICE_POOL_EMPTY` (`practice-canonical.ts:1592-1601`), which the client does not yet handle. The `practice.tsx` `any` hits (UI-10) ride along. | Student request to `/api/questions/stats` → 403 (test observed failing once); a schema test proves student responses of the two practice endpoints carry no count or total fields; grep of `client/src` for the removed strings is empty; production screenshots of Practice show no counts | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on the free-account production check | — |
+| UI-08 | Hot-path foreign-key indexes, one additive migration, each `CREATE INDEX CONCURRENTLY` (outside a transaction): `practice_session_items(question_id)`, `review_session_items(question_id)`, `review_session_items(queue_entry_id)`, `review_schedule(question_id)`, `review_error_attempts(question_id)`, `test_session_items(question_id)`, `test_form_items(question_id)`, `test_sessions(test_form_id)`, `calendar_block_launches(student_id)`, `calendar_block_launches(block_id, student_id)`, `usage_rate_limit_ledger(student_user_id)`, `notification_events(subject_profile_id)`, `account_deletion_requests(profile_id)`, `guardian_consent_requests(student_profile_id)`, `profiles(guardian_profile_id)`. Karl applies the SQL.<br>*Step 2:* all 15 columns exist, and none leads an existing index. CI applies migrations with `psql -f` outside a transaction, so `CONCURRENTLY` works (precedent `20260930000000_…`). The migration also updates `scripts/ci/genesis-schema.expected.sql`.<br>**Karl's step:** apply the SQL (outside a transaction), then run the verification query in the migration header and send back the `pg_indexes` output. | `pg_indexes` query output listing all 15; the performance advisor no longer flags these foreign keys | In progress: 15 migration files in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); **not applied**. Karl applies them outside a transaction and pastes the verification queries | — |
+| UI-09 | RLS policies re-evaluating `auth.uid()` per row (42). **Deferred:** only matters for queries run as the user. Record whether the server ever queries as the user rather than with the service role. | File:line of how the server's Supabase client is created, pasted here. If user-scoped queries exist, this becomes a post-launch hardening item with denial tests | Closed | 2026-09-29, code fact (Step 2 ruling: close on file:line). Every data query runs with the service role. `apps/api/src/lib/supabase-server.ts:50` creates the service-role client, and `server/middleware/supabase-auth.ts:404` uses it. The anon and SSR clients call `auth.*` only, and `getSupabaseAnon` has no callers ([`evidence/step2-wave1.md`](evidence/step2-wave1.md) UI-09). There are no user-scoped queries, so the 42 per-row `auth.uid()` RLS findings affect no query the app runs. Nothing to harden now; revisit if a user-scoped query is ever added. |
+| UI-10 | Coding-standard hits from the audit. Fixed as part of any file this vertical rewrites: `any` (`RequireRole.tsx:30`, `App.tsx:376`, `lib/runtime-contract-disable.ts:42`, `practice.tsx:196,199,749,775`), silent `catch` (`server/routes/legacy/progress.ts:111`, `guardian-routes.ts:75`), `console.*` (`App.tsx:377`, `CanonicalPracticePage.tsx:321`, `home.tsx:92,126`, `SupabaseAuthContext.tsx:99,141,146,185,199`), raw `error.message` shown to users (`App.tsx:389`). Hits in files the vertical does not touch get their own row in §8.<br>*Step 2, re-located at `cleanup` head:* `RequireRole.tsx:28` (was :30), `CanonicalPracticePage.tsx:322` (was :321). `SupabaseAuthContext.tsx` has 21 `console.*` calls, not 5. Further silent catches not listed here are §8 F-04. | Grep for each pattern in the listed files returns empty | In progress: fixed in the files the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) rewrites | — |
+| UI-19 | **Exam report domain breakdown as seven segments** (Step 2 ruling 7; SCL-180 amended). The student report endpoint returns `segments_filled` (0–7) per domain, computed at read time by a pure function: `round_half_up(correct × 7 / total)`, clamped to 0–7. A domain with `total = 0` is omitted, and the payload says why. `correct` and `total` never appear in the student payload or UI, and no migration is added. The client renders seven segment bars per domain. The guardian report is unchanged (§8 F-08). | Unit tests for 0, 7, every rounding boundary and `total = 0`, each observed failing once. A route test on the real student report output shows `segments_filled` present and `correct`/`total` absent (presence asserted first). In production, with the free test account: no exam report exists for it. **Paid-side script (Karl):** 1. Open a completed practice test's report (`/tests/<id>/report`). 2. Open the score breakdown: each domain shows seven segments, and no "N of M" or "correct" count appears anywhere on the page. 3. In DevTools → Network, open the `report` response: each `domain_breakdown` row has `segments_filled` and no `correct` or `total`. Report the date and what you saw. | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on a production student report | — |
+| UI-1A | **Remove every student-visible raw accuracy figure** (Step 2 ruling 6; SCL-186). This covers the "Accuracy (7d)" tile and the "at N% accuracy" line on `/dashboard` (`lyceon-dashboard.tsx:252-262,504`), the Accuracy tile on `/practice` (`practice.tsx:871-880`) and the runner's accuracy pill (`PracticeShell.tsx:45,76`). Counts of the student's own activity stay. | Grep of `client/src` (non-test) for student-visible accuracy percentages is empty, with the command and output pasted; a render test per surface, observed failing once; production screenshots of `/dashboard`, `/practice` and a runner showing no accuracy figure | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`); closes on the free-account `/dashboard` and `/practice` check | — |
+
+### Wave 2: Performance (structure unchanged)
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-11 | Route-level code splitting: every route in `App.tsx` lazy-loaded; Desmos, the math reference sheet and math rendering load only on question screens<br>*Step 2:* 32 routes are already lazy, and Desmos, the math reference sheet and math rendering load only through lazy routes. What remains: `client/src/main.tsx:6` puts the KaTeX CSS on every page (`MathRenderer.tsx:3` already imports it), plus the eager `UpdatePassword` and `NotificationsPage` imports. | Initial JS for `/dashboard` from the build report, before and after | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) (Wave 2: after the UI-00a/UI-00b baseline); closes on UI-60 | — |
+| UI-12 | Fonts load via `<link>` with preconnect instead of the CSS `@import` (`index.css:1`); non-critical scripts deferred; the unloaded "Bricolage Grotesque" reference removed from `calendar.css`<br>*Step 2:* also `client/index.html:41` loads about 25 Google Font families when only two are used, and `client/index.html:47` loads a synchronous Replit dev-banner script in production. "Bricolage Grotesque" appears on 10 lines of `calendar.css`. | Lighthouse "render-blocking resources" is empty on the four pages | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) (Wave 2: after the baseline); closes on UI-60. Bricolage handling is an owner question (§9) | — |
+| UI-13 | Public-page images served as WebP with explicit width and height; below-the-fold images `loading="lazy"`<br>*Step 2:* there is no `<img>` anywhere in `client/src`, so nothing needs converting. `SEO.tsx` (which pointed at missing `og-image.png`/`logo.png`) is deleted by UI-06. `client/public/lyceon-logo.png` (888 KB) is referenced by nothing. | Lighthouse image audits pass on `/` | Open (no code change; closes on the UI-00a/UI-60 Lighthouse run) | — |
+| UI-14 | Query hygiene: one `queryFn` for `["/api/profile"]` (today three: `RequireRole.tsx:44-62`, `profile-complete.tsx:100-110`, `UserProfile.tsx:130-133`); one key for billing status (today `["/api/billing/status"]` and `["billing-status"]`); default `staleTime` set per data type, long for taxonomy and pricing<br>*Step 2:* `/api/profile` is fetched from **four** places (the fourth is `SupabaseAuthContext.tsx:84`, outside React Query), and billing status uses **three** keys (plus `guardian-billing-status`). The default `staleTime` is already `Infinity` (`queryClient.ts:131`). Doc 05F:831 requires calendar data to refetch on focus, so the work is *shorter* times for data that changes. | Network log for a `/dashboard` load shows each endpoint requested once | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) (Wave 2: after the baseline); closes on a production network log | — |
+| UI-15 | Remove unused dependencies (after UI-06): run a dead-code and dependency report; present the removal list to Karl for approval before changing `package.json` | Report shows zero unused dependencies; Karl's approval recorded here | Blocked: the removal list is with Karl for approval; `package.json` unchanged | — |
+| UI-16 | Pagination, 20 per page with a cursor: review past sessions, notifications, LISA conversation history<br>*Step 2:* notifications already page by cursor, 20 by default (`server/routes/notifications.ts:101-193`, contract C3.1). LISA's 20 with a cursor is already specified (Doc 03B:749-750) but broken: the list handler ignores the cursor (§8 F-01). There is no past-sessions endpoint; the picker is fed by the unpaginated `/api/review/pool` (`review-pool.ts:456`). | Boundary tests (20, 21, empty); production responses show the cursor | In progress: code in the consolidated student-UI draft PR (branch `claude/student-ui-track-a`) (Wave 2: after the baseline); includes the F-01 fix | — |
+| UI-17 | Per-row queries in loops: check the past-sessions and notifications handlers | Query count per request pasted here; if more than a constant, a row goes in §8 | In progress | Code-read query counts, 2026-09-29 (`cleanup` head, [`evidence/step2-wave02.md`](evidence/step2-wave02.md)): `/api/review/sessions/open` runs 1 + 2N queries (`review-canonical.ts:1473-1491`), where N is capped by the concurrent-session limit (a constant, 5). The notifications list is one query (`notifications.ts:101-193`). Neither exceeds a constant bound. The unbounded case is the LISA conversation list (1 + 2N plus a per-row scan, N up to 100, `tutor-runtime.ts:2256-2320`), which is §8 F-01. Awaiting production confirmation. |
+| UI-18 | Cold starts: act on UI-00b only if cold-start time is material. Options that keep the structure: enable Vercel Fluid compute, trim the function bundle. Any plan change is an owner question. | UI-00b numbers before and after | Open | — |
+
+### Wave 3: Design completion (Claude + Karl, on the canvas)
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-30 | Home, free and paid | Karl's sign-off on the canvas | In progress (layout approved; bank counts must be removed) | — |
+| UI-31 | Practice, free and paid: remove all bank counts from the filter bar and result line (UI-07 ruling) | Karl's sign-off | In progress | — |
+| UI-32 | Review home, including the past-sessions dropdown | Karl's sign-off | Open | — |
+| UI-33 | Full-Length home | Karl's sign-off | Open | — |
+| UI-34 | Exam report domain breakdown using the mastery row | Karl's sign-off | Open | — |
+| UI-35 | Calendar: Canvas-style layout, right panel with mini month, schedule summary, filters, target, projection, streak, days to test | Karl's sign-off | Open | — |
+| UI-36 | LISA (`/chat`): conversation history in the right panel, reading-width input | Karl's sign-off | Open | — |
+| UI-37 | Mastery page | Karl's sign-off | Open | — |
+| UI-38 | Question runner (Focus shell): back arrow, keyboard rules, feedback state | Karl's sign-off | Open | — |
+| UI-39 | Mobile: bottom tab bar and one page per shell | Karl's sign-off | Open | — |
+| UI-3A | Bare card pages: login, profile completion, update password, account recovery, pending deletion, 404, error screen | Karl's sign-off | Open | — |
+| UI-3B | Upgrade modal copy per feature (Full-Length, Calendar, LISA, mastery) | Karl's sign-off | In progress | — |
+
+### Wave 4: Shell and shared components
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-40 | Design tokens: colors (brand, level ramp from UI-00e), type scale (16px body, 14px floor), serif and sans families, spacing, radius | Grep of `client/src` for `text-[10px]`, `text-[11px]` and raw hex outside the token files is empty | Open | — |
+| UI-41 | App shell: left rail (with lock states), content column, right margin panel; Focus shell with back arrow; Bare card | Every student route renders inside exactly one of the three shells (route table check pasted here) | Open | — |
+| UI-42 | Mastery row component (five-segment bar + level pill, compact and wide variants, unmeasured state) | Used on Home, Practice, Review, Full-Length home, Mastery page, exam report; grep shows no other mastery rendering | Open | — |
+| UI-43 | Filter bar component (Section, Domain, Skill, Difficulty; chips; cascade; no bank counts) | Used by Practice and Review; unit tests for the cascade rules | Open | — |
+| UI-44 | Upgrade modal, keyed by `feature`; opened by locked rail items and by any UI-01 `entitlement_required` response | Test: a 402 `entitlement_required` for each feature opens the matching modal | Open | — |
+| UI-45 | Shared keyboard hook (§2 table), with listener cleanup | Tests per surface; a test that fails if the unmount cleanup is removed | Open | — |
+| UI-46 | Shared primitives replacing the duplicates in the audit ([§6.2 of the audit](audit/student-ui-surface-audit.md#62-ui-elements-implemented-more-than-once)): button variants, page header, empty state, notice, skeletons, tabs, modal and sheet | Grep shows zero remaining duplicate implementations listed in audit §6.2 | Open | — |
+
+### Wave 5: Page migrations
+
+Each page moves onto the new shell in its own PR once its screen is signed off. Proof for every row: side-by-side screenshot with the signed-off prototype in the PR, and the page's main click path exercised in production.
+
+| ID | Page(s) | Status | Proof output |
+|---|---|---|---|
+| UI-50 | Home (`/dashboard`) | Open | — |
+| UI-51 | Practice (`/practice`), including retiring the Domain Library card | Open | — |
+| UI-52 | Review (`/review`) | Open | — |
+| UI-53 | Practice and review runners (Focus shell) | Open | — |
+| UI-54 | Full-Length home (`/tests`), exam session and report pages (the timed module keeps its Bluebook layout; typography tokens only) | Open | — |
+| UI-55 | Calendar (`/calendar`) | Open | — |
+| UI-56 | LISA (`/chat`) | Open | — |
+| UI-57 | Mastery (`/mastery`) | Open | — |
+| UI-58 | Upgrade, profile, notifications | Open | — |
+| UI-59 | Bare card pages (UI-3A list) | Open | — |
+
+### Wave 6: Close-out
+
+| ID | Item | Proof | Status | Proof output |
+|---|---|---|---|---|
+| UI-60 | Lighthouse after-run on the UI-00a pages | Values pasted beside the baseline | Open | — |
+| UI-61 | Reachability audit re-run with the original brief | Three shells on student surfaces; no unreferenced student endpoints except those held in UI-06 | Open | — |
+| UI-62 | Invariant sweep | Greps empty for: text below 14px, raw hex outside tokens, bank counts in student UI, `console.*` in touched files | Open | — |
+| UI-63 | Delete the free test account `lyceon-qa-student-ui-free@example.com` at close (Step 2 ruling, environment) | The account deleted through the product's own deletion flow (or by Karl), then a sign-in attempt refused, with its status and body pasted here, plus Karl's confirmation that no `profiles` row remains | Open | — |
+
+---
+
+## 7. Out of scope
+
+- Guardian and admin surfaces.
+- The end-to-end funnel audit (diagnostic → payment); it runs separately after this vertical.
+- Mastery, scoring and projection formulas; no RPC or formula changes.
+- The exam's timed module layout, beyond typography tokens.
+- New infrastructure (CDN, load balancer, cache layer, separate API services).
+
+---
+
+## 8. Findings added during work
+
+New findings become rows here with their own proof. They are not fixed on discovery unless they are active harm.
+
+| ID | Finding | Proof | Status | Proof output |
+|---|---|---|---|---|
+| F-01 | **LISA conversation list ignores its cursor.** `GET /api/tutor/conversations` (`server/routes/tutor-runtime.ts:2195`) never reads `cursor`, so page 2 repeats page 1, and `has_more` is `length === limit`, which reports more when exactly 20 exist. The handler also runs 1 + 2N queries plus a per-row output scan, with N up to 100 (`:2256-2320`). Doc 03B:749-750 specifies 20 per page with an opaque cursor. Fixed under UI-16. | Boundary tests (20, 21, empty) and a page-2 test showing no overlap with page 1, each observed failing once; production responses show the cursor advancing | Open | — |
+| F-02 | **Calendar full-length launch refused for entitlement looks like an outage.** The adapter returns `engine_error` with status 403 (`server/services/calendar/adapters/full-length.ts:110`), and the route maps every `engine_error` to a retryable **502** (`server/routes/calendar-routes.ts:442-446`). A paid-feature denial should reach the student as the UI-01 denial, not a 502. | Route test: a calendar full-length launch for a student without `exam_full_length` returns the UI-01 denial body, observed failing once | Open | — |
+| F-03 | **`getQuestionById` read the raw `questions` table** instead of `servable_questions` (`server/routes/questions-runtime.ts`). Its only route, `GET /api/questions/:id`, has no client caller. Resolved by UI-05 deleting the route and handler. | Closes with UI-05: grep for `getQuestionById` is empty | Open | — |
+| F-04 | **Silent catches not listed in UI-10:** `server/lib/kpi-access.ts:42`, `server/routes/practice-topics-routes.ts:89,151`, `server/middleware/supabase-auth.ts:143`, and `describeSourceSessions` in `server/services/review-pool.ts`, which discards database errors without logging. Coding standards §13 forbids silent catches. | Each catch logs through the structured logger or rethrows; a grep for empty or comment-only catches in these files returns empty | Open | — |
+| F-05 | **`canAccessFeature` gaps.** `EntitlementService.canAccessFeature` (`server/services/entitlement-service.ts:131-184`) has no admin bypass and ignores `blocked_during_live_exam`. That is why UI-01 keeps LISA on `isEntitlementActiveForProfile` (Step 2 ruling 1). If LISA ever moves, the live-exam block required by Doc 03B §5.9 must move with it. Recorded; no change in this vertical. | Owner decision recorded here if the predicates are ever unified | Open | — |
+| F-06 | **The Vercel deployment never runs the server-rendered public pages.** `vercel.json:40-56` sends only `/api/*` and `/auth/callback` to the function, so `PUBLIC_SSR_ROUTES` and `/legal/:slug` (`server/index.ts:760-789`) only serve under `app.listen`. SEO metadata for public pages is therefore not served by the server in production. | Production `curl` of `/` and `/digital-sat` showing whether the server-rendered markup is present | Open | — |
+| F-07 | **Practice quota status split.** The free daily quota returns 402 `PRACTICE_FREE_DAILY_QUOTA_EXCEEDED` (`server/routes/practice-canonical.ts`), where Doc 01A §44 specifies 429 `rate_limit_exceeded`. There is no change in this vertical (Step 2 ruling 12); UI-01 and SCL-185 leave it out of scope. | Owner ruling recorded here | Open | — |
+| F-08 | **Guardian exam report must follow the seven-segment rule.** Ruling 7 changes the student report only. The guardian report (`/api/students/:studentId/tests/:sessionId/report`, `GuardianExamResultsPage`) still carries `correct` of `total` per domain under SCL-180. It must follow the same `segments_filled` rule in the guardian vertical. | The guardian vertical's row cites this; SCL-180 is amended again when it lands | Open | — |
+| F-09 | **No live public AI-disclosure page.** Retiring the app's `/tutor` (UI-04) removes the only link target to a public tutor-disclosure page. The server-rendered `/tutor` ("Tutor Safety, Privacy, and Pedagogy", `server/seo-content.ts:796`) never runs on Vercel (F-06), and the Doc 10 AI-disclosure notice is not drafted. | Owner decision on where the Doc 10 disclosure lives | Open | — |
+| F-10 | **Signup logs the submitted email when it blocks an admin-role request.** `server/routes/supabase-auth-routes.ts:91-98` logs `email` in `admin_signup_blocked`. Coding Standards §12.1 and CLAUDE.md "Privacy". | `grep -n 'email:' server/routes/supabase-auth-routes.ts` | Open (owner question OQ-14) | `:96  email: (req.body as { email?: unknown } \| undefined)?.email,` |
+| F-11 | **`/api/practice/reference/questions` always returns an empty list**, so the Browse Topics section badge never renders. The select (`server/routes/practice-topics-routes.ts:106-108`) omits `question_type` and `correct_answer`, and `isCanonicalPublishedMcQuestion` (`shared/question-bank-contract.ts:306,311`) rejects a row without them, so every row is filtered out. Client: `pages/browse-topics.tsx:78-88`. Relevant to OQ-3. | Code read, 2026-09-29 | Open | — |
+| F-12 | **Lint debt in two files UI-05/UI-06 edit.** `server/index.ts` and `server/middleware/supabase-auth.ts` do not lint clean: 39 problems (28 `no-console`, 10 `no-explicit-any`, 1 `no-namespace`), down from 47 on `cleanup`. Not fixed here; out of scope for UI-05/UI-06. | `pnpm exec eslint server/index.ts server/middleware/supabase-auth.ts` | Open | `✖ 39 problems (39 errors, 0 warnings)`; on `cleanup` `✖ 47 problems` |
+| F-13 | **`DATABASE_URL` is declared but unused at runtime** (`packages/shared/src/env.ts:33`, optional). The server is supabase-js only. UI-15 candidate. | `grep -rn DATABASE_URL server apps packages/shared/src/env.ts` | Open | — |
+| F-14 | **`getQuestionStats` 500 body carries `error.message`** (`server/routes/questions-runtime.ts:24`, `detail: error.message`). Now admin-only (UI-07), still a detail leak. | `grep -n 'error.message' server/routes/questions-runtime.ts` | Open | `24: .json({ error: "Failed to fetch questions", detail: error.message });` |
+| F-15 | **`tests/specs/rls-auth-enforcement.spec.ts` is stale.** It still targets `/api/questions*` routes UI-05 deleted (`:97-99, 234-239, 279-281`). It is a Playwright spec outside the vitest run, so nothing fails. | Code read | Open | — |
+| F-16 | **The guardian 402 still answers `PAYMENT_REQUIRED`.** `resolveSubject` builds its own body (`server/middleware/subject-resolver.ts:135`), outside UI-01's student scope. | `grep -rn PAYMENT_REQUIRED server` | Open | `server/middleware/subject-resolver.ts:135: code: "PAYMENT_REQUIRED",` |
+| F-17 | **`/api/progress/kpis` still sends `accuracy`** on `week` and `recency` (`server/index.ts:473` → `getRecencyKpis`). UI-1A removed every render; the payload field stays, because removing it changes a contract other readers use. | Code read | Open | — |
+| F-18 | **Doc 04C §2.6 rule 7 (guardian payload is a strict subset of the student payload) no longer holds for the exam report.** After UI-19 the student report carries `segments_filled` and no correct/total; the guardian report still carries correct/total (see F-08). | Code read | Open (resolves with F-08) | — |
+| F-19 | **`profile-routes.ts` escape hatches:** `catch (error: any)` with `console.error` at `server/routes/profile-routes.ts:261` and `:525`. | `grep -n 'catch (error: any)' server/routes/profile-routes.ts` | Open | `261`, `525` |
+| F-20 | **The review pool never refreshes after a session starts or ends.** The pool is cached under `["/api/review/pool?tz=…"]` when a timezone is present; the invalidation uses `["/api/review/pool"]`, and TanStack prefix matching compares whole array elements, so it never matches. | Code read (UI-14 agent, 2026-09-29) | Open | — |
+| F-21 | **The LISA list and detail responses send `resolved_scope.source_question_canonical_id` to the student client** (`server/routes/tutor-runtime.ts:139,147,177,188`). The anti-leak skill keeps internal canonical IDs off the student client. Predates this vertical. | `grep -n source_question_canonical_id server/routes/tutor-runtime.ts` | Open | — |
+| F-22 | **`/api/profile` and `/api/billing/status` have no shared Zod schema.** The hooks do not parse the bodies (`client/src/hooks/useProfileQuery.ts` notes this). A fail-closed schema changes what pages render, so it is a follow-up. | Code read | Open | — |
+| F-23 | **"Member since" always shows "Unavailable"** on the profile page: `/api/profile` never sends `created_at` (`server/routes/profile-routes.ts`, GET handler). | Code read | Open | — |
+| F-24 | **`pnpm check` is red on `cleanup` itself:** 41 TS errors in `practice-canonical.ts` (18), `diagnostic-routes.ts` (10), `tutor-context.ts` (7), `tutor-compaction.ts` (3), `DesmosCalculator.tsx` (2), `account-deletion-routes.ts` (1). The student-UI PR adds none. | `pnpm check \| grep -c 'error TS'` | Open | `41` on `cleanup` and on the PR head |
+| F-25 | **The tutor error classifier has no production caller** (`client/src/lib/tutor-error-classifier.ts`; only its test imports it). | Code read | Open | — |
+| F-26 | **Trust-page card copy still describes the retired `/tutor` page** (`client/src/pages/trust.tsx`, `trust-evidence.tsx`); UI-04 repointed the links only. See F-09. | Code read | Open | — |
+
+---
+
+## 9. Owner questions
+
+| # | Question | Status | Ruling |
+|---|---|---|---|
+| OQ-1 | Is `/api/auth/admin-provision` used to create test accounts? | Closed | No; delete (UI-06) |
+| OQ-2 | Run Wave 3 design alongside Waves 1 and 2? | Closed | Yes; run concurrently wherever there is no dependency (§4) |
+| OQ-3 | Should `/practice/topics` (topic explorer) be retired, since the filter bar replaces it? | Open | — |
+| OQ-4 | Mobile tab bar has six items; platform guidance is five. Which item moves under a "More" tab, or does LISA become a floating button? | Open | — |
+| OQ-5 | A student whose plan lapsed opens a past exam report: keep today's in-page "unavailable" state, or use the UI-01 402 and the upgrade modal? | Closed | Doc 04C:915 decides it: HTTP 200 with an `unavailable` payload (`resume_action: renew_entitlement`), and the upgrade modal opens from the payload (Step 2 ruling 9, 2026-09-29) |
+| OQ-7 | UI-01 as written (one 402 contract) conflicts with Doc 03B §5.9 (403, CR-03B-21), Doc 04A §16 (403) and Doc 05F §15 (flat 402). Which contract? | Closed | Step 2 ruling 1: keep every status; unify the code (`entitlement_required`) and add `details.feature`; one client helper. SCL-185 |
+| OQ-8 | UI-02 reverses SCL-130 (APPLIED, `PUT /profile` ungated). Close as no change? | Closed | Step 2 ruling 2: yes |
+| OQ-9 | §2 said free users get only the diagnostic projection; Doc 02B §12 and Doc 05C give an ongoing projection. Which? | Closed | Step 2 ruling 4: follow Doc 02B and 05C; mastery and KPIs stay gated |
+| OQ-10 | §2's locked-rail modal conflicts with Doc 05F §15/§17.5 for the calendar, where the page itself is the upsell. Which? | Closed | Step 2 ruling 3: Calendar navigates to its page; LISA and Full-Length keep the modal |
+| OQ-11 | Free review rests on SCL-110 (PROPOSED). Apply it? | Closed | Step 2 ruling 5: yes. SCL-110 is APPLIED |
+| OQ-12 | "No raw accuracy" conflicts with Doc 05 Parent:646. Which? | Closed | Step 2 ruling 6: remove every student-visible raw accuracy figure. SCL-186 strikes the sentence; row UI-1A |
+| OQ-13 | The exam report breakdown: the mastery row (§2) or SCL-180's correct-of-total? | Closed | Step 2 ruling 7: seven segments per domain; `segments_filled` only. SCL-180 amended; row UI-19 |
+| OQ-6 | Confirm the typefaces: Source Serif 4 (headings) and Source Sans 3 (body), self-hosted or via Google Fonts | Open | — |
+| OQ-14 | F-10: the signup route logs a submitted email when it blocks an admin-role request. Fix it now in a small PR, or leave it in §8? | Open | — |
+| OQ-15 | UI-12: "Bricolage Grotesque" was never loaded, so calendar headings render in the browser's serif default. Replace with `inherit` (Inter), or load the font? | Open | — |
+| OQ-16 | UI-01 as built also changed code values beyond `details.feature` (the exam 403 now says `entitlement_required`) and the client 402 copy. Accept? | Open | — |
+
+---
+
+## 10. Change log
+
+| Date | Change |
+|---|---|
+| 2026-09-29 | Document created from the student UI surface audit, production checks and Karl's rulings. |
+| 2026-09-29 | Placed in the repo at `docs/plans/student-ui/` on `cleanup` (draft PR from `claude/student-ui-docs`). Branch references changed to `cleanup`; audit files added under `audit/`. |
+| 2026-09-29 | Step 2 rulings applied. §2: the free projection, calendar navigation, the entitlement denial contract, free review, no raw accuracy, the seven-segment exam breakdown. §5: Doc 08 corrected to Doc 05F; Doc 03B, 04A and 02B added. §6: UI-01 amended; UI-00d, UI-00e, UI-02 and UI-09 closed; UI-19, UI-1A and UI-63 added; Wave 2 rows corrected from the Step 2 evidence. §8: F-01 to F-09 added. §9: OQ-5 and OQ-7 to OQ-13 closed. Step 2 evidence committed to `evidence/`. SCL-185 and SCL-186 allocated; SCL-110 marked APPLIED; SCL-180 amended in place. |
+| 2026-09-29 | All Wave 1 and Wave 2 code consolidated into one draft PR (branch `claude/student-ui-track-a`, base `cleanup`) at the owner's request; the per-row PRs are closed. Row statuses updated. §8 adds F-10 to F-26. §9 adds OQ-14 to OQ-16. The PR carries Wave 2, so it does not merge before the UI-00a/UI-00b baseline. |

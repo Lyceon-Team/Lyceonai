@@ -642,6 +642,8 @@ describe("W4-11 — accepted gap: the server refuses an unpaid student before cr
     for (const res of [list, create, message]) {
       expect(res.status).toBe(403);
       expect(res.body.error.code).toBe("entitlement_required");
+      // SCL-185 (UI-01): every paid-feature denial names its Doc 01 feature key.
+      expect(res.body.error.details).toEqual({ feature: "tutor_access" });
     }
     expect(vi.mocked(runCrisisClassifier)).not.toHaveBeenCalled();
     expect(orchestrateTurn).not.toHaveBeenCalled();

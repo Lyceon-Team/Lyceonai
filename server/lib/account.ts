@@ -28,7 +28,6 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
-  GUARDIAN_LINK_ERROR,
   GuardianLinkError,
   GUARDIAN_LINK_COLUMNS,
   GUARDIAN_LINK_SQLSTATE,
@@ -301,21 +300,9 @@ import { resolveEntitlementDisplay } from "./entitlement-display";
 // entitlements keyed on profile_id and no account_id indirection.
 // See WS-GL_Stage1_Audit.md §1 blocker B-3.
 //
-// getAllAccountsForUser is still imported by account-routes.ts (/api/account/status).
-// That route returns { hasAccount: false } when the query returns empty,
-// which is the correct degraded behavior. The route itself is a separate
-// cleanup item — it does not cause 500s.
-
-/**
- * Stub — getAllAccountsForUser reads from the non-existent account_members
- * table. Returns empty so /api/account/status degrades to { hasAccount: false }
- * instead of throwing PGRST205 on every request.
- */
-export async function getAllAccountsForUser(
-  _userId: string,
-): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
-  return [];
-}
+// getAllAccountsForUser survived as a stub returning [] for GET /api/account/status. That route
+// (and POST /api/account/select) was deleted as unused (student-ui register UI-06, 2026-09-29),
+// so the stub went with it.
 
 /**
  * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181]

@@ -138,9 +138,13 @@ export async function getPracticeQuestions(req: Request, res: Response) {
         };
       });
 
+    // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+    // plain English: no `count` (or any other tally) on this student response — students
+    // never see question-bank counts. The shape is pinned by the strict
+    // `practiceReferenceQuestionsResponseSchema` in packages/shared; `filters.limit` is the
+    // requested page size echoed back, not a bank count.
     return res.status(200).json({
       questions: safeQuestions,
-      count: safeQuestions.length,
       filters: {
         section: sectionParam || null,
         domain: domain || null,

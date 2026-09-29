@@ -15611,6 +15611,13 @@ CREATE INDEX idx_account_deletion_pending ON public.account_deletion_requests US
 
 
 --
+-- Name: idx_account_deletion_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_deletion_profile ON public.account_deletion_requests USING btree (profile_id);
+
+
+--
 -- Name: idx_account_deletion_recovery_token; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15643,6 +15650,20 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 --
 
 CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
+
+
+--
+-- Name: idx_calendar_block_launches_block_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_block_launches_block_student ON public.calendar_block_launches USING btree (block_id, student_id);
+
+
+--
+-- Name: idx_calendar_block_launches_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launches USING btree (student_id);
 
 
 --
@@ -15730,6 +15751,13 @@ CREATE INDEX idx_exam_runtime_outbox_pending ON public.exam_runtime_outbox USING
 
 
 --
+-- Name: idx_guardian_consent_requests_student_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_guardian_consent_requests_student_profile ON public.guardian_consent_requests USING btree (student_profile_id);
+
+
+--
 -- Name: idx_guardian_links_guardian; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15807,6 +15835,20 @@ CREATE INDEX idx_mccl_time ON public.mastery_constants_change_log USING btree (c
 
 
 --
+-- Name: idx_notification_events_subject_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notification_events_subject_profile ON public.notification_events USING btree (subject_profile_id);
+
+
+--
+-- Name: idx_practice_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_items_question ON public.practice_session_items USING btree (question_id);
+
+
+--
 -- Name: idx_practice_items_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15860,6 +15902,13 @@ CREATE INDEX idx_profiles_deleted ON public.profiles USING btree (deleted_at) WH
 --
 
 CREATE UNIQUE INDEX idx_profiles_email_active ON public.profiles USING btree (lower(email)) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_profiles_guardian_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_profiles_guardian_profile ON public.profiles USING btree (guardian_profile_id);
 
 
 --
@@ -15919,10 +15968,31 @@ CREATE INDEX idx_review_attempts_item ON public.review_error_attempts USING btre
 
 
 --
+-- Name: idx_review_attempts_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_attempts_question ON public.review_error_attempts USING btree (question_id);
+
+
+--
 -- Name: idx_review_attempts_student; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_review_attempts_student ON public.review_error_attempts USING btree (student_id, occurred_at DESC);
+
+
+--
+-- Name: idx_review_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_question ON public.review_session_items USING btree (question_id);
+
+
+--
+-- Name: idx_review_items_queue_entry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_queue_entry ON public.review_session_items USING btree (queue_entry_id);
 
 
 --
@@ -15944,6 +16014,13 @@ CREATE INDEX idx_review_items_student ON public.review_session_items USING btree
 --
 
 CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, queued_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_review_schedule_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_schedule_question ON public.review_schedule USING btree (question_id);
 
 
 --
@@ -16094,6 +16171,13 @@ CREATE INDEX idx_test_form_items_lookup ON public.test_form_items USING btree (t
 
 
 --
+-- Name: idx_test_form_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_form_items_question ON public.test_form_items USING btree (question_id);
+
+
+--
 -- Name: idx_test_session_answers_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16101,10 +16185,24 @@ CREATE INDEX idx_test_session_answers_session ON public.test_session_answers USI
 
 
 --
+-- Name: idx_test_session_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_items_question ON public.test_session_items USING btree (question_id);
+
+
+--
 -- Name: idx_test_session_sections_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_test_session_sections_lookup ON public.test_session_sections USING btree (test_session_id, section);
+
+
+--
+-- Name: idx_test_sessions_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_sessions_form ON public.test_sessions USING btree (test_form_id);
 
 
 --
@@ -16308,6 +16406,13 @@ CREATE INDEX idx_tutor_turn_metrics_crisis_outcome ON public.tutor_turn_metrics 
 --
 
 CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
+-- Name: idx_usage_rate_limit_ledger_student_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit_ledger USING btree (student_user_id);
 
 
 --

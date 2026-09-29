@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, BookOpen, AlertCircle, Search } from "lucide-react";
+import { ArrowLeft, BookOpen, Search } from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { apiRequest } from "@/lib/queryClient";
@@ -34,7 +35,6 @@ interface QuestionResult {
 
 interface QuestionsResponse {
   questions: QuestionResult[];
-  count: number;
   filters: {
     section: string | null;
     domain: string | null;
@@ -56,6 +56,8 @@ function BrowseTopics() {
   // Fetch topics taxonomy
   const { data: topicsData, isLoading: topicsLoading, error: topicsError } = useQuery<PracticeTopics>({
     queryKey: ['/api/practice/topics'],
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   // Build query parameters for questions
@@ -291,8 +293,10 @@ function BrowseTopics() {
                 </div>
               </PageCard>
             ) : questionsData ? (
+              // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+              // plain English: no "Found N Questions" — students never see question-bank counts.
               <PageCard 
-                title={`Found ${questionsData.count} Question${questionsData.count !== 1 ? 's' : ''}`}
+                title="Matching Questions"
                 description={`${selectedSection ? topicsData?.sections?.find(s => s.section === selectedSection)?.label : 'All sections'}${selectedDomain ? ` • ${selectedDomain}` : ''}${selectedSkill ? ` • ${selectedSkill}` : ''}`}
               >
                 <div className="space-y-4">

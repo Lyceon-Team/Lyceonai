@@ -74,7 +74,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
     authHeaderPresent: false,
     cookieKeys: [],
   })),
-  resolveUserIdFromToken: vi.fn(async () => null),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({

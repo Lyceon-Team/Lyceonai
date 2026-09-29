@@ -43,13 +43,10 @@
  *  - Prefix matching, so `/blog/<slug>` and `/legal/<slug>` work without
  *    enumerating slugs. The prefix is matched at a path SEGMENT boundary, so
  *    `/blogging-internal` does not inherit `/blog`'s allowance.
- *  - `/tutor` IS NOT HERE, although `PUBLIC_SSR_ROUTES` lists it. That path is
- *    both: the server renders a public "Tutor Transparency" page for a
- *    logged-out visitor or a crawler, and the SPA route is wrapped in
- *    `RequireRole allow={["student","admin"]}`. Two different pages live at
- *    one URL and the analytics event cannot tell them apart, so the
- *    student-facing reading wins and the marketing page loses its page view.
- *    Deny-on-conflict is the whole point of defaults-to-deny.
+ *  - `/tutor` IS NOT HERE. It is retired (owner ruling 2026-09-29, UI-04): the
+ *    SPA route only redirects to the role-gated `/chat`, and it is no longer a
+ *    public SSR page. An unlisted path is denied by default, so the redirect
+ *    reports nothing.
  *
  * edge cases:
  *  - A malformed or relative URL parses to nothing useful; the predicate
