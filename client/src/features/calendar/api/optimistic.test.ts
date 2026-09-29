@@ -146,6 +146,7 @@ const READY: CalendarResponse = {
   exam_planning: {
     final_exam_lead_days: 7,
     default_full_length_interval_weeks: 2,
+    default_full_length_weekday: 6,
   },
   // Brief 14 Step 4. Required on the ready payload, so the §15 round-trip below refuses a
   // fixture without it — which is the assertion that caught its absence here.
@@ -234,6 +235,7 @@ const SETUP_REQUIRED: CalendarResponse = {
     daily_minutes_max: 180,
     target_exam_date_max_days: 540,
     default_full_length_interval_weeks: 2,
+    default_full_length_weekday: 6,
     final_exam_lead_days: 7,
   },
 };

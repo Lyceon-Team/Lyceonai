@@ -649,6 +649,7 @@ export async function readCalendar(
     exam_planning: {
       final_exam_lead_days: config.finalExamLeadDays,
       default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+      default_full_length_weekday: config.defaultFullLengthWeekday,
     },
     // Formula sheet §2 Step 2 item 4. Always present, `[]` when nothing was lost.
     full_length_suppressions: range.fullLengthSuppressions,
@@ -781,6 +782,7 @@ async function setupDefaults(
     daily_minutes_max: config.bounds.daily_minutes_max,
     target_exam_date_max_days: config.bounds.target_exam_date_max_days,
     default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    default_full_length_weekday: config.defaultFullLengthWeekday,
     final_exam_lead_days: config.finalExamLeadDays,
   };
 }
