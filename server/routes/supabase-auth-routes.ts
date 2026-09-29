@@ -5,10 +5,8 @@ import { logger } from "../logger.js";
 import {
   requireSupabaseAuth,
   getSupabaseAdmin,
-  resolveTokenFromRequest,
 } from "../middleware/supabase-auth.js";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit.js";
-import { BUILD } from "../lib/build.js";
 import { clearAuthCookies } from "../lib/auth-cookies.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { z } from "zod";
@@ -86,7 +84,7 @@ router.post(
   doubleCsrfProtection,
   async (req: Request, res: Response) => {
     try {
-      const requestedRole = (req.body as any)?.role;
+      const requestedRole = (req.body as { role?: unknown } | undefined)?.role;
 
       // Signup must never create admins.
       if (isAdminRoleRequest(requestedRole)) {
@@ -95,7 +93,7 @@ router.post(
           "admin_signup_blocked",
           "Blocked admin role request during signup",
           {
-            email: (req.body as any)?.email,
+            email: (req.body as { email?: unknown } | undefined)?.email,
             requestId: req.requestId,
           },
         );
@@ -300,196 +298,6 @@ router.post(
   },
 );
 
-const adminProvisionSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  passcode: z.string().min(1),
-  displayName: z.string().min(1).max(120).optional(),
-});
-
-/**
- * POST /api/auth/admin-provision
- * Guarded admin bootstrap path.
- *
- * Fails closed unless ADMN_PASSCODE is configured and explicitly provided.
- */
-router.post(
-  "/admin-provision",
-  authRateLimiter,
-  doubleCsrfProtection,
-  async (req: Request, res: Response) => {
-    const validation = adminProvisionSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({
-        error:
-          validation.error.errors[0]?.message ||
-          "Invalid admin provision payload",
-      });
-    }
-
-    const isProduction = process.env.NODE_ENV === "production";
-    const isAdminProvisionEnabled =
-      process.env.ADMIN_PROVISION_ENABLE === "true";
-
-    if (isProduction) {
-      logger.warn(
-        "AUTH",
-        "admin_provision_blocked_production",
-        "Admin provisioning is hard-disabled in production",
-        {
-          requestId: req.requestId,
-        },
-      );
-      return res.status(403).json({
-        error: "Admin provisioning is disabled",
-      });
-    }
-
-    if (!isAdminProvisionEnabled) {
-      logger.warn(
-        "AUTH",
-        "admin_provision_disabled_by_default",
-        "Admin provisioning denied because ADMIN_PROVISION_ENABLE is not true",
-        {
-          requestId: req.requestId,
-        },
-      );
-      return res.status(403).json({
-        error: "Admin provisioning is disabled",
-      });
-    }
-
-    const configuredPasscode = process.env.ADMN_PASSCODE;
-    if (!configuredPasscode) {
-      logger.error(
-        "AUTH",
-        "admin_provision_closed",
-        "ADMN_PASSCODE is missing; refusing admin provisioning",
-        {
-          requestId: req.requestId,
-        },
-      );
-      return res.status(403).json({
-        error: "Admin provisioning is disabled",
-      });
-    }
-
-    const { email, password, passcode, displayName } = validation.data;
-
-    if (passcode !== configuredPasscode) {
-      logger.warn(
-        "AUTH",
-        "admin_provision_rejected",
-        "Rejected admin provisioning due to passcode mismatch",
-        {
-          email,
-          requestId: req.requestId,
-        },
-      );
-      return res.status(403).json({
-        error: "Invalid provisioning credentials",
-      });
-    }
-
-    if (runningAgainstPlaceholder()) {
-      return res.status(503).json({
-        error: "Admin provisioning is unavailable in test placeholder mode",
-      });
-    }
-
-    try {
-      const admin = getSupabaseAdmin();
-
-      const { data: created, error: createError } =
-        await admin.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-          user_metadata: {
-            display_name: displayName || email.split("@")[0],
-          },
-        });
-
-      if (createError || !created.user?.id) {
-        logger.error(
-          "AUTH",
-          "admin_provision_failed",
-          "Failed to create Supabase auth user for admin provisioning",
-          {
-            email,
-            error: createError,
-            requestId: req.requestId,
-          },
-        );
-        return res.status(400).json({
-          error: createError?.message || "Failed to provision admin account",
-        });
-      }
-
-      const { error: profileError } = await admin.from("profiles").upsert(
-        {
-          id: created.user.id,
-          email: created.user.email || email,
-          display_name:
-            displayName || created.user.user_metadata?.display_name || null,
-          role: "admin",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-
-      if (profileError) {
-        logger.error(
-          "AUTH",
-          "admin_profile_upsert_failed",
-          "Failed to persist admin profile during provisioning",
-          {
-            userId: created.user.id,
-            email,
-            error: profileError,
-            requestId: req.requestId,
-          },
-        );
-        return res.status(500).json({
-          error: "Failed to persist admin profile",
-        });
-      }
-
-      logger.warn(
-        "AUTH",
-        "admin_provisioned",
-        "Admin account provisioned through guarded path",
-        {
-          userId: created.user.id,
-          email: created.user.email,
-          requestId: req.requestId,
-        },
-      );
-
-      return res.status(201).json({
-        success: true,
-        user: {
-          id: created.user.id,
-          email: created.user.email,
-          role: "admin",
-        },
-      });
-    } catch (error) {
-      logger.error(
-        "AUTH",
-        "admin_provision_exception",
-        "Unexpected admin provisioning error",
-        {
-          error,
-          requestId: req.requestId,
-        },
-      );
-      return res
-        .status(500)
-        .json({ error: "Failed to provision admin account" });
-    }
-  },
-);
 /**
  * POST /api/auth/signin
  * Sign in with email and password
@@ -580,7 +388,7 @@ router.post(
       const isProd = process.env.NODE_ENV === "production";
       clearAuthCookies(res, isProd);
       logger.info("AUTH", "signout_success", "User signed out", {
-        userId: (req as any).user?.id || null,
+        userId: req.user?.id || null,
       });
 
       res.json({
@@ -605,125 +413,6 @@ router.post(
  * to the response cookies. There is no longer a client-callable refresh path, which removes a
  * CSRF-bound mutation surface. Any POST to /api/auth/refresh now falls through to 404.
  */
-
-/**
- * GET /api/auth/debug
- * Debug endpoint for OAuth troubleshooting
- * Uses SHARED auth resolution helper for consistency with practice endpoints
- * Safe for production - no secrets exposed
- */
-router.get("/debug", async (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({ error: "Not found" });
-  }
-
-  res.setHeader("Cache-Control", "no-store");
-
-  try {
-    // Use SHARED helper for token resolution (same as practice endpoints)
-    const tokenResult = resolveTokenFromRequest(req);
-    const refreshToken = req.cookies["sb-refresh-token"];
-
-    let resolvedUserId: string | null = null;
-    let resolvedRole: string | null = null;
-    let serviceRoleCanReadUser: boolean | null = null;
-    let serviceRoleUserLookupError: string | null = null;
-    let tokenValidationError: string | null = null;
-
-    if (tokenResult.token) {
-      try {
-        const supabase = createClient(supabaseUrl, supabaseAnonKey);
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser(tokenResult.token);
-        if (error) {
-          tokenValidationError = error.message;
-        }
-        if (!error && user) {
-          resolvedUserId = user.id;
-
-          const admin = getSupabaseAdmin();
-          const { data: profile } = await admin
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
-          resolvedRole = profile?.role || null;
-        }
-      } catch (e: any) {
-        tokenValidationError = e?.message || "exception";
-      }
-    }
-
-    // Service role key validation: can it read the user from auth.users?
-    if (resolvedUserId) {
-      try {
-        const admin = getSupabaseAdmin();
-        const { data, error } =
-          await admin.auth.admin.getUserById(resolvedUserId);
-
-        if (error || !data?.user) {
-          serviceRoleCanReadUser = false;
-          serviceRoleUserLookupError = error?.message || "user_not_found";
-        } else {
-          serviceRoleCanReadUser = true;
-        }
-      } catch (e: any) {
-        serviceRoleCanReadUser = false;
-        serviceRoleUserLookupError = e?.message || "exception";
-      }
-    }
-
-    const publicSiteUrl = process.env.PUBLIC_SITE_URL || "";
-
-    res.json({
-      build: BUILD,
-      environment: {
-        nodeEnv: process.env.NODE_ENV || "undefined",
-        publicSiteUrl: publicSiteUrl || "(missing)",
-        publicSiteUrlSet: !!publicSiteUrl,
-        supabaseUrlSet: !!process.env.SUPABASE_URL,
-        // Native OAuth: Google client id/secret live in the Supabase dashboard, not app env.
-        // Intentionally not surfaced here (HALT-3 secret-hygiene).
-      },
-      request: {
-        host: req.headers.host || null,
-        origin: req.headers.origin || null,
-        referer: req.headers.referer || null,
-        protocol: req.protocol,
-      },
-      tokenResolution: {
-        cookieKeys: tokenResult.cookieKeys,
-        authHeaderPresent: tokenResult.authHeaderPresent,
-        tokenSource: tokenResult.tokenSource,
-        tokenLength: tokenResult.tokenLength,
-        bearerParsed: tokenResult.bearerParsed,
-      },
-      cookies: {
-        hasAccessToken: !!tokenResult.token,
-        hasRefreshCookie: !!refreshToken,
-      },
-      session: {
-        resolvedUserId,
-        resolvedRole,
-        tokenValidationError,
-      },
-      serviceRole: {
-        canReadUser: serviceRoleCanReadUser,
-        userLookupError: serviceRoleUserLookupError,
-      },
-      // Native OAuth: Supabase owns the OAuth callback at <ref>.supabase.co/auth/v1/callback.
-      // The app's post-login landing route is PUBLIC_SITE_URL/auth/callback.
-      oauthCallback: publicSiteUrl
-        ? `${publicSiteUrl}/auth/callback`
-        : "(cannot determine)",
-    });
-  } catch (error) {
-    logger.error("AUTH", "debug_error", "Debug endpoint error", error);
-    res.status(500).json({ error: "Debug endpoint failed" });
-  }
-});
 
 /**
  * POST /api/auth/reset-password
@@ -778,7 +467,7 @@ router.post(
         message:
           "If an account exists for that email, we've sent password reset instructions.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(
         "AUTH",
         "reset_password_exception",
@@ -835,7 +524,7 @@ router.post(
       }
 
       res.json({ success: true, message: "Password updated successfully" });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(
         "AUTH",
         "update_password_exception",

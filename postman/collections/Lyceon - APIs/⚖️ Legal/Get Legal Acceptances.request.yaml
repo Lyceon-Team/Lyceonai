@@ -1,4 +1,0 @@
-$kind: http-request
-url: "{{baseUrl}}/api/legal/acceptances"
-method: GET
-order: 2000

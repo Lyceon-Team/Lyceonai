@@ -22,16 +22,7 @@ import rateLimit from "express-rate-limit";
 import tutorRuntimeRouter from "./routes/tutor-runtime";
 import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
-import {
-  getQuestions,
-  getRandomQuestions,
-  getQuestionCount,
-  getQuestionStats,
-  getQuestionsFeed,
-  getRecentQuestions,
-  getQuestionById,
-  submitQuestionFeedback,
-} from "./routes/questions-runtime";
+import { getQuestionStats } from "./routes/questions-runtime";
 import {
   supabaseAuthMiddleware,
   enforceDeletionLock,
@@ -62,7 +53,6 @@ import { calendarRouter, streakRouter } from "./routes/calendar-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
-import healthRoutes from "./routes/health-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -513,97 +503,13 @@ app.use(
   adminCrisisReviewRouter,
 );
 
-// Questions API Routes (Supabase-authenticated, student/admin only)
-// Wrap getQuestions to match frontend format expectations
-app.get(
-  "/api/questions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  async (req, res) => {
-    const originalJson = res.json.bind(res);
-    res.json = function (data: any) {
-      if (Array.isArray(data)) {
-        return originalJson.call(res, {
-          questions: data,
-          meta: { total: data.length },
-        });
-      }
-      return originalJson.call(res, data);
-    };
-    return getQuestions(req, res);
-  },
-);
-
-app.get("/api/questions/recent", async (req, res) => {
-  // Allow anonymous access to recent questions for public preview
-  const originalJson = res.json.bind(res);
-  res.json = function (data: any) {
-    if (Array.isArray(data)) {
-      return originalJson.call(res, {
-        questions: data,
-        meta: { total: data.length },
-      });
-    }
-    return originalJson.call(res, data);
-  };
-  return getRecentQuestions(req, res);
-});
-
-app.get(
-  "/api/questions/random",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  async (req, res) => {
-    const originalJson = res.json.bind(res);
-    res.json = function (data: any) {
-      if (Array.isArray(data)) {
-        return originalJson.call(res, {
-          questions: data,
-          meta: { total: data.length },
-        });
-      }
-      return originalJson.call(res, data);
-    };
-    return getRandomQuestions(req, res);
-  },
-);
-
-app.get(
-  "/api/questions/count",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionCount,
-);
+// Questions API: only the stats route survives. The list, recent, random, count, feed, :id
+// and feedback routes were deleted as unused (student-ui register UI-05, 2026-09-29).
 app.get(
   "/api/questions/stats",
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getQuestionStats,
-);
-app.get(
-  "/api/questions/feed",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionsFeed,
-);
-
-// SECURE: Single question endpoint - never leaks answers
-app.get(
-  "/api/questions/:id",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionById,
-);
-
-// Answer validation endpoint (questionId passed in request body for flexibility)
-
-// Question feedback endpoint (thumbs up/down)
-app.post(
-  "/api/questions/feedback",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  submitQuestionFeedback,
 );
 
 // Guardian Routes (requires Supabase auth + guardian role)
@@ -635,9 +541,6 @@ app.use("/api/billing", billingRoutes);
 // Account Routes (bootstrap, status, deletion)
 app.use("/api/account", accountRoutes);
 app.use("/api/account", accountDeletionRoutes);
-
-// Health Routes (schema and credential verification)
-app.use("/api/health", healthRoutes);
 
 // Practice reference routes (bootstrap/filtering only; not runtime delivery)
 app.get(
@@ -715,21 +618,6 @@ app.use(
   doubleCsrfProtection,
   reviewCanonicalRouter,
 );
-
-// Debug route to identify server version and routes in prod
-app.get("/api/_whoami", (_req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({ error: "Not found" });
-  }
-
-  res.json({
-    service: "lyceon-api",
-    env: process.env.NODE_ENV || "development",
-    version: "1.0.0",
-    routes: ["tutor/conversations", "tutor/messages"],
-    timestamp: new Date().toISOString(),
-  });
-});
 
 // Serve static frontend files in production
 const staticPath = path.join(process.cwd(), "dist", "public");
@@ -1023,11 +911,6 @@ if (isMainModule) {
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
     console.log(`  POST   /api/auth/signout`);
-    console.log(`\n❓ Questions API (requires Supabase auth):`);
-    console.log(`  GET    /api/questions`);
-    console.log(`  GET    /api/questions/recent`);
-    console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  POST   /api/practice/sessions`);
     console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);

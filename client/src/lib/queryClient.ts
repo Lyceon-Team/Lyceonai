@@ -105,21 +105,7 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    const data = await res.json();
-
-    // Handle wrapped question responses: { questions: [], meta: {} }
-    // Extract the array for question endpoints
-    if (
-      url.includes("/api/questions") &&
-      data &&
-      typeof data === "object" &&
-      !Array.isArray(data) &&
-      Array.isArray(data.questions)
-    ) {
-      return data.questions;
-    }
-
-    return data;
+    return await res.json();
   };
 
 export const queryClient = new QueryClient({

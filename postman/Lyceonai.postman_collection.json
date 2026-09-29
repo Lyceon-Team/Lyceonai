@@ -12,7 +12,6 @@
 		{ "key": "testPassword", "value": "TestPassword123!", "type": "string" },
 		{ "key": "adminEmail", "value": "admin@example.com", "type": "string" },
 		{ "key": "adminPassword", "value": "AdminPassword123!", "type": "string" },
-		{ "key": "adminPasscode", "value": "", "type": "string" },
 		{ "key": "guardianEmail", "value": "guardian@example.com", "type": "string" },
 		{ "key": "guardianPassword", "value": "GuardianPass123!", "type": "string" },
 		{ "key": "questionId", "value": "REPLACE_ME", "type": "string" },
@@ -160,18 +159,6 @@
 					}
 				},
 				{
-					"name": "Admin Provision",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"passcode\": \"{{adminPasscode}}\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/auth/admin-provision", "host": ["{{baseUrl}}"], "path": ["api","auth","admin-provision"] }
-					}
-				},
-				{
 					"name": "Reset Password",
 					"request": {
 						"method": "POST",
@@ -217,30 +204,6 @@
 							"raw": "{\n  \"display_name\": \"Test User\"\n}"
 						},
 						"url": { "raw": "{{baseUrl}}/api/profile", "host": ["{{baseUrl}}"], "path": ["api","profile"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "⚖️ Legal",
-			"item": [
-				{
-					"name": "Accept Legal Document",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"documentSlug\": \"student-terms\",\n  \"version\": \"1.0\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/legal/accept", "host": ["{{baseUrl}}"], "path": ["api","legal","accept"] }
-					}
-				},
-				{
-					"name": "Get Legal Acceptances",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/legal/acceptances", "host": ["{{baseUrl}}"], "path": ["api","legal","acceptances"] }
 					}
 				}
 			]
@@ -385,43 +348,10 @@
 			"name": "❓ Questions",
 			"item": [
 				{
-					"name": "Get Questions List",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions", "host": ["{{baseUrl}}"], "path": ["api","questions"] }
-					}
-				},
-				{
-					"name": "Get Question by ID",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api","questions","{{questionId}}"] }
-					}
-				},
-				{
 					"name": "Get Question Stats",
 					"request": {
 						"method": "GET",
 						"url": { "raw": "{{baseUrl}}/api/questions/stats", "host": ["{{baseUrl}}"], "path": ["api","questions","stats"] }
-					}
-				},
-				{
-					"name": "Get Question Feed",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions/feed", "host": ["{{baseUrl}}"], "path": ["api","questions","feed"] }
-					}
-				},
-				{
-					"name": "Submit Question Feedback",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"feedback\": \"This question has a typo in option B.\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/questions/feedback", "host": ["{{baseUrl}}"], "path": ["api","questions","feedback"] }
 					}
 				}
 			]
