@@ -40,10 +40,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
-import {
-  normalizePracticeTopicDomains,
-  type RawPracticeTopicDomain,
-} from "@/lib/practice-topic-taxonomy";
+import { normalizePracticeTopicDomains } from "@/lib/practice-topic-taxonomy";
 import { type PracticeDifficulty } from "@/lib/practice-filters";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
@@ -57,32 +54,13 @@ import {
   SECTION_LABEL_RW,
 } from "@shared/section-display";
 import type { CanonicalSectionCode } from "@shared/question-bank-contract";
+import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 // Doc 05F §15 / INV-08-20. The day streak is served without a `calendar_access` check, so it
 // renders here for every student regardless of tier — this is the platform-wide streak, not
 // the in-session correct-answer streak `PracticeShell` shows during a run.
 import { useStreak } from "@/features/calendar/api";
-
-interface QuestionStats {
-  total: number;
-  math: number;
-  reading_writing: number;
-  byDifficulty: {
-    easy: number;
-    medium: number;
-    hard: number;
-  };
-  recentlyAdded: number;
-}
-
-interface PracticeTopics {
-  sections?: Array<{
-    section: string;
-    label: string;
-    domains?: RawPracticeTopicDomain[];
-  }>;
-}
 
 interface KpiResponse {
   timezone: string;
@@ -136,17 +114,6 @@ function Practice() {
   const [isStarting, setIsStarting] = useState(false);
 
   const {
-    data: stats,
-    isLoading: statsLoading,
-    isError: statsError,
-    error: statsErrorObj,
-    refetch: refetchStats,
-  } = useQuery<QuestionStats>({
-    queryKey: ["/api/questions/stats"],
-    enabled: !!user && !authLoading,
-  });
-
-  const {
     sessions: activeSessions,
     maxConcurrentSessions,
     terminateSession: terminateActiveSession,
@@ -161,7 +128,7 @@ function Practice() {
     isError: topicsError,
     error: topicsErrorObj,
     refetch: refetchTopics,
-  } = useQuery<PracticeTopics>({
+  } = useQuery<PracticeTopicsResponse>({
     queryKey: ["/api/practice/topics"],
     enabled: !!user && !authLoading,
   });
@@ -193,10 +160,10 @@ function Practice() {
   const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
   const mathDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "M")?.domains,
+    topicsData?.sections.find((s) => s.section === "M")?.domains,
   );
   const readingDomains = normalizePracticeTopicDomains(
-    topicsData?.sections?.find((s: any) => s.section === "RW")?.domains,
+    topicsData?.sections.find((s) => s.section === "RW")?.domains,
   );
 
   const visibleDomains = useMemo(() => {
@@ -205,7 +172,6 @@ function Practice() {
     return [...mathDomains, ...readingDomains];
   }, [focusSection, mathDomains, readingDomains]);
 
-  const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
 
   const visibleSkills = useMemo(() => {
@@ -272,27 +238,26 @@ function Practice() {
     selectedDomains.length > 0 ||
     selectedSkills.length > 0;
 
-  const quickFocus = useMemo(
-    () => [
-      {
-        section: "RW" as const,
-        title: SECTION_LABEL_RW,
-        subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
-        icon: BookOpen,
-        testId: "button-practice-reading",
-        variant: "outline" as const,
-      },
-      {
-        section: "M" as const,
-        title: SECTION_LABEL_MATH,
-        subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
-        icon: Calculator,
-        testId: "button-practice-math",
-        variant: "default" as const,
-      },
-    ],
-    [stats?.math, stats?.reading_writing, statsError, statsLoading],
-  );
+  // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+  // plain English: the section cards no longer carry a "N questions in bank" subtitle —
+  // students never see question-bank counts. The only subtitle left is the session-limit
+  // notice rendered below.
+  const quickFocus = [
+    {
+      section: "RW" as const,
+      title: SECTION_LABEL_RW,
+      icon: BookOpen,
+      testId: "button-practice-reading",
+      variant: "outline" as const,
+    },
+    {
+      section: "M" as const,
+      title: SECTION_LABEL_MATH,
+      icon: Calculator,
+      testId: "button-practice-math",
+      variant: "default" as const,
+    },
+  ];
 
   const secondaryActions = [
     {
@@ -657,11 +622,11 @@ function Practice() {
                                 {focus.title}
                               </span>
                             </div>
-                            <p className="text-xs opacity-85">
-                              {isLimitReached
-                                ? "Limit reached (5 sessions)"
-                                : focus.subtitle}
-                            </p>
+                            {isLimitReached && (
+                              <p className="text-xs opacity-85">
+                                Limit reached (5 sessions)
+                              </p>
+                            )}
                           </div>
                           <ArrowRight className="h-4 w-4 shrink-0" />
                         </div>
@@ -690,25 +655,28 @@ function Practice() {
                   <PremiumUpgradePrompt featureBenefit="unlimited daily practice" />
                 )}
 
-                {practiceHook.error && !practiceHook.quotaExhausted && (
+                {/*
+                  @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+                  plain English: session start answers 422 PRACTICE_POOL_EMPTY when the
+                  chosen filters select no questions. That is not a failure to recover
+                  from — it says "change the filters" — and it names no count.
+                */}
+                {practiceHook.poolEmpty && (
                   <RecoveryNotice
-                    title="Something went wrong."
-                    message={practiceHook.error}
-                  />
-                )}
-
-                {statsError && (
-                  <RecoveryNotice
-                    title="We couldn't load question totals."
-                    message={
-                      (statsErrorObj as Error)?.message ??
-                      "Try again. If this keeps happening, refresh the page."
-                    }
-                    onRetry={() => void refetchStats()}
-                    retryLabel="Retry"
+                    title="No questions match these filters"
+                    message="Try a different combination of domains, skills or difficulty."
                     className="rounded-lg"
                   />
                 )}
+
+                {practiceHook.error &&
+                  !practiceHook.quotaExhausted &&
+                  !practiceHook.poolEmpty && (
+                    <RecoveryNotice
+                      title="Something went wrong."
+                      message={practiceHook.error}
+                    />
+                  )}
               </div>
             </PageCard>
 
@@ -746,16 +714,13 @@ function Practice() {
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {mathDomains.map((domain: any) => (
+                        {mathDomains.map((domain) => (
                           <Badge
                             key={`math-${domain.domain}`}
                             variant="outline"
                             className="px-3 py-1"
                           >
                             {domain.domain}
-                            {domain.skills.length > 0
-                              ? ` · ${domain.skills.length}`
-                              : ""}
                           </Badge>
                         ))}
                       </div>
@@ -772,16 +737,13 @@ function Practice() {
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {readingDomains.map((domain: any) => (
+                        {readingDomains.map((domain) => (
                           <Badge
                             key={`rw-${domain.domain}`}
                             variant="outline"
                             className="px-3 py-1"
                           >
                             {domain.domain}
-                            {domain.skills.length > 0
-                              ? ` · ${domain.skills.length}`
-                              : ""}
                           </Badge>
                         ))}
                       </div>
@@ -886,22 +848,6 @@ function Practice() {
                     No weekly KPI activity recorded yet.
                   </p>
                 )}
-              </div>
-            </PageCard>
-
-            <PageCard className="bg-primary-container text-primary-foreground border-transparent">
-              <div className="space-y-2 text-center py-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70">
-                  Question Bank
-                </p>
-                <p className="text-5xl font-bold">
-                  {statsError ? "—" : statsLoading ? "--" : stats?.total || 0}
-                </p>
-                <p className="text-sm text-primary-foreground/80">
-                  {statsEmpty
-                    ? "No questions available yet"
-                    : "Total questions currently available"}
-                </p>
               </div>
             </PageCard>
 

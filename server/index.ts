@@ -577,7 +577,7 @@ app.get(
 app.get(
   "/api/questions/stats",
   requireSupabaseAuth,
-  requireStudentOrAdmin,
+  requireSupabaseAdmin,
   getQuestionStats,
 );
 app.get(

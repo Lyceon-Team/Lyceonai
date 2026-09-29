@@ -18,6 +18,7 @@ export * from "./password-policy.js";
 export * from "./return-path.js";
 export * from "./support-contact.js";
 export * from "./practice-response-schema.js";
+export * from "./practice-reference-schema.js";
 export * from "./review-schema.js";
 export * from "./tutor-lifecycle-schema.js";
 

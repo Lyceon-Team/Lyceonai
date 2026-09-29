@@ -154,6 +154,8 @@ export function usePractice(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quotaExhausted, setQuotaExhausted] = useState(false);
+  // UI-07: the chosen filters select no questions (server 422 PRACTICE_POOL_EMPTY).
+  const [poolEmpty, setPoolEmpty] = useState(false);
 
   // Answer selection state
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -221,6 +223,7 @@ export function usePractice(
       }
 
       const f = overrideFilters ?? filters;
+      setPoolEmpty(false);
 
       const lockKey = initialSessionId
         ? `resume-${initialSessionId}`
@@ -292,7 +295,19 @@ export function usePractice(
         if ("status" in apiErr && apiErr.status === 402) {
           setQuotaExhausted(true);
         }
+        // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+        // plain English: practice-canonical.ts answers 422 `PRACTICE_POOL_EMPTY` when the
+        // filters select no questions. Surface it as its own state so the page can say
+        // "No questions match these filters" (no count) instead of a generic failure.
         if (
+          "status" in apiErr &&
+          apiErr.status === 422 &&
+          "code" in apiErr &&
+          apiErr.code === "PRACTICE_POOL_EMPTY"
+        ) {
+          setPoolEmpty(true);
+          setError("No questions match these filters");
+        } else if (
           "status" in apiErr &&
           apiErr.status === 403 &&
           "code" in apiErr &&
@@ -659,6 +674,7 @@ export function usePractice(
     isLoading,
     error,
     quotaExhausted,
+    poolEmpty,
 
     // Answer selection
     selectedAnswer,
