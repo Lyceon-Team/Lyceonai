@@ -3,23 +3,30 @@
  * @spec [Doc-04C_V1.0 §8.1, §9.1, §10.2, §11.4, §11.5, §11.5b, §15.1]
  *       [E7b plant: "the completion screen refuses to render a score without its
  *        disclosure"; owner rulings 4 and 6] | @implemented [2026-09-25]
+ *       [SCL-180 (amended 2026-09-29), owner ruling 7: seven segments per domain, no
+ *        correct-of-total anywhere] | @implemented [2026-09-29]
+ *
+ * FIXTURES: the student payloads are `toStudentExamReport` of the shared server-side
+ * fixtures — the same projection the /report route applies.
  */
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import type { ExamReportPayload } from "@lyceon/shared/exam-report-schema";
-import { examReportPayloadSchema } from "@lyceon/shared/exam-report-schema";
+import {
+  examStudentReportPayloadSchema,
+  type ExamStudentReportPayload,
+} from "@lyceon/shared/exam-student-report-schema";
 import {
   FIXTURE_DISCLOSURE,
   FIXTURE_FORM_ID,
   FIXTURE_SESSION_ID,
-  failedReport,
-  inProgressReport,
-  partialReport,
-  pendingReport,
-  scoredReport,
+  studentFailedReport,
+  studentInProgressReport,
+  studentPartialReport,
+  studentPendingReport,
+  studentScoredReport,
 } from "../test-fixtures/report-fixtures";
 
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
@@ -34,9 +41,9 @@ const base = {
   test_form_name: "Practice Test 2",
 };
 const disclosure = FIXTURE_DISCLOSURE;
-const scored = scoredReport;
+const scored = studentScoredReport;
 
-function show(payload: ExamReportPayload) {
+function show(payload: ExamStudentReportPayload) {
   const { hook } = memoryLocation({ path: "/tests/x/report" });
   return render(
     <Router hook={hook}>
@@ -75,7 +82,7 @@ describe("report screen", () => {
     ).toBe(true);
   });
 
-  it("G1: the Score breakdown tab shows every domain's correct-of-total, grouped by section", () => {
+  it("ruling 7: the Score breakdown tab draws seven segments per domain and no question counts", () => {
     show(scored);
     const tab = screen.getByRole("tab", {
       name: "Score breakdown",
@@ -84,13 +91,30 @@ describe("report screen", () => {
     expect(screen.queryByTestId("exam-domain-breakdown")).toBeNull();
     fireEvent.click(tab);
     expect(tab.getAttribute("aria-selected")).toBe("true");
-    const rows = screen
-      .getAllByTestId("exam-domain-row")
-      .map((r) => r.textContent);
+    // Presence first: eight domains, each a bar of exactly seven segments.
+    const rows = screen.getAllByTestId("exam-domain-row");
     expect(rows).toHaveLength(8);
-    expect(rows[0]).toBe("Craft and Structure10 of 13 correct");
-    expect(rows[7]).toBe("Problem Solving and Data Analysis5 of 9 correct");
+    const bars = screen.getAllByTestId("exam-domain-segments");
+    expect(
+      bars.map(
+        (b) => b.querySelectorAll('[data-testid="exam-domain-segment"]').length,
+      ),
+    ).toEqual([7, 7, 7, 7, 7, 7, 7, 7]);
+    // Filled per the server's segments_filled (fixtures: 10/13, 6/8, 9/12, 11/21, 12/15,
+    // 11/13, 4/7, 5/9), in canonical order within RW then Math.
+    expect(
+      bars.map((b) => b.querySelectorAll('[data-filled="true"]').length),
+    ).toEqual([5, 5, 5, 4, 6, 6, 4, 4]);
+    expect(rows[0]!.textContent).toBe("Information and Ideas");
+    expect(
+      screen.getByRole("img", { name: "Algebra: 6 of 7 segments filled" }),
+    ).toBeTruthy();
     expect(screen.getByText("Reading and Writing")).toBeTruthy();
+    // Then absence: no "N of M" count and no "correct" anywhere in the rendered text.
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(text).not.toMatch(/correct/i);
+    expect(screen.queryAllByTestId("exam-domain-omitted")).toHaveLength(0);
     // Keyboard: Left from the second tab returns to Section scores.
     fireEvent.keyDown(tab, { key: "ArrowLeft" });
     expect(
@@ -105,7 +129,7 @@ describe("report screen", () => {
     const stripped = {
       ...scored,
       disclosure: undefined,
-    } as unknown as ExamReportPayload;
+    } as unknown as ExamStudentReportPayload;
     show(stripped);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
     expect(screen.queryAllByTestId("exam-section-score")).toHaveLength(0);
@@ -118,12 +142,12 @@ describe("report screen", () => {
     show({
       ...scored,
       disclosure: { ...disclosure, summary: "" },
-    } as ExamReportPayload);
+    } as ExamStudentReportPayload);
     expect(document.body.textContent).not.toMatch(/1340/);
   });
 
   it("scoring_pending: generic copy when estimated_ready_at is null (§11.5)", () => {
-    show(pendingReport);
+    show(studentPendingReport);
     expect(screen.getByRole("status").textContent).toContain(
       "Scoring usually takes a few minutes",
     );
@@ -133,7 +157,7 @@ describe("report screen", () => {
   });
 
   it("partial_scored: no total, the partial summary, the incomplete section named", () => {
-    show(partialReport);
+    show(studentPartialReport);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
     expect(screen.getByTestId("exam-partial-summary").textContent).toContain(
       "no total score",
@@ -142,27 +166,32 @@ describe("report screen", () => {
       screen.getAllByTestId("exam-section-score")[1]!.textContent,
     ).toContain("Not completed");
     expect(screen.getAllByTestId("exam-disclosure").length).toBeGreaterThan(0);
-    // G1: only the scored section is broken down; Math has no rows beside its missing score.
+    // Ruling 7: only the scored section is drawn; Math's domains are omitted and the
+    // report says why, with no segment bar beside its missing score.
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
     expect(screen.getAllByTestId("exam-domain-row")).toHaveLength(4);
-    expect(screen.queryByText("Math")).toBeNull();
+    expect(screen.getAllByTestId("exam-domain-segments")).toHaveLength(4);
+    expect(screen.getByTestId("exam-domain-omitted").textContent).toBe(
+      "Math wasn't completed, so its domains aren't shown.",
+    );
+    expect(document.body.textContent).not.toMatch(/\d+\s*of\s*\d+/);
   });
 
   it("failed_requires_review: the payload's message and reference, nothing internal", () => {
-    show(failedReport);
+    show(studentFailedReport);
     expect(screen.getByTestId("exam-failure-message").textContent).toContain(
       "INC-1a2b3c4d",
     );
   });
 
   it("not_completed and unavailable render without a score", () => {
-    show(inProgressReport);
+    show(studentInProgressReport);
     expect(
       screen.getByRole("link", { name: "Resume test" }).getAttribute("href"),
     ).toBe(`/tests/${base.session_id}`);
     cleanup();
     show(
-      examReportPayloadSchema.parse({
+      examStudentReportPayloadSchema.parse({
         report_state: "unavailable",
         ...base,
         unavailable_reason: "entitlement_lapsed",
