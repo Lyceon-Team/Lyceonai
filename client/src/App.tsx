@@ -1,4 +1,4 @@
-import { Component, ReactNode, Suspense, lazy } from "react";
+import { Component, ErrorInfo, ReactNode, Suspense, lazy } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -88,7 +88,6 @@ const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
 const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
-const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
@@ -132,14 +131,10 @@ function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/trust/evidence" component={TrustEvidence} />
-        <Route
-          path="/tutor"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <TutorPage />
-            </RequireRole>
-          )}
-        />
+        {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
+            plain English: the old tutor page is retired; /tutor now sends
+            everyone to /chat, whose guard handles sign-in (next=/chat). */}
+        <Route path="/tutor">{() => <Redirect to="/chat" replace />}</Route>
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 
@@ -373,7 +368,8 @@ class ErrorBoundary extends Component<
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: any) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // eslint-disable-next-line no-console -- the client has no structured logger; lint-clean of a touched file (UI-04), behaviour unchanged.
     console.error("App Error:", error, errorInfo);
   }
 
