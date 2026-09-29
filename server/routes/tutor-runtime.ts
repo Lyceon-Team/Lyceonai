@@ -90,7 +90,14 @@ import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/
 import {
   listConversationsQuerySchema,
   type ConversationDetail,
+  type ConversationListCursor,
 } from "../../packages/shared/src/tutor-lifecycle-schema";
+import { TutorConfig } from "../services/tutor-config";
+import {
+  decodeConversationCursor,
+  encodeConversationCursor,
+  mergeKeysetReads,
+} from "../services/tutor-conversation-cursor";
 
 const router = Router();
 
@@ -1546,8 +1553,6 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sendTutorError(res, "canonical_write_failed");
       return;
     }
-    const assignmentId = instructionAssignmentResult.assignmentId;
-
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope. Two consumers, two scopes:
     //   - BFF output scan (step 15): needs the real correct_answer to detect
@@ -2192,6 +2197,27 @@ router.get(
 // GET /conversations — §8 List
 // ============================================================================
 
+/**
+ * @spec [Doc-03B_V4.1 §8.3, §8.5; cursor format §7.3 (CR-03B-28)]
+ * | @implemented [2026-09-29]
+ *
+ * plain English: the student's conversations, newest first, one page at a
+ * time. Page size is `limit`, else the `validation.pagination_default` config
+ * key (20), capped at `validation.pagination_max` (100). Keyset pagination on
+ * (updated_at DESC, id DESC): the server reads limit+1 rows, so `has_more` is
+ * true only when a further row really exists, and `next_cursor` (opaque
+ * base64url) anchors the next page on the last row of this one.
+ *
+ * trade-offs: before this, `cursor` was parsed and ignored (page 2 repeated
+ * page 1) and `has_more` was `length === limit`, true at exactly 20 rows with
+ * nothing after them. Each row still costs one tutor_messages read for its
+ * preview and count (previously two — merged via count=exact on the preview
+ * read, same values). A fully set-based read needs a SQL function; not done.
+ *
+ * edge cases: a malformed cursor is 400 invalid_input. A conversation updated
+ * between page reads moves to the top of the list and is not re-served on a
+ * later page — the anchor only ever moves backwards.
+ */
 router.get(
   "/conversations",
   async (req: Request, res: Response): Promise<void> => {
@@ -2208,72 +2234,134 @@ router.get(
       sendTutorError(res, "invalid_input", parsedQuery.error.flatten());
       return;
     }
-    const limit = parsedQuery.data.limit ?? 20;
+    const filters = parsedQuery.data;
+    const limit = Math.min(
+      filters.limit ?? TutorConfig.get("validation.pagination_default"),
+      TutorConfig.get("validation.pagination_max"),
+    );
+
+    let anchor: ConversationListCursor | null = null;
+    if (filters.cursor !== undefined) {
+      anchor = decodeConversationCursor(filters.cursor);
+      if (!anchor) {
+        sendTutorError(res, "invalid_input", {
+          fieldErrors: { cursor: ["malformed cursor"] },
+        });
+        return;
+      }
+    }
 
     try {
-      let query = supabaseServer
-        .from("tutor_conversations")
-        .select(
-          "id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, created_at, updated_at, title, surface, crisis_paused_at",
-        )
-        .eq("student_id", studentId)
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(limit);
+      const listQuery = () => {
+        let query = supabaseServer
+          .from("tutor_conversations")
+          .select(
+            "id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, created_at, updated_at, title, surface, crisis_paused_at",
+          )
+          .eq("student_id", studentId)
+          .is("deleted_at", null);
+        if (filters.surface) {
+          query = query.eq("surface", filters.surface);
+        }
+        if (filters.source_surface) {
+          query = query.eq("source_surface", filters.source_surface);
+        }
+        if (filters.source_session_item_id) {
+          query = query.eq(
+            "source_session_item_id",
+            filters.source_session_item_id,
+          );
+        }
+        return filters.status
+          ? query.eq("status", filters.status)
+          : query.in("status", ["active", "ended"]);
+      };
 
-      if (parsedQuery.data.surface) {
-        query = query.eq("surface", parsedQuery.data.surface);
-      }
-      if (parsedQuery.data.source_surface) {
-        query = query.eq("source_surface", parsedQuery.data.source_surface);
-      }
-      if (parsedQuery.data.source_session_item_id) {
-        query = query.eq(
-          "source_session_item_id",
-          parsedQuery.data.source_session_item_id,
+      // limit+1: the extra row is how `has_more` is known, never served.
+      const cap = limit + 1;
+      let rows: TutorConversationRow[];
+      let readError: { message: string; code: string } | null = null;
+      if (!anchor) {
+        const { data, error } = await listQuery()
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(cap);
+        readError = error;
+        rows = (data ?? []) as TutorConversationRow[];
+      } else {
+        const [ties, older] = await Promise.all([
+          listQuery()
+            .eq("updated_at", anchor.anchor_ts)
+            .lt("id", anchor.anchor_id)
+            .order("id", { ascending: false })
+            .limit(cap),
+          listQuery()
+            .lt("updated_at", anchor.anchor_ts)
+            .order("updated_at", { ascending: false })
+            .order("id", { ascending: false })
+            .limit(cap),
+        ]);
+        readError = ties.error ?? older.error;
+        rows = mergeKeysetReads(
+          (ties.data ?? []) as TutorConversationRow[],
+          (older.data ?? []) as TutorConversationRow[],
+          cap,
         );
       }
-      query = parsedQuery.data.status
-        ? query.eq("status", parsedQuery.data.status)
-        : query.in("status", ["active", "ended"]);
 
-      const { data: rows, error } = await query;
-
-      if (error) {
+      if (readError) {
         logger.error(
           "TUTOR_RUNTIME",
           "list_conversations_failed",
           "Failed to list tutor_conversations",
-          { message: error.message, code: error.code },
+          { message: readError.message, code: readError.code },
         );
         sendTutorError(res, "canonical_write_failed");
         return;
       }
 
+      const hasMore = rows.length > limit;
+      const pageRows = rows.slice(0, limit);
+
       const conversations = await Promise.all(
-        (rows ?? []).map(async (row) => {
-          const conv = row as TutorConversationRow;
-          const { data: lastMessage } = await supabaseServer
+        pageRows.map(async (conv) => {
+          // One read per row: the newest message (the preview) and, via
+          // count=exact, the total — count ignores the limit.
+          const {
+            data: lastMessages,
+            count,
+            error: messageError,
+          } = await supabaseServer
             .from("tutor_messages")
-            .select("message, role")
+            .select("message, role", { count: "exact" })
             .eq("conversation_id", conv.id)
             .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const { count } = await supabaseServer
-            .from("tutor_messages")
-            .select("id", { count: "exact", head: true })
-            .eq("conversation_id", conv.id);
+            .limit(1);
+          if (messageError) {
+            // Same output as before (no preview, count 0); now visible.
+            logger.warn(
+              "TUTOR_RUNTIME",
+              "list_preview_read_failed",
+              "Failed to read tutor_messages preview for list row",
+              { conversationId: conv.id, code: messageError.code },
+            );
+          }
+          const lastMessage = (lastMessages ?? [])[0] as
+            | { message?: unknown; role?: unknown }
+            | undefined;
 
           const rawPreview =
-            (lastMessage?.message as string | undefined) ?? null;
-          const lastRole = (lastMessage?.role as string | undefined) ?? null;
+            typeof lastMessage?.message === "string"
+              ? lastMessage.message
+              : null;
+          const lastRole =
+            typeof lastMessage?.role === "string" ? lastMessage.role : null;
 
           // LISA-FULL-007: scan list previews for defense-in-depth.
           // Only tutor-role messages need scanning. Student messages
           // and null previews pass through. The preview is truncated
           // AFTER scanning so a leak at position 90 is still caught.
-          let safePreview: string | null = null;
+          let safePreview: string | null;
           if (rawPreview !== null && lastRole === "tutor") {
             const listScanContext: OutputScanContext = {
               conversationId: conv.id,
@@ -2315,15 +2403,14 @@ router.get(
         }),
       );
 
+      const lastRow = pageRows[pageRows.length - 1];
       res.status(200).json({
         data: {
           conversations,
           pagination: {
-            has_more: conversations.length === limit,
+            has_more: hasMore,
             next_cursor:
-              conversations.length > 0
-                ? conversations[conversations.length - 1].conversation_id
-                : null,
+              hasMore && lastRow ? encodeConversationCursor(lastRow) : null,
           },
         },
       });

@@ -399,6 +399,22 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
       }
       if (this.limitN !== null) sql += ` LIMIT ${this.limitN}`;
       const r = await wireQuery(this.pg, sql, where.params);
+      // `count: "exact"` WITHOUT `head`: PostgREST returns the rows AND the total
+      // matching count, and the total ignores the limit. Added 2026-09-29 for the
+      // tutor conversation list, which reads a row's newest message and its message
+      // count in one request.
+      if (this.countMode === "exact") {
+        const c = await wireQuery(
+          this.pg,
+          `SELECT count(*)::int AS c FROM ${t}${where.sql}`,
+          where.params,
+        );
+        return {
+          data: r.rows,
+          error: null,
+          ...({ count: c.rows[0]?.c ?? 0 } as Record<string, unknown>),
+        } as PgSupabaseResult;
+      }
       return { data: r.rows, error: null };
     } catch (err: unknown) {
       const e = err as Error & { code?: string; detail?: string };

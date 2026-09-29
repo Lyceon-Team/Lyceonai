@@ -929,6 +929,61 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
     ).toBe(400);
   });
 
+  // ── C3.1 page boundaries at the DEFAULT page size (register UI-16) ───────
+  // @spec [contracts/notifications.contract.md C3.1; NOTIFICATION_FEED_DEFAULT_LIMIT = 20]
+  // | @implemented [2026-09-29] | plain English: no `?limit`, so the route's default
+  // applies. Empty, exactly one page (20, no cursor) and one past it (21: a cursor,
+  // then the last row and no cursor), with no row served twice.
+  async function emitInApp(n: number, recipient: string, tag: string) {
+    for (let i = 0; i < n; i += 1) {
+      const id = notificationEventId("guardian_linked", `${tag}-${i}`);
+      await pg.query(
+        `SELECT public.emit_notification_event($1,'guardian_linked',$2,$3::jsonb,$4::jsonb)`,
+        [
+          id,
+          STUDENT,
+          JSON.stringify([{ profile_id: recipient, channels: ["in_app"] }]),
+          JSON.stringify({ link_id: id, student_display_name: `S${i}` }),
+        ],
+      );
+    }
+  }
+
+  it("C3.1 default page: empty inbox → no items, nextCursor null", async () => {
+    const app = await buildApp();
+    // Someone else's notifications exist; this recipient's inbox is still empty.
+    await emitInApp(3, OUTSIDER, "boundary-empty");
+    const res = await request(app).get("/api/notifications");
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual([]);
+    expect(res.body.data.nextCursor).toBeNull();
+  });
+
+  it("C3.1 default page: exactly 20 → one page of 20, nextCursor null", async () => {
+    const app = await buildApp();
+    await emitInApp(20, GUARDIAN, "boundary-20");
+    const res = await request(app).get("/api/notifications");
+    expect(res.body.data.items).toHaveLength(20);
+    expect(res.body.data.nextCursor).toBeNull();
+  });
+
+  it("C3.1 default page: 21 → 20 with a cursor, then 1 with none, no overlap", async () => {
+    const app = await buildApp();
+    await emitInApp(21, GUARDIAN, "boundary-21");
+    const first = await request(app).get("/api/notifications");
+    expect(first.body.data.items).toHaveLength(20);
+    expect(typeof first.body.data.nextCursor).toBe("string");
+    const second = await request(app).get(
+      `/api/notifications?cursor=${encodeURIComponent(first.body.data.nextCursor)}`,
+    );
+    expect(second.body.data.items).toHaveLength(1);
+    expect(second.body.data.nextCursor).toBeNull();
+    const ids = [...first.body.data.items, ...second.body.data.items].map(
+      (i: { messageId: string }) => i.messageId,
+    );
+    expect(new Set(ids).size).toBe(21);
+  });
+
   // ── C0.2 / C0.3 / C10.2 grep clauses ─────────────────────────────────────
   it("C0.2/C0.3/C10.2 only the transport talks to Resend; no contact@lyceon.ai; no console in the notification modules", () => {
     const root = path.resolve(__dirname, "../..");
