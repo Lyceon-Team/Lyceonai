@@ -29,7 +29,11 @@ Every quantity is an integer (seconds, questions, weights, basis points). No flo
 **Step 2 — Exam placement.** Arithmetic on what the student chose — a **frequency** (`full_length_interval_weeks` ∈ 1, 2, 3, 4) and a **preferred weekday**. Both or neither: a profile with one and not the other is refused by `full_length_pair`, and neither means no automatic exams.
 
 1. **Final rehearsal**, when a target date is set: walk **back** from `target − final_exam_lead_days` to the preferred weekday. It is never shifted — it is the one fixed point in the schedule, and a student who blocks that day has made their own call.
-2. **The series**: start from the **last completed full-length's local date**, or the **setup date** when there is none. Add `interval_weeks × 7` days, then take the **next preferred weekday on or after** that. Repeat through the horizon. The cursor advances on the intended date, so one shifted exam never drags the whole series.
+2. **The series.** The **first** sitting is the first preferred weekday **strictly after the setup date** — no interval is applied before a student has sat one. After a completed full-length, the next is `interval_weeks × 7` days from that sitting, snapped forward to the preferred weekday. Every later one is `interval_weeks × 7` from its predecessor, through the horizon. The cursor advances on the intended date, so one shifted exam never drags the whole series.
+
+   *Strictly after* is load-bearing in both directions. Applying a full interval before the first sitting put a fortnightly student's first exam on day 14–20 of a 14-day horizon, so a new student never saw one; anchoring on or after the setup date put it on the day they signed up. Strictly-after-then-interval is the only rule that avoids both.
+
+   **An exam day need not be a study day.** A student who studies Monday to Friday and sits practice tests on Saturdays gets a Saturday exam block; the study-days mask governs practice and review, not the sitting the student explicitly scheduled.
 3. **An overridden date shifts by exactly one week**, to the next occurrence of the same weekday — never to a different weekday. Two reasons, and either alone decides it: a 1–6 day shift can never satisfy validator V-02, which requires an exam to fall on the student's weekday; and the student picked that day, so moving their test to a Wednesday quietly overrides a choice they made.
 4. **If that occurrence is also overridden**, place nothing and record the date in `degraded[]` as a suppression. Silence is the failure this replaces: an edited day used to swallow the only exam in a horizon with no trace anywhere.
 5. Nothing is placed inside the lead window or on/after the target, and `max_full_length_per_horizon` still caps the horizon. An exam day holds nothing else.
@@ -83,6 +87,7 @@ That is the entire algorithm. There is no round-robin, no proportional rounding,
 | `post_exam_emphasis_days` / `post_exam_multiplier` | 7 / 2 | 0–30 / 1–5 |
 | `min_domain_questions` / `max_domains_per_block` / `granularity` | 5 / 4 / 5 | 5–20 / 1–8 / 5 |
 | `default_full_length_interval_weeks` | 2 | 1–4 |
+| `default_full_length_weekday` | 6 (Saturday) | 0–6 |
 | `final_exam_lead_days` / `max_full_length_per_horizon` | 7 / 2 | 3–21 / 0–4 |
 | `taper_days` / `taper_ratio_bp` | 3 / 5000 | 0–7 / 0–10000 |
 | `recent_planned_window_days` | 28 | 14–56 |
@@ -129,6 +134,8 @@ Mirrors Doc 05A/B: a pure inner function, a snapshot builder, a validator, and I
 `suite(N=3000, seed=1)` and `suite_fallback(N=3000, seed=1)`, both generators, zero violations: determinism; no study on/after target; budget; no empty study day with ≥15 min; ≤2 practice blocks per day, each within one section; ≤4 domains per block, all counts multiples of 5 and ≥5; exam-day isolation; lead window; minimum gap; exam review on the next study day after every exam; **monotonicity: 0 violations of 623** (lowering a domain's mastery never reduces its questions). Weight fidelity: **TVD 0.019 with no prior history** (the deficit rule is near-exact); 0.106 when the suite injects adversarial random 28-day history that must be repaired inside one horizon. Re-run after re-keying to levels 0–4: identical results. One-study-day-a-week students rotate through all eight domains over four weekly generations. Budget utilization 0.955.
 
 ## 8. Doc 05F change record (owner applies to the locked doc)
+
+**2026-09-29 — first-sitting rule corrected.** Step 2 above: the first sitting is the first preferred weekday strictly after the setup date, with the interval applying only after a completed sitting. Evidence: a real profile (Mon–Fri, Saturdays, fortnightly, setup 29 Sep) placed its first exam on 17 Oct against a horizon ending 12 Oct, so nothing rendered — the mirror of the anchor defect this rule replaced. `default_full_length_weekday` (6) is added so a new student's practice-test day defaults to Saturday rather than None. A thirteenth fixture, `exam_day_outside_study_days`, pins that an exam day need not be a study day.
 
 **2026-09-27 — exam placement replaced (Brief 14).** Step 2 above is rewritten: the student picks a frequency and a preferred weekday, and placement is arithmetic from the last completed exam or the setup date. `full_length_every_n_occurrences` and `full_length_min_gap_days` are retired; `default_full_length_interval_weeks` (2, bounds 1–4) is added; `student_study_profile` gains `full_length_interval_weeks` with a both-or-neither CHECK against `full_length_weekday`. An overridden date shifts +7 and never to another weekday (V-02); two overridden occurrences record a suppression in `degraded[]`. The final rehearsal is unchanged and unshifted. Doc 05F consequences: R-08-27 restated, §8.1 gains the field, §21 swaps the keys, §22.7's worked example rewritten, §9.4 and §12 re-pointed here.
 

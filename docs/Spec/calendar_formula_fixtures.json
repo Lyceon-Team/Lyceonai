@@ -6,7 +6,7 @@
  "mastery_levels": "0..4 per public.mastery_levels (L0 Foundations weakest .. L4 Strong); NULL unmeasured",
  "mask_convention": "Postgres DOW, bit 0 = Sunday",
  "domain_vocabulary": "The canonical eight College Board domain names in full, exactly as production stores them. No codes, no aliases, no mapping layer.",
- "exam_placement": "Student-chosen frequency. From the last completed exam (or setup date), + interval_weeks x 7, then the next preferred weekday on or after. An overridden date shifts +7 (never to another weekday); both occurrences overridden records a suppression. The final rehearsal walks back from the target and is never shifted.",
+ "exam_placement": "Student-chosen frequency. First sitting = the first preferred weekday strictly after the setup date; after a completed sitting = interval_weeks later, snapped forward to that weekday. An exam day need not be a study day. An overridden date shifts +7, never to another weekday; both overridden records a suppression. The final rehearsal walks back from the target and is never shifted.",
  "constants": {
   "horizon_days": 14,
   "review_share_max_bp": 5000,
@@ -80,7 +80,9 @@
     "current_overrides": []
    },
    "exam_placement": {
-    "placed": {},
+    "placed": {
+     "2026-09-26": "exam_cadence"
+    },
     "suppressed": []
    },
    "deterministic_v1": {
@@ -174,24 +176,21 @@
       "cold_start"
      ]
     ],
-    "2026-09-26": [],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
     "2026-09-27": [],
     "2026-09-28": [
      [
-      "practice",
-      {
-       "RW": 15
-      },
-      15,
-      "cold_start"
-     ],
-     [
-      "practice",
-      {
-       "M": 15
-      },
-      15,
-      "cold_start"
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
      ]
     ],
     "2026-09-29": [
@@ -360,24 +359,21 @@
       "fallback"
      ]
     ],
-    "2026-09-26": [],
+    "2026-09-26": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
     "2026-09-27": [],
     "2026-09-28": [
      [
-      "practice",
-      {
-       "RW": 15
-      },
-      15,
-      "fallback"
-     ],
-     [
-      "practice",
-      {
-       "M": 15
-      },
-      15,
-      "fallback"
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
      ]
     ],
     "2026-09-29": [
@@ -4882,6 +4878,407 @@
     "2026-10-03": [],
     "2026-10-04": [],
     "2026-10-05": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ]
+   }
+  },
+  "exam_day_outside_study_days": {
+   "input": {
+    "today": "2026-09-29",
+    "setup_date": "2026-09-29",
+    "study_days_mask": 62,
+    "daily_minutes": 45,
+    "levels": {
+     "Algebra": null,
+     "Advanced Math": null,
+     "Problem Solving and Data Analysis": null,
+     "Geometry and Trigonometry": null,
+     "Information and Ideas": null,
+     "Craft and Structure": null,
+     "Expression of Ideas": null,
+     "Standard English Conventions": null
+    },
+    "target_exam_date": null,
+    "full_length_weekday": 6,
+    "last_exam_date": null,
+    "days_since_exam": null,
+    "exam_weak_domains": [],
+    "last_exam_missed_count": null,
+    "last_exam_reviewed": true,
+    "review_due_by_date": {},
+    "recent_planned_by_domain": {},
+    "full_length_interval_weeks": 2,
+    "current_overrides": []
+   },
+   "exam_placement": {
+    "placed": {
+     "2026-10-03": "exam_cadence"
+    },
+    "suppressed": []
+   },
+   "deterministic_v1": {
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-10-04": [],
+    "2026-10-05": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ]
+    ],
+    "2026-10-06": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-07": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-08": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-09": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ],
+    "2026-10-10": [],
+    "2026-10-11": [],
+    "2026-10-12": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "cold_start"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "cold_start"
+     ]
+    ]
+   },
+   "fallback_v1": {
+    "2026-09-29": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-09-30": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-01": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-02": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-03": [
+     [
+      "full_length",
+      null,
+      1,
+      "exam_cadence"
+     ]
+    ],
+    "2026-10-04": [],
+    "2026-10-05": [
+     [
+      "review",
+      null,
+      20,
+      "exam_review_placeholder"
+     ]
+    ],
+    "2026-10-06": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-07": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-08": [
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-09": [
+     [
+      "practice",
+      {
+       "M": 15
+      },
+      15,
+      "fallback"
+     ],
+     [
+      "practice",
+      {
+       "RW": 15
+      },
+      15,
+      "fallback"
+     ]
+    ],
+    "2026-10-10": [],
+    "2026-10-11": [],
+    "2026-10-12": [
      [
       "practice",
       {

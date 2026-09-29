@@ -2524,6 +2524,7 @@ DECLARE
   fl_key         text[] := '{}';
   v_supp         date[] := '{}';
   v_cursor       date;
+  v_first        date;
   v_d            date;
   v_nxt          date;
   v_probe        date;
@@ -2582,19 +2583,49 @@ BEGIN
   END IF;
 
   ----------------------------------------------------------------------------
-  -- (2) The series — one interval after the last exam, or after setup.
+  -- (2) The series.
+  --
+  -- THE FIRST SITTING IS THE FIRST PREFERRED WEEKDAY STRICTLY AFTER THE ANCHOR.
+  -- No interval is applied before a student has sat one; after a completed
+  -- sitting the interval runs from that sitting.
+  --
+  -- STRICTLY AFTER IS LOAD-BEARING IN BOTH DIRECTIONS, and the two failures it
+  -- sits between are both real. Applying a full interval before the first
+  -- sitting put a fortnightly student's first exam on day 14-20 of a 14-day
+  -- horizon, so a new student never saw one at all: production profile
+  -- 59ce67c7, Mon-Fri with Saturday tests, set up 29 Sep -> 29 Sep + 14 = 13 Oct
+  -- -> next Saturday 17 Oct, against a horizon ending 12 Oct. Zero full-length
+  -- blocks, and for a fortnightly student there always would be. Anchoring "on
+  -- or after" the setup date instead puts the first exam on the day they signed
+  -- up, which is the defect the anchor rule was replaced for. Strictly-after,
+  -- then interval, is the only rule that avoids both.
+  --
+  -- A consequence worth naming because it looks like a bug: a student who sets
+  -- up ON their preferred weekday does not get an exam that day. `p_setup + 1`
+  -- is already past it, so the snap forward lands on the NEXT occurrence.
   --
   -- THE CURSOR ADVANCES ON THE INTENDED DATE, NOT THE SHIFTED ONE. That is what
   -- stops one blocked Saturday from dragging every later exam a week late: the
   -- rhythm belongs to the student's choice, not to the accident that moved one
-  -- sitting. (Oracle line 78.)
+  -- sitting.
+  --
+  -- Ported from the oracle, docs/Spec/calendar_formula_reference.py exam_dates()
+  -- step (2). Later sittings are NOT re-snapped to the weekday, exactly as there:
+  -- a weekday-aligned date plus a whole number of weeks is still weekday-aligned,
+  -- so a snap would be a no-op that invited a reader to think otherwise.
   ----------------------------------------------------------------------------
-  v_cursor := COALESCE(x_last, p_setup);
+  IF x_last IS NOT NULL THEN
+    v_first := x_last + (p_iv * 7);
+  ELSE
+    v_first := p_setup + 1;
+  END IF;
+  WHILE EXTRACT(DOW FROM v_first)::integer <> p_wd LOOP
+    v_first := v_first + 1;
+  END LOOP;
+
+  v_cursor := NULL;
   LOOP
-    v_d := v_cursor + (p_iv * 7);
-    WHILE EXTRACT(DOW FROM v_d)::integer <> p_wd LOOP
-      v_d := v_d + 1;
-    END LOOP;
+    v_d := CASE WHEN v_cursor IS NULL THEN v_first ELSE v_cursor + (p_iv * 7) END;
     EXIT WHEN v_d > h_end;
     v_cursor := v_d;
     CONTINUE WHEN v_d < h_start OR v_d = ANY (fl_date);
@@ -2645,7 +2676,7 @@ $$;
 -- Name: FUNCTION calendar_place_full_lengths(p_input jsonb); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) IS 'Doc 05F formula sheet §2 step 2 (rewritten 2026-09-27). Arithmetic on the student''s chosen frequency and weekday: from the last completed exam or the setup date, + interval_weeks x 7, then the next preferred weekday on or after. An overridden date shifts +7 and never to another weekday (V-02); both occurrences overridden records a suppression. The final rehearsal walks back from the target and is never shifted. Returns {placed, suppressed}. Shared by both generators (sheet §5A), so the rules have exactly one implementation.';
+COMMENT ON FUNCTION public.calendar_place_full_lengths(p_input jsonb) IS 'Doc 05F formula sheet §2 step 2 (first-sitting rule corrected 2026-09-29). Arithmetic on the student''s chosen frequency and weekday. The FIRST sitting is the first preferred weekday strictly after the setup date — no interval is applied before a student has sat one, because spending the first interval first put a fortnightly student''s first exam past the end of their first horizon. After a completed sitting the next is interval_weeks x 7 from it, snapped forward to that weekday; every later one is a full interval from its predecessor. An exam day need not be a study day. An overridden date shifts +7 and never to another weekday (V-02); both occurrences overridden records a suppression. The final rehearsal walks back from the target and is never shifted. Returns {placed, suppressed}. Shared by both generators (sheet §5A), so the rules have exactly one implementation.';
 
 
 --

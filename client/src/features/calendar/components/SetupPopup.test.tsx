@@ -12,7 +12,7 @@ import React from "react";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
-import { EXAM_FREQUENCIES } from "../copy/exam-cadence";
+import { EXAM_FREQUENCIES, WEEKDAYS } from "../copy/exam-cadence";
 import { SetupPopup, type SetupAnswers } from "./SetupPopup";
 
 afterEach(cleanup);
@@ -27,6 +27,7 @@ const DEFAULTS: CalendarSetupDefaults = {
   // form opens the frequency control on the first and reads the countdown off the second, so
   // a fixture without them describes a payload the route cannot send.
   default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
   final_exam_lead_days: 7,
 };
 
@@ -84,7 +85,19 @@ describe("pressing straight through", () => {
   // is wrong" — the real SAT is sat on a Saturday morning and §928's own worked example is a
   // Saturday exam, so the chip must still store 6 when the student picks it. Without this,
   // the obvious over-correction (dropping Saturday, or coercing the weekday) passes.
-  it("the test-day row opens UNANSWERED — None is the pressed chip", () => {
+  /**
+   * THE DAY ROW OPENS ON THE SERVED DEFAULT, exactly as the cadence row beside it does.
+   *
+   * This case asserted None, and Brief 17 Step 2 reverses the DISPLAY: the two halves of one
+   * decision were showing the student two different answers to "is there a default here?",
+   * and `full_length_pair` refuses a profile carrying one half without the other.
+   *
+   * R-08-27 IS NOT REPEALED BY SHOWING IT, which is the whole reason the display and the
+   * payload are separate questions here. A full-length spends a whole day's budget, so it
+   * must be a choice the student made — the press-through case below still asserts both
+   * halves go out null.
+   */
+  it("the test-day row opens on the SERVED default, not on None", () => {
     open();
     // The row lives on the schedule panel, reached without answering anything.
     fireEvent.click(screen.getByTestId("calendar-setup-continue"));
@@ -94,12 +107,24 @@ describe("pressing straight through", () => {
       (c) => c.getAttribute("aria-pressed") === "true",
     );
     expect(pressed).toHaveLength(1);
-    expect(pressed[0]!.textContent).toBe("None");
-    // Prove the row is non-trivial before trusting what is absent from it: every weekday is
-    // on offer, Saturday included, and none of them is pre-pressed.
+    // Read off the served value, not the label "Sat", so a form that hardcoded Saturday
+    // still fails the next case.
+    expect(pressed[0]!.textContent).toBe(
+      WEEKDAYS.find((w) => w.dow === DEFAULTS.default_full_length_weekday)!
+        .label,
+    );
+    // Prove the row is non-trivial first: every weekday is on offer plus None.
     expect(chips.length).toBe(8);
-    const sat = chips.find((c) => c.textContent === "Sat")!;
-    expect(sat.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("serves 0 and presses 'Sun' — the day DISPLAY follows the server too", () => {
+    open({ defaults: { ...DEFAULTS, default_full_length_weekday: 0 } });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const pressed = Array.from(
+      screen.getByTestId("calendar-setup-fl").querySelectorAll("button"),
+    ).filter((c) => c.getAttribute("aria-pressed") === "true");
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]!.textContent).toBe("Sun");
   });
 
   it("choosing Saturday still stores Saturday (the weekday itself is untouched)", () => {

@@ -117,6 +117,7 @@ const READY_BODY = {
   exam_planning: {
     final_exam_lead_days: 7,
     default_full_length_interval_weeks: 2,
+    default_full_length_weekday: 6,
   },
   // Brief 14 Step 4. Dates the generator refused to place because both the intended
   // occurrence and the +7-day alternative were user-overridden. Non-empty on purpose: the
@@ -324,6 +325,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
         exam_planning: {
           final_exam_lead_days: 7,
           default_full_length_interval_weeks: 2,
+          default_full_length_weekday: 6,
         },
         days: [],
       }),
@@ -342,6 +344,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
         exam_planning: {
           final_exam_lead_days: 7,
           default_full_length_interval_weeks: 2,
+          default_full_length_weekday: 6,
         },
         days: [],
       }),
@@ -360,6 +363,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
         exam_planning: {
           final_exam_lead_days: 7,
           default_full_length_interval_weeks: 2,
+          default_full_length_weekday: 6,
         },
         days: [],
       }),
