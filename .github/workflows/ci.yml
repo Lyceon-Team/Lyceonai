@@ -1069,6 +1069,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
             --file tests/ci/guardian-link-code.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G1-05; audit G-AUD-08] | @implemented [2026-09-29]
+      # Redeem answers on every error branch. Runs the real route against this Postgres, with
+      # one failure injected per case (a thrown connection error, a foreign-instance LY004)
+      # and a 2s response deadline so a hang is red. Behind the summary gate: a skipped file
+      # exits 0.
+      - name: Guardian redeem error branches → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-redeem-errors.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-redeem-errors.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-redeem-errors.json \
+            --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
+
       # @spec [Guardian_Closure_Plan G1-07; audit G-AUD-10] | @implemented [2026-09-29]
       # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the six
       # guardian functions read f/f/f/t (guardian_can_view_student f/f/t/t) even after a
